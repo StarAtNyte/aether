@@ -151,6 +151,8 @@ export interface SceneSyncOptions {
 
 /** Minimum interval between view re-plans while the camera keeps moving (ms). */
 export const VIEW_INTERVAL_MS = 120;
+/** The same while the frame is drawn at a reduced scale and every millisecond counts: LOD and culling lag a little more behind a moving camera. */
+export const VIEW_INTERVAL_SCALED_MS = 280;
 
 /** Default virtual-geometry budget: triangles one unique mesh may draw over all its instances. */
 export const DEFAULT_VIRTUAL_TRIANGLES = 1_500_000;
@@ -340,10 +342,10 @@ export class SceneSync {
    * (captures). Returns true when instance or index buffers changed.
    * Allocation-free.
    */
-  updateView(camera: PerspectiveCamera, heightPx: number, nowMs = 0): boolean {
+  updateView(camera: PerspectiveCamera, heightPx: number, nowMs = 0, intervalMs = VIEW_INTERVAL_MS): boolean {
     // While the camera moves, re-plan at most every VIEW_INTERVAL_MS (uploads dominate on
     // slow GPUs); the skipped frame leaves the view dirty so the last pose is always planned.
-    if (nowMs > 0 && nowMs - this.lastViewUpdate < VIEW_INTERVAL_MS && this.lastViewUpdate > 0) {
+    if (nowMs > 0 && nowMs - this.lastViewUpdate < intervalMs && this.lastViewUpdate > 0) {
       this.viewDirty = true;
       return false;
     }

@@ -247,7 +247,7 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
     const uSharp = uniform(0);
     const uTexel = uniform(new three.Vector2(0, 0));
     let hdr = color.rgb;
-    if (!prepass && !(globalThis as { __NOSHARP?: boolean }).__NOSHARP) {
+    if (!prepass) {
       const c = color.rgb;
       const up = color.sample(screenUV.add(vec2(0, uTexel.y))).rgb;
       const down = color.sample(screenUV.sub(vec2(0, uTexel.y))).rgb;

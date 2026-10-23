@@ -107,6 +107,7 @@ const EXTRA: Cfg[] = [
   { id: 'default-x-lm', auto: true, js: 'lm-off', after: 'lm-on' },
   { id: 'default-x-env', auto: true, js: 'no-env', after: 'env-on' },
   { id: 'default-x-sunsh', auto: true, js: 'shadow-off', after: 'shadow-on' },
+  { id: 'default-layers-none', auto: true, js: 'layers-none', after: 'layers-all' },
   { id: 'default-taps1', auto: true, js: 'taps1', after: 'taps-restore' },
   { id: 'default-norecv', auto: true, js: 'recv-off', after: 'recv-on' },
   { id: 'default-no-people', auto: true, js: 'people-hide', after: 'people-show' },
@@ -345,6 +346,11 @@ async function measure(page: Page, pose: readonly number[], cfg: Cfg): Promise<{
             } else if (m.__pm) m.material = m.__pm as never;
           });
         }
+        if (name === 'layers-none' || name === 'layers-all') {
+          const cam = (x as unknown as { perspective: { layers: { set(l: number): void; enableAll(): void } } }).perspective;
+          if (name === 'layers-none') cam.layers.set(29);
+          else cam.layers.enableAll();
+        }
         if (name === 'people-hide' || name === 'people-show') walk((o) => { if (o.isSkinnedMesh) o.visible = name === 'people-show'; });
         if (name === 'std-off') {
           x.scene.overrideMaterial = null;
@@ -459,12 +465,13 @@ async function measure(page: Page, pose: readonly number[], cfg: Cfg): Promise<{
         }
         const sorted = times.slice(2).sort((x, y) => x - y);
         rafMed.push(sorted[Math.floor(sorted.length / 2)] as number);
+        if (blk === 2) (window as unknown as { __slow: string }).__slow = times.map((t, i) => (t > 25 ? `${i}:${t.toFixed(0)}` : '')).filter(Boolean).join(',');
         if (perFrame < best) {
           best = perFrame;
           bestP90 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.9))] as number;
         }
       }
-      (window as unknown as { __dbg: string }).__dbg = `rafMed=${rafMed.map((v) => v.toFixed(1)).join('/')} scaleInMotion=${moveScale} gpu(move x n+rest x n)=${gpuBlocks.join(' | ')} sunMapDraws=${String((r as unknown as { sunMapDraws: number }).sunMapDraws)} blocks=${blocks.map((b) => b.toFixed(0)).join('/')}`;
+      (window as unknown as { __dbg: string }).__dbg = `rafMed=${rafMed.map((v) => v.toFixed(1)).join('/')} scaleInMotion=${moveScale} gpu(move x n+rest x n)=${gpuBlocks.join(' | ')} slow=[${(window as unknown as { __slow?: string }).__slow ?? ''}] water=${JSON.stringify((r as unknown as { waterDebug(): unknown }).waterDebug())} sunMapDraws=${String((r as unknown as { sunMapDraws: number }).sunMapDraws)} blocks=${blocks.map((b) => b.toFixed(0)).join('/')}`;
       if (cfg.after) for (const j of cfg.after.split('+')) await hook(r, j);
       const s = r.stats();
       return { median: best, p90: bestP90, cpu: s['frameMs'] as number, state: `${(window as unknown as { __dbg: string }).__dbg} ad=${String((r as unknown as { adaptive: { enabled: boolean; smoothedFps: number } }).adaptive.enabled)}/${String((r as unknown as { atRest: boolean }).atRest)}/${(r as unknown as { adaptive: { smoothedFps: number } }).adaptive.smoothedFps.toFixed(0)} post=${(r as unknown as { post?: { key: string } | null }).post?.key ?? 'none'} maps=${r.sunShadowInfo.mapSizes.join('/')} ${r.renderQuality}/${r.renderTier} fx=${r.intendedEffects.length} lvl=${s['performanceLevel']} scale=${s['resolutionScale']} draws=${s['drawCalls']}` };
@@ -558,8 +565,6 @@ async function main(): Promise<void> {
       const context = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
       await context.addInitScript({ content: SKIP_FIRST_RUN });
       await context.addInitScript({ content: 'globalThis.__name = (f) => f;' });
-      if (process.env['NOPASS']) await context.addInitScript({ content: 'globalThis.__NOPASS = true;' });
-      if (process.env['NOSHARP']) await context.addInitScript({ content: 'globalThis.__NOSHARP = true;' });
       if (WEAK) {
         await context.addInitScript(() => {
           Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 2 });
@@ -602,6 +607,18 @@ async function main(): Promise<void> {
           }, arg('bisect') === 'lean');
           await page.waitForTimeout(3000);
           for (const line of await bisect(page, pose)) log(`${slug}: ${line}`);
+        }
+        if (arg('idle') !== undefined) {
+          // Idle: nothing may be drawn once the refinement has converged; while moving, the refinement must not run.
+          const probe = (): Promise<string> =>
+            page.evaluate(async () => {
+              const r = window.__aether?.simulation?.renderer as unknown as { frameCount: number; atRest: boolean; refinement?: { next(): boolean } };
+              const f0 = r.frameCount;
+              await new Promise((res) => setTimeout(res, 2000));
+              return `frames drawn in 2 s: ${r.frameCount - f0} (atRest=${String(r.atRest)})`;
+            });
+          await page.waitForTimeout(12_000);
+          log(`${slug}: idle after settling: ${await probe()}`);
         }
         for (const cfg of CONFIGS) {
           if (ROWS && !ROWS.includes(cfg.id)) continue;

@@ -45,7 +45,7 @@ import { EditOverlay, type ComponentMode } from './view/edit-overlay';
 import { ProofReplay, type ProofReplayOptions, type ProofTrace } from './view/proof-replay';
 import { GhostRun, type GhostTrace } from './view/ghost-run';
 import { BlueprintMarks, BLUEPRINT_LEAD_SECONDS, MAX_BLUEPRINT_BOXES, markBoxOf, type MarkBox } from './view/blueprint';
-import { MESH_TRIANGLES_KEY } from './sync/scene-sync';
+import { MESH_TRIANGLES_KEY, VIEW_INTERVAL_MS, VIEW_INTERVAL_SCALED_MS } from './sync/scene-sync';
 import type { MeshGeometryBundle } from './geometry/mesh-asset';
 import { Avatar, type AvatarState } from './view/avatar';
 import { CharacterSystem } from './characters/system';
@@ -368,7 +368,7 @@ const REST_DELAY_MS = 220;
 /** Size of the planar water mirror relative to the frame at full scale (see PlanarMirror). */
 const MIRROR_SCALE = 0.5;
 /** Lowest adaptive scale of a scene pass that is upsampled and sharpened (the drawing buffer's own floor is 0.5). */
-const PASS_SCALE_FLOOR = 0.3;
+const PASS_SCALE_FLOOR = 0.25;
 /** Frame time (s) beyond which an animating scene at rest cannot afford the full chain, and for how many frames in a row. */
 const REST_SLOW_DT = 0.034;
 const REST_SLOW_FRAMES = 10;
@@ -565,10 +565,12 @@ async function encodePixels(pixels: Uint8Array, w: number, h: number, mime: stri
 const SHADER_WARMUP_MS = 15_000;
 /** Frames after which the cached sun shadow map is drawn again whatever happened (a safety net). */
 const SUN_MAP_REFRESH = 24;
+/** The safety net while the view moves under the split studio chain. */
+const SUN_MAP_REFRESH_MOVING = 60;
 /** Frames between redraws of the cached sun shadow map while casters animate (30 fps at 60). */
 const SUN_MAP_SOFT_REFRESH = 2;
-/** The same while the view moves under the split studio chain (10 fps at 60): animated shadows lag a little, the frame rate holds. */
-const SUN_MAP_SOFT_REFRESH_MOVING = 6;
+/** The same while the view moves under the split studio chain (2 fps at 60): animated shadows lag a little, the frame rate holds (a redraw is a frame of 5 ms more, which a 13 ms frame cannot afford often). */
+const SUN_MAP_SOFT_REFRESH_MOVING = 30;
 /** Assets smaller than this in every direction cast no sun shadow on the low tier (metres). */
 const SMALL_CASTER_METRES = 0.9;
 /** Skinned assets farther than this from the eye are not drawn on the low tier (metres). */
@@ -3325,7 +3327,8 @@ export class WorldRenderer {
     this.sunMapKey = sun;
     shadow.autoUpdate = false;
     const age = this.sunMapAge + 1;
-    const due = this.sunMapDirty || moved || age >= SUN_MAP_REFRESH || (this.sunMapSoft && age >= (this.qualityPlan.moveEffects !== null && !this.atRest ? SUN_MAP_SOFT_REFRESH_MOVING : SUN_MAP_SOFT_REFRESH));
+    const moving = this.qualityPlan.moveEffects !== null && !this.atRest;
+    const due = this.sunMapDirty || moved || age >= (moving ? SUN_MAP_REFRESH_MOVING : SUN_MAP_REFRESH) || (this.sunMapSoft && age >= (moving ? SUN_MAP_SOFT_REFRESH_MOVING : SUN_MAP_SOFT_REFRESH));
     shadow.needsUpdate = due;
     if (due) {
       this.sunMapDraws++;
@@ -4255,7 +4258,7 @@ export class WorldRenderer {
     if (this.viewChanged() || this.sync.viewNeedsUpdate) {
       const target = this.renderer.getOutputRenderTarget();
       const height = target ? target.height : Math.round(this.cssHeight * this.renderer.getPixelRatio());
-      if (this.sync.updateView(this.perspective, Math.max(1, height), capture ? 0 : now())) this.sunMapSoft = true;
+      if (this.sync.updateView(this.perspective, Math.max(1, height), capture ? 0 : now(), this.viaPassApplied && this.adaptive.scale < 0.8 ? VIEW_INTERVAL_SCALED_MS : VIEW_INTERVAL_MS)) this.sunMapSoft = true;
     }
     // A resized sun shadow map reallocates its textures on the next draw; shafts built against the old
     // ones would sample destroyed textures. Drop the pipeline, draw once directly, and let it rebuild.
@@ -5007,7 +5010,7 @@ export class WorldRenderer {
 
   /** The adaptive scale is applied to the scene pass of the light chain (upsampled and sharpened in its composite), not to the drawing buffer. */
   private scalesViaPass(): boolean {
-    return this.qualityPlan.moveEffects !== null && !this.atRest && !this.captureActive && this.post?.sceneScalable === true && !(globalThis as { __NOPASS?: boolean }).__NOPASS;
+    return this.qualityPlan.moveEffects !== null && !this.atRest && !this.captureActive && this.post?.sceneScalable === true;
   }
 
   /** Whether the drawing buffer was last sized for the scene pass taking the adaptive scale. */

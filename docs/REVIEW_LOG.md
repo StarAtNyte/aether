@@ -6226,3 +6226,36 @@ Change
 Measured lean build (local CDN stand-in): dist 148 MB, 1616 files (assets/lib 82 MB), Chromium harness (`tests/e2e/lean-library.e2e.ts`): the apartment opens with 0 CDN requests; a showcase village with a model the build does not ship fetches only that file from the CDN; with the CDN blocked the world still opens. A race found on the way: `loadCatalog` installed the catalog before the index arrived, so a second caller could build local URLs; the catalog now installs after the index.
 
 Gates: tsc clean; vitest packages/assets, apps/studio, apps/server pass (new tests for the CDN routing and the ship set); showcase:bake --check up to date; showcase lightmaps --verify ok; smoke 34/34.
+
+## 2026-10-24 Frame cost of the casa patio and the skyline penthouse in motion: scene pass scale with a sharpening upsample, lean foliage and terrain, a sun map that stops redrawing every frame
+
+Task: 60 fps on the integrated GPU (Intel UHD 770, headless Chromium, ANGLE/GL, 1856 x 1016, vsync on, GPU timer queries, cover cameras, slow orbit) for the two worlds that held 30 to 33 fps (casa patio 28.5 ms GPU, skyline penthouse about 21 ms at the 0.5 resolution floor).
+
+What the measurements said (harness `default-perf.e2e.ts`, new `--pin=<scale>` freezes the scaler and the performance ladder so rows compare; the earlier hide/receive rows ran while the ladder moved and were confounded):
+- Pixels still mattered. GPU ms against scale, casa: 1.0 about 72, 0.5 about 32, 0.35 about 24, 0.2 about 17.5. The 0.5 floor was never a real limit of the idea, but the drawing buffer cannot go below a pixel ratio of 0.5 (`MIN_PIXEL_RATIO`), so the scaler had stopped there.
+- Shadow receiving is small (1.5 ms at the 0.5 floor on both worlds); plain materials on ground and towers did not change the skyline at all (the cost there is the lighting arithmetic of the pixels the surface covers, not the finish); plain foliage cards took 10 ms off the casa at 0.5.
+- The sun shadow map was drawn again on 276 of about 280 frames in the casa: the throttled field re-plan leaves the view dirty while the camera moves and the frame loop turned that into "content changed". Casters never animate for it, so the map drawn every frame cost about 4 ms of 23.
+- MSAA of the scene pass costs 4 ms on both worlds (alpha-to-coverage foliage needs it: without it the cut-outs come out white), so it stays.
+- An empty frame (camera layers off) costs 5 ms of the light chain (post passes and background): bloom 1.5, the sharpening 1, the grade 1. Canvas MSAA made no difference.
+
+What changed (all generic):
+1. Scene pass at the adaptive scale (`PostPipeline.setSceneScale`): while the view moves under the split studio chain the drawing buffer keeps its size and the scene pass (and the water mirror and backdrop) take the scale, floor 0.25. The composite upsamples bilinearly and sharpens with a 4-tap contrast-limited step on the linear image (clamped to the neighbours' range, so no ringing on bright edges). The chain at rest is untouched (full resolution, full chain). The scaler's floor is lowered only while that path is in force (`AdaptiveResolution.setFloor`); resizing the buffer from the draw no longer counts as the view moving (it kept a resting view from ever resting; found by the rest stills).
+2. A throttled field re-plan no longer marks the sun map dirty (it asks for a frame only); while the view moves the map is redrawn at most every 30 frames for animated casters and every 60 as a net (every 2 and 24 at rest); field and virtual-geometry re-plans while the frame is scaled are 280 ms apart instead of 120.
+3. Lean foliage colour and lean terrain while the view moves (the `leanShading` uniform, no recompile): the two 3D noise octaves of the leaf colour are skipped (5.4 ms off the casa at 0.5); terrain takes only the large-scale lookup everywhere and drops the fine macro noise and micro detail (2.1 ms). Nodes are built inside the branches, as the earlier lessons say.
+
+Before and after (task start build vs now, default view in motion, frame interval median (p90) and GPU ms, three blocks of 120 frames, two runs):
+
+| room | before | after | scale in motion |
+|---|---:|---:|---:|
+| casa patio | 33.3 ms (30 fps), 28.7 GPU | 16.7 ms (60 fps), p90 16.7, 10.2 to 11.6 GPU | 0.25 |
+| skyline penthouse | 33.3 ms (30 fps), 21.5 GPU | 16.7 ms (60 fps), p90 16.7, 9.1 to 11.5 GPU | 0.31 |
+| hotel bedroom | 16.7 (60), scale 0.60 | 16.7 (60), scale 0.65, 8 GPU | 0.65 |
+| twin room, vaulted bedroom | 16.7 (60), scale 0.72 | 16.7 (60), GPU 9.3 | 0.9 |
+
+The first casa run at floor 0.3 had one frame in ten at 33 ms (GPU 12.4 to 13, no headroom); at 0.25 it holds. Skyline held 60 at 0.3 as well.
+
+Honest limits. In motion those two worlds are drawn at 0.25 to 0.3 of the frame and upsampled: edges are blocky, thin foliage thins out (leaf cards are alpha-to-coverage at a third of the size) and fine terrain detail is gone; the sharpening keeps it crisp, not detailed, and everything is back at full quality 220 ms after the view stops. The frame has about 5 ms of fixed light-chain cost (bloom, composite, background) that is not reduced here. Not done, measured as small or no gain: shadow receiving off for far foliage (1.5 ms for every receiver), a far/near split of ground and facade materials (plain materials gained nothing on the skyline), tighter alpha cut-outs, impostors, a foliage depth pre-pass, fewer shadow taps. The WebGPU backend was not tested (no WebGPU here): `setResolutionScale` of the scene pass and the new branches are node code shared by both backends, but the sharpening step and the lean branches ran on WebGL2 only. Casa at rest with walking people still ends in the light chain (the rest-slow rule; unchanged, and unrelated to this work).
+
+Idle and rest: with the camera still and refinement converged no frame is drawn (0 frames in 2 s on hotel, skyline and casa); refinement runs only when nothing changed, never while the view moves.
+
+Stills at rest, pixel-diffed against the task-start build (mean 8-bit difference, share of pixels over 8): hotel 0.67 (0.02 %), twin 0.71 (0.09 %), vaulted 0.50 (0.06 %), skyline 1.6 (0.6 %); casa regional means within 0.3 / 255 (foliage speckle differs between any two captures). Viewed side by side: the same pictures. Gates: tsc clean; vitest packages/render and apps/studio 1575 pass (new floor tests); smoke 34/34; e2e:weak ok; showcase:bake --check up to date; showcase:lightmaps --verify ok.
