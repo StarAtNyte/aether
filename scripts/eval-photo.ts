@@ -281,6 +281,8 @@ async function runPhoto(args: Args, live: Provider | null): Promise<Report> {
       if (e.phase === 'done' && e.score) {
         report.final = { passed: e.score.passed, total: e.score.total, objective: e.score.objective ?? null, judge: e.score.judge ?? null, judgedBy: e.score.judgedBy ?? null, fidelity: e.score.fidelity ?? null, structuralFailed: e.score.structuralFailed, failing: e.score.failing.map((f) => ({ id: f.id, note: f.note })) };
       }
+    } else if (e.type === 'step' && e.tool === 'measure_room') {
+      console.log(`  [${args.photo}] ${e.label}`);
     } else if (e.type === 'error') {
       report.errors.push(e.text);
       console.log(`  [${args.photo}] ERROR ${e.text.slice(0, 300)}`);

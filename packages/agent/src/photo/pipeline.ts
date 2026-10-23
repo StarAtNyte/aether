@@ -1087,6 +1087,9 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
       if (m && m.estimate) {
         depthNote = `${m.text.replace('\nThe depth picture follows this reply.', '')}\nThe depth picture is the last image. Call measure_room with an anchor (a whole door, a bed, a table: name, size_m, axis, box) to pin the scale.`;
         depthImages = m.blocks;
+        yield { type: 'step', tool: MEASURE_TOOL_NAME, label: `Depth estimate: ${m.estimate.width.value} × ${m.estimate.depth.value} × ${m.estimate.height.value} m (${m.estimate.scale.basis} scale)`, ok: true };
+      } else if (m) {
+        yield { type: 'step', tool: MEASURE_TOOL_NAME, label: m.text.slice(0, 160), ok: false };
       }
     }
     const notes = [rejectNote, standing?.panel ? consensusText(standing.panel) : '', advisory, view.fidelity ? fidelityText(view.fidelity) : '', view.lookEvidence, view.scale, round === 1 ? footprintAdvisory(desc) : '', depthNote, kit?.readout ?? '', ledger ? ledger.roundText() : '', hs && ledger ? repairOrderText(ledger.ranked()) : ''].filter((l) => l.length > 0).join('\n');
