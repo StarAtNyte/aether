@@ -43,6 +43,10 @@ A refusal teaches: the reply names the class to work on and the open difference 
 
 A difference the model fixed is not closed until the next render shows it. The ledger requires an earlier id to be reported again with `fixed`, `smaller`, `same` or `worse`, judged on the new render; an id left out stays open; a difference that did not shrink after an edit is pointed out; a round the judges find worse is rolled back, including a camera change. The independent seat at the end lists what it sees without the conversation, so a difference the fixer called fixed can still show up there as its own entry.
 
+## Measured room size (depth network, advisory)
+
+The shell size used to be only the model's guess, and wide-lens photos read narrow. `measure_room` runs a small monocular depth network (Depth Anything V2 Small, Apache-2.0, 27 MB, CPU) on the photo and reports width, depth and height with a range. Method: relative inverse depth to depth with a swept shift, pinhole back-projection with a swept field of view (65, 75, 90 degrees), a floor plane fitted to the lower third gives "up", and the metric scale comes from one thing of known size: a named anchor (a door about 2.05 m, a bed width, a table height) or else a ceiling of 2.4 to 2.7 m. Width is the span of the wall points across the picture (a lower bound when the side walls are out of frame), depth the far wall plus a 0.4 m camera standoff. The reported range is the 10th to 90th percentile over the sweep. The first compare round shows the numbers, a depth picture and the model's own reading side by side; the model decides. Weights are fetched on first use with a pinned SHA-256 and cached; offline, the line is simply absent (see docs/THIRD_PARTY.md). CLI: `npx tsx scripts/measure-room.ts photo.jpg`.
+
 ## Assumptions and blockers
 
 Anything the photo cannot show is an assumption: metric scale, depth behind occluders, hidden walls, the back of furniture, the room outside the frame, ceiling height, the colour of what is in shadow. Each entry has an id, a text, a confidence between 0 and 1, the stage that made it and a one-line prompt that changes it.

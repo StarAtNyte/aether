@@ -80,6 +80,7 @@ import { restorePatches } from './revert';
 import { applyGrade, estimatePhotoGrade, lookEvidenceText, matchGrade, type PhotoGrade } from './grade';
 import { JUDGES_DEFAULT, JUDGES_MAX, ProgressTracker, consensusText, decideRound, runPanel, type Consensus, type Decision, type RoundState } from './judge';
 import { CLOSER_TOOL, CLOSER_TOOL_NAME, lookCloser } from './closer';
+import { MEASURE_TOOL, MEASURE_TOOL_NAME, autoAnchor, measureRoom, parseMeasureInput, type Measured } from './measure';
 import { compareImages, extractPalette, regionColourScore, type Raster } from './score';
 import { runReconcile } from './reconcile';
 import { texturePass, texturePassLine, textureSource } from './texture-pass';
@@ -888,7 +889,10 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
   const designTools = run.tools.filter((t) => isDesignTool(t.name));
   const hs = run.harness ?? null;
   const baseRounds = hs?.rounds ?? 0;
-  const tools: ToolDef[] = [VERDICT_TOOL, ...(ledger ? [DIFFERENCES_TOOL] : []), ...(hs ? [GATE_TOOL, ...(ledger ? [REPAIR_TOOL] : []), CAMERA_TOOL] : []), ...(photo.raster ? [SAMPLE_TOOL] : []), CLOSER_TOOL, ...designTools, ...(run.ctx.textures?.photo ? [MAKE_TEXTURE_TOOL] : []), ...run.tools.filter((t) => t.name === 'tune_look' || t.name === 'finish' || t.name === 'find_model')];
+  /** The photo for the depth network (null without a host decoder: the measure tool is then not offered). */
+  const depthRaster = typeof ctx.host.decodeImage === 'function' && process.env['AETHER_DEPTH'] !== 'off' ? () => ctx.host.decodeImage!(run.image, 518) : null;
+  let depthFirst: Promise<Measured> | null = null;
+  const tools: ToolDef[] = [VERDICT_TOOL, ...(ledger ? [DIFFERENCES_TOOL] : []), ...(hs ? [GATE_TOOL, ...(ledger ? [REPAIR_TOOL] : []), CAMERA_TOOL] : []), ...(photo.raster ? [SAMPLE_TOOL] : []), CLOSER_TOOL, ...(depthRaster ? [MEASURE_TOOL] : []), ...designTools, ...(run.ctx.textures?.photo ? [MAKE_TEXTURE_TOOL] : []), ...run.tools.filter((t) => t.name === 'tune_look' || t.name === 'finish' || t.name === 'find_model')];
   const messages: ChatMessage[] = [];
   /** Where progress is measured from: with a panel, the last state the judges preferred; without, the best state. */
   // (Written through `settle`, so the declared type is spelled out: control flow would otherwise narrow it to null.)
@@ -1075,7 +1079,17 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
     }) : null;
     if (kit && kit.images.length > 0) run.imageCap = Math.max(run.imageCap ?? 0, 6 + kit.images.length + 2);
     const advisory = decision?.advisory ? `Advisory, from the deterministic checks (not a verdict; look at the render and decide): since the accepted state, ${decision.advisory}.` : '';
-    const notes = [rejectNote, standing?.panel ? consensusText(standing.panel) : '', advisory, view.fidelity ? fidelityText(view.fidelity) : '', view.lookEvidence, view.scale, round === 1 ? footprintAdvisory(desc) : '', kit?.readout ?? '', ledger ? ledger.roundText() : '', hs && ledger ? repairOrderText(ledger.ranked()) : ''].filter((l) => l.length > 0).join('\n');
+    let depthNote = '';
+    let depthImages: ContentBlock[] = [];
+    if (round === 1 && depthRaster) {
+      depthFirst ??= measureRoom({ raster: depthRaster }, autoAnchor(desc), { width: desc.footprint.width, depth: desc.footprint.depth, ceiling: desc.footprint.ceiling });
+      const m = await depthFirst.catch(() => null);
+      if (m && m.estimate) {
+        depthNote = `${m.text.replace('\nThe depth picture follows this reply.', '')}\nThe depth picture is the last image. Call measure_room with an anchor (a whole door, a bed, a table: name, size_m, axis, box) to pin the scale.`;
+        depthImages = m.blocks;
+      }
+    }
+    const notes = [rejectNote, standing?.panel ? consensusText(standing.panel) : '', advisory, view.fidelity ? fidelityText(view.fidelity) : '', view.lookEvidence, view.scale, round === 1 ? footprintAdvisory(desc) : '', depthNote, kit?.readout ?? '', ledger ? ledger.roundText() : '', hs && ledger ? repairOrderText(ledger.ranked()) : ''].filter((l) => l.length > 0).join('\n');
     const blocks: ContentBlock[] = [];
     if (intro) {
       const sampled = photo.raster ? surfaceColourText(sampleSurfaces(photo.raster, desc)) : '';
@@ -1085,6 +1099,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
     blocks.push({ type: 'text', text: 'Image 1: the PHOTO' }, { type: 'image', dataUrl: photo.dataUrl });
     view.images.forEach((im, i) => blocks.push({ type: 'text', text: `Image ${i + 2}: RENDER, ${im.label}` }, { type: 'image', dataUrl: im.dataUrl }));
     if (kit) kit.images.forEach((im, i) => blocks.push({ type: 'text', text: `Image ${view.images.length + 2 + i}: ${im.label}` }, { type: 'image', dataUrl: im.dataUrl }));
+    blocks.push(...depthImages);
     if (ledger) blocks.push({ type: 'text', text: differencesProcedure(round, kit !== null && kit.images.length > 0) });
     if (hs) blocks.push({ type: 'text', text: harnessProcedure(round, baseRounds + round) });
     // Judging alone, the model decides whether its last changes helped by looking at the best state next to the new one.
@@ -1189,6 +1204,17 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
           const look = await lookCloser({ photoUrl: photo.dataUrl, renderUrl: shot.clean, compose: run.ctx.host.composeImages?.bind(run.ctx.host), plan: () => planShot(run, photo.aspect), roomLine: `Room ${desc.footprint.width} m (west-east) by ${desc.footprint.depth} m (north-south), ceiling ${desc.footprint.ceiling} m.` }, call.input);
           results.push({ type: 'tool_result', toolUseId: call.id, content: look.text, ...(look.isError ? { isError: true } : {}) });
           lookBlocks.push(...look.blocks);
+          continue;
+        }
+        if (call.name === MEASURE_TOOL_NAME && depthRaster) {
+          const input = parseMeasureInput(call.input);
+          if (!input) {
+            results.push({ type: 'tool_result', toolUseId: call.id, content: 'measure_room: the anchor needs {name, size_m, axis: "height"|"width", box:[x0,y0,x1,y1]} with a box of at least 2% of the photo.', isError: true });
+            continue;
+          }
+          const m = await measureRoom({ raster: depthRaster }, input.anchor ?? autoAnchor(desc), { width: desc.footprint.width, depth: desc.footprint.depth, ceiling: desc.footprint.ceiling });
+          results.push({ type: 'tool_result', toolUseId: call.id, content: m.text, ...(m.isError ? { isError: true } : {}) });
+          lookBlocks.push(...m.blocks);
           continue;
         }
         if (call.name === GATE_TOOL_NAME && hs) {

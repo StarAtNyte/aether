@@ -51,6 +51,7 @@ bridge.
 | [quickjs-emscripten-core](https://github.com/justjake/quickjs-emscripten) | 0.32.0 | MIT | `packages/logic` | Script sandbox, lazy | © 2019–2024 Jake Teton-Landis |
 | [@jitl/quickjs-wasmfile-release-sync](https://github.com/justjake/quickjs-emscripten) | 0.32.0 | MIT (contains **QuickJS**, © 2017–2021 Fabrice Bellard and Charlie Gordon, MIT) | `packages/logic` | The QuickJS WebAssembly build the sandbox loads | © 2019–2024 Jake Teton-Landis |
 | [zod](https://github.com/colinhacks/zod) | 4.6.6 | MIT | studio, server-side packages, CLI, bridge, verifier | Validation | © 2025 Colin McDonnell |
+| [onnxruntime-web](https://github.com/microsoft/onnxruntime) | 1.22.0 | MIT | `@aether/agent` | WebAssembly CPU runtime for the depth network behind `measure_room` (loaded on first use only) | © Microsoft Corporation |
 | [react](https://github.com/facebook/react) | 19.3.0 | MIT | `apps/studio` | UI | © Meta Platforms, Inc. and affiliates |
 | [react-dom](https://github.com/facebook/react) | 19.3.0 | MIT | `apps/studio` | UI | © Meta Platforms, Inc. and affiliates |
 | [zustand](https://github.com/pmndrs/zustand) | 5.0.15 | MIT | `apps/studio` | State | © 2019 Paul Henschel |
@@ -157,6 +158,12 @@ server never starts the HTTP transports, so Express is loaded but not served):
 | require-from-string | 2.0.2 | MIT |
 | json-schema-typed | 8.0.2 | BSD-2-Clause |
 | zod-to-json-schema | 3.25.2 | ISC |
+| onnxruntime-common | 1.22.0 | MIT |
+| flatbuffers | 25.9.23 | Apache-2.0 |
+| guid-typescript | 1.0.9 | ISC |
+| long | 5.3.2 | Apache-2.0 |
+| platform | 1.3.6 | MIT |
+| protobufjs (and its `@protobufjs/*` helpers) | 7.6.6 | BSD-3-Clause |
 | eventsource | 3.0.7 | MIT |
 | eventsource-parser | 3.1.1 | MIT |
 | jose | 6.2.12 | MIT |
@@ -779,6 +786,16 @@ textures (MIT, © 2020 Microsoft) by `scripts/characters/`:
 | `sophie.masks.ac99bbe4.webp` | `ac99bbe4f3c1ebce323ecf59fc906097eb9dc18fc664d4f101bfdd691e6bb1b9` |
 | `tomas.masks.c8bd41a2.webp` | `c8bd41a2a467c43bb9d8b11d3208538f94a51352c8d5053f0a643db520286fed` |
 | `walter.masks.a9e9f7bd.webp` | `a9e9f7bd61a8120da7adea3aa140099d22080287ac1c385cf2407197ee0a49b8` |
+
+## Model weights fetched at run time
+
+Not in git and not shipped: downloaded on first use, checked against a pinned SHA-256 (a file that differs is discarded) and cached under `~/.local/share/aether/models` (Node) or the browser Cache API. Offline or on a mismatch the feature reports itself unavailable and nothing else changes. `AETHER_DEPTH=off` disables it.
+
+| Model | Licence | Source (pinned revision) | SHA-256 | Size | Use |
+| --- | --- | --- | --- | --- | --- |
+| Depth Anything V2 **Small**, ONNX, unsigned 8-bit weights (`model_uint8.onnx`) | Apache-2.0 (model card of `onnx-community/depth-anything-v2-small`; upstream [DepthAnything/Depth-Anything-V2](https://github.com/DepthAnything/Depth-Anything-V2): the Small model is Apache-2.0) | `https://huggingface.co/onnx-community/depth-anything-v2-small/resolve/4472b7362082ad9968fee890ca0f1e5aca36b93d/onnx/model_uint8.onnx` | `fcf51f1b230362b28690bb9d1809bf0431f29cad20534e3f589bd7285547f20d` | 27.3 MB | `measure_room` in the photo flow (`packages/agent/src/photo/depth-model.ts`): relative depth of a room photo, run on the CPU |
+
+Not used: Depth Anything V2 Base, Large and Giant (CC-BY-NC-4.0, non-commercial), the Depth Anything V2 Hypersim metric models for Base and Large (CC-BY-NC-4.0), Apple Depth Pro (Apple's own research licence, not an open-source one), UniDepth (CC-BY-NC). Permissive but not chosen: MiDaS (MIT) and ZoeDepth (MIT) are larger or older for no gain here; Metric3D (BSD-2-Clause) needs a ViT-L or larger. The Small metric-indoor checkpoint is permissively licensed upstream but has no ONNX export published to fetch from a pinned URL.
 
 ## External services
 
