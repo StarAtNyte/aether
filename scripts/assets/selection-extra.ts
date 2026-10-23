@@ -34,7 +34,7 @@ export const EXTRA_SELECTION: readonly PackSel[] = [
       ['corridor_cross', 'space-corridor-cross', { name: 'Corridor crossing', tags: `${sci} hallway junction module` }],
       ['corridor_split', 'space-corridor-split', { name: 'Corridor junction', tags: `${sci} hallway module` }],
       ['corridor_end', 'space-corridor-end', { name: 'Corridor end', tags: `${sci} hallway module` }],
-      ['corridor_window', 'space-corridor-window', { name: 'Corridor with window', tags: `${sci} hallway module` }],
+      ['corridor_window', 'space-corridor-glazed', { name: 'Glazed corridor', tags: `${sci} hallway module porthole` }],
       ['hangar_smallA', 'space-hangar-small', { name: 'Small hangar', tags: `${sci} garage dome` }],
       ['hangar_largeA', 'space-hangar-large', { name: 'Large hangar', tags: `${sci} garage` }],
       ['hangar_roundA', 'space-hangar-round', { name: 'Round hangar', tags: `${sci} dome` }],

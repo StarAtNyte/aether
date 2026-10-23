@@ -8216,1523 +8216,6 @@
    ]
   },
   {
-   "id": "space-corridor",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/corridor.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-corridor.e6b31c76.glb",
-     "sha256": "e6b31c767f15861635cc67557a7dc5f8dcdbc7557539cdfda34de14026332525",
-     "bytes": 10176
-    }
-   ]
-  },
-  {
-   "id": "space-corridor-detailed",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/corridor_detailed.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-corridor-detailed.20a61836.glb",
-     "sha256": "20a61836bdbd2412b2ea6929a31540134eab43ff4609421dcb8c43ec88a71081",
-     "bytes": 20440
-    }
-   ]
-  },
-  {
-   "id": "space-corridor-corner",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/corridor_corner.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-corridor-corner.3b82351f.glb",
-     "sha256": "3b82351f602755ea5994d9db4dd28a5f4e557491d8f5ebd3d4b6aea4ad666286",
-     "bytes": 12660
-    }
-   ]
-  },
-  {
-   "id": "space-corridor-cross",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/corridor_cross.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-corridor-cross.e38b2f4a.glb",
-     "sha256": "e38b2f4aca1f1fd8b2879fdbc57ec5e3b8e11c6a6533aecaa5a210dc0354a273",
-     "bytes": 19176
-    }
-   ]
-  },
-  {
-   "id": "space-corridor-split",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/corridor_split.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-corridor-split.bb6a12fa.glb",
-     "sha256": "bb6a12fac8d11e92534afc0d5ebcafc74ca680507c46b85b11955ffbd03c8b6d",
-     "bytes": 19692
-    }
-   ]
-  },
-  {
-   "id": "space-corridor-end",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/corridor_end.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-corridor-end.f60ff7fd.glb",
-     "sha256": "f60ff7fdf88ccdce647b0522ae64ecb2c0e5569fa4deaf0487a7ff7a4abe86ec",
-     "bytes": 16544
-    }
-   ]
-  },
-  {
-   "id": "space-corridor-window",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/corridor_window.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-corridor-window.7e9f5800.glb",
-     "sha256": "7e9f58003d4c23f0b14171ef4b132ebb374b5cb2abdb4eb0f3853dcad4a643f7",
-     "bytes": 22528
-    }
-   ]
-  },
-  {
-   "id": "space-hangar-small",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/hangar_smallA.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-hangar-small.b692377d.glb",
-     "sha256": "b692377d6f68cf3461c44ee77b9474ca23e46b4f2048808932e1384f55ef1072",
-     "bytes": 22660
-    }
-   ]
-  },
-  {
-   "id": "space-hangar-large",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/hangar_largeA.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-hangar-large.1b05d67d.glb",
-     "sha256": "1b05d67dca55332314bdd8bbe156dee537a02552b8f5c6448859beaf57fd3918",
-     "bytes": 31292
-    }
-   ]
-  },
-  {
-   "id": "space-hangar-round",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/hangar_roundA.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-hangar-round.ea31307f.glb",
-     "sha256": "ea31307f6a7f8c1e54247d09479e6d6ae5e37865bc91228752cf54afaf142442",
-     "bytes": 22904
-    }
-   ]
-  },
-  {
-   "id": "space-platform",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/platform_large.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-platform.7b229c7d.glb",
-     "sha256": "7b229c7d2d19d2c6cdfae6152b1674f37117c26cc235c9424ab2b46c0f56f9db",
-     "bytes": 9240
-    }
-   ]
-  },
-  {
-   "id": "space-gate",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/gate_complex.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-gate.9b2f2dbd.glb",
-     "sha256": "9b2f2dbd8f988145c54a99cc92b5a30dc8bafbe88cc0698e2ddd5cc7fdf82ff4",
-     "bytes": 54820
-    }
-   ]
-  },
-  {
-   "id": "space-dish",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/satelliteDish_large.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-dish.40c7b4e1.glb",
-     "sha256": "40c7b4e18cc736c6e694f2939af9abffbc5b2ae24e17ec906d927b98987329f2",
-     "bytes": 25084
-    }
-   ]
-  },
-  {
-   "id": "space-turret",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/turret_single.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-turret.218d55aa.glb",
-     "sha256": "218d55aa468bef8c1dced71621fff6b7361bea575911d22c6be4b6da903d4d45",
-     "bytes": 49608
-    }
-   ]
-  },
-  {
-   "id": "space-turret-double",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/turret_double.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-turret-double.35e531a5.glb",
-     "sha256": "35e531a5bd91cf7a24b874a2e0854967a04a2be865ae4dd4b783a6e90a79ba05",
-     "bytes": 69036
-    }
-   ]
-  },
-  {
-   "id": "space-generator",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/machine_generatorLarge.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-generator.6aad5f06.glb",
-     "sha256": "6aad5f06dc715627fc351224dcb4266535b551c91a0cdbff39ee613bd2f34768",
-     "bytes": 18928
-    }
-   ]
-  },
-  {
-   "id": "space-transmitter",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/machine_wireless.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-transmitter.ba17404e.glb",
-     "sha256": "ba17404ef7fda553f32425553be77b347c303caf4f9bc7abc8ecf5a7810cef3f",
-     "bytes": 25280
-    }
-   ]
-  },
-  {
-   "id": "space-barrels",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/barrels.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-barrels.3ca41d59.glb",
-     "sha256": "3ca41d59e1d291b01b4eef4ccc73b13773047c8883f96b3337fd9e5dddcea3e1",
-     "bytes": 16644
-    }
-   ]
-  },
-  {
-   "id": "space-console",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/desk_computer.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-console.ab89b294.glb",
-     "sha256": "ab89b2941e98d1662da4ba85de31f5a499ec1b9d647773d7f87238ce05b89284",
-     "bytes": 10852
-    }
-   ]
-  },
-  {
-   "id": "space-chair",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/desk_chair.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-chair.90c5dcb2.glb",
-     "sha256": "90c5dcb215ba9f17736e07790712ce6a489ac96e5a7395a0be48dab431e8722e",
-     "bytes": 12840
-    }
-   ]
-  },
-  {
-   "id": "space-speeder-a",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/craft_speederA.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-speeder-a.d9ba16c9.glb",
-     "sha256": "d9ba16c90b96eb03a900898d72167206328a5d4d329241d2fa36fad06a69fa16",
-     "bytes": 39552
-    }
-   ]
-  },
-  {
-   "id": "space-racer",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/craft_racer.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-racer.cc1daa04.glb",
-     "sha256": "cc1daa04df240c06ccd7d13da2480d82e6704b0c54ff4c81e4f3c20d4043d37e",
-     "bytes": 35860
-    }
-   ]
-  },
-  {
-   "id": "space-cargo-ship",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/craft_cargoA.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-cargo-ship.d46975bf.glb",
-     "sha256": "d46975bfcd7ef58e21af2603e0cc9c48f4db38da5e3e6871dfa2c35d1f5591f4",
-     "bytes": 36420
-    }
-   ]
-  },
-  {
-   "id": "space-miner",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/craft_miner.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-miner.873805fa.glb",
-     "sha256": "873805fa0fc43ffaa4e3e76ea589c9078724b35f98a34463e9d962c0bbecee1d",
-     "bytes": 50664
-    }
-   ]
-  },
-  {
-   "id": "space-rover",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/rover.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-rover.e1e8e1fe.glb",
-     "sha256": "e1e8e1fe77c44e009686652434a3ac047574e173577b493ec11ccd4b25475817",
-     "bytes": 25204
-    }
-   ]
-  },
-  {
-   "id": "space-rocket-base",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/rocket_baseA.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-rocket-base.1bc7ec45.glb",
-     "sha256": "1bc7ec454bfdf2363dfc455d7f162e869267db5a59100e4583d0d6025514c7b0",
-     "bytes": 29472
-    }
-   ]
-  },
-  {
-   "id": "space-astronaut",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/astronautA.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-astronaut.248f19e4.glb",
-     "sha256": "248f19e498bd4d11b956c2fef894de30bda81cdec4305af14c51103deb9673ce",
-     "bytes": 36336
-    }
-   ]
-  },
-  {
-   "id": "space-alien",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/alien.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-alien.57ca91d2.glb",
-     "sha256": "57ca91d23f9131e8dc05601f31a634d58b6b79f83695c634ad6fde4709050ab9",
-     "bytes": 33112
-    }
-   ]
-  },
-  {
-   "id": "space-rock-large",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/rock_largeA.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-rock-large.36658115.glb",
-     "sha256": "36658115c4463d976db4c37af0d23488f248bb23e98bbaa0525c64bb6e26ec3c",
-     "bytes": 16032
-    }
-   ]
-  },
-  {
-   "id": "space-rocks-small",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/rocks_smallA.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-rocks-small.cb9d96b2.glb",
-     "sha256": "cb9d96b293308ec9460a38f724dcfc6573c909973676b067b51b793d2e3eefff",
-     "bytes": 4936
-    }
-   ]
-  },
-  {
-   "id": "space-crystals",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/rock_crystals.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-crystals.d75ce647.glb",
-     "sha256": "d75ce647ccf70d426902a719bf21335df5bf0c71f22c57b180e4306738b4c7cd",
-     "bytes": 41796
-    }
-   ]
-  },
-  {
-   "id": "space-crystals-large",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/rock_crystalsLargeA.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-crystals-large.1a916562.glb",
-     "sha256": "1a91656249f7a302bdaba32b32a65e3e7019e1eb5bca7d6cc1f8aacea2795a1f",
-     "bytes": 44156
-    }
-   ]
-  },
-  {
-   "id": "space-meteor",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/meteor.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-meteor.5be98aeb.glb",
-     "sha256": "5be98aeb9fc35c4d7383f889943bcaaf162ff15476d808ef667c18588bc8a84c",
-     "bytes": 5068
-    }
-   ]
-  },
-  {
-   "id": "space-crater",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/crater.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-crater.4f1acef6.glb",
-     "sha256": "4f1acef660a26691a4aa8f091bf35d86ef644a9c89ee96e90f04d68455ffec41",
-     "bytes": 7868
-    }
-   ]
-  },
-  {
-   "id": "space-monorail",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/monorail_trainFront.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-monorail.ddab2313.glb",
-     "sha256": "ddab2313cfdcaaa7dd56f3808ec25394c0e5d2d35cefd44a75a952801a805dd9",
-     "bytes": 25208
-    }
-   ]
-  },
-  {
-   "id": "space-rifle",
-   "pack": "kenney-space-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
-    "path": "kenney/space-kit/Models/GLTF format/weapon_rifle.glb"
-   },
-   "files": [
-    {
-     "path": "m/space-rifle.9a4b0619.glb",
-     "sha256": "9a4b06193410111f5fcdfcad11f73d508fef49686672e1e9ed76ba434946722e",
-     "bytes": 16576
-    }
-   ]
-  },
-  {
-   "id": "castle-wall",
-   "pack": "kenney-castle-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
-    "path": "kenney/castle-kit/Models/GLB format/wall.glb"
-   },
-   "files": [
-    {
-     "path": "m/castle-wall.229a26a6.glb",
-     "sha256": "229a26a6ff3a1920963f3c98cd9f3f54983104c2a21e02cbaa589ebe53c665d4",
-     "bytes": 14088
-    }
-   ]
-  },
-  {
-   "id": "castle-wall-corner",
-   "pack": "kenney-castle-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
-    "path": "kenney/castle-kit/Models/GLB format/wall-corner.glb"
-   },
-   "files": [
-    {
-     "path": "m/castle-wall-corner.4eb70bf1.glb",
-     "sha256": "4eb70bf1af56103580ee54dda5af791685f95f4fd4fbc93396fb3a21e4498a71",
-     "bytes": 13680
-    }
-   ]
-  },
-  {
-   "id": "castle-wall-doorway",
-   "pack": "kenney-castle-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
-    "path": "kenney/castle-kit/Models/GLB format/wall-doorway.glb"
-   },
-   "files": [
-    {
-     "path": "m/castle-wall-doorway.b4eac494.glb",
-     "sha256": "b4eac494409ede5a56ad8417c403c3a155e9327cc5096fc754a8e9fb479b8d91",
-     "bytes": 20768
-    }
-   ]
-  },
-  {
-   "id": "castle-wall-gate",
-   "pack": "kenney-castle-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
-    "path": "kenney/castle-kit/Models/GLB format/wall-narrow-gate.glb"
-   },
-   "files": [
-    {
-     "path": "m/castle-wall-gate.db400569.glb",
-     "sha256": "db40056977146c2078f327e2d4aa09d381543dc63968272355286fb19f33733e",
-     "bytes": 14532
-    }
-   ]
-  },
-  {
-   "id": "castle-wall-half",
-   "pack": "kenney-castle-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
-    "path": "kenney/castle-kit/Models/GLB format/wall-half.glb"
-   },
-   "files": [
-    {
-     "path": "m/castle-wall-half.a21ee2f3.glb",
-     "sha256": "a21ee2f3d2d859a7738b77b2f67e773a970ad88c8d3102107c05499535c5b9ee",
-     "bytes": 13112
-    }
-   ]
-  },
-  {
-   "id": "castle-fence-wood",
-   "pack": "kenney-castle-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
-    "path": "kenney/castle-kit/Models/GLB format/wall-narrow-wood-fence.glb"
-   },
-   "files": [
-    {
-     "path": "m/castle-fence-wood.1fd0be36.glb",
-     "sha256": "1fd0be36a43df14886b409e14f8114f72d19b48edefcf0b157d43cc0ef31df08",
-     "bytes": 19312
-    }
-   ]
-  },
-  {
-   "id": "castle-tower-square",
-   "pack": "kenney-castle-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
-    "path": "kenney/castle-kit/Models/GLB format/tower-square.glb"
-   },
-   "files": [
-    {
-     "path": "m/castle-tower-square.dc940829.glb",
-     "sha256": "dc9408299019f672b32e2131f980a938b5297342088c46fc46ceb4626da1565e",
-     "bytes": 13760
-    }
-   ]
-  },
-  {
-   "id": "castle-tower-roof",
-   "pack": "kenney-castle-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
-    "path": "kenney/castle-kit/Models/GLB format/tower-square-top-roof.glb"
-   },
-   "files": [
-    {
-     "path": "m/castle-tower-roof.2ea8d691.glb",
-     "sha256": "2ea8d691b9d7513fddd56434f7ca9665988d024a88bccd8e7aa1579306c76bd2",
-     "bytes": 12744
-    }
-   ]
-  },
-  {
-   "id": "castle-tower-hex",
-   "pack": "kenney-castle-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
-    "path": "kenney/castle-kit/Models/GLB format/tower-hexagon-base.glb"
-   },
-   "files": [
-    {
-     "path": "m/castle-tower-hex.cb84e8c7.glb",
-     "sha256": "cb84e8c7652b78124efcd045df9a94edffc8e15ef589db2a65cbfb04a4caf929",
-     "bytes": 12352
-    }
-   ]
-  },
-  {
-   "id": "castle-tower-slant",
-   "pack": "kenney-castle-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
-    "path": "kenney/castle-kit/Models/GLB format/tower-slant-roof.glb"
-   },
-   "files": [
-    {
-     "path": "m/castle-tower-slant.64f28e34.glb",
-     "sha256": "64f28e34ccd09352de38fcedd4025dde94e744a97df53e7c27bd7a30bfa31517",
-     "bytes": 25932
-    }
-   ]
-  },
-  {
-   "id": "castle-gate",
-   "pack": "kenney-castle-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
-    "path": "kenney/castle-kit/Models/GLB format/gate.glb"
-   },
-   "files": [
-    {
-     "path": "m/castle-gate.3512a9dd.glb",
-     "sha256": "3512a9ddbb677aa67aca2fb0ad30d1225ccf15f4ba87ccbc742da8ab8ee67421",
-     "bytes": 14048
-    }
-   ]
-  },
-  {
-   "id": "castle-gate-metal",
-   "pack": "kenney-castle-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
-    "path": "kenney/castle-kit/Models/GLB format/metal-gate.glb"
-   },
-   "files": [
-    {
-     "path": "m/castle-gate-metal.a8f2f72d.glb",
-     "sha256": "a8f2f72dcd2f77e00857a321fde8c9484f9950c4bae713ab246adefd977f909b",
-     "bytes": 17872
-    }
-   ]
-  },
-  {
-   "id": "castle-bridge",
-   "pack": "kenney-castle-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
-    "path": "kenney/castle-kit/Models/GLB format/bridge-straight.glb"
-   },
-   "files": [
-    {
-     "path": "m/castle-bridge.3bc05607.glb",
-     "sha256": "3bc056077b237bc2d44b6cae7add14e5908564e71c39dabf70ddc176d6ac6dd0",
-     "bytes": 13924
-    }
-   ]
-  },
-  {
-   "id": "castle-drawbridge",
-   "pack": "kenney-castle-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
-    "path": "kenney/castle-kit/Models/GLB format/bridge-draw.glb"
-   },
-   "files": [
-    {
-     "path": "m/castle-drawbridge.60878d1b.glb",
-     "sha256": "60878d1bf80ed45a4ec605f194afcf29270a5459a4751cac41ff7060e208a258",
-     "bytes": 11156
-    }
-   ]
-  },
-  {
-   "id": "castle-stairs",
-   "pack": "kenney-castle-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
-    "path": "kenney/castle-kit/Models/GLB format/stairs-stone.glb"
-   },
-   "files": [
-    {
-     "path": "m/castle-stairs.d07b026e.glb",
-     "sha256": "d07b026eef3ce6b5af12d4048f35386f4e4723420d97a472bb2bc946bbf5200e",
-     "bytes": 11948
-    }
-   ]
-  },
-  {
-   "id": "castle-catapult",
-   "pack": "kenney-castle-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
-    "path": "kenney/castle-kit/Models/GLB format/siege-catapult.glb"
-   },
-   "files": [
-    {
-     "path": "m/castle-catapult.8dc0176e.glb",
-     "sha256": "8dc0176eba6f1efb082618b321c9a8cf33c2ca2ea9820644302442ccc1587d26",
-     "bytes": 37416
-    }
-   ]
-  },
-  {
-   "id": "castle-trebuchet",
-   "pack": "kenney-castle-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
-    "path": "kenney/castle-kit/Models/GLB format/siege-trebuchet.glb"
-   },
-   "files": [
-    {
-     "path": "m/castle-trebuchet.3e820350.glb",
-     "sha256": "3e820350b0642564f07b72afae0f4b365d4c85150b52b2f52ee5b3a7c0ca35e1",
-     "bytes": 53836
-    }
-   ]
-  },
-  {
-   "id": "castle-ballista",
-   "pack": "kenney-castle-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
-    "path": "kenney/castle-kit/Models/GLB format/siege-ballista.glb"
-   },
-   "files": [
-    {
-     "path": "m/castle-ballista.adc113c5.glb",
-     "sha256": "adc113c59146635603317ec70add7301f89246cd3f048bb2dcbf68a972a54ae5",
-     "bytes": 31224
-    }
-   ]
-  },
-  {
-   "id": "castle-ram",
-   "pack": "kenney-castle-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
-    "path": "kenney/castle-kit/Models/GLB format/siege-ram.glb"
-   },
-   "files": [
-    {
-     "path": "m/castle-ram.3c86612d.glb",
-     "sha256": "3c86612dde2c7a6f101f405dd89b21c4c148cd52cb276e8c52c9c1386cc7ec88",
-     "bytes": 42696
-    }
-   ]
-  },
-  {
-   "id": "castle-siege-tower",
-   "pack": "kenney-castle-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
-    "path": "kenney/castle-kit/Models/GLB format/siege-tower.glb"
-   },
-   "files": [
-    {
-     "path": "m/castle-siege-tower.de43cf08.glb",
-     "sha256": "de43cf088b74c5f0c7edf64e34b1101a39610e9bccf2c6fdd01094ff91891851",
-     "bytes": 53840
-    }
-   ]
-  },
-  {
-   "id": "castle-flag",
-   "pack": "kenney-castle-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
-    "path": "kenney/castle-kit/Models/GLB format/flag.glb"
-   },
-   "files": [
-    {
-     "path": "m/castle-flag.f8e52b01.glb",
-     "sha256": "f8e52b01ade14ecdc70cc470a45f5e0fe90801d09d21effe579e84c519591455",
-     "bytes": 14660
-    }
-   ]
-  },
-  {
-   "id": "castle-banner",
-   "pack": "kenney-castle-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
-    "path": "kenney/castle-kit/Models/GLB format/flag-banner-long.glb"
-   },
-   "files": [
-    {
-     "path": "m/castle-banner.affac9f6.glb",
-     "sha256": "affac9f6df614c9ad7f973774aefdab620cfdb5584939af20ebdea1b8284f75a",
-     "bytes": 11312
-    }
-   ]
-  },
-  {
-   "id": "castle-tree-large",
-   "pack": "kenney-castle-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
-    "path": "kenney/castle-kit/Models/GLB format/tree-large.glb"
-   },
-   "files": [
-    {
-     "path": "m/castle-tree-large.74934bde.glb",
-     "sha256": "74934bdedb800d3e326da070974c118a8726e6f2318bd9c228efba7031557472",
-     "bytes": 18084
-    }
-   ]
-  },
-  {
-   "id": "castle-tree-small",
-   "pack": "kenney-castle-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
-    "path": "kenney/castle-kit/Models/GLB format/tree-small.glb"
-   },
-   "files": [
-    {
-     "path": "m/castle-tree-small.558505e5.glb",
-     "sha256": "558505e548fb811eb2ebd30dd2da5e4420ce94c6c5a27d7b9f6d9208eded3764",
-     "bytes": 15792
-    }
-   ]
-  },
-  {
-   "id": "castle-log",
-   "pack": "kenney-castle-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
-    "path": "kenney/castle-kit/Models/GLB format/tree-log.glb"
-   },
-   "files": [
-    {
-     "path": "m/castle-log.7f647193.glb",
-     "sha256": "7f64719374a3c6e36c2a1442a00b15e6ae59b17ff3b072205f11396f070c2fc0",
-     "bytes": 12620
-    }
-   ]
-  },
-  {
-   "id": "castle-rocks-large",
-   "pack": "kenney-castle-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
-    "path": "kenney/castle-kit/Models/GLB format/rocks-large.glb"
-   },
-   "files": [
-    {
-     "path": "m/castle-rocks-large.60de6305.glb",
-     "sha256": "60de6305966a3adb2522286e942d3e538b1ee46615fcb50d6a7133362b23dce1",
-     "bytes": 15584
-    }
-   ]
-  },
-  {
-   "id": "castle-rocks-small",
-   "pack": "kenney-castle-kit",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
-    "path": "kenney/castle-kit/Models/GLB format/rocks-small.glb"
-   },
-   "files": [
-    {
-     "path": "m/castle-rocks-small.6203b02e.glb",
-     "sha256": "6203b02e0eb3d86822530955fb3cdd80a431c06657561e416ae0dd6e43986995",
-     "bytes": 15144
-    }
-   ]
-  },
-  {
-   "id": "harbour-ship-large",
-   "pack": "kenney-watercraft-pack",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
-    "path": "kenney/watercraft-pack/Models/GLB format/ship-large.glb"
-   },
-   "files": [
-    {
-     "path": "m/harbour-ship-large.2d757719.glb",
-     "sha256": "2d757719f43f04c6e12d916754a8bb357f40479c737c8d9f37830343e00ca22a",
-     "bytes": 60644
-    }
-   ]
-  },
-  {
-   "id": "harbour-ship-small",
-   "pack": "kenney-watercraft-pack",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
-    "path": "kenney/watercraft-pack/Models/GLB format/ship-small.glb"
-   },
-   "files": [
-    {
-     "path": "m/harbour-ship-small.6fdc58f5.glb",
-     "sha256": "6fdc58f5d130eb3ba32e7850fe9240fbdb344987123d3c0f3164d6a5bc4c1589",
-     "bytes": 57124
-    }
-   ]
-  },
-  {
-   "id": "harbour-cargo-ship",
-   "pack": "kenney-watercraft-pack",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
-    "path": "kenney/watercraft-pack/Models/GLB format/ship-cargo-a.glb"
-   },
-   "files": [
-    {
-     "path": "m/harbour-cargo-ship.8e2408c6.glb",
-     "sha256": "8e2408c68060bc213d30c1203cc2599f15609f7d51ad9007bd1f8dfe2f8c8bbe",
-     "bytes": 42800
-    }
-   ]
-  },
-  {
-   "id": "harbour-liner",
-   "pack": "kenney-watercraft-pack",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
-    "path": "kenney/watercraft-pack/Models/GLB format/ship-ocean-liner-small.glb"
-   },
-   "files": [
-    {
-     "path": "m/harbour-liner.d905ae8e.glb",
-     "sha256": "d905ae8e33598a12b5aa4af443f1d3f820291e89f7b158749706b8f0a973fefc",
-     "bytes": 59300
-    }
-   ]
-  },
-  {
-   "id": "harbour-ghost-ship",
-   "pack": "kenney-watercraft-pack",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
-    "path": "kenney/watercraft-pack/Models/GLB format/ship-small-ghost.glb"
-   },
-   "files": [
-    {
-     "path": "m/harbour-ghost-ship.1ceef76d.glb",
-     "sha256": "1ceef76d8a4b5cf19ce5c458dd5d0f4f7261edab38a10748d8e2f24c894c88ed",
-     "bytes": 61308
-    }
-   ]
-  },
-  {
-   "id": "harbour-rowboat",
-   "pack": "kenney-watercraft-pack",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
-    "path": "kenney/watercraft-pack/Models/GLB format/boat-row-small.glb"
-   },
-   "files": [
-    {
-     "path": "m/harbour-rowboat.719199ea.glb",
-     "sha256": "719199eaf52b90f2f738b74fd2fb0ff7220b175d23fdc9b1e4caf64941f11632",
-     "bytes": 17260
-    }
-   ]
-  },
-  {
-   "id": "harbour-rowboat-large",
-   "pack": "kenney-watercraft-pack",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
-    "path": "kenney/watercraft-pack/Models/GLB format/boat-row-large.glb"
-   },
-   "files": [
-    {
-     "path": "m/harbour-rowboat-large.cffbe679.glb",
-     "sha256": "cffbe679a58d31d6ef4b7c58bc5e7b77880bdabd9d1e23a948f73edfb37f6946",
-     "bytes": 16188
-    }
-   ]
-  },
-  {
-   "id": "harbour-sailboat",
-   "pack": "kenney-watercraft-pack",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
-    "path": "kenney/watercraft-pack/Models/GLB format/boat-sail-a.glb"
-   },
-   "files": [
-    {
-     "path": "m/harbour-sailboat.dcdc27ff.glb",
-     "sha256": "dcdc27ff722ee611f68bdb8978e275fe8120580cd4c8c6731d1b8d98cb82f556",
-     "bytes": 22176
-    }
-   ]
-  },
-  {
-   "id": "harbour-sailboat-b",
-   "pack": "kenney-watercraft-pack",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
-    "path": "kenney/watercraft-pack/Models/GLB format/boat-sail-b.glb"
-   },
-   "files": [
-    {
-     "path": "m/harbour-sailboat-b.3a5975d8.glb",
-     "sha256": "3a5975d8a9bc4ee6ea517228f5227252b06b608635de04ce5974909745e8d54f",
-     "bytes": 23100
-    }
-   ]
-  },
-  {
-   "id": "harbour-fishing-boat",
-   "pack": "kenney-watercraft-pack",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
-    "path": "kenney/watercraft-pack/Models/GLB format/boat-fishing-small.glb"
-   },
-   "files": [
-    {
-     "path": "m/harbour-fishing-boat.9765998b.glb",
-     "sha256": "9765998b720f72cf099daee7b3fc5ff4b0a7385a56dca4f2935be8ce7ac5e9dc",
-     "bytes": 19272
-    }
-   ]
-  },
-  {
-   "id": "harbour-speedboat",
-   "pack": "kenney-watercraft-pack",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
-    "path": "kenney/watercraft-pack/Models/GLB format/boat-speed-a.glb"
-   },
-   "files": [
-    {
-     "path": "m/harbour-speedboat.6169394b.glb",
-     "sha256": "6169394b799728b8595958e1acffef9d9e135b011b2adfc43da7ccc64eac97c1",
-     "bytes": 17476
-    }
-   ]
-  },
-  {
-   "id": "harbour-tugboat",
-   "pack": "kenney-watercraft-pack",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
-    "path": "kenney/watercraft-pack/Models/GLB format/boat-tug-a.glb"
-   },
-   "files": [
-    {
-     "path": "m/harbour-tugboat.d3460543.glb",
-     "sha256": "d3460543ca920e608ef0afcac73c66e4bf96fa75b64ccf579652be6f8bdc066e",
-     "bytes": 25668
-    }
-   ]
-  },
-  {
-   "id": "harbour-houseboat",
-   "pack": "kenney-watercraft-pack",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
-    "path": "kenney/watercraft-pack/Models/GLB format/boat-house-a.glb"
-   },
-   "files": [
-    {
-     "path": "m/harbour-houseboat.0a9197ed.glb",
-     "sha256": "0a9197ed9dadc4c55a2cd4fb299258cb4d204bc685641e4c031fd9315fe909e4",
-     "bytes": 23884
-    }
-   ]
-  },
-  {
-   "id": "harbour-container",
-   "pack": "kenney-watercraft-pack",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
-    "path": "kenney/watercraft-pack/Models/GLB format/cargo-container-a.glb"
-   },
-   "files": [
-    {
-     "path": "m/harbour-container.f036e181.glb",
-     "sha256": "f036e18153c6d49e249d426b54285fedd6597728a247afb2e52cec6f357bc78f",
-     "bytes": 16140
-    }
-   ]
-  },
-  {
-   "id": "harbour-container-b",
-   "pack": "kenney-watercraft-pack",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
-    "path": "kenney/watercraft-pack/Models/GLB format/cargo-container-b.glb"
-   },
-   "files": [
-    {
-     "path": "m/harbour-container-b.a9360aae.glb",
-     "sha256": "a9360aae40908a10b0cb8bfb4a97a3bbcde2e26bfe324e892d464318215be21f",
-     "bytes": 16176
-    }
-   ]
-  },
-  {
-   "id": "harbour-cargo-pile",
-   "pack": "kenney-watercraft-pack",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
-    "path": "kenney/watercraft-pack/Models/GLB format/cargo-pile-a.glb"
-   },
-   "files": [
-    {
-     "path": "m/harbour-cargo-pile.2fd7f748.glb",
-     "sha256": "2fd7f748d7e37d9d64752651452494591cb948d3faa2eae65da097ecd630304a",
-     "bytes": 17948
-    }
-   ]
-  },
-  {
-   "id": "harbour-buoy",
-   "pack": "kenney-watercraft-pack",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
-    "path": "kenney/watercraft-pack/Models/GLB format/buoy.glb"
-   },
-   "files": [
-    {
-     "path": "m/harbour-buoy.bb517f15.glb",
-     "sha256": "bb517f15026d0c411e2539a49a8879d0bc4dc0e3b63692ce37121c4e80f30cbb",
-     "bytes": 14772
-    }
-   ]
-  },
-  {
-   "id": "harbour-buoy-flag",
-   "pack": "kenney-watercraft-pack",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
-    "path": "kenney/watercraft-pack/Models/GLB format/buoy-flag.glb"
-   },
-   "files": [
-    {
-     "path": "m/harbour-buoy-flag.eca7c784.glb",
-     "sha256": "eca7c784316bcedf948d7890a165e8d80281504601c269ac60eda1fb396a5fe8",
-     "bytes": 18008
-    }
-   ]
-  },
-  {
-   "id": "harbour-ramp",
-   "pack": "kenney-watercraft-pack",
-   "licence": "CC0-1.0",
-   "authors": null,
-   "source": {
-    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
-    "path": "kenney/watercraft-pack/Models/GLB format/ramp.glb"
-   },
-   "files": [
-    {
-     "path": "m/harbour-ramp.f71f442f.glb",
-     "sha256": "f71f442fa37be6b0c4ed055ed62bd815cf68878d4e22f20507d914ce8e7afca9",
-     "bytes": 15760
-    }
-   ]
-  },
-  {
-   "id": "sky-overcast",
-   "pack": "polyhaven",
-   "licence": "CC0-1.0",
-   "authors": [
-    "Greg Zaal"
-   ],
-   "source": {
-    "archive": "polyhaven:kloofendal_overcast_puresky",
-    "path": "polyhaven/hdris/kloofendal_overcast_puresky_1k.hdr"
-   },
-   "files": [
-    {
-     "path": "h/sky-overcast.5f98aa01.hdr",
-     "sha256": "5f98aa01d43a49cd899299751a978b3e5559a76300198b5dd2d9c68ecc4ad130",
-     "bytes": 1174053
-    },
-    {
-     "path": "h/sky-overcast.512.b518aa58.hdr",
-     "sha256": "b518aa586e298fc80dc44fed5f83d7f7ccceb1c0344242320a6ee1aa01562fc0",
-     "bytes": 334059
-    }
-   ]
-  },
-  {
-   "id": "sky-starry-night",
-   "pack": "polyhaven",
-   "licence": "CC0-1.0",
-   "authors": [
-    "Greg Zaal"
-   ],
-   "source": {
-    "archive": "polyhaven:rogland_clear_night",
-    "path": "polyhaven/hdris/rogland_clear_night_1k.hdr"
-   },
-   "files": [
-    {
-     "path": "h/sky-starry-night.3cc2486b.hdr",
-     "sha256": "3cc2486bdf545b1b3358ba8f2fa1ebb13211d2c6b45a376f39b8d3217ec7c028",
-     "bytes": 1694136
-    },
-    {
-     "path": "h/sky-starry-night.512.b1beaeb3.hdr",
-     "sha256": "b1beaeb36db4727d2d48fc9cd75fa3eed2938e5445a46e013604a52446ae5de3",
-     "bytes": 423040
-    }
-   ]
-  },
-  {
-   "id": "sky-desert-dunes",
-   "pack": "polyhaven",
-   "licence": "CC0-1.0",
-   "authors": [
-    "Greg Zaal"
-   ],
-   "source": {
-    "archive": "polyhaven:goegap",
-    "path": "polyhaven/hdris/goegap_1k.hdr"
-   },
-   "files": [
-    {
-     "path": "h/sky-desert-dunes.56bb97ac.hdr",
-     "sha256": "56bb97ac7fcbfcbc91116adfb96e26b9da54475dabb7ec2c442f41bf99cda085",
-     "bytes": 1361485
-    },
-    {
-     "path": "h/sky-desert-dunes.512.f10ee55d.hdr",
-     "sha256": "f10ee55d35843e51120508a156a931f0fdb2a4631cdada26280e155796d47beb",
-     "bytes": 358358
-    }
-   ]
-  },
-  {
-   "id": "sky-industrial-sunset",
-   "pack": "polyhaven",
-   "licence": "CC0-1.0",
-   "authors": [
-    "Jarod Guest",
-    "Sergej Majboroda"
-   ],
-   "source": {
-    "archive": "polyhaven:industrial_sunset_02_puresky",
-    "path": "polyhaven/hdris/industrial_sunset_02_puresky_1k.hdr"
-   },
-   "files": [
-    {
-     "path": "h/sky-industrial-sunset.0b92b0a2.hdr",
-     "sha256": "0b92b0a2ea3b2489ec9bb7170960c3a10e5e68567d9a3d9622970fd06caf649f",
-     "bytes": 1075650
-    },
-    {
-     "path": "h/sky-industrial-sunset.512.eeb0b853.hdr",
-     "sha256": "eeb0b8532e9efda8390fa4d1a9a68ee10150753ceb8438f7ead7e94db215de34",
-     "bytes": 300813
-    }
-   ]
-  },
-  {
-   "id": "sky-golden-sunset",
-   "pack": "polyhaven",
-   "licence": "CC0-1.0",
-   "authors": [
-    "Greg Zaal",
-    "Dimitrios Savva",
-    "Jarod Guest"
-   ],
-   "source": {
-    "archive": "polyhaven:belfast_sunset_puresky",
-    "path": "polyhaven/hdris/belfast_sunset_puresky_1k.hdr"
-   },
-   "files": [
-    {
-     "path": "h/sky-golden-sunset.cec532d8.hdr",
-     "sha256": "cec532d8dd382bcdca98d7010fa951a782f3295f98e8bd72ee453be8d0a64e98",
-     "bytes": 1190247
-    },
-    {
-     "path": "h/sky-golden-sunset.512.f2f966a4.hdr",
-     "sha256": "f2f966a49ce6071f2941426ac65537c4ec4728a0f4ca679538ea6008d35b2699",
-     "bytes": 328567
-    }
-   ]
-  },
-  {
    "id": "sofa-02",
    "pack": "polyhaven",
    "licence": "CC0-1.0",
@@ -14691,6 +13174,1523 @@
      "path": "i/trash-can-metal.lite.fa57a966.glb",
      "sha256": "fa57a96624878b6d40b4fa85310937febfaf73a0a916927da28f200c4f48dd9e",
      "bytes": 81252
+    }
+   ]
+  },
+  {
+   "id": "space-corridor",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/corridor.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-corridor.e6b31c76.glb",
+     "sha256": "e6b31c767f15861635cc67557a7dc5f8dcdbc7557539cdfda34de14026332525",
+     "bytes": 10176
+    }
+   ]
+  },
+  {
+   "id": "space-corridor-detailed",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/corridor_detailed.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-corridor-detailed.20a61836.glb",
+     "sha256": "20a61836bdbd2412b2ea6929a31540134eab43ff4609421dcb8c43ec88a71081",
+     "bytes": 20440
+    }
+   ]
+  },
+  {
+   "id": "space-corridor-corner",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/corridor_corner.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-corridor-corner.3b82351f.glb",
+     "sha256": "3b82351f602755ea5994d9db4dd28a5f4e557491d8f5ebd3d4b6aea4ad666286",
+     "bytes": 12660
+    }
+   ]
+  },
+  {
+   "id": "space-corridor-cross",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/corridor_cross.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-corridor-cross.e38b2f4a.glb",
+     "sha256": "e38b2f4aca1f1fd8b2879fdbc57ec5e3b8e11c6a6533aecaa5a210dc0354a273",
+     "bytes": 19176
+    }
+   ]
+  },
+  {
+   "id": "space-corridor-split",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/corridor_split.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-corridor-split.bb6a12fa.glb",
+     "sha256": "bb6a12fac8d11e92534afc0d5ebcafc74ca680507c46b85b11955ffbd03c8b6d",
+     "bytes": 19692
+    }
+   ]
+  },
+  {
+   "id": "space-corridor-end",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/corridor_end.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-corridor-end.f60ff7fd.glb",
+     "sha256": "f60ff7fdf88ccdce647b0522ae64ecb2c0e5569fa4deaf0487a7ff7a4abe86ec",
+     "bytes": 16544
+    }
+   ]
+  },
+  {
+   "id": "space-corridor-glazed",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/corridor_window.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-corridor-glazed.7e9f5800.glb",
+     "sha256": "7e9f58003d4c23f0b14171ef4b132ebb374b5cb2abdb4eb0f3853dcad4a643f7",
+     "bytes": 22528
+    }
+   ]
+  },
+  {
+   "id": "space-hangar-small",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/hangar_smallA.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-hangar-small.b692377d.glb",
+     "sha256": "b692377d6f68cf3461c44ee77b9474ca23e46b4f2048808932e1384f55ef1072",
+     "bytes": 22660
+    }
+   ]
+  },
+  {
+   "id": "space-hangar-large",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/hangar_largeA.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-hangar-large.1b05d67d.glb",
+     "sha256": "1b05d67dca55332314bdd8bbe156dee537a02552b8f5c6448859beaf57fd3918",
+     "bytes": 31292
+    }
+   ]
+  },
+  {
+   "id": "space-hangar-round",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/hangar_roundA.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-hangar-round.ea31307f.glb",
+     "sha256": "ea31307f6a7f8c1e54247d09479e6d6ae5e37865bc91228752cf54afaf142442",
+     "bytes": 22904
+    }
+   ]
+  },
+  {
+   "id": "space-platform",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/platform_large.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-platform.7b229c7d.glb",
+     "sha256": "7b229c7d2d19d2c6cdfae6152b1674f37117c26cc235c9424ab2b46c0f56f9db",
+     "bytes": 9240
+    }
+   ]
+  },
+  {
+   "id": "space-gate",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/gate_complex.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-gate.9b2f2dbd.glb",
+     "sha256": "9b2f2dbd8f988145c54a99cc92b5a30dc8bafbe88cc0698e2ddd5cc7fdf82ff4",
+     "bytes": 54820
+    }
+   ]
+  },
+  {
+   "id": "space-dish",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/satelliteDish_large.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-dish.40c7b4e1.glb",
+     "sha256": "40c7b4e18cc736c6e694f2939af9abffbc5b2ae24e17ec906d927b98987329f2",
+     "bytes": 25084
+    }
+   ]
+  },
+  {
+   "id": "space-turret",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/turret_single.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-turret.218d55aa.glb",
+     "sha256": "218d55aa468bef8c1dced71621fff6b7361bea575911d22c6be4b6da903d4d45",
+     "bytes": 49608
+    }
+   ]
+  },
+  {
+   "id": "space-turret-double",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/turret_double.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-turret-double.35e531a5.glb",
+     "sha256": "35e531a5bd91cf7a24b874a2e0854967a04a2be865ae4dd4b783a6e90a79ba05",
+     "bytes": 69036
+    }
+   ]
+  },
+  {
+   "id": "space-generator",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/machine_generatorLarge.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-generator.6aad5f06.glb",
+     "sha256": "6aad5f06dc715627fc351224dcb4266535b551c91a0cdbff39ee613bd2f34768",
+     "bytes": 18928
+    }
+   ]
+  },
+  {
+   "id": "space-transmitter",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/machine_wireless.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-transmitter.ba17404e.glb",
+     "sha256": "ba17404ef7fda553f32425553be77b347c303caf4f9bc7abc8ecf5a7810cef3f",
+     "bytes": 25280
+    }
+   ]
+  },
+  {
+   "id": "space-barrels",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/barrels.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-barrels.3ca41d59.glb",
+     "sha256": "3ca41d59e1d291b01b4eef4ccc73b13773047c8883f96b3337fd9e5dddcea3e1",
+     "bytes": 16644
+    }
+   ]
+  },
+  {
+   "id": "space-console",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/desk_computer.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-console.ab89b294.glb",
+     "sha256": "ab89b2941e98d1662da4ba85de31f5a499ec1b9d647773d7f87238ce05b89284",
+     "bytes": 10852
+    }
+   ]
+  },
+  {
+   "id": "space-chair",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/desk_chair.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-chair.90c5dcb2.glb",
+     "sha256": "90c5dcb215ba9f17736e07790712ce6a489ac96e5a7395a0be48dab431e8722e",
+     "bytes": 12840
+    }
+   ]
+  },
+  {
+   "id": "space-speeder-a",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/craft_speederA.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-speeder-a.d9ba16c9.glb",
+     "sha256": "d9ba16c90b96eb03a900898d72167206328a5d4d329241d2fa36fad06a69fa16",
+     "bytes": 39552
+    }
+   ]
+  },
+  {
+   "id": "space-racer",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/craft_racer.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-racer.cc1daa04.glb",
+     "sha256": "cc1daa04df240c06ccd7d13da2480d82e6704b0c54ff4c81e4f3c20d4043d37e",
+     "bytes": 35860
+    }
+   ]
+  },
+  {
+   "id": "space-cargo-ship",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/craft_cargoA.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-cargo-ship.d46975bf.glb",
+     "sha256": "d46975bfcd7ef58e21af2603e0cc9c48f4db38da5e3e6871dfa2c35d1f5591f4",
+     "bytes": 36420
+    }
+   ]
+  },
+  {
+   "id": "space-miner",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/craft_miner.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-miner.873805fa.glb",
+     "sha256": "873805fa0fc43ffaa4e3e76ea589c9078724b35f98a34463e9d962c0bbecee1d",
+     "bytes": 50664
+    }
+   ]
+  },
+  {
+   "id": "space-rover",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/rover.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-rover.e1e8e1fe.glb",
+     "sha256": "e1e8e1fe77c44e009686652434a3ac047574e173577b493ec11ccd4b25475817",
+     "bytes": 25204
+    }
+   ]
+  },
+  {
+   "id": "space-rocket-base",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/rocket_baseA.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-rocket-base.1bc7ec45.glb",
+     "sha256": "1bc7ec454bfdf2363dfc455d7f162e869267db5a59100e4583d0d6025514c7b0",
+     "bytes": 29472
+    }
+   ]
+  },
+  {
+   "id": "space-astronaut",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/astronautA.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-astronaut.248f19e4.glb",
+     "sha256": "248f19e498bd4d11b956c2fef894de30bda81cdec4305af14c51103deb9673ce",
+     "bytes": 36336
+    }
+   ]
+  },
+  {
+   "id": "space-alien",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/alien.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-alien.57ca91d2.glb",
+     "sha256": "57ca91d23f9131e8dc05601f31a634d58b6b79f83695c634ad6fde4709050ab9",
+     "bytes": 33112
+    }
+   ]
+  },
+  {
+   "id": "space-rock-large",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/rock_largeA.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-rock-large.36658115.glb",
+     "sha256": "36658115c4463d976db4c37af0d23488f248bb23e98bbaa0525c64bb6e26ec3c",
+     "bytes": 16032
+    }
+   ]
+  },
+  {
+   "id": "space-rocks-small",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/rocks_smallA.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-rocks-small.cb9d96b2.glb",
+     "sha256": "cb9d96b293308ec9460a38f724dcfc6573c909973676b067b51b793d2e3eefff",
+     "bytes": 4936
+    }
+   ]
+  },
+  {
+   "id": "space-crystals",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/rock_crystals.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-crystals.d75ce647.glb",
+     "sha256": "d75ce647ccf70d426902a719bf21335df5bf0c71f22c57b180e4306738b4c7cd",
+     "bytes": 41796
+    }
+   ]
+  },
+  {
+   "id": "space-crystals-large",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/rock_crystalsLargeA.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-crystals-large.1a916562.glb",
+     "sha256": "1a91656249f7a302bdaba32b32a65e3e7019e1eb5bca7d6cc1f8aacea2795a1f",
+     "bytes": 44156
+    }
+   ]
+  },
+  {
+   "id": "space-meteor",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/meteor.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-meteor.5be98aeb.glb",
+     "sha256": "5be98aeb9fc35c4d7383f889943bcaaf162ff15476d808ef667c18588bc8a84c",
+     "bytes": 5068
+    }
+   ]
+  },
+  {
+   "id": "space-crater",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/crater.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-crater.4f1acef6.glb",
+     "sha256": "4f1acef660a26691a4aa8f091bf35d86ef644a9c89ee96e90f04d68455ffec41",
+     "bytes": 7868
+    }
+   ]
+  },
+  {
+   "id": "space-monorail",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/monorail_trainFront.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-monorail.ddab2313.glb",
+     "sha256": "ddab2313cfdcaaa7dd56f3808ec25394c0e5d2d35cefd44a75a952801a805dd9",
+     "bytes": 25208
+    }
+   ]
+  },
+  {
+   "id": "space-rifle",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/weapon_rifle.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-rifle.9a4b0619.glb",
+     "sha256": "9a4b06193410111f5fcdfcad11f73d508fef49686672e1e9ed76ba434946722e",
+     "bytes": 16576
+    }
+   ]
+  },
+  {
+   "id": "castle-wall",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/wall.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-wall.229a26a6.glb",
+     "sha256": "229a26a6ff3a1920963f3c98cd9f3f54983104c2a21e02cbaa589ebe53c665d4",
+     "bytes": 14088
+    }
+   ]
+  },
+  {
+   "id": "castle-wall-corner",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/wall-corner.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-wall-corner.4eb70bf1.glb",
+     "sha256": "4eb70bf1af56103580ee54dda5af791685f95f4fd4fbc93396fb3a21e4498a71",
+     "bytes": 13680
+    }
+   ]
+  },
+  {
+   "id": "castle-wall-doorway",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/wall-doorway.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-wall-doorway.b4eac494.glb",
+     "sha256": "b4eac494409ede5a56ad8417c403c3a155e9327cc5096fc754a8e9fb479b8d91",
+     "bytes": 20768
+    }
+   ]
+  },
+  {
+   "id": "castle-wall-gate",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/wall-narrow-gate.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-wall-gate.db400569.glb",
+     "sha256": "db40056977146c2078f327e2d4aa09d381543dc63968272355286fb19f33733e",
+     "bytes": 14532
+    }
+   ]
+  },
+  {
+   "id": "castle-wall-half",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/wall-half.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-wall-half.a21ee2f3.glb",
+     "sha256": "a21ee2f3d2d859a7738b77b2f67e773a970ad88c8d3102107c05499535c5b9ee",
+     "bytes": 13112
+    }
+   ]
+  },
+  {
+   "id": "castle-fence-wood",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/wall-narrow-wood-fence.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-fence-wood.1fd0be36.glb",
+     "sha256": "1fd0be36a43df14886b409e14f8114f72d19b48edefcf0b157d43cc0ef31df08",
+     "bytes": 19312
+    }
+   ]
+  },
+  {
+   "id": "castle-tower-square",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/tower-square.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-tower-square.dc940829.glb",
+     "sha256": "dc9408299019f672b32e2131f980a938b5297342088c46fc46ceb4626da1565e",
+     "bytes": 13760
+    }
+   ]
+  },
+  {
+   "id": "castle-tower-roof",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/tower-square-top-roof.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-tower-roof.2ea8d691.glb",
+     "sha256": "2ea8d691b9d7513fddd56434f7ca9665988d024a88bccd8e7aa1579306c76bd2",
+     "bytes": 12744
+    }
+   ]
+  },
+  {
+   "id": "castle-tower-hex",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/tower-hexagon-base.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-tower-hex.cb84e8c7.glb",
+     "sha256": "cb84e8c7652b78124efcd045df9a94edffc8e15ef589db2a65cbfb04a4caf929",
+     "bytes": 12352
+    }
+   ]
+  },
+  {
+   "id": "castle-tower-slant",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/tower-slant-roof.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-tower-slant.64f28e34.glb",
+     "sha256": "64f28e34ccd09352de38fcedd4025dde94e744a97df53e7c27bd7a30bfa31517",
+     "bytes": 25932
+    }
+   ]
+  },
+  {
+   "id": "castle-gate",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/gate.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-gate.3512a9dd.glb",
+     "sha256": "3512a9ddbb677aa67aca2fb0ad30d1225ccf15f4ba87ccbc742da8ab8ee67421",
+     "bytes": 14048
+    }
+   ]
+  },
+  {
+   "id": "castle-gate-metal",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/metal-gate.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-gate-metal.a8f2f72d.glb",
+     "sha256": "a8f2f72dcd2f77e00857a321fde8c9484f9950c4bae713ab246adefd977f909b",
+     "bytes": 17872
+    }
+   ]
+  },
+  {
+   "id": "castle-bridge",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/bridge-straight.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-bridge.3bc05607.glb",
+     "sha256": "3bc056077b237bc2d44b6cae7add14e5908564e71c39dabf70ddc176d6ac6dd0",
+     "bytes": 13924
+    }
+   ]
+  },
+  {
+   "id": "castle-drawbridge",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/bridge-draw.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-drawbridge.60878d1b.glb",
+     "sha256": "60878d1bf80ed45a4ec605f194afcf29270a5459a4751cac41ff7060e208a258",
+     "bytes": 11156
+    }
+   ]
+  },
+  {
+   "id": "castle-stairs",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/stairs-stone.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-stairs.d07b026e.glb",
+     "sha256": "d07b026eef3ce6b5af12d4048f35386f4e4723420d97a472bb2bc946bbf5200e",
+     "bytes": 11948
+    }
+   ]
+  },
+  {
+   "id": "castle-catapult",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/siege-catapult.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-catapult.8dc0176e.glb",
+     "sha256": "8dc0176eba6f1efb082618b321c9a8cf33c2ca2ea9820644302442ccc1587d26",
+     "bytes": 37416
+    }
+   ]
+  },
+  {
+   "id": "castle-trebuchet",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/siege-trebuchet.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-trebuchet.3e820350.glb",
+     "sha256": "3e820350b0642564f07b72afae0f4b365d4c85150b52b2f52ee5b3a7c0ca35e1",
+     "bytes": 53836
+    }
+   ]
+  },
+  {
+   "id": "castle-ballista",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/siege-ballista.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-ballista.adc113c5.glb",
+     "sha256": "adc113c59146635603317ec70add7301f89246cd3f048bb2dcbf68a972a54ae5",
+     "bytes": 31224
+    }
+   ]
+  },
+  {
+   "id": "castle-ram",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/siege-ram.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-ram.3c86612d.glb",
+     "sha256": "3c86612dde2c7a6f101f405dd89b21c4c148cd52cb276e8c52c9c1386cc7ec88",
+     "bytes": 42696
+    }
+   ]
+  },
+  {
+   "id": "castle-siege-tower",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/siege-tower.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-siege-tower.de43cf08.glb",
+     "sha256": "de43cf088b74c5f0c7edf64e34b1101a39610e9bccf2c6fdd01094ff91891851",
+     "bytes": 53840
+    }
+   ]
+  },
+  {
+   "id": "castle-flag",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/flag.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-flag.f8e52b01.glb",
+     "sha256": "f8e52b01ade14ecdc70cc470a45f5e0fe90801d09d21effe579e84c519591455",
+     "bytes": 14660
+    }
+   ]
+  },
+  {
+   "id": "castle-banner",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/flag-banner-long.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-banner.affac9f6.glb",
+     "sha256": "affac9f6df614c9ad7f973774aefdab620cfdb5584939af20ebdea1b8284f75a",
+     "bytes": 11312
+    }
+   ]
+  },
+  {
+   "id": "castle-tree-large",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/tree-large.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-tree-large.74934bde.glb",
+     "sha256": "74934bdedb800d3e326da070974c118a8726e6f2318bd9c228efba7031557472",
+     "bytes": 18084
+    }
+   ]
+  },
+  {
+   "id": "castle-tree-small",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/tree-small.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-tree-small.558505e5.glb",
+     "sha256": "558505e548fb811eb2ebd30dd2da5e4420ce94c6c5a27d7b9f6d9208eded3764",
+     "bytes": 15792
+    }
+   ]
+  },
+  {
+   "id": "castle-log",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/tree-log.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-log.7f647193.glb",
+     "sha256": "7f64719374a3c6e36c2a1442a00b15e6ae59b17ff3b072205f11396f070c2fc0",
+     "bytes": 12620
+    }
+   ]
+  },
+  {
+   "id": "castle-rocks-large",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/rocks-large.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-rocks-large.60de6305.glb",
+     "sha256": "60de6305966a3adb2522286e942d3e538b1ee46615fcb50d6a7133362b23dce1",
+     "bytes": 15584
+    }
+   ]
+  },
+  {
+   "id": "castle-rocks-small",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/rocks-small.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-rocks-small.6203b02e.glb",
+     "sha256": "6203b02e0eb3d86822530955fb3cdd80a431c06657561e416ae0dd6e43986995",
+     "bytes": 15144
+    }
+   ]
+  },
+  {
+   "id": "harbour-ship-large",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/ship-large.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-ship-large.2d757719.glb",
+     "sha256": "2d757719f43f04c6e12d916754a8bb357f40479c737c8d9f37830343e00ca22a",
+     "bytes": 60644
+    }
+   ]
+  },
+  {
+   "id": "harbour-ship-small",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/ship-small.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-ship-small.6fdc58f5.glb",
+     "sha256": "6fdc58f5d130eb3ba32e7850fe9240fbdb344987123d3c0f3164d6a5bc4c1589",
+     "bytes": 57124
+    }
+   ]
+  },
+  {
+   "id": "harbour-cargo-ship",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/ship-cargo-a.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-cargo-ship.8e2408c6.glb",
+     "sha256": "8e2408c68060bc213d30c1203cc2599f15609f7d51ad9007bd1f8dfe2f8c8bbe",
+     "bytes": 42800
+    }
+   ]
+  },
+  {
+   "id": "harbour-liner",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/ship-ocean-liner-small.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-liner.d905ae8e.glb",
+     "sha256": "d905ae8e33598a12b5aa4af443f1d3f820291e89f7b158749706b8f0a973fefc",
+     "bytes": 59300
+    }
+   ]
+  },
+  {
+   "id": "harbour-ghost-ship",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/ship-small-ghost.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-ghost-ship.1ceef76d.glb",
+     "sha256": "1ceef76d8a4b5cf19ce5c458dd5d0f4f7261edab38a10748d8e2f24c894c88ed",
+     "bytes": 61308
+    }
+   ]
+  },
+  {
+   "id": "harbour-rowboat",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/boat-row-small.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-rowboat.719199ea.glb",
+     "sha256": "719199eaf52b90f2f738b74fd2fb0ff7220b175d23fdc9b1e4caf64941f11632",
+     "bytes": 17260
+    }
+   ]
+  },
+  {
+   "id": "harbour-rowboat-large",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/boat-row-large.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-rowboat-large.cffbe679.glb",
+     "sha256": "cffbe679a58d31d6ef4b7c58bc5e7b77880bdabd9d1e23a948f73edfb37f6946",
+     "bytes": 16188
+    }
+   ]
+  },
+  {
+   "id": "harbour-sailboat",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/boat-sail-a.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-sailboat.dcdc27ff.glb",
+     "sha256": "dcdc27ff722ee611f68bdb8978e275fe8120580cd4c8c6731d1b8d98cb82f556",
+     "bytes": 22176
+    }
+   ]
+  },
+  {
+   "id": "harbour-sailboat-b",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/boat-sail-b.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-sailboat-b.3a5975d8.glb",
+     "sha256": "3a5975d8a9bc4ee6ea517228f5227252b06b608635de04ce5974909745e8d54f",
+     "bytes": 23100
+    }
+   ]
+  },
+  {
+   "id": "harbour-fishing-boat",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/boat-fishing-small.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-fishing-boat.9765998b.glb",
+     "sha256": "9765998b720f72cf099daee7b3fc5ff4b0a7385a56dca4f2935be8ce7ac5e9dc",
+     "bytes": 19272
+    }
+   ]
+  },
+  {
+   "id": "harbour-speedboat",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/boat-speed-a.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-speedboat.6169394b.glb",
+     "sha256": "6169394b799728b8595958e1acffef9d9e135b011b2adfc43da7ccc64eac97c1",
+     "bytes": 17476
+    }
+   ]
+  },
+  {
+   "id": "harbour-tugboat",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/boat-tug-a.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-tugboat.d3460543.glb",
+     "sha256": "d3460543ca920e608ef0afcac73c66e4bf96fa75b64ccf579652be6f8bdc066e",
+     "bytes": 25668
+    }
+   ]
+  },
+  {
+   "id": "harbour-houseboat",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/boat-house-a.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-houseboat.0a9197ed.glb",
+     "sha256": "0a9197ed9dadc4c55a2cd4fb299258cb4d204bc685641e4c031fd9315fe909e4",
+     "bytes": 23884
+    }
+   ]
+  },
+  {
+   "id": "harbour-container",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/cargo-container-a.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-container.f036e181.glb",
+     "sha256": "f036e18153c6d49e249d426b54285fedd6597728a247afb2e52cec6f357bc78f",
+     "bytes": 16140
+    }
+   ]
+  },
+  {
+   "id": "harbour-container-b",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/cargo-container-b.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-container-b.a9360aae.glb",
+     "sha256": "a9360aae40908a10b0cb8bfb4a97a3bbcde2e26bfe324e892d464318215be21f",
+     "bytes": 16176
+    }
+   ]
+  },
+  {
+   "id": "harbour-cargo-pile",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/cargo-pile-a.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-cargo-pile.2fd7f748.glb",
+     "sha256": "2fd7f748d7e37d9d64752651452494591cb948d3faa2eae65da097ecd630304a",
+     "bytes": 17948
+    }
+   ]
+  },
+  {
+   "id": "harbour-buoy",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/buoy.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-buoy.bb517f15.glb",
+     "sha256": "bb517f15026d0c411e2539a49a8879d0bc4dc0e3b63692ce37121c4e80f30cbb",
+     "bytes": 14772
+    }
+   ]
+  },
+  {
+   "id": "harbour-buoy-flag",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/buoy-flag.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-buoy-flag.eca7c784.glb",
+     "sha256": "eca7c784316bcedf948d7890a165e8d80281504601c269ac60eda1fb396a5fe8",
+     "bytes": 18008
+    }
+   ]
+  },
+  {
+   "id": "harbour-ramp",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/ramp.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-ramp.f71f442f.glb",
+     "sha256": "f71f442fa37be6b0c4ed055ed62bd815cf68878d4e22f20507d914ce8e7afca9",
+     "bytes": 15760
+    }
+   ]
+  },
+  {
+   "id": "sky-overcast",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Greg Zaal"
+   ],
+   "source": {
+    "archive": "polyhaven:kloofendal_overcast_puresky",
+    "path": "polyhaven/hdris/kloofendal_overcast_puresky_1k.hdr"
+   },
+   "files": [
+    {
+     "path": "h/sky-overcast.5f98aa01.hdr",
+     "sha256": "5f98aa01d43a49cd899299751a978b3e5559a76300198b5dd2d9c68ecc4ad130",
+     "bytes": 1174053
+    },
+    {
+     "path": "h/sky-overcast.512.b518aa58.hdr",
+     "sha256": "b518aa586e298fc80dc44fed5f83d7f7ccceb1c0344242320a6ee1aa01562fc0",
+     "bytes": 334059
+    }
+   ]
+  },
+  {
+   "id": "sky-starry-night",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Greg Zaal"
+   ],
+   "source": {
+    "archive": "polyhaven:rogland_clear_night",
+    "path": "polyhaven/hdris/rogland_clear_night_1k.hdr"
+   },
+   "files": [
+    {
+     "path": "h/sky-starry-night.3cc2486b.hdr",
+     "sha256": "3cc2486bdf545b1b3358ba8f2fa1ebb13211d2c6b45a376f39b8d3217ec7c028",
+     "bytes": 1694136
+    },
+    {
+     "path": "h/sky-starry-night.512.b1beaeb3.hdr",
+     "sha256": "b1beaeb36db4727d2d48fc9cd75fa3eed2938e5445a46e013604a52446ae5de3",
+     "bytes": 423040
+    }
+   ]
+  },
+  {
+   "id": "sky-desert-dunes",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Greg Zaal"
+   ],
+   "source": {
+    "archive": "polyhaven:goegap",
+    "path": "polyhaven/hdris/goegap_1k.hdr"
+   },
+   "files": [
+    {
+     "path": "h/sky-desert-dunes.56bb97ac.hdr",
+     "sha256": "56bb97ac7fcbfcbc91116adfb96e26b9da54475dabb7ec2c442f41bf99cda085",
+     "bytes": 1361485
+    },
+    {
+     "path": "h/sky-desert-dunes.512.f10ee55d.hdr",
+     "sha256": "f10ee55d35843e51120508a156a931f0fdb2a4631cdada26280e155796d47beb",
+     "bytes": 358358
+    }
+   ]
+  },
+  {
+   "id": "sky-industrial-sunset",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Jarod Guest",
+    "Sergej Majboroda"
+   ],
+   "source": {
+    "archive": "polyhaven:industrial_sunset_02_puresky",
+    "path": "polyhaven/hdris/industrial_sunset_02_puresky_1k.hdr"
+   },
+   "files": [
+    {
+     "path": "h/sky-industrial-sunset.0b92b0a2.hdr",
+     "sha256": "0b92b0a2ea3b2489ec9bb7170960c3a10e5e68567d9a3d9622970fd06caf649f",
+     "bytes": 1075650
+    },
+    {
+     "path": "h/sky-industrial-sunset.512.eeb0b853.hdr",
+     "sha256": "eeb0b8532e9efda8390fa4d1a9a68ee10150753ceb8438f7ead7e94db215de34",
+     "bytes": 300813
+    }
+   ]
+  },
+  {
+   "id": "sky-golden-sunset",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Greg Zaal",
+    "Dimitrios Savva",
+    "Jarod Guest"
+   ],
+   "source": {
+    "archive": "polyhaven:belfast_sunset_puresky",
+    "path": "polyhaven/hdris/belfast_sunset_puresky_1k.hdr"
+   },
+   "files": [
+    {
+     "path": "h/sky-golden-sunset.cec532d8.hdr",
+     "sha256": "cec532d8dd382bcdca98d7010fa951a782f3295f98e8bd72ee453be8d0a64e98",
+     "bytes": 1190247
+    },
+    {
+     "path": "h/sky-golden-sunset.512.f2f966a4.hdr",
+     "sha256": "f2f966a49ce6071f2941426ac65537c4ec4728a0f4ca679538ea6008d35b2699",
+     "bytes": 328567
     }
    ]
   }
