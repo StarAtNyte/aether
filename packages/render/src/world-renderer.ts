@@ -1223,14 +1223,18 @@ export class WorldRenderer {
     const seen = new Set<Mesh>();
     const ROLE_RANK: Record<string, number> = { room: 0, wall: 1, ceiling: 2, roof: 3, stair: 4, column: 5 };
     const order = g.parts.filter((p) => !p.movable && p.role !== 'door' && p.role !== 'window' && p.role !== 'opening').sort((a, b) => (ROLE_RANK[a.role] ?? 9) - (ROLE_RANK[b.role] ?? 9));
+    const walls: Array<{ meshes: Mesh[]; cut: boolean }> = [];
     for (const p of order) {
+      // A wall the view has sectioned (`drawn` set: the part holds the wall as built) draws other geometry than the wall as built.
+      const wall = p.role === 'wall' ? { meshes: [] as Mesh[], cut: p.drawn !== undefined } : null;
       for (const vm of p.drawn ?? p.meshes) {
         if (vm.seeThrough || seen.has(vm.mesh)) continue;
         seen.add(vm.mesh);
-        meshes.push(vm.mesh);
+        (wall ? wall.meshes : meshes).push(vm.mesh);
       }
+      if (wall) walls.push(wall);
     }
-    return { meshes, parts: g.parts, lighting: g.lighting, groundY: g.groundY };
+    return { meshes, walls, parts: g.parts, lighting: g.lighting, groundY: g.groundY };
   }
 
   /** Bake the buildings' light now at this quality (the assistant's `bake_light`, the editor's button). */
@@ -1251,6 +1255,11 @@ export class WorldRenderer {
   /** Size, cost and source of the lightmap on screen (null without one). */
   get lightmapStats(): Readonly<NonNullable<LightmapController['lastBake']>> | null {
     return this.lightmap.ready ? this.lightmap.lastBake : null;
+  }
+
+  /** Bakes the worker was given since the renderer started (0 when every lightmap came from a bundled file or the cache). */
+  get lightmapBakesStarted(): number {
+    return this.lightmap.bakesStarted;
   }
 
   /** The `.lmap` file of the lightmap on screen (save it with the project or ship it with a bundled world). */

@@ -33,7 +33,7 @@ import { decodeImage, encodeImage } from '../environment/lightmap-codec';
 import { parseLightmapReply, type LightmapRequest } from '../environment/lightmap-protocol';
 import { collectTraceInput, type TraceProxy, type VolumeLighting, type VolumePart } from './light-volume-controller';
 import { refreshProgram, type LightmapSource } from '../sync/lightmap-uv';
-import { expandWithLightmap, lightmapEligible, worldMeshData } from './lightmap-geometry';
+import { expandWithLightmap, lightmapEligible, mergeMeshData, worldMeshData } from './lightmap-geometry';
 
 /** Quiet time (s) after the volume is up before an automatic bake starts. */
 export const LIGHTMAP_SETTLE_SECONDS = 1.2;
@@ -55,8 +55,14 @@ export interface LightmapStatus {
 
 /** The scene as the renderer hands it over when a bake starts. */
 export interface LightmapScene {
-  /** The building's own meshes (the members of merges included, hidden ones too), in priority order. */
+  /** The building's own meshes except the walls (the members of merges included, hidden ones too), in priority order. */
   meshes: Mesh[];
+  /**
+   * The walls, one entry per wall in a stable order, with the meshes the view draws for it. A wall the view has sectioned (`cut`:
+   * cutaway, lowered, cut open) draws other geometry than the wall as built: it keeps the light volume's light, and it neither
+   * enters the key of the building nor changes which bundled file matches, so a world opened in the cutaway still finds its file.
+   */
+  walls?: Array<{ meshes: Mesh[]; cut: boolean }>;
   parts: VolumePart[];
   lighting: VolumeLighting;
   groundY: number;
@@ -116,8 +122,18 @@ async function defaultFetch(url: string, json = false): Promise<Uint8Array | nul
   }
 }
 
-interface Prepared {
+/** One entry of the bake: a mesh, or all the meshes of one wall merged (so the entries do not depend on how a view splits a wall). */
+interface Slot {
   meshes: Mesh[];
+  /** Triangles of each mesh of the slot (they add up to the slot's triangle count). */
+  tris: number[];
+  wall: boolean;
+  /** A sectioned wall: nothing of it is baked or applied. */
+  cut: boolean;
+}
+
+interface Prepared {
+  slots: Slot[];
   data: LightmapMesh[];
   input: Required<TraceInput>;
   proxies: TraceProxy[];
@@ -158,6 +174,8 @@ export class LightmapController implements LightmapSource {
   private disposed = false;
   /** A bake is scheduled or being decided (gathering, looking for a stored lightmap): not final yet. */
   private deciding = false;
+  /** Bakes handed to the worker since the controller was made (a bundled or cached lightmap never counts). */
+  bakesStarted = 0;
   private readonly cache: LightmapCache | null;
   private readonly factory: (() => LightmapWorkerLike) | null;
   /** The last finished bake or load: what it was and what it cost. */
@@ -413,26 +431,50 @@ export class LightmapController implements LightmapSource {
 
   /** Gather the surfaces in world space and the trace scene, a few milliseconds at a time. */
   private async prepare(scene: LightmapScene, vol: { grid: VolumeGrid; data: Float32Array }, gen: number): Promise<Prepared | null> {
-    const meshes: Mesh[] = [];
+    const slots: Slot[] = [];
     const data: LightmapMesh[] = [];
     let triangles = 0;
     let until = performance.now() + LIGHTMAP_SLICE_MS;
+    const pause = async (): Promise<boolean> => {
+      if (performance.now() <= until) return true;
+      await new Promise<void>((r) => setTimeout(r, 0));
+      until = performance.now() + LIGHTMAP_SLICE_MS;
+      return gen === this.gen && this.enabled;
+    };
     for (const mesh of scene.meshes) {
       if (!lightmapEligible(mesh)) continue;
       const g = mesh.geometry;
       const n = g.index ? g.index.count / 3 : g.getAttribute('position').count / 3;
       if (triangles + n > LIGHTMAP_MAX_TRIANGLES) continue;
       const d = worldMeshData(mesh);
-      meshes.push(mesh);
+      const count = meshTriangleCount(d);
+      slots.push({ meshes: [mesh], tris: [count], wall: false, cut: false });
       data.push(d);
-      triangles += meshTriangleCount(d);
-      if (performance.now() > until) {
-        await new Promise<void>((r) => setTimeout(r, 0));
-        if (gen !== this.gen || !this.enabled) return null;
-        until = performance.now() + LIGHTMAP_SLICE_MS;
-      }
+      triangles += count;
+      if (!(await pause())) return null;
     }
-    if (meshes.length === 0) {
+    for (const wall of scene.walls ?? []) {
+      const parts: LightmapMesh[] = [];
+      const carried: Mesh[] = [];
+      const tris: number[] = [];
+      if (!wall.cut) {
+        for (const mesh of wall.meshes) {
+          if (!lightmapEligible(mesh)) continue;
+          const g = mesh.geometry;
+          const n = g.index ? g.index.count / 3 : g.getAttribute('position').count / 3;
+          if (triangles + n > LIGHTMAP_MAX_TRIANGLES) continue;
+          const d = worldMeshData(mesh);
+          parts.push(d);
+          carried.push(mesh);
+          tris.push(meshTriangleCount(d));
+          triangles += tris[tris.length - 1] as number;
+        }
+      }
+      slots.push({ meshes: carried, tris, wall: true, cut: wall.cut });
+      data.push(mergeMeshData(parts));
+      if (!(await pause())) return null;
+    }
+    if (slots.every((sl) => sl.meshes.length === 0)) {
       this.setState('idle', 'no surface can carry a lightmap');
       return null;
     }
@@ -442,18 +484,21 @@ export class LightmapController implements LightmapSource {
       this.setState('idle', 'no building to trace');
       return null;
     }
-    return { meshes, data, input, proxies, grid: vol.grid, volume: vol.data, lighting: scene.lighting, groundY: scene.groundY };
+    return { slots, data, input, proxies, grid: vol.grid, volume: vol.data, lighting: scene.lighting, groundY: scene.groundY };
   }
 
   /** The key of this building and light for `plan` (the geometry is hashed once per bake attempt). */
   private keyOf(p: Prepared, plan: LightmapPlan): string {
     if (!p.content) {
+      // The walls are in the trace input as built; their drawn meshes (which a view may section) are left out.
       const arrays: ArrayBufferView[] = [p.input.positions, p.input.albedo, p.input.twoSided, p.volume];
-      for (const d of p.data) arrays.push(d.positions, d.normals);
+      p.data.forEach((d, i) => {
+        if (!p.slots[i]?.wall) arrays.push(d.positions, d.normals);
+      });
       p.content = contentHash(arrays);
     }
     const lamps = p.lighting.lamps.map((l) => [l.position, l.color, l.range, l.room ?? null]);
-    return lightmapKey(p.content, [plan.size, plan.samples, plan.density, p.data.map((d) => meshTriangleCount(d)), p.grid, p.lighting.sun, p.lighting.ambient, p.groundY, lamps]);
+    return lightmapKey(p.content, [plan.size, plan.samples, plan.density, p.data.map((d, i) => (p.slots[i]?.wall ? -1 : meshTriangleCount(d))), p.grid, p.lighting.sun, p.lighting.ambient, p.groundY, lamps]);
   }
 
   private async lookup(keys: readonly string[]): Promise<{ bytes: Uint8Array; source: 'static' | 'cache' } | null> {
@@ -560,6 +605,7 @@ export class LightmapController implements LightmapSource {
       return;
     }
     this.job = { id, gen, key, triCounts, started: performance.now(), prepared: p };
+    this.bakesStarted++;
     this.setState('baking', 'baking light', 0);
   }
 
@@ -628,7 +674,7 @@ export class LightmapController implements LightmapSource {
     if (bytes.byteLength > LIGHTMAP_MAX_ASSET_BYTES) {
       // Too large to keep (raw atlas on a browser without WebP): it is still applied this session, just not stored.
       log.warn(`lightmap file is ${bytes.byteLength} B (cap ${LIGHTMAP_MAX_ASSET_BYTES}): not cached`);
-    } else if (this.cache && wallMs >= LIGHTMAP_CACHE_MIN_BAKE_MS) void this.cache.put(job.key, bytes);
+    } else if (this.cache && wallMs >= LIGHTMAP_CACHE_MIN_BAKE_MS && !job.prepared.slots.some((sl) => sl.cut)) void this.cache.put(job.key, bytes);
     this.applyDecoded(meta, r.rgba, r.uv, job.prepared, 'bake', bytes, wallMs, job.gen);
   }
 
@@ -639,7 +685,8 @@ export class LightmapController implements LightmapSource {
     const asset = unpackAsset(bytes);
     if (!asset) return false;
     const triCounts = p.data.map((d) => meshTriangleCount(d));
-    if (asset.meta.tris.length !== triCounts.length || asset.meta.tris.some((t, i) => t !== -1 && t !== triCounts[i])) return false;
+    // A sectioned wall is not baked here, so its triangle count is not compared (nor is its slot applied).
+    if (asset.meta.tris.length !== triCounts.length || asset.meta.tris.some((t, i) => t !== -1 && t !== triCounts[i] && !p.slots[i]?.cut)) return false;
     let rgba: Uint8Array | null;
     if (asset.meta.image === 'raw') rgba = unstackAtlas(asset.image, asset.meta.size);
     else {
@@ -660,11 +707,20 @@ export class LightmapController implements LightmapSource {
     // The same surfaces re-baked (another hour) have the same coordinates: nothing is rebuilt, only the atlas changed.
     let same = this.uvs.size > 0;
     const next = new Map<Mesh, Float32Array>();
-    for (let i = 0; i < p.meshes.length; i++) {
+    for (let i = 0; i < p.slots.length; i++) {
       const u = uv[i];
-      if (!u) continue;
-      const mesh = p.meshes[i] as Mesh;
-      next.set(mesh, u);
+      const slot = p.slots[i] as Slot;
+      if (!u || slot.cut) continue;
+      // A wall's coordinates are one list for all its meshes: split by triangle ranges (six floats a triangle).
+      if (u.length !== slot.tris.reduce((a, b) => a + b, 0) * 6) continue;
+      let at = 0;
+      slot.meshes.forEach((mesh, k) => {
+        const len = (slot.tris[k] as number) * 6;
+        next.set(mesh, slot.meshes.length === 1 ? u : u.subarray(at, at + len));
+        at += len;
+      });
+    }
+    for (const [mesh, u] of next) {
       const old = this.uvs.get(mesh);
       if (!old || old.length !== u.length) same = false;
       else if (same) for (let k = 0; k < u.length; k++) if (old[k] !== u[k]) { same = false; break; }

@@ -3120,9 +3120,15 @@ scripts/showcase/lightmaps.ts   bake the architecture showcase worlds in a brows
 scripts/lightmap-shots.ts       before/after stills, bake wall time, file size and draw cost per mode (fresh page per mode)
 ```
 
-The bake reads the geometry the renderer shows, and the architectural view changes that geometry (`cutaway` sections the walls that face the camera, so a
-volume or lightmap baked while the camera is outside sees a room opened on one side). The key therefore names the view state a bake came from: a bundled
-file matches the world as it opens, and a world opened in another view bakes in the browser as before.
+The bake reads the geometry the renderer shows, and the architectural view changes that geometry (`cutaway` sections the walls that face the camera,
+and which walls those are follows the camera). The key must not follow it, or a world opened in the cutaway (a restored session, a cover shot) would
+find no bundled file and bake in the browser. `LightmapScene` therefore hands the walls over separately (`walls: [{ meshes, cut }]`, `cut` when the view
+has sectioned that wall): the bake and the key see one entry per wall (its meshes merged, in a stable order), the walls' drawn meshes are left out of
+the key (their as-built geometry is in the trace input, which the key does hash) and a sectioned wall is neither baked nor given coordinates (the
+light volume lights it; the file's triangle count for it is not compared). A bake taken while a wall is sectioned is not kept in the browser cache
+(its file lacks that wall). `WorldRenderer.lightmapBakesStarted` counts jobs handed to the worker: it stays 0 when every lightmap comes from a bundled
+file or the cache. `tests/e2e/lightmap-open.e2e.ts` opens each bundled world as it is, switches it to the cutaway and the lowered view, and opens
+it already in them, and fails on any worker job or "Baking light" pill.
 
 ### Scripts
 

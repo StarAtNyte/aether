@@ -79,7 +79,7 @@ async function until(cond: () => boolean, ms = 8000): Promise<void> {
   }
 }
 
-function setup(over: { cache?: LightmapCache | null; auto?: boolean; posted?: unknown[]; worker?: boolean; hold?: { release?: () => void }; staticBytes?: Map<string, Uint8Array> } = {}) {
+function setup(over: { cache?: LightmapCache | null; auto?: boolean; posted?: unknown[]; worker?: boolean; hold?: { release?: () => void }; staticBytes?: Map<string, Uint8Array>; walls?: 'whole' | 'cut' } = {}) {
   const { meshes, parts } = room();
   const posted = over.posted ?? [];
   const light = new LightVolume();
@@ -92,7 +92,12 @@ function setup(over: { cache?: LightmapCache | null; auto?: boolean; posted?: un
   let changes = 0;
   let attached: unknown = 'none';
   const statuses: string[] = [];
-  const gather = (): LightmapScene => ({ meshes, parts, lighting, groundY: 0 });
+  const gather = (): LightmapScene => {
+    if (!over.walls) return { meshes, parts, lighting, groundY: 0 };
+    // The four wall planes as wall entries; one of them sectioned by the view (its drawn geometry is another mesh and is not baked).
+    const walls = [2, 3, 4, 5].map((i) => ({ meshes: [meshes[i] as Mesh], cut: over.walls === 'cut' && i === 2 }));
+    return { meshes: [0, 1, 6].map((i) => meshes[i] as Mesh), walls, parts, lighting, groundY: 0 };
+  };
   const ctl = new LightmapController(light, {
     gather,
     volume: () => ({ grid, data }),
@@ -222,6 +227,28 @@ describe('lightmap controller', () => {
     await until(() => wrong.ctl.status.state === 'failed');
     wrong.ctl.dispose();
     expect(meshTriangleCount({ positions: new Float32Array(18), index: null })).toBe(2);
+  });
+
+  it('finds the bundled file of a building whose view has sectioned a wall, and leaves that wall to the light volume', async () => {
+    const donor = setup({ walls: 'whole' });
+    donor.ctl.setEnabled(true);
+    donor.ctl.request('low', 8);
+    await until(() => donor.ctl.ready);
+    const key = donor.ctl.lastBake!.key;
+    const bytes = donor.ctl.asset!;
+    expect(donor.ctl.lastBake!.meshes).toBe(7);
+    donor.ctl.dispose();
+    const t = setup({ cache: null, worker: false, staticBytes: new Map([[key, bytes]]), walls: 'cut' });
+    t.ctl.setEnabled(true);
+    t.ctl.request('low', 8);
+    await until(() => t.ctl.ready);
+    expect(t.ctl.lastBake).toMatchObject({ source: 'static', key });
+    expect(t.ctl.bakesStarted).toBe(0);
+    // Six surfaces carry the file; the sectioned wall keeps its own geometry.
+    expect(t.ctl.meshCount).toBe(6);
+    expect(t.meshes[2]!.geometry.getAttribute('aetherLM')).toBeUndefined();
+    expect(t.meshes[3]!.geometry.getAttribute('aetherLM')).toBeDefined();
+    t.ctl.dispose();
   });
 
   it('cancels a bake in flight and reports it', async () => {

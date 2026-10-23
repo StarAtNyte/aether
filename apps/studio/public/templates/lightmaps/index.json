@@ -1,48 +1,48 @@
 {
   "keys": [
-    "lm3-64ccdd776cc19fcdb58893dbebc1e2ae",
-    "lm3-83357235e946007399dc29c05d6e5490",
-    "lm3-8c64b9bb6b80dc15a9d9a95c889465b2",
-    "lm3-d3d8e9e47f975fd9e16ee07d11eecbea",
-    "lm3-e9529aece1de6ffb7c7e3dacc0940c40",
-    "lm3-ffa3bca1b983a782720997ab477177cb"
+    "lm3-22989e4b235ba5f6b57eafab33af15e1",
+    "lm3-3d06dbb5c0f03ab8008e218e06658374",
+    "lm3-5c553ff11272d30183c546d0835c544d",
+    "lm3-b907f2154d275a049e6ccb7d86499a00",
+    "lm3-c4f08e030e6f6557042cd0660a15b3ed",
+    "lm3-dff140d574aee1b50cb1c4ab3b97c5ac"
   ],
   "worlds": {
     "casa-patio": {
-      "key": "lm3-d3d8e9e47f975fd9e16ee07d11eecbea",
+      "key": "lm3-5c553ff11272d30183c546d0835c544d",
       "quality": "medium",
       "samples": 48,
-      "bytes": 747428
+      "bytes": 767140
     },
     "photo-four-poster": {
-      "key": "lm3-8c64b9bb6b80dc15a9d9a95c889465b2",
+      "key": "lm3-b907f2154d275a049e6ccb7d86499a00",
       "quality": "medium",
       "samples": 48,
-      "bytes": 250304
+      "bytes": 238100
     },
     "photo-hotel-bedroom": {
-      "key": "lm3-83357235e946007399dc29c05d6e5490",
+      "key": "lm3-22989e4b235ba5f6b57eafab33af15e1",
       "quality": "medium",
       "samples": 48,
-      "bytes": 230280
+      "bytes": 229284
     },
     "photo-twin-room": {
-      "key": "lm3-ffa3bca1b983a782720997ab477177cb",
+      "key": "lm3-3d06dbb5c0f03ab8008e218e06658374",
       "quality": "medium",
       "samples": 48,
-      "bytes": 214056
+      "bytes": 212860
     },
     "photo-vaulted-bedroom": {
-      "key": "lm3-64ccdd776cc19fcdb58893dbebc1e2ae",
+      "key": "lm3-c4f08e030e6f6557042cd0660a15b3ed",
       "quality": "medium",
       "samples": 48,
-      "bytes": 252996
+      "bytes": 250252
     },
     "skyline-penthouse": {
-      "key": "lm3-e9529aece1de6ffb7c7e3dacc0940c40",
+      "key": "lm3-dff140d574aee1b50cb1c4ab3b97c5ac",
       "quality": "medium",
       "samples": 48,
-      "bytes": 747156
+      "bytes": 831160
     }
   }
 }

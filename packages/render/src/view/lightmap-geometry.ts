@@ -5,7 +5,7 @@
  */
 import { DoubleSide, Matrix3, Matrix4, type InstancedMesh, type Mesh, type SkinnedMesh } from 'three';
 import { LIGHTMAP_ATTRIBUTE } from '../environment/light-volume-light';
-import { LIGHTMAP_MAX_TRIANGLES, type LightmapMesh } from '../environment/lightmap';
+import { LIGHTMAP_MAX_TRIANGLES, meshTriangleCount, type LightmapMesh } from '../environment/lightmap';
 
 /**
  * Meshes the lightmap never touches: instanced and skinned ones, glass, anything that is not plain opaque lit geometry. A mesh
@@ -67,6 +67,31 @@ export function worldMeshData(mesh: Mesh): LightmapMesh {
   if (idx) {
     index = new Uint32Array(idx.count);
     for (let i = 0; i < idx.count; i++) index[i] = idx.getX(i);
+  }
+  return { positions, normals, index };
+}
+
+/** Several meshes as one (vertices appended, indices offset): triangles keep the order of the meshes. Empty input: an empty mesh. */
+export function mergeMeshData(parts: readonly LightmapMesh[]): LightmapMesh {
+  if (parts.length === 1) return parts[0] as LightmapMesh;
+  let verts = 0;
+  let tris = 0;
+  for (const m of parts) {
+    verts += m.positions.length / 3;
+    tris += meshTriangleCount(m);
+  }
+  const positions = new Float32Array(verts * 3);
+  const normals = new Float32Array(verts * 3);
+  const index = new Uint32Array(tris * 3);
+  let v = 0;
+  let t = 0;
+  for (const m of parts) {
+    positions.set(m.positions, v * 3);
+    normals.set(m.normals, v * 3);
+    const n = meshTriangleCount(m);
+    for (let i = 0; i < n * 3; i++) index[t * 3 + i] = (m.index ? (m.index[i] as number) : i) + v;
+    v += m.positions.length / 3;
+    t += n;
   }
   return { positions, normals, index };
 }
