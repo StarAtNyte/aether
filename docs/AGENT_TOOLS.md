@@ -341,16 +341,29 @@ See [Eyes](#query_level-1).
 
 ### `find_model`
 
-- **What it does.** Ranks the photographed, real-size interior models of the library (`@aether/assets`
-  `findModels`: sofas, armchairs, chairs, tables, beds, shelves, lamps, plants, vases, books, mirrors, pictures,
-  clocks, small appliances) by what the piece is, the design style, the colour and the size wanted.
-- **Input.** `{what, style?, color?, size? [w,h,d], limit 1..8 (4)}`. `what` is free text ("green velvet armchair");
-  its type word picks the models, the other words rank them.
-- **Returns.** One line per model: `id — name: size; styles; colours; where it goes; why it ranked`. The model judges
-  the candidates (and later the render) and places one with `place_items`. Colours are measured from the model's own
-  base-colour texture, not written by hand.
-- **When to use it.** Before placing seating, tables, beds, lamps, plants and decor, and in the photo compare loop when a
-  piece differs in shape, style or colour.
+- **What it does.** Ranks the real-size, photographed models of the library (`@aether/assets` `findModels`) by what the
+  piece is, the design style or biome, the colour and the size wanted. Interiors: sofas, armchairs, chairs, tables, beds,
+  shelves, lamps, plants, vases, books, mirrors, pictures, clocks, small appliances. Outdoors and beyond (Poly Haven,
+  CC0): rocks, boulders, cliffs, dead trunks, quiver trees, ferns, succulents, branches; street furniture (street
+  lamps, hydrants, barriers, bins, utility boxes, manholes, picnic tables, wet-floor signs, chain-link fence, iron
+  gates, covered cars); harbour and coast (ships, buoys, barrels, crates, cannons, chests); industrial and sci-fi
+  (pipes, cranes, generators, racks, carts, spacecraft instruments, moon rock); farm and garden (planters, tools,
+  bags, sprinkler, gnome); medieval and fantasy (castle door, shields, swords, statues, candlesticks).
+- **Input.** `{what, style?, category?, look?, color?, size? [w,h,d], limit 1..8 (4)}`. `what` is free text ("green
+  velvet armchair", "sandstone boulder"); its type word picks the models, the other words rank them. `style` is a
+  design style (modern, scandinavian, industrial, classic, rustic, vintage...) or a biome word (forest, desert,
+  coastal, harbour, urban, industrial, farm, scifi, fantasy, medieval, ...). `category` limits to one catalog category
+  (nature, rocks, plants, street, building, vehicles, props, tools, decor, lighting, furniture...). `look` is the art
+  style: `realistic` (default, photographed models only), `stylised` or `low-poly` (the Kenney-style kits, including
+  the sci-fi base, castle and harbour kits, for cartoon or blocky worlds) or `any`. Stylised kits are never offered to a
+  realistic request.
+- **Returns.** One line per model: `id — name: size; category, look; styles; colours; where it goes; why it ranked`.
+  The model judges the candidates (and later the render) and places one with `place_items` in a room, or with an
+  `apply_patches` entity `shape {"kind":"asset","id":"<id>"}` in an open world. Colours are measured from the model's
+  own base-colour texture, not written by hand.
+- **When to use it.** Before placing seating, tables, beds, lamps, plants and decor, before dressing a landscape,
+  street, harbour, factory or fantasy set with props, and in the photo compare loop when a piece differs in shape,
+  style or colour.
 
 ### `write_generator`
 

@@ -1,0 +1,133 @@
+/**
+ * Three further Kenney kits (CC0-1.0, each archive's own License.txt says so) for stylised and low-poly worlds:
+ * a sci-fi base kit, a castle kit and a harbour / watercraft kit. They are built by `build.ts --extra` into
+ * `assets/extra.json` so the models of the earlier kits keep their file hashes. Poly Haven HDRIs added with them
+ * are listed in `EXTRA_HDRIS`.
+ */
+import type { PackSel } from './selection';
+
+export const EXTRA_HDRIS: readonly string[] = ['kloofendal_overcast_puresky', 'rogland_clear_night', 'goegap', 'industrial_sunset_02_puresky', 'belfast_sunset_puresky'];
+/** Library ids of the extra HDRIs. */
+export const EXTRA_HDRI_IDS: Readonly<Record<string, string>> = {
+  kloofendal_overcast_puresky: 'sky-overcast',
+  rogland_clear_night: 'sky-starry-night',
+  goegap: 'sky-desert-dunes',
+  industrial_sunset_02_puresky: 'sky-industrial-sunset',
+  belfast_sunset_puresky: 'sky-golden-sunset',
+};
+
+const sci = 'scifi space station';
+const cas = 'medieval castle fantasy';
+const har = 'harbour port coastal';
+
+export const EXTRA_SELECTION: readonly PackSel[] = [
+  {
+    pack: 'kenney-space-kit',
+    scale: 3,
+    style: 'low-poly',
+    category: 'building',
+    collider: 'box',
+    items: [
+      ['corridor', 'space-corridor', { name: 'Station corridor', tags: `${sci} hallway tunnel module` }],
+      ['corridor_detailed', 'space-corridor-detailed', { name: 'Detailed corridor', tags: `${sci} hallway tunnel module` }],
+      ['corridor_corner', 'space-corridor-corner', { name: 'Corridor corner', tags: `${sci} hallway module` }],
+      ['corridor_cross', 'space-corridor-cross', { name: 'Corridor crossing', tags: `${sci} hallway junction module` }],
+      ['corridor_split', 'space-corridor-split', { name: 'Corridor junction', tags: `${sci} hallway module` }],
+      ['corridor_end', 'space-corridor-end', { name: 'Corridor end', tags: `${sci} hallway module` }],
+      ['corridor_window', 'space-corridor-window', { name: 'Corridor with window', tags: `${sci} hallway module` }],
+      ['hangar_smallA', 'space-hangar-small', { name: 'Small hangar', tags: `${sci} garage dome` }],
+      ['hangar_largeA', 'space-hangar-large', { name: 'Large hangar', tags: `${sci} garage` }],
+      ['hangar_roundA', 'space-hangar-round', { name: 'Round hangar', tags: `${sci} dome` }],
+      ['platform_large', 'space-platform', { name: 'Landing platform', cat: 'street', tags: `${sci} pad floor` }],
+      ['gate_complex', 'space-gate', { name: 'Station gate', tags: `${sci} door airlock` }],
+      ['satelliteDish_large', 'space-dish', { name: 'Satellite dish', cat: 'props', tags: `${sci} antenna radar` }],
+      ['turret_single', 'space-turret', { name: 'Turret', cat: 'props', tags: `${sci} gun defence` }],
+      ['turret_double', 'space-turret-double', { name: 'Double turret', cat: 'props', tags: `${sci} gun defence` }],
+      ['machine_generatorLarge', 'space-generator', { name: 'Reactor generator', cat: 'props', tags: `${sci} machine power` }],
+      ['machine_wireless', 'space-transmitter', { name: 'Transmitter', cat: 'props', tags: `${sci} machine antenna` }],
+      ['barrels', 'space-barrels', { name: 'Fuel barrels', cat: 'props', tags: `${sci} cargo`, collider: 'hull' }],
+      ['desk_computer', 'space-console', { name: 'Computer desk', cat: 'furniture', tags: `${sci} workstation terminal` }],
+      ['desk_chair', 'space-chair', { name: 'Station chair', cat: 'furniture', tags: `${sci} seat office` }],
+      ['craft_speederA', 'space-speeder-a', { name: 'Hover speeder', cat: 'vehicles', tags: `${sci} spaceship hovercraft`, collider: 'hull' }],
+      ['craft_racer', 'space-racer', { name: 'Space racer', cat: 'vehicles', tags: `${sci} spaceship fighter`, collider: 'hull' }],
+      ['craft_cargoA', 'space-cargo-ship', { name: 'Cargo shuttle', cat: 'vehicles', tags: `${sci} spaceship freighter`, collider: 'hull' }],
+      ['craft_miner', 'space-miner', { name: 'Mining craft', cat: 'vehicles', tags: `${sci} spaceship`, collider: 'hull' }],
+      ['rover', 'space-rover', { name: 'Planet rover', cat: 'vehicles', tags: `${sci} moon buggy`, collider: 'hull', w: 3 }],
+      ['rocket_baseA', 'space-rocket-base', { name: 'Rocket base stage', cat: 'props', tags: `${sci} launch booster` }],
+      ['astronautA', 'space-astronaut', { name: 'Astronaut', cat: 'props', tags: `${sci} spaceman suit statue`, h: 1.8, collider: 'capsule' }],
+      ['alien', 'space-alien', { name: 'Alien', cat: 'props', tags: `${sci} extraterrestrial creature`, h: 1.5, collider: 'capsule' }],
+      ['rock_largeA', 'space-rock-large', { name: 'Moon rock', cat: 'rocks', tags: 'scifi moon alien planet boulder', collider: 'hull' }],
+      ['rocks_smallA', 'space-rocks-small', { name: 'Small moon rocks', cat: 'rocks', tags: 'scifi moon alien planet stones', collider: 'hull' }],
+      ['rock_crystals', 'space-crystals', { name: 'Crystal rock', cat: 'rocks', tags: 'scifi alien planet gems', collider: 'hull' }],
+      ['rock_crystalsLargeA', 'space-crystals-large', { name: 'Large crystals', cat: 'rocks', tags: 'scifi alien planet gems', collider: 'hull' }],
+      ['meteor', 'space-meteor', { name: 'Meteor', cat: 'rocks', tags: 'scifi asteroid space rock', collider: 'hull' }],
+      ['crater', 'space-crater', { name: 'Crater', cat: 'nature', tags: 'scifi moon planet hole' }],
+      ['monorail_trainFront', 'space-monorail', { name: 'Monorail train', cat: 'vehicles', tags: `${sci} tram` }],
+      ['weapon_rifle', 'space-rifle', { name: 'Blaster rifle', cat: 'props', tags: `${sci} gun weapon`, collider: 'hull' }],
+    ],
+  },
+  {
+    pack: 'kenney-castle-kit',
+    scale: 4,
+    style: 'low-poly',
+    category: 'building',
+    collider: 'box',
+    items: [
+      ['wall', 'castle-wall', { name: 'Castle wall', tags: `${cas} rampart battlement` }],
+      ['wall-corner', 'castle-wall-corner', { name: 'Castle wall corner', tags: `${cas} rampart battlement` }],
+      ['wall-doorway', 'castle-wall-doorway', { name: 'Castle wall with doorway', tags: `${cas} rampart entrance` }],
+      ['wall-narrow-gate', 'castle-wall-gate', { name: 'Castle gatehouse wall', tags: `${cas} rampart entrance` }],
+      ['wall-half', 'castle-wall-half', { name: 'Low castle wall', tags: `${cas} rampart` }],
+      ['wall-narrow-wood-fence', 'castle-fence-wood', { name: 'Wooden palisade', cat: 'street', tags: `${cas} fence` }],
+      ['tower-square', 'castle-tower-square', { name: 'Square tower', tags: `${cas} keep` }],
+      ['tower-square-top-roof', 'castle-tower-roof', { name: 'Tower with roof', tags: `${cas} keep spire` }],
+      ['tower-hexagon-base', 'castle-tower-hex', { name: 'Round tower base', tags: `${cas} keep` }],
+      ['tower-slant-roof', 'castle-tower-slant', { name: 'Tower with slanted roof', tags: `${cas} keep spire` }],
+      ['gate', 'castle-gate', { name: 'Castle gate', tags: `${cas} portcullis door`, w: 3 }],
+      ['metal-gate', 'castle-gate-metal', { name: 'Iron portcullis', tags: `${cas} gate door` }],
+      ['bridge-straight', 'castle-bridge', { name: 'Stone bridge', cat: 'street', tags: `${cas} river arch` }],
+      ['bridge-draw', 'castle-drawbridge', { name: 'Drawbridge', cat: 'street', tags: `${cas} moat` }],
+      ['stairs-stone', 'castle-stairs', { name: 'Stone stairs', cat: 'street', tags: `${cas} steps` }],
+      ['siege-catapult', 'castle-catapult', { name: 'Catapult', cat: 'props', tags: `${cas} siege weapon war machine`, w: 4.5 }],
+      ['siege-trebuchet', 'castle-trebuchet', { name: 'Trebuchet', cat: 'props', tags: `${cas} siege weapon war machine`, w: 6 }],
+      ['siege-ballista', 'castle-ballista', { name: 'Ballista', cat: 'props', tags: `${cas} siege weapon war machine`, w: 3 }],
+      ['siege-ram', 'castle-ram', { name: 'Battering ram', cat: 'props', tags: `${cas} siege weapon war machine`, w: 5 }],
+      ['siege-tower', 'castle-siege-tower', { name: 'Siege tower', cat: 'props', tags: `${cas} war machine`, w: 5 }],
+      ['flag', 'castle-flag', { name: 'Castle flag', cat: 'props', tags: `${cas} banner pole`, h: 3 }],
+      ['flag-banner-long', 'castle-banner', { name: 'Long banner', cat: 'props', tags: `${cas} flag hanging`, h: 3, place: 'wall' }],
+      ['tree-large', 'castle-tree-large', { name: 'Large tree', cat: 'nature', tags: 'fantasy medieval forest oak', collider: 'hull', h: 7 }],
+      ['tree-small', 'castle-tree-small', { name: 'Small tree', cat: 'nature', tags: 'fantasy medieval forest', collider: 'hull', h: 4 }],
+      ['tree-log', 'castle-log', { name: 'Fallen log', cat: 'nature', tags: 'fantasy medieval forest timber', collider: 'hull', w: 3 }],
+      ['rocks-large', 'castle-rocks-large', { name: 'Large rocks', cat: 'rocks', tags: 'fantasy medieval boulder', collider: 'hull' }],
+      ['rocks-small', 'castle-rocks-small', { name: 'Small rocks', cat: 'rocks', tags: 'fantasy medieval stones', collider: 'hull' }],
+    ],
+  },
+  {
+    pack: 'kenney-watercraft-pack',
+    scale: 1.5,
+    style: 'low-poly',
+    category: 'vehicles',
+    collider: 'hull',
+    items: [
+      ['ship-large', 'harbour-ship-large', { name: 'Large sailing ship', tags: `${har} galleon tall ship`, w: 22 }],
+      ['ship-small', 'harbour-ship-small', { name: 'Small ship', tags: `${har} sailing`, w: 12 }],
+      ['ship-cargo-a', 'harbour-cargo-ship', { name: 'Cargo ship', tags: `${har} freighter container`, w: 40 }],
+      ['ship-ocean-liner-small', 'harbour-liner', { name: 'Ocean liner', tags: `${har} cruise ship ferry`, w: 45 }],
+      ['ship-small-ghost', 'harbour-ghost-ship', { name: 'Ghost ship', tags: `${har} haunted pirate`, w: 12 }],
+      ['boat-row-small', 'harbour-rowboat', { name: 'Rowing boat', tags: `${har} dinghy lake` }],
+      ['boat-row-large', 'harbour-rowboat-large', { name: 'Large rowing boat', tags: `${har} dinghy lake` }],
+      ['boat-sail-a', 'harbour-sailboat', { name: 'Sailboat', tags: `${har} yacht lake` }],
+      ['boat-sail-b', 'harbour-sailboat-b', { name: 'Sailboat with jib', tags: `${har} yacht lake` }],
+      ['boat-fishing-small', 'harbour-fishing-boat', { name: 'Fishing boat', tags: `${har} trawler` }],
+      ['boat-speed-a', 'harbour-speedboat', { name: 'Speedboat', tags: `${har} motorboat lake` }],
+      ['boat-tug-a', 'harbour-tugboat', { name: 'Tugboat', tags: `${har} workboat` }],
+      ['boat-house-a', 'harbour-houseboat', { name: 'Houseboat', cat: 'building', tags: `${har} lake home` }],
+      ['cargo-container-a', 'harbour-container', { name: 'Shipping container', cat: 'props', tags: `${har} cargo industrial`, w: 6, collider: 'box' }],
+      ['cargo-container-b', 'harbour-container-b', { name: 'Shipping container, open', cat: 'props', tags: `${har} cargo industrial`, w: 6, collider: 'box' }],
+      ['cargo-pile-a', 'harbour-cargo-pile', { name: 'Cargo pile', cat: 'props', tags: `${har} crates dock`, collider: 'box' }],
+      ['buoy', 'harbour-buoy', { name: 'Harbour buoy', cat: 'props', tags: `${har} marker float`, h: 1.4 }],
+      ['buoy-flag', 'harbour-buoy-flag', { name: 'Flag buoy', cat: 'props', tags: `${har} marker float`, h: 1.6 }],
+      ['ramp', 'harbour-ramp', { name: 'Boat ramp', cat: 'street', tags: `${har} slipway`, collider: 'box' }],
+    ],
+  },
+];

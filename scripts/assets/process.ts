@@ -200,7 +200,7 @@ export function normaliseAnimated(doc: Document, scale: number, offset: Vec3, fl
  * Simplify every primitive to about `ratio` of its triangles (meshoptimizer,
  * attribute-blind). Returns the new triangle count.
  */
-export async function simplifyDocument(doc: Document, ratio: number): Promise<number> {
+export async function simplifyDocument(doc: Document, ratio: number, maxError = 0.05): Promise<number> {
   await MeshoptSimplifier.ready;
   let tris = 0;
   for (const mesh of doc.getRoot().listMeshes()) {
@@ -219,7 +219,10 @@ export async function simplifyDocument(doc: Document, ratio: number): Promise<nu
       const target = Math.max(3, Math.floor((indices.length / 3) * ratio) * 3);
       // UV / normal seams split vertices, so locking borders would freeze most edges; LOD files are
       // only drawn when small on screen, where a hairline seam is invisible.
-      const [out] = MeshoptSimplifier.simplify(indices, positions, 3, target, 0.05, []);
+      let [out] = MeshoptSimplifier.simplify(indices, positions, 3, target, maxError, []);
+      // Photoscanned meshes with a vertex per triangle (UV seams everywhere) stall far above the target: for the
+      // outdoor set (`maxError` raised) fall back to the topology-free simplifier, which keeps original vertices.
+      if (maxError > 0.05 && out.length > target * 1.25) [out] = MeshoptSimplifier.simplifySloppy(indices, positions, 3, null, target, 1);
       tris += out.length / 3;
       // Drop the vertices no triangle uses any more (and renumber), or the file keeps the source's full vertex buffers.
       const used = new Int32Array(pos.getCount()).fill(-1);

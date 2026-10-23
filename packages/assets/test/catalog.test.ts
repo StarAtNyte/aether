@@ -20,7 +20,7 @@ const manifest = JSON.parse(readFileSync(join(ROOT, 'assets', 'manifest.json'), 
 describe('asset catalog', () => {
   it('validates and is a curated, sizeable library', () => {
     expect(catalog.entries.length).toBeGreaterThanOrEqual(150);
-    expect(catalog.entries.length).toBeLessThanOrEqual(560);
+    expect(catalog.entries.length).toBeLessThanOrEqual(700);
     const ids = catalog.entries.map((e) => e.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
@@ -50,8 +50,8 @@ describe('asset catalog', () => {
         expect(f.split('.').at(-2), f).toBe(hash);
       }
     }
-    // Disk budget of the library (target ≤ 150 MB).
-    expect(total).toBeLessThan(150 * 1024 * 1024);
+    // Disk budget of the library (target ≤ 200 MB).
+    expect(total).toBeLessThan(200 * 1024 * 1024);
   });
 
   it('has a thumbnail for every model, sky, surface and forge original', () => {

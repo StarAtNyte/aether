@@ -5,7 +5,7 @@
  * kind resolved to the best model) and by layouts, which fall back to the parametric part when
  * nothing fits.
  */
-import type { AssetPlacement, Catalog, CatalogEntry } from './schema';
+import type { AssetCategory, AssetPlacement, Catalog, CatalogEntry } from './schema';
 import { synonymsOf } from './synonyms';
 import { searchAssets, tokenize } from './search';
 
@@ -61,6 +61,37 @@ const STYLE_WORDS: Readonly<Record<string, readonly string[]>> = {
   asian: ['asian', 'traditional'],
   farmhouse: ['farmhouse', 'rustic'],
   loft: ['loft', 'industrial'],
+  // Worlds outdoors and beyond: the biome words the outdoor models are tagged with.
+  forest: ['forest', 'temperate', 'conifer'],
+  woods: ['forest', 'temperate', 'conifer'],
+  jungle: ['tropical', 'forest'],
+  tropical: ['tropical', 'coastal'],
+  desert: ['desert', 'arid'],
+  canyon: ['canyon', 'desert', 'arid'],
+  beach: ['coastal', 'beach'],
+  coastal: ['coastal', 'harbour', 'beach'],
+  harbour: ['harbour', 'coastal'],
+  harbor: ['harbour', 'coastal'],
+  city: ['urban', 'city'],
+  urban: ['urban', 'city'],
+  street: ['urban', 'city'],
+  town: ['urban', 'city', 'medieval'],
+  village: ['farm', 'rural', 'medieval', 'garden'],
+  farm: ['farm', 'garden', 'rural'],
+  rural: ['farm', 'rural', 'garden'],
+  garden: ['garden', 'park', 'farm'],
+  park: ['park', 'garden', 'urban'],
+  factory: ['industrial'],
+  warehouse: ['industrial'],
+  'sci-fi': ['scifi', 'industrial'],
+  scifi: ['scifi', 'industrial'],
+  space: ['scifi', 'moon'],
+  fantasy: ['fantasy', 'medieval'],
+  medieval: ['medieval', 'fantasy'],
+  pirate: ['pirate', 'coastal', 'fantasy'],
+  swamp: ['swamp', 'forest'],
+  mountain: ['mountain', 'alpine', 'forest'],
+  wasteland: ['wasteland', 'industrial', 'desert'],
 };
 
 /** Plain colour names the catalog measures (see `scripts/assets/tex_tiers.py`) and the aliases people use. */
@@ -91,6 +122,13 @@ export interface ModelQuery {
   mount?: AssetPlacement;
   /** When true, a model must match the style (a miss is dropped). */
   strictStyle?: boolean;
+  /** Only this catalog category ("nature", "rocks", "street", "building", "props"...). */
+  category?: string;
+  /**
+   * The art style of the model: "realistic" (photographed, the default), "stylised" / "low-poly" (the Kenney kits, for
+   * cartoon or blocky worlds) or "any". Stylised kits are never offered to a realistic request.
+   */
+  look?: 'realistic' | 'stylised' | 'low-poly' | 'any';
   limit?: number;
 }
 
@@ -186,12 +224,14 @@ export function findModels(catalog: Catalog, q: ModelQuery): ModelHit[] {
     }
   }
   const limit = Math.max(1, Math.min(30, q.limit ?? 6));
-  if (types.size === 0) {
-    // No known type: plain search over the realistic models, so a rare object still has a chance.
-    const text = q.text ?? q.type ?? q.kind ?? '';
-    return searchAssets(catalog, { text, kind: 'model', style: 'realistic', limit })
+  const look = q.look ?? 'realistic';
+  if (types.size === 0 || look === 'stylised' || look === 'low-poly') {
+    // No known type, or a stylised world: plain search over the models of that look, so a rare object still has a chance.
+    const text = [q.text ?? q.type ?? q.kind ?? '', q.style ?? ''].join(' ').trim();
+    return searchAssets(catalog, { text, kind: 'model', ...(look === 'any' ? {} : { style: look }), ...(q.category ? { category: q.category as AssetCategory } : {}), limit: 60 })
       .filter((h) => h.entry.category !== 'characters' && h.entry.category !== 'animals')
-      .map((h) => ({ entry: h.entry, score: h.score, notes: ['text match'] }));
+      .slice(0, limit)
+      .map((h) => ({ entry: h.entry, score: h.score, notes: [`text match, ${h.entry.style}`] }));
   }
   const wantColors = new Set<string>();
   let wantRgb: [number, number, number] | null = null;
@@ -207,6 +247,8 @@ export function findModels(catalog: Catalog, q: ModelQuery): ModelHit[] {
     const t = typeOf(e, known);
     if (!t || !types.has(t)) continue;
     if (mount && e.placement !== mount) continue;
+    if (q.category && e.category !== q.category) continue;
+    if (look === 'realistic' && e.style !== 'realistic') continue;
     const notes: string[] = [];
     let score = 100;
     const sh = styleHits(e, q.style);
@@ -268,6 +310,6 @@ export function describeModel(h: ModelHit): string {
   const e = h.entry;
   const size = e.size.map((v) => Math.round(v * 100) / 100).join('x');
   const i = e.interior;
-  const bits = [`${size} m`, i ? `styles ${i.styles.join('/')}` : '', i && i.colors.length > 0 ? `colours ${i.colors.join('/')}` : '', e.placement !== 'floor' ? `goes on ${e.placement}` : '', ...h.notes.slice(0, 3)].filter(Boolean);
+  const bits = [`${size} m`, `${e.category}, ${e.style}`, i ? `styles ${i.styles.join('/')}` : '', i && i.colors.length > 0 ? `colours ${i.colors.join('/')}` : '', e.placement !== 'floor' ? `goes on ${e.placement}` : '', ...h.notes.slice(0, 3)].filter(Boolean);
   return `${e.id} — ${e.name}: ${bits.join('; ')}`;
 }

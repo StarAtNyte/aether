@@ -35,6 +35,10 @@ const catalog = Catalog.parse({
     model('lamp-pendant', 'Pendant lamp', [0.4, 0.6, 0.4], 'lamp', ['modern'], ['black'], [28, 28, 30], { placement: 'ceiling', category: 'lighting' }),
     model('lamp-desk', 'Desk lamp', [0.2, 0.5, 0.2], 'lamp', ['modern'], ['black'], [28, 28, 30], { placement: 'surface', category: 'lighting' }),
     model('plant-pot', 'Potted plant', [0.4, 0.9, 0.4], 'plant', ['modern'], ['green'], [74, 120, 58], { category: 'plants' }),
+    model('rock-sand', 'Sandstone boulder', [2, 1.2, 1.8], 'rock', ['desert', 'arid'], ['tan'], [190, 150, 110], { category: 'rocks' }),
+    model('rock-forest', 'Mossy boulder', [1.5, 1, 1.4], 'rock', ['forest', 'temperate'], ['olive'], [90, 100, 60], { category: 'rocks' }),
+    model('hydrant-red', 'Fire hydrant', [0.4, 0.8, 0.4], 'hydrant', ['urban', 'city'], ['red'], [180, 40, 30], { category: 'street' }),
+    { ...model('castle-wall', 'Castle wall', [4, 5, 4], 'wall', [], [], [128, 128, 128], { category: 'building', style: 'low-poly', tags: ['castle', 'medieval', 'wall'] }), interior: undefined },
     { ...model('sofa-classic', 'Classic sofa', [2, 0.9, 0.9], 'sofa', [], [], [128, 128, 128]), interior: undefined },
   ],
 });
@@ -80,5 +84,19 @@ describe('interior model finder', () => {
 
   it('keeps earlier realistic models whose id names a type, as candidates without a style', () => {
     expect(findModels(catalog, { type: 'sofa' }).map((h) => h.entry.id)).toContain('sofa-classic');
+  });
+
+  it('serves outdoor worlds: biome words rank, categories filter, hydrant aliases resolve', () => {
+    expect(findModels(catalog, { type: 'rock', style: 'desert' })[0]!.entry.id).toBe('rock-sand');
+    expect(findModels(catalog, { type: 'rock', style: 'forest' })[0]!.entry.id).toBe('rock-forest');
+    expect(findModels(catalog, { text: 'fire hydrant', category: 'street' }).map((h) => h.entry.id)).toEqual(['hydrant-red']);
+    expect(findModels(catalog, { type: 'rock', category: 'street' })).toEqual([]);
+    expect(describeModel(findModels(catalog, { type: 'rock', style: 'desert' })[0]!)).toContain('rocks, realistic');
+  });
+
+  it('offers the stylised kits only when asked for a stylised look', () => {
+    expect(findModels(catalog, { text: 'castle wall' }).map((h) => h.entry.id)).not.toContain('castle-wall');
+    expect(findModels(catalog, { text: 'castle wall', look: 'low-poly' }).map((h) => h.entry.id)).toContain('castle-wall');
+    expect(findModels(catalog, { text: 'castle wall', look: 'any' }).map((h) => h.entry.id)).toContain('castle-wall');
   });
 });

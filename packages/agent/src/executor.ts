@@ -395,7 +395,7 @@ async function searchAssetsTool(input: z.infer<typeof ToolInputs.search_assets>)
 async function findModelTool(input: z.infer<typeof ToolInputs.find_model>): Promise<ToolOutcome> {
   const catalog = await loadCatalog();
   if (catalog.entries.length === 0) return { content: 'The model library is not available here: use the parametric parts.', isError: false, events: [], edited: false };
-  const hits = findModels(catalog, { text: input.what, limit: input.limit, ...(input.style ? { style: input.style } : {}), ...(input.color ? { color: input.color } : {}), ...(input.size ? { size: input.size } : {}) });
+  const hits = findModels(catalog, { text: input.what, limit: input.limit, ...(input.style ? { style: input.style } : {}), ...(input.category ? { category: input.category } : {}), ...(input.look ? { look: input.look } : {}), ...(input.color ? { color: input.color } : {}), ...(input.size ? { size: input.size } : {}) });
   if (hits.length === 0) return { content: `No library model matches "${input.what.slice(0, 80)}". Use the parametric part for this kind (see the parts list).`, isError: false, events: [], edited: false };
   const lines = hits.map(describeModel);
   const same = hits[0]!.entry.interior?.type;

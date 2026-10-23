@@ -24,7 +24,12 @@ import { readSources, SOURCE_DIR, type PolyhavenRecord } from './fetch';
 import { colliderFor, kebab, prettyName, tagsFor } from './describe';
 import { hullPoints, isAnimated, normaliseAndMerge, normaliseAnimated, sceneBounds, scenePositions, simplifyDocument } from './process';
 import { SELECTION, type ItemSel, type PackSel } from './selection';
-import { EXISTING_FACTS, INTERIOR } from './selection-interior';
+import { EXISTING_FACTS, INTERIOR as INTERIOR_ROWS } from './selection-interior';
+import { OUTDOOR } from './selection-outdoor';
+import { EXTRA_HDRIS, EXTRA_HDRI_IDS, EXTRA_SELECTION } from './selection-extra';
+
+const INTERIOR = [...INTERIOR_ROWS, ...OUTDOOR];
+const OUTDOOR_IDS: ReadonlySet<string> = new Set(OUTDOOR.map((r) => r[1]));
 import { spawnSync } from 'node:child_process';
 import { liteHdr } from './hdri';
 import { reencodedTextures } from './textures';
@@ -72,6 +77,9 @@ async function io(): Promise<NodeIO> {
   return new NodeIO().registerExtensions(ALL_EXTENSIONS).registerDependencies({ 'meshopt.decoder': MeshoptDecoder, 'meshopt.encoder': MeshoptEncoder });
 }
 
+/** Relative error the simplifier may spend: photoscanned outdoor models have many seams and need more than the default. */
+let SIMPLIFY_ERROR = 0.05;
+
 /** Read, normalise and (optionally) simplify one source model. */
 async function prepare(nio: NodeIO, path: string, pack: PackSel, opts: NonNullable<ItemSel[2]>, lodRatio: number | null, keepTextures = false): Promise<{ doc: Document; tris: number; size: [number, number, number]; animated: boolean }> {
   const doc = await nio.read(path);
@@ -82,6 +90,12 @@ async function prepare(nio: NodeIO, path: string, pack: PackSel, opts: NonNullab
       const png = re[0] === 0x89;
       tex.setImage(re).setMimeType(png ? 'image/png' : 'image/jpeg').setURI(name.replace(/\.(png|jpe?g)$/i, png ? '.png' : '.jpg'));
     }
+  }
+  if (opts.omit) {
+    // Files that lay variants side by side (a clean and an aged hydrant): drop the top-level nodes whose name matches.
+    const scene = doc.getRoot().getDefaultScene() ?? doc.getRoot().listScenes()[0]!;
+    const re = new RegExp(opts.omit);
+    for (const k of scene.listChildren()) if (re.test(k.getName())) scene.removeChild(k);
   }
   if (opts.rot) {
     // Turn the model so its front faces +Z: a wrapper node carries the rotation into the baked transforms.
@@ -114,7 +128,7 @@ async function prepare(nio: NodeIO, path: string, pack: PackSel, opts: NonNullab
   const flip = facesBackward(opts.cat ?? pack.category);
   let tris = animated ? normaliseAnimated(doc, scale, offset, flip) : normaliseAndMerge(doc, scale, offset, flip);
   if (lodRatio !== null && !animated) {
-    tris = await simplifyDocument(doc, lodRatio);
+    tris = await simplifyDocument(doc, lodRatio, SIMPLIFY_ERROR);
     // LOD files are geometry only: the renderer reuses LOD 0's materials (same primitive order), so textures ship once.
     if (!keepTextures) {
       for (const m of doc.getRoot().listMaterials()) m.setBaseColorTexture(null).setNormalTexture(null).setMetallicRoughnessTexture(null).setOcclusionTexture(null).setEmissiveTexture(null);
@@ -387,6 +401,7 @@ async function main(): Promise<void> {
   }
   // HDRIs.
   for (const id of sources.polyhaven.hdris) {
+    if (EXTRA_HDRIS.includes(id)) continue; // built by `--extra` into extra.json
     const rec = phById.get(id);
     if (!rec) throw new Error(`${id}: HDRI not downloaded`);
     const src = join(SOURCE_DIR, 'polyhaven', 'hdris', rec.files[0]!.path);
@@ -478,7 +493,7 @@ async function main(): Promise<void> {
   writeFileSync(join(OUT, 'manifest.json'), `${JSON.stringify(manifest, null, 1)}\n`);
   const total = built.reduce((s, b) => s + b.files.reduce((t, f) => t + f.bytes, 0), 0);
   // First-party and vendored model sets built by their own scripts (animals, vehicles) survive a library rebuild.
-  for (const f of ['creatures.json', 'vehicles.json', 'living.json', 'interior.json']) {
+  for (const f of ['creatures.json', 'vehicles.json', 'living.json', 'interior.json', 'extra.json']) {
     const file = join(OUT, f);
     if (existsSync(file)) mergeIntoCatalog(JSON.parse(readFileSync(file, 'utf8')) as Parameters<typeof mergeIntoCatalog>[0]);
   }
@@ -524,7 +539,7 @@ async function buildInterior(): Promise<void> {
   for (const row of INTERIOR) if (taken.has(row[1])) throw new Error(`interior id ${row[1]} clashes with an existing asset`);
   const only = process.argv.find((a) => a.startsWith('--ids='))?.slice(6).split(',');
   if (!only) rmSync(join(LIB, 'i'), { recursive: true, force: true });
-  if (only) console.log('partial run: interior.json is not rewritten');
+  if (only) console.log('partial run: the listed ids are upserted into interior.json');
   for (const [phId, id, type, category, styles, name, o = {}] of INTERIOR) {
     if (only && !only.includes(id)) continue;
     const rec = phById.get(phId);
@@ -533,7 +548,12 @@ async function buildInterior(): Promise<void> {
     const doc = await nio.read(src);
     const b = sceneBounds(doc);
     const big = Math.max(b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]) > 1.2;
-    const side = o.tex ?? (big && BIG_TEXTURE_TYPES.has(type) ? 1024 : 512);
+    const small = OUTDOOR_IDS.has(id) && Math.max(b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]) < 0.8;
+    const side = o.tex ?? (big && BIG_TEXTURE_TYPES.has(type) ? 1024 : small ? 256 : 512);
+    // Triangle budget by size: a hydrant does not need what a ship does. Furniture keeps the flat default.
+    const longest = Math.max(b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]);
+    SIMPLIFY_ERROR = OUTDOOR_IDS.has(id) ? 0.3 : 0.05;
+    const budgetTris = o.tris ?? (OUTDOOR_IDS.has(id) ? (longest < 0.6 ? 3000 : longest < 1.5 ? 5000 : longest < 5 ? 8000 : 16000) : INTERIOR_TRIS);
     // Dominant material: the one with the most triangles; its base-colour texture (or factor) gives the colour names.
     const area = new Map<unknown, number>();
     for (const m of doc.getRoot().listMeshes()) for (const p of m.listPrimitives()) area.set(p.getMaterial(), (area.get(p.getMaterial()) ?? 0) + (p.getIndices()?.getCount() ?? 0));
@@ -545,7 +565,7 @@ async function buildInterior(): Promise<void> {
       const uri = decodeURIComponent(t.getURI());
       const from = join(texDir, uri);
       files.set(basename(uri), from);
-      for (const [tier, px] of [[`main${side}`, side], ['lite', 256]] as const) jobs.push({ src: from, dst: join(TIER_CACHE, tier, phId, basename(uri).replace(/\.\w+$/, '.img')), side: px, quality: px === 256 ? 70 : 78 });
+      for (const [tier, px] of [[`main${side}`, side], ['lite', 256]] as const) jobs.push({ src: from, dst: join(TIER_CACHE, tier, phId, basename(uri).replace(/\.\w+$/, '.img')), side: px, quality: px === 256 ? 70 : OUTDOOR_IDS.has(id) ? 62 : 78 });
     }
     const leadTex = lead?.getBaseColorTexture();
     const colorKey = leadTex ? files.get(basename(decodeURIComponent(leadTex.getURI()))) : undefined;
@@ -564,11 +584,11 @@ async function buildInterior(): Promise<void> {
     const paint = RECOLOUR_TYPES.has(type) && !!lead;
     const pack: PackSel = { pack: 'polyhaven', scale: 1, style: 'realistic', category, collider: o.collider ?? 'box', items: [] };
     TEXTURES = tierTextures(`main${side}`);
-    const built = await buildModel(nio, pack, [phId, id, { name, cat: category, tags: `${type} ${o.tags ?? ''} ${styles}`, ...(o.place ? { place: o.place } : {}), ...(o.collider ? { collider: o.collider } : {}), ...(o.h ? { h: o.h } : {}), ...(o.rot ? { rot: o.rot } : {}), ...(paint ? { paint: true } : {}) }], src, `polyhaven:${phId}`, rec.authors, { budget: INTERIOR_TRIS, lod: 0.4 });
+    const built = await buildModel(nio, pack, [phId, id, { name, cat: category, tags: `${type} ${o.tags ?? ''} ${styles}`, ...(o.place ? { place: o.place } : {}), ...(o.collider ? { collider: o.collider } : {}), ...(o.h ? { h: o.h } : {}), ...(o.rot ? { rot: o.rot } : {}), ...(o.omit ? { omit: o.omit } : {}), ...(paint ? { paint: true } : {}) }], src, `polyhaven:${phId}`, rec.authors, { budget: budgetTris, lod: 0.4 });
     TEXTURES = tierTextures('lite');
     // The light copy: a quarter of the main budget at most, 256 px textures.
-    const probe = await prepare(nio, src, pack, { ...(o.h ? { h: o.h } : {}), ...(o.rot ? { rot: o.rot } : {}), ...(paint ? { paint: true } : {}) }, null);
-    const lite = probe.tris > INTERIOR_TRIS / 4 ? await prepare(nio, src, pack, { ...(o.h ? { h: o.h } : {}), ...(o.rot ? { rot: o.rot } : {}), ...(paint ? { paint: true } : {}) }, INTERIOR_TRIS / 4 / probe.tris, true) : probe;
+    const probe = await prepare(nio, src, pack, { ...(o.h ? { h: o.h } : {}), ...(o.rot ? { rot: o.rot } : {}), ...(o.omit ? { omit: o.omit } : {}), ...(paint ? { paint: true } : {}) }, null);
+    const lite = probe.tris > budgetTris / 4 ? await prepare(nio, src, pack, { ...(o.h ? { h: o.h } : {}), ...(o.rot ? { rot: o.rot } : {}), ...(o.omit ? { omit: o.omit } : {}), ...(paint ? { paint: true } : {}) }, budgetTris / 4 / probe.tris, true) : probe;
     const liteFile = writeLib('i', id, '.lite', 'glb', await encode(nio, lite.doc));
     // buildModel writes under `m/`, which a full rebuild clears: move the interior files to `i/`.
     const moved = built.files.map((x) => relocate(x));
@@ -583,7 +603,7 @@ async function buildInterior(): Promise<void> {
     console.log(`${id}: ${e.tris} tris, ${(e.bytes / 1024) | 0} KB main, ${(liteFile.bytes / 1024) | 0} KB lite, ${look.names.join('/')}`);
   }
   // Variants: the other models of the same interior type (up to 12).
-  for (const e of entries) e.variants = entries.filter((x) => x !== e && x.interior!.type === e.interior!.type).map((x) => x.id).slice(0, 12);
+  for (const e of entries) e.variants = entries.filter((x) => x !== e && x.interior!.type === e.interior!.type && x.category === e.category).map((x) => x.id).slice(0, 12);
   if (entries.length === 0) throw new Error('no interior entries built');
   const file = {
     packs: [] as Array<Record<string, unknown>>,
@@ -606,7 +626,17 @@ async function buildInterior(): Promise<void> {
       writeFileSync(mp, `${JSON.stringify(man, null, 1)}\n`);
     }
   }
-  if (!only) writeFileSync(join(OUT, 'interior.json'), `${JSON.stringify(file)}\n`);
+  if (only && existsSync(join(OUT, 'interior.json'))) {
+    // A partial run upserts the rebuilt ids into the recorded interior file, keeping the rest as they were.
+    const prev = JSON.parse(readFileSync(join(OUT, 'interior.json'), 'utf8')) as typeof file;
+    const fresh = new Set(entries.map((e) => e.id));
+    file.entries = [...prev.entries.filter((e) => !fresh.has(e.id)), ...entries];
+    file.assets = [...prev.assets.filter((a) => !fresh.has(a.id)), ...assets];
+    for (const e of file.entries) e.variants = file.entries.filter((x) => x !== e && x.interior?.type === e.interior?.type && x.category === e.category).map((x) => x.id).slice(0, 12);
+    file.packs = prev.packs;
+    file.sources = prev.sources;
+    writeFileSync(join(OUT, 'interior.json'), `${JSON.stringify(file)}\n`);
+  } else if (!only) writeFileSync(join(OUT, 'interior.json'), `${JSON.stringify(file)}\n`);
   mergeIntoCatalog(file);
   // Earlier realistic models get the same facts, so the finder ranks them with the new ones.
   const cat = JSON.parse(readFileSync(join(OUT, 'catalog.json'), 'utf8')) as { entries: CatalogEntryInput[] };
@@ -618,6 +648,80 @@ async function buildInterior(): Promise<void> {
   writeFileSync(join(OUT, 'catalog.json'), `${JSON.stringify(cat)}\n`);
 }
 
+/**
+ * `--extra`: the later Kenney kits (sci-fi base, castle, watercraft) and Poly Haven skies of `selection-extra.ts`,
+ * written to `assets/extra.json` and merged into the catalog without touching the files of earlier builds.
+ */
+async function buildExtra(): Promise<void> {
+  const sources = readSources();
+  const nio = await io();
+  const phRecords: PolyhavenRecord[] = JSON.parse(readFileSync(join(SOURCE_DIR, 'polyhaven', 'provenance.json'), 'utf8')) as PolyhavenRecord[];
+  const phById = new Map(phRecords.map((r) => [r.id, r]));
+  const built: Built[] = [];
+  const taken = new Set((JSON.parse(readFileSync(join(OUT, 'catalog.json'), 'utf8')) as { entries: Array<{ id: string; pack: string }> }).entries.filter((e) => !e.pack.startsWith('kenney-space') && !e.pack.startsWith('kenney-castle') && !e.pack.startsWith('kenney-watercraft') && !EXTRA_HDRI_IDS_SET.has(e.id)).map((e) => e.id));
+  const packIds: string[] = [];
+  for (const pack of EXTRA_SELECTION) {
+    const meta = sources.packs.find((p) => p.id === pack.pack);
+    if (!meta) throw new Error(`${pack.pack}: not in sources.json`);
+    packIds.push(pack.pack);
+    for (const item of pack.items) {
+      const [file, idOpt] = item;
+      const id = idOpt ?? kebab(file);
+      if (taken.has(id)) throw new Error(`extra id ${id} clashes with an existing asset`);
+      taken.add(id);
+      const path = findFile(join(SOURCE_DIR, 'kenney', pack.pack.replace(/^kenney-/, '')), `${file}.glb`);
+      if (!path || !existsSync(path)) throw new Error(`${pack.pack}/${file}: source file not found`);
+      const b = await buildModel(nio, pack, item, path, meta.url, undefined);
+      built.push(b);
+      process.stdout.write(`${b.entry.id} (${b.entry.tris} tris, ${((b.entry.bytes ?? 0) / 1024) | 0} KB)\n`);
+    }
+  }
+  for (const id of EXTRA_HDRIS) {
+    const rec = phById.get(id);
+    if (!rec) throw new Error(`${id}: HDRI not downloaded`);
+    const src = join(SOURCE_DIR, 'polyhaven', 'hdris', rec.files[0]!.path);
+    const data = readFileSync(src);
+    const assetId = EXTRA_HDRI_IDS[id]!;
+    const f = writeLib('h', assetId, '', 'hdr', data);
+    const lite = writeLib('h', assetId, '.512', 'hdr', liteHdr(data));
+    built.push({
+      entry: {
+        id: assetId,
+        name: rec.name,
+        kind: 'hdri',
+        category: 'sky',
+        tags: tagsFor(assetId, rec.name, 'sky', ['hdri', 'environment', 'sky', ...rec.categories].join(' '), 'realistic'),
+        style: 'realistic',
+        pack: 'polyhaven',
+        authors: rec.authors,
+        size: [0, 0, 0],
+        tris: 0,
+        bytes: f.bytes,
+        file: f.path,
+        lite: lite.path,
+        lods: [],
+        collider: { type: 'box' },
+        placement: 'floor',
+        source: relative(SOURCE_DIR, src),
+      },
+      files: [f, lite],
+      source: { archive: `polyhaven:${id}`, path: relative(SOURCE_DIR, src) },
+    });
+  }
+  const entries = built.map((b) => b.entry);
+  assignVariants(entries);
+  const packs: CatalogPack[] = sources.packs.filter((p) => packIds.includes(p.id)).map((p) => ({ id: p.id, title: `Kenney ${p.title}`, author: p.author, licence: 'CC0-1.0' as const, licenceUrl: p.licenceUrl, url: p.page, version: p.version }));
+  const file = {
+    packs,
+    sources: sources.packs.filter((p) => packIds.includes(p.id)).map((p) => ({ id: p.id, provider: 'Kenney', title: p.title, version: p.version, author: p.author, licence: p.licence, licenceUrl: p.licenceUrl, page: p.page, archive: p.url, sha256: p.sha256, retrieved: p.retrieved })),
+    entries,
+    assets: built.map((b) => ({ id: b.entry.id, pack: b.entry.pack, licence: 'CC0-1.0', authors: b.entry.authors ?? null, source: b.source, files: b.files })),
+  };
+  writeFileSync(join(OUT, 'extra.json'), `${JSON.stringify(file)}\n`);
+  mergeIntoCatalog(file as unknown as Parameters<typeof mergeIntoCatalog>[0]);
+}
+const EXTRA_HDRI_IDS_SET: ReadonlySet<string> = new Set(Object.values(EXTRA_HDRI_IDS));
+
 /** Move a file written to `m/` into `i/` (same name and hash). */
 function relocate(f: { path: string; sha256: string; bytes: number }): { path: string; sha256: string; bytes: number } {
   const to = `i/${f.path.slice(2)}`;
@@ -626,7 +730,7 @@ function relocate(f: { path: string; sha256: string; bytes: number }): { path: s
   return { ...f, path: to };
 }
 
-(process.argv.includes('--interior') ? buildInterior() : process.argv.includes('--hdri-lite') ? Promise.resolve(buildHdriLite()) : process.argv.includes('--photo-only') ? buildPhotoOnly() : main()).catch((err: unknown) => {
+(process.argv.includes('--interior') ? buildInterior() : process.argv.includes('--extra') ? buildExtra() : process.argv.includes('--hdri-lite') ? Promise.resolve(buildHdriLite()) : process.argv.includes('--photo-only') ? buildPhotoOnly() : main()).catch((err: unknown) => {
   console.error(err instanceof Error ? (err.stack ?? err.message) : err);
   process.exit(1);
 });

@@ -27,6 +27,8 @@ export interface ItemOpts {
   paint?: boolean;
   /** Turn the model about the vertical axis (degrees) so its front faces +Z. */
   rot?: number;
+  /** Drop the top-level nodes of the source scene whose name matches this regular expression (files that lay variants side by side). */
+  omit?: string;
 }
 
 /** `[source file name without extension, id (default: kebab of the file), options]`. */

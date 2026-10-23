@@ -1703,9 +1703,10 @@ floor plan (draw a room, add a door, undo) → walk in through the front door
 - Tool `search_assets({ query ≤ 120, category?, limit 1..20 })` (between
   `request_asset` and `inspect`). `AgentCatalogs.assetSummary?` adds an
   "Asset library" prompt section.
-- Tool `find_model({ what ≤ 120, style?, color?, size? [w,h,d], limit 1..8 })` (read-only, after
-  `search_assets`): ranks the interior models by type (from `what`), style, colour and size and answers one
-  line per model (`id — name: size; styles; colours; mount; why`). The model places its pick with
+- Tool `find_model({ what ≤ 120, style?, category?, look?, color?, size? [w,h,d], limit 1..8 })` (read-only, after
+  `search_assets`): ranks the library models by type (from `what`), style or biome, colour and size and answers one
+  line per model (`id — name: size; category, look; styles; colours; mount; why`); `look` is realistic (default),
+  stylised, low-poly or any. The model places its pick with
   `place_items {kind: "model:<id>", fit?}`.
 - `forgeGenerator(deps, req)` — the asset forge: OBSERVE → SPEC → BUILD →
   PARAMETRISE (`FORGE_METHOD`), sandbox check, four-view contact sheet,

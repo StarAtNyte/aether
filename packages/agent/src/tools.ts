@@ -232,12 +232,14 @@ export const AGENT_TOOLS: ToolDef[] = [
   {
     name: 'find_model',
     description:
-      'Find photographed, real-size furniture and decor models for one piece, ranked by style, colour and size, with their facts so you can choose. Pick one and place it with place_items {"kind":"model:<id>"} (optional "fit":[w,h,d] metres to scale it, "yaw"); kind "sofa" with "model":"auto" lets the finder choose. Models do not open (no drawers or doors): keep the parametric part for wardrobes, cabinets and kitchens.',
+      'Find real, real-size models for one piece, ranked by style/biome, colour and size, with their facts so you can choose: furniture and decor, and also trees, rocks, cliffs, shrubs, grass, street furniture (lamps, hydrants, benches, bins, barriers), building facades, industrial and sci-fi parts, harbour and farm props, medieval and fantasy pieces. Each model is tagged with a category and a look (realistic photographed models by default; look "stylised" or "low-poly" asks the Kenney-style kits for cartoon or blocky worlds). Pick one and place it in a room with place_items {"kind":"model:<id>"} (optional "fit":[w,h,d] metres to scale it, "yaw"); kind "sofa" with "model":"auto" lets the finder choose. In an open world (no rooms) add an entity whose shape is {"kind":"asset","id":"<id>"} with apply_patches (scale it with transform.scale; models are real size in metres, base on y 0). Models do not open (no drawers or doors): keep the parametric part for wardrobes, cabinets and kitchens. Biome words work as the style: forest, desert, coastal, harbour, urban, industrial, farm, scifi, fantasy, medieval.',
     inputSchema: {
       type: 'object',
       properties: {
-        what: { type: 'string', description: 'The piece, e.g. "sofa", "green armchair", "round dining table", "floor plant", "pendant lamp".' },
-        style: { type: 'string', description: 'modern, scandinavian, industrial, japandi, classic, rustic, vintage...' },
+        what: { type: 'string', description: 'The piece, e.g. "sofa", "green armchair", "pine tree", "sandstone cliff", "street lamp", "fire hydrant", "wooden pier", "cannon".' },
+        style: { type: 'string', description: 'Design style (modern, scandinavian, industrial, japandi, classic, rustic, vintage...) or biome (forest, desert, coastal, urban, farm, scifi, fantasy, medieval...).' },
+        category: { type: 'string', enum: [...ASSET_CATEGORIES], description: 'Only this category (nature, rocks, plants, street, building, vehicles, props, tools, decor, lighting, furniture...).' },
+        look: { type: 'string', enum: ['realistic', 'stylised', 'low-poly', 'any'], description: 'Art style of the model; default realistic. Stylised and low-poly are the cartoon kits.' },
         color: { type: 'string', description: 'Colour name or #rrggbb of the piece.' },
         size: { type: 'array', items: { type: 'number' }, minItems: 1, maxItems: 3, description: 'Wanted [width, height, depth] in metres (0 for a side that does not matter).' },
         limit: { type: 'integer', minimum: 1, maximum: 8 },
@@ -456,8 +458,10 @@ export const ToolInputs = {
   find_model: z.object({
     what: z.string().min(1).max(120),
     style: z.string().max(40).optional(),
+    category: z.enum(ASSET_CATEGORIES).optional(),
+    look: z.enum(['realistic', 'stylised', 'low-poly', 'any']).optional(),
     color: z.string().max(40).optional(),
-    size: z.array(z.number().finite().min(0).max(20)).min(1).max(3).optional(),
+    size: z.array(z.number().finite().min(0).max(500)).min(1).max(3).optional(),
     limit: z.number().int().min(1).max(8).default(4),
   }),
   inspect: z.object({ ids: z.array(z.string().max(64)).max(TOOL_LIMITS.MAX_INSPECT_IDS).optional(), groups: z.boolean().optional() }),

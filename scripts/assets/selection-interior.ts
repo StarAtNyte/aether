@@ -15,6 +15,10 @@ export interface InteriorOpts {
   tex?: 256 | 512 | 1024;
   /** Turn the model about Y (degrees) so its front faces +Z; found with `thumbs.ts --front`. */
   rot?: number;
+  /** Triangle budget of the main file (default 20k). */
+  tris?: number;
+  /** Drop the top-level nodes of the source scene whose name matches this regular expression (files that lay variants side by side). */
+  omit?: string;
   /** Extra search words. */
   tags?: string;
   /** Target height in metres for models whose source scale is off. */

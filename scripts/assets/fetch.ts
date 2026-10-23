@@ -193,6 +193,7 @@ async function fetchPolyhaven(src: Sources['polyhaven']): Promise<void> {
   if (src.licence !== 'CC0-1.0') throw new Error('Poly Haven entries must be CC0-1.0');
   const records: PolyhavenRecord[] = [];
   for (const id of src.models) {
+    try {
     const info = PhInfo.parse(await json(`${src.api}/info/${id}`));
     const raw = await json(`${src.api}/files/${id}`);
     if (typeof raw !== 'object' || raw === null || !('gltf' in raw)) {
@@ -213,6 +214,11 @@ async function fetchPolyhaven(src: Sources['polyhaven']): Promise<void> {
     }
     records.push({ id, type: 'model', name: info.name, authors: Object.keys(info.authors), published: new Date(info.date_published * 1000).toISOString().slice(0, 10), categories: info.categories, tags: info.tags ?? [], files: list });
     console.log(`ok polyhaven model ${id}`);
+    } catch (e) {
+      // A model whose source geometry is over the download cap is far beyond a browser budget: skip it, keep the rest.
+      if (e instanceof Error && /larger than/.test(e.message)) console.warn(`skip polyhaven model ${id}: ${e.message}`);
+      else throw e;
+    }
   }
   for (const id of src.hdris) {
     const info = PhInfo.parse(await json(`${src.api}/info/${id}`));
@@ -266,7 +272,7 @@ async function main(): Promise<void> {
   mkdirSync(SOURCE_DIR, { recursive: true });
   // `--only=ambientcg`: just the photographed finish materials (small, no model packs).
   const only = process.argv.find((a) => a.startsWith('--only='))?.slice(7);
-  if (!only) for (const p of sources.packs) await fetchPack(p);
+  if (!only || only === 'kenney') for (const p of sources.packs) await fetchPack(p);
   if (!only || only === 'polyhaven') await fetchPolyhaven(sources.polyhaven);
   if (sources.ambientcg && (!only || only === 'ambientcg')) await fetchAmbientcg(sources.ambientcg);
   console.log(`sources ready in ${SOURCE_DIR}`);
