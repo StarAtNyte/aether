@@ -14,7 +14,9 @@
  * WebGL2.
  */
 import { Color, Vector3, type MeshStandardMaterial } from 'three';
+import { Fn, If } from 'three/tsl';
 import { T, type Nd } from './tsl-lite';
+import { leanShading } from './anti-tile';
 
 /** Direction toward the sun (unit). */
 const sunDirection = new Vector3(0.35, 0.8, 0.3).normalize();
@@ -76,11 +78,20 @@ let maskNode: Nd | null = null;
 function nodes(): { color: Nd; emissive: Nd; mask: Nd } {
   if (colorNode && emissiveNode && maskNode) return { color: colorNode, emissive: emissiveNode, mask: maskNode };
   const p = T.positionWorld;
-  const plant = T.mx_noise_float(p.mul(0.23));
-  const cluster = T.mx_noise_float(p.mul(1.9).add(T.vec3(13.1, 7.7, 3.3)));
-  const tint = T.vec3(T.float(1).add(plant.mul(FOLIAGE_HUE[0])), T.float(1).add(plant.mul(FOLIAGE_HUE[1])), T.float(1).add(plant.mul(FOLIAGE_HUE[2]))).mul(T.float(1).add(cluster.mul(FOLIAGE_VALUE)));
   const base = T.materialColor;
-  colorNode = T.vec4(base.rgb.mul(tint).mul(uFoliageTint), base.w);
+  // The two octaves of 3D noise are the heaviest arithmetic of a leaf pixel and a forest is many layers of them: a moving view
+  // (lean shading) takes the card's own colour. The branch is on a uniform; the noise nodes are built inside it (a node first
+  // built in a branch is declared there).
+  colorNode = Fn(() => {
+    const out = T.vec4(base.rgb.mul(uFoliageTint), base.w).toVar();
+    If(leanShading.lessThan(0.5), () => {
+      const plant = T.mx_noise_float(p.mul(0.23));
+      const cluster = T.mx_noise_float(p.mul(1.9).add(T.vec3(13.1, 7.7, 3.3)));
+      const tint = T.vec3(T.float(1).add(plant.mul(FOLIAGE_HUE[0])), T.float(1).add(plant.mul(FOLIAGE_HUE[1])), T.float(1).add(plant.mul(FOLIAGE_HUE[2]))).mul(T.float(1).add(cluster.mul(FOLIAGE_VALUE)));
+      out.assign(T.vec4(base.rgb.mul(tint).mul(uFoliageTint), base.w));
+    });
+    return out;
+  })() as Nd;
   const view = T.normalize(p.sub(T.cameraPosition));
   const forward = T.pow(T.clamp(T.dot(view, uSunDirection), 0, 1), FOLIAGE_LOBE);
   // Light that went through a leaf crossed it twice (chlorophyll filters it on the way in and out): its colour is the leaf's own

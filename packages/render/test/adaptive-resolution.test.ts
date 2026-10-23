@@ -83,3 +83,21 @@ describe('AdaptiveResolution p90 governor', () => {
     expect(a.scale).toBe(1);
   });
 });
+
+describe('AdaptiveResolution floor', () => {
+  it('goes below the default floor once it was lowered, and back up to the default when it is restored', () => {
+    const a = new AdaptiveResolution();
+    a.setFloor(0.3);
+    for (let i = 0; i < 4000; i++) a.record(0.1, true);
+    expect(a.scale).toBe(0.3);
+    expect(a.setFloor()).toBe(true);
+    expect(a.scale).toBe(ADAPTIVE_DEFAULTS.minScale);
+  });
+
+  it('keeps a scale above the restored floor as it is', () => {
+    const a = new AdaptiveResolution();
+    a.setFloor(0.3);
+    expect(a.setFloor()).toBe(false);
+    expect(a.scale).toBe(1);
+  });
+});

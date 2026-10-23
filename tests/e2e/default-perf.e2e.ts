@@ -27,6 +27,7 @@ const WEAK = arg('weak') !== undefined;
 const VSYNC = arg('vsync') !== undefined;
 const FORCE_DRAW = arg('forcedraw') !== undefined;
 const PROFILE = arg('profile') !== undefined;
+const MOVESHOT = arg('moveshot');
 const PIN = arg('pin') === undefined ? null : Number(arg('pin'));
 const TIMEOUT = 150_000;
 const t0 = performance.now();
@@ -97,6 +98,15 @@ const EXTRA: Cfg[] = [
   { id: 'default-cast-off-l0', auto: true, js: 'cast-off:^field:l0', after: 'cast-on:^field:l0' },
   { id: 'default-cast-off-l1', auto: true, js: 'cast-off:^field:l1', after: 'cast-on:^field:l1' },
   { id: 'default-cast-off-l2p', auto: true, js: 'cast-off:^field:l[2-9]', after: 'cast-on:^field:l[2-9]' },
+  { id: 'default-plain-towers', auto: true, js: 'mat-plain:^tower', after: 'mat-restore:^tower' },
+  { id: 'default-plain-ground', auto: true, js: 'mat-plain:^aether:ground', after: 'mat-restore:^aether:ground' },
+  { id: 'default-plain-fields', auto: true, js: 'mat-plain:^field:', after: 'mat-restore:^field:' },
+  { id: 'default-plain-landscape', auto: true, js: 'mat-plain:^landscape', after: 'mat-restore:^landscape' },
+  { id: 'default-plain-model', auto: true, js: 'mat-plain:^model', after: 'mat-restore:^model' },
+  { id: 'default-x-vol', auto: true, js: 'vol-off', after: 'vol-on' },
+  { id: 'default-x-lm', auto: true, js: 'lm-off', after: 'lm-on' },
+  { id: 'default-x-env', auto: true, js: 'no-env', after: 'env-on' },
+  { id: 'default-x-sunsh', auto: true, js: 'shadow-off', after: 'shadow-on' },
   { id: 'default-taps1', auto: true, js: 'taps1', after: 'taps-restore' },
   { id: 'default-norecv', auto: true, js: 'recv-off', after: 'recv-on' },
   { id: 'default-no-people', auto: true, js: 'people-hide', after: 'people-show' },
@@ -322,6 +332,17 @@ async function measure(page: Page, pose: readonly number[], cfg: Cfg): Promise<{
               m.__tm = m.material;
               m.material = new m.material.constructor({ color: 0x8a8a50, roughness: 0.9 }) as never;
             } else if (m.__tm) m.material = m.__tm as never;
+          });
+        }
+        if (name.startsWith('mat-plain:') || name.startsWith('mat-restore:')) {
+          const re = new RegExp(name.slice(name.indexOf(':') + 1));
+          walk((o) => {
+            const m = o as unknown as { isMesh?: boolean; material: { constructor: new (q: object) => unknown; color?: { getHex(): number } }; __pm?: unknown; name: string; parent?: unknown };
+            if (!m.isMesh || !named(m, re)) return;
+            if (name.startsWith('mat-plain:')) {
+              m.__pm = m.material;
+              m.material = new m.material.constructor({ color: m.material.color?.getHex() ?? 0x888888, roughness: 0.9 }) as never;
+            } else if (m.__pm) m.material = m.__pm as never;
           });
         }
         if (name === 'people-hide' || name === 'people-show') walk((o) => { if (o.isSkinnedMesh) o.visible = name === 'people-show'; });
@@ -609,6 +630,27 @@ async function main(): Promise<void> {
           const line = `| ${slug} | ${cfg.id} | ${m.median.toFixed(1)} | ${m.p90.toFixed(1)} | ${m.cpu.toFixed(1)} | ${m.state} |`;
           rows.push(line);
           log(line);
+          if (MOVESHOT) {
+            // A picture of the frame while the view moves (the page compositor's copy of the canvas).
+            mkdirSync(MOVESHOT, { recursive: true });
+            await page.evaluate((p) => {
+              const r = window.__aether?.simulation?.renderer as unknown as R;
+              let yaw = p[3] as number;
+              let i = 0;
+              (window as unknown as { __orbit: Promise<void> }).__orbit = new Promise<void>((done) => {
+                const step = (): void => {
+                  yaw += 0.002;
+                  r.setCameraPose(p[0] as number, p[1] as number, p[2] as number, yaw, p[4] as number);
+                  if (++i < 120) requestAnimationFrame(step);
+                  else done();
+                };
+                requestAnimationFrame(step);
+              });
+            }, [...pose]);
+            await page.waitForTimeout(900);
+            writeFileSync(join(MOVESHOT, `${slug}-${cfg.id}.png`), await page.screenshot());
+            await page.evaluate(() => (window as unknown as { __orbit: Promise<void> }).__orbit);
+          }
           if (cfg.id === 'default') log(`${slug}: after default run: ${await describe(page)}`);
         }
         if (STILLS) {

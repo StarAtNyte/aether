@@ -17,7 +17,7 @@ import type { Material } from 'three';
 import type { MaterialFinish } from '@aether/core';
 import type { FinishMaps } from './finish-textures';
 import type { SplatArrays } from './splat-arrays';
-import { DETAIL_MICRO_SCALE, DETAIL_NEAR, FINISH_MAPS_KEY } from './anti-tile';
+import { DETAIL_MICRO_SCALE, DETAIL_NEAR, FINISH_MAPS_KEY, leanShading } from './anti-tile';
 
 /** The four layers, in the order of the `splat` weights, and the finish whose photograph each one uses. */
 export const SPLAT_LAYERS: readonly MaterialFinish[] = Object.freeze(['grass', 'rock', 'soil', 'snow']) as readonly MaterialFinish[];
@@ -68,7 +68,8 @@ export function applySplat(material: Material, maps: (id: MaterialFinish) => Fin
   // blend noise, the rotated coordinates) inside its branch: a node first built inside one branch cannot be shared with
   // another. The results are variables the blend below reads; a skipped layer reads as a neutral photograph.
   const active = (i: number) => (weights[i] as typeof w4.x).greaterThan(ACTIVE_WEIGHT);
-  const far = () => dist().greaterThan(FAR_METRES);
+  // A moving view (lean shading) takes the large-scale lookup everywhere: at the scale it moves at, the fine one is below a pixel.
+  const far = () => dist().greaterThan(FAR_METRES).or(leanShading.greaterThan(0.5));
   const sampleAt = (kind: 'map' | 'orm' | 'normal', i: number, macro: boolean) => {
     const base = uv();
     const rot = vec2(base.x.mul(0.8).sub(base.y.mul(0.6)), base.x.mul(0.6).add(base.y.mul(0.8)));
@@ -135,7 +136,7 @@ export function applySplat(material: Material, maps: (id: MaterialFinish) => Fin
   const micro = (kind: 'map' | 'normal') =>
     Fn(() => {
       const r = neutral(kind).toVar();
-      If(dist().lessThan(DETAIL_NEAR[1]), () => {
+      If(dist().lessThan(DETAIL_NEAR[1]).and(leanShading.lessThan(0.5)), () => {
         set(r, texture(stack[kind], uv().mul(uniform(grassMaps.map.repeat)).mul(DETAIL_MICRO_SCALE)).depth(int(0)));
       });
       return r;
@@ -149,10 +150,18 @@ export function applySplat(material: Material, maps: (id: MaterialFinish) => Fin
   material.userData[FINISH_MAPS_KEY] = layerMaps[0];
   const m = material as Material & { colorNode?: unknown; roughnessNode?: unknown; aoNode?: unknown; normalNode?: unknown };
   const patch = mx_noise_float(positionWorld.mul(MACRO_VARIATION.patchScale).add(vec3(7.3, 0, 2.1)));
-  const mottle = mx_noise_float(positionWorld.mul(MACRO_VARIATION.mottleScale));
-  const hue = mx_noise_float(positionWorld.mul(MACRO_VARIATION.patchScale * 1.7).add(vec3(31.7, 0, 11.9)));
-  const vary = float(1).add(patch.mul(MACRO_VARIATION.patch)).add(mottle.mul(MACRO_VARIATION.mottle));
-  const tint = vec3(float(1).add(hue.mul(MACRO_VARIATION.hue)), float(1).add(hue.mul(MACRO_VARIATION.hue * 0.25)), float(1).sub(hue.mul(MACRO_VARIATION.hue)));
+  // The finer mottling and the hue drift (two more 3D noises) are left out of a moving view; the broad patches stay.
+  const finer = Fn(() => {
+    const out = vec4(1, 1, 1, 1).toVar();
+    If(leanShading.lessThan(0.5), () => {
+      const mottle = mx_noise_float(positionWorld.mul(MACRO_VARIATION.mottleScale));
+      const hue = mx_noise_float(positionWorld.mul(MACRO_VARIATION.patchScale * 1.7).add(vec3(31.7, 0, 11.9)));
+      out.assign(vec4(float(1).add(hue.mul(MACRO_VARIATION.hue)), float(1).add(hue.mul(MACRO_VARIATION.hue * 0.25)), float(1).sub(hue.mul(MACRO_VARIATION.hue)), float(1).add(mottle.mul(MACRO_VARIATION.mottle))));
+    });
+    return out;
+  })();
+  const vary = float(1).add(patch.mul(MACRO_VARIATION.patch)).add(finer.w.sub(1));
+  const tint = vec3(finer.x, finer.y, finer.z);
   m.colorNode = vec4(materialColor.rgb.mul(vec3(rgb.r, rgb.g, rgb.b)).mul(tint).mul(vary), 1);
   m.roughnessNode = ormMix.g;
   m.aoNode = ormMix.r;

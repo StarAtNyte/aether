@@ -97,7 +97,15 @@ async function main(): Promise<void> {
           r.setCameraPose(p[0]!, p[1]!, p[2]!, p[3]!, p[4]!);
           r.requestRender();
         }, pose);
-        await page.waitForTimeout(9000);
+        for (let i = 0; i < Math.round(Number(arg('wait') ?? 9) * 2); i++) {
+          await page.waitForTimeout(500);
+          if (process.env['TRACE']) process.stdout.write(`  t=${i * 0.5}: ${await page.evaluate(() => { const r = window.__aether?.simulation?.renderer as unknown as Record<string, unknown>; return `atRest=${String(r['atRest'])} animating=${String(r['restAnimating'])} slow=${String(r['restSlow'])} deferred=${String(r['restDeferred'])} frames=${String(r['frameCount'])}`; })}\n`);
+        }
+        const st = await page.evaluate(() => {
+          const r = window.__aether?.simulation?.renderer as unknown as { atRest: boolean; restDeferred: boolean; post?: { key: string } | null; stats(): Record<string, number>; intendedEffects: string[] };
+          return `atRest=${String(r.atRest)} restDeferred=${String(r.restDeferred)} post=${r.post?.key ?? 'none'} scale=${r.stats()['resolutionScale']} level=${r.stats()['performanceLevel']} frameMs=${r.stats()['frameMs']} fps=${r.stats()['fps']} sunDraws=${String((r as unknown as { sunMapDraws?: number }).sunMapDraws)} fx=${r.intendedEffects.join('+')}`;
+        });
+        process.stdout.write(`${slug}: ${st}\n`);
         writeFileSync(join(OUT, `${slug}-rest.png`), await page.screenshot());
         if (MOVING) {
           // One frame of the moving view: nudge the camera and grab the very next frame, before the view rests.

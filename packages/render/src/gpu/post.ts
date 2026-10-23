@@ -377,7 +377,7 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
       sceneScalable: !prepass,
       setSceneScale: (scale: number, width: number, height: number) => {
         if (prepass) return;
-        const k = Number.isFinite(scale) ? Math.max(0.1, Math.min(1, scale)) : 1;
+        const k = Number.isFinite(scale) ? Math.max(0.25, Math.min(1, scale)) : 1;
         if (k === sceneScale && uTexel.value.x > 0) return;
         sceneScale = k;
         scenePass.setResolutionScale(k);

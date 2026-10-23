@@ -368,7 +368,7 @@ const REST_DELAY_MS = 220;
 /** Size of the planar water mirror relative to the frame at full scale (see PlanarMirror). */
 const MIRROR_SCALE = 0.5;
 /** Lowest adaptive scale of a scene pass that is upsampled and sharpened (the drawing buffer's own floor is 0.5). */
-const PASS_SCALE_FLOOR = 0.2;
+const PASS_SCALE_FLOOR = 0.3;
 /** Frame time (s) beyond which an animating scene at rest cannot afford the full chain, and for how many frames in a row. */
 const REST_SLOW_DT = 0.034;
 const REST_SLOW_FRAMES = 10;
@@ -4987,6 +4987,12 @@ export class WorldRenderer {
       this.pendingResize = [width, height];
       return;
     }
+    this.sizeBuffer(width, height);
+    this.needsDraw = true;
+  }
+
+  /** The drawing buffer and camera for `width`×`height` CSS pixels (no frame is requested). */
+  private sizeBuffer(width: number, height: number): void {
     this.cssWidth = width;
     this.cssHeight = height;
     const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
@@ -4997,7 +5003,6 @@ export class WorldRenderer {
     this.renderer.setSize(width, height, false);
     this.perspective.aspect = width / height;
     this.perspective.updateProjectionMatrix();
-    this.needsDraw = true;
   }
 
   /** The adaptive scale is applied to the scene pass of the light chain (upsampled and sharpened in its composite), not to the drawing buffer. */
@@ -5014,16 +5019,18 @@ export class WorldRenderer {
     const lowered = this.adaptive.setFloor(via ? PASS_SCALE_FLOOR : undefined);
     if (lowered || via !== this.viaPassApplied) {
       this.viaPassApplied = via;
-      this.resize(this.cssWidth, this.cssHeight);
+      // Called while drawing: the buffer follows without asking for another frame (that would count as the view moving, and a
+      // view that rests would never rest).
+      if (!this.captureActive) this.sizeBuffer(this.cssWidth, this.cssHeight);
     }
-    const post = this.post;
-    if (!post?.sceneScalable) return;
-    this.renderer.getDrawingBufferSize(_size);
     const k = via ? this.adaptive.scale : 1;
-    post.setSceneScale(k, _size.x, _size.y);
     // The planar water mirror and the scene backdrop are sized from the drawing buffer: they follow the scene pass.
     this.materials.mirror.mirror.scale = MIRROR_SCALE * k;
     this.materials.backdrop.scale = k;
+    const post = this.post;
+    if (!post?.sceneScalable) return;
+    this.renderer.getDrawingBufferSize(_size);
+    post.setSceneScale(k, _size.x, _size.y);
   }
 
   /** True while the world uses scatter fields or virtual geometry (cheap). */
