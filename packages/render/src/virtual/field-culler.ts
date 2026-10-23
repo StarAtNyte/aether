@@ -165,6 +165,10 @@ const HYSTERESIS = 0.15;
 /** Per-frame chunk culling, LOD selection and instance-buffer assembly. */
 export class FieldCuller {
   readonly levels: number;
+  /** Triangles per instance of the finest level. */
+  get finestTriangles(): number {
+    return Math.max(1, this.opts.lodTriangles[0] ?? 1);
+  }
   /** Instance matrices per level (column-major 4×4), written front to back. */
   readonly buffers: Float32Array[];
   /** Instances assigned per level by the last update (= instances to draw). */

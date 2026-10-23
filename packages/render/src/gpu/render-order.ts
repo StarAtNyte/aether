@@ -27,3 +27,9 @@ export function opaqueSort(a: SortItem, b: SortItem): number {
   if (a.z !== b.z) return a.z - b.z;
   return a.id - b.id;
 }
+
+/**
+ * Render order of layered terrain (and the ground): drawn after every other opaque item, so houses, trunks and crowns
+ * cover it first and its heavy per-pixel material (about 28 texture reads) runs only where the ground is actually visible.
+ */
+export const TERRAIN_RENDER_ORDER = 1;

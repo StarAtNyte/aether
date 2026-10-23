@@ -12,7 +12,7 @@
  * - Pure node (TSL) code: identical on the WebGPU and WebGL2 backends. Like the anti-tiled finishes,
  *   the nodes are attached to the classic material, which the node renderer converts.
  */
-import { abs, attribute, cameraPosition, float, int, materialColor, max, mix, mx_noise_float, normalMap, normalWorld, positionWorld, pow, smoothstep, texture, uniform, uv, vec2, vec3, vec4 } from 'three/tsl';
+import { abs, attribute, Fn, If, cameraPosition, float, int, materialColor, max, mix, modelWorldMatrix, mx_noise_float, normalLocal, normalMap, positionWorld, pow, smoothstep, texture, transformDirection, uniform, uv, vec2, vec3, vec4 } from 'three/tsl';
 import type { Material } from 'three';
 import type { MaterialFinish } from '@aether/core';
 import type { FinishMaps } from './finish-textures';
@@ -29,6 +29,13 @@ const MACRO_SCALE = 1 / 4.3;
 const BLEND_NOISE = 0.045;
 /** How much a layer's brightness shifts its weight at the seams (0 = plain linear fade). */
 const HEIGHT_BIAS = 0.22;
+type Vec4N = ReturnType<typeof vec4>;
+/** Assign inside a branch (the node typings do not describe `toVar` results). */
+const set = (variable: unknown, value: unknown): void => (variable as { assign(v: unknown): void }).assign(value);
+/** A layer with at most this weight is not sampled. */
+const ACTIVE_WEIGHT = 0.001;
+/** Beyond this distance (m) only the large-scale lookup is taken. */
+export const FAR_METRES = 90;
 /** Weights below this vanish, so a layer never leaves a faint haze where it is not. */
 const SHARPEN = 2.4;
 
@@ -49,65 +56,92 @@ export const SPLAT_KEY = 'aetherSplat';
  */
 export function applySplat(material: Material, maps: (id: MaterialFinish) => FinishMaps, stack: SplatArrays, detail = false): void {
   const w4 = attribute('splat', 'vec4');
-  const base = uv();
-  const rot = vec2(base.x.mul(0.8).sub(base.y.mul(0.6)), base.x.mul(0.6).add(base.y.mul(0.8)));
-  const n = mx_noise_float(positionWorld.mul(BLEND_NOISE)).mul(0.5).add(0.5);
-  const wMacro = smoothstep(float(0.35), float(0.65), n);
-
+  const weights = [w4.x, w4.y, w4.z, w4.w];
   const layerMaps = SPLAT_LAYERS.map((id) => maps(id));
-  // Every layer's three maps live in texture arrays (see splat-arrays.ts): twelve photographs would need twelve sampler
-  // bindings, over the budget of a WebGPU fragment stage once the lights have taken theirs; three arrays need three.
-  // Each layer keeps the tile size of its own finish (the repeat of its source texture, a live uniform).
-  const sample = (kind: 'map' | 'orm' | 'normal', i: number, macro: boolean) => {
+  // A node used twice becomes a variable declared where it is first built; inside a branch that would leave it unset
+  // outside it. Everything a branch needs is therefore built fresh at each use, from varyings and uniforms only.
+  const dist = () => positionWorld.sub(cameraPosition).length();
+
+  // The per-pixel lookups of a layer are skipped where the layer has no weight (the usual case for three of the four)
+  // and, beyond FAR_METRES, taken at the large scale only: the fine scale is below a pixel there, so the second lookup,
+  // the blend noise and the rock's side planes would only be averaged away. Each lookup builds its own small nodes (the
+  // blend noise, the rotated coordinates) inside its branch: a node first built inside one branch cannot be shared with
+  // another. The results are variables the blend below reads; a skipped layer reads as a neutral photograph.
+  const active = (i: number) => (weights[i] as typeof w4.x).greaterThan(ACTIVE_WEIGHT);
+  const far = () => dist().greaterThan(FAR_METRES);
+  const sampleAt = (kind: 'map' | 'orm' | 'normal', i: number, macro: boolean) => {
+    const base = uv();
+    const rot = vec2(base.x.mul(0.8).sub(base.y.mul(0.6)), base.x.mul(0.6).add(base.y.mul(0.8)));
     const repeat = uniform((layerMaps[i] as FinishMaps)[kind].repeat);
     return texture(stack.of(kind), macro ? rot.mul(repeat).mul(MACRO_SCALE) : base.mul(repeat)).depth(int(i));
   };
+  const blendWeight = () => smoothstep(float(0.35), float(0.65), mx_noise_float(positionWorld.mul(BLEND_NOISE)).mul(0.5).add(0.5));
   // Rock leans over cliffs: its colour and roughness are sampled from three planes (top-down, along x, along z)
   // weighted by the world normal, so a vertical face shows rock grain instead of a smeared top-down stretch.
-  const ny4 = pow(abs(normalWorld.y), 4);
-  const nx4 = pow(abs(normalWorld.x), 4);
-  const nz4 = pow(abs(normalWorld.z), 4);
-  const triSum = ny4.add(nx4).add(nz4).add(1e-4);
   const triplanar = (kind: 'map' | 'orm', i: number) => {
+    const n = transformDirection(normalLocal, modelWorldMatrix);
+    const ny4 = pow(abs(n.y), 4);
+    const nx4 = pow(abs(n.x), 4);
+    const nz4 = pow(abs(n.z), 4);
+    const triSum = ny4.add(nx4).add(nz4).add(1e-4);
     const r = uniform((layerMaps[i] as FinishMaps)[kind].repeat);
     const arr = stack.of(kind);
-    const top = mix(texture(arr, base.mul(r)).depth(int(i)), texture(arr, rot.mul(r).mul(MACRO_SCALE)).depth(int(i)), wMacro);
+    const top = mix(sampleAt(kind, i, false), sampleAt(kind, i, true), blendWeight());
     const sx = texture(arr, vec2(positionWorld.z, positionWorld.y).mul(r)).depth(int(i));
     const sz = texture(arr, vec2(positionWorld.x, positionWorld.y).mul(r)).depth(int(i));
     return top.mul(ny4.div(triSum)).add(sx.mul(nx4.div(triSum))).add(sz.mul(nz4.div(triSum)));
   };
-  const albedoOf = (i: number) => (i === 1 ? triplanar('map', i) : mix(sample('map', i, false), sample('map', i, true), wMacro));
-  const ormOf = (i: number) => (i === 1 ? triplanar('orm', i) : mix(sample('orm', i, false), sample('orm', i, true), wMacro));
-  const normalOf = (i: number) => mix(sample('normal', i, false), sample('normal', i, true), wMacro);
+  const near = (kind: 'map' | 'orm' | 'normal', i: number) => (i === 1 && kind !== 'normal' ? triplanar(kind, i) : mix(sampleAt(kind, i, false), sampleAt(kind, i, true), blendWeight()));
+  // Fresh nodes on every call: a variable is named after the node it starts from, so a shared start node would be one variable.
+  const neutral = (kind: 'map' | 'orm' | 'normal') => (kind === 'map' ? vec4(1, 1, 1, 1) : kind === 'orm' ? vec4(1, 0.9, 0, 1) : vec4(0.5, 0.5, 1, 1));
+  const lookup = (kind: 'map' | 'orm' | 'normal', i: number) =>
+    Fn(() => {
+      const r = neutral(kind).toVar();
+      If(active(i), () => {
+        If(far(), () => {
+          set(r, sampleAt(kind, i, true));
+        }).Else(() => {
+          set(r, near(kind, i));
+        });
+      });
+      return r;
+    })() as unknown as Vec4N;
+  const layer = (kind: 'map' | 'orm' | 'normal') => [lookup(kind, 0), lookup(kind, 1), lookup(kind, 2), lookup(kind, 3)];
 
-  const albedo = [albedoOf(0), albedoOf(1), albedoOf(2), albedoOf(3)];
-  const orm = [ormOf(0), ormOf(1), ormOf(2), ormOf(3)];
-  const lum = (c: ReturnType<typeof albedoOf>) => c.r.add(c.g).add(c.b).mul(1 / 3);
+  const albedo = layer('map');
+  const orm = layer('orm');
+  const lum = (c: Vec4N) => c.r.add(c.g).add(c.b).mul(1 / 3);
 
   // Height blend: weight + brightness bias, then everything more than a hair below the best layer drops out.
-  const weights = [w4.x, w4.y, w4.z, w4.w];
-  const heights = weights.map((w, i) => w.mul(float(SHARPEN)).add(lum(albedo[i] as ReturnType<typeof albedoOf>).sub(1).mul(HEIGHT_BIAS)).mul(w.greaterThan(0.001).select(float(1), float(0))));
+  const heights = weights.map((w, i) => w.mul(float(SHARPEN)).add(lum(albedo[i] as Vec4N).sub(1).mul(HEIGHT_BIAS)).mul(w.greaterThan(ACTIVE_WEIGHT).select(float(1), float(0))));
   const top = max(max(heights[0] as typeof w4.x, heights[1] as typeof w4.x), max(heights[2] as typeof w4.x, heights[3] as typeof w4.x));
   const blended = heights.map((h) => max(h.sub(top).add(0.45), float(0)));
   const sum = (blended[0] as typeof w4.x).add(blended[1] as typeof w4.x).add(blended[2] as typeof w4.x).add(blended[3] as typeof w4.x).add(1e-4);
   const wn = blended.map((b) => b.div(sum));
 
-  const mixLayers = <T extends ReturnType<typeof albedoOf>>(values: readonly T[]) =>
-    values.reduce((acc, v, i) => (acc === null ? v.mul(wn[i] as typeof w4.x) : acc.add(v.mul(wn[i] as typeof w4.x))), null as unknown as ReturnType<typeof albedoOf>);
+  const mixLayers = (values: readonly Vec4N[]): Vec4N => {
+    let acc = values[0]!.mul(wn[0] as typeof w4.x) as unknown as Vec4N;
+    for (let i = 1; i < values.length; i++) acc = acc.add((values[i] as Vec4N).mul(wn[i] as typeof w4.x)) as unknown as Vec4N;
+    return acc;
+  };
 
   const rgbLayers = mixLayers(albedo);
   const ormMix = mixLayers(orm);
-  const nrmLayers = mixLayers([normalOf(0), normalOf(1), normalOf(2), normalOf(3)]);
+  const nrmLayers = mixLayers(layer('normal'));
   // Close-up detail: a lawn underfoot would otherwise show the magnified 1.6 m photograph (blurry). Past a few metres
   // a finer lookup of the grass photograph (and its normals) adds blades and grain, weighted by how grassy the pixel is.
-  const dist = positionWorld.sub(cameraPosition).length();
-  const nearFade = float(1).sub(smoothstep(float(DETAIL_NEAR[0]), float(DETAIL_NEAR[1]), dist)).mul(wn[0] as typeof w4.x);
+  const nearFade = float(1).sub(smoothstep(float(DETAIL_NEAR[0]), float(DETAIL_NEAR[1]), dist())).mul(wn[0] as typeof w4.x);
   const grassMaps = layerMaps[0] as FinishMaps;
-  const microUv = base.mul(uniform(grassMaps.map.repeat)).mul(DETAIL_MICRO_SCALE);
-  const microMap = texture(stack.map, microUv).depth(int(0));
-  const microNormal = texture(stack.normal, microUv).depth(int(0));
-  const rgb = detail ? mix(rgbLayers, rgbLayers.mul(microMap), nearFade.mul(0.6)) : rgbLayers;
-  const nrm = detail ? nrmLayers.add(microNormal.sub(vec4(0.5, 0.5, 0, 0)).mul(nearFade.mul(0.9))) : nrmLayers;
+  const micro = (kind: 'map' | 'normal') =>
+    Fn(() => {
+      const r = neutral(kind).toVar();
+      If(dist().lessThan(DETAIL_NEAR[1]), () => {
+        set(r, texture(stack[kind], uv().mul(uniform(grassMaps.map.repeat)).mul(DETAIL_MICRO_SCALE)).depth(int(0)));
+      });
+      return r;
+    })() as unknown as Vec4N;
+  const rgb = detail ? mix(rgbLayers, rgbLayers.mul(micro('map')), nearFade.mul(0.6)) : rgbLayers;
+  const nrm = detail ? nrmLayers.add(micro('normal').sub(vec4(0.5, 0.5, 0, 0)).mul(nearFade.mul(0.9))) : nrmLayers;
   const strength = (wn[0] as typeof w4.x).mul(NORMAL_STRENGTH[0] as number).add((wn[1] as typeof w4.x).mul(NORMAL_STRENGTH[1] as number)).add((wn[2] as typeof w4.x).mul(NORMAL_STRENGTH[2] as number)).add((wn[3] as typeof w4.x).mul(NORMAL_STRENGTH[3] as number));
 
   material.userData[SPLAT_KEY] = true;

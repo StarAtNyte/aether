@@ -66,18 +66,19 @@ import { resolveLook } from '@aether/assets';
 import { assetInfo, effectiveAssetId, fitScale, loadCatalog, lodDistances, type AssetInfo } from '@aether/assets';
 import { buildHeightGrid, transformPositions, type HeightGrid } from '../geometry/height-grid';
 import { composeScatterMatrices, composeScatterPacked, MAX_SCATTER_INSTANCES, primitiveLift, scatterPlacements, type SurfaceSampler } from '../geometry/scatter';
-import { ScatterField, FIELD_MIN_INSTANCES } from '../virtual/scatter-field';
-import { buildChunks } from '../virtual/field-culler';
+import { ScatterField, FIELD_MIN_INSTANCES, fieldChunkSize, isFieldLayer } from '../virtual/scatter-field';
+import { buildChunks, CHUNK_INSTANCES } from '../virtual/field-culler';
 import { createLocalView, localView } from '../virtual/view';
 import { DagClient, type DagClientOptions } from '../virtual/dag-client';
 import { mirror, VirtualGroup, VIRTUAL_MIN_TRIANGLES } from '../virtual/virtual-mesh';
 import { BATCHED_LAYER } from './static-batches';
-import { DEFAULT_FIELD_BUDGET, LodChainCache, lodOutputKey, lodPart, outputRadius, shareBudget, type FieldBudget } from './field-mount';
+import { DEFAULT_FIELD_BUDGET, LodChainCache, lodOutputKey, lodPart, outputRadius, shareDemand, type FieldBudget } from './field-mount';
 import { buildMeshGeometry, previewMeshGeometry, type MeshGeometryBundle } from '../geometry/mesh-asset';
 import { meshColliders } from '@aether/procgen';
 import { areaLightsReady, createEntityLight, disposeEntityLight, enforceShadowCap, LAMP_CUTOFF, loadAreaLights, updateLightParams } from './lights';
 import { createEntityNode, ENTITY_ID_KEY, type EntityNode, type MeshBinding } from './entity-node';
 import { renderableIds } from './renderable';
+import { TERRAIN_RENDER_ORDER } from '../gpu/render-order';
 import { withWaterKind } from './water-surfaces';
 import { OccluderGrid, partBounds, posesFromMatrices } from '../view/occluders';
 import { setEntityPath } from './property-path';
@@ -1392,7 +1393,9 @@ export class SceneSync {
 
   private mountScatter(node: EntityNode, shape: ScatterShape, keyed: KeyedOutput): void {
     const requested = Math.min(shape.points ? shape.points.length : shape.count, MAX_SCATTER_INSTANCES);
-    if (this.fieldBudget && requested >= FIELD_MIN_INSTANCES && keyed.output.parts.length > 0) {
+    let sourceTriangles = 0;
+    for (const part of keyed.output.parts) sourceTriangles += Math.floor(part.indices.length / 3);
+    if (this.fieldBudget && keyed.output.parts.length > 0 && isFieldLayer(requested, sourceTriangles)) {
       this.mountField(node, shape, keyed, requested, this.fieldBudget);
       return;
     }
@@ -1442,7 +1445,7 @@ export class SceneSync {
     const radius = Math.max(1e-3, outputRadius(keyed.output));
     const packed = composeScatterPacked(placements, lift, sampler);
     this.setOccluders(node, packed, placements.count, plain);
-    const chunks = buildChunks(packed, placements.count, radius);
+    const chunks = buildChunks(packed, placements.count, radius, fieldChunkSize(placements.count, CHUNK_INSTANCES));
     const chain = this.lodChains.get(keyed.key, keyed.output);
     const parts = keyed.output.parts;
     node.keyed = keyed;
@@ -1466,7 +1469,8 @@ export class SceneSync {
       return;
     }
     // Field capacity follows the field's size (a 400k+ layer may use the whole budget).
-    const cap = Math.max(budget.triangles * 0.15, Math.min(budget.triangles, (budget.triangles * placements.count) / 400_000));
+    const finest = Math.max(1, (levels[0] as { triangles: number }).triangles);
+    const cap = Math.max(budget.triangles * 0.15, Math.min(budget.triangles, (budget.triangles * placements.count) / 400_000), Math.min(budget.triangles, placements.count * finest));
     // Vegetation fields sway in the wind (vertex shader only).
     const variant: MaterialVariant = shape.of.kind === 'procedural' && FOLIAGE_GENERATORS.has(shape.of.generator) ? 'foliage' : this.variant;
     for (let i = 0; i < parts.length; i++) {
@@ -1499,7 +1503,7 @@ export class SceneSync {
     const budget = this.fieldBudget;
     if (!budget || this.fieldNodes.size === 0) return;
     const nodes = [...this.fieldNodes];
-    const shares = shareBudget(budget.triangles, nodes.map((n) => n.instances));
+    const shares = shareDemand(budget.triangles, nodes.map((n) => n.instances * (n.field?.culler.finestTriangles ?? 1)));
     nodes.forEach((n, i) => n.field?.culler.setBudget(shares[i] as number));
   }
 
@@ -1627,6 +1631,7 @@ export class SceneSync {
           mesh = im;
         } else {
           mesh = new Mesh(g.geometry, handle.material);
+          if (handle.resolved.splat) mesh.renderOrder = TERRAIN_RENDER_ORDER;
           // Large parts (terrain) raycast through a BVH: picking, snapping and camera occlusion stay O(log n).
           accelerateRaycast(mesh);
           if (this.dags && part.indices.length / 3 >= VIRTUAL_MIN_TRIANGLES) this.virtualize(node, mesh, g.key, part.positions, part.indices);

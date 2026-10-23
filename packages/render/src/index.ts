@@ -85,7 +85,7 @@ export { parseDagRequest, validateDag, MAX_DAG_INDICES, MAX_DAG_VERTICES } from 
 export { VirtualGroup, VIRTUAL_MIN_TRIANGLES, VIRTUAL_ERROR_PX } from './virtual/virtual-mesh';
 export { buildLodChain, cardKeepRatio, isCardPart, isFaceted, LOD_RATIOS, thinCards, type LodLevel, type LodPart } from './virtual/lod-chain';
 export { buildChunks, packMatrices, FieldCuller, FIELD_STRIDE, CHUNK_INSTANCES, DEFAULT_LOD_PIXELS, type FieldChunks, type FieldView, type FieldCullerOptions } from './virtual/field-culler';
-export { ScatterField, FIELD_MIN_INSTANCES } from './virtual/scatter-field';
+export { ScatterField, FIELD_MIN_INSTANCES, FIELD_HEAVY_MIN_INSTANCES, FIELD_HEAVY_MIN_TRIANGLES, isFieldLayer, fieldChunkSize } from './virtual/scatter-field';
 export { composeScatterPacked } from './geometry/scatter';
 export { DEFAULT_FIELD_BUDGET, type FieldBudget } from './sync/field-mount';
 export { DEFAULT_VIRTUAL_TRIANGLES, VIEW_INTERVAL_MS } from './sync/scene-sync';

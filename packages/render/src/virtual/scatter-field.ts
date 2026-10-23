@@ -13,6 +13,24 @@ import type { LocalView } from './view';
 
 /** Instances at or above which a scatter layer becomes a field. */
 export const FIELD_MIN_INSTANCES = 2_000;
+/**
+ * A layer below {@link FIELD_MIN_INSTANCES} is a field as well when it is heavy: at least this many instances ...
+ */
+export const FIELD_HEAVY_MIN_INSTANCES = 24;
+/** ... and at least this many triangles drawn when every instance is at its finest level (a forest of 300 trees). */
+export const FIELD_HEAVY_MIN_TRIANGLES = 60_000;
+
+/** Whether a scatter layer of `instances` copies of a mesh of `trianglesPerInstance` is drawn as a culled, LOD'd field. */
+export function isFieldLayer(instances: number, trianglesPerInstance: number): boolean {
+  if (instances >= FIELD_MIN_INSTANCES) return true;
+  return instances >= FIELD_HEAVY_MIN_INSTANCES && instances * trianglesPerInstance >= FIELD_HEAVY_MIN_TRIANGLES;
+}
+
+/** Instances per culling chunk: the default for big layers, finer for small ones so a few hundred trees still cull and LOD by region. */
+export function fieldChunkSize(instances: number, standard: number): number {
+  if (instances >= FIELD_MIN_INSTANCES) return standard;
+  return Math.max(8, Math.min(standard, Math.round(instances / 14)));
+}
 
 /** One LOD level: a geometry per part and its triangles per instance. */
 export interface FieldLevel {
@@ -31,6 +49,7 @@ export class ScatterField {
   readonly meshes: InstancedMesh[] = [];
   readonly culler: FieldCuller;
   private readonly attributes: InstancedBufferAttribute[] = [];
+  private readonly ranges: Array<{ start: number; count: number }> = [];
   private readonly parts: number;
 
   /**
@@ -59,6 +78,7 @@ export class ScatterField {
       // re-plans upload through version bumps with update ranges instead.
       const attr = new InstancedBufferAttribute(this.culler.buffers[l] as Float32Array, 16);
       this.attributes.push(attr);
+      this.ranges.push({ start: 0, count: 0 });
       for (let p = 0; p < this.parts; p++) {
         const geometry = level.geometries[p] as BufferGeometry;
         const mesh = new InstancedMesh(geometry, materials[p] as Material, 0);
@@ -102,7 +122,19 @@ export class ScatterField {
       if (from >= count) continue;
       const attr = this.attributes[l] as InstancedBufferAttribute;
       // Ranges accumulate until uploaded (the renderer clears them), so two re-plans before one draw stay correct.
-      attr.addUpdateRange(from * 16, (count - from) * 16);
+      // One pooled range per buffer (merged while it waits for its upload): no allocation per re-plan.
+      const ranges = attr.updateRanges;
+      const range = this.ranges[l] as { start: number; count: number };
+      if (ranges.length === 0) {
+        range.start = from * 16;
+        range.count = (count - from) * 16;
+        ranges.push(range);
+      } else {
+        const start = Math.min(range.start, from * 16);
+        const end = Math.max(range.start + range.count, count * 16);
+        range.start = start;
+        range.count = end - start;
+      }
       attr.needsUpdate = true;
     }
     return true;

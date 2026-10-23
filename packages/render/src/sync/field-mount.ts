@@ -77,3 +77,23 @@ export function shareBudget(total: number, instances: readonly number[]): number
   if (sum <= 0) return instances.map(() => 0);
   return instances.map((n) => Math.max(total * 0.05, Math.floor((total * n) / sum)));
 }
+
+/**
+ * Split a triangle budget between fields by what each one can draw (`demands`: instances × triangles of the finest level):
+ * a field never gets more than it can use, and the rest is shared equally among the fields that want more. A forest of
+ * 300 heavy trees is no longer starved by ground cover of 10 000 blades that asks for little.
+ */
+export function shareDemand(total: number, demands: readonly number[]): number[] {
+  const out = demands.map(() => 0);
+  const order = demands.map((_, i) => i).sort((a, b) => (demands[a] as number) - (demands[b] as number));
+  let remaining = Math.max(0, total);
+  let left = order.length;
+  for (const i of order) {
+    const want = Math.max(0, demands[i] as number);
+    const give = Math.min(want, remaining / left);
+    out[i] = Math.floor(give);
+    remaining -= give;
+    left--;
+  }
+  return out;
+}

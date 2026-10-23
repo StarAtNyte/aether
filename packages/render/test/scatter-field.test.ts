@@ -3,8 +3,8 @@ import { InstancedMesh, PerspectiveCamera } from 'three';
 import { buildChunks, FieldCuller, FIELD_STRIDE, packMatrices, type FieldView } from '../src/virtual/field-culler';
 import { buildLodChain, isFaceted } from '../src/virtual/lod-chain';
 import { composeScatterMatrices, composeScatterPacked, scatterPlacements } from '../src/geometry/scatter';
-import { shareBudget } from '../src/sync/field-mount';
-import { FIELD_MIN_INSTANCES } from '../src/virtual/scatter-field';
+import { shareBudget, shareDemand } from '../src/sync/field-mount';
+import { FIELD_MIN_INSTANCES, fieldChunkSize, isFieldLayer } from '../src/virtual/scatter-field';
 import { renderBudget } from '../src/gpu/budget';
 import { makeSync, patch, world } from './helpers';
 import { primitiveOutput } from '@aether/procgen';
@@ -167,6 +167,21 @@ describe('FieldCuller', () => {
     expect(shareBudget(1000, [1, 999])[0]).toBe(50);
     expect(shareBudget(1000, [0, 0])).toEqual([0, 0]);
   });
+
+  it('splits a budget by demand: nobody gets more than it can draw, the rest is shared', () => {
+    expect(shareDemand(1000, [100, 200])).toEqual([100, 200]);
+    expect(shareDemand(1000, [100, 5000, 5000])).toEqual([100, 450, 450]);
+    expect(shareDemand(1000, [0, 0])).toEqual([0, 0]);
+  });
+
+  it('makes a small layer of heavy meshes a field, a small layer of light ones not', () => {
+    expect(isFieldLayer(FIELD_MIN_INSTANCES, 1)).toBe(true);
+    expect(isFieldLayer(330, 2500)).toBe(true);
+    expect(isFieldLayer(330, 20)).toBe(false);
+    expect(isFieldLayer(10, 50_000)).toBe(false);
+    expect(fieldChunkSize(330, 128)).toBeLessThan(128);
+    expect(fieldChunkSize(50_000, 128)).toBe(128);
+  });
 });
 
 describe('LOD chains', () => {
@@ -264,7 +279,7 @@ describe('SceneSync scatter fields', () => {
 
   it('keeps small layers plain and respects the field instance budget', async () => {
     const { sync } = makeSync({ fields: { maxInstances: 5_000, triangles: 100_000 } });
-    await sync.setWorld(world([{ ...field(FIELD_MIN_INSTANCES - 1), id: 'small' }, field(8_000)]));
+    await sync.setWorld(world([{ ...field(200), id: 'small' }, field(8_000)]));
     expect(sync.node('small')!.field).toBeNull();
     expect(sync.node('forest')!.instances).toBe(5_000);
     expect(sync.getWarnings().get('forest')).toMatch(/field limited/);

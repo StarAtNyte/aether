@@ -255,6 +255,7 @@ export function mirror(mesh: Mesh, source: Mesh): void {
   if (mesh.material !== source.material) mesh.material = source.material;
   mesh.castShadow = source.castShadow;
   mesh.receiveShadow = source.receiveShadow;
+  mesh.renderOrder = source.renderOrder;
 }
 
 /** True when `o` and all its ancestors are visible (null: detached, not visible). */
