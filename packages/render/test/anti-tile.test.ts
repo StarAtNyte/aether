@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Material } from 'three';
 import { MaterialCache } from '../src/materials/material-cache';
-import { needsAntiTile } from '../src/materials/anti-tile';
+import { ANTI_TILE_FINISHES, DETAIL_MID, DETAIL_MID_AMOUNT, DETAIL_FAR, MID_DETAIL_FINISHES, needsAntiTile } from '../src/materials/anti-tile';
 
 type NodeCarrier = Material & { colorNode?: unknown; roughnessNode?: unknown; aoNode?: unknown; normalNode?: unknown };
 
@@ -59,5 +59,18 @@ describe('anti-tiling', () => {
     expect(needsAntiTile('grass', Number.NaN)).toBe(false);
     expect(needsAntiTile('brick', 3)).toBe(false);
     expect(needsAntiTile('oak', 3)).toBe(false);
+  });
+});
+
+describe('mid-range ground breakup', () => {
+  it('only natural ground finishes get it, each of them an anti-tiled one', () => {
+    for (const f of MID_DETAIL_FINISHES) expect(ANTI_TILE_FINISHES.has(f)).toBe(true);
+    for (const wall of ['plaster', 'concrete', 'terrazzo', 'carpet', 'bark']) expect(MID_DETAIL_FINISHES.has(wall)).toBe(false);
+    expect(MID_DETAIL_FINISHES.has('grass')).toBe(true);
+  });
+  it('fades in before the far macro lookup does and keeps the mean tone (amplitudes are small)', () => {
+    expect(DETAIL_MID[0]).toBeLessThan(DETAIL_MID[1]);
+    expect(DETAIL_MID[1]).toBeLessThanOrEqual(DETAIL_FAR[0]);
+    expect(DETAIL_MID_AMOUNT[0] + DETAIL_MID_AMOUNT[1]).toBeLessThan(1);
   });
 });

@@ -83,6 +83,17 @@ export const DETAIL_FAR: readonly [number, number] = Object.freeze([10, 60]) as 
 /** Texture-repeat factors of the micro (finer) and macro (coarser) detail lookups. */
 export const DETAIL_MICRO_SCALE = 5.3;
 export const DETAIL_MACRO_SCALE = 0.113;
+/**
+ * Mid-range breakup of the isotropic ground finishes: a photographed lawn or soil averages out to one flat tone once its
+ * texels shrink below a pixel (mip levels keep the mean, not the variance), so a plane seen from 8 to 80 m reads as a
+ * carpet. Two lookups of the shared noise (lattice frequencies in 1/m: clumps about 0.6 m wide, grain about 18 cm) put
+ * the lost variance back, fading in between these distances (m) and with the amplitudes below (relative to 1).
+ */
+/** Natural ground finishes that take the mid-range breakup (walls and floors indoors keep their own texture). */
+export const MID_DETAIL_FINISHES: ReadonlySet<string> = new Set(['grass', 'gravel', 'soil', 'sand', 'snow', 'rock', 'dry-earth']);
+export const DETAIL_MID_SCALES: readonly [number, number] = Object.freeze([1.7, 5.5]) as readonly [number, number];
+export const DETAIL_MID: readonly [number, number] = Object.freeze([2.5, 9]) as readonly [number, number];
+export const DETAIL_MID_AMOUNT: readonly [number, number] = Object.freeze([0.5, 0.22]) as readonly [number, number];
 
 /** Options of {@link applyAntiTile}. */
 export interface AntiTileOptions {
@@ -144,8 +155,16 @@ export function applyAntiTile(material: Material, maps: AntiTileMaps, normalStre
   const split = stochastic || detail;
   // Close up the texels would magnify: a finer lookup of the same photograph adds grain and micro relief; far away a
   // much coarser one adds the large patches a flat ground plane lacks. Both are ratios around 1, so the mean tone holds.
+  const mid = detail && opts.finish !== undefined && MID_DETAIL_FINISHES.has(opts.finish);
+  const midFade = smoothstep(float(DETAIL_MID[0]), float(DETAIL_MID[1]), dist);
+  const clumps = () => {
+    const a = noise01(positionWorld, DETAIL_MID_SCALES[0], 0);
+    const b = noise01(positionWorld, DETAIL_MID_SCALES[1], 1);
+    const k = float(1).sub(float(DETAIL_MID_AMOUNT[0] / 2)).add(a.mul(DETAIL_MID_AMOUNT[0])).mul(float(1).sub(float(DETAIL_MID_AMOUNT[1] / 2)).add(b.mul(DETAIL_MID_AMOUNT[1])));
+    return mix(float(1), k, midFade);
+  };
   const albedoFull = () => {
-    const albedo = blend(maps.map).rgb;
+    const albedo = mid ? blend(maps.map).rgb.mul(clumps()) : blend(maps.map).rgb;
     return detail ? albedo.mul(mix(vec3(1), texture(maps.map, micro).rgb, nearFade.mul(0.55))).mul(mix(vec3(1), texture(maps.map, far).rgb, farFade.mul(0.9))) : albedo;
   };
   const normalFull = () => {
