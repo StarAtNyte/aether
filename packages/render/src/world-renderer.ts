@@ -365,6 +365,10 @@ const REFIT_INTERVAL = 0.35;
 /** Draws a pipeline with sun shafts waits for the sun's shadow map before giving the shafts up for this world. */
 /** Milliseconds the view stays still before the split studio chain switches to its full version. */
 const REST_DELAY_MS = 220;
+/** Size of the planar water mirror relative to the frame at full scale (see PlanarMirror). */
+const MIRROR_SCALE = 0.5;
+/** Lowest adaptive scale of a scene pass that is upsampled and sharpened (the drawing buffer's own floor is 0.5). */
+const PASS_SCALE_FLOOR = 0.2;
 /** Frame time (s) beyond which an animating scene at rest cannot afford the full chain, and for how many frames in a row. */
 const REST_SLOW_DT = 0.034;
 const REST_SLOW_FRAMES = 10;
@@ -563,6 +567,8 @@ const SHADER_WARMUP_MS = 15_000;
 const SUN_MAP_REFRESH = 24;
 /** Frames between redraws of the cached sun shadow map while casters animate (30 fps at 60). */
 const SUN_MAP_SOFT_REFRESH = 2;
+/** The same while the view moves under the split studio chain (10 fps at 60): animated shadows lag a little, the frame rate holds. */
+const SUN_MAP_SOFT_REFRESH_MOVING = 6;
 /** Assets smaller than this in every direction cast no sun shadow on the low tier (metres). */
 const SMALL_CASTER_METRES = 0.9;
 /** Skinned assets farther than this from the eye are not drawn on the low tier (metres). */
@@ -3087,7 +3093,9 @@ export class WorldRenderer {
     const gameStep = step * this.fx.frame(opts.animate !== false ? step : 0, this.perspective, this.avatar.group);
     this.adaptEye(step);
     // A field or virtual mesh was just mounted / moved: draw (draw() re-plans the view).
-    if (this.sync.viewNeedsUpdate) this.needsDraw = true;
+    // The re-plan is throttled, so the view stays dirty while the camera moves: that asks for a frame, not for a new sun map
+    // (re-plans that change what is drawn mark the map for a soft refresh themselves).
+    if (this.sync.viewNeedsUpdate) this._needsDraw = true;
     const vox = this.voxelLayer;
     if (vox) {
       const tf = this.env.terrainFog;
@@ -3317,15 +3325,18 @@ export class WorldRenderer {
     this.sunMapKey = sun;
     shadow.autoUpdate = false;
     const age = this.sunMapAge + 1;
-    const due = this.sunMapDirty || moved || age >= SUN_MAP_REFRESH || (this.sunMapSoft && age >= SUN_MAP_SOFT_REFRESH);
+    const due = this.sunMapDirty || moved || age >= SUN_MAP_REFRESH || (this.sunMapSoft && age >= (this.qualityPlan.moveEffects !== null && !this.atRest ? SUN_MAP_SOFT_REFRESH_MOVING : SUN_MAP_SOFT_REFRESH));
     shadow.needsUpdate = due;
     if (due) {
+      this.sunMapDraws++;
       this.sunMapAge = 0;
       this.sunMapDirty = false;
       this.sunMapSoft = false;
     } else this.sunMapAge = age;
   }
 
+  /** Times the cached sun map was drawn again (diagnostics and benchmarks). */
+  sunMapDraws = 0;
   private shadowFrame = 0;
   private readonly focusProbe = { point: new Vector3(), valid: false, at: -1e9, pos: new Vector3(Number.NaN, 0, 0), quat: new Quaternion() };
 
@@ -4263,6 +4274,7 @@ export class WorldRenderer {
       return;
     }
     this.syncPost();
+    this.syncSceneScale();
     this.aimSunShadows(capture);
     // Water joins the depth pre-pass (and so the screen-space reflections) while they run.
     const reflective = this.post?.effects.ssr === true;
@@ -4978,12 +4990,40 @@ export class WorldRenderer {
     this.cssWidth = width;
     this.cssHeight = height;
     const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
-    const ratio = effectivePixelRatio(Math.min(dpr, this.ratioCap) * this.adaptive.scale, width, height, this.budget);
+    // While the view moves under the split studio chain the scene pass takes the adaptive scale (see syncSceneScale); the frame keeps its size.
+    const viaPass = this.scalesViaPass();
+    const ratio = effectivePixelRatio(Math.min(dpr, this.ratioCap) * (viaPass ? 1 : this.adaptive.scale), width, height, this.budget);
     if (ratio !== this.renderer.getPixelRatio()) this.renderer.setPixelRatio(ratio);
     this.renderer.setSize(width, height, false);
     this.perspective.aspect = width / height;
     this.perspective.updateProjectionMatrix();
     this.needsDraw = true;
+  }
+
+  /** The adaptive scale is applied to the scene pass of the light chain (upsampled and sharpened in its composite), not to the drawing buffer. */
+  private scalesViaPass(): boolean {
+    return this.qualityPlan.moveEffects !== null && !this.atRest && !this.captureActive && this.post?.sceneScalable === true && !(globalThis as { __NOPASS?: boolean }).__NOPASS;
+  }
+
+  /** Whether the drawing buffer was last sized for the scene pass taking the adaptive scale. */
+  private viaPassApplied = false;
+
+  /** Keep the scene pass at the adaptive scale (and the scaler's floor) of the way the scale is applied. */
+  private syncSceneScale(): void {
+    const via = this.scalesViaPass();
+    const lowered = this.adaptive.setFloor(via ? PASS_SCALE_FLOOR : undefined);
+    if (lowered || via !== this.viaPassApplied) {
+      this.viaPassApplied = via;
+      this.resize(this.cssWidth, this.cssHeight);
+    }
+    const post = this.post;
+    if (!post?.sceneScalable) return;
+    this.renderer.getDrawingBufferSize(_size);
+    const k = via ? this.adaptive.scale : 1;
+    post.setSceneScale(k, _size.x, _size.y);
+    // The planar water mirror and the scene backdrop are sized from the drawing buffer: they follow the scene pass.
+    this.materials.mirror.mirror.scale = MIRROR_SCALE * k;
+    this.materials.backdrop.scale = k;
   }
 
   /** True while the world uses scatter fields or virtual geometry (cheap). */

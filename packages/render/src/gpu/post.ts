@@ -52,6 +52,14 @@ export interface PostPipeline {
   /** Stable key of {@link effects} (rebuild when it differs from what is wanted). */
   readonly key: string;
   render(): void;
+  /**
+   * Draw the scene pass at `scale` of the frame (width and height in pixels of the full frame) and upsample it with a
+   * sharpening step in the composite: a cheap way to hold the frame rate while the view moves without a blurred picture.
+   * Only the chains without a depth pre-pass can (see {@link sceneScalable}); 1 is the plain composite.
+   */
+  setSceneScale(scale: number, width: number, height: number): void;
+  /** True when {@link setSceneScale} has an effect. */
+  readonly sceneScalable: boolean;
   setBloom(strength: number): void;
   /** Apply a colour grade (uniform updates only; no shader rebuild). */
   setGrade(grade: Grade): void;
@@ -74,6 +82,8 @@ export interface PostPipeline {
  * materials, the sun disc and sharp specular glints bloom.
  */
 const BLOOM_RADIUS = 0.35;
+/** Strength of the sharpening that follows a scene pass drawn below the frame resolution. */
+export const SCENE_SHARPEN = 0.9;
 export const BLOOM_THRESHOLD = 1.05;
 /** `environment.bloom` (0–3) is scaled by this into the bloom node strength (subtle by default). */
 export const BLOOM_SCALE = 0.42;
@@ -159,7 +169,7 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
       contactLight ? import('three/addons/tsl/display/SSSNode.js') : Promise.resolve(null),
     ]);
     const { RenderPipeline, Vector3, UnsignedByteType, Color } = three;
-    const { pass, screenUV, screenCoordinate, smoothstep, float, uniform, vec2, vec3, vec4, dot, mix, pow, max, clamp, mrt, packNormalToRGB, unpackRGBToNormal, normalView, velocity, sample, context, diffuseColor, convertToTexture, renderOutput, interleavedGradientNoise, metalness, roughness } = tsl;
+    const { pass, screenUV, screenCoordinate, smoothstep, float, uniform, vec2, vec3, vec4, dot, mix, pow, max, min, clamp, mrt, packNormalToRGB, unpackRGBToNormal, normalView, velocity, sample, context, diffuseColor, convertToTexture, renderOutput, interleavedGradientNoise, metalness, roughness } = tsl;
     const { bloom } = bloomMod;
     const disposables: Array<{ dispose(): void }> = [];
     // Temporal AA replaces MSAA (its history needs single-sampled targets); without it the scene pass keeps MSAA.
@@ -232,7 +242,22 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
       scenePass.contextNode = (context as unknown as (v: Record<string, unknown>) => typeof scenePass.contextNode)(value);
     }
     const color = scenePass.getTextureNode('output');
+    // Scene pass at a lower resolution than the frame (motion only): upsampled bilinearly, then sharpened against the four
+    // neighbours, limited to their range so a bright edge does not ring (contrast adaptive sharpening on the linear image).
+    const uSharp = uniform(0);
+    const uTexel = uniform(new three.Vector2(0, 0));
     let hdr = color.rgb;
+    if (!prepass && !(globalThis as { __NOSHARP?: boolean }).__NOSHARP) {
+      const c = color.rgb;
+      const up = color.sample(screenUV.add(vec2(0, uTexel.y))).rgb;
+      const down = color.sample(screenUV.sub(vec2(0, uTexel.y))).rgb;
+      const right = color.sample(screenUV.add(vec2(uTexel.x, 0))).rgb;
+      const left = color.sample(screenUV.sub(vec2(uTexel.x, 0))).rgb;
+      const lo = min(min(min(up, down), min(left, right)), c);
+      const hi = max(max(max(up, down), max(left, right)), c);
+      const blur = up.add(down).add(left).add(right).mul(0.25);
+      hdr = clamp(c.add(c.sub(blur).mul(uSharp)), lo, hi);
+    }
     // One bounce of the lit scene: the sunlit floor patch lights the walls and the ceiling above it, a
     // bright wall tints its neighbours. The bounce is the lit colour gathered around each pixel times the
     // surface's own albedo (so a white ceiling takes the floor's warmth and a dark one stays dark).
@@ -347,7 +372,19 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
       pipeline.outputNode = output;
     }
     let seed = 0;
+    let sceneScale = 1;
     return {
+      sceneScalable: !prepass,
+      setSceneScale: (scale: number, width: number, height: number) => {
+        if (prepass) return;
+        const k = Number.isFinite(scale) ? Math.max(0.1, Math.min(1, scale)) : 1;
+        if (k === sceneScale && uTexel.value.x > 0) return;
+        sceneScale = k;
+        scenePass.setResolutionScale(k);
+        // One texel of the scaled target in frame UV units; the sharpening fades out as the scale nears 1.
+        uTexel.value.set(1 / Math.max(1, Math.floor(width * k)), 1 / Math.max(1, Math.floor(height * k)));
+        uSharp.value = k >= 0.98 ? 0 : SCENE_SHARPEN;
+      },
       quality: prepass ? 'studio' : 'standard',
       effects,
       key: effectsKey(effects),

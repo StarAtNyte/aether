@@ -27,6 +27,7 @@ const WEAK = arg('weak') !== undefined;
 const VSYNC = arg('vsync') !== undefined;
 const FORCE_DRAW = arg('forcedraw') !== undefined;
 const PROFILE = arg('profile') !== undefined;
+const PIN = arg('pin') === undefined ? null : Number(arg('pin'));
 const TIMEOUT = 150_000;
 const t0 = performance.now();
 const log = (line: string): void => void process.stdout.write(`[${((performance.now() - t0) / 1000).toFixed(1).padStart(6)}s] ${line}\n`);
@@ -88,6 +89,14 @@ const EXTRA: Cfg[] = [
   { id: 'default-hide-building', auto: true, js: 'hide-on:^(penthouse|casa)', after: 'hide-off:^(penthouse|casa)' },
   { id: 'default-hide-models', auto: true, js: 'hide-on:^model', after: 'hide-off:^model' },
   { id: 'default-hide-olive', auto: true, js: 'hide-on:^olive', after: 'hide-off:^olive' },
+  { id: 'default-hide-all', auto: true, js: 'hide-on:', after: 'hide-off:' },
+  { id: 'default-hide-all-nosun', auto: true, js: 'hide-on:+sun-off', after: 'hide-off:+sun-on' },
+  { id: 'default-nosun', auto: true, js: 'sun-off', after: 'sun-on' },
+  { id: 'default-quarter', auto: true, js: 'quarter', after: 'full' },
+  { id: 'default-half', auto: true, js: 'half', after: 'full' },
+  { id: 'default-cast-off-l0', auto: true, js: 'cast-off:^field:l0', after: 'cast-on:^field:l0' },
+  { id: 'default-cast-off-l1', auto: true, js: 'cast-off:^field:l1', after: 'cast-on:^field:l1' },
+  { id: 'default-cast-off-l2p', auto: true, js: 'cast-off:^field:l[2-9]', after: 'cast-on:^field:l[2-9]' },
   { id: 'default-taps1', auto: true, js: 'taps1', after: 'taps-restore' },
   { id: 'default-norecv', auto: true, js: 'recv-off', after: 'recv-on' },
   { id: 'default-no-people', auto: true, js: 'people-hide', after: 'people-show' },
@@ -95,6 +104,14 @@ const EXTRA: Cfg[] = [
   { id: 'default-no-skydetail', auto: true, js: 'no-sky' },
   { id: 'default-no-hdri-no-sky', auto: true, js: 'no-hdri-sky' },
 ];
+/** `--rows=q~<hook>[+<hook>]`: realtime low at the 0.5 floor (`q5~`: 0.25), adaptive off, with those page hooks applied (undone by their inverse). */
+for (const id of ROWS ?? []) {
+  const m = /^(q5?)~(.+)$/.exec(id);
+  if (!m) continue;
+  const inv = (h: string): string => h.replace(/^hide-on/, 'hide-off').replace(/^recv-off/, 'recv-on').replace(/^cast-off/, 'cast-on');
+  const hooks = m[2]!.split('+');
+  EXTRA.push({ id, ...BASE, js: `${m[1] === 'q5' ? 'quarter' : 'half'}+${hooks.join('+')}`, after: `full+${hooks.map(inv).join('+')}` });
+}
 const STUDIO_PIECES = ['ao', 'taa', 'contact', 'ssr', 'shafts', 'halation', 'aberration', 'grain'];
 const CONFIGS: Cfg[] = [
   ...EXTRA,
@@ -184,7 +201,7 @@ async function describe(page: Page): Promise<string> {
 
 async function measure(page: Page, pose: readonly number[], cfg: Cfg): Promise<{ median: number; p90: number; cpu: number; state: string }> {
   return page.evaluate(
-    async ([c, frames, p, forceDraw]) => {
+    async ([c, frames, p, forceDraw, pin]) => {
       const cfg = c as Cfg;
       const r = window.__aether?.simulation?.renderer as unknown as R;
       const hook = async (rr: R, name: string): Promise<void> => {
@@ -353,6 +370,15 @@ async function measure(page: Page, pose: readonly number[], cfg: Cfg): Promise<{
       await new Promise((res) => setTimeout(res, 1500));
       await new Promise((res) => setTimeout(res, 2500));
       await run(150, null);
+      if (typeof pin === 'number') {
+        // Fixed scale in motion: the scaler and the performance ladder stand still.
+        const x = r as unknown as { adaptive: { scale: number; record: () => boolean }; governor: { record: () => boolean }; motionScale: number; resize(w: number, h: number): void; cssWidth: number; cssHeight: number };
+        x.adaptive.record = () => false;
+        x.governor.record = () => false;
+        x.adaptive.scale = pin;
+        x.motionScale = pin;
+        x.resize(x.cssWidth, x.cssHeight);
+      }
       const be = (r.renderer as unknown as { backend?: { gl?: WebGL2RenderingContext } }).backend;
       const gl = be?.gl ?? r.renderer.getContext?.();
       // GPU time per drawn frame from timer queries wrapped around the whole draw (nothing nested; skipped when the extension is missing).
@@ -417,12 +443,12 @@ async function measure(page: Page, pose: readonly number[], cfg: Cfg): Promise<{
           bestP90 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.9))] as number;
         }
       }
-      (window as unknown as { __dbg: string }).__dbg = `rafMed=${rafMed.map((v) => v.toFixed(1)).join('/')} scaleInMotion=${moveScale} gpu(move x n+rest x n)=${gpuBlocks.join(' | ')} blocks=${blocks.map((b) => b.toFixed(0)).join('/')}`;
+      (window as unknown as { __dbg: string }).__dbg = `rafMed=${rafMed.map((v) => v.toFixed(1)).join('/')} scaleInMotion=${moveScale} gpu(move x n+rest x n)=${gpuBlocks.join(' | ')} sunMapDraws=${String((r as unknown as { sunMapDraws: number }).sunMapDraws)} blocks=${blocks.map((b) => b.toFixed(0)).join('/')}`;
       if (cfg.after) for (const j of cfg.after.split('+')) await hook(r, j);
       const s = r.stats();
       return { median: best, p90: bestP90, cpu: s['frameMs'] as number, state: `${(window as unknown as { __dbg: string }).__dbg} ad=${String((r as unknown as { adaptive: { enabled: boolean; smoothedFps: number } }).adaptive.enabled)}/${String((r as unknown as { atRest: boolean }).atRest)}/${(r as unknown as { adaptive: { smoothedFps: number } }).adaptive.smoothedFps.toFixed(0)} post=${(r as unknown as { post?: { key: string } | null }).post?.key ?? 'none'} maps=${r.sunShadowInfo.mapSizes.join('/')} ${r.renderQuality}/${r.renderTier} fx=${r.intendedEffects.length} lvl=${s['performanceLevel']} scale=${s['resolutionScale']} draws=${s['drawCalls']}` };
     },
-    [cfg, FRAMES, [...pose], FORCE_DRAW] as const,
+    [cfg, FRAMES, [...pose], FORCE_DRAW, PIN] as const,
   );
 }
 
@@ -511,6 +537,8 @@ async function main(): Promise<void> {
       const context = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
       await context.addInitScript({ content: SKIP_FIRST_RUN });
       await context.addInitScript({ content: 'globalThis.__name = (f) => f;' });
+      if (process.env['NOPASS']) await context.addInitScript({ content: 'globalThis.__NOPASS = true;' });
+      if (process.env['NOSHARP']) await context.addInitScript({ content: 'globalThis.__NOSHARP = true;' });
       if (WEAK) {
         await context.addInitScript(() => {
           Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 2 });

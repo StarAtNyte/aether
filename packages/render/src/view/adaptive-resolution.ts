@@ -53,6 +53,8 @@ export class AdaptiveResolution {
   scale = 1;
   /** Whether the controller may change the scale. */
   enabled = true;
+  /** The lowest scale in force (the options' `minScale` unless {@link setFloor} lowered it). */
+  private floor: number;
   private readonly o: typeof ADAPTIVE_DEFAULTS;
   private fps = 0;
   private below = 0;
@@ -69,6 +71,16 @@ export class AdaptiveResolution {
   constructor(opts: AdaptiveOptions = {}) {
     this.o = { ...ADAPTIVE_DEFAULTS, ...opts };
     this.upWait = this.o.upAfter;
+    this.floor = this.o.minScale;
+  }
+
+  /**
+   * Lower (or restore, with no argument) the floor: a chain that upsamples with a sharpening step can go below the
+   * option's `minScale`. A scale already below a restored floor is raised to it.
+   */
+  setFloor(floor: number = this.o.minScale): boolean {
+    this.floor = Math.max(0.1, Math.min(1, floor));
+    return this.scale < this.floor ? this.set(this.floor) : false;
   }
 
   /** Number of scale changes so far (diagnostics). */
@@ -120,10 +132,10 @@ export class AdaptiveResolution {
       this.below = 0;
       this.above = 0;
     }
-    if (this.below >= this.o.downAfter && this.scale > this.o.minScale) {
+    if (this.below >= this.o.downAfter && this.scale > this.floor) {
       if (this.sinceUpscale < this.o.failWindow) this.upWait = Math.min(this.o.maxUpAfter, this.upWait * 2);
       const factor = Math.max(this.o.minStep, Math.min(this.o.step, Math.sqrt(Math.max(this.fps, 1) / this.o.targetFps)));
-      return this.set(Math.max(this.o.minScale, this.scale * factor));
+      return this.set(Math.max(this.floor, this.scale * factor));
     }
     if (this.above >= this.upWait && this.scale < 1) {
       this.sinceUpscale = 0;
