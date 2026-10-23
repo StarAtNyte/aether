@@ -6166,3 +6166,22 @@ Startup (cold browser, first frame, `tests/e2e/startup-perf.e2e.ts`): hotel 4.5 
 Tried and dropped: spherical-harmonics ambient replacing the two prefiltered environment lookups (fitted to the lookup itself on the GPU, matched within 2 levels) saved only 0.5 ms, because the rest of the cost is three's physical lighting model arithmetic, not the lookups. Not done: a lean lighting model (needs a fork of three's PhysicalLightingModel), cheaper foliage and water shaders (skyline), texture compression changes.
 
 Gates: tsc clean; vitest packages/render and apps/studio 1570 pass; smoke 34/34; e2e:weak ok; showcase:bake --check up to date. The weak check failed on bcdb5270 until the follow-up a8c437cf (not this work).
+## 2026-10-23 Geometry, terrain and shadow cost of the skyline penthouse and the casa patio
+
+Task: 60 fps on an integrated GPU for the two heavy showcase worlds. Measured on the Intel UHD 770 (headless Chromium, ANGLE/GL, vsync on, cover cameras, 1856 x 1016, orbit; smallest of three blocks; GPU ms from timer queries). The iGPU is shared with other jobs: rows are only comparable when run back to back in fresh pages, and a hide/cast/receive row in one page is confounded by the performance ladder, so conclusions come from fresh-page rows. Harness: `default-perf.e2e.ts` (new rows `default-nocast`, `-frozen-map`, `-noshadow`, `-terrain-plain`, `-recv-off:<re>`, `-cast-off:<re>`, `-hide-*`), `geom-probe.e2e.ts` (triangles and draws by mesh group, shader dump). The harness no longer marks content changed every frame (`--forcedraw` restores it).
+
+Where the casa frame went (GPU ms of about 53 at the 0.5 resolution floor): layered terrain material 11 (28 texture reads per pixel, four layers, two scales, triplanar rock), sun shadows 12 (pass about 6, receiving about 6; filter taps are not the cost: 1+1 taps saved 0.3), scatter foliage 8 (4 of it shadow receiving), the rest geometry and fixed cost. Skyline: backdrop towers 5 and ground 7 (fragment cost, not draw calls), shadows 4.
+
+Changes (generic): heavy scatter layers below 2000 instances (330 oaks of 2.5k triangles) become culled, LOD'd fields with finer chunks; the field triangle budget is split by demand (before, ground cover of 10 000 blades took the share and a forest vanished); pooled update ranges (no per-replan allocation); layered terrain draws after the other opaque items; the terrain shader skips layers with no weight and takes only the large-scale lookup beyond 90 m (inside branches built from fresh nodes: a node first built in a branch is a variable declared there, and `normalWorld` and a shared distance node left unset variables, which showed as dark terrain until fixed); unique static procedural props merge per 160 m cell and material; the single sun map is reused while only the camera moves (dirty on content change, sun or frustum change; every 2nd frame while casters animate; every 24 frames as a net; cascades and captures always draw). Bundled lightmaps regenerated for skyline and casa; `showcase:lightmaps --verify` 6/6, `showcase:bake --check` up to date.
+
+Before and after (task start build vs now, GPU ms in motion / frame interval):
+
+| room | before | after |
+|---|---:|---:|
+| casa patio | 53.5 ms GPU, 59 ms (15-17 fps) | 28.5 ms GPU, 34 ms (30 fps) |
+| skyline penthouse | 35 ms GPU, 40 ms (25 fps) | 24.5 ms GPU, 29-30 ms (33 fps) |
+| hotel, twin, vaulted | 16.7 ms (60) | 16.6 ms (60) |
+
+Still short of 60: casa (about 28 ms GPU) and skyline (about 24 ms). What is left is per-pixel work, not geometry: terrain and ground shading, foliage overdraw (LOD does not cut it: thinned cards grow to keep coverage), shadow receiving (6 ms casa, 4 skyline), and the backdrop towers' facade shader. Next levers, not done: a far/near split of the ground and facade materials like the terrain's, per-LOD receiving flags on far foliage, a lower resolution floor for these two worlds.
+
+Stills at rest: skyline mean 8-bit difference 4.3 (p99 26); casa terrain matches, the whole difference is the foliage speckle that differs between any two captures (mean 21). Gates: tsc clean, vitest render/studio/core pass (one allocation probe, `assets.test` walkers, is flaky only in the full run under load), smoke 34/34, e2e:weak ok. Not tested: the WebGPU backend (no WebGPU on this machine) for the terrain branches.
