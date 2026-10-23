@@ -144,7 +144,7 @@ async function runWorld(base: string, world: string): Promise<boolean> {
 
 /**
  * The watchdog itself: the read-back the watchdog takes of the drawn frame is made to come back empty (as a view that
- * drew nothing would), with short waits.
+ * drew nothing would: the canvas snapshot the sampler hands to its worker is replaced by an empty image), with short waits.
  * The renderer must step down, say so over the viewport with a Safe mode switch, log why, and offer diagnostics.
  */
 async function runForcedBlack(base: string, world: string): Promise<boolean> {
@@ -155,7 +155,7 @@ async function runForcedBlack(base: string, world: string): Promise<boolean> {
   try {
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 });
     await context.addInitScript({ content: SKIP_FIRST_RUN });
-    await context.addInitScript({ content: 'globalThis.__name = (f) => f; delete Navigator.prototype.gpu; window.__aetherWatchdog = { firstFrameMs: 60000, stepFrameMs: 3000, sampleEveryMs: 300, darkSamples: 2 }; { const d = CanvasRenderingContext2D.prototype.drawImage; CanvasRenderingContext2D.prototype.drawImage = function (...a) { if (this.canvas.width === 16 && this.canvas.height === 16) return; return d.apply(this, a); }; }' });
+    await context.addInitScript({ content: 'globalThis.__name = (f) => f; delete Navigator.prototype.gpu; window.__aetherWatchdog = { firstFrameMs: 60000, stepFrameMs: 3000, sampleEveryMs: 300, darkSamples: 2 }; { const d = CanvasRenderingContext2D.prototype.drawImage; CanvasRenderingContext2D.prototype.drawImage = function (...a) { if (this.canvas.width === 16 && this.canvas.height === 16) return; return d.apply(this, a); }; } { const c = window.createImageBitmap.bind(window); window.createImageBitmap = (src, ...a) => (src instanceof HTMLCanvasElement ? c(new ImageData(16, 16)) : c(src, ...a)); }' });
     const page = await context.newPage();
     const logs: string[] = [];
     page.on('console', (m) => void logs.push(m.text()));

@@ -6104,3 +6104,38 @@ Before and after, same machine, default orbit of the default camera, studio rend
 The three photo rooms hold 60 fps in motion. The skyline and the casa do not: at the resolution floor their cost is geometry and the shadow pass (0.75 and 4 million triangles drawn per frame, 600 to 780 draw calls), which resolution does not reduce. Next levers, not done: a cached sun map for static content (the medium plan's map no longer depends on the camera, so it can be kept until content or sun change; needs a dirty signal from the scene sync), merged and instanced static meshes, a cheaper far ground. Stills: at rest the hotel and skyline look as before (viewed side by side); the skyline's leaf shimmer is calmer. Other things found: the skyline and the casa still bake their light in the browser on open (their bundled lightmap keys no longer match after later renderer changes; `showcase:lightmaps` regenerates them), and the lit material of anti-tiled finishes costs 7 of 25 ms in the hotel view with no single part (noise, second lookup, mottle) responsible.
 
 Gates: `tsc --noEmit` clean; vitest `packages/render` and `apps/studio` pass (the adaptive-resolution tests were rewritten for proportional steps, a quality-plan test covers the split); `npm run e2e:weak` ok; smoke 34/34.
+
+## 2026-10-23 Main-thread blocking: measured per flow, three offenders moved off the page
+
+Harness: `tests/e2e/longtask.e2e.ts` (Chromium, integrated GPU through `GEN_GPU=intel`, machine shared with other jobs, so absolute times are inflated and noisy; the ratios are what to read). It records long tasks (over 50 ms), long animation frames with script attribution, rAF gaps and input delay (a key press every 100 ms through the flow), and attributes every long task from a CDP CPU profile (self and inclusive functions). Flows: open each of the 15 showcase worlds and the three photo rooms (cold page), then on highland-trail, casa-patio and skyline-penthouse: resize, chat edit, verify, export (.aether.json, .glb, share link), enter Play, leave Play.
+
+Ranking before (total blocked ms = sum of long-task time above 50 ms; worst single task):
+
+| flow | blocked | worst | what it was |
+|---|---:|---:|---|
+| open hollow-gate | 14 486 | 13 256 | the black-screen watchdog's 16x16 read-back (`drawImage` + `getImageData` of the canvas) waiting for the GPU to finish the first frame |
+| open skyline-penthouse / sakura-river / dusk-lake-house / kyoto-temple | 11 379 / 9 386 / 9 346 / 8 031 | 9 283 / 7 398 / 7 619 / 7 079 | the same read-back |
+| export .glb casa-patio / skyline / highland | 4 717 / 3 446 / 2 000 | 4 538 / 3 496 / 2 050 | three's GLTFExporter merging roughness and metalness maps with a full-size `getImageData` per texture, then `toBlob` of accelerated scratch canvases |
+| open kart-canyon / neon-rain-city | 4 273 / 3 732 | 3 479 / 2 630 | three builds the post-chain and material node programs inside one frame (NodeBuilder, GC); neon also decoded its 2048 px character masks on the page (396 ms) |
+| enter Play casa-patio / highland | 4 410 / 3 395 | 3 206 / 1 539 | native program/link time on the first play frames (not JS) |
+| everything else | under 3 000 | under 1 200 | frame renders compiling programs; module evaluation of lazy chunks (90 to 170 ms); sky dome recolour in `setWorld` (60 to 115 ms) |
+
+Chat edit, verify, export JSON, share link, resize and leave Play: no JS long task above 60 ms on these worlds (verification and procedural work already run in workers). Physics creation on entering Play is cheap (casa-patio: 217 bodies, 147 ms in total over several yields; highland 94 ms), so a physics worker was not built and the sealed-replay contract is untouched.
+
+What moved (all generic, no per-world code):
+- The watchdog's view sample: `createImageBitmap(canvas)` takes the snapshot in the frame's task and a worker (`view/frame-sample.worker.ts`) reduces it with the same `measureFrame`; the watchdog decision is unchanged. `e2e:weak --force-black` now empties the snapshot instead of the old 2D `drawImage` hook.
+- GLB export: the metal-rough composite is built in `view/metal-rough.worker.ts` (same rules as the exporter's: cyan base, sRGB to linear) and both material slots then hold the one texture, which the exporter writes as it is; the exporter's scratch 2D canvases are software canvases for the duration of the export (`willReadFrequently`), so the PNG encode no longer waits for a GPU read-back.
+- Character mask decode: `characters/mask-decode.worker.ts` (decode, draw, read-back off the page; falls back to the old path where workers are missing).
+
+After (same harness; opens re-measured over all worlds, GLB re-measured on highland and skyline after the last change):
+- Total blocked over every flow measured: 92.5 s to 46.5 s (before the GLB canvas change; the remainder is frame renders).
+- Worst single task: hollow-gate open 13 256 to 935 ms; skyline-penthouse open 9 283 to 774; sakura-river 7 398 to 1 012; dusk-lake-house 7 619 to 1 672; kyoto-temple 7 079 to 1 414; casa-patio open 2 258 to 776.
+- Input delay (max, key press during the flow): hollow-gate open 13 217 to 34 ms; sakura-river 7 324 to 51; kyoto 7 037 to 628; kart-canyon 3 395 to 57.
+- GLB export worst task: highland 2 050 to 869 ms; skyline 3 496 to 1 065 (the rest is one `toBlob` of a 2048 px texture).
+
+Not done, and why:
+- OffscreenCanvas rendering in a worker: the studio draws through three's WebGPU/WebGL2 renderers with picking, DOM overlays, the gizmo layer, the capture/still path and a watchdog that reads the canvas and restarts the renderer on a context loss; a worker renderer would need all of those proxied and a second code path for the WebGL fallback. Not safe in this window. The long tasks that remain in frames are three building node programs (NodeBuilder, 300 to 2 800 ms for the studio post chain of kart-canyon and neon-rain-city: `pipeline.render()` builds the whole chain in its first call); they cannot be split from outside three and belong to the post/material code (a pre-build of the chain in slices, or fewer distinct programs).
+- The first watchdog sample still costs 0.4 to 0.6 s once (`createImageBitmap` of a canvas whose frame the GPU has not finished); the watch ends after the first non-black sample.
+- Sky dome recolour in `setWorld` (60 to 115 ms once per open), module evaluation of the lazy still/render chunk (90 to 170 ms), first-play program links (native): left, none exceeds the budget by enough to justify more machinery.
+
+Gates: `tsc --noEmit` clean; vitest `packages/render` and `apps/studio` pass; smoke 34/34; `e2e:weak` (including the forced-black watchdog run) ok.
