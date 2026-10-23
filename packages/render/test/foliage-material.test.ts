@@ -28,6 +28,8 @@ describe('foliage materials', () => {
       expect(m).toBeInstanceOf(MeshStandardMaterial);
       expect(m.map).toBeInstanceOf(DataTexture);
       expect(m.alphaTest).toBe(0.5);
+      // Single-sampled post chains: coverage would dither the whole card into a stipple.
+      expect(m.alphaToCoverage).toBe(false);
       expect(m.transparent).toBe(false);
       expect(m.userData['aetherFoliage']).toBe('broadleaf');
       // Without textures (a context that cannot make them) the material is plain.
