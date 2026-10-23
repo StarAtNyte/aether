@@ -170,7 +170,7 @@ async function main(): Promise<void> {
                 e.softFilter?.set({ blockerSamples: 1, filterSamples: 1, sunAngle: 0.019, minPenumbra: 0.012 });
                 const t = await gpu();
                 e.softFilter?.set({ blockerSamples: 6, filterSamples: 12, sunAngle: 0.019, minPenumbra: 0.012 });
-                out.push(`soft filter 1+1 taps: ${t.toFixed(1)} ms  [base ${(await gpu()).toFixed(1)}]`);
+                out.push(`softFilter present=${!!e.softFilter} plan=${JSON.stringify(e.sunPlan)} soft filter 1+1 taps: ${t.toFixed(1)} ms  [base ${(await gpu()).toFixed(1)}]`);
               }
               if (h === 'x:norecv' || h === 'x:nocast') {
                 const meshes: any[] = [];

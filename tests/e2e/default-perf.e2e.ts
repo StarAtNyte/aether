@@ -75,6 +75,20 @@ const EXTRA: Cfg[] = [
   { id: 'default-no-fields', auto: true, js: 'fields-hide', after: 'fields-show' },
   { id: 'default-no-terrain', auto: true, js: 'terrain-hide', after: 'terrain-show' },
   { id: 'default-terrain-plain', auto: true, js: 'terrain-plain', after: 'terrain-restore' },
+  { id: 'default-recv-off-fields', auto: true, js: 'recv-off:^field:', after: 'recv-on:^field:' },
+  { id: 'default-recv-off-terrain', auto: true, js: 'recv-off:^landscape', after: 'recv-on:^landscape' },
+  { id: 'default-recv-off-rest', auto: true, js: 'recv-off:^(?!field:|landscape)', after: 'recv-on:^(?!field:|landscape)' },
+  { id: 'default-cast-off-fields', auto: true, js: 'cast-off:^field:', after: 'cast-on:^field:' },
+  { id: 'default-cast-off-terrain', auto: true, js: 'cast-off:^landscape', after: 'cast-on:^landscape' },
+  { id: 'default-cast-off-rest', auto: true, js: 'cast-off:^(?!field:|landscape)', after: 'cast-on:^(?!field:|landscape)' },
+  { id: 'default-hide-towers', auto: true, js: 'hide-on:^tower', after: 'hide-off:^tower' },
+  { id: 'default-hide-ground', auto: true, js: 'hide-on:^aether:ground', after: 'hide-off:^aether:ground' },
+  { id: 'default-hide-sky', auto: true, js: 'hide-on:^aether:(sky|clouds|cirrus)', after: 'hide-off:^aether:(sky|clouds|cirrus)' },
+  { id: 'default-hide-building', auto: true, js: 'hide-on:^(penthouse|casa)', after: 'hide-off:^(penthouse|casa)' },
+  { id: 'default-hide-models', auto: true, js: 'hide-on:^model', after: 'hide-off:^model' },
+  { id: 'default-hide-olive', auto: true, js: 'hide-on:^olive', after: 'hide-off:^olive' },
+  { id: 'default-taps1', auto: true, js: 'taps1', after: 'taps-restore' },
+  { id: 'default-norecv', auto: true, js: 'recv-off', after: 'recv-on' },
   { id: 'default-no-people', auto: true, js: 'people-hide', after: 'people-show' },
   { id: 'default-no-hdri', auto: true, js: 'no-hdri' },
   { id: 'default-no-skydetail', auto: true, js: 'no-sky' },
@@ -259,6 +273,23 @@ async function measure(page: Page, pose: readonly number[], cfg: Cfg): Promise<{
         };
         if (name === 'cast-off') walk((o) => { if (o.isMesh) { o.__cs = o.castShadow; o.castShadow = false; } });
         if (name === 'cast-on') walk((o) => { if (o.isMesh && o.__cs !== undefined) o.castShadow = o.__cs; });
+        const rx = name.includes(':') ? new RegExp(name.slice(name.indexOf(':') + 1)) : null;
+        const key = name.startsWith('recv-') ? 'receiveShadow' : name.startsWith('cast-') ? 'castShadow' : name.startsWith('hide-') ? 'visible' : null;
+        if (rx && key) {
+          const head = name.slice(0, name.indexOf(':'));
+          const off = head === 'hide-on' || head === 'recv-off' || head === 'cast-off';
+          walk((o) => {
+            const m = o as unknown as Record<string, unknown> & { isMesh?: boolean; name: string; parent?: unknown };
+            if (!m.isMesh) return;
+            let hit = false;
+            for (let p: { name: string; parent?: unknown } | undefined = m; p; p = p.parent as typeof p) if (rx.test(p.name)) hit = true;
+            if (!hit) return;
+            if (off) { m['__sv_' + key] = m[key]; m[key] = false; } else if (m['__sv_' + key] !== undefined) m[key] = m['__sv_' + key];
+          });
+        }
+        if (name === 'taps1' || name === 'taps-restore') (x.env as unknown as { softFilter?: { set(o: object): void } }).softFilter?.set(name === 'taps1' ? { blockerSamples: 1, filterSamples: 1, sunAngle: 0.019, minPenumbra: 0.012 } : { blockerSamples: 3, filterSamples: 6, sunAngle: 0.019, minPenumbra: 0.012 });
+        if (name === 'recv-off') walk((o) => { const m = o as unknown as { isMesh?: boolean; receiveShadow: boolean; __rs?: boolean }; if (m.isMesh) { m.__rs = m.receiveShadow; m.receiveShadow = false; } });
+        if (name === 'recv-on') walk((o) => { const m = o as unknown as { isMesh?: boolean; receiveShadow: boolean; __rs?: boolean }; if (m.isMesh && m.__rs !== undefined) m.receiveShadow = m.__rs; });
         if (name === 'map-freeze') (x.env.sun as unknown as { shadow: { autoUpdate: boolean; needsUpdate: boolean } }).shadow.autoUpdate = false;
         if (name === 'map-thaw') (x.env.sun as unknown as { shadow: { autoUpdate: boolean } }).shadow.autoUpdate = true;
         if (name === 'sun-off') x.env.sun.castShadow = false;

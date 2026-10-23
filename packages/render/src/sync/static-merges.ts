@@ -4,6 +4,8 @@
  * entities with `arch` metadata) that share a material are merged into one
  * mesh per material under their storey, so a furnished apartment draws a few
  * dozen meshes instead of several hundred (and the shadow pass likewise).
+ * Unique static procedural props of the world (a backdrop of towers, planters,
+ * boulders) merge the same way per cell of {@link PROP_CELL} metres.
  *
  * Like {@link StaticBatches} it is a render-only layer over the scene graph:
  * every entity keeps its own meshes, moved to {@link BATCHED_LAYER} (raycast,
@@ -24,6 +26,9 @@ import type { EntityNode } from './entity-node';
 import { concatMemberUv, expandWithLightmap, refreshProgram, type LightmapSource } from './lightmap-uv';
 import { BATCHED_LAYER } from './static-batches';
 
+/** Edge (m) of the cells that world props (entities without `arch`) are merged in: a merged mesh is culled as a whole, so it stays local. */
+export const PROP_CELL = 160;
+
 /** Smallest group worth merging (fewer meshes draw as they are). */
 export const MIN_MERGE = 3;
 /** Largest merged mesh (vertices); bigger groups split into several meshes. */
@@ -36,7 +41,7 @@ export function mergeable(node: Readonly<EntityNode>): boolean {
   if (node.transient || node.placeholder || node.pending || node.failed || node.overridden || node.instances > 0) return false;
   if (node.virtual.length > 0 || node.field) return false;
   const e = node.entity;
-  if (!e.arch || e.template || e.visible === false || e.shape.kind !== 'procedural') return false;
+  if (e.template || e.visible === false || e.shape.kind !== 'procedural') return false;
   if (e.behaviors.length > 0) return false;
   if (e.physics && e.physics.body !== 'static') return false;
   if (node.bindings.length === 0 || node.bindings.length > MAX_PARTS || node.geometryKeys.length !== node.bindings.length) return false;
@@ -45,7 +50,7 @@ export function mergeable(node: Readonly<EntityNode>): boolean {
 
 /** A mesh of a mergeable node that can join a merge (opaque, shared single material, indexed). */
 function mergeablePart(b: Readonly<EntityNode['bindings'][number]>): boolean {
-  if (b.ownedMaterial || b.seeThrough) return false;
+  if (b.ownedMaterial || b.seeThrough || b.variant) return false;
   const m = b.mesh.material as Material | Material[];
   if (Array.isArray(m) || m.transparent) return false;
   const g = b.mesh.geometry;
@@ -112,7 +117,10 @@ export class StaticMerges {
         this.evicted.delete(mesh);
         const g = mesh.geometry;
         const attrs = `${g.getAttribute('uv') ? 'u' : ''}${g.getAttribute('color') ? 'c' : ''}`;
-        const key = `${parent.uuid}|${b.materialKey}|${mesh.castShadow ? 1 : 0}${mesh.receiveShadow ? 1 : 0}|${attrs}`;
+        // Parts of a building merge under their storey; world props merge per cell of the world, so a district of
+        // towers or a row of trees is a few draws and still culls by region.
+        const cell = node.entity.arch ? '' : `|${Math.floor(mesh.matrixWorld.elements[12] / PROP_CELL)},${Math.floor(mesh.matrixWorld.elements[14] / PROP_CELL)}`;
+        const key = `${parent.uuid}${cell}|${b.materialKey}|${mesh.castShadow ? 1 : 0}${mesh.receiveShadow ? 1 : 0}|${attrs}`;
         let list = groups.get(key);
         if (!list) {
           list = { parent, material: mesh.material as Material, meshes: [] };
