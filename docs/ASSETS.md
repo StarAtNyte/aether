@@ -14,11 +14,11 @@ CC0 / CC-BY asset → built-in generator → AI-written generator → primitive 
 
 | | |
 | --- | --- |
-| Entries | 404: 368 models (animated: people and animals with idle / walk / run, 2 chests that open), 5 HDR skies, 23 photographed surfaces, 8 forge originals; among the models, 13 code-authored vehicles (kart, race car, road cars) and 22 skinned, animated animals (7 Quaternius Farm Animals CC0, fox and wolf from the Khronos Fox, 13 code-authored) |
-| Categories | furniture 49, kitchen 21, bathroom 10, decor 25, lighting 13, plants 19, nature 28, rocks 8, buildings 26, street 32, vehicles 29, people 19, animals 37, food 24, tools 5, props 31, skies 5, surfaces 23 |
-| Sources | 14 Kenney kits (CC0), 16 Poly Haven models + 5 Poly Haven HDRIs (CC0), 23 ambientCG PBR materials (CC0), Quaternius Farm Animals (CC0, 7 models), Khronos Fox (CC-BY-4.0), 8 first-party forge originals, 13 code-authored creatures and 13 vehicles (MIT) |
-| Disk | 58 MB under `assets/lib/` (meshopt-compressed GLB, 1k JPEG textures, 512 px surface maps, 192 px WebP thumbnails, 1k HDR), plus 67 MB of KTX2 twins under `assets/lib/k/` ([GPU-compressed textures](#gpu-compressed-textures-ktx2)) |
-| Catalog | `assets/catalog.json`, 244 KB (43 KB gzip), loaded lazily after the editor starts |
+| Entries | 665: 624 models (animated: people and animals with idle / walk / run, 2 chests that open), 10 HDR skies, 23 photographed surfaces, 8 forge originals; 249 models are realistic (photographed), 348 low-poly and 68 stylised (the kits of Kenney and the code-authored creatures and vehicles) |
+| Categories | furniture 115, building 53, vehicles 50, decor 50, street 47, nature 38, animals 37, rocks 28, plants 25, kitchen 24, lighting 24, food 24, props 77, characters 19, bathroom 10, tools 11, skies 10, surfaces 23 |
+| Sources | 17 Kenney kits (CC0; the later sci-fi base, castle and watercraft kits are built by `build.ts --extra`), about 190 Poly Haven models (98 interiors, 76 outdoor, street, industrial, harbour, farm and fantasy models, 16 earlier ones) + 10 Poly Haven HDRIs (CC0), 23 ambientCG PBR materials (CC0), Quaternius Farm Animals (CC0, 7 models), Khronos Fox (CC-BY-4.0), 8 first-party forge originals, 13 code-authored creatures and 13 vehicles (MIT) |
+| Disk | 170 MB under `assets/lib/` (meshopt-compressed GLB, JPEG textures at 256 / 512 / 1k, 512 px surface maps, 192 px WebP thumbnails, 1k HDR), plus 68 MB of KTX2 twins under `assets/lib/k/` ([GPU-compressed textures](#gpu-compressed-textures-ktx2)); the library is fetched on demand, never bundled with the app code |
+| Catalog | `assets/catalog.json`, 464 KB (83 KB gzip), loaded lazily after the editor starts |
 | Provenance | `assets/manifest.json`: source archive + SHA-256 (Kenney) or per-file MD5 (Poly Haven API), file inside the archive, licence, authors and SHA-256 of every shipped file |
 
 Every asset is real-world sized in metres, its base on y = 0 and centred in
@@ -27,12 +27,40 @@ vehicles face −Z, the engine's forward axis, so behaviours walk and drive
 them head first. Search understands synonyms ("couch" → sofa, "cop car" →
 police car), plurals and small typos.
 
+### Which models serve which world
+
+Every model carries a **category** (nature, rocks, plants, street, building, vehicles, props, tools, decor, lighting,
+furniture, ...) and a **look** (`style`: `realistic` for photographed Poly Haven models, `low-poly` or `stylised` for the
+Kenney-style kits and code-authored pieces). Realistic models also carry an `interior` fact: the object type ("tree",
+"rock", "hydrant", "sofa"), words for the design style or the biome it belongs to (forest, desert, coastal, harbour,
+urban, industrial, farm, scifi, fantasy, medieval), measured colours and the size. `find_model` ranks by those, so a
+prompt for a desert gets sandstone and quiver trees, a harbour gets ships, buoys and barrels, a city block gets
+street lamps, hydrants, barriers and bins. It takes `category` and `look` filters: a realistic request never returns a
+stylised kit, a `look: "low-poly"` request searches the kits (sci-fi base, castle, watercraft, pirate, fantasy
+town, nature, city, survival...) instead.
+
+| World | Realistic (Poly Haven) | Stylised / low-poly (Kenney) |
+| --- | --- | --- |
+| Forest, woodland | dead trunks, ferns, mossy rocks, branches (the dense scanned trees are too heavy; procedural trees fill in) | nature kit, castle trees and logs |
+| Desert, canyon | quiver trees, succulents, sandstone boulders, rubble and a cliff, sand rocks | castle rocks |
+| Coast, harbour | coastal ships, barrels, crates, chests, cannon, buoys, life ring, buckets | watercraft kit (ships, boats, containers, cargo, ramps), pirate kit |
+| City block, street | street lamp, hydrant, barriers, bins, utility boxes, manholes, picnic table, signs, fence, gates, covered car, fire escape | city kits (roads, commercial, suburban), car kit |
+| Industrial, sci-fi | pipes, crane, generator, racks, carts, barrel stove, floodlights, spacecraft instrument, moon rocks | space kit (corridors, hangars, platforms, craft, turrets, crystals, rovers) |
+| Farm, garden | planters, watering can, spade, ladder, seed tray, bags, sprinkler, crates, buckets | survival kit |
+| Medieval, fantasy | castle door, shields, swords, statue, candlestick | castle kit (walls, towers, gates, siege engines, bridges), fantasy town kit |
+| Interiors | the 98 furniture and decor models; sinks, cane chairs, rugs, fridges and ovens are procedural parts (`sink`, `cane-chair`, `fridge`, `oven`) | furniture kit |
+
+Gaps that remain: dense photographed trees and grass (procedural foliage covers them), bathtub and toilet (procedural
+parts), curtains and rugs (procedural parts), window views (sky HDRIs).
+
 ### Rebuilding it
 
 ```sh
 npm run assets:fetch    # download + verify the sources into ~/.cache/aether-asset-src (outside the repo)
 npm run assets:build    # normalise, merge, LOD, compress, colliders, catalog + manifest
 npm run assets:thumbs   # render thumbnails in one headless Chromium
+npx tsx scripts/assets/build.ts --interior [--ids=a,b]   # the Poly Haven rows of selection-interior.ts and selection-outdoor.ts (--ids upserts only those)
+npx tsx scripts/assets/build.ts --extra                  # the later Kenney kits and skies of selection-extra.ts
 npx tsx scripts/assets/sheet.ts 0 120 sheet.png   # contact sheet for review
 ```
 

@@ -564,6 +564,45 @@
    "sha256": "9a593ffe4194132bd8c881558b47107f2c3c739018bbdad12fca5d877c90746a",
    "retrieved": "2026-10-15",
    "usedFor": "finish \"cladding\""
+  },
+  {
+   "id": "kenney-space-kit",
+   "provider": "Kenney",
+   "title": "Space Kit",
+   "version": "1.0",
+   "author": "Kenney (www.kenney.nl)",
+   "licence": "CC0-1.0",
+   "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "page": "https://kenney.nl/assets/space-kit",
+   "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+   "sha256": "d5d7cdf2635ed5a43a9187deaf409b6f47484e402321128341d3c3698e9ef4d9",
+   "retrieved": "2026-10-23"
+  },
+  {
+   "id": "kenney-castle-kit",
+   "provider": "Kenney",
+   "title": "Castle Kit",
+   "version": "1.0",
+   "author": "Kenney (www.kenney.nl)",
+   "licence": "CC0-1.0",
+   "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "page": "https://kenney.nl/assets/castle-kit",
+   "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+   "sha256": "921f3f73927bb23106cae34bc21d5ab4b033a9fc120475e96f714a406e3169df",
+   "retrieved": "2026-10-23"
+  },
+  {
+   "id": "kenney-watercraft-pack",
+   "provider": "Kenney",
+   "title": "Watercraft Pack",
+   "version": "1.0",
+   "author": "Kenney (www.kenney.nl)",
+   "licence": "CC0-1.0",
+   "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "page": "https://kenney.nl/assets/watercraft-kit",
+   "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+   "sha256": "cd1470c1cf441c7f46d0944ae6d0d897242365dc97677c5079b3238965d659f3",
+   "retrieved": "2026-10-23"
   }
  ],
  "assets": [
@@ -8177,6 +8216,1523 @@
    ]
   },
   {
+   "id": "space-corridor",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/corridor.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-corridor.e6b31c76.glb",
+     "sha256": "e6b31c767f15861635cc67557a7dc5f8dcdbc7557539cdfda34de14026332525",
+     "bytes": 10176
+    }
+   ]
+  },
+  {
+   "id": "space-corridor-detailed",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/corridor_detailed.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-corridor-detailed.20a61836.glb",
+     "sha256": "20a61836bdbd2412b2ea6929a31540134eab43ff4609421dcb8c43ec88a71081",
+     "bytes": 20440
+    }
+   ]
+  },
+  {
+   "id": "space-corridor-corner",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/corridor_corner.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-corridor-corner.3b82351f.glb",
+     "sha256": "3b82351f602755ea5994d9db4dd28a5f4e557491d8f5ebd3d4b6aea4ad666286",
+     "bytes": 12660
+    }
+   ]
+  },
+  {
+   "id": "space-corridor-cross",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/corridor_cross.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-corridor-cross.e38b2f4a.glb",
+     "sha256": "e38b2f4aca1f1fd8b2879fdbc57ec5e3b8e11c6a6533aecaa5a210dc0354a273",
+     "bytes": 19176
+    }
+   ]
+  },
+  {
+   "id": "space-corridor-split",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/corridor_split.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-corridor-split.bb6a12fa.glb",
+     "sha256": "bb6a12fac8d11e92534afc0d5ebcafc74ca680507c46b85b11955ffbd03c8b6d",
+     "bytes": 19692
+    }
+   ]
+  },
+  {
+   "id": "space-corridor-end",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/corridor_end.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-corridor-end.f60ff7fd.glb",
+     "sha256": "f60ff7fdf88ccdce647b0522ae64ecb2c0e5569fa4deaf0487a7ff7a4abe86ec",
+     "bytes": 16544
+    }
+   ]
+  },
+  {
+   "id": "space-corridor-window",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/corridor_window.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-corridor-window.7e9f5800.glb",
+     "sha256": "7e9f58003d4c23f0b14171ef4b132ebb374b5cb2abdb4eb0f3853dcad4a643f7",
+     "bytes": 22528
+    }
+   ]
+  },
+  {
+   "id": "space-hangar-small",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/hangar_smallA.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-hangar-small.b692377d.glb",
+     "sha256": "b692377d6f68cf3461c44ee77b9474ca23e46b4f2048808932e1384f55ef1072",
+     "bytes": 22660
+    }
+   ]
+  },
+  {
+   "id": "space-hangar-large",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/hangar_largeA.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-hangar-large.1b05d67d.glb",
+     "sha256": "1b05d67dca55332314bdd8bbe156dee537a02552b8f5c6448859beaf57fd3918",
+     "bytes": 31292
+    }
+   ]
+  },
+  {
+   "id": "space-hangar-round",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/hangar_roundA.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-hangar-round.ea31307f.glb",
+     "sha256": "ea31307f6a7f8c1e54247d09479e6d6ae5e37865bc91228752cf54afaf142442",
+     "bytes": 22904
+    }
+   ]
+  },
+  {
+   "id": "space-platform",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/platform_large.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-platform.7b229c7d.glb",
+     "sha256": "7b229c7d2d19d2c6cdfae6152b1674f37117c26cc235c9424ab2b46c0f56f9db",
+     "bytes": 9240
+    }
+   ]
+  },
+  {
+   "id": "space-gate",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/gate_complex.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-gate.9b2f2dbd.glb",
+     "sha256": "9b2f2dbd8f988145c54a99cc92b5a30dc8bafbe88cc0698e2ddd5cc7fdf82ff4",
+     "bytes": 54820
+    }
+   ]
+  },
+  {
+   "id": "space-dish",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/satelliteDish_large.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-dish.40c7b4e1.glb",
+     "sha256": "40c7b4e18cc736c6e694f2939af9abffbc5b2ae24e17ec906d927b98987329f2",
+     "bytes": 25084
+    }
+   ]
+  },
+  {
+   "id": "space-turret",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/turret_single.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-turret.218d55aa.glb",
+     "sha256": "218d55aa468bef8c1dced71621fff6b7361bea575911d22c6be4b6da903d4d45",
+     "bytes": 49608
+    }
+   ]
+  },
+  {
+   "id": "space-turret-double",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/turret_double.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-turret-double.35e531a5.glb",
+     "sha256": "35e531a5bd91cf7a24b874a2e0854967a04a2be865ae4dd4b783a6e90a79ba05",
+     "bytes": 69036
+    }
+   ]
+  },
+  {
+   "id": "space-generator",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/machine_generatorLarge.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-generator.6aad5f06.glb",
+     "sha256": "6aad5f06dc715627fc351224dcb4266535b551c91a0cdbff39ee613bd2f34768",
+     "bytes": 18928
+    }
+   ]
+  },
+  {
+   "id": "space-transmitter",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/machine_wireless.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-transmitter.ba17404e.glb",
+     "sha256": "ba17404ef7fda553f32425553be77b347c303caf4f9bc7abc8ecf5a7810cef3f",
+     "bytes": 25280
+    }
+   ]
+  },
+  {
+   "id": "space-barrels",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/barrels.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-barrels.3ca41d59.glb",
+     "sha256": "3ca41d59e1d291b01b4eef4ccc73b13773047c8883f96b3337fd9e5dddcea3e1",
+     "bytes": 16644
+    }
+   ]
+  },
+  {
+   "id": "space-console",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/desk_computer.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-console.ab89b294.glb",
+     "sha256": "ab89b2941e98d1662da4ba85de31f5a499ec1b9d647773d7f87238ce05b89284",
+     "bytes": 10852
+    }
+   ]
+  },
+  {
+   "id": "space-chair",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/desk_chair.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-chair.90c5dcb2.glb",
+     "sha256": "90c5dcb215ba9f17736e07790712ce6a489ac96e5a7395a0be48dab431e8722e",
+     "bytes": 12840
+    }
+   ]
+  },
+  {
+   "id": "space-speeder-a",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/craft_speederA.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-speeder-a.d9ba16c9.glb",
+     "sha256": "d9ba16c90b96eb03a900898d72167206328a5d4d329241d2fa36fad06a69fa16",
+     "bytes": 39552
+    }
+   ]
+  },
+  {
+   "id": "space-racer",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/craft_racer.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-racer.cc1daa04.glb",
+     "sha256": "cc1daa04df240c06ccd7d13da2480d82e6704b0c54ff4c81e4f3c20d4043d37e",
+     "bytes": 35860
+    }
+   ]
+  },
+  {
+   "id": "space-cargo-ship",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/craft_cargoA.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-cargo-ship.d46975bf.glb",
+     "sha256": "d46975bfcd7ef58e21af2603e0cc9c48f4db38da5e3e6871dfa2c35d1f5591f4",
+     "bytes": 36420
+    }
+   ]
+  },
+  {
+   "id": "space-miner",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/craft_miner.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-miner.873805fa.glb",
+     "sha256": "873805fa0fc43ffaa4e3e76ea589c9078724b35f98a34463e9d962c0bbecee1d",
+     "bytes": 50664
+    }
+   ]
+  },
+  {
+   "id": "space-rover",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/rover.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-rover.e1e8e1fe.glb",
+     "sha256": "e1e8e1fe77c44e009686652434a3ac047574e173577b493ec11ccd4b25475817",
+     "bytes": 25204
+    }
+   ]
+  },
+  {
+   "id": "space-rocket-base",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/rocket_baseA.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-rocket-base.1bc7ec45.glb",
+     "sha256": "1bc7ec454bfdf2363dfc455d7f162e869267db5a59100e4583d0d6025514c7b0",
+     "bytes": 29472
+    }
+   ]
+  },
+  {
+   "id": "space-astronaut",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/astronautA.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-astronaut.248f19e4.glb",
+     "sha256": "248f19e498bd4d11b956c2fef894de30bda81cdec4305af14c51103deb9673ce",
+     "bytes": 36336
+    }
+   ]
+  },
+  {
+   "id": "space-alien",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/alien.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-alien.57ca91d2.glb",
+     "sha256": "57ca91d23f9131e8dc05601f31a634d58b6b79f83695c634ad6fde4709050ab9",
+     "bytes": 33112
+    }
+   ]
+  },
+  {
+   "id": "space-rock-large",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/rock_largeA.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-rock-large.36658115.glb",
+     "sha256": "36658115c4463d976db4c37af0d23488f248bb23e98bbaa0525c64bb6e26ec3c",
+     "bytes": 16032
+    }
+   ]
+  },
+  {
+   "id": "space-rocks-small",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/rocks_smallA.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-rocks-small.cb9d96b2.glb",
+     "sha256": "cb9d96b293308ec9460a38f724dcfc6573c909973676b067b51b793d2e3eefff",
+     "bytes": 4936
+    }
+   ]
+  },
+  {
+   "id": "space-crystals",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/rock_crystals.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-crystals.d75ce647.glb",
+     "sha256": "d75ce647ccf70d426902a719bf21335df5bf0c71f22c57b180e4306738b4c7cd",
+     "bytes": 41796
+    }
+   ]
+  },
+  {
+   "id": "space-crystals-large",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/rock_crystalsLargeA.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-crystals-large.1a916562.glb",
+     "sha256": "1a91656249f7a302bdaba32b32a65e3e7019e1eb5bca7d6cc1f8aacea2795a1f",
+     "bytes": 44156
+    }
+   ]
+  },
+  {
+   "id": "space-meteor",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/meteor.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-meteor.5be98aeb.glb",
+     "sha256": "5be98aeb9fc35c4d7383f889943bcaaf162ff15476d808ef667c18588bc8a84c",
+     "bytes": 5068
+    }
+   ]
+  },
+  {
+   "id": "space-crater",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/crater.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-crater.4f1acef6.glb",
+     "sha256": "4f1acef660a26691a4aa8f091bf35d86ef644a9c89ee96e90f04d68455ffec41",
+     "bytes": 7868
+    }
+   ]
+  },
+  {
+   "id": "space-monorail",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/monorail_trainFront.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-monorail.ddab2313.glb",
+     "sha256": "ddab2313cfdcaaa7dd56f3808ec25394c0e5d2d35cefd44a75a952801a805dd9",
+     "bytes": 25208
+    }
+   ]
+  },
+  {
+   "id": "space-rifle",
+   "pack": "kenney-space-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+    "path": "kenney/space-kit/Models/GLTF format/weapon_rifle.glb"
+   },
+   "files": [
+    {
+     "path": "m/space-rifle.9a4b0619.glb",
+     "sha256": "9a4b06193410111f5fcdfcad11f73d508fef49686672e1e9ed76ba434946722e",
+     "bytes": 16576
+    }
+   ]
+  },
+  {
+   "id": "castle-wall",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/wall.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-wall.229a26a6.glb",
+     "sha256": "229a26a6ff3a1920963f3c98cd9f3f54983104c2a21e02cbaa589ebe53c665d4",
+     "bytes": 14088
+    }
+   ]
+  },
+  {
+   "id": "castle-wall-corner",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/wall-corner.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-wall-corner.4eb70bf1.glb",
+     "sha256": "4eb70bf1af56103580ee54dda5af791685f95f4fd4fbc93396fb3a21e4498a71",
+     "bytes": 13680
+    }
+   ]
+  },
+  {
+   "id": "castle-wall-doorway",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/wall-doorway.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-wall-doorway.b4eac494.glb",
+     "sha256": "b4eac494409ede5a56ad8417c403c3a155e9327cc5096fc754a8e9fb479b8d91",
+     "bytes": 20768
+    }
+   ]
+  },
+  {
+   "id": "castle-wall-gate",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/wall-narrow-gate.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-wall-gate.db400569.glb",
+     "sha256": "db40056977146c2078f327e2d4aa09d381543dc63968272355286fb19f33733e",
+     "bytes": 14532
+    }
+   ]
+  },
+  {
+   "id": "castle-wall-half",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/wall-half.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-wall-half.a21ee2f3.glb",
+     "sha256": "a21ee2f3d2d859a7738b77b2f67e773a970ad88c8d3102107c05499535c5b9ee",
+     "bytes": 13112
+    }
+   ]
+  },
+  {
+   "id": "castle-fence-wood",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/wall-narrow-wood-fence.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-fence-wood.1fd0be36.glb",
+     "sha256": "1fd0be36a43df14886b409e14f8114f72d19b48edefcf0b157d43cc0ef31df08",
+     "bytes": 19312
+    }
+   ]
+  },
+  {
+   "id": "castle-tower-square",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/tower-square.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-tower-square.dc940829.glb",
+     "sha256": "dc9408299019f672b32e2131f980a938b5297342088c46fc46ceb4626da1565e",
+     "bytes": 13760
+    }
+   ]
+  },
+  {
+   "id": "castle-tower-roof",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/tower-square-top-roof.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-tower-roof.2ea8d691.glb",
+     "sha256": "2ea8d691b9d7513fddd56434f7ca9665988d024a88bccd8e7aa1579306c76bd2",
+     "bytes": 12744
+    }
+   ]
+  },
+  {
+   "id": "castle-tower-hex",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/tower-hexagon-base.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-tower-hex.cb84e8c7.glb",
+     "sha256": "cb84e8c7652b78124efcd045df9a94edffc8e15ef589db2a65cbfb04a4caf929",
+     "bytes": 12352
+    }
+   ]
+  },
+  {
+   "id": "castle-tower-slant",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/tower-slant-roof.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-tower-slant.64f28e34.glb",
+     "sha256": "64f28e34ccd09352de38fcedd4025dde94e744a97df53e7c27bd7a30bfa31517",
+     "bytes": 25932
+    }
+   ]
+  },
+  {
+   "id": "castle-gate",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/gate.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-gate.3512a9dd.glb",
+     "sha256": "3512a9ddbb677aa67aca2fb0ad30d1225ccf15f4ba87ccbc742da8ab8ee67421",
+     "bytes": 14048
+    }
+   ]
+  },
+  {
+   "id": "castle-gate-metal",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/metal-gate.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-gate-metal.a8f2f72d.glb",
+     "sha256": "a8f2f72dcd2f77e00857a321fde8c9484f9950c4bae713ab246adefd977f909b",
+     "bytes": 17872
+    }
+   ]
+  },
+  {
+   "id": "castle-bridge",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/bridge-straight.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-bridge.3bc05607.glb",
+     "sha256": "3bc056077b237bc2d44b6cae7add14e5908564e71c39dabf70ddc176d6ac6dd0",
+     "bytes": 13924
+    }
+   ]
+  },
+  {
+   "id": "castle-drawbridge",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/bridge-draw.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-drawbridge.60878d1b.glb",
+     "sha256": "60878d1bf80ed45a4ec605f194afcf29270a5459a4751cac41ff7060e208a258",
+     "bytes": 11156
+    }
+   ]
+  },
+  {
+   "id": "castle-stairs",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/stairs-stone.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-stairs.d07b026e.glb",
+     "sha256": "d07b026eef3ce6b5af12d4048f35386f4e4723420d97a472bb2bc946bbf5200e",
+     "bytes": 11948
+    }
+   ]
+  },
+  {
+   "id": "castle-catapult",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/siege-catapult.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-catapult.8dc0176e.glb",
+     "sha256": "8dc0176eba6f1efb082618b321c9a8cf33c2ca2ea9820644302442ccc1587d26",
+     "bytes": 37416
+    }
+   ]
+  },
+  {
+   "id": "castle-trebuchet",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/siege-trebuchet.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-trebuchet.3e820350.glb",
+     "sha256": "3e820350b0642564f07b72afae0f4b365d4c85150b52b2f52ee5b3a7c0ca35e1",
+     "bytes": 53836
+    }
+   ]
+  },
+  {
+   "id": "castle-ballista",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/siege-ballista.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-ballista.adc113c5.glb",
+     "sha256": "adc113c59146635603317ec70add7301f89246cd3f048bb2dcbf68a972a54ae5",
+     "bytes": 31224
+    }
+   ]
+  },
+  {
+   "id": "castle-ram",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/siege-ram.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-ram.3c86612d.glb",
+     "sha256": "3c86612dde2c7a6f101f405dd89b21c4c148cd52cb276e8c52c9c1386cc7ec88",
+     "bytes": 42696
+    }
+   ]
+  },
+  {
+   "id": "castle-siege-tower",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/siege-tower.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-siege-tower.de43cf08.glb",
+     "sha256": "de43cf088b74c5f0c7edf64e34b1101a39610e9bccf2c6fdd01094ff91891851",
+     "bytes": 53840
+    }
+   ]
+  },
+  {
+   "id": "castle-flag",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/flag.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-flag.f8e52b01.glb",
+     "sha256": "f8e52b01ade14ecdc70cc470a45f5e0fe90801d09d21effe579e84c519591455",
+     "bytes": 14660
+    }
+   ]
+  },
+  {
+   "id": "castle-banner",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/flag-banner-long.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-banner.affac9f6.glb",
+     "sha256": "affac9f6df614c9ad7f973774aefdab620cfdb5584939af20ebdea1b8284f75a",
+     "bytes": 11312
+    }
+   ]
+  },
+  {
+   "id": "castle-tree-large",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/tree-large.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-tree-large.74934bde.glb",
+     "sha256": "74934bdedb800d3e326da070974c118a8726e6f2318bd9c228efba7031557472",
+     "bytes": 18084
+    }
+   ]
+  },
+  {
+   "id": "castle-tree-small",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/tree-small.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-tree-small.558505e5.glb",
+     "sha256": "558505e548fb811eb2ebd30dd2da5e4420ce94c6c5a27d7b9f6d9208eded3764",
+     "bytes": 15792
+    }
+   ]
+  },
+  {
+   "id": "castle-log",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/tree-log.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-log.7f647193.glb",
+     "sha256": "7f64719374a3c6e36c2a1442a00b15e6ae59b17ff3b072205f11396f070c2fc0",
+     "bytes": 12620
+    }
+   ]
+  },
+  {
+   "id": "castle-rocks-large",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/rocks-large.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-rocks-large.60de6305.glb",
+     "sha256": "60de6305966a3adb2522286e942d3e538b1ee46615fcb50d6a7133362b23dce1",
+     "bytes": 15584
+    }
+   ]
+  },
+  {
+   "id": "castle-rocks-small",
+   "pack": "kenney-castle-kit",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip",
+    "path": "kenney/castle-kit/Models/GLB format/rocks-small.glb"
+   },
+   "files": [
+    {
+     "path": "m/castle-rocks-small.6203b02e.glb",
+     "sha256": "6203b02e0eb3d86822530955fb3cdd80a431c06657561e416ae0dd6e43986995",
+     "bytes": 15144
+    }
+   ]
+  },
+  {
+   "id": "harbour-ship-large",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/ship-large.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-ship-large.2d757719.glb",
+     "sha256": "2d757719f43f04c6e12d916754a8bb357f40479c737c8d9f37830343e00ca22a",
+     "bytes": 60644
+    }
+   ]
+  },
+  {
+   "id": "harbour-ship-small",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/ship-small.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-ship-small.6fdc58f5.glb",
+     "sha256": "6fdc58f5d130eb3ba32e7850fe9240fbdb344987123d3c0f3164d6a5bc4c1589",
+     "bytes": 57124
+    }
+   ]
+  },
+  {
+   "id": "harbour-cargo-ship",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/ship-cargo-a.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-cargo-ship.8e2408c6.glb",
+     "sha256": "8e2408c68060bc213d30c1203cc2599f15609f7d51ad9007bd1f8dfe2f8c8bbe",
+     "bytes": 42800
+    }
+   ]
+  },
+  {
+   "id": "harbour-liner",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/ship-ocean-liner-small.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-liner.d905ae8e.glb",
+     "sha256": "d905ae8e33598a12b5aa4af443f1d3f820291e89f7b158749706b8f0a973fefc",
+     "bytes": 59300
+    }
+   ]
+  },
+  {
+   "id": "harbour-ghost-ship",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/ship-small-ghost.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-ghost-ship.1ceef76d.glb",
+     "sha256": "1ceef76d8a4b5cf19ce5c458dd5d0f4f7261edab38a10748d8e2f24c894c88ed",
+     "bytes": 61308
+    }
+   ]
+  },
+  {
+   "id": "harbour-rowboat",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/boat-row-small.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-rowboat.719199ea.glb",
+     "sha256": "719199eaf52b90f2f738b74fd2fb0ff7220b175d23fdc9b1e4caf64941f11632",
+     "bytes": 17260
+    }
+   ]
+  },
+  {
+   "id": "harbour-rowboat-large",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/boat-row-large.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-rowboat-large.cffbe679.glb",
+     "sha256": "cffbe679a58d31d6ef4b7c58bc5e7b77880bdabd9d1e23a948f73edfb37f6946",
+     "bytes": 16188
+    }
+   ]
+  },
+  {
+   "id": "harbour-sailboat",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/boat-sail-a.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-sailboat.dcdc27ff.glb",
+     "sha256": "dcdc27ff722ee611f68bdb8978e275fe8120580cd4c8c6731d1b8d98cb82f556",
+     "bytes": 22176
+    }
+   ]
+  },
+  {
+   "id": "harbour-sailboat-b",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/boat-sail-b.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-sailboat-b.3a5975d8.glb",
+     "sha256": "3a5975d8a9bc4ee6ea517228f5227252b06b608635de04ce5974909745e8d54f",
+     "bytes": 23100
+    }
+   ]
+  },
+  {
+   "id": "harbour-fishing-boat",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/boat-fishing-small.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-fishing-boat.9765998b.glb",
+     "sha256": "9765998b720f72cf099daee7b3fc5ff4b0a7385a56dca4f2935be8ce7ac5e9dc",
+     "bytes": 19272
+    }
+   ]
+  },
+  {
+   "id": "harbour-speedboat",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/boat-speed-a.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-speedboat.6169394b.glb",
+     "sha256": "6169394b799728b8595958e1acffef9d9e135b011b2adfc43da7ccc64eac97c1",
+     "bytes": 17476
+    }
+   ]
+  },
+  {
+   "id": "harbour-tugboat",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/boat-tug-a.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-tugboat.d3460543.glb",
+     "sha256": "d3460543ca920e608ef0afcac73c66e4bf96fa75b64ccf579652be6f8bdc066e",
+     "bytes": 25668
+    }
+   ]
+  },
+  {
+   "id": "harbour-houseboat",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/boat-house-a.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-houseboat.0a9197ed.glb",
+     "sha256": "0a9197ed9dadc4c55a2cd4fb299258cb4d204bc685641e4c031fd9315fe909e4",
+     "bytes": 23884
+    }
+   ]
+  },
+  {
+   "id": "harbour-container",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/cargo-container-a.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-container.f036e181.glb",
+     "sha256": "f036e18153c6d49e249d426b54285fedd6597728a247afb2e52cec6f357bc78f",
+     "bytes": 16140
+    }
+   ]
+  },
+  {
+   "id": "harbour-container-b",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/cargo-container-b.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-container-b.a9360aae.glb",
+     "sha256": "a9360aae40908a10b0cb8bfb4a97a3bbcde2e26bfe324e892d464318215be21f",
+     "bytes": 16176
+    }
+   ]
+  },
+  {
+   "id": "harbour-cargo-pile",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/cargo-pile-a.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-cargo-pile.2fd7f748.glb",
+     "sha256": "2fd7f748d7e37d9d64752651452494591cb948d3faa2eae65da097ecd630304a",
+     "bytes": 17948
+    }
+   ]
+  },
+  {
+   "id": "harbour-buoy",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/buoy.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-buoy.bb517f15.glb",
+     "sha256": "bb517f15026d0c411e2539a49a8879d0bc4dc0e3b63692ce37121c4e80f30cbb",
+     "bytes": 14772
+    }
+   ]
+  },
+  {
+   "id": "harbour-buoy-flag",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/buoy-flag.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-buoy-flag.eca7c784.glb",
+     "sha256": "eca7c784316bcedf948d7890a165e8d80281504601c269ac60eda1fb396a5fe8",
+     "bytes": 18008
+    }
+   ]
+  },
+  {
+   "id": "harbour-ramp",
+   "pack": "kenney-watercraft-pack",
+   "licence": "CC0-1.0",
+   "authors": null,
+   "source": {
+    "archive": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+    "path": "kenney/watercraft-pack/Models/GLB format/ramp.glb"
+   },
+   "files": [
+    {
+     "path": "m/harbour-ramp.f71f442f.glb",
+     "sha256": "f71f442fa37be6b0c4ed055ed62bd815cf68878d4e22f20507d914ce8e7afca9",
+     "bytes": 15760
+    }
+   ]
+  },
+  {
+   "id": "sky-overcast",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Greg Zaal"
+   ],
+   "source": {
+    "archive": "polyhaven:kloofendal_overcast_puresky",
+    "path": "polyhaven/hdris/kloofendal_overcast_puresky_1k.hdr"
+   },
+   "files": [
+    {
+     "path": "h/sky-overcast.5f98aa01.hdr",
+     "sha256": "5f98aa01d43a49cd899299751a978b3e5559a76300198b5dd2d9c68ecc4ad130",
+     "bytes": 1174053
+    },
+    {
+     "path": "h/sky-overcast.512.b518aa58.hdr",
+     "sha256": "b518aa586e298fc80dc44fed5f83d7f7ccceb1c0344242320a6ee1aa01562fc0",
+     "bytes": 334059
+    }
+   ]
+  },
+  {
+   "id": "sky-starry-night",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Greg Zaal"
+   ],
+   "source": {
+    "archive": "polyhaven:rogland_clear_night",
+    "path": "polyhaven/hdris/rogland_clear_night_1k.hdr"
+   },
+   "files": [
+    {
+     "path": "h/sky-starry-night.3cc2486b.hdr",
+     "sha256": "3cc2486bdf545b1b3358ba8f2fa1ebb13211d2c6b45a376f39b8d3217ec7c028",
+     "bytes": 1694136
+    },
+    {
+     "path": "h/sky-starry-night.512.b1beaeb3.hdr",
+     "sha256": "b1beaeb36db4727d2d48fc9cd75fa3eed2938e5445a46e013604a52446ae5de3",
+     "bytes": 423040
+    }
+   ]
+  },
+  {
+   "id": "sky-desert-dunes",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Greg Zaal"
+   ],
+   "source": {
+    "archive": "polyhaven:goegap",
+    "path": "polyhaven/hdris/goegap_1k.hdr"
+   },
+   "files": [
+    {
+     "path": "h/sky-desert-dunes.56bb97ac.hdr",
+     "sha256": "56bb97ac7fcbfcbc91116adfb96e26b9da54475dabb7ec2c442f41bf99cda085",
+     "bytes": 1361485
+    },
+    {
+     "path": "h/sky-desert-dunes.512.f10ee55d.hdr",
+     "sha256": "f10ee55d35843e51120508a156a931f0fdb2a4631cdada26280e155796d47beb",
+     "bytes": 358358
+    }
+   ]
+  },
+  {
+   "id": "sky-industrial-sunset",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Jarod Guest",
+    "Sergej Majboroda"
+   ],
+   "source": {
+    "archive": "polyhaven:industrial_sunset_02_puresky",
+    "path": "polyhaven/hdris/industrial_sunset_02_puresky_1k.hdr"
+   },
+   "files": [
+    {
+     "path": "h/sky-industrial-sunset.0b92b0a2.hdr",
+     "sha256": "0b92b0a2ea3b2489ec9bb7170960c3a10e5e68567d9a3d9622970fd06caf649f",
+     "bytes": 1075650
+    },
+    {
+     "path": "h/sky-industrial-sunset.512.eeb0b853.hdr",
+     "sha256": "eeb0b8532e9efda8390fa4d1a9a68ee10150753ceb8438f7ead7e94db215de34",
+     "bytes": 300813
+    }
+   ]
+  },
+  {
+   "id": "sky-golden-sunset",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Greg Zaal",
+    "Dimitrios Savva",
+    "Jarod Guest"
+   ],
+   "source": {
+    "archive": "polyhaven:belfast_sunset_puresky",
+    "path": "polyhaven/hdris/belfast_sunset_puresky_1k.hdr"
+   },
+   "files": [
+    {
+     "path": "h/sky-golden-sunset.cec532d8.hdr",
+     "sha256": "cec532d8dd382bcdca98d7010fa951a782f3295f98e8bd72ee453be8d0a64e98",
+     "bytes": 1190247
+    },
+    {
+     "path": "h/sky-golden-sunset.512.f2f966a4.hdr",
+     "sha256": "f2f966a49ce6071f2941426ac65537c4ec4728a0f4ca679538ea6008d35b2699",
+     "bytes": 328567
+    }
+   ]
+  },
+  {
    "id": "sofa-02",
    "pack": "polyhaven",
    "licence": "CC0-1.0",
@@ -10923,6 +12479,2218 @@
      "path": "i/stove-masonry.lite.9ccd77d9.glb",
      "sha256": "9ccd77d903e596a181113c3f11a42bb7351b16163acc76bb25ec11abb98cf352",
      "bytes": 164696
+    }
+   ]
+  },
+  {
+   "id": "tree-dead-trunk",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Rob Tuytel"
+   ],
+   "source": {
+    "archive": "polyhaven:dead_tree_trunk",
+    "path": "polyhaven/models/dead_tree_trunk/dead_tree_trunk.gltf"
+   },
+   "files": [
+    {
+     "path": "i/tree-dead-trunk.312eed50.glb",
+     "sha256": "312eed50d8185d12054d0330043afefe747cb97c013aac4fbdb82fec72350364",
+     "bytes": 328548
+    },
+    {
+     "path": "i/tree-dead-trunk.lod1.5683bb17.glb",
+     "sha256": "5683bb17f066bf1a1514acf76db163879a79e28047407cfe7fd8f85d6b4eb0df",
+     "bytes": 79724
+    },
+    {
+     "path": "i/tree-dead-trunk.lite.d7314f89.glb",
+     "sha256": "d7314f897e66da535b26d027674b8810c35a645a347c795f0bee094069a6e813",
+     "bytes": 82148
+    }
+   ]
+  },
+  {
+   "id": "tree-dead-trunk-02",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Jenelle van Heerden",
+    "Rico Cilliers"
+   ],
+   "source": {
+    "archive": "polyhaven:dead_tree_trunk_02",
+    "path": "polyhaven/models/dead_tree_trunk_02/dead_tree_trunk_02.gltf"
+   },
+   "files": [
+    {
+     "path": "i/tree-dead-trunk-02.01aa7a3f.glb",
+     "sha256": "01aa7a3ff4bd61762d94806f5ff1687c60a4e33cc7416b80502d8d8442974f3d",
+     "bytes": 350496
+    },
+    {
+     "path": "i/tree-dead-trunk-02.lod1.232fb656.glb",
+     "sha256": "232fb6561c0f6125feabe4de50e44c357f60a688c0bbd3c572fe867fbbd2423f",
+     "bytes": 81888
+    },
+    {
+     "path": "i/tree-dead-trunk-02.lite.280e106a.glb",
+     "sha256": "280e106a587d2dcb4d82ab68d0a7606161d351ff76cd7b0d15c745f487555a6d",
+     "bytes": 93192
+    }
+   ]
+  },
+  {
+   "id": "branches-dry",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Rico Cilliers"
+   ],
+   "source": {
+    "archive": "polyhaven:dry_branches_medium_01",
+    "path": "polyhaven/models/dry_branches_medium_01/dry_branches_medium_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/branches-dry.c20db468.glb",
+     "sha256": "c20db4682318f0790e8ab9171b4d1d0221590053fa88af6dcbbcddc703cb191b",
+     "bytes": 311668
+    },
+    {
+     "path": "i/branches-dry.lod1.b266a72b.glb",
+     "sha256": "b266a72b84ca24f3f4c0b4430276ab30c3006dc95b148e53eec2ac14428e38ae",
+     "bytes": 30172
+    },
+    {
+     "path": "i/branches-dry.lite.28faca75.glb",
+     "sha256": "28faca7596c8e21d9171363f0c9db62acdfc1a05cd6fd186b9aef1f9d9706bad",
+     "bytes": 58616
+    }
+   ]
+  },
+  {
+   "id": "fern-02",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Rob Tuytel",
+    "Rico Cilliers"
+   ],
+   "source": {
+    "archive": "polyhaven:fern_02",
+    "path": "polyhaven/models/fern_02/fern_02.gltf"
+   },
+   "files": [
+    {
+     "path": "i/fern-02.803214cf.glb",
+     "sha256": "803214cf0fbf4a0384d2fc4d7c28e6c6a72e766570293f03969363a51358c887",
+     "bytes": 191816
+    },
+    {
+     "path": "i/fern-02.lod1.b1a642bb.glb",
+     "sha256": "b1a642bbf586cecded85bea9cc413b910deb96f0de0af64ed1b378de0608fd73",
+     "bytes": 57460
+    },
+    {
+     "path": "i/fern-02.lite.43384af1.glb",
+     "sha256": "43384af19e0f7fae3eba115c03e41f248e65e688221157dede82ef8bdc7ec15c",
+     "bytes": 66008
+    }
+   ]
+  },
+  {
+   "id": "rock-boulder-01",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Rico Cilliers"
+   ],
+   "source": {
+    "archive": "polyhaven:boulder_01",
+    "path": "polyhaven/models/boulder_01/boulder_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/rock-boulder-01.d2498819.glb",
+     "sha256": "d2498819dc581fa31a3e156ff97d2781c6f0f8d73d0d4d8c97ef2ab770cec913",
+     "bytes": 295584
+    },
+    {
+     "path": "i/rock-boulder-01.lod1.812d2bf5.glb",
+     "sha256": "812d2bf54b46ad17d9a6e10c1eafa8878f0ea173c083e9ada31254c2980edb9b",
+     "bytes": 46188
+    },
+    {
+     "path": "i/rock-boulder-01.lite.6580a27c.glb",
+     "sha256": "6580a27cd47ceca58275fee1221dfad5fa5c406abab4ed38552e08dbb5503c24",
+     "bytes": 66092
+    }
+   ]
+  },
+  {
+   "id": "rock-07",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Jenelle van Heerden"
+   ],
+   "source": {
+    "archive": "polyhaven:rock_07",
+    "path": "polyhaven/models/rock_07/rock_07.gltf"
+   },
+   "files": [
+    {
+     "path": "i/rock-07.8e259fc8.glb",
+     "sha256": "8e259fc81bf28dc6f1a44a6424ff21b078742978ffa3c1e535b066289537f443",
+     "bytes": 99884
+    },
+    {
+     "path": "i/rock-07.lod1.888b24dd.glb",
+     "sha256": "888b24dda272d734a5eff596b5379f806c439e2023eda85486688a965a2fcd17",
+     "bytes": 34396
+    },
+    {
+     "path": "i/rock-07.lite.bf2d1ba9.glb",
+     "sha256": "bf2d1ba94ba19b962d87e79d303543d85db76dd21153c857fb7bd1966c7c3e63",
+     "bytes": 48136
+    }
+   ]
+  },
+  {
+   "id": "rock-09",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Jenelle van Heerden"
+   ],
+   "source": {
+    "archive": "polyhaven:rock_09",
+    "path": "polyhaven/models/rock_09/rock_09.gltf"
+   },
+   "files": [
+    {
+     "path": "i/rock-09.d383bfe1.glb",
+     "sha256": "d383bfe1954cbb9020d9423a87b9dd1b8f00fa93efa5a63e95f9f3b4c90faf20",
+     "bytes": 83188
+    },
+    {
+     "path": "i/rock-09.lod1.8faa54ab.glb",
+     "sha256": "8faa54ab76ec3698b2b17b99f8be9a254f8104c5d3e484a97e8f6f9c98f8fa9d",
+     "bytes": 25952
+    },
+    {
+     "path": "i/rock-09.lite.a621c0f1.glb",
+     "sha256": "a621c0f19ce51e656270fe7b49db109079ec5e9f8528e6159d95232dc236a7c9",
+     "bytes": 43276
+    }
+   ]
+  },
+  {
+   "id": "rock-stone-01",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Dario Barresi",
+    "Rico Cilliers"
+   ],
+   "source": {
+    "archive": "polyhaven:stone_01",
+    "path": "polyhaven/models/stone_01/stone_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/rock-stone-01.30f76ed7.glb",
+     "sha256": "30f76ed7e7e2bf42ae13a54ec7d4febd0bbf6cf303f0281c0d313bfe6b7a8581",
+     "bytes": 93532
+    },
+    {
+     "path": "i/rock-stone-01.lod1.af37a1eb.glb",
+     "sha256": "af37a1eb3007f8decf8949efdb3a08ec031f5cb9e86189d0e69f6f7d032edc6d",
+     "bytes": 26976
+    },
+    {
+     "path": "i/rock-stone-01.lite.04559292.glb",
+     "sha256": "0455929249cd860623f5e22cde35d10e244f6a5da5b5c4a265f8532f2893fbde",
+     "bytes": 52516
+    }
+   ]
+  },
+  {
+   "id": "rocks-moss-01",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kless Gyzen"
+   ],
+   "source": {
+    "archive": "polyhaven:rock_moss_set_01",
+    "path": "polyhaven/models/rock_moss_set_01/rock_moss_set_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/rocks-moss-01.c4bad0cb.glb",
+     "sha256": "c4bad0cb759ac074a8993e5ca0b87329d4ba16a526a49464bb592f29c362acc6",
+     "bytes": 403532
+    },
+    {
+     "path": "i/rocks-moss-01.lod1.d2109151.glb",
+     "sha256": "d2109151e32e37b2c8d5fe623e994167c552355f889681e23146105437dfa58f",
+     "bytes": 140332
+    },
+    {
+     "path": "i/rocks-moss-01.lite.c1b4494c.glb",
+     "sha256": "c1b4494ca0020531fdd4e0fe5634a2a91571e4bca0356b6de17f79b07e715609",
+     "bytes": 113436
+    }
+   ]
+  },
+  {
+   "id": "rocks-moss-02",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Kless Gyzen"
+   ],
+   "source": {
+    "archive": "polyhaven:rock_moss_set_02",
+    "path": "polyhaven/models/rock_moss_set_02/rock_moss_set_02.gltf"
+   },
+   "files": [
+    {
+     "path": "i/rocks-moss-02.88d624ca.glb",
+     "sha256": "88d624ca531006c6d095dfe1fd0ade4adbbbd80ef74ae64af7f5670863ec749d",
+     "bytes": 399132
+    },
+    {
+     "path": "i/rocks-moss-02.lod1.ee781768.glb",
+     "sha256": "ee781768c7cdad8dcfc63071851e8d6ef644ab417f44e4118a5432bebf27eb21",
+     "bytes": 118764
+    },
+    {
+     "path": "i/rocks-moss-02.lite.53958cfa.glb",
+     "sha256": "53958cfad453f4a959939c1f0f0100c4f656007a98b86fc45d6e14e811ac4bba",
+     "bytes": 109044
+    }
+   ]
+  },
+  {
+   "id": "tree-quiver-01",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "James Ray Cock",
+    "Dario Barresi",
+    "Rico Cilliers"
+   ],
+   "source": {
+    "archive": "polyhaven:quiver_tree_01",
+    "path": "polyhaven/models/quiver_tree_01/quiver_tree_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/tree-quiver-01.8777b0ae.glb",
+     "sha256": "8777b0ae3d27943f8a72fc20b45879ccdff2d407c456cf84626e3cacefaff42f",
+     "bytes": 532896
+    },
+    {
+     "path": "i/tree-quiver-01.lod1.f95e5e10.glb",
+     "sha256": "f95e5e1076c2b623b42fce27c74b7c6eb5b04acc536b5d3ac46b9f2c4966ab38",
+     "bytes": 147092
+    },
+    {
+     "path": "i/tree-quiver-01.lite.3d137a6a.glb",
+     "sha256": "3d137a6a77d3ab9c4bc903f780eec2699ef2d3a1adb27bc045217d29365ea8af",
+     "bytes": 159384
+    }
+   ]
+  },
+  {
+   "id": "tree-quiver-02",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Dario Barresi",
+    "Rico Cilliers"
+   ],
+   "source": {
+    "archive": "polyhaven:quiver_tree_02",
+    "path": "polyhaven/models/quiver_tree_02/quiver_tree_02.gltf"
+   },
+   "files": [
+    {
+     "path": "i/tree-quiver-02.7317a0b4.glb",
+     "sha256": "7317a0b4803fa97e36da27a3ce22f85865249f037b7a75e533a1cfd53615f6a7",
+     "bytes": 441224
+    },
+    {
+     "path": "i/tree-quiver-02.lod1.99e5d9bf.glb",
+     "sha256": "99e5d9bfa9940a2d22a0c3a75753be61719ae0a7f4c3cb26e1a5f78cf5efa387",
+     "bytes": 129396
+    },
+    {
+     "path": "i/tree-quiver-02.lite.31ee3dc6.glb",
+     "sha256": "31ee3dc6c850b9f93aaca98e93b347b33d6f503be9c0067d4e7a7c6ef85233a5",
+     "bytes": 126160
+    }
+   ]
+  },
+  {
+   "id": "trunk-quiver-dead",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "James Ray Cock",
+    "Dario Barresi",
+    "Rico Cilliers"
+   ],
+   "source": {
+    "archive": "polyhaven:dead_quiver_trunk",
+    "path": "polyhaven/models/dead_quiver_trunk/dead_quiver_trunk.gltf"
+   },
+   "files": [
+    {
+     "path": "i/trunk-quiver-dead.2b1e658b.glb",
+     "sha256": "2b1e658b1c258f721a575aaa595a8f3f502da1dbbc92f139032b34d1d3e1aa00",
+     "bytes": 252996
+    },
+    {
+     "path": "i/trunk-quiver-dead.lod1.415b5486.glb",
+     "sha256": "415b5486f0dfe058b46d7b58d4a86060ae0c58d322fa42ab105afdd84b35c82d",
+     "bytes": 60488
+    },
+    {
+     "path": "i/trunk-quiver-dead.lite.9e0678f4.glb",
+     "sha256": "9e0678f419c7ee06242ac69557454a6f886ad5a1863f4f6b525b19e11c09b05a",
+     "bytes": 67884
+    }
+   ]
+  },
+  {
+   "id": "succulent-desert",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "James Ray Cock",
+    "Jenelle van Heerden"
+   ],
+   "source": {
+    "archive": "polyhaven:cheiridopsis_succulent",
+    "path": "polyhaven/models/cheiridopsis_succulent/cheiridopsis_succulent.gltf"
+   },
+   "files": [
+    {
+     "path": "i/succulent-desert.817f469b.glb",
+     "sha256": "817f469b1bb1a935a1253ae6395507515a0ac82294dd5780af5dd573ea355246",
+     "bytes": 441684
+    },
+    {
+     "path": "i/succulent-desert.lod1.1f51864b.glb",
+     "sha256": "1f51864b13b2567d8b8c5b779011adb0db027789b9e54316479c88da22c40cbd",
+     "bytes": 173124
+    },
+    {
+     "path": "i/succulent-desert.lite.3b3023bb.glb",
+     "sha256": "3b3023bbdeaf15515fd8cc3c0453e99a6fcedb37e1c5dfd935748ecc37e1489e",
+     "bytes": 157564
+    }
+   ]
+  },
+  {
+   "id": "rock-sandstone-boulder",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Greg Zaal",
+    "Rico Cilliers"
+   ],
+   "source": {
+    "archive": "polyhaven:namaqualand_boulder_02",
+    "path": "polyhaven/models/namaqualand_boulder_02/namaqualand_boulder_02.gltf"
+   },
+   "files": [
+    {
+     "path": "i/rock-sandstone-boulder.79bb9ba9.glb",
+     "sha256": "79bb9ba93ce458b2edbdf34d525bde44c6f6a3dc4c7ea877daf5f0c799cc3d48",
+     "bytes": 347380
+    },
+    {
+     "path": "i/rock-sandstone-boulder.lod1.e6dd7862.glb",
+     "sha256": "e6dd786212855d3e75198f6be7627cfa1dc8b64388d9c776a1c2e67a37dbb8a5",
+     "bytes": 80492
+    },
+    {
+     "path": "i/rock-sandstone-boulder.lite.c24c6980.glb",
+     "sha256": "c24c6980e738d30f4deed19513fa8738d5a13f6a9636f28735f3a50be5407fb6",
+     "bytes": 91680
+    }
+   ]
+  },
+  {
+   "id": "rock-sandstone-group",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Greg Zaal",
+    "Jenelle van Heerden"
+   ],
+   "source": {
+    "archive": "polyhaven:namaqualand_boulders_01",
+    "path": "polyhaven/models/namaqualand_boulders_01/namaqualand_boulders_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/rock-sandstone-group.faa2ef83.glb",
+     "sha256": "faa2ef83b31d80c50e0d892f0c1a61482cb962698b069a5cdc73d1f3031a0d3e",
+     "bytes": 214244
+    },
+    {
+     "path": "i/rock-sandstone-group.lod1.0e32826f.glb",
+     "sha256": "0e32826f809cca951472c4d3f88751c9cd9734e48515aa283c8963c71eaa9c84",
+     "bytes": 39268
+    },
+    {
+     "path": "i/rock-sandstone-group.lite.29555ae6.glb",
+     "sha256": "29555ae67d487c64ee1c691e7dc3bc24a595f9dc0adc2600f7478b810f193b04",
+     "bytes": 59716
+    }
+   ]
+  },
+  {
+   "id": "rock-desert-rubble",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Greg Zaal",
+    "Jenelle van Heerden"
+   ],
+   "source": {
+    "archive": "polyhaven:namaqualand_rocks_01",
+    "path": "polyhaven/models/namaqualand_rocks_01/namaqualand_rocks_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/rock-desert-rubble.99280701.glb",
+     "sha256": "99280701b7db609fd1b0424afceea4ce2d52d84ffb361689be9e966bcfbac759",
+     "bytes": 270688
+    },
+    {
+     "path": "i/rock-desert-rubble.lod1.713813fb.glb",
+     "sha256": "713813fb02c2b512a56b2c9092cb05465a2d9023818a1633c492f8a69d151614",
+     "bytes": 43468
+    },
+    {
+     "path": "i/rock-desert-rubble.lite.e0bd1c0f.glb",
+     "sha256": "e0bd1c0fbcdde9e459a1bab08029405835a8915225d89c783ae4e7b043335248",
+     "bytes": 66120
+    }
+   ]
+  },
+  {
+   "id": "cliff-sandstone",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Jenelle van Heerden",
+    "Rico Cilliers"
+   ],
+   "source": {
+    "archive": "polyhaven:namaqualand_cliff_01",
+    "path": "polyhaven/models/namaqualand_cliff_01/namaqualand_cliff_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/cliff-sandstone.6be91736.glb",
+     "sha256": "6be91736720be6e999de6c0b784539e9891bae0a1ec28795f533829dc39de39a",
+     "bytes": 375924
+    },
+    {
+     "path": "i/cliff-sandstone.lod1.67a101b0.glb",
+     "sha256": "67a101b0f441c36de17b16f8769896068f20ad4c8418d2c9a94c0c30a641a123",
+     "bytes": 122592
+    },
+    {
+     "path": "i/cliff-sandstone.lite.003378a6.glb",
+     "sha256": "003378a6b64c308598a0eb31a75a03b8019893faefb5922d9fddcc2e0e115115",
+     "bytes": 110988
+    }
+   ]
+  },
+  {
+   "id": "rock-sand-small",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Rob Tuytel",
+    "Rico Cilliers"
+   ],
+   "source": {
+    "archive": "polyhaven:sand_rocks_small_01",
+    "path": "polyhaven/models/sand_rocks_small_01/sand_rocks_small_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/rock-sand-small.afbf8255.glb",
+     "sha256": "afbf8255170136b61aa6aa455a7a63e7df791781e901c1ddeb9d639a107ffdf4",
+     "bytes": 327088
+    },
+    {
+     "path": "i/rock-sand-small.lod1.ca1ba462.glb",
+     "sha256": "ca1ba46241ed00e17c4dd58c1ce74f9a0644810f4990c2166f3f8f0f3f0897fe",
+     "bytes": 94624
+    },
+    {
+     "path": "i/rock-sand-small.lite.ca20898a.glb",
+     "sha256": "ca20898a553084fc2145a17eb5d9025d71e1aa6550b486b344cb15b6655a37d1",
+     "bytes": 97708
+    }
+   ]
+  },
+  {
+   "id": "chest-treasure-real",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Rico Cilliers"
+   ],
+   "source": {
+    "archive": "polyhaven:treasure_chest",
+    "path": "polyhaven/models/treasure_chest/treasure_chest.gltf"
+   },
+   "files": [
+    {
+     "path": "i/chest-treasure-real.0fdba1cd.glb",
+     "sha256": "0fdba1cd6f551cb38beb4c6215e86d7321614e5d94e30927de64c6c971535882",
+     "bytes": 322900
+    },
+    {
+     "path": "i/chest-treasure-real.lod1.b4e20eeb.glb",
+     "sha256": "b4e20eebd6d7d5d9f7df4e9bcff54ae0dbc23683a65112749b878d376666c83c",
+     "bytes": 32292
+    },
+    {
+     "path": "i/chest-treasure-real.lite.1d4c3cc4.glb",
+     "sha256": "1d4c3cc4ed2952ac235be51a7cf359860acd89aab61e2b660ca06f1d1b10b9d1",
+     "bytes": 63260
+    }
+   ]
+  },
+  {
+   "id": "cannon-iron-real",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Yann Kervran",
+    "James Ray Cock"
+   ],
+   "source": {
+    "archive": "polyhaven:cannon_01",
+    "path": "polyhaven/models/cannon_01/cannon_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/cannon-iron-real.c1c484be.glb",
+     "sha256": "c1c484be91d65ef050e4a4efb603e41582bc0b55ec27d7e7ecdbff66b390e114",
+     "bytes": 350864
+    },
+    {
+     "path": "i/cannon-iron-real.lod1.3958520c.glb",
+     "sha256": "3958520c200ee059bf14e30a2cadafe05a4e8f23a722a42ffa129ee0725aab06",
+     "bytes": 109648
+    },
+    {
+     "path": "i/cannon-iron-real.lite.873369f6.glb",
+     "sha256": "873369f66e61e7562037ecf8fed9606e3b57fa610491dd0316921c7d3cd1265c",
+     "bytes": 115592
+    }
+   ]
+  },
+  {
+   "id": "crate-wooden-01",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "James Ray Cock"
+   ],
+   "source": {
+    "archive": "polyhaven:wooden_crate_01",
+    "path": "polyhaven/models/wooden_crate_01/wooden_crate_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/crate-wooden-01.2d8e06bf.glb",
+     "sha256": "2d8e06bfd1a79090722ea47fc13116077e2169c269fd87e59e6533cd7ebc3e7b",
+     "bytes": 222156
+    },
+    {
+     "path": "i/crate-wooden-01.lod1.6d51ff8b.glb",
+     "sha256": "6d51ff8b12d6d2f2eff8250cc459fe340538ac51bcd008fe22437177dd97bc9f",
+     "bytes": 51436
+    },
+    {
+     "path": "i/crate-wooden-01.lite.8ce8c4b6.glb",
+     "sha256": "8ce8c4b6e95ec2955491657d48e8b484055bab97f906986dc82670f7c305c9b4",
+     "bytes": 65432
+    }
+   ]
+  },
+  {
+   "id": "bucket-wooden",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "James Ray Cock"
+   ],
+   "source": {
+    "archive": "polyhaven:wooden_bucket_01",
+    "path": "polyhaven/models/wooden_bucket_01/wooden_bucket_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/bucket-wooden.f33cb9e7.glb",
+     "sha256": "f33cb9e75baee50ecb53f2f68ccf9c3d3ef690671507ecae78d68b7aa1210072",
+     "bytes": 110836
+    },
+    {
+     "path": "i/bucket-wooden.lod1.a3816ce5.glb",
+     "sha256": "a3816ce5bae8303f2593ba88d8b306cdedafca0f974518671061be6de7289052",
+     "bytes": 42272
+    },
+    {
+     "path": "i/bucket-wooden.lite.b1b6f92e.glb",
+     "sha256": "b1b6f92e7dd1ba50b07ab3e709860339d0be5d1fe1dee5942c48ad5aac0941da",
+     "bytes": 62972
+    }
+   ]
+  },
+  {
+   "id": "buoy-ocean",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Mateusz Sadek"
+   ],
+   "source": {
+    "archive": "polyhaven:ocean_buoy",
+    "path": "polyhaven/models/ocean_buoy/ocean_buoy.gltf"
+   },
+   "files": [
+    {
+     "path": "i/buoy-ocean.4e35ae29.glb",
+     "sha256": "4e35ae298fbbd1b37e7dfbdd176db483aaa33701b2df0afda5a8192251ba70ca",
+     "bytes": 361588
+    },
+    {
+     "path": "i/buoy-ocean.lod1.8d01ed55.glb",
+     "sha256": "8d01ed5512ae3b311ff8b638e53170af4c2627baa5c92e0aeb9e6efc44e54a41",
+     "bytes": 112648
+    },
+    {
+     "path": "i/buoy-ocean.lite.c0b301b2.glb",
+     "sha256": "c0b301b2b4949e553e1403d9338a1035ce728f5b4fa7794ddf0b4d8bbd880d48",
+     "bytes": 121896
+    }
+   ]
+  },
+  {
+   "id": "lifebuoy",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Hank Kaamura"
+   ],
+   "source": {
+    "archive": "polyhaven:lifebuoy",
+    "path": "polyhaven/models/lifebuoy/lifebuoy.gltf"
+   },
+   "files": [
+    {
+     "path": "i/lifebuoy.3f191148.glb",
+     "sha256": "3f191148a99b4ecde7342ae9558522fa56c9a5686ed0c62ce548855c07711f46",
+     "bytes": 230472
+    },
+    {
+     "path": "i/lifebuoy.lod1.b1adce99.glb",
+     "sha256": "b1adce995918254ed6d4726988f1d75fdaf26467981c9fdd8a78309d11d57486",
+     "bytes": 41536
+    },
+    {
+     "path": "i/lifebuoy.lite.f8446146.glb",
+     "sha256": "f8446146bd091ee68097363642b9070b4296ebf6387a6a01bbc69e766f03802c",
+     "bytes": 60408
+    }
+   ]
+  },
+  {
+   "id": "streetlight-01",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Josh Dean"
+   ],
+   "source": {
+    "archive": "polyhaven:street_lamp_01",
+    "path": "polyhaven/models/street_lamp_01/street_lamp_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/streetlight-01.a93eec04.glb",
+     "sha256": "a93eec046f5b658763e8d6e4379abcd9fd95c387d878a4cd51f91dc0e4f35df4",
+     "bytes": 270920
+    },
+    {
+     "path": "i/streetlight-01.lod1.9a4688ea.glb",
+     "sha256": "9a4688eaa3cd587e80bbcd05c52d9f557fdc9762f10935b428dbe1e2a321261a",
+     "bytes": 82472
+    },
+    {
+     "path": "i/streetlight-01.lite.76f36af4.glb",
+     "sha256": "76f36af4324ebea48af2169dea3c1af625acb2dbd7dbe6ba7ebf9c72c7df5636",
+     "bytes": 85028
+    }
+   ]
+  },
+  {
+   "id": "barrier-concrete",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Amal Kumar"
+   ],
+   "source": {
+    "archive": "polyhaven:concrete_road_barrier",
+    "path": "polyhaven/models/concrete_road_barrier/concrete_road_barrier.gltf"
+   },
+   "files": [
+    {
+     "path": "i/barrier-concrete.4850db86.glb",
+     "sha256": "4850db862f7031b4315ea69e54233b9d8f7a5997effc874506a6abdb197945a0",
+     "bytes": 251152
+    },
+    {
+     "path": "i/barrier-concrete.lod1.cf17587d.glb",
+     "sha256": "cf17587dc2cb44c2f1c0caa7c5186d4055d603ca4bf188cf796f22450042d07b",
+     "bytes": 62488
+    },
+    {
+     "path": "i/barrier-concrete.lite.484f7e92.glb",
+     "sha256": "484f7e92857aa51911ed16659dfcc95ec1211d25d78f9b11f5f7c4d5c5568571",
+     "bytes": 61440
+    }
+   ]
+  },
+  {
+   "id": "utility-box",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "James Ray Cock"
+   ],
+   "source": {
+    "archive": "polyhaven:utility_box_01",
+    "path": "polyhaven/models/utility_box_01/utility_box_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/utility-box.8323de6a.glb",
+     "sha256": "8323de6a4e4de2de41adfa93c6eefefd86f26b80ee3ead91b8ef2e4647591dde",
+     "bytes": 201132
+    },
+    {
+     "path": "i/utility-box.lod1.3b47c952.glb",
+     "sha256": "3b47c95274d5eb0b7867740a3a8887cfc542c17a1faa27936fdefa6c6166173d",
+     "bytes": 47176
+    },
+    {
+     "path": "i/utility-box.lite.65eb96f2.glb",
+     "sha256": "65eb96f2586eddb892cd6c09e06b6a7dc5f6e9becb08a4a600edf4e5258379b8",
+     "bytes": 64936
+    }
+   ]
+  },
+  {
+   "id": "manhole-cover",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Raunox"
+   ],
+   "source": {
+    "archive": "polyhaven:water_manhole_cover",
+    "path": "polyhaven/models/water_manhole_cover/water_manhole_cover.gltf"
+   },
+   "files": [
+    {
+     "path": "i/manhole-cover.bf3eccd4.glb",
+     "sha256": "bf3eccd430c7dc2a95c6808d3542eaa09e5fe94bed5f91130f54a7a058777497",
+     "bytes": 148632
+    },
+    {
+     "path": "i/manhole-cover.lod1.8fe193a3.glb",
+     "sha256": "8fe193a39ebc4948a129326f58ae244847cf0111ac90f3d3778fd0c136363afb",
+     "bytes": 63368
+    },
+    {
+     "path": "i/manhole-cover.lite.88b556c8.glb",
+     "sha256": "88b556c886d8cd10b2c7034c022f28f0cfe2966669d7906bb50699a597f39150",
+     "bytes": 77040
+    }
+   ]
+  },
+  {
+   "id": "picnic-table",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Ulan Cabanilla"
+   ],
+   "source": {
+    "archive": "polyhaven:wooden_picnic_table",
+    "path": "polyhaven/models/wooden_picnic_table/wooden_picnic_table.gltf"
+   },
+   "files": [
+    {
+     "path": "i/picnic-table.14421131.glb",
+     "sha256": "144211318af8c7cea9bb236693dba9128cc6f7fe44bc1891d214047cac430fb7",
+     "bytes": 340780
+    },
+    {
+     "path": "i/picnic-table.lod1.fc835bb5.glb",
+     "sha256": "fc835bb5fcc483cca80ad004f934ca284f30de0d1c5970405bd628a9057a36e4",
+     "bytes": 80944
+    },
+    {
+     "path": "i/picnic-table.lite.649b78b6.glb",
+     "sha256": "649b78b662560bd666287cbdd4070e650e7b5356be6ade554250ce30fe3c4106",
+     "bytes": 100872
+    }
+   ]
+  },
+  {
+   "id": "fire-escape",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Juniix"
+   ],
+   "source": {
+    "archive": "polyhaven:modular_fire_escape",
+    "path": "polyhaven/models/modular_fire_escape/modular_fire_escape.gltf"
+   },
+   "files": [
+    {
+     "path": "i/fire-escape.198e0bd0.glb",
+     "sha256": "198e0bd033495a3a4923fcb636540c85cb0b18f4af7df6da1161e5d5c072dd49",
+     "bytes": 1072556
+    },
+    {
+     "path": "i/fire-escape.lod1.a83f159a.glb",
+     "sha256": "a83f159a57235257c345e45767ceed998750d6d5425bded6d1fbd56967868650",
+     "bytes": 120688
+    },
+    {
+     "path": "i/fire-escape.lite.762afa25.glb",
+     "sha256": "762afa255d71de59712f352c3278bc8ba107a218577a2472cf42405d5dc153d6",
+     "bytes": 172200
+    }
+   ]
+  },
+  {
+   "id": "shutter-door",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "MP"
+   ],
+   "source": {
+    "archive": "polyhaven:rollershutter_door",
+    "path": "polyhaven/models/rollershutter_door/rollershutter_door.gltf"
+   },
+   "files": [
+    {
+     "path": "i/shutter-door.61ea7177.glb",
+     "sha256": "61ea7177fb1df8011881f89d392b9b2ceca0d48deb247851d601ec162fe087c9",
+     "bytes": 176312
+    },
+    {
+     "path": "i/shutter-door.lite.d1a5b71d.glb",
+     "sha256": "d1a5b71d27b43185e19d96ce2b0ff12c99242a4e5182e3487be64c37dcc03f90",
+     "bytes": 65820
+    }
+   ]
+  },
+  {
+   "id": "gate-iron",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Josh Dean"
+   ],
+   "source": {
+    "archive": "polyhaven:large_iron_gate",
+    "path": "polyhaven/models/large_iron_gate/large_iron_gate.gltf"
+   },
+   "files": [
+    {
+     "path": "i/gate-iron.89decf24.glb",
+     "sha256": "89decf240550e8e1203f2c46a1c38abbcc0adddf455295b31c35aa41bfc5d12d",
+     "bytes": 591748
+    },
+    {
+     "path": "i/gate-iron.lod1.64102b37.glb",
+     "sha256": "64102b37f637d1f0c3607368b94bb97280a67343a24b2c20a0219e8d50ae1550",
+     "bytes": 84768
+    },
+    {
+     "path": "i/gate-iron.lite.6e7119b3.glb",
+     "sha256": "6e7119b3e9787bce7e4bef0cc1e3ecd9035deb871672ed8906cfd46c6a909fba",
+     "bytes": 89064
+    }
+   ]
+  },
+  {
+   "id": "fence-chainlink",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "James Ray Cock",
+    "Amal Kumar"
+   ],
+   "source": {
+    "archive": "polyhaven:modular_chainlink_fence",
+    "path": "polyhaven/models/modular_chainlink_fence/modular_chainlink_fence.gltf"
+   },
+   "files": [
+    {
+     "path": "i/fence-chainlink.19d0746b.glb",
+     "sha256": "19d0746bcd5aa464c844cd86565af0e4b267a4338f59fbdd646c72c452e1f6a0",
+     "bytes": 825412
+    },
+    {
+     "path": "i/fence-chainlink.lod1.c2b4a4f1.glb",
+     "sha256": "c2b4a4f1f44e6453d0af985104faad4822b42897465048a4bb677bb2875dcb63",
+     "bytes": 81916
+    },
+    {
+     "path": "i/fence-chainlink.lite.c13a284d.glb",
+     "sha256": "c13a284d60356bd7e9459aacfc01e447f670bf35700a078571c7a3beea288f2e",
+     "bytes": 121012
+    }
+   ]
+  },
+  {
+   "id": "car-covered",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "MP"
+   ],
+   "source": {
+    "archive": "polyhaven:covered_car",
+    "path": "polyhaven/models/covered_car/covered_car.gltf"
+   },
+   "files": [
+    {
+     "path": "i/car-covered.dd334589.glb",
+     "sha256": "dd3345897e0417c05d4a61ed4d47da56ef8fa0395b4abb16a7acb0232bfaf762",
+     "bytes": 309212
+    },
+    {
+     "path": "i/car-covered.lod1.0c219e5f.glb",
+     "sha256": "0c219e5f52e7cd7abc4fe1ea73ac0162260cd250cb084888c07ffb4548eeee20",
+     "bytes": 101032
+    },
+    {
+     "path": "i/car-covered.lite.5edc4f1c.glb",
+     "sha256": "5edc4f1cd92c5d78f50abda6167c7540666883ac3cd4b702eaf836e56b0f8839",
+     "bytes": 101440
+    }
+   ]
+  },
+  {
+   "id": "tyre-old",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "MP"
+   ],
+   "source": {
+    "archive": "polyhaven:old_tyre",
+    "path": "polyhaven/models/old_tyre/old_tyre.gltf"
+   },
+   "files": [
+    {
+     "path": "i/tyre-old.13095cc5.glb",
+     "sha256": "13095cc52f042adafca437ea5edebf0996d7d4533b770a087c639131b0904097",
+     "bytes": 84028
+    },
+    {
+     "path": "i/tyre-old.lod1.dd57eb34.glb",
+     "sha256": "dd57eb34f7ec628972704c8f19588de40f240a4de25164ce6b3c2f8828dfccd4",
+     "bytes": 27528
+    },
+    {
+     "path": "i/tyre-old.lite.ff4a408c.glb",
+     "sha256": "ff4a408c6bd697821c6ccee87aaf3bbefc510515bb94ebd5c77f53fcfb53b7b4",
+     "bytes": 55112
+    }
+   ]
+  },
+  {
+   "id": "floodlight-security",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Maximilian Schuster"
+   ],
+   "source": {
+    "archive": "polyhaven:security_light",
+    "path": "polyhaven/models/security_light/security_light.gltf"
+   },
+   "files": [
+    {
+     "path": "i/floodlight-security.fae397d9.glb",
+     "sha256": "fae397d947a2c41d2cc00208330eaa9054b8234084818fd068374452ccc5e347",
+     "bytes": 125184
+    },
+    {
+     "path": "i/floodlight-security.lod1.6a13d36d.glb",
+     "sha256": "6a13d36d9cb7804589694fddaaefa2286156b706a754803d1ffd78566993812e",
+     "bytes": 40440
+    },
+    {
+     "path": "i/floodlight-security.lite.e2f9b9aa.glb",
+     "sha256": "e2f9b9aa451213225f6e4b67e91470497d595494f343184fbe3a4e0ac45e9849",
+     "bytes": 78040
+    }
+   ]
+  },
+  {
+   "id": "sign-wet-floor",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Fran Calvente"
+   ],
+   "source": {
+    "archive": "polyhaven:WetFloorSign_01",
+    "path": "polyhaven/models/WetFloorSign_01/WetFloorSign_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/sign-wet-floor.bf26b8d1.glb",
+     "sha256": "bf26b8d108b630f15f05ed917b8840005afbb6d2127c785e3b37defea70ee591",
+     "bytes": 29584
+    },
+    {
+     "path": "i/sign-wet-floor.lite.bf26b8d1.glb",
+     "sha256": "bf26b8d108b630f15f05ed917b8840005afbb6d2127c785e3b37defea70ee591",
+     "bytes": 29584
+    }
+   ]
+  },
+  {
+   "id": "pipes-industrial",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Jorge Camacho"
+   ],
+   "source": {
+    "archive": "polyhaven:modular_industrial_pipes_01",
+    "path": "polyhaven/models/modular_industrial_pipes_01/modular_industrial_pipes_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/pipes-industrial.a285687d.glb",
+     "sha256": "a285687d256cda67d1d3eaf79a878b131057c3e771ad50c0aba37dee7ff00264",
+     "bytes": 472336
+    },
+    {
+     "path": "i/pipes-industrial.lod1.d9b3904c.glb",
+     "sha256": "d9b3904cc5964f2be176ecb539ee6c6ac728ac8e82f28ec1374b60a4296073a9",
+     "bytes": 108224
+    },
+    {
+     "path": "i/pipes-industrial.lite.9b27a358.glb",
+     "sha256": "9b27a358a97bd84567d29870e5bab5952eac35c1ddc80e660b992323799e49ae",
+     "bytes": 93592
+    }
+   ]
+  },
+  {
+   "id": "crane-overhead",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Timothy3D"
+   ],
+   "source": {
+    "archive": "polyhaven:overhead_crane",
+    "path": "polyhaven/models/overhead_crane/overhead_crane.gltf"
+   },
+   "files": [
+    {
+     "path": "i/crane-overhead.6145d6ff.glb",
+     "sha256": "6145d6ffa23bb6b49153e344570d74d21796d9c901b0d4dea4f67485d5e28d4a",
+     "bytes": 1452804
+    },
+    {
+     "path": "i/crane-overhead.lod1.a6446a90.glb",
+     "sha256": "a6446a9009bcda63f6247d7a25b2e0e00ad0192f8f20438fcb592d5ed8c5ce0a",
+     "bytes": 170424
+    },
+    {
+     "path": "i/crane-overhead.lite.fa743a51.glb",
+     "sha256": "fa743a51ced0551acc62c7ef2e759fe421f97e20e99c737cbca210229eb377fd",
+     "bytes": 169504
+    }
+   ]
+  },
+  {
+   "id": "generator-portable",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "James Ray Cock"
+   ],
+   "source": {
+    "archive": "polyhaven:portable_generator",
+    "path": "polyhaven/models/portable_generator/portable_generator.gltf"
+   },
+   "files": [
+    {
+     "path": "i/generator-portable.4e4eb229.glb",
+     "sha256": "4e4eb22991a6a433ec07077122e3a156222797657201065617e8e8c656bae11a",
+     "bytes": 409436
+    },
+    {
+     "path": "i/generator-portable.lod1.59f352a0.glb",
+     "sha256": "59f352a0b7fc93848da0721fed80798e5166c61a8a849c11223639a6acb33ec6",
+     "bytes": 29568
+    },
+    {
+     "path": "i/generator-portable.lite.cba013eb.glb",
+     "sha256": "cba013ebe4da52dd41f99144c65ed0c184a5f9a93cad070c3e5bfcecd81844c8",
+     "bytes": 75868
+    }
+   ]
+  },
+  {
+   "id": "stove-barrel",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "MP"
+   ],
+   "source": {
+    "archive": "polyhaven:barrel_stove",
+    "path": "polyhaven/models/barrel_stove/barrel_stove.gltf"
+   },
+   "files": [
+    {
+     "path": "i/stove-barrel.12b8896e.glb",
+     "sha256": "12b8896e5a4e6970b2f9a3bceb3da043d5353709ec90bc5378dc6ffc76e1c261",
+     "bytes": 215184
+    },
+    {
+     "path": "i/stove-barrel.lod1.22cbfc2d.glb",
+     "sha256": "22cbfc2daf24fdc3e2bc679f1e0144aed652d08db6da06007c9e194e095d2c58",
+     "bytes": 61564
+    },
+    {
+     "path": "i/stove-barrel.lite.19220041.glb",
+     "sha256": "19220041cfcc181f7d7c23be1d366b0dcb978d788b78ef8d21d3a7cc2572d523",
+     "bytes": 38556
+    }
+   ]
+  },
+  {
+   "id": "lamp-caged-hanging",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Ulan Cabanilla"
+   ],
+   "source": {
+    "archive": "polyhaven:caged_hanging_light",
+    "path": "polyhaven/models/caged_hanging_light/caged_hanging_light.gltf"
+   },
+   "files": [
+    {
+     "path": "i/lamp-caged-hanging.86118f46.glb",
+     "sha256": "86118f46394c1fc68441becd15de6609160e6e8023415a31640dbd20ff1d442d",
+     "bytes": 298564
+    },
+    {
+     "path": "i/lamp-caged-hanging.lod1.c20fad14.glb",
+     "sha256": "c20fad14e6f359a1fa13ec00c66362ec96aafd270e8702194ce4686f900ea8b6",
+     "bytes": 71244
+    },
+    {
+     "path": "i/lamp-caged-hanging.lite.3e030352.glb",
+     "sha256": "3e03035240bfaf585d39c3f82c5ff2c1743d656f065241372c0516425867ba47",
+     "bytes": 90632
+    }
+   ]
+  },
+  {
+   "id": "panel-spacecraft",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Michał Wiśniewski"
+   ],
+   "source": {
+    "archive": "polyhaven:vintage_spacecraft_instrument",
+    "path": "polyhaven/models/vintage_spacecraft_instrument/vintage_spacecraft_instrument.gltf"
+   },
+   "files": [
+    {
+     "path": "i/panel-spacecraft.56034ac8.glb",
+     "sha256": "56034ac8672c8c080cf1c1f2f7a299ebbaa46817f2f7b85ab0743387b5fff979",
+     "bytes": 158096
+    },
+    {
+     "path": "i/panel-spacecraft.lod1.4a71fe09.glb",
+     "sha256": "4a71fe09e7b52854c0bdc2e3e9f354c759d7c070676b00f8eda3fb631d7f798c",
+     "bytes": 20008
+    },
+    {
+     "path": "i/panel-spacecraft.lite.160181b7.glb",
+     "sha256": "160181b7059d01590e5fdeadcc7eb289caf5cab832c896c1e5ff714c4b3b10b7",
+     "bytes": 63008
+    }
+   ]
+  },
+  {
+   "id": "power-box",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Rico Cilliers",
+    "Yann Kervran"
+   ],
+   "source": {
+    "archive": "polyhaven:power_box_01",
+    "path": "polyhaven/models/power_box_01/power_box_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/power-box.4d14cf1b.glb",
+     "sha256": "4d14cf1b89d92bb93eff5c448967a0beb6dbb9ecee8d9e220b2582939ad7dd77",
+     "bytes": 63100
+    },
+    {
+     "path": "i/power-box.lod1.e869f504.glb",
+     "sha256": "e869f5047cbcb1a0b7ccc20eaec58295f860aea75dd508bb59d046244c304205",
+     "bytes": 15372
+    },
+    {
+     "path": "i/power-box.lite.d9c42141.glb",
+     "sha256": "d9c42141c4aeff22850726fc0ae691d7d3f30033a981ce5c4c3a6c84af4e9733",
+     "bytes": 37192
+    }
+   ]
+  },
+  {
+   "id": "cart-industrial",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Jule Bielitz"
+   ],
+   "source": {
+    "archive": "polyhaven:industrial_storage_cart",
+    "path": "polyhaven/models/industrial_storage_cart/industrial_storage_cart.gltf"
+   },
+   "files": [
+    {
+     "path": "i/cart-industrial.95bf810a.glb",
+     "sha256": "95bf810a502f7a151e132cf2bd65973ca449efd8187c04e3792b160428ab9c9c",
+     "bytes": 281732
+    },
+    {
+     "path": "i/cart-industrial.lod1.813510a7.glb",
+     "sha256": "813510a7a2bb4a7931a7e7818cc856819bb06b4fa4b28669fdddf4876e4bb019",
+     "bytes": 34772
+    },
+    {
+     "path": "i/cart-industrial.lite.4fd86861.glb",
+     "sha256": "4fd868619db2ed7ba50ba4209ccacb0537e1be2e677e951e1d8bf727a5d6b945",
+     "bytes": 40404
+    }
+   ]
+  },
+  {
+   "id": "hand-truck",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Mutanzom3D"
+   ],
+   "source": {
+    "archive": "polyhaven:hand_truck",
+    "path": "polyhaven/models/hand_truck/hand_truck.gltf"
+   },
+   "files": [
+    {
+     "path": "i/hand-truck.ae45b7b8.glb",
+     "sha256": "ae45b7b82fa803d747c75e901e61851d3486c33c772bcc0e7ac0d80c6af72477",
+     "bytes": 356156
+    },
+    {
+     "path": "i/hand-truck.lod1.bb151fc4.glb",
+     "sha256": "bb151fc4339bcc01fb62dcdf9ffe7615af9b979876e974f913f52252b665b73e",
+     "bytes": 32404
+    },
+    {
+     "path": "i/hand-truck.lite.d5f20cef.glb",
+     "sha256": "d5f20cefba317773bdd814a2dde9aec66c84c19d32c9189ca89c31305137a73d",
+     "bytes": 51580
+    }
+   ]
+  },
+  {
+   "id": "rack-steel-01",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "James Ray Cock"
+   ],
+   "source": {
+    "archive": "polyhaven:steel_frame_shelves_01",
+    "path": "polyhaven/models/steel_frame_shelves_01/steel_frame_shelves_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/rack-steel-01.df98e807.glb",
+     "sha256": "df98e80722b7ef874d206130117bf731600b9891c85708f3a42e4c2349ce3fc3",
+     "bytes": 175628
+    },
+    {
+     "path": "i/rack-steel-01.lod1.f871fe39.glb",
+     "sha256": "f871fe39f6140b5841a8798db6bf6d354b3e51eb0b27261c0f85af28b3f64290",
+     "bytes": 49964
+    },
+    {
+     "path": "i/rack-steel-01.lite.02579556.glb",
+     "sha256": "025795569af38bb49824adba816a898bd831875861628ed8539d125536e123b9",
+     "bytes": 108904
+    }
+   ]
+  },
+  {
+   "id": "toolbox-metal",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Mateusz Sadek"
+   ],
+   "source": {
+    "archive": "polyhaven:metal_toolbox",
+    "path": "polyhaven/models/metal_toolbox/metal_toolbox.gltf"
+   },
+   "files": [
+    {
+     "path": "i/toolbox-metal.569d0aa0.glb",
+     "sha256": "569d0aa0e3b4491dc919dec85a10e170be7da0c2e862c8929e70193debf7aaf2",
+     "bytes": 128024
+    },
+    {
+     "path": "i/toolbox-metal.lod1.d52726f3.glb",
+     "sha256": "d52726f331a49b1ccd78033f44c9db9f3521be682f932994f58223489882f2f2",
+     "bytes": 19372
+    },
+    {
+     "path": "i/toolbox-metal.lite.1f02512a.glb",
+     "sha256": "1f02512a85b6cecb26e14da9fe5c0635a3338b6b27b6364acc784cdd49c5c66e",
+     "bytes": 39196
+    }
+   ]
+  },
+  {
+   "id": "rock-moon-01",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Greg Zaal",
+    "Rico Cilliers",
+    "Jenelle van Heerden",
+    "Dario Barresi"
+   ],
+   "source": {
+    "archive": "polyhaven:moon_rock_01",
+    "path": "polyhaven/models/moon_rock_01/moon_rock_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/rock-moon-01.467ec5d2.glb",
+     "sha256": "467ec5d252df962ed3936e101f5918c98024eab977ebfb28630dba635c41f6b3",
+     "bytes": 29624
+    },
+    {
+     "path": "i/rock-moon-01.lod1.f2c5f34b.glb",
+     "sha256": "f2c5f34bcb4c0cc0a451c2e49930bdb94ae55b897078907714d01866531b1102",
+     "bytes": 5088
+    },
+    {
+     "path": "i/rock-moon-01.lite.08feccef.glb",
+     "sha256": "08feccefbd1965a8729055783bbcbdd0678f94cb482cbe975840f72f3299cb78",
+     "bytes": 17120
+    }
+   ]
+  },
+  {
+   "id": "rock-moon-03",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Greg Zaal",
+    "Rico Cilliers",
+    "Jenelle van Heerden"
+   ],
+   "source": {
+    "archive": "polyhaven:moon_rock_03",
+    "path": "polyhaven/models/moon_rock_03/moon_rock_03.gltf"
+   },
+   "files": [
+    {
+     "path": "i/rock-moon-03.b02cf374.glb",
+     "sha256": "b02cf3740f844a7addabc3fba722470378838574c1487ea391d23b624004f2de",
+     "bytes": 70124
+    },
+    {
+     "path": "i/rock-moon-03.lod1.cb842b14.glb",
+     "sha256": "cb842b1425f05b2927290e061617f8204a353ef07e2a995cf26e901573699f6d",
+     "bytes": 25632
+    },
+    {
+     "path": "i/rock-moon-03.lite.22e95ae8.glb",
+     "sha256": "22e95ae86a88f8c8ec02b147041bd1e4691dd317af89058cf126a690d30bff7d",
+     "bytes": 31272
+    }
+   ]
+  },
+  {
+   "id": "aircon-exterior",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Monsta3D"
+   ],
+   "source": {
+    "archive": "polyhaven:exterior_aircon_unit",
+    "path": "polyhaven/models/exterior_aircon_unit/exterior_aircon_unit.gltf"
+   },
+   "files": [
+    {
+     "path": "i/aircon-exterior.74da064a.glb",
+     "sha256": "74da064a20cb25cd0fc2df348b0d13f9c84fbefe030f45104b0e6dc7288571f2",
+     "bytes": 717504
+    },
+    {
+     "path": "i/aircon-exterior.lod1.9d570b4b.glb",
+     "sha256": "9d570b4b17b1a1b86e960249900a4b2a9681d5cc053cd2c99289141661a540c8",
+     "bytes": 104868
+    },
+    {
+     "path": "i/aircon-exterior.lite.d321590e.glb",
+     "sha256": "d321590e0d5c54a64b212f0f2bcf0bb0f77464852d3fc427694ef4b0e9844d1d",
+     "bytes": 193288
+    }
+   ]
+  },
+  {
+   "id": "planter-box-02",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "James Ray Cock"
+   ],
+   "source": {
+    "archive": "polyhaven:planter_box_02",
+    "path": "polyhaven/models/planter_box_02/planter_box_02.gltf"
+   },
+   "files": [
+    {
+     "path": "i/planter-box-02.d7ee3b50.glb",
+     "sha256": "d7ee3b5046b70540e0b27653ba1c141bfe6dc248806a90d3d559c77d35b708d7",
+     "bytes": 261860
+    },
+    {
+     "path": "i/planter-box-02.lod1.8a646450.glb",
+     "sha256": "8a646450d9812d1c7ba40e3af41b5746eb9a2b8a44d61834d1ecc2afae2e7280",
+     "bytes": 63324
+    },
+    {
+     "path": "i/planter-box-02.lite.55f2f51e.glb",
+     "sha256": "55f2f51ec7de0c216bbe62b4952e10b6938c660ffc887c879ebe653f5a018a12",
+     "bytes": 73976
+    }
+   ]
+  },
+  {
+   "id": "watering-can",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Charles Nderitu"
+   ],
+   "source": {
+    "archive": "polyhaven:watering_can_metal_01",
+    "path": "polyhaven/models/watering_can_metal_01/watering_can_metal_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/watering-can.3d2cc904.glb",
+     "sha256": "3d2cc90450792d9dea8518b543be67573ac8365ea452404c3aee79dc2ec7721b",
+     "bytes": 112028
+    },
+    {
+     "path": "i/watering-can.lod1.a0f27e74.glb",
+     "sha256": "a0f27e748255057dce8bed9c68c71a20906ce4fe214c1b393e3c1c20fa81a40e",
+     "bytes": 39840
+    },
+    {
+     "path": "i/watering-can.lite.24426609.glb",
+     "sha256": "24426609bf318d566df6a313284851044148b9dc3cc1345dfa47fb52c9fde837",
+     "bytes": 63808
+    }
+   ]
+  },
+  {
+   "id": "spade-rusted",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Blemonade"
+   ],
+   "source": {
+    "archive": "polyhaven:rusted_spade_01",
+    "path": "polyhaven/models/rusted_spade_01/rusted_spade_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/spade-rusted.fe18fc72.glb",
+     "sha256": "fe18fc72036b27f4790e81109ee4add2003e3e898adbffec029b8c4fd8230d3c",
+     "bytes": 205440
+    },
+    {
+     "path": "i/spade-rusted.lod1.648de26b.glb",
+     "sha256": "648de26bc4f4e3c830987923d5793d5a95be7b3f49979dae7334a9ab81f7cc82",
+     "bytes": 43532
+    },
+    {
+     "path": "i/spade-rusted.lite.2cbdd142.glb",
+     "sha256": "2cbdd14249168ccabb7a43c1803357330f5e25210375f9e39d9a1f6559e0b729",
+     "bytes": 57376
+    }
+   ]
+  },
+  {
+   "id": "gnome-garden",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Bhargav Kubal"
+   ],
+   "source": {
+    "archive": "polyhaven:garden_gnome",
+    "path": "polyhaven/models/garden_gnome/garden_gnome.gltf"
+   },
+   "files": [
+    {
+     "path": "i/gnome-garden.d543a89e.glb",
+     "sha256": "d543a89e9f5ed76800b61a44194c66a7c108549767f8a47facfd8ba075458a8a",
+     "bytes": 108116
+    },
+    {
+     "path": "i/gnome-garden.lod1.d02ecbc0.glb",
+     "sha256": "d02ecbc03803a5a9c8b79a5e065176d14f2a594b998467241b499c661b4a07bf",
+     "bytes": 30004
+    },
+    {
+     "path": "i/gnome-garden.lite.17e9544a.glb",
+     "sha256": "17e9544a2346b5de6bf3cacc24e2e94ba22e8661d54bfaed810ac959525dc6bb",
+     "bytes": 66508
+    }
+   ]
+  },
+  {
+   "id": "bags-compost",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "James Ray Cock"
+   ],
+   "source": {
+    "archive": "polyhaven:compost_bags",
+    "path": "polyhaven/models/compost_bags/compost_bags.gltf"
+   },
+   "files": [
+    {
+     "path": "i/bags-compost.4805101f.glb",
+     "sha256": "4805101f31fbf43d299059f87b97781933b4688c6fc86554f772a5edef265d12",
+     "bytes": 545016
+    },
+    {
+     "path": "i/bags-compost.lite.a226c0c1.glb",
+     "sha256": "a226c0c1c38c4a11f02333eee800e98f172140fbe742e4b2b300dfff71314f47",
+     "bytes": 438928
+    }
+   ]
+  },
+  {
+   "id": "ladder-sectioned",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "MP"
+   ],
+   "source": {
+    "archive": "polyhaven:ladder_sectioned_01",
+    "path": "polyhaven/models/ladder_sectioned_01/ladder_sectioned_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/ladder-sectioned.4e25c12f.glb",
+     "sha256": "4e25c12f17a246f6e84997f849083dfaf4bb11e7660d7ff8b2fd5bd0333d8482",
+     "bytes": 328544
+    },
+    {
+     "path": "i/ladder-sectioned.lod1.9b9e9b19.glb",
+     "sha256": "9b9e9b190227134bb32c33df42fe5ae12c653d2a9e7955bc54b5c31a58aca3bb",
+     "bytes": 96720
+    },
+    {
+     "path": "i/ladder-sectioned.lite.a8e456ee.glb",
+     "sha256": "a8e456ee70afce9c8145b76bf85344f320249048b35339ef0e07435c5c609da5",
+     "bytes": 103016
+    }
+   ]
+  },
+  {
+   "id": "tray-seeding",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Satyaki Mandal"
+   ],
+   "source": {
+    "archive": "polyhaven:seeding_tray_01",
+    "path": "polyhaven/models/seeding_tray_01/seeding_tray_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/tray-seeding.1da63d6f.glb",
+     "sha256": "1da63d6f2249620352079405f5f9c43a80540cbf30c5a2c961a4112c517735fe",
+     "bytes": 112744
+    },
+    {
+     "path": "i/tray-seeding.lod1.9be85822.glb",
+     "sha256": "9be8582236e57a3ab4b42c63a7936ecaf6ecd43401c3b8e567d4a5db1978d06d",
+     "bytes": 41604
+    },
+    {
+     "path": "i/tray-seeding.lite.1acc5bca.glb",
+     "sha256": "1acc5bca91a46e0415990b8366b837daf33fccea288d300b5f0fb27ac3ca78c5",
+     "bytes": 58992
+    }
+   ]
+  },
+  {
+   "id": "bag-cement",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "PierreB3D"
+   ],
+   "source": {
+    "archive": "polyhaven:cement_bag",
+    "path": "polyhaven/models/cement_bag/cement_bag.gltf"
+   },
+   "files": [
+    {
+     "path": "i/bag-cement.e5d27f8e.glb",
+     "sha256": "e5d27f8e38580ff8148a8ff85ae3806f4b61530a1accc67bd12b6424b1af8bec",
+     "bytes": 36712
+    },
+    {
+     "path": "i/bag-cement.lite.e5d27f8e.glb",
+     "sha256": "e5d27f8e38580ff8148a8ff85ae3806f4b61530a1accc67bd12b6424b1af8bec",
+     "bytes": 36712
+    }
+   ]
+  },
+  {
+   "id": "sprinkler-garden",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Amal Kumar"
+   ],
+   "source": {
+    "archive": "polyhaven:garden_sprinkler_01",
+    "path": "polyhaven/models/garden_sprinkler_01/garden_sprinkler_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/sprinkler-garden.62b9037e.glb",
+     "sha256": "62b9037e12d6f2e2197fbec86a9eff53e811a9e8fd031e6c9115dd8158c4663a",
+     "bytes": 143620
+    },
+    {
+     "path": "i/sprinkler-garden.lod1.529bee1d.glb",
+     "sha256": "529bee1daf8f25bb786d9176315cb6583c08e272861c56139fb1b700f8a4a381",
+     "bytes": 16000
+    },
+    {
+     "path": "i/sprinkler-garden.lite.85e856d1.glb",
+     "sha256": "85e856d1967ce74f416263878dc7c64e0ca3f4fb7861e09bc937cfafbcdb98ca",
+     "bytes": 55056
+    }
+   ]
+  },
+  {
+   "id": "bucket-wooden-02",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "James Ray Cock"
+   ],
+   "source": {
+    "archive": "polyhaven:wooden_bucket_02",
+    "path": "polyhaven/models/wooden_bucket_02/wooden_bucket_02.gltf"
+   },
+   "files": [
+    {
+     "path": "i/bucket-wooden-02.0b9254d5.glb",
+     "sha256": "0b9254d5d9f08e1c77a4a428756123f13033e3cb63bebfc8a5148991306da8c5",
+     "bytes": 158568
+    },
+    {
+     "path": "i/bucket-wooden-02.lod1.a558645b.glb",
+     "sha256": "a558645b9479aa7440e92baf9e68da3078b2aa3288f58bc20ad5e0547af1a6d8",
+     "bytes": 65312
+    },
+    {
+     "path": "i/bucket-wooden-02.lite.c61c6cf7.glb",
+     "sha256": "c61c6cf75cb503e065a8ad2c8e14df0b7ea47a2321777955fb22ccf6a27678ae",
+     "bytes": 84244
+    }
+   ]
+  },
+  {
+   "id": "crate-plastic",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "PierreB3D"
+   ],
+   "source": {
+    "archive": "polyhaven:plastic_crate_01",
+    "path": "polyhaven/models/plastic_crate_01/plastic_crate_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/crate-plastic.4b92961c.glb",
+     "sha256": "4b92961cc00d130d9cad5997323893528c413f13d82fb53aca8e78f565ab7bda",
+     "bytes": 62744
+    },
+    {
+     "path": "i/crate-plastic.lod1.03c1a747.glb",
+     "sha256": "03c1a747270424fd735f74041edbbbe18f2f404bd63e3c44c40f5368a8ff70b5",
+     "bytes": 12672
+    },
+    {
+     "path": "i/crate-plastic.lite.8d34ec06.glb",
+     "sha256": "8d34ec066bcd6845673ff84a81a79913c9e538909d8489a29be85dbde6126f1c",
+     "bytes": 43092
+    }
+   ]
+  },
+  {
+   "id": "door-castle",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Tina"
+   ],
+   "source": {
+    "archive": "polyhaven:large_castle_door",
+    "path": "polyhaven/models/large_castle_door/large_castle_door.gltf"
+   },
+   "files": [
+    {
+     "path": "i/door-castle.3138c5cf.glb",
+     "sha256": "3138c5cf7b231c21bda7d9aa6af1d81fa12c1c6357002bf479345870f08852cc",
+     "bytes": 829644
+    },
+    {
+     "path": "i/door-castle.lod1.44f0da89.glb",
+     "sha256": "44f0da89533dc25b26472289a097c46cabe1cc541086e7dd7a64775a89607833",
+     "bytes": 100584
+    },
+    {
+     "path": "i/door-castle.lite.20e4222a.glb",
+     "sha256": "20e4222a2b8d8742b356f30cd9452c9edd025d95f29c5284d709434d4b0d0030",
+     "bytes": 114112
+    }
+   ]
+  },
+  {
+   "id": "shield-kite",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Ulan Cabanilla"
+   ],
+   "source": {
+    "archive": "polyhaven:kite_shield",
+    "path": "polyhaven/models/kite_shield/kite_shield.gltf"
+   },
+   "files": [
+    {
+     "path": "i/shield-kite.f08f149f.glb",
+     "sha256": "f08f149f0d2136fe64af20e0ed0e915fdb30a105b2b52432c801c80a10f45033",
+     "bytes": 327372
+    },
+    {
+     "path": "i/shield-kite.lod1.57b6008a.glb",
+     "sha256": "57b6008aa8cab84253065dc2bf6119c5891fcf51983e3407c980ad80ded324db",
+     "bytes": 63304
+    },
+    {
+     "path": "i/shield-kite.lite.a214c25e.glb",
+     "sha256": "a214c25ed5474d29ffeb2790967186817780aa2bc0065cf220cb241243b746c2",
+     "bytes": 95948
+    }
+   ]
+  },
+  {
+   "id": "sword-katana",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Tal Swicegood"
+   ],
+   "source": {
+    "archive": "polyhaven:antique_katana_01",
+    "path": "polyhaven/models/antique_katana_01/antique_katana_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/sword-katana.d3afe2ac.glb",
+     "sha256": "d3afe2ac144cca289673ebe1adb0f391c1292e27f991732c2175178df651c2e8",
+     "bytes": 228868
+    },
+    {
+     "path": "i/sword-katana.lod1.f7a01205.glb",
+     "sha256": "f7a012053ee1edb7f7f718235a2a53701e90967ff31669cf5326a69f9b754914",
+     "bytes": 63916
+    },
+    {
+     "path": "i/sword-katana.lite.483f6215.glb",
+     "sha256": "483f6215b001482b0538a660a89125bc343a3da8da9756ee970544c1d7601e61",
+     "bytes": 72316
+    }
+   ]
+  },
+  {
+   "id": "sword-estoc",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "James Ray Cock",
+    "Ulan Cabanilla"
+   ],
+   "source": {
+    "archive": "polyhaven:antique_estoc",
+    "path": "polyhaven/models/antique_estoc/antique_estoc.gltf"
+   },
+   "files": [
+    {
+     "path": "i/sword-estoc.7eb6b3fe.glb",
+     "sha256": "7eb6b3fe4cc3137fda91db760859dbb0cb26cdae7a8456c244d458677a6c49fa",
+     "bytes": 258688
+    },
+    {
+     "path": "i/sword-estoc.lod1.01d394e6.glb",
+     "sha256": "01d394e68216611f753e026fbd5ce1240a48d347f97bb1b5aa3a02be449df977",
+     "bytes": 54820
+    },
+    {
+     "path": "i/sword-estoc.lite.5b5199f9.glb",
+     "sha256": "5b5199f937de52eba5798a5a5a84a2a6b0f45ead2ea80755020cfa841fc6cfd8",
+     "bytes": 74372
+    }
+   ]
+  },
+  {
+   "id": "stand-katana",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Rico Cilliers"
+   ],
+   "source": {
+    "archive": "polyhaven:katana_stand_01",
+    "path": "polyhaven/models/katana_stand_01/katana_stand_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/stand-katana.13162fce.glb",
+     "sha256": "13162fceb4b5f50f65cf69a23168c56f66ac403128c454b75be292be26c8ba1d",
+     "bytes": 89700
+    },
+    {
+     "path": "i/stand-katana.lod1.f1cbb23a.glb",
+     "sha256": "f1cbb23aff82b81d64a165ccac95c1d8814bca7616b72c168bd266eee43c2d64",
+     "bytes": 31544
+    },
+    {
+     "path": "i/stand-katana.lite.7c89b8fd.glb",
+     "sha256": "7c89b8fd8fb37bf225770a4851e47532c7ad2ad56431559bce55c79c898f594b",
+     "bytes": 50260
+    }
+   ]
+  },
+  {
+   "id": "statue-gothic",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Benny Weimer"
+   ],
+   "source": {
+    "archive": "polyhaven:gothic_statue",
+    "path": "polyhaven/models/gothic_statue/gothic_statue.gltf"
+   },
+   "files": [
+    {
+     "path": "i/statue-gothic.9b5d9905.glb",
+     "sha256": "9b5d99057f1536c6ea456b1ffca82f5d27fd6d84a922de7cb097b21efd83ac1e",
+     "bytes": 501560
+    },
+    {
+     "path": "i/statue-gothic.lod1.fcb27040.glb",
+     "sha256": "fcb27040b1db943c3af44ce61de4dcbf5165175ad5a1c0fc10cd7638d6f342da",
+     "bytes": 41568
+    },
+    {
+     "path": "i/statue-gothic.lite.446f045d.glb",
+     "sha256": "446f045d2d76a8c5cd47d996ad5380c87460865590bb4454e1452a1b5eea5fb5",
+     "bytes": 84464
+    }
+   ]
+  },
+  {
+   "id": "candlestick-wooden",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Josh Dean"
+   ],
+   "source": {
+    "archive": "polyhaven:wooden_candlestick",
+    "path": "polyhaven/models/wooden_candlestick/wooden_candlestick.gltf"
+   },
+   "files": [
+    {
+     "path": "i/candlestick-wooden.48465661.glb",
+     "sha256": "48465661e0a53c521b2d53a05318698292648cae5b763ab8da31f93d93305ac7",
+     "bytes": 86784
+    },
+    {
+     "path": "i/candlestick-wooden.lod1.353a8340.glb",
+     "sha256": "353a83403a11c562ffe6cd747949c71eaa83fb83dce581227bacd882ea5d563a",
+     "bytes": 19020
+    },
+    {
+     "path": "i/candlestick-wooden.lite.82810de6.glb",
+     "sha256": "82810de6446a1ec2dae9721b73317e40782b0cb340453a184bfed987121e28bd",
+     "bytes": 38244
+    }
+   ]
+  },
+  {
+   "id": "elephant-carved",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Greg Zaal"
+   ],
+   "source": {
+    "archive": "polyhaven:carved_wooden_elephant",
+    "path": "polyhaven/models/carved_wooden_elephant/carved_wooden_elephant.gltf"
+   },
+   "files": [
+    {
+     "path": "i/elephant-carved.df3760b6.glb",
+     "sha256": "df3760b62d4c45abea1929705c87cc008ef3fe460fcecfb8d9999644feef4c29",
+     "bytes": 85208
+    },
+    {
+     "path": "i/elephant-carved.lod1.5865b91f.glb",
+     "sha256": "5865b91f686d5c0910610a16e9333f2c1dd2015b4f613de18d706ae12f7dd654",
+     "bytes": 27080
+    },
+    {
+     "path": "i/elephant-carved.lite.38c52a60.glb",
+     "sha256": "38c52a606b962698f38cce360aa7a1fbc2ed86b1fd1e3de0660bc839d5d3ac7a",
+     "bytes": 45440
+    }
+   ]
+  },
+  {
+   "id": "ship-dutch-medium",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "James Ray Cock",
+    "Rico Cilliers",
+    "Nicolò Zubbini"
+   ],
+   "source": {
+    "archive": "polyhaven:dutch_ship_medium",
+    "path": "polyhaven/models/dutch_ship_medium/dutch_ship_medium.gltf"
+   },
+   "files": [
+    {
+     "path": "i/ship-dutch-medium.8e8d2561.glb",
+     "sha256": "8e8d256195c6bf1d20bcc9afae4c692ce66e110fb8d147aab4066c68bf41b368",
+     "bytes": 1075236
+    },
+    {
+     "path": "i/ship-dutch-medium.lod1.f7d35821.glb",
+     "sha256": "f7d35821d7722e22e6c2f0de204932cc3c66a9f8189d612a050deb1be90f4783",
+     "bytes": 314788
+    },
+    {
+     "path": "i/ship-dutch-medium.lite.bf80e675.glb",
+     "sha256": "bf80e675ea5da90055c78e4ef65b403ccef882e42bc7d4758096b2ac4c2e696e",
+     "bytes": 192780
+    }
+   ]
+  },
+  {
+   "id": "ship-pinnace",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "James Ray Cock",
+    "Rico Cilliers",
+    "Nicolò Zubbini",
+    "Yann Kervran"
+   ],
+   "source": {
+    "archive": "polyhaven:ship_pinnace",
+    "path": "polyhaven/models/ship_pinnace/ship_pinnace.gltf"
+   },
+   "files": [
+    {
+     "path": "i/ship-pinnace.41227a9c.glb",
+     "sha256": "41227a9c872f6c723836e508747d969b2ad416b8ef6cbe1eb55660f8a9034299",
+     "bytes": 858532
+    },
+    {
+     "path": "i/ship-pinnace.lod1.f7f20b27.glb",
+     "sha256": "f7f20b2753dbdaef5d414d8bd8c6562be1438226e38fd75700de35fb7717e44c",
+     "bytes": 123664
+    },
+    {
+     "path": "i/ship-pinnace.lite.f6521e3a.glb",
+     "sha256": "f6521e3aa0630f412afa74a205726b1262089d24ae3e912ac81f1cd46f71d1e3",
+     "bytes": 260688
+    }
+   ]
+  },
+  {
+   "id": "barrels-wooden",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "James Ray Cock"
+   ],
+   "source": {
+    "archive": "polyhaven:wooden_barrels_01",
+    "path": "polyhaven/models/wooden_barrels_01/wooden_barrels_01.gltf"
+   },
+   "files": [
+    {
+     "path": "i/barrels-wooden.71cd66ea.glb",
+     "sha256": "71cd66ea86d0445168cbaf9ae8b8a33ebab7996be80d4ddbbaf69d2d1299cae6",
+     "bytes": 480776
+    },
+    {
+     "path": "i/barrels-wooden.lod1.2d0a79ef.glb",
+     "sha256": "2d0a79ef95aa17cce63b0d82576c350bd71a5509ae8bfabfa9fa6dfe29adb899",
+     "bytes": 128268
+    },
+    {
+     "path": "i/barrels-wooden.lite.21abe4b0.glb",
+     "sha256": "21abe4b0e7e6e5cbbaa3922f47bf101f3ef57b48faf8700c464847d01871047b",
+     "bytes": 71044
+    }
+   ]
+  },
+  {
+   "id": "hydrant",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "Gonçalo Felício"
+   ],
+   "source": {
+    "archive": "polyhaven:fire_hydrant",
+    "path": "polyhaven/models/fire_hydrant/fire_hydrant.gltf"
+   },
+   "files": [
+    {
+     "path": "i/hydrant.03760266.glb",
+     "sha256": "03760266ed9cce1f60ca26728b3ed26e8ae09347b6573fb605f8e932ebec060f",
+     "bytes": 224984
+    },
+    {
+     "path": "i/hydrant.lod1.ec84a6e0.glb",
+     "sha256": "ec84a6e0bfeb0aba02f147d7259d92f2b7799cfd729593473e857f1d984bfb5f",
+     "bytes": 57864
+    },
+    {
+     "path": "i/hydrant.lite.d2cb9fe5.glb",
+     "sha256": "d2cb9fe5e33c9f5a4c981980d8f2f2a27ad27790079ae860c58ee89676c58374",
+     "bytes": 70264
+    }
+   ]
+  },
+  {
+   "id": "trash-can-metal",
+   "pack": "polyhaven",
+   "licence": "CC0-1.0",
+   "authors": [
+    "GurJas Studios"
+   ],
+   "source": {
+    "archive": "polyhaven:metal_trash_can",
+    "path": "polyhaven/models/metal_trash_can/metal_trash_can.gltf"
+   },
+   "files": [
+    {
+     "path": "i/trash-can-metal.dfc753b4.glb",
+     "sha256": "dfc753b461aeea42349820811b5683993d22b993c358e57fb9dfdd2f8ed589f1",
+     "bytes": 255564
+    },
+    {
+     "path": "i/trash-can-metal.lod1.2a721258.glb",
+     "sha256": "2a7212583a587767c1412491fef766e2bb58f3b8dbbf6f7aa5ebff65af2fd173",
+     "bytes": 59288
+    },
+    {
+     "path": "i/trash-can-metal.lite.fa57a966.glb",
+     "sha256": "fa57a96624878b6d40b4fa85310937febfaf73a0a916927da28f200c4f48dd9e",
+     "bytes": 81252
     }
    ]
   }

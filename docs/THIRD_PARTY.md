@@ -474,6 +474,127 @@ published), `vintage_grandfather_clock_01` (the only glTF published is 8k and it
 MD5 did not match the API), three leafy plants whose leaf cards fell apart when
 simplified, and three picture frames that ship with a black canvas.
 
+**Poly Haven outdoor, street, industrial, harbour, farm and fantasy models** (CC0-1.0,
+[polyhaven.com/license](https://polyhaven.com/license); retrieved 2026-10-23 through the Poly Haven API, every file
+checked against the API's MD5; the licence is the site-wide CC0 statement and the author comes from the API's `/info`
+record). 76 models for worlds that are not rooms: rocks, cliffs, dead trunks, quiver trees, ferns,
+succulents, street furniture, harbour and coast props, industrial and sci-fi parts, farm tools, medieval pieces. Built
+by `scripts/assets/build.ts --interior` from the rows of `scripts/assets/selection-outdoor.ts` into `assets/lib/i/`.
+Size-based triangle budgets (3,000 under 0.6 m, 5,000 under 1.5 m, 8,000 under 5 m, 16,000 above), 256 px maps for
+pieces under 0.8 m and 512 px otherwise (JPEG quality 62), meshopt, one distance level and a light copy. Credit line:
+*"Poly Haven by <author>"*, licence CC0-1.0, source polyhaven.com. The `Triangles` column is the main file.
+
+| Library id | Poly Haven asset | Author | Triangles | SHA-256 of the shipped main file |
+| --- | --- | --- | ---: | --- |
+| aircon-exterior | [exterior_aircon_unit](https://polyhaven.com/a/exterior_aircon_unit) | Monsta3D | 7996 | `74da064a20cb25cd0fc2df348b0d13f9c84fbefe030f45104b0e6dc7288571f2` |
+| bag-cement | [cement_bag](https://polyhaven.com/a/cement_bag) | PierreB3D | 844 | `e5d27f8e38580ff8148a8ff85ae3806f4b61530a1accc67bd12b6424b1af8bec` |
+| bags-compost | [compost_bags](https://polyhaven.com/a/compost_bags) | James Ray Cock | 18708 | `4805101f31fbf43d299059f87b97781933b4688c6fc86554f772a5edef265d12` |
+| barrels-wooden | [wooden_barrels_01](https://polyhaven.com/a/wooden_barrels_01) | James Ray Cock | 7999 | `71cd66ea86d0445168cbaf9ae8b8a33ebab7996be80d4ddbbaf69d2d1299cae6` |
+| barrier-concrete | [concrete_road_barrier](https://polyhaven.com/a/concrete_road_barrier) | Amal Kumar | 8000 | `4850db862f7031b4315ea69e54233b9d8f7a5997effc874506a6abdb197945a0` |
+| branches-dry | [dry_branches_medium_01](https://polyhaven.com/a/dry_branches_medium_01) | Rico Cilliers | 4997 | `c20db4682318f0790e8ab9171b4d1d0221590053fa88af6dcbbcddc703cb191b` |
+| bucket-wooden | [wooden_bucket_01](https://polyhaven.com/a/wooden_bucket_01) | James Ray Cock | 3000 | `f33cb9e75baee50ecb53f2f68ccf9c3d3ef690671507ecae78d68b7aa1210072` |
+| bucket-wooden-02 | [wooden_bucket_02](https://polyhaven.com/a/wooden_bucket_02) | James Ray Cock | 5000 | `0b9254d5d9f08e1c77a4a428756123f13033e3cb63bebfc8a5148991306da8c5` |
+| buoy-ocean | [ocean_buoy](https://polyhaven.com/a/ocean_buoy) | Mateusz Sadek | 7999 | `4e35ae298fbbd1b37e7dfbdd176db483aaa33701b2df0afda5a8192251ba70ca` |
+| candlestick-wooden | [wooden_candlestick](https://polyhaven.com/a/wooden_candlestick) | Josh Dean | 2999 | `48465661e0a53c521b2d53a05318698292648cae5b763ab8da31f93d93305ac7` |
+| cannon-iron-real | [cannon_01](https://polyhaven.com/a/cannon_01) | Yann Kervran, James Ray Cock | 7999 | `c1c484be91d65ef050e4a4efb603e41582bc0b55ec27d7e7ecdbff66b390e114` |
+| car-covered | [covered_car](https://polyhaven.com/a/covered_car) | MP | 7999 | `dd3345897e0417c05d4a61ed4d47da56ef8fa0395b4abb16a7acb0232bfaf762` |
+| cart-industrial | [industrial_storage_cart](https://polyhaven.com/a/industrial_storage_cart) | Jule Bielitz | 7984 | `95bf810a502f7a151e132cf2bd65973ca449efd8187c04e3792b160428ab9c9c` |
+| chest-treasure-real | [treasure_chest](https://polyhaven.com/a/treasure_chest) | Rico Cilliers | 4738 | `0fdba1cd6f551cb38beb4c6215e86d7321614e5d94e30927de64c6c971535882` |
+| cliff-sandstone | [namaqualand_cliff_01](https://polyhaven.com/a/namaqualand_cliff_01) | Jenelle van Heerden, Rico Cilliers | 13998 | `6be91736720be6e999de6c0b784539e9891bae0a1ec28795f533829dc39de39a` |
+| crane-overhead | [overhead_crane](https://polyhaven.com/a/overhead_crane) | Timothy3D | 19994 | `6145d6ffa23bb6b49153e344570d74d21796d9c901b0d4dea4f67485d5e28d4a` |
+| crate-plastic | [plastic_crate_01](https://polyhaven.com/a/plastic_crate_01) | PierreB3D | 2146 | `4b92961cc00d130d9cad5997323893528c413f13d82fb53aca8e78f565ab7bda` |
+| crate-wooden-01 | [wooden_crate_01](https://polyhaven.com/a/wooden_crate_01) | James Ray Cock | 5000 | `2d8e06bfd1a79090722ea47fc13116077e2169c269fd87e59e6533cd7ebc3e7b` |
+| door-castle | [large_castle_door](https://polyhaven.com/a/large_castle_door) | Tina | 7999 | `3138c5cf7b231c21bda7d9aa6af1d81fa12c1c6357002bf479345870f08852cc` |
+| elephant-carved | [carved_wooden_elephant](https://polyhaven.com/a/carved_wooden_elephant) | Greg Zaal | 2752 | `df3760b62d4c45abea1929705c87cc008ef3fe460fcecfb8d9999644feef4c29` |
+| fence-chainlink | [modular_chainlink_fence](https://polyhaven.com/a/modular_chainlink_fence) | James Ray Cock, Amal Kumar | 15994 | `19d0746bcd5aa464c844cd86565af0e4b267a4338f59fbdd646c72c452e1f6a0` |
+| fern-02 | [fern_02](https://polyhaven.com/a/fern_02) | Rob Tuytel, Rico Cilliers | 6232 | `803214cf0fbf4a0384d2fc4d7c28e6c6a72e766570293f03969363a51358c887` |
+| fire-escape | [modular_fire_escape](https://polyhaven.com/a/modular_fire_escape) | Juniix | 11322 | `198e0bd033495a3a4923fcb636540c85cb0b18f4af7df6da1161e5d5c072dd49` |
+| floodlight-security | [security_light](https://polyhaven.com/a/security_light) | Maximilian Schuster | 2997 | `fae397d947a2c41d2cc00208330eaa9054b8234084818fd068374452ccc5e347` |
+| gate-iron | [large_iron_gate](https://polyhaven.com/a/large_iron_gate) | Josh Dean | 8000 | `89decf240550e8e1203f2c46a1c38abbcc0adddf455295b31c35aa41bfc5d12d` |
+| generator-portable | [portable_generator](https://polyhaven.com/a/portable_generator) | James Ray Cock | 4988 | `4e4eb22991a6a433ec07077122e3a156222797657201065617e8e8c656bae11a` |
+| gnome-garden | [garden_gnome](https://polyhaven.com/a/garden_gnome) | Bhargav Kubal | 2999 | `d543a89e9f5ed76800b61a44194c66a7c108549767f8a47facfd8ba075458a8a` |
+| hand-truck | [hand_truck](https://polyhaven.com/a/hand_truck) | Mutanzom3D | 5244 | `ae45b7b82fa803d747c75e901e61851d3486c33c772bcc0e7ac0d80c6af72477` |
+| hydrant | [fire_hydrant](https://polyhaven.com/a/fire_hydrant) | Gonçalo Felício | 4792 | `03760266ed9cce1f60ca26728b3ed26e8ae09347b6573fb605f8e932ebec060f` |
+| ladder-sectioned | [ladder_sectioned_01](https://polyhaven.com/a/ladder_sectioned_01) | MP | 7978 | `4e25c12f17a246f6e84997f849083dfaf4bb11e7660d7ff8b2fd5bd0333d8482` |
+| lamp-caged-hanging | [caged_hanging_light](https://polyhaven.com/a/caged_hanging_light) | Ulan Cabanilla | 4976 | `86118f46394c1fc68441becd15de6609160e6e8023415a31640dbd20ff1d442d` |
+| lifebuoy | [lifebuoy](https://polyhaven.com/a/lifebuoy) | Hank Kaamura | 5000 | `3f191148a99b4ecde7342ae9558522fa56c9a5686ed0c62ce548855c07711f46` |
+| manhole-cover | [water_manhole_cover](https://polyhaven.com/a/water_manhole_cover) | Raunox | 4999 | `bf3eccd430c7dc2a95c6808d3542eaa09e5fe94bed5f91130f54a7a058777497` |
+| panel-spacecraft | [vintage_spacecraft_instrument](https://polyhaven.com/a/vintage_spacecraft_instrument) | Michał Wiśniewski | 2995 | `56034ac8672c8c080cf1c1f2f7a299ebbaa46817f2f7b85ab0743387b5fff979` |
+| picnic-table | [wooden_picnic_table](https://polyhaven.com/a/wooden_picnic_table) | Ulan Cabanilla | 7998 | `144211318af8c7cea9bb236693dba9128cc6f7fe44bc1891d214047cac430fb7` |
+| pipes-industrial | [modular_industrial_pipes_01](https://polyhaven.com/a/modular_industrial_pipes_01) | Jorge Camacho | 7998 | `a285687d256cda67d1d3eaf79a878b131057c3e771ad50c0aba37dee7ff00264` |
+| planter-box-02 | [planter_box_02](https://polyhaven.com/a/planter_box_02) | James Ray Cock | 5000 | `d7ee3b5046b70540e0b27653ba1c141bfe6dc248806a90d3d559c77d35b708d7` |
+| power-box | [power_box_01](https://polyhaven.com/a/power_box_01) | Rico Cilliers, Yann Kervran | 2752 | `4d14cf1b89d92bb93eff5c448967a0beb6dbb9ecee8d9e220b2582939ad7dd77` |
+| rack-steel-01 | [steel_frame_shelves_01](https://polyhaven.com/a/steel_frame_shelves_01) | James Ray Cock | 4348 | `df98e80722b7ef874d206130117bf731600b9891c85708f3a42e4c2349ce3fc3` |
+| rock-07 | [rock_07](https://polyhaven.com/a/rock_07) | Jenelle van Heerden | 3000 | `8e259fc81bf28dc6f1a44a6424ff21b078742978ffa3c1e535b066289537f443` |
+| rock-09 | [rock_09](https://polyhaven.com/a/rock_09) | Jenelle van Heerden | 3000 | `d383bfe1954cbb9020d9423a87b9dd1b8f00fa93efa5a63e95f9f3b4c90faf20` |
+| rock-boulder-01 | [boulder_01](https://polyhaven.com/a/boulder_01) | Rico Cilliers | 7600 | `d2498819dc581fa31a3e156ff97d2781c6f0f8d73d0d4d8c97ef2ab770cec913` |
+| rock-desert-rubble | [namaqualand_rocks_01](https://polyhaven.com/a/namaqualand_rocks_01) | Greg Zaal, Jenelle van Heerden | 5000 | `99280701b7db609fd1b0424afceea4ce2d52d84ffb361689be9e966bcfbac759` |
+| rock-moon-01 | [moon_rock_01](https://polyhaven.com/a/moon_rock_01) | Greg Zaal, Rico Cilliers, Jenelle van Heerden, Dario Barresi | 1698 | `467ec5d252df962ed3936e101f5918c98024eab977ebfb28630dba635c41f6b3` |
+| rock-moon-03 | [moon_rock_03](https://polyhaven.com/a/moon_rock_03) | Greg Zaal, Rico Cilliers, Jenelle van Heerden | 3000 | `b02cf3740f844a7addabc3fba722470378838574c1487ea391d23b624004f2de` |
+| rock-sand-small | [sand_rocks_small_01](https://polyhaven.com/a/sand_rocks_small_01) | Rob Tuytel, Rico Cilliers | 7995 | `afbf8255170136b61aa6aa455a7a63e7df791781e901c1ddeb9d639a107ffdf4` |
+| rock-sandstone-boulder | [namaqualand_boulder_02](https://polyhaven.com/a/namaqualand_boulder_02) | Greg Zaal, Rico Cilliers | 7998 | `79bb9ba93ce458b2edbdf34d525bde44c6f6a3dc4c7ea877daf5f0c799cc3d48` |
+| rock-sandstone-group | [namaqualand_boulders_01](https://polyhaven.com/a/namaqualand_boulders_01) | Greg Zaal, Jenelle van Heerden | 5000 | `faa2ef83b31d80c50e0d892f0c1a61482cb962698b069a5cdc73d1f3031a0d3e` |
+| rock-stone-01 | [stone_01](https://polyhaven.com/a/stone_01) | Dario Barresi, Rico Cilliers | 3000 | `30f76ed7e7e2bf42ae13a54ec7d4febd0bbf6cf303f0281c0d313bfe6b7a8581` |
+| rocks-moss-01 | [rock_moss_set_01](https://polyhaven.com/a/rock_moss_set_01) | Kless Gyzen | 16000 | `c4bad0cb759ac074a8993e5ca0b87329d4ba16a526a49464bb592f29c362acc6` |
+| rocks-moss-02 | [rock_moss_set_02](https://polyhaven.com/a/rock_moss_set_02) | Kless Gyzen | 15996 | `88d624ca531006c6d095dfe1fd0ade4adbbbd80ef74ae64af7f5670863ec749d` |
+| shield-kite | [kite_shield](https://polyhaven.com/a/kite_shield) | Ulan Cabanilla | 4997 | `f08f149f0d2136fe64af20e0ed0e915fdb30a105b2b52432c801c80a10f45033` |
+| ship-dutch-medium | [dutch_ship_medium](https://polyhaven.com/a/dutch_ship_medium) | James Ray Cock, Rico Cilliers, Nicolò Zubbini | 23924 | `8e8d256195c6bf1d20bcc9afae4c692ce66e110fb8d147aab4066c68bf41b368` |
+| ship-pinnace | [ship_pinnace](https://polyhaven.com/a/ship_pinnace) | James Ray Cock, Rico Cilliers, Nicolò Zubbini, Yann Kervran | 19373 | `41227a9c872f6c723836e508747d969b2ad416b8ef6cbe1eb55660f8a9034299` |
+| shutter-door | [rollershutter_door](https://polyhaven.com/a/rollershutter_door) | MP | 1104 | `61ea7177fb1df8011881f89d392b9b2ceca0d48deb247851d601ec162fe087c9` |
+| sign-wet-floor | [WetFloorSign_01](https://polyhaven.com/a/WetFloorSign_01) | Fran Calvente | 228 | `bf26b8d108b630f15f05ed917b8840005afbb6d2127c785e3b37defea70ee591` |
+| spade-rusted | [rusted_spade_01](https://polyhaven.com/a/rusted_spade_01) | Blemonade | 5000 | `fe18fc72036b27f4790e81109ee4add2003e3e898adbffec029b8c4fd8230d3c` |
+| sprinkler-garden | [garden_sprinkler_01](https://polyhaven.com/a/garden_sprinkler_01) | Amal Kumar | 3000 | `62b9037e12d6f2e2197fbec86a9eff53e811a9e8fd031e6c9115dd8158c4663a` |
+| stand-katana | [katana_stand_01](https://polyhaven.com/a/katana_stand_01) | Rico Cilliers | 3000 | `13162fceb4b5f50f65cf69a23168c56f66ac403128c454b75be292be26c8ba1d` |
+| statue-gothic | [gothic_statue](https://polyhaven.com/a/gothic_statue) | Benny Weimer | 8000 | `9b5d99057f1536c6ea456b1ffca82f5d27fd6d84a922de7cb097b21efd83ac1e` |
+| stove-barrel | [barrel_stove](https://polyhaven.com/a/barrel_stove) | MP | 4999 | `12b8896e5a4e6970b2f9a3bceb3da043d5353709ec90bc5378dc6ffc76e1c261` |
+| streetlight-01 | [street_lamp_01](https://polyhaven.com/a/street_lamp_01) | Josh Dean | 7995 | `a93eec046f5b658763e8d6e4379abcd9fd95c387d878a4cd51f91dc0e4f35df4` |
+| succulent-desert | [cheiridopsis_succulent](https://polyhaven.com/a/cheiridopsis_succulent) | James Ray Cock, Jenelle van Heerden | 7998 | `817f469b1bb1a935a1253ae6395507515a0ac82294dd5780af5dd573ea355246` |
+| sword-estoc | [antique_estoc](https://polyhaven.com/a/antique_estoc) | James Ray Cock, Ulan Cabanilla | 5000 | `7eb6b3fe4cc3137fda91db760859dbb0cb26cdae7a8456c244d458677a6c49fa` |
+| sword-katana | [antique_katana_01](https://polyhaven.com/a/antique_katana_01) | Tal Swicegood | 5000 | `d3afe2ac144cca289673ebe1adb0f391c1292e27f991732c2175178df651c2e8` |
+| toolbox-metal | [metal_toolbox](https://polyhaven.com/a/metal_toolbox) | Mateusz Sadek | 3000 | `569d0aa0e3b4491dc919dec85a10e170be7da0c2e862c8929e70193debf7aaf2` |
+| trash-can-metal | [metal_trash_can](https://polyhaven.com/a/metal_trash_can) | GurJas Studios | 6428 | `dfc753b461aeea42349820811b5683993d22b993c358e57fb9dfdd2f8ed589f1` |
+| tray-seeding | [seeding_tray_01](https://polyhaven.com/a/seeding_tray_01) | Satyaki Mandal | 3000 | `1da63d6f2249620352079405f5f9c43a80540cbf30c5a2c961a4112c517735fe` |
+| tree-dead-trunk | [dead_tree_trunk](https://polyhaven.com/a/dead_tree_trunk) | Rob Tuytel | 7992 | `312eed50d8185d12054d0330043afefe747cb97c013aac4fbdb82fec72350364` |
+| tree-dead-trunk-02 | [dead_tree_trunk_02](https://polyhaven.com/a/dead_tree_trunk_02) | Jenelle van Heerden, Rico Cilliers | 7996 | `01aa7a3ff4bd61762d94806f5ff1687c60a4e33cc7416b80502d8d8442974f3d` |
+| tree-quiver-01 | [quiver_tree_01](https://polyhaven.com/a/quiver_tree_01) | James Ray Cock, Dario Barresi, Rico Cilliers | 11989 | `8777b0ae3d27943f8a72fc20b45879ccdff2d407c456cf84626e3cacefaff42f` |
+| tree-quiver-02 | [quiver_tree_02](https://polyhaven.com/a/quiver_tree_02) | Dario Barresi, Rico Cilliers | 11997 | `7317a0b4803fa97e36da27a3ce22f85865249f037b7a75e533a1cfd53615f6a7` |
+| trunk-quiver-dead | [dead_quiver_trunk](https://polyhaven.com/a/dead_quiver_trunk) | James Ray Cock, Dario Barresi, Rico Cilliers | 7996 | `2b1e658b1c258f721a575aaa595a8f3f502da1dbbc92f139032b34d1d3e1aa00` |
+| tyre-old | [old_tyre](https://polyhaven.com/a/old_tyre) | MP | 2880 | `13095cc52f042adafca437ea5edebf0996d7d4533b770a087c639131b0904097` |
+| utility-box | [utility_box_01](https://polyhaven.com/a/utility_box_01) | James Ray Cock | 4404 | `8323de6a4e4de2de41adfa93c6eefefd86f26b80ee3ead91b8ef2e4647591dde` |
+| watering-can | [watering_can_metal_01](https://polyhaven.com/a/watering_can_metal_01) | Charles Nderitu | 3000 | `3d2cc90450792d9dea8518b543be67573ac8365ea452404c3aee79dc2ec7721b` |
+
+**Further Kenney kits for stylised worlds** (CC0-1.0, each archive's own `License.txt` states "License: (Creative
+Commons Zero, CC0)", retrieved 2026-10-23; built by `scripts/assets/build.ts --extra` from
+`scripts/assets/selection-extra.ts` into `assets/extra.json`). Credit line: *"Kenney <kit title> by Kenney
+(www.kenney.nl)"*, licence CC0-1.0, source the kit page.
+
+| Kit | Version | Shipped | Archive SHA-256 (`assets/sources.json`) |
+| --- | --- | --- | --- |
+| [Space Kit](https://kenney.nl/assets/space-kit) | 1.0 | 36 models | `d5d7cdf2635ed5a43a9187deaf409b6f47484e402321128341d3c3698e9ef4d9` |
+| [Castle Kit](https://kenney.nl/assets/castle-kit) | 1.0 | 27 models | `921f3f73927bb23106cae34bc21d5ab4b033a9fc120475e96f714a406e3169df` |
+| [Watercraft Pack](https://kenney.nl/assets/watercraft-kit) | 1.0 | 19 models | `cd1470c1cf441c7f46d0944ae6d0d897242365dc97677c5079b3238965d659f3` |
+
+Considered and not shipped in this pass, with the reason (see also the vetting write-up in
+[REVIEW_LOG.md](REVIEW_LOG.md)):
+
+- Poly Haven trees and saplings (`pine_tree_01`, `fir_tree_01`, `fir_sapling_medium`, `pine_sapling_medium`,
+  `jacaranda_tree`, `island_tree_01`, `island_tree_02`, `tree_small_02`): the glTF geometry buffer is over the 32 MB
+  download cap (photoscanned, 1M+ triangles); the procedural trees cover forests.
+- Poly Haven kit sheets that lay many pieces side by side (apartment and factory facades, fort walls, pier,
+  electricity poles, pipe and duct sets, street bench parts) and cut-out plant sheets (grass, moss, shrubs, flowers)
+  whose single objects are spread over several metres; stumps and root clusters that read as rocks.
+- Sketchfab (CC0 filter): the search API lists CC0 models, but download needs an account token and each model's
+  licence is the uploader's claim, so nothing is fetched automatically; the top results are museum scans of 60k to
+  460k triangles.
+- Objaverse: licences are per object and inherited from Sketchfab, many are CC-BY-SA, NC or unclear, and a number are
+  AI-generated; no per-object CC0 allow-list was built, so none shipped.
+- KayKit (CC0 `LICENSE.txt` in each GitHub repository, for example Space Base Bits and Medieval Hexagon Pack):
+  accepted as a source, not yet built, because the repositories are not zip archives on an allowed host.
+- Smithsonian Open Access 3D: CC0 scans of museum objects of 100k to millions of triangles; none useful as props.
+- Quaternius: unchanged, see [Quaternius licence check](#animals-from-third-parties).
+- ambientCG: CC0 and already the source of the 23 photo finishes; further terrain sets would need new `material.finish`
+  names in the core schema and renderer, which this change does not touch.
+
 ### Human characters and their motions (`assets/lib/c/`)
 
 | Item | Source | Licence | Evidence |
@@ -655,8 +776,8 @@ Other textures:
 
 ## HDRIs
 
-Five Poly Haven HDRIs, 1k `.hdr`, CC0-1.0, downloaded through the Poly Haven
-API (MD5 checked), retrieved 2026-10-14. Credit line: *"Poly Haven by <author>"*, licence
+Ten Poly Haven HDRIs, 1k `.hdr`, CC0-1.0, downloaded through the Poly Haven
+API (MD5 checked), retrieved 2026-10-14 (the first five) and 2026-10-23 (overcast, starry night, desert, industrial sunset, golden sunset). Credit line: *"Poly Haven by <author>"*, licence
 CC0-1.0.
 
 | Library id | Poly Haven HDRI | Author | Shipped file SHA-256 |
@@ -666,6 +787,11 @@ CC0-1.0.
 | sky-sunny-interior | lebombo | Greg Zaal | `a02c9615adeba91a753c3e4737c3ce7a719273df822eeaa85d24982bd43c9ecb` |
 | sky-moonlit | moonlit_golf | Greg Zaal | `cff71a58efa0c06e06b54046ee877c933d74e7292be1d71511aca1a36749d60c` |
 | sky-photo-studio | brown_photostudio_02 | Sergej Majboroda | `469abc5e6035b6c450bae8adbb448f8d1fa7c51d9e384e501516c28352c91b58` |
+| sky-overcast | kloofendal_overcast_puresky | Greg Zaal | `5f98aa01d43a49cd899299751a978b3e5559a76300198b5dd2d9c68ecc4ad130` |
+| sky-starry-night | rogland_clear_night | Greg Zaal | `3cc2486bdf545b1b3358ba8f2fa1ebb13211d2c6b45a376f39b8d3217ec7c028` |
+| sky-desert-dunes | goegap | Greg Zaal | `56bb97ac7fcbfcbc91116adfb96e26b9da54475dabb7ec2c442f41bf99cda085` |
+| sky-industrial-sunset | industrial_sunset_02_puresky | Jarod Guest, Sergej Majboroda | `0b92b0a2ea3b2489ec9bb7170960c3a10e5e68567d9a3d9622970fd06caf649f` |
+| sky-golden-sunset | belfast_sunset_puresky | Greg Zaal, Dimitrios Savva, Jarod Guest | `cec532d8dd382bcdca98d7010fa951a782f3295f98e8bd72ee453be8d0a64e98` |
 
 All other skies come from Aether's own atmosphere model and shaders.
 

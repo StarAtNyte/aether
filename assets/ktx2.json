@@ -1529,6 +1529,654 @@
     "after": 349552
    }
   },
+  "m/castle-ballista.adc113c5.glb": {
+   "file": "k/castle-ballista.0c90a531.glb",
+   "sha256": "0c90a531972eb3f54b9a85c8bd0fbc81487e1b7ee201ecf451c6863f2b68b246",
+   "bytes": 35924,
+   "source": {
+    "sha256": "adc113c59146635603317ec70add7301f89246cd3f048bb2dcbf68a972a54ae5",
+    "bytes": 31224
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9971
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/castle-banner.affac9f6.glb": {
+   "file": "k/castle-banner.446a31fd.glb",
+   "sha256": "446a31fda1cbd1c1442b7f15b934b42ac379d074f53b18de4814c3e28092b74c",
+   "bytes": 16016,
+   "source": {
+    "sha256": "affac9f6df614c9ad7f973774aefdab620cfdb5584939af20ebdea1b8284f75a",
+    "bytes": 11312
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9971
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/castle-bridge.3bc05607.glb": {
+   "file": "k/castle-bridge.e8247cce.glb",
+   "sha256": "e8247cce25df61bed1037b47ce50609224293c8a7af559e77d1fe836a8e7f84e",
+   "bytes": 18624,
+   "source": {
+    "sha256": "3bc056077b237bc2d44b6cae7add14e5908564e71c39dabf70ddc176d6ac6dd0",
+    "bytes": 13924
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9971
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/castle-catapult.8dc0176e.glb": {
+   "file": "k/castle-catapult.96df7306.glb",
+   "sha256": "96df73063c9975d7b84af4e20ce1286e593a5758910439718eedcd88184c59f5",
+   "bytes": 42116,
+   "source": {
+    "sha256": "8dc0176eba6f1efb082618b321c9a8cf33c2ca2ea9820644302442ccc1587d26",
+    "bytes": 37416
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9971
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/castle-drawbridge.60878d1b.glb": {
+   "file": "k/castle-drawbridge.de578df4.glb",
+   "sha256": "de578df49bd8b8ea3a81155a592af96dc9f510e0189448e226cdea138d3e0e3b",
+   "bytes": 15860,
+   "source": {
+    "sha256": "60878d1bf80ed45a4ec605f194afcf29270a5459a4751cac41ff7060e208a258",
+    "bytes": 11156
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9971
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/castle-fence-wood.1fd0be36.glb": {
+   "file": "k/castle-fence-wood.722e2b3f.glb",
+   "sha256": "722e2b3f330af26d687b344b9b79e1c0a56b81972fb1984eb0bfa87ee229a762",
+   "bytes": 24012,
+   "source": {
+    "sha256": "1fd0be36a43df14886b409e14f8114f72d19b48edefcf0b157d43cc0ef31df08",
+    "bytes": 19312
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9971
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/castle-flag.f8e52b01.glb": {
+   "file": "k/castle-flag.9d1d21aa.glb",
+   "sha256": "9d1d21aa483f06eb2cd11663d5b4a1cdabb06fe20618016f1572007946edf73f",
+   "bytes": 19360,
+   "source": {
+    "sha256": "f8e52b01ade14ecdc70cc470a45f5e0fe90801d09d21effe579e84c519591455",
+    "bytes": 14660
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9971
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/castle-gate-metal.a8f2f72d.glb": {
+   "file": "k/castle-gate-metal.800ecbea.glb",
+   "sha256": "800ecbea6a394ca229f31811cb01fd629fb125e9d21bb3f0a573012adb21004c",
+   "bytes": 22572,
+   "source": {
+    "sha256": "a8f2f72dcd2f77e00857a321fde8c9484f9950c4bae713ab246adefd977f909b",
+    "bytes": 17872
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9971
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/castle-gate.3512a9dd.glb": {
+   "file": "k/castle-gate.654a46e0.glb",
+   "sha256": "654a46e003da1f87317c9ff30dfaac254122945621f5268fb33e564bfce46853",
+   "bytes": 18748,
+   "source": {
+    "sha256": "3512a9ddbb677aa67aca2fb0ad30d1225ccf15f4ba87ccbc742da8ab8ee67421",
+    "bytes": 14048
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9971
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/castle-log.7f647193.glb": {
+   "file": "k/castle-log.c51f7a7c.glb",
+   "sha256": "c51f7a7ca942372af0d1b02c6bc4d9189d0ce8e136d5319be96e9b5d569f54d3",
+   "bytes": 17320,
+   "source": {
+    "sha256": "7f64719374a3c6e36c2a1442a00b15e6ae59b17ff3b072205f11396f070c2fc0",
+    "bytes": 12620
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9971
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/castle-ram.3c86612d.glb": {
+   "file": "k/castle-ram.036cb43f.glb",
+   "sha256": "036cb43f5e4b57c372b729265718ecf0350771aced11fc3c2ac121b001245371",
+   "bytes": 47396,
+   "source": {
+    "sha256": "3c86612dde2c7a6f101f405dd89b21c4c148cd52cb276e8c52c9c1386cc7ec88",
+    "bytes": 42696
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9971
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/castle-rocks-large.60de6305.glb": {
+   "file": "k/castle-rocks-large.f45d90d6.glb",
+   "sha256": "f45d90d6349cb8f7698f93d4bac3e7fb596cb2043706265ac26f1b28e9fa1b80",
+   "bytes": 20280,
+   "source": {
+    "sha256": "60de6305966a3adb2522286e942d3e538b1ee46615fcb50d6a7133362b23dce1",
+    "bytes": 15584
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9971
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/castle-rocks-small.6203b02e.glb": {
+   "file": "k/castle-rocks-small.33356171.glb",
+   "sha256": "33356171522e53d932ab9674743e0bd2a82ea12cc11189235c33533fb54f65d4",
+   "bytes": 19844,
+   "source": {
+    "sha256": "6203b02e0eb3d86822530955fb3cdd80a431c06657561e416ae0dd6e43986995",
+    "bytes": 15144
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9971
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/castle-siege-tower.de43cf08.glb": {
+   "file": "k/castle-siege-tower.2798f909.glb",
+   "sha256": "2798f90924cbcd7890490f916110cce026c31443f2b9447b9b6e24d1ef4c7651",
+   "bytes": 58540,
+   "source": {
+    "sha256": "de43cf088b74c5f0c7edf64e34b1101a39610e9bccf2c6fdd01094ff91891851",
+    "bytes": 53840
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9971
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/castle-stairs.d07b026e.glb": {
+   "file": "k/castle-stairs.0971f213.glb",
+   "sha256": "0971f21330a2d4531201b66afe110dd71cf8d15a4277a99c57303541984b8a2f",
+   "bytes": 16652,
+   "source": {
+    "sha256": "d07b026eef3ce6b5af12d4048f35386f4e4723420d97a472bb2bc946bbf5200e",
+    "bytes": 11948
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9971
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/castle-tower-hex.cb84e8c7.glb": {
+   "file": "k/castle-tower-hex.21b67c56.glb",
+   "sha256": "21b67c564ad27026093842d156204680ada33e5da4bb47901008d6936e826663",
+   "bytes": 17056,
+   "source": {
+    "sha256": "cb84e8c7652b78124efcd045df9a94edffc8e15ef589db2a65cbfb04a4caf929",
+    "bytes": 12352
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9971
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/castle-tower-roof.2ea8d691.glb": {
+   "file": "k/castle-tower-roof.19fc7ec3.glb",
+   "sha256": "19fc7ec35506a490cc99c6c7e7261fd957652c8e3c4d06ba996c2130fbc994a0",
+   "bytes": 17448,
+   "source": {
+    "sha256": "2ea8d691b9d7513fddd56434f7ca9665988d024a88bccd8e7aa1579306c76bd2",
+    "bytes": 12744
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9971
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/castle-tower-slant.64f28e34.glb": {
+   "file": "k/castle-tower-slant.d9b7f57b.glb",
+   "sha256": "d9b7f57bb253185d0496b7c2bb95489751b612d23ebe79038884b11d2205313d",
+   "bytes": 30628,
+   "source": {
+    "sha256": "64f28e34ccd09352de38fcedd4025dde94e744a97df53e7c27bd7a30bfa31517",
+    "bytes": 25932
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9971
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/castle-tower-square.dc940829.glb": {
+   "file": "k/castle-tower-square.18ed442b.glb",
+   "sha256": "18ed442bfba37b1628e26dc4f8b6c7a91def437b965529070c04d1251e4fc617",
+   "bytes": 18460,
+   "source": {
+    "sha256": "dc9408299019f672b32e2131f980a938b5297342088c46fc46ceb4626da1565e",
+    "bytes": 13760
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9971
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/castle-trebuchet.3e820350.glb": {
+   "file": "k/castle-trebuchet.a08f75da.glb",
+   "sha256": "a08f75da5298cd3459964e40d7ed0d8854ed5ebf21eae8676a25e67587fd6027",
+   "bytes": 58532,
+   "source": {
+    "sha256": "3e820350b0642564f07b72afae0f4b365d4c85150b52b2f52ee5b3a7c0ca35e1",
+    "bytes": 53836
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9971
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/castle-tree-large.74934bde.glb": {
+   "file": "k/castle-tree-large.34b10ae3.glb",
+   "sha256": "34b10ae3eeadcee0c970e189d1d3ac77849426cd7a88a8bf0f3556f1f1a6c80b",
+   "bytes": 22784,
+   "source": {
+    "sha256": "74934bdedb800d3e326da070974c118a8726e6f2318bd9c228efba7031557472",
+    "bytes": 18084
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9971
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/castle-tree-small.558505e5.glb": {
+   "file": "k/castle-tree-small.2b50d782.glb",
+   "sha256": "2b50d782b20f5123aa68e24ba0f181f14e99c5bdf720db723674d58987445fdf",
+   "bytes": 20492,
+   "source": {
+    "sha256": "558505e548fb811eb2ebd30dd2da5e4420ce94c6c5a27d7b9f6d9208eded3764",
+    "bytes": 15792
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9971
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/castle-wall-corner.4eb70bf1.glb": {
+   "file": "k/castle-wall-corner.3a5cfd21.glb",
+   "sha256": "3a5cfd21a1e4c59c58ffb9977f351d92e2a82c0c4164faee2591d0d235847ec6",
+   "bytes": 18380,
+   "source": {
+    "sha256": "4eb70bf1af56103580ee54dda5af791685f95f4fd4fbc93396fb3a21e4498a71",
+    "bytes": 13680
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9971
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/castle-wall-doorway.b4eac494.glb": {
+   "file": "k/castle-wall-doorway.9560a283.glb",
+   "sha256": "9560a283e89c2e246950b3830dbffee8f2e7000b06df89a8b8b7ab5554122563",
+   "bytes": 25464,
+   "source": {
+    "sha256": "b4eac494409ede5a56ad8417c403c3a155e9327cc5096fc754a8e9fb479b8d91",
+    "bytes": 20768
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9971
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/castle-wall-gate.db400569.glb": {
+   "file": "k/castle-wall-gate.53bb7157.glb",
+   "sha256": "53bb7157cd52a2c96359ed5deb76087c633a729f58e88e75656657b0dd0106d5",
+   "bytes": 19228,
+   "source": {
+    "sha256": "db40056977146c2078f327e2d4aa09d381543dc63968272355286fb19f33733e",
+    "bytes": 14532
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9971
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/castle-wall-half.a21ee2f3.glb": {
+   "file": "k/castle-wall-half.63950e66.glb",
+   "sha256": "63950e660715ef2840f77e4e8e7c2c12cb90596c923c0fb6f41fbc74d23d770b",
+   "bytes": 17812,
+   "source": {
+    "sha256": "a21ee2f3d2d859a7738b77b2f67e773a970ad88c8d3102107c05499535c5b9ee",
+    "bytes": 13112
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9971
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/castle-wall.229a26a6.glb": {
+   "file": "k/castle-wall.445facf3.glb",
+   "sha256": "445facf31f566adc0a5a867ea2744314b2343a4fa5fcb2c53fb87bdfa357f076",
+   "bytes": 18788,
+   "source": {
+    "sha256": "229a26a6ff3a1920963f3c98cd9f3f54983104c2a21e02cbaa589ebe53c665d4",
+    "bytes": 14088
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9971
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
   "m/cat-statue.34237e58.glb": {
    "file": "k/cat-statue.ab82c15c.glb",
    "sha256": "ab82c15ca8dc96ebad3988c77cc170fd0f94b141acbc250340df3570e94d7b1d",
@@ -2560,6 +3208,462 @@
      "width": 512,
      "height": 512,
      "ssim": 0.9971
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/harbour-buoy-flag.eca7c784.glb": {
+   "file": "k/harbour-buoy-flag.bad56494.glb",
+   "sha256": "bad5649480a6467024b8286b2476176feb71f0b2f438fa1d79c79401428bf32a",
+   "bytes": 22740,
+   "source": {
+    "sha256": "eca7c784316bcedf948d7890a165e8d80281504601c269ac60eda1fb396a5fe8",
+    "bytes": 18008
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9965
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/harbour-buoy.bb517f15.glb": {
+   "file": "k/harbour-buoy.4822c61e.glb",
+   "sha256": "4822c61e18f36f273fea6586d2d5663ff719c08b241cb91d10e1040f3ded175e",
+   "bytes": 19500,
+   "source": {
+    "sha256": "bb517f15026d0c411e2539a49a8879d0bc4dc0e3b63692ce37121c4e80f30cbb",
+    "bytes": 14772
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9965
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/harbour-cargo-pile.2fd7f748.glb": {
+   "file": "k/harbour-cargo-pile.2add4180.glb",
+   "sha256": "2add4180d11ce7ee5286912ff2f80144169736881a15745027004a988e5be177",
+   "bytes": 22680,
+   "source": {
+    "sha256": "2fd7f748d7e37d9d64752651452494591cb948d3faa2eae65da097ecd630304a",
+    "bytes": 17948
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9965
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/harbour-cargo-ship.8e2408c6.glb": {
+   "file": "k/harbour-cargo-ship.c6220390.glb",
+   "sha256": "c62203903851bc2cb44df560afc1ef2834b7fc5e0292fc4e303725c9d4a64cba",
+   "bytes": 47532,
+   "source": {
+    "sha256": "8e2408c68060bc213d30c1203cc2599f15609f7d51ad9007bd1f8dfe2f8c8bbe",
+    "bytes": 42800
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9965
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/harbour-container-b.a9360aae.glb": {
+   "file": "k/harbour-container-b.e2796f4c.glb",
+   "sha256": "e2796f4ceadb05b1887d89578eea87d32ed26e13ea7d64949cf0848fca0720ce",
+   "bytes": 20904,
+   "source": {
+    "sha256": "a9360aae40908a10b0cb8bfb4a97a3bbcde2e26bfe324e892d464318215be21f",
+    "bytes": 16176
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9965
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/harbour-container.f036e181.glb": {
+   "file": "k/harbour-container.a1cbe745.glb",
+   "sha256": "a1cbe745e579635453c2baadc3fb261e7c3a4b64bfc1ad3d5dec92a8025553ae",
+   "bytes": 20868,
+   "source": {
+    "sha256": "f036e18153c6d49e249d426b54285fedd6597728a247afb2e52cec6f357bc78f",
+    "bytes": 16140
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9965
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/harbour-fishing-boat.9765998b.glb": {
+   "file": "k/harbour-fishing-boat.57f89b99.glb",
+   "sha256": "57f89b993849b3d87c9b263277976a007b2d2eaa598b8aa84b268967b97ad5e2",
+   "bytes": 24000,
+   "source": {
+    "sha256": "9765998b720f72cf099daee7b3fc5ff4b0a7385a56dca4f2935be8ce7ac5e9dc",
+    "bytes": 19272
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9965
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/harbour-ghost-ship.1ceef76d.glb": {
+   "file": "k/harbour-ghost-ship.1b747e5c.glb",
+   "sha256": "1b747e5c84f13e9bcf32696ddcda89273b2b9f19164645069e971bd408526a5c",
+   "bytes": 66040,
+   "source": {
+    "sha256": "1ceef76d8a4b5cf19ce5c458dd5d0f4f7261edab38a10748d8e2f24c894c88ed",
+    "bytes": 61308
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9965
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/harbour-houseboat.0a9197ed.glb": {
+   "file": "k/harbour-houseboat.9779628b.glb",
+   "sha256": "9779628b6273d23a88027479f831be186ef2b8e3a61895d7888ebf65d3d7e550",
+   "bytes": 28616,
+   "source": {
+    "sha256": "0a9197ed9dadc4c55a2cd4fb299258cb4d204bc685641e4c031fd9315fe909e4",
+    "bytes": 23884
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9965
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/harbour-liner.d905ae8e.glb": {
+   "file": "k/harbour-liner.5375b881.glb",
+   "sha256": "5375b881c2345c66cb8d8dbf78e2ffe92059787c0b3d053f8a387a786d966e10",
+   "bytes": 64032,
+   "source": {
+    "sha256": "d905ae8e33598a12b5aa4af443f1d3f820291e89f7b158749706b8f0a973fefc",
+    "bytes": 59300
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9965
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/harbour-ramp.f71f442f.glb": {
+   "file": "k/harbour-ramp.54d540c2.glb",
+   "sha256": "54d540c2fc2ff5b33f8468150dca1d3d82cddeadee9715fa10db1378b61cb0b9",
+   "bytes": 20488,
+   "source": {
+    "sha256": "f71f442fa37be6b0c4ed055ed62bd815cf68878d4e22f20507d914ce8e7afca9",
+    "bytes": 15760
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9965
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/harbour-rowboat-large.cffbe679.glb": {
+   "file": "k/harbour-rowboat-large.4e60159b.glb",
+   "sha256": "4e60159b36728c08bee184c419be0a43ec53200e50cfabd44736830c9ffa960a",
+   "bytes": 20920,
+   "source": {
+    "sha256": "cffbe679a58d31d6ef4b7c58bc5e7b77880bdabd9d1e23a948f73edfb37f6946",
+    "bytes": 16188
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9965
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/harbour-rowboat.719199ea.glb": {
+   "file": "k/harbour-rowboat.edea5bd0.glb",
+   "sha256": "edea5bd066fa4a3951113df2bab087db0d9954439af1c588e9e0eed3f1c7f6f2",
+   "bytes": 21992,
+   "source": {
+    "sha256": "719199eaf52b90f2f738b74fd2fb0ff7220b175d23fdc9b1e4caf64941f11632",
+    "bytes": 17260
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9965
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/harbour-sailboat-b.3a5975d8.glb": {
+   "file": "k/harbour-sailboat-b.ab0f5486.glb",
+   "sha256": "ab0f5486af9051c98915f970b0b16b479453512241e40814994a227818dd13c8",
+   "bytes": 27832,
+   "source": {
+    "sha256": "3a5975d8a9bc4ee6ea517228f5227252b06b608635de04ce5974909745e8d54f",
+    "bytes": 23100
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9965
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/harbour-sailboat.dcdc27ff.glb": {
+   "file": "k/harbour-sailboat.e805f0f9.glb",
+   "sha256": "e805f0f97dcb7d1cb42d98eea9efcbba081ec1c998bd76d293b59c734efd1470",
+   "bytes": 26904,
+   "source": {
+    "sha256": "dcdc27ff722ee611f68bdb8978e275fe8120580cd4c8c6731d1b8d98cb82f556",
+    "bytes": 22176
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9965
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/harbour-ship-large.2d757719.glb": {
+   "file": "k/harbour-ship-large.de6ba0d2.glb",
+   "sha256": "de6ba0d2e81c481e39afe772c6502ca8996d35dc49cf19860829edc44c62c667",
+   "bytes": 65372,
+   "source": {
+    "sha256": "2d757719f43f04c6e12d916754a8bb357f40479c737c8d9f37830343e00ca22a",
+    "bytes": 60644
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9965
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/harbour-ship-small.6fdc58f5.glb": {
+   "file": "k/harbour-ship-small.5842dbe3.glb",
+   "sha256": "5842dbe34e06d7eca1e1442cd06a093d3b2473bb5e78e0f96175ed998820359a",
+   "bytes": 61856,
+   "source": {
+    "sha256": "6fdc58f5d130eb3ba32e7850fe9240fbdb344987123d3c0f3164d6a5bc4c1589",
+    "bytes": 57124
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9965
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/harbour-speedboat.6169394b.glb": {
+   "file": "k/harbour-speedboat.ccce37bd.glb",
+   "sha256": "ccce37bd39d7d160fef7f5a1444be5a544ac5c4ce529e224052b62b228df9e5d",
+   "bytes": 22208,
+   "source": {
+    "sha256": "6169394b799728b8595958e1acffef9d9e135b011b2adfc43da7ccc64eac97c1",
+    "bytes": 17476
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9965
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "m/harbour-tugboat.d3460543.glb": {
+   "file": "k/harbour-tugboat.f21faae2.glb",
+   "sha256": "f21faae2d7b4c417facf4ca161f2427e60e91fa295d218bb64f0734fe39ef3a3",
+   "bytes": 30396,
+   "source": {
+    "sha256": "d3460543ca920e608ef0afcac73c66e4bf96fa75b64ccf579652be6f8bdc066e",
+    "bytes": 25668
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9965
     }
    ],
    "gpu": {
