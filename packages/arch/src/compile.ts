@@ -1320,7 +1320,7 @@ function insetFor(e: RoomEdge, walls: readonly WallRec[]): number {
 }
 
 /** Furniture kinds the player can sit on (see the studio's seat poses). */
-const SEAT_KINDS: ReadonlySet<string> = new Set(['sofa', 'armchair', 'chair', 'office-chair', 'bar-stool', 'bed', 'lounger']);
+const SEAT_KINDS: ReadonlySet<string> = new Set(['sofa', 'armchair', 'chair', 'office-chair', 'bar-stool', 'cane-chair', 'bed', 'lounger']);
 
 /** Furniture placement → entity (also used by the design tools to instantiate parts). */
 export function placedEntity(p: Placed, id: string, parent: string, room: string, level: number, withLight: boolean): EntityInput {

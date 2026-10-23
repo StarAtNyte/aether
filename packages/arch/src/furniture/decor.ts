@@ -6,23 +6,50 @@
  */
 import { Geom, box, cylinder, extrude, lathe, roundedBox, sphere, tube } from '../mesh';
 import { PartSet } from '../parts';
-import { choice, color, flag, int, mat, num, roundedRect, seeded, type FurnitureDef } from './kit';
+import { choice, color, flag, int, mat, num, roundedRect, seeded, type FurnitureDef, type ParamReader } from './kit';
 import type { P2 } from '../math2';
 import { BLIND, CURTAIN, PELMET } from './soft';
 
 export { BLIND, CURTAIN, PELMET };
 
+const rectPoly = (x0: number, z0: number, x1: number, z1: number): P2[] => [[x0, z0], [x1, z0], [x1, z1], [x0, z1]];
+
+/** High-pile rug: a 1 cm pad with a bound edge and a few hundred pointed tufts (seeded) in the field colour. */
+function shagRug(p: ParamReader, w: number, d: number, r: number, seed: number) {
+  const set = new PartSet();
+  const round = p.str('shape') === 'round';
+  const outline = roundedRect(w, d, r, round ? 16 : 3);
+  set.add(extrude(outline, 0.001, 0.014, { bottom: false }), mat('carpet', p.color('color')));
+  const rnd = seeded(seed + 7);
+  const tufts = new Geom();
+  const count = Math.min(850, Math.max(60, Math.round(w * d * 380)));
+  const tr = Math.max(0.016, Math.min(0.05, Math.sqrt((w * d) / count) * 0.75));
+  const base = cylinder(tr, 0.003, 0.03, 3, { top: false, bottom: false });
+  for (let k = 0; k < count; k++) {
+    let x = 0;
+    let z = 0;
+    for (let t = 0; t < 8; t++) {
+      x = (rnd() - 0.5) * (w - 0.04);
+      z = (rnd() - 0.5) * (d - 0.04);
+      if (!round || (x / (w / 2 - 0.02)) ** 2 + (z / (d / 2 - 0.02)) ** 2 <= 1) break;
+    }
+    tufts.merge(base.clone().scale(0.8 + rnd() * 0.5, 0.85 + rnd() * 0.5, 0.8 + rnd() * 0.5).rotateY(rnd() * 120).translate(x, 0.012, z));
+  }
+  set.add(tufts, mat('carpet', p.color('color')));
+  return set.build();
+}
+
 export const RUG: FurnitureDef = {
   id: 'furn-rug',
   kind: 'rug',
-  description: 'Low-pile rug with a bound edge (rectangular or round).',
+  description: 'Rug with a bound edge (rectangular or round). Patterns: plain, zigzag, stripes, diamonds (nested lozenges), kilim (diamond medallions between banded ends) and shag (deep pile of tufts, 3 cm).',
   params: {
     width: num(2.4, 0.6, 5, 'width (m)'),
     depth: num(1.7, 0.6, 4, 'depth (m)'),
     shape: choice(['rect', 'round'], 'rect', 'shape'),
     color: color('#c9bfae', 'field colour'),
     border: color('#8a7f70', 'border colour'),
-    pattern: choice(['plain', 'zigzag', 'stripes'], 'plain', 'woven pattern across the field: zigzag (chevron bands) or stripes, in the three accent colours and the field colour'),
+    pattern: choice(['plain', 'zigzag', 'stripes', 'diamonds', 'kilim', 'shag'], 'plain', 'woven pattern across the field in the three accent colours and the field colour: zigzag (chevron bands), stripes, diamonds (row of nested lozenges), kilim (medallions between banded ends); shag is a high pile of tufts in the field colour (round or rectangular)'),
     accent1: color('#c0473f', 'first accent colour of a pattern'),
     accent2: color('#e0a93b', 'second accent colour of a pattern'),
     accent3: color('#3f7f8f', 'third accent colour of a pattern'),
@@ -30,12 +57,13 @@ export const RUG: FurnitureDef = {
   mount: 'floor',
   againstWall: false,
   frontClearance: 0,
-  size: (p) => [p.num('width'), 0.012, p.str('shape') === 'round' ? p.num('width') : p.num('depth')],
-  build(p) {
+  size: (p) => [p.num('width'), p.str('pattern') === 'shag' ? 0.035 : 0.012, p.str('shape') === 'round' ? p.num('width') : p.num('depth')],
+  build(p, seed) {
     const set = new PartSet();
     const w = p.num('width');
     const d = p.str('shape') === 'round' ? w : p.num('depth');
     const r = p.str('shape') === 'round' ? w / 2 - 0.001 : 0.02;
+    if (p.str('pattern') === 'shag') return shagRug(p, w, d, r, seed);
     const outline = roundedRect(w, d, r, p.str('shape') === 'round' ? 16 : 2);
     const inner = roundedRect(w - 0.16, d - 0.16, Math.max(0.01, r - 0.08), p.str('shape') === 'round' ? 16 : 2);
     const border = new Geom().flatPolygon(outline, 0.01, true, [inner]);
@@ -43,7 +71,42 @@ export const RUG: FurnitureDef = {
     set.add(border.merge(edge), mat('carpet', p.color('border')));
     set.add(new Geom().flatPolygon(inner, 0.011, true), mat('carpet', p.color('color')));
     const pattern = p.str('pattern');
-    if (pattern !== 'plain' && p.str('shape') !== 'round') {
+    if ((pattern === 'diamonds' || pattern === 'kilim') && p.str('shape') !== 'round') {
+      const iw = w - 0.16;
+      const id = d - 0.16;
+      const cols = [p.color('accent1'), p.color('accent2'), p.color('accent3')];
+      const bands: Geom[] = cols.map(() => new Geom());
+      const bandH = Math.min(0.06, id * 0.08);
+      if (pattern === 'kilim') {
+        // Banded ends: a wide band and a thin one at each short edge.
+        for (const sg of [-1, 1]) {
+          (bands[0] as Geom).flatPolygon(rectPoly(-iw / 2 + 0.03, sg * (id / 2 - 0.03 - bandH), iw / 2 - 0.03, sg * (id / 2 - 0.03)), 0.0115, true);
+          (bands[2] as Geom).flatPolygon(rectPoly(-iw / 2 + 0.03, sg * (id / 2 - 0.09 - bandH * 1.6), iw / 2 - 0.03, sg * (id / 2 - 0.09 - bandH * 1.6 + bandH * 0.45)), 0.0115, true);
+        }
+      }
+      const room = pattern === 'kilim' ? id - 0.4 : id - 0.1;
+      const rad = Math.max(0.1, Math.min(room / 2, iw / (2 * Math.max(1, Math.round(iw / (room * 1.05))))));
+      const cnt = Math.max(1, Math.round(iw / (rad * 2.1)));
+      for (let k = 0; k < cnt; k++) {
+        const cx = -iw / 2 + (iw * (k + 0.5)) / cnt;
+        const rr = Math.min(rad, iw / cnt / 2 - 0.01, room / 2);
+        const lozenge = (q: number): P2[] => [[cx - rr * q, 0], [cx, -rr * q], [cx + rr * q, 0], [cx, rr * q]];
+        (bands[0] as Geom).flatPolygon(lozenge(1), 0.0116, true);
+        (bands[1] as Geom).flatPolygon(lozenge(0.68), 0.0122, true);
+        (bands[2] as Geom).flatPolygon(lozenge(0.36), 0.0128, true);
+        if (pattern === 'kilim') {
+          // Stepped hooks on the four sides of each medallion.
+          for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as Array<[number, number]>) {
+            const hx = cx + dx * rr * 1.18;
+            const hz = dz * rr * 1.18;
+            if (Math.abs(hz) < id / 2 - 0.12 && Math.abs(hx) < iw / 2 - 0.05) (bands[1] as Geom).flatPolygon(rectPoly(hx - 0.025, hz - 0.025, hx + 0.025, hz + 0.025), 0.0122, true);
+          }
+        }
+      }
+      cols.forEach((c, i) => {
+        if ((bands[i] as Geom).i.length > 0) set.add(bands[i] as Geom, mat('carpet', c));
+      });
+    } else if (pattern !== 'plain' && p.str('shape') !== 'round') {
       // Bands across the depth of the field, cycling through the accents; zigzag bands have a chevron edge.
       const iw = w - 0.16;
       const id = d - 0.16;

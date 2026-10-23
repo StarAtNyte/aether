@@ -5,7 +5,8 @@
  * Worktops at 0.9 m, base cabinets 0.6 m deep, wall cabinets from 1.45 m.
  */
 import type { MaterialSpec } from '@aether/core';
-import { Geom, box, cylinder, roundedBox, tube } from '../mesh';
+import { Geom, box, cylinder, lathe, roundedBox, tube } from '../mesh';
+import { pole } from './shape';
 import { PartSet } from '../parts';
 import { choice, color, drawerBox, emitFront, flag, mat, num, MovableSink, type FurnitureDef } from './kit';
 
@@ -211,9 +212,12 @@ export const ISLAND: FurnitureDef = {
 export const FRIDGE: FurnitureDef = {
   id: 'furn-fridge',
   kind: 'fridge',
-  description: 'Tall fridge-freezer with steel doors and bar handles; back against a wall.',
+  description:
+    'Fridge / refrigerator with rounded steel doors and bar handles; back against a wall. `layout`: bottom-freezer (default tall fridge over a freezer door), single (one door; use a low `height` for an under-counter fridge), side-by-side (narrow freezer door beside a fridge door) or french (two upper doors over a freezer drawer).',
   params: {
-    width: num(0.7, 0.55, 0.95, 'width (m)'),
+    width: num(0.7, 0.5, 1.1, 'width (m); side-by-side and french are best at 0.85-1.0'),
+    height: num(1.9, 0.8, 2.1, 'height (m): 0.85 under-counter, 1.9 tall'),
+    layout: choice(['bottom-freezer', 'single', 'side-by-side', 'french'], 'bottom-freezer', 'door arrangement'),
     finish: choice(['brushed-metal', 'paint', 'black-metal'], 'brushed-metal', 'door finish'),
     interactive: flag(false, 'the doors are separate parts that open'),
   },
@@ -221,34 +225,171 @@ export const FRIDGE: FurnitureDef = {
   mount: 'floor',
   againstWall: true,
   frontClearance: 1.0,
-  size: (p) => [p.num('width'), 1.9, 0.68],
+  size: (p) => [p.num('width'), p.num('height'), 0.68],
   build(p, _seed, sink) {
     const set = new PartSet();
     const w = p.num('width');
+    const H = p.num('height');
     const d = 0.68;
     const face = p.str('finish') === 'paint' ? mat('paint', '#e9e6e0') : mat(p.str('finish'));
-    set.add(roundedBox(w, 1.9, d - 0.04, 0.01, 1).translate(0, 0.95, -0.02), mat('paint', '#d7d4cf'));
+    const layout = H < 1.2 ? 'single' : p.str('layout');
+    set.add(roundedBox(w, H - 0.02, d - 0.04, 0.01, 1).translate(0, 0.01 + (H - 0.02) / 2, -0.02), mat('paint', '#d7d4cf'));
+    // Plinth grille and a top trim line.
+    set.add(box(-w / 2 + 0.02, 0, -d / 2 + 0.05, w / 2 - 0.02, 0.025, d / 2 - 0.05), mat('black-metal'));
     const doors = new Geom();
     const bars = new Geom();
     const barMat = mat('chrome');
-    const fridgeParts: Array<{ id: string; name: string; yc: number; h: number; hy: number; bh: number; hinge: 'left' | 'right' }> = [
-      { id: 'door-0', name: 'Fridge door', yc: 0.68 + 0.6, h: 1.2, hy: 1.2, bh: 0.5, hinge: 'right' },
-      { id: 'door-1', name: 'Freezer door', yc: 0.34, h: 0.66, hy: 0.45, bh: 0.35, hinge: 'right' },
-    ];
-    for (const f of fridgeParts) {
+    interface Door { id: string; name: string; kind: 'door' | 'drawer'; xc: number; dw: number; yc: number; h: number; hy: number; bh: number; hx: number; hinge: 'left' | 'right'; horizontal?: boolean }
+    const list: Door[] = [];
+    const y0 = 0.03;
+    const top = H - 0.005;
+    const edge = (xc: number, dw: number, hinge: 'left' | 'right'): number => (hinge === 'right' ? xc - dw / 2 + 0.05 : xc + dw / 2 - 0.05);
+    if (layout === 'single') list.push({ id: 'door-0', name: 'Fridge door', kind: 'door', xc: 0, dw: w - 0.006, yc: (y0 + top) / 2, h: top - y0, hy: Math.min(top - 0.2, y0 + (top - y0) * 0.7), bh: Math.min(0.55, (top - y0) * 0.45), hx: edge(0, w, 'right'), hinge: 'right' });
+    else if (layout === 'side-by-side') {
+      const fw = w * 0.4;
+      const rw = w - fw;
+      list.push({ id: 'door-0', name: 'Freezer door', kind: 'door', xc: -w / 2 + fw / 2, dw: fw - 0.005, yc: (y0 + top) / 2, h: top - y0, hy: H * 0.55, bh: 0.6, hx: edge(-w / 2 + fw / 2, fw, 'left'), hinge: 'left' });
+      list.push({ id: 'door-1', name: 'Fridge door', kind: 'door', xc: w / 2 - rw / 2, dw: rw - 0.005, yc: (y0 + top) / 2, h: top - y0, hy: H * 0.55, bh: 0.6, hx: edge(w / 2 - rw / 2, rw, 'right'), hinge: 'right' });
+    } else {
+      const lowH = H * 0.32;
+      const upY0 = y0 + lowH + 0.012;
+      const upH = top - upY0;
+      if (layout === 'french') {
+        list.push({ id: 'door-0', name: 'Fridge door', kind: 'door', xc: -w / 4, dw: w / 2 - 0.005, yc: upY0 + upH / 2, h: upH, hy: upY0 + upH * 0.45, bh: 0.45, hx: edge(-w / 4, w / 2, 'left'), hinge: 'left' });
+        list.push({ id: 'door-1', name: 'Fridge door', kind: 'door', xc: w / 4, dw: w / 2 - 0.005, yc: upY0 + upH / 2, h: upH, hy: upY0 + upH * 0.45, bh: 0.45, hx: edge(w / 4, w / 2, 'right'), hinge: 'right' });
+        list.push({ id: 'drawer-0', name: 'Freezer drawer', kind: 'drawer', xc: 0, dw: w - 0.006, yc: y0 + lowH / 2, h: lowH, hy: y0 + lowH - 0.06, bh: w * 0.7, hx: 0, hinge: 'right', horizontal: true });
+      } else {
+        list.push({ id: 'door-0', name: 'Fridge door', kind: 'door', xc: 0, dw: w - 0.006, yc: upY0 + upH / 2, h: upH, hy: upY0 + upH * 0.45, bh: Math.min(0.55, upH * 0.45), hx: edge(0, w, 'right'), hinge: 'right' });
+        list.push({ id: 'door-1', name: 'Freezer door', kind: 'door', xc: 0, dw: w - 0.006, yc: y0 + lowH / 2, h: lowH, hy: y0 + lowH * 0.62, bh: Math.min(0.35, lowH * 0.6), hx: edge(0, w, 'right'), hinge: 'right' });
+      }
+    }
+    for (const f of list) {
+      const handle = f.horizontal ? roundedBox(f.bh, 0.02, 0.03, 0.008, 2).translate(f.xc, f.hy, d / 2 + 0.03) : roundedBox(0.02, f.bh, 0.03, 0.008, 2).translate(f.hx, f.hy, d / 2 + 0.03);
       emitFront(sink, { front: doors, handle: bars }, {
-        id: f.id, name: f.name, kind: 'door', center: [0, f.yc, d / 2 - 0.02], size: [w - 0.006, f.h, 0.04], motion: { type: 'swing', hinge: f.hinge, angle: 110 },
-        front: roundedBox(w - 0.006, f.h, 0.04, 0.008, 2).translate(0, f.yc, d / 2 - 0.02),
-        handle: roundedBox(0.02, f.bh, 0.03, 0.008, 2).translate(-w / 2 + 0.05, f.hy, d / 2 + 0.03),
+        id: f.id, name: f.name, kind: f.kind, center: [f.xc, f.yc, d / 2 - 0.02], size: [f.dw, f.h, 0.04],
+        motion: f.kind === 'drawer' ? { type: 'slide', offset: [0, 0, 0.45] } : { type: 'swing', hinge: f.hinge, angle: f.hinge === 'right' ? 110 : -110 },
+        front: roundedBox(f.dw, f.h, 0.04, 0.012, 2).translate(f.xc, f.yc, d / 2 - 0.02),
+        handle,
         frontMaterial: face, handleMaterial: barMat,
       });
     }
     set.add(doors, face);
     set.add(bars, barMat);
-    set.boxMinMax(-w / 2, 0, -d / 2, w / 2, 1.9, d / 2);
+    set.boxMinMax(-w / 2, 0, -d / 2, w / 2, H, d / 2);
+    return set.build();
+  },
+};
+
+export const OVEN: FurnitureDef = {
+  id: 'furn-oven',
+  kind: 'oven',
+  description: 'Freestanding cooker (range): four-burner hob with cast grates, control knobs, a glazed oven door with a bar handle and a plinth; 0.9 m tall, back against a wall. Pair with an `extractor` above it.',
+  params: {
+    width: num(0.6, 0.5, 1.2, 'width (m): 0.6 standard, 0.9 / 1.1 range cooker (6 burners from 0.9)'),
+    finish: choice(['brushed-metal', 'paint', 'black-metal'], 'brushed-metal', 'body finish'),
+    color: color('#e9e6e0', 'paint colour (when the finish is paint)'),
+    trim: choice(['chrome', 'brass', 'black-metal'], 'chrome', 'knobs and handle finish'),
+  },
+  mount: 'floor',
+  againstWall: true,
+  frontClearance: 1.0,
+  size: (p) => [p.num('width'), 0.95, 0.62],
+  build(p) {
+    const set = new PartSet();
+    const w = p.num('width');
+    const d = 0.6;
+    const body = p.str('finish') === 'paint' ? mat('paint', p.color('color')) : mat(p.str('finish'));
+    const trim = mat(p.str('trim'));
+    const top = 0.9;
+    set.add(roundedBox(w, top - 0.06, d, 0.012, 2).translate(0, 0.06 + (top - 0.06) / 2, 0), body);
+    set.add(box(-w / 2 + 0.02, 0, -d / 2 + 0.04, w / 2 - 0.02, 0.06, d / 2 - 0.04), mat('black-metal'));
+    // Hob plate (glass) with burners and grates.
+    set.add(roundedBox(w - 0.02, 0.01, d - 0.02, 0.004, 1).translate(0, top + 0.005, 0), { finish: 'glass', color: '#101114', opacity: 1, roughness: 0.08 });
+    const six = w >= 0.85;
+    const cols = six ? 3 : 2;
+    const rows = 2;
+    const burners = new Geom();
+    const grates = new Geom();
+    const cw = (w - 0.06) / cols;
+    const cd = (d - 0.14) / rows;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const x = -w / 2 + 0.03 + cw * (c + 0.5);
+        const z = -d / 2 + 0.07 + cd * (r + 0.5) - 0.01;
+        const rad = Math.min(0.085, cw * 0.36, cd * 0.4) * (r === 0 && c === 0 ? 1 : 0.85);
+        burners.merge(lathe([[rad * 0.5, 0.0], [rad * 0.52, 0.016], [rad * 0.62, 0.02], [rad * 0.62, 0.012], [rad * 0.5, 0.0]], 20).translate(x, top + 0.01, z));
+        burners.merge(cylinder(rad * 0.33, rad * 0.3, 0.022, 16).translate(x, top + 0.01, z));
+        for (const a of [0, 60, 120]) grates.merge(box(-rad * 1.25, 0.03, -0.008, rad * 1.25, 0.04, 0.008).rotateY(a).translate(x, top + 0.01, z));
+      }
+    }
+    set.add(burners, mat('black-metal'));
+    // One continuous cast frame joins each row of grates.
+    const gx0 = -w / 2 + 0.035;
+    const gx1 = w / 2 - 0.035;
+    grates.merge(box(gx0, top + 0.036, -d / 2 + 0.04, gx1, top + 0.046, -d / 2 + 0.05)).merge(box(gx0, top + 0.036, d / 2 - 0.05, gx1, top + 0.046, d / 2 - 0.04));
+    grates.merge(box(gx0, top + 0.036, -d / 2 + 0.04, gx0 + 0.01, top + 0.046, d / 2 - 0.04)).merge(box(gx1 - 0.01, top + 0.036, -d / 2 + 0.04, gx1, top + 0.046, d / 2 - 0.04));
+    set.add(grates, mat('black-metal'));
+    // Door, window, handle and knob strip.
+    const doorH = 0.58;
+    const doorY = 0.06 + doorH / 2 + 0.01;
+    set.add(roundedBox(w - 0.02, doorH, 0.04, 0.012, 2).translate(0, doorY, d / 2 + 0.005), body);
+    set.add(roundedBox(w - 0.2, doorH - 0.2, 0.012, 0.01, 2).translate(0, doorY - 0.03, d / 2 + 0.027), { finish: 'glass', color: '#17181b', opacity: 1, roughness: 0.06 });
+    const handle = new Geom();
+    handle.merge(pole([[-w / 2 + 0.08, doorY + doorH / 2 - 0.045, d / 2 + 0.02], [-w / 2 + 0.08, doorY + doorH / 2 - 0.045, d / 2 + 0.07], [w / 2 - 0.08, doorY + doorH / 2 - 0.045, d / 2 + 0.07], [w / 2 - 0.08, doorY + doorH / 2 - 0.045, d / 2 + 0.02]], 0.012, 8, 2));
+    const nk = six ? 6 : 5;
+    for (let k = 0; k < nk; k++) {
+      const x = -w / 2 + 0.08 + ((w - 0.16) * k) / (nk - 1);
+      handle.merge(cylinder(0.021, 0.018, 0.028, 16).rotateX(90).translate(x, 0.8, d / 2 + 0.02));
+    }
+    set.add(handle, trim);
+    set.boxMinMax(-w / 2, 0, -d / 2, w / 2, top + 0.05, d / 2 + 0.07);
+    return set.build();
+  },
+};
+
+export const EXTRACTOR: FurnitureDef = {
+  id: 'furn-extractor',
+  kind: 'extractor',
+  description: 'Cooker hood on a wall: a tapered steel canopy with a chimney flue running up (`height` is the flue height above the canopy), filter grille and lights underneath. Origin at the bottom of the canopy, back at z = 0 on the wall; mount about 0.65 m above the hob.',
+  params: {
+    width: num(0.6, 0.45, 1.2, 'width (m): match the hob'),
+    height: num(0.75, 0.3, 1.2, 'flue height above the canopy (m)'),
+    finish: choice(['brushed-metal', 'paint', 'black-metal', 'brass'], 'brushed-metal', 'hood finish'),
+  },
+  mount: 'wall',
+  againstWall: true,
+  frontClearance: 0.6,
+  size: (p) => [p.num('width'), 0.18 + p.num('height'), 0.5],
+  build(p) {
+    const set = new PartSet();
+    const w = p.num('width');
+    const fin = p.str('finish') === 'paint' ? mat('paint', '#e9e6e0') : mat(p.str('finish'));
+    const lowD = 0.5;
+    const topD = Math.min(0.3, w * 0.55);
+    const topW = Math.min(w * 0.55, 0.36);
+    // Canopy: a frustum from the wide underside to the flue base (back stays on the wall).
+    const g = new Geom();
+    const c0: Array<[number, number, number]> = [[-w / 2, 0, 0], [w / 2, 0, 0], [w / 2, 0, lowD], [-w / 2, 0, lowD]];
+    const c1: Array<[number, number, number]> = [[-topW / 2, 0.18, 0], [topW / 2, 0.18, 0], [topW / 2, 0.18, topD], [-topW / 2, 0.18, topD]];
+    for (let k = 1; k < 4; k++) {
+      const a = c0[k] as [number, number, number];
+      const b = c0[(k + 1) % 4] as [number, number, number];
+      const a1 = c1[k] as [number, number, number];
+      const b1 = c1[(k + 1) % 4] as [number, number, number];
+      // Faces: front (k=2), right (1), left (3): wound to face out.
+      g.quadAuto(a, b, b1, a1);
+    }
+    g.quadAuto([-w / 2, 0, lowD], [w / 2, 0, lowD], [topW / 2, 0.18, topD], [-topW / 2, 0.18, topD]);
+    g.merge(roundedBox(w - 0.004, 0.012, lowD, 0.004, 1).translate(0, 0.006, lowD / 2));
+    set.add(g, fin);
+    set.add(box(-topW / 2, 0.18, 0, topW / 2, 0.18 + p.num('height'), topD), fin);
+    set.add(box(-w / 2 + 0.05, -0.004, 0.05, w / 2 - 0.05, 0.0, lowD - 0.05), mat('black-metal'));
+    set.add(box(-w / 4 - 0.02, -0.006, lowD - 0.1, -w / 4 + 0.02, -0.002, lowD - 0.07).merge(box(w / 4 - 0.02, -0.006, lowD - 0.1, w / 4 + 0.02, -0.002, lowD - 0.07)), { preset: 'emissive', color: '#fff0d6', emissive: '#ffe2b0', emissiveIntensity: 2 });
+    set.boxMinMax(-w / 2, 0, 0, w / 2, 0.18, lowD);
+    set.boxMinMax(-topW / 2, 0.18, 0, topW / 2, 0.18 + p.num('height'), topD);
     return set.build();
   },
 };
 
 /** Kitchen definitions. */
-export const KITCHEN_SET: readonly FurnitureDef[] = [KITCHEN, ISLAND, FRIDGE];
+export const KITCHEN_SET: readonly FurnitureDef[] = [KITCHEN, ISLAND, FRIDGE, OVEN, EXTRACTOR];

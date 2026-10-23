@@ -51,7 +51,7 @@ const DRESSED_DENSITY: Readonly<Record<string, number>> = { living: 7, bedroom: 
 /** Rooms that need no light fitting of their own. */
 const UNLIT_OK: ReadonlySet<string> = new Set(['terrace', 'garage', 'storage']);
 /** Kinds that sit with a person in front and need free floor there. */
-const NO_FRONT_CHECK: ReadonlySet<string> = new Set(['chair', 'office-chair', 'bar-stool', 'plant', 'floor-lamp', 'rug']);
+const NO_FRONT_CHECK: ReadonlySet<string> = new Set(['chair', 'office-chair', 'bar-stool', 'cane-chair', 'plant', 'floor-lamp', 'rug']);
 
 const area = (i: SceneItem): number => i.size[0] * i.size[2];
 

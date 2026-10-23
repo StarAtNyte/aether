@@ -154,7 +154,7 @@ const DRY_DECOR: ReadonlySet<string> = new Set(['plant', 'floor-lamp', 'side-tab
 
 /** Pairs allowed to overlap (chairs tucked under tables, stools under islands). */
 export function tucksUnder(kindA: string, kindB: string): boolean {
-  const tuck = new Set(['chair', 'office-chair', 'bar-stool']);
+  const tuck = new Set(['chair', 'office-chair', 'bar-stool', 'cane-chair']);
   const host = new Set(['dining-table', 'desk', 'island', 'cafe-counter']);
   return (tuck.has(kindA) && host.has(kindB)) || (tuck.has(kindB) && host.has(kindA));
 }

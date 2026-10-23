@@ -139,6 +139,19 @@ refusals as text with a fix.
   (`params.closed` above 0) gets a reach of 0.2 m. When `params.pelmet` is `box`, `valance` or `swag`, one pelmet is
   made across both panels and the panels carry none. A `blind` hangs centred over the window. A description or a
   call that asks for `panels: 2` with a `gap` therefore no longer makes pairs that cover the glass and are refused.
+- **Crafted procedural kinds.** These parts carry real shape (swept poles, lofted ceramic, woven strands) and read as
+  the object in a render. Aliases such as "rattan chair", "wicker chair", "pedestal sink", "washbasin", "refrigerator",
+  "cooker" and "range hood" resolve to them.
+  - `cane-chair`: rattan frame with woven-cane seat and back. `variant` `dining` | `bar` | `stool`, `height` (seat
+    height m; bar 0.65-0.75), `frame` finish, `tint` (frame colour), `cane` (weave colour).
+  - `sink`: standalone basin. `style` `pedestal` | `wall-hung` | `vessel` | `utility`; `width` (0 = style default),
+    `color` (ceramic), `tap` finish, `top` and `body` (vessel console / utility fronts), `bowls` 1-2 and `drainer`
+    (utility). A bathroom cabinet with a basin is still `vanity`.
+  - `fridge`: `layout` `bottom-freezer` | `single` | `side-by-side` | `french`, `width`, `height` (0.85 for an
+    under-counter fridge), `finish`, `interactive`.
+  - `oven`: freestanding cooker with hob, grates, knobs and a glazed door. `width` (0.9+ gives six burners),
+    `finish`, `color`, `trim`. `extractor`: wall cooker hood; `width`, `height` (flue), `finish`.
+  - `rug` also takes `pattern` `diamonds`, `kilim` and `shag` (high pile, 3 cm) besides `plain`, `zigzag`, `stripes`.
 - **Returns.** Accepted and refused items, with measurements.
 - **When to use it.** After `design_plan`, for every planned piece.
 

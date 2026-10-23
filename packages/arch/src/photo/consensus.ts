@@ -44,6 +44,7 @@ const KIND_CLASS: Readonly<Record<string, string>> = Object.freeze({
   chair: 'seat',
   'office-chair': 'seat',
   'bar-stool': 'seat',
+  'cane-chair': 'seat',
   sofa: 'seat',
   sideboard: 'storage',
   wardrobe: 'storage',

@@ -196,7 +196,7 @@ function roomCentre(env: OpEnv, room: SceneItem): [number, number] {
 const KIND_ALIASES: Readonly<Record<string, string>> = {
   couch: 'sofa', settee: 'sofa', loveseat: 'sofa', carpet: 'rug', mat: 'rug', painting: 'art', picture: 'art', poster: 'art', artwork: 'art', frame: 'art', canvas: 'art',
   television: 'tv', screen: 'tv', drape: 'curtain', blind: 'curtain', cabinet: 'sideboard', console: 'sideboard', dresser: 'sideboard', shelf: 'bookshelf', bookcase: 'bookshelf', closet: 'wardrobe',
-  houseplant: 'plant', 'pot plant': 'plant', stool: 'bar-stool', lamp: 'floor-lamp', chandelier: 'pendant', light: 'pendant', mattress: 'bed', fridge: 'fridge', refrigerator: 'fridge', sink: 'vanity', basin: 'vanity', wc: 'toilet', bath: 'bathtub', tub: 'bathtub', counter: 'island',
+  houseplant: 'plant', 'pot plant': 'plant', stool: 'bar-stool', lamp: 'floor-lamp', chandelier: 'pendant', light: 'pendant', mattress: 'bed', fridge: 'fridge', refrigerator: 'fridge', sink: 'sink', basin: 'sink', washbasin: 'sink', oven: 'oven', cooker: 'oven', stove: 'oven', hood: 'extractor', 'rattan chair': 'cane-chair', 'wicker chair': 'cane-chair', 'cane chair': 'cane-chair', wc: 'toilet', bath: 'bathtub', tub: 'bathtub', counter: 'island',
 };
 
 /** The furniture kind a noun names, when the catalogue has one. */
