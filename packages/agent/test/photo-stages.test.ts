@@ -182,6 +182,17 @@ describe('RepairGuard', () => {
     g.newRound(2);
     expect(g.allow('make_texture', {})).toMatch(/Say what you repair first/);
   });
+  it('declare_repair carries an optional keep_shell reason and the analysis asks for the shell-size reconciliation', async () => {
+    const { REPAIR_TOOL } = await import('../src/photo/stages.js');
+    expect(Object.keys((REPAIR_TOOL.inputSchema as { properties: object }).properties)).toContain('keep_shell');
+    const g = new RepairGuard();
+    const l = new DifferenceLedger();
+    l.record({ differences: [{ id: 'room-wide', cause: 'geometry', what: 'shell too narrow', size: 4 }] });
+    expect(g.declare({ difference: 'room-wide', cause: 'geometry', keep_shell: 'beds and walkway fit in 3.6 m' }, l.ranked()).ok).toBe(true);
+    const { analysisUserText } = await import('../src/photo/prompt.js');
+    expect(analysisUserText('make this room')).toMatch(/SHELL-SIZE RECONCILIATION/);
+  });
+
   it('classifies edit tools by what they change', () => {
     expect(causesOfTool('set_photo_camera', { fov: 60 })).toEqual(['camera']);
     expect(causesOfTool('tune_look', {})).toEqual(['lighting']);

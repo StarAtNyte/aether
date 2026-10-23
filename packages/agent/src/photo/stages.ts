@@ -207,13 +207,14 @@ export const REPAIR_TOOL: ToolDef = {
       difference: { type: 'string' },
       cause: { type: 'string', enum: [...CAUSES] },
       why: { type: 'string' },
+      keep_shell: { type: 'string', description: 'Only when the shell size is judged different or a piece is refused for lack of space and you keep the size: the reason, one sentence (recorded in the assumptions).' },
     },
     required: ['difference', 'cause'],
     additionalProperties: false,
   },
 };
 
-const RepairInput = z.object({ difference: z.string().min(1).max(40), cause: z.enum(CAUSES), why: z.string().max(300).optional() });
+const RepairInput = z.object({ difference: z.string().min(1).max(40), cause: z.enum(CAUSES), why: z.string().max(300).optional(), keep_shell: z.string().max(300).optional() });
 
 export const CAMERA_TOOL_NAME = 'set_photo_camera';
 

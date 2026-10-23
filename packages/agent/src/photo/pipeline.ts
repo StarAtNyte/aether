@@ -132,6 +132,9 @@ export interface HarnessState {
 const ANALYSIS_ATTEMPTS = 3;
 /** Most model turns inside one compare round. */
 const TURNS_PER_ROUND = 8;
+
+/** Asked in a repair round while the shell size is judged different or a piece is refused for lack of space. */
+const SHELL_DUE_TEXT = 'SHELL SIZE is open (judged different, or a piece is refused for lack of space). Answer it this round: resend design_plan with a changed room size, or call declare_repair with keep_shell giving the reason the size stays. Either answer is accepted; leaving it unanswered is not.';
 /**
  * Safety ceiling of compare rounds when no `maxRounds` is set (subscription backends): the loop is meant to end when the
  * judges and the model are satisfied or progress stalls, never on a fixed round count; this only stops a runaway.
@@ -1114,7 +1117,11 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
         yield { type: 'step', tool: MEASURE_TOOL_NAME, label: m.text.slice(0, 160), ok: false };
       }
     }
-    const notes = [rejectNote, standing?.panel ? consensusText(standing.panel) : '', advisory, view.fidelity ? fidelityText(view.fidelity) : '', view.lookEvidence, view.scale, round === 1 ? footprintAdvisory(desc) : '', depthNote, kit?.readout ?? '', ledger ? ledger.roundText() : '', hs && ledger ? repairOrderText(ledger.ranked()) : ''].filter((l) => l.length > 0).join('\n');
+    // A judged shell-size failure, or a piece still refused for lack of space, has to be answered this round (the gate checks that the model answered, not what it chose).
+    const shellDue = !!(hs && ledger) && ((standing ?? last)?.score.failing.some((f) => f.id === 'shell-size') === true || (ledger?.ranked().some((d) => /lack of space/i.test(d.what)) ?? false));
+    let shellAnswered = false;
+    let finishNag = false;
+    const notes = [rejectNote, standing?.panel ? consensusText(standing.panel) : '', advisory, view.fidelity ? fidelityText(view.fidelity) : '', view.lookEvidence, view.scale, round === 1 ? footprintAdvisory(desc) : '', depthNote, kit?.readout ?? '', ledger ? ledger.roundText() : '', hs && ledger ? repairOrderText(ledger.ranked()) : '', shellDue ? SHELL_DUE_TEXT : ''].filter((l) => l.length > 0).join('\n');
     const blocks: ContentBlock[] = [];
     if (intro) {
       const sampled = photo.raster ? surfaceColourText(sampleSurfaces(photo.raster, desc)) : '';
@@ -1146,7 +1153,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
     let toolCalls = 0;
     let listed = ledger === null;
     const ready = (): boolean => standing !== null || workerJudged;
-    for (let turn = 0; turn < TURNS_PER_ROUND && !declared && !(ready() && (edited || rolledBack)); turn++) {
+    for (let turn = 0; turn < TURNS_PER_ROUND && !declared && !(ready() && (edited || rolledBack) && !(shellDue && !shellAnswered)); turn++) {
       const res = await ask(run, messages, tools, true);
       messages.push({ role: 'assistant', content: res.content });
       const calls = res.content.filter((b): b is Extract<ContentBlock, { type: 'tool_use' }> => b.type === 'tool_use');
@@ -1156,6 +1163,11 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
         return yield* pickBest({ judged: standing ?? last });
       }
       if (calls.length === 0) {
+        if (ready() && shellDue && !shellAnswered && !finishNag) {
+          finishNag = true;
+          pushUser(messages, [{ type: 'text', text: SHELL_DUE_TEXT }]);
+          continue;
+        }
         if (ready()) {
           if (text) yield { type: 'message', text };
           declared = true;
@@ -1258,12 +1270,22 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
             results.push({ type: 'tool_result', toolUseId: call.id, content: 'List the differences first (report_differences), each with its cause, then declare what you repair.', isError: true });
             continue;
           }
+          const keep = (call.input as { keep_shell?: unknown } | null)?.keep_shell;
+          if (typeof keep === 'string' && keep.trim().length > 0) {
+            hs.assume.add({ id: 'shell-size', text: `Shell size kept at ${desc.footprint.width} x ${desc.footprint.depth} m: ${keep.trim()}`, confidence: 0.4, stage: 'shell', adjust: `make the room ${Math.round((desc.footprint.width + 0.6) * 10) / 10} m wide`, kind: 'scale' });
+            shellAnswered = true;
+          }
           const d = hs.guard.declare(call.input, ledger.ranked());
           yield { type: 'step', tool: REPAIR_TOOL_NAME, label: d.ok ? `Repair: ${hs.guard.current?.cause} (${hs.guard.current?.id})` : 'Repair refused: wrong order or unknown difference', ok: d.ok };
           results.push({ type: 'tool_result', toolUseId: call.id, content: d.text, ...(d.ok ? {} : { isError: true }) });
           continue;
         }
         if (call.name === 'finish') {
+          if (shellDue && !shellAnswered && !finishNag) {
+            finishNag = true;
+            results.push({ type: 'tool_result', toolUseId: call.id, content: SHELL_DUE_TEXT, isError: true });
+            continue;
+          }
           declared = true;
           results.push({ type: 'tool_result', toolUseId: call.id, content: 'Done.' });
           continue;
@@ -1308,6 +1330,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
         const out = await executeTool(ctx, call.name, call.input);
         yield { type: 'step', tool: call.name, label: stepLabel(call.name, call.input, !out.isError), ok: !out.isError };
         for (const ev of out.events) yield ev;
+        if (call.name === 'design_plan' && !out.isError) shellAnswered = true;
         if (out.edited) {
           edited = true;
           ledger?.markEdited();
