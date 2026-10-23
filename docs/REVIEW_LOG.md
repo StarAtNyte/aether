@@ -6139,3 +6139,30 @@ Not done, and why:
 - Sky dome recolour in `setWorld` (60 to 115 ms once per open), module evaluation of the lazy still/render chunk (90 to 170 ms), first-play program links (native): left, none exceeds the budget by enough to justify more machinery.
 
 Gates: `tsc --noEmit` clean; vitest `packages/render` and `apps/studio` pass; smoke 34/34; `e2e:weak` (including the forced-black watchdog run) ok.
+
+## 2026-10-23 Per-pixel shading cost on an integrated GPU: lean surface shading, cheaper light volume, startup
+
+Task: per-pixel lit shading was the largest GPU cost of the default view (the ground covers 40 to 65 % of it), the post chain second. Measured on the Intel UHD 770 (WebGL2 over ANGLE/GL), 1856 x 1016, vsync on, GPU timer queries, smallest of three blocks, scale fixed at 1 (`tests/e2e/default-perf.e2e.ts`, rows `realtime-medium` and `medium-lean`).
+
+What the numbers said (hotel, GPU ms): whole frame 24.5; ground hidden 8.5; a plain standard-material ground 14.2; image-based light alone 3.9 of the 5.7 a plain ground adds; shadows, lightmap and light volume 0.7 to 1.3 each; the medium post chain 0.9 (it is not the cost while moving). The three 3D gradient noises of the anti-tiled finishes cost 2.5; the lawn's 10 texture reads and tangent frame most of the rest.
+
+Changes (generic, no per-room code):
+1. Lean surface shading (`leanShading` uniform, set while the split studio view moves): anti-tiled finishes take one lookup per map, no repeat-hiding second lookup, no micro or macro detail and no relief. A branch on a uniform, so one program serves both and flipping recompiles nothing; at rest, stills and discrete GPUs the shading is exactly as before.
+2. The blend and macro noise of those finishes come from one shared tileable noise texture (`materials/noise-texture.ts`, same spread as `mx_noise_float`) instead of three 3D noises per pixel.
+3. Light volume: pixels beyond its fade distance skip its twelve reads and arithmetic (most of a lawn or plaza), and the eight probes are a shader loop instead of eight copies. Lesson recorded in the code: a shared TSL node is declared where it is first built, so anything a branch builds first (world normal, lighting-context variables) must be built before it, or the pixels that skip the branch read undeclared variables (the lawn outside the volume came out 40 % dark until fixed).
+
+Fixed-scale GPU ms per frame, same machine, back to back (before = realtime-medium row, the old moving path; after = medium-lean):
+
+| room | before | after |
+|---|---:|---:|
+| hotel bedroom | 24.5 | 15.0 |
+| twin room | 24.5 | 16.6 (before the light volume change; about 15 after) |
+| vaulted bedroom | 24.3 | 17.6 (about 16 after) |
+
+Default view in motion (adaptive resolution on, frame interval; scale reached in a 3 s run): hotel 60 fps at 0.72 (before 0.60), twin 60 fps at 0.72 (0.52), vaulted 60 fps at 0.72 (0.60); GPU 8.4 to 8.9 ms at those scales. Skyline penthouse and casa patio still miss 60 (about 87 ms GPU at scale 1: geometry and shadow pass, not shading; lean saves 5 % there). Stills at rest: hotel, twin, vaulted and skyline pixel-diffed against before at the camera-noise floor (mean 0.7 to 1.6 / 255, under 0.7 % of pixels over 8); the lawn's macro patches differ in pattern (new noise field), same spread.
+
+Startup (cold browser, first frame, `tests/e2e/startup-perf.e2e.ts`): hotel 4.5 s to 2.9 s, skyline 19.9 s to 15.0 s (108 programs, 10.4 MB of fragment source, was 11.8).
+
+Tried and dropped: spherical-harmonics ambient replacing the two prefiltered environment lookups (fitted to the lookup itself on the GPU, matched within 2 levels) saved only 0.5 ms, because the rest of the cost is three's physical lighting model arithmetic, not the lookups. Not done: a lean lighting model (needs a fork of three's PhysicalLightingModel), cheaper foliage and water shaders (skyline), texture compression changes.
+
+Gates: tsc clean; vitest packages/render and apps/studio 1570 pass; smoke 34/34; e2e:weak ok; showcase:bake --check up to date. The weak check failed on bcdb5270 until the follow-up a8c437cf (not this work).
