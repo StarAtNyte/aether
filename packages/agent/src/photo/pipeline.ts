@@ -80,7 +80,8 @@ import { restorePatches } from './revert';
 import { applyGrade, estimatePhotoGrade, lookEvidenceText, matchGrade, type PhotoGrade } from './grade';
 import { JUDGES_DEFAULT, JUDGES_MAX, ProgressTracker, consensusText, decideRound, runPanel, type Consensus, type Decision, type RoundState } from './judge';
 import { CLOSER_TOOL, CLOSER_TOOL_NAME, lookCloser } from './closer';
-import { MEASURE_TOOL, MEASURE_TOOL_NAME, autoAnchor, measureRoom, parseMeasureInput, type Measured } from './measure';
+import type { DepthRaster } from './depth-model';
+import { MEASURE_TOOL, MEASURE_TOOL_NAME, analysisDepthText, autoAnchor, measureRoom, parseMeasureInput, type Measured } from './measure';
 import { compareImages, extractPalette, regionColourScore, type Raster } from './score';
 import { runReconcile } from './reconcile';
 import { texturePass, texturePassLine, textureSource } from './texture-pass';
@@ -106,6 +107,15 @@ export interface PhotoRun {
   imageCap?: number;
   /** The staged harness state of this run (set by the flow when `options.harness` is on). */
   harness?: HarnessState;
+}
+
+/** The depth estimate made before the photo is read, for the first message of every reading. */
+const depthEvidence = new WeakMap<PhotoRun, Measured>();
+/** The photo as the depth network takes it, or null when depth is off or the host cannot decode. */
+function depthSource(run: PhotoRun): (() => Promise<DepthRaster | null>) | null {
+  const host = run.ctx.host;
+  if (typeof host.decodeImage !== 'function' || process.env['AETHER_DEPTH'] === 'off') return null;
+  return () => host.decodeImage!(run.image, 518);
 }
 
 /** The books of the staged harness (see stages.ts): stage states, the repair order guard, the assumptions, the round count. */
@@ -206,7 +216,10 @@ type Analysis = { ok: true; description: RoomDescription; fixes: string[]; callI
  * continues it, which is how a shell the builder refused is sent back to the model to correct.
  */
 async function analyse(run: PhotoRun, messages: ChatMessage[] = [], seed?: number): Promise<Analysis> {
-  if (messages.length === 0) messages.push({ role: 'user', content: [{ type: 'image', dataUrl: run.image }, { type: 'text', text: analysisUserText(run.request) }] });
+  if (messages.length === 0) {
+    const depth = depthEvidence.get(run);
+    messages.push({ role: 'user', content: [{ type: 'image', dataUrl: run.image }, ...(depth ? [...depth.blocks.filter((b) => b.type === 'image'), { type: 'text' as const, text: analysisDepthText(depth) }] : []), { type: 'text', text: analysisUserText(run.request) }] });
+  }
   let lastError = 'the model did not describe the room';
   for (let attempt = 0; attempt < ANALYSIS_ATTEMPTS; attempt++) {
     const res = await ask(run, messages, [DESCRIBE_TOOL], false, seed);
@@ -592,6 +605,15 @@ export async function* reconstructRoom(run: PhotoRun): AsyncGenerator<AgentEvent
   yield { type: 'status', text: 'Reading the photo…' };
   yield { type: 'photo', phase: 'analysing', text: 'Reading the photo: room size, walls, windows, furniture, colours and light.' };
   const photo = await decodePhoto(run);
+  // The depth network runs before the photo is read, so the first shell size is informed (advisory; skipped silently when it cannot run).
+  const source = depthSource(run);
+  if (source) {
+    const m = await measureRoom({ raster: source }, undefined).catch(() => null);
+    if (m?.estimate) {
+      depthEvidence.set(run, m);
+      yield { type: 'step', tool: MEASURE_TOOL_NAME, label: `Depth estimate before the first shell: ${m.estimate.width.value} × ${m.estimate.depth.value} × ${m.estimate.height.value} m (${m.estimate.scale.basis} scale; width a lower bound)`, ok: true };
+    }
+  }
   let analysis: Reading;
   try {
     analysis = await readPhoto(run);
@@ -890,7 +912,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
   const hs = run.harness ?? null;
   const baseRounds = hs?.rounds ?? 0;
   /** The photo for the depth network (null without a host decoder: the measure tool is then not offered). */
-  const depthRaster = typeof ctx.host.decodeImage === 'function' && process.env['AETHER_DEPTH'] !== 'off' ? () => ctx.host.decodeImage!(run.image, 518) : null;
+  const depthRaster = depthSource(run);
   let depthFirst: Promise<Measured> | null = null;
   const tools: ToolDef[] = [VERDICT_TOOL, ...(ledger ? [DIFFERENCES_TOOL] : []), ...(hs ? [GATE_TOOL, ...(ledger ? [REPAIR_TOOL] : []), CAMERA_TOOL] : []), ...(photo.raster ? [SAMPLE_TOOL] : []), CLOSER_TOOL, ...(depthRaster ? [MEASURE_TOOL] : []), ...designTools, ...(run.ctx.textures?.photo ? [MAKE_TEXTURE_TOOL] : []), ...run.tools.filter((t) => t.name === 'tune_look' || t.name === 'finish' || t.name === 'find_model')];
   const messages: ChatMessage[] = [];

@@ -79,6 +79,15 @@ export async function measureRoom(deps: MeasureDeps, anchor: DepthAnchor | undef
   return { text: `${depthAdvisoryText(est, guess)}\nThe depth picture follows this reply.`, blocks, isError: false, estimate: est };
 }
 
+/**
+ * The estimate as evidence for the FIRST reading of the photo (before any shell exists, so no door anchor and no guess to
+ * compare with): numbers, range, what fixed the scale, the lower-bound label for the width, and the licence to override.
+ */
+export function analysisDepthText(m: Measured): string {
+  const body = m.text.replace('\nThe depth picture follows this reply.', '').replace(/^measure_room: /, '');
+  return `Depth evidence for sizing the room (computed from this photo by a depth network, advisory only: your own reading of the known-size things decides, and you may override it, saying why in assumptions). The second image is its depth picture (warm = near, cool = far).\n${body}\nThe width is a LOWER BOUND whenever a side wall is out of frame: the room is at least this wide, and wider when a wall is not visible. Depth and height are usually closer.`;
+}
+
 /** Tool input to an anchor (null when it is not valid). */
 export function parseMeasureInput(input: unknown): { anchor?: DepthAnchor } | null {
   const p = Input.safeParse(input ?? {});

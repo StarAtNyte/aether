@@ -5234,6 +5234,8 @@ shell-size. Tests: `photo.test.ts` (synthetic and the recorded live description,
 **Environment note.** A worktree whose `node_modules` was symlinked from another checkout resolved `@aether/*` to that
 checkout and gave 10 false failures; use `npm ci --ignore-scripts` in a worktree.
 
+A worktree (or the main checkout) with a stale `node_modules` can hold `@dimforge/rapier3d-compat` 0.12.0 at the root while the lockfile and the root `overrides` pin 0.21.0; the physics code then fails with `R.JointData.revoluteWithAxes is not a function`. Not a code bug: run `npm ci --ignore-scripts` in the worktree (checked: a fresh `npm ci` installs 0.21.0 at the root) and never share or symlink `node_modules` between checkouts.
+
 ## Photo to room: live check of best-state keeping, curtains and the scale lines
 
 Run on 2026-10-22 with `scripts/eval-photo.ts --mode=live` (3 judges, 3 reads, software renders); logs and montages in
@@ -6002,3 +6004,5 @@ Estimates on the four fixture photos, no anchor (ceiling scale), against the shi
 Reading: the twin is close; the other three read narrow by 1.0 to 1.5 m in width because the side walls fall outside the frame (width is the span seen, a lower bound; the tool says so), depth is within about 0.5 m on three of four. No constants were tuned on these photos beyond the first pick of the shift sweep.
 
 Live check, Claude Code, twin (`~/.local/share/aether/qa/live3/f-twin`, against `d-twin`, same prompt, before): first build 3.4 m wide in both. With the depth line (door anchor: 3.88 x 5.91 x 2.44 m) the model widened the shell in the compare loop to 3.9 m inner (4.2 m outer rect; d-twin stayed 3.4). Judged items 8/15 in round 1, 12/15 in rounds 3 and 4, 10/15 at the end (d: 2/18, c: 10/16; the judge noise between runs is large). So the width moved toward the reference as intended and the judged count was not worse than the earlier runs, but one run cannot separate the gain from noise. The run ended with `R.JointData.revoluteWithAxes is not a function` in the walkthrough verification (the installed rapier does not match the source, present before this change) so there is no final score. Remaining: the first build still uses the model's own width (the depth line comes after it); running the network before the analysis and passing its width as a starting point would remove the widen step.
+
+Follow-up (same day): the depth estimate is also run before the photo is read and added to the first analysis message (numbers, range, anchor, width labelled a lower bound, depth picture), so the first shell size is informed; no extra model turn, advisory, skipped silently when the network is unavailable. The compare round 1 line stays.

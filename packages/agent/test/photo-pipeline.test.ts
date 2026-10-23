@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { MAX_CHECKLIST_ITEMS, MAX_PHOTO_ITEMS, MAX_PHOTO_OPENINGS, MAX_VERDICTS, PHOTO_BUILDING_ID, buildChecklist, parseRoomDescription, type RoomDescription } from '@aether/arch/photo';
 import { partKinds, readScene } from '@aether/arch';
 import { WorldAgent } from '../src/agent';
@@ -603,6 +603,42 @@ describe('the compare prompt asks the model to re-check scale against the photo'
       expect(text).toMatch(/Check the SCALE against the photo/);
       expect(text).toMatch(/ceiling height/);
       expect(text).toMatch(/shell-size item fails, change a room dimension/);
+    }
+  });
+});
+
+describe('depth evidence before the first shell', () => {
+  it('puts the depth estimate and picture into the analysis input without an extra model turn, and skips silently when the network is unavailable', async () => {
+    const depth = await import('../src/photo/depth-model');
+    const W = 80, H = 60;
+    const data = new Float32Array(W * H);
+    for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) data[j * W + i] = 0.2 + (j / H) * 0.8 + 0.1 * Math.abs(i / W - 0.5);
+    const spy = vi.spyOn(depth, 'estimateDepthMap');
+    const saved = process.env['AETHER_DEPTH'];
+    process.env['AETHER_DEPTH'] = '';
+    try {
+      const run = async (ok: boolean): Promise<{ first: CompletionRequest; turns: number; evs: AgentEvent[] }> => {
+        spy.mockResolvedValue(ok ? { ok: true, map: { width: W, height: H, data }, image: 'data:image/png;base64,DEPTHPIC' } : { ok: false, reason: 'offline' });
+        const provider = scripted([describeCall(), verdicts([]), finish]);
+        const evs = await collect(agent(provider).run('make this bedroom in 3d', new PhotoHost(), { images: [fakePhoto(1920, 1280)] }));
+        return { first: provider.requests[0] as CompletionRequest, turns: provider.requests.length, evs };
+      };
+      const withDepth = await run(true);
+      const content = withDepth.first.messages[0]?.content as ContentBlock[];
+      const texts = content.filter((b): b is Extract<ContentBlock, { type: 'text' }> => b.type === 'text').map((b) => b.text).join('\n');
+      expect(content.filter((b) => b.type === 'image').length).toBe(2);
+      expect(texts).toMatch(/Depth evidence for sizing the room/);
+      expect(texts).toMatch(/LOWER BOUND/);
+      expect(texts).toMatch(/you may override it/);
+      expect(withDepth.evs.some((e) => e.type === 'step' && e.tool === 'measure_room' && e.ok === true)).toBe(true);
+      const without = await run(false);
+      expect((without.first.messages[0]?.content as ContentBlock[]).filter((b) => b.type === 'image').length).toBe(1);
+      expect(without.turns).toBe(withDepth.turns);
+      expect(photoEvents(without.evs).map((e) => e.phase)).toContain('done');
+    } finally {
+      spy.mockRestore();
+      if (saved === undefined) delete process.env['AETHER_DEPTH'];
+      else process.env['AETHER_DEPTH'] = saved;
     }
   });
 });
