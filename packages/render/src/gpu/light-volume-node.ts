@@ -14,6 +14,7 @@
  * fragment; the same code runs on WebGPU and WebGL2.
  */
 import { Vector3, Vector4 } from 'three';
+import * as TSL from 'three/tsl';
 import { AnalyticLightNode, type NodeBuilder } from 'three/webgpu';
 import { T, type Nd } from '../materials/tsl-lite';
 import { LIGHTMAP_ATTRIBUTE, LightVolume } from '../environment/light-volume-light';
@@ -25,6 +26,11 @@ interface LightingContext {
   radiance: Nd;
   ambientOcclusion: Nd;
 }
+
+/** `Loop(count, body)` of three's TSL with the loop index passed to `body`. */
+const LOOP = (count: number, body: (i: Nd) => void): void => {
+  (TSL as unknown as { Loop(n: number, f: (o: { i: Nd }) => void): void }).Loop(count, ({ i }) => body(i));
+};
 
 /** The node the renderer creates for each {@link LightVolume} (register with `renderer.library.addLight`). */
 export class LightVolumeNode extends AnalyticLightNode<LightVolume> {
@@ -114,14 +120,16 @@ export class LightVolumeNode extends AnalyticLightNode<LightVolume> {
       const geomZ = slab.mul(4).add(1.5);
       const free = (code: Nd): Nd => T.mix(code.div(FREE_STEPS), T.float(2), T.step(FREE_STEPS - 0.5, code));
       const sees = (d: Nd, minus: Nd, plus: Nd): Nd => T.clamp(T.mix(minus, plus, T.step(0, d)).sub(T.abs(d)).mul(20), 0, 1);
-      let wsum: Nd = T.float(0);
-      let wx: Nd = T.float(0);
-      let wy: Nd = T.float(0);
-      let wz: Nd = T.float(0);
-      for (let c = 0; c < 8; c++) {
-        const cx = c & 1;
-        const cy = (c >> 1) & 1;
-        const cz = (c >> 2) & 1;
+      const wsum = T.float(0).toVar();
+      const wx = T.float(0).toVar();
+      const wy = T.float(0).toVar();
+      const wz = T.float(0).toVar();
+      // The eight probes are a loop, not eight copies: each copy is about a hundred lines of shader, and every lit program
+      // without baked light coordinates carries this node (the unrolled form was a third of such a program's source).
+      LOOP(8, (i: Nd) => {
+        const cx = T.float(i.bitAnd(1));
+        const cy = T.float(i.shiftRight(1).bitAnd(1));
+        const cz = T.float(i.shiftRight(2).bitAnd(1));
         const corner = base.add(T.vec3(cx, cy, cz));
         const g = tex.sample(T.vec3(corner.x.add(0.5).div(uAlloc.x), corner.y.add(0.5).div(uAlloc.y), corner.z.add(geomZ).div(depth))).level(0);
         const a = T.floor(g.x.add(0.5));
@@ -134,7 +142,8 @@ export class LightVolumeNode extends AnalyticLightNode<LightVolume> {
         const yp = free(b.sub(b8.mul(8)));
         const zm = free(b8.sub(T.floor(b8.div(8)).mul(8)));
         const zp = free(T.floor(b.div(64)));
-        const tri = (cx ? t.x : t.x.oneMinus()).mul(cy ? t.y : t.y.oneMinus()).mul(cz ? t.z : t.z.oneMinus());
+        const pick = (tc: Nd, c: Nd): Nd => T.mix(tc.oneMinus(), tc, c);
+        const tri = pick(t.x, cx).mul(pick(t.y, cy)).mul(pick(t.z, cz));
         // Slack for the quantisation (see FREE_SLACK) except for a probe buried in a wall (all distances zero).
         const open = T.step(1e-4, xm.add(xp).add(ym).add(yp).add(zm).add(zp));
         const slack = open.mul(FREE_SLACK);
@@ -142,11 +151,11 @@ export class LightVolumeNode extends AnalyticLightNode<LightVolume> {
         // A trace of the plain weight keeps the read defined where no probe sees the point; buried probes (their light is
         // filled from both sides of the wall) get almost none of it.
         const w = tri.mul(v.add(open.mul(1e-3)).add(1e-6));
-        wsum = wsum.add(w);
-        if (cx) wx = wx.add(w);
-        if (cy) wy = wy.add(w);
-        if (cz) wz = wz.add(w);
-      }
+        wsum.addAssign(w);
+        wx.addAssign(w.mul(cx));
+        wy.addAssign(w.mul(cy));
+        wz.addAssign(w.mul(cz));
+      });
       const fa = base.add(T.vec3(wx, wy, wz).div(T.max(wsum, 1e-6)));
       const u = fa.x.add(0.5).div(uAlloc.x);
       const v = fa.y.add(0.5).div(uAlloc.y);

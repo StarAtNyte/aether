@@ -25,6 +25,8 @@ export interface Nd {
   greaterThan(o: Nd | number): Nd;
   and(o: Nd): Nd;
   toVar(): Nd;
+  bitAnd(o: Nd | number): Nd;
+  shiftRight(o: Nd | number): Nd;
   assign(o: Nd | number): void;
   clone(): Nd;
   addAssign(o: Nd): Nd;
