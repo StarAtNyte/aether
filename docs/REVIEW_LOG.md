@@ -5985,3 +5985,20 @@ Evidence: `~/.local/share/aether/qa/live3/{a,c,d}-twin` (photo and render side b
 4. Window views. A window's `daylight` is one emissive colour pane just outside the glass (`WindowParams.daylight`), so the view is flat by design. The cheapest upgrade is to texture that pane with a crop of the photo's own window region (or `make_texture` landscape strip) instead of a colour; not trivial in the current tool set, not done.
 
 Limit: single live run, render uses the studio build from before the exposure work (dark first and final images).
+
+## 2026-10-23 Photo to room: measured room size from a monocular depth network (`measure_room`, advisory)
+
+What: `measure_room` (`packages/agent/src/photo/measure.ts`, `depth-model.ts`, method in `packages/arch/src/photo/depth.ts`, CLI `scripts/measure-room.ts`). Depth Anything V2 Small (Apache-2.0; Base and Large are CC-BY-NC and not used), unsigned 8-bit ONNX, 27 MB, onnxruntime-web on the CPU, about 1.0 to 1.6 s per photo. The 8-bit `int8` export does not load in the wasm runtime (no ConvInteger kernel); `uint8` does. Weights are fetched on first use, SHA-256 pinned, cached under `~/.local/share/aether/models`; offline the tool says so and the flow is unchanged. Method: relative inverse depth, depth = 1 / (d + shift), pinhole back-projection, floor plane by RANSAC on the lower third, metric scale from an anchor (a whole door at 2.05 m taken from the description, or one the model names) or a 2.4 to 2.7 m ceiling; fov 65/75/90 and shift 0.2/0.3/0.45 are swept and the 10th to 90th percentile is the range. The first compare round shows it next to the model's own footprint, with the depth picture.
+
+Estimates on the four fixture photos, no anchor (ceiling scale), against the shipped example rooms (themselves model guesses, the twin hand-widened; not measured truth):
+
+| photo | estimate W x D x H (range of W / D) | shipped room W x D |
+| --- | --- | --- |
+| twin | 4.06 x 6.18 x 2.5 (3.2-4.4 / 5.0-7.3) | 4.20 x 5.88 |
+| hotel | 3.24 x 5.30 x 2.5 (2.6-3.7 / 4.3-6.4) | 4.48 x 4.88 |
+| pd1 | 4.06 x 5.88 x 2.5 (3.9-4.4 / 4.6-7.6) | 5.28 x 5.78 |
+| pd2 | 4.28 x 6.01 x 2.5 (4.1-4.6 / 4.5-7.5) | 5.78 x 6.78 |
+
+Reading: the twin is close; the other three read narrow by 1.0 to 1.5 m in width because the side walls fall outside the frame (width is the span seen, a lower bound; the tool says so), depth is within about 0.5 m on three of four. No constants were tuned on these photos beyond the first pick of the shift sweep.
+
+Live check, Claude Code, twin (`~/.local/share/aether/qa/live3/f-twin`, against `d-twin`, same prompt, before): first build 3.4 m wide in both. With the depth line (door anchor: 3.88 x 5.91 x 2.44 m) the model widened the shell in the compare loop to 3.9 m inner (4.2 m outer rect; d-twin stayed 3.4). Judged items 8/15 in round 1, 12/15 in rounds 3 and 4, 10/15 at the end (d: 2/18, c: 10/16; the judge noise between runs is large). So the width moved toward the reference as intended and the judged count was not worse than the earlier runs, but one run cannot separate the gain from noise. The run ended with `R.JointData.revoluteWithAxes is not a function` in the walkthrough verification (the installed rapier does not match the source, present before this change) so there is no final score. Remaining: the first build still uses the model's own width (the depth line comes after it); running the network before the analysis and passing its width as a starting point would remove the widen step.
