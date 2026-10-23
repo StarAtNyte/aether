@@ -13,6 +13,7 @@ import type { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { buildStructure } from '@aether/arch';
 import { Entity, deepEqual, type EntityId, type Json, type ProceduralShape, type Vec3, type WorldDoc } from '@aether/core';
 import type { CameraMode, GeneratorOutput, GeometrySource, RenderDiagnostic, SandboxRunner } from './types';
+import { leanShading } from './materials/anti-tile';
 import { MaterialCache } from './materials/material-cache';
 import { WaterSystem } from './sync/water-system';
 import { waterTierFor } from './materials/water-params';
@@ -761,6 +762,8 @@ export class WorldRenderer {
   private readonly postBuiltSize = new WeakMap<PostPipeline, number>();
   /** The view has rested long enough for the full chain (always true for plans that do not split). */
   private atRest = true;
+  /** Measurement hook (tests): true draws every frame with the lean surface shading, null follows the view's motion. */
+  forceLean: boolean | null = null;
   private lastChangeAt = 0;
   /** Adaptive scale in force before the view rested (restored when it moves again). */
   private motionScale = 1;
@@ -848,7 +851,8 @@ export class WorldRenderer {
     // The second texture lookup that hides texture repeats costs fill rate: not on software rasterisers or in low-memory mode.
     // Nor where the automatic tier is `low` (weak hardware): each of these lookups is hundreds of lines of the lit shader,
     // and a lit program is what a weak machine spends its load time linking.
-    const richMaterials = this.gpu.tier !== 'software' && !this.lowMemory && this.autoTierNow() !== 'low';
+    // `globalThis.__AETHER_RICH` (tests): true builds the rich finish shaders on a software rasteriser, to check them on a backend.
+    const richMaterials = (globalThis as { __AETHER_RICH?: boolean }).__AETHER_RICH === true || (this.gpu.tier !== 'software' && !this.lowMemory && this.autoTierNow() !== 'low');
     this.materials.antiTile = richMaterials;
     this.materials.groundDetail = richMaterials;
     // The layered terrain blends four photographed surfaces per pixel: also not on software rasterisers.
@@ -4053,6 +4057,7 @@ export class WorldRenderer {
   private syncRest(motion: boolean, animating: boolean): void {
     if (this.qualityPlan.moveEffects === null) {
       this.atRest = true;
+      leanShading.value = this.forceLean === true ? 1 : 0;
       return;
     }
     const t = now();
@@ -4079,6 +4084,8 @@ export class WorldRenderer {
       }
     }
     this.restAnimating = this.atRest && animating;
+    // Moving views take the lean surface shading (one lookup per map); the picture at rest is the full one.
+    leanShading.value = (this.forceLean ?? !this.atRest) ? 1 : 0;
   }
 
   /** The view is at rest and the content animates (frames at rest are not refinement frames). */

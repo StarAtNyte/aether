@@ -25,7 +25,6 @@ const ROWS = arg('rows')?.split(',');
 const STILLS = arg('stills');
 const WEAK = arg('weak') !== undefined;
 const VSYNC = arg('vsync') !== undefined;
-const MATOFF = arg('matoff');
 const PROFILE = arg('profile') !== undefined;
 const TIMEOUT = 150_000;
 const t0 = performance.now();
@@ -61,6 +60,15 @@ const EXTRA: Cfg[] = [
   { id: 'low-std-override-noshadow', ...BASE, js: 'std-noshadow', after: 'std-off' },
   { id: 'low-ground-hidden', ...BASE, js: 'ground-hide', after: 'ground-show' },
   { id: 'low-ground-simple', ...BASE, js: 'ground-simple', after: 'ground-restore' },
+  { id: 'medium-lean', quality: 'realtime', tier: 'medium', js: 'lean', after: 'lean-off' },
+  { id: 'low-lean', ...BASE, js: 'lean', after: 'lean-off' },
+  { id: 'gs-base', ...BASE, js: 'ground-simple', after: 'ground-restore' },
+  { id: 'gs-noshadow', ...BASE, js: 'ground-simple+shadow-off', after: 'ground-restore+shadow-on' },
+  { id: 'gs-noenv', ...BASE, js: 'ground-simple+no-env', after: 'ground-restore+env-on' },
+  { id: 'gs-nolm', ...BASE, js: 'ground-simple+lm-off', after: 'ground-restore+lm-on' },
+  { id: 'gs-novol', ...BASE, js: 'ground-simple+vol-off', after: 'ground-restore+vol-on' },
+  { id: 'gs-alloff', ...BASE, js: 'ground-simple+all-off', after: 'ground-restore+all-on' },
+  { id: 'gs-alloff-noenv', ...BASE, js: 'ground-simple+all-off+no-env', after: 'ground-restore+all-on+env-on' },
   { id: 'default-no-hdri', auto: true, js: 'no-hdri' },
   { id: 'default-no-skydetail', auto: true, js: 'no-sky' },
   { id: 'default-no-hdri-no-sky', auto: true, js: 'no-hdri-sky' },
@@ -199,6 +207,8 @@ async function measure(page: Page, pose: readonly number[], cfg: Cfg): Promise<{
           x.env.sun.castShadow = true;
           x.lightmap.setEnabled(true);
         }
+        if (name === 'lean') (x as unknown as { forceLean: boolean | null }).forceLean = true;
+        if (name === 'lean-off') (x as unknown as { forceLean: boolean | null }).forceLean = null;
         if (name === 'plain' || name === 'all-off-plain') x.plainMaterials(true);
         if (name === 'plain-off' || name === 'all-on-plain-off') x.plainMaterials(false);
         if (name === 'no-env') {
@@ -243,7 +253,7 @@ async function measure(page: Page, pose: readonly number[], cfg: Cfg): Promise<{
         for (const k of cfg.off ?? []) o[k] = false;
         r.setEffects(o);
       } else if (cfg.quality) r.setRenderQuality(cfg.quality);
-      if (cfg.js) await hook(r, cfg.js);
+      if (cfg.js) for (const j of cfg.js.split('+')) await hook(r, j);
       const pose = p as number[];
       let yaw = pose[3] as number;
       const run = (n: number, record: number[] | null): Promise<void> =>
@@ -337,7 +347,7 @@ async function measure(page: Page, pose: readonly number[], cfg: Cfg): Promise<{
         }
       }
       (window as unknown as { __dbg: string }).__dbg = `rafMed=${rafMed.map((v) => v.toFixed(1)).join('/')} scaleInMotion=${moveScale} gpu(move x n+rest x n)=${gpuBlocks.join(' | ')} blocks=${blocks.map((b) => b.toFixed(0)).join('/')}`;
-      if (cfg.after) await hook(r, cfg.after);
+      if (cfg.after) for (const j of cfg.after.split('+')) await hook(r, j);
       const s = r.stats();
       return { median: best, p90: bestP90, cpu: s['frameMs'] as number, state: `${(window as unknown as { __dbg: string }).__dbg} ad=${String((r as unknown as { adaptive: { enabled: boolean; smoothedFps: number } }).adaptive.enabled)}/${String((r as unknown as { atRest: boolean }).atRest)}/${(r as unknown as { adaptive: { smoothedFps: number } }).adaptive.smoothedFps.toFixed(0)} post=${(r as unknown as { post?: { key: string } | null }).post?.key ?? 'none'} maps=${r.sunShadowInfo.mapSizes.join('/')} ${r.renderQuality}/${r.renderTier} fx=${r.intendedEffects.length} lvl=${s['performanceLevel']} scale=${s['resolutionScale']} draws=${s['drawCalls']}` };
     },
@@ -430,7 +440,6 @@ async function main(): Promise<void> {
       const context = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
       await context.addInitScript({ content: SKIP_FIRST_RUN });
       await context.addInitScript({ content: 'globalThis.__name = (f) => f;' });
-      if (MATOFF) await context.addInitScript(`globalThis.__MAT_OFF = ${JSON.stringify(MATOFF)};`);
       if (WEAK) {
         await context.addInitScript(() => {
           Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 2 });

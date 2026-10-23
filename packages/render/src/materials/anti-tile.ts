@@ -11,8 +11,10 @@
  * copies when it converts the material (like the foliage wind, see `wind.ts`). The texture's `repeat`
  * stays a live uniform, so retiling a finish to its photo's real size later recompiles nothing.
  */
-import { cameraPosition, clamp, float, materialColor, materialRoughness, mix, mx_noise_float, normalMap, normalWorld, positionWorld, smoothstep, texture, uniform, uv, vec2, vec3, vec4 } from 'three/tsl';
+import { Fn, If, cameraPosition, clamp, float, materialColor, materialRoughness, mix, normalMap, normalView, normalWorld, positionWorld, smoothstep, texture, uniform, uv, vec2, vec3, vec4 } from 'three/tsl';
 import type { Material, Texture } from 'three';
+import type { Node } from 'three/webgpu';
+import { noise01 } from './noise-texture';
 
 /** The second lookup's rotation (radians), scale and offset in tile units. */
 export const ANTI_TILE = Object.freeze({ rotation: 0.6435, scale: 0.77, offset: [0.31, 0.17] as readonly [number, number] });
@@ -70,6 +72,11 @@ export const WETNESS: Readonly<Record<string, { base: number; rain: number }>> =
  * those that have a {@link WETNESS} entry. A uniform, so a change of weather recompiles nothing.
  */
 export const groundWeather = uniform(0);
+/**
+ * Lean shading (0 off, 1 on) for every anti-tiled finish: one lookup per map, no repeat-hiding second lookup and no micro or
+ * macro detail. Set while the view moves on integrated GPUs; a uniform, so flipping it recompiles nothing.
+ */
+export const leanShading = uniform(0);
 /** Distances (m) over which the close-up micro detail fades out and the far macro detail fades in. */
 export const DETAIL_NEAR: readonly [number, number] = Object.freeze([1.5, 7]) as readonly [number, number];
 export const DETAIL_FAR: readonly [number, number] = Object.freeze([10, 60]) as readonly [number, number];
@@ -108,40 +115,60 @@ export function applyAntiTile(material: Material, maps: AntiTileMaps, normalStre
   const centred = base.sub(vec2(0.5, 0.5));
   const rotated = vec2(centred.x.mul(c).sub(centred.y.mul(s)), centred.x.mul(s).add(centred.y.mul(c)));
   const second = rotated.mul(ANTI_TILE.scale).add(vec2(0.5 + ANTI_TILE.offset[0], 0.5 + ANTI_TILE.offset[1]));
-  // Noise in [0, 1], thresholded so a surface shows ONE lookup almost everywhere and the two meet in a
-  // narrow soft seam: an even mix of two unrelated crops would wash the texture out to its average.
-  const n = mx_noise_float(positionWorld.mul(BLEND_NOISE_SCALE)).mul(0.5).add(0.5);
-  const w = smoothstep(float(SEAM[0]), float(SEAM[1]), n);
-  const blend = (tex: Texture) => (stochastic ? mix(texture(tex, base), texture(tex, second), w) : texture(tex, base));
-  const albedo = blend(maps.map);
-  const orm = blend(maps.orm);
-  const nrm = blend(maps.normal);
-
-  // --- Distance and weather -----------------------------------------------------------------------------------
+  // The lookups. Lean shading (a uniform: moving views on integrated GPUs) takes one lookup per map; the full path adds the
+  // second, rotated lookup that hides the repeat and the close-up micro / distant macro detail, which together are
+  // ten texture reads per pixel and the heaviest part of a lawn or plaza. The branch is on a uniform, so it is uniform
+  // control flow for every backend; both sides are compiled into the one program (no recompile when it flips).
   const dist = positionWorld.sub(cameraPosition).length();
   const nearFade = float(1).sub(smoothstep(float(DETAIL_NEAR[0]), float(DETAIL_NEAR[1]), dist));
   const farFade = smoothstep(float(DETAIL_FAR[0]), float(DETAIL_FAR[1]), dist);
+  const micro = base.mul(DETAIL_MICRO_SCALE);
+  const far = base.mul(DETAIL_MACRO_SCALE);
+  const flat = vec3(0.5, 0.5, 0);
+  /** `lean` or `full`, chosen per pixel by the uniform: only the chosen side's texture reads are executed. */
+  const branch = (leanOf: () => Node<'vec3'>, fullOf: () => Node<'vec3'>) =>
+    Fn(() => {
+      const out = vec3(0).toVar();
+      If(leanShading.greaterThan(0.5), () => {
+        out.assign(leanOf());
+      }).Else(() => {
+        out.assign(fullOf());
+      });
+      return out;
+    })();
+  // Noise in [0, 1], thresholded so a surface shows ONE lookup almost everywhere and the two meet in a
+  // narrow soft seam: an even mix of two unrelated crops would wash the texture out to its average.
+  const seamWeight = () => smoothstep(float(SEAM[0]), float(SEAM[1]), noise01(positionWorld, BLEND_NOISE_SCALE, 0));
+  const blend = (tex: Texture) => (stochastic ? mix(texture(tex, base), texture(tex, second), seamWeight()) : texture(tex, base));
+  const plain = (tex: Texture) => () => texture(tex, base).rgb;
+  const split = stochastic || detail;
+  // Close up the texels would magnify: a finer lookup of the same photograph adds grain and micro relief; far away a
+  // much coarser one adds the large patches a flat ground plane lacks. Both are ratios around 1, so the mean tone holds.
+  const albedoFull = () => {
+    const albedo = blend(maps.map).rgb;
+    return detail ? albedo.mul(mix(vec3(1), texture(maps.map, micro).rgb, nearFade.mul(0.55))).mul(mix(vec3(1), texture(maps.map, far).rgb, farFade.mul(0.9))) : albedo;
+  };
+  const normalFull = () => {
+    const nrm = blend(maps.normal).rgb;
+    return detail && normalStrength > 0 ? nrm.add(texture(maps.normal, micro).rgb.sub(flat).mul(nearFade.mul(0.8))).add(texture(maps.normal, far).rgb.sub(flat).mul(farFade.mul(0.35))) : nrm;
+  };
+  const albedoTex = split ? branch(plain(maps.map), albedoFull) : texture(maps.map, base).rgb;
+  const ormTex = split ? branch(plain(maps.orm), () => blend(maps.orm).rgb) : texture(maps.orm, base).rgb;
+  const normalTex = split ? branch(() => flat, normalFull) : texture(maps.normal, base).rgb;
+
+  // --- Weather and macro variation ----------------------------------------------------------------------------
   // Macro variation: patches of lighter / darker and rougher / glossier surface several metres and tens of metres wide,
   // so a lawn, a plaza or a street is never one flat tone even where the photograph's own variation is small.
-  const m1 = mx_noise_float(positionWorld.mul(0.045)).mul(0.5).add(0.5);
-  const m2 = mx_noise_float(positionWorld.mul(0.21).add(vec3(31.7, 4.2, 18.9))).mul(0.5).add(0.5);
+  const m1 = noise01(positionWorld, 0.045, 1);
+  const m2 = noise01(positionWorld, 0.21, 2);
   // Contrast-stretched (smoothstep) so the patches read: noise alone clusters around its mean and looks like a flat tone.
   const patch = smoothstep(float(0.22), float(0.78), m1);
   const speck = smoothstep(float(0.3), float(0.7), m2);
   const macro = float(0.74).add(patch.mul(0.46)).add(speck.sub(0.5).mul(0.2));
   const warmth = patch.sub(0.5);
-  const flat = vec3(0.5, 0.5, 0);
-  // Close up the texels would magnify: a finer lookup of the same photograph adds grain and micro relief; far away a
-  // much coarser one adds the large patches a flat ground plane lacks. Both are ratios around 1, so the mean tone holds.
-  const micro = base.mul(DETAIL_MICRO_SCALE);
-  const far = base.mul(DETAIL_MACRO_SCALE);
-  const albedoBase = albedo.rgb.mul(macro).mul(vec3(float(1).add(warmth.mul(0.1)), float(1), float(1).sub(warmth.mul(0.14))));
-  const albedoNear = detail ? mix(albedoBase, albedoBase.mul(texture(maps.map, micro).rgb), nearFade.mul(0.55)) : albedoBase;
-  const albedoDetailed = detail ? mix(albedoNear, albedoNear.mul(texture(maps.map, far).rgb), farFade.mul(0.9)) : albedoNear;
-  const normalEnc =
-    detail && normalStrength > 0
-      ? nrm.rgb.add(texture(maps.normal, micro).rgb.sub(flat).mul(nearFade.mul(0.8))).add(texture(maps.normal, far).rgb.sub(flat).mul(farFade.mul(0.35)))
-      : nrm.rgb;
+  const albedoDetailed = albedoTex.mul(macro).mul(vec3(float(1).add(warmth.mul(0.1)), float(1), float(1).sub(warmth.mul(0.14))));
+  const normalEnc = normalTex;
+  const orm = ormTex;
   // Wet ground: the weather uniform darkens and glosses everything a little; surfaces with a puddle share (asphalt,
   // concrete, paving) also pool water in the low spots, flat and mirror-like where screen-space reflections show the sky.
   const flatUp = smoothstep(float(0.75), float(0.95), normalWorld.y);
@@ -162,5 +189,16 @@ export function applyAntiTile(material: Material, maps: AntiTileMaps, normalStre
   m.colorNode = vec4(materialColor.rgb.mul(rgb), 1);
   m.roughnessNode = roughness;
   m.aoNode = orm.r;
-  if (normalStrength > 0) m.normalNode = normalMap(normalEnc, vec2(normalScale, normalScale));
+  // Lean shading leaves the relief out: the surface keeps its geometric normal, and neither the map nor the tangent frame is read.
+  if (normalStrength > 0) {
+    m.normalNode = split
+      ? Fn(() => {
+          const out = normalView.toVar();
+          If(leanShading.lessThan(0.5), () => {
+            out.assign(normalMap(normalEnc, vec2(normalScale, normalScale)));
+          });
+          return out;
+        })()
+      : normalMap(normalEnc, vec2(normalScale, normalScale));
+  }
 }
