@@ -6185,3 +6185,27 @@ Before and after (task start build vs now, GPU ms in motion / frame interval):
 Still short of 60: casa (about 28 ms GPU) and skyline (about 24 ms). What is left is per-pixel work, not geometry: terrain and ground shading, foliage overdraw (LOD does not cut it: thinned cards grow to keep coverage), shadow receiving (6 ms casa, 4 skyline), and the backdrop towers' facade shader. Next levers, not done: a far/near split of the ground and facade materials like the terrain's, per-LOD receiving flags on far foliage, a lower resolution floor for these two worlds.
 
 Stills at rest: skyline mean 8-bit difference 4.3 (p99 26); casa terrain matches, the whole difference is the foliage speckle that differs between any two captures (mean 21). Gates: tsc clean, vitest render/studio/core pass (one allocation probe, `assets.test` walkers, is flaky only in the full run under load), smoke 34/34, e2e:weak ok. Not tested: the WebGPU backend (no WebGPU on this machine) for the terrain branches.
+
+## 2026-10-23 Library for any world: vetting, additions, crafted parts
+
+Request: the library should serve any world the app builds (forest, desert, village, city block, harbour, farm, sci-fi corridor), not only rooms, plus the interior gaps seen in photo-to-room runs (cane chair, sink, fridge, rugs).
+
+Vetting (licence text seen, then decision)
+- Poly Haven models and HDRIs: `polyhaven.com/license` states CC0 for every asset; authors from the API `/info` record. Accepted. Of 108 outdoor candidates, 8 photoscanned trees and saplings (`pine_tree_01`, `fir_tree_01`, `fir_sapling_medium`, `pine_sapling_medium`, `jacaranda_tree`, `island_tree_01`, `island_tree_02`, `tree_small_02`) were rejected for browser use: the glTF geometry buffer is over 32 MB. After building and looking at contact sheets 24 more were dropped: kit sheets that lay many pieces side by side (apartment and factory facades, fort walls, pier, electricity poles, pipe and duct sets, street bench parts, a 92 m cliff, a 59 m coast rock), cut-out plant sheets whose single plants are spread over metres (grass, moss, three shrubs, three flowers, a dark scrub bush) and stumps and root clusters that read as rocks. 76 shipped.
+- Kenney Space Kit, Castle Kit, Watercraft Pack: each zip's `License.txt` reads "License: (Creative Commons Zero, CC0)"; archive SHA-256 pinned in `assets/sources.json`. Accepted, labelled low-poly. 92 models.
+- Poly Haven HDRIs: overcast, starry night, desert, industrial sunset, golden sunset added (CC0).
+- KayKit (Space Base Bits, Medieval Hexagon Pack): `LICENSE.txt` in each GitHub repository reads CC0. Accepted as a source, not built: the repositories are not zip archives on an allowed download host.
+- Sketchfab: the search API's CC0 filter works, download needs an account token, the licence is the uploader's claim; top hits are museum scans of 60k to 460k triangles. Rejected (gated, unverifiable at build time).
+- Objaverse: licence is per object, inherited from Sketchfab, many CC-BY-SA, NC or unclear, some AI-generated. Rejected (no per-object allow-list).
+- Smithsonian Open Access 3D: CC0 but scans of 100k to millions of triangles of museum objects. Rejected (not usable as props).
+- Quaternius: unchanged (site licence page forbids redistribution as assets). ABO, Mixamo, Ready Player Me, MetaHuman: not used.
+- ambientCG: CC0, already the source of the 23 finishes; more terrain sets need new `material.finish` names in the core schema and renderer, files other work is editing, so deferred.
+
+What changed
+- Pipeline: `selection-outdoor.ts` (76 rows) joins the `--interior` build; `selection-extra.ts` plus `build.ts --extra` builds the later Kenney kits and skies into `assets/extra.json` so earlier files keep their hashes; `--ids` runs upsert instead of leaving `interior.json` stale. Triangle budgets by size (3k under 0.6 m up to 16k above), 256 px maps under 0.8 m, JPEG quality 62; meshopt's topology-aware simplifier stalled at 50k triangles on photoscanned rocks (a vertex per triangle), so outdoor models fall back to the topology-free simplifier. Variants stay within a category. The fetch script skips (does not fail on) models over its size cap.
+- Sizes: median main file 319 KB before this pass's last trims, the 76 outdoor models total about 38 MB for main, distance and light files (heroes 1 to 1.4 MB); the library is fetched on demand. Library on disk 170 MB (limit raised to 200 MB), catalog 464 KB (83 KB gzip). Studio JS 17,622 to 17,896 KB (+274 KB raw, +59 KB gzip), mostly the new procedural kinds and aliases.
+- `find_model` takes `category` and `look` (realistic default, stylised, low-poly, any), biome words work as the style (forest, desert, coastal, urban, industrial, farm, scifi, fantasy...), lines show category and look; open worlds place with an `apply_patches` asset entity. Synonyms for hydrant, manhole, power pole, facade, pier, dead tree, stump, cactus, sword, picnic table and others.
+- A model named "corridor with window" made the planner's "add a window to the kitchen" place the corridor instead of a window; renamed.
+- Procedural (separate commit by the crafted-parts work): sink (pedestal, wall-hung, vessel, utility), cane chair (dining, bar, stool), fridge layouts, oven, extractor, rug patterns. Curtains (sheer, pleated, ripple), toilets, bathtubs and panelled wardrobes already existed.
+
+Gates: tsc clean; vitest assets, agent, render, studio pass; smoke 34/34; showcase:bake --check up to date (no bundled lightmap hash changed).
