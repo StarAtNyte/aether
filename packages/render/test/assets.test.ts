@@ -259,4 +259,40 @@ describe('asset animation', () => {
     );
     expect(r.bytesPerIteration, describeSites(r)).toBeLessThan(16);
   });
+  it('distant animators step at a lower rate with the skipped time owed, and hidden ones not at all', () => {
+    const animator = new AssetAnimator();
+    const make = (id: string, x: number): { tracked: Object3D; root: Group } => {
+      const root = new Group();
+      root.add(new Object3D());
+      root.animations = [clip('idle')];
+      const tracked = new Object3D();
+      tracked.position.x = x;
+      tracked.add(root);
+      tracked.updateMatrixWorld(true);
+      animator.add(id, root, tracked, { idle: 'idle', walk: undefined, run: undefined } as never, undefined);
+      return { tracked, root };
+    };
+    const near = make('near', 5);
+    make('far', 200);
+    const gone = make('gone', 5);
+    gone.root.visible = false;
+    const eye = { x: 0, y: 0, z: 0 };
+    const updates = new Map<string, number>();
+    const spy = (animator as unknown as { list: Array<{ mixer: { update(t: number): void }; root: Object3D }> }).list;
+    for (const it of spy) {
+      const real = it.mixer.update.bind(it.mixer);
+      const key = it === spy[0] ? 'near' : it === spy[1] ? 'far' : 'gone';
+      it.mixer.update = (t: number): void => {
+        updates.set(key, (updates.get(key) ?? 0) + 1);
+        updates.set(`${key}-time`, (updates.get(`${key}-time`) ?? 0) + t);
+        real(t);
+      };
+    }
+    for (let f = 0; f < 60; f++) animator.update(1 / 60, eye);
+    expect(updates.get('near')).toBe(60);
+    expect(updates.get('far')).toBe(10);
+    expect(updates.get('far-time')).toBeGreaterThan(0.95);
+    expect(updates.get('gone') ?? 0).toBe(0);
+    expect(near.tracked.visible).toBe(true);
+  });
 });

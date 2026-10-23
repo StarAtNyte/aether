@@ -4,7 +4,7 @@
  * models are shared per URL (refcounted) and each entity gets a lightweight
  * clone that reuses the source geometry and materials.
  */
-import { Box3, Group, Mesh, Vector3, type Material, type Object3D } from 'three';
+import { Box3, Group, Mesh, Sphere, Vector3, type Material, type Object3D } from 'three';
 import type { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { isAllowedModelUrl, MAX_MODEL_URL_LENGTH } from '@aether/core';
 import { loadTextureVariants, textureVariantUrl } from '@aether/assets';
@@ -135,20 +135,53 @@ export function cloneModel(source: Object3D): Object3D {
   return clone;
 }
 
+type SkinnedLike = Object3D & { isSkinnedMesh?: boolean; boundingSphere: Sphere | null; computeBoundingSphere(): void; skeleton: { update(): void } };
+
+/** Source skinned meshes whose bounds were already widened (clones copy the sphere from their source). */
+const boundedSources = new WeakSet<Object3D>();
+
+/**
+ * Give every skinned mesh of a loaded model a conservative bounding sphere, so it can be frustum culled like any other mesh.
+ * three tests the bind-pose bounds of the geometry, which do not follow the animation; the pose-computed sphere is widened
+ * by half its radius plus half a metre, enough for the in-place gaits, wing beats and tail swings of the library models.
+ * Without this every skinned mesh of a world (368 in Highland Trail, each a draw call per pass) was drawn whether or not
+ * it was in view.
+ */
+function widenSkinBounds(source: Object3D): void {
+  if (boundedSources.has(source)) return;
+  boundedSources.add(source);
+  source.updateMatrixWorld(true);
+  source.traverse((o) => {
+    const m = o as SkinnedLike;
+    if (m.isSkinnedMesh !== true) return;
+    try {
+      m.skeleton.update();
+      m.computeBoundingSphere();
+      const b = m.boundingSphere;
+      if (b && !b.isEmpty() && Number.isFinite(b.radius)) b.radius = b.radius * 1.5 + 0.5;
+      else m.boundingSphere = null;
+    } catch {
+      m.boundingSphere = null;
+    }
+  });
+}
+
 /**
  * Clone a library / imported asset: models are already normalised (metres,
  * base on y = 0, centred), so only a uniform `scale` is applied. Skinned
- * meshes skip frustum culling (their bind-pose bounds do not follow the
- * animation).
+ * meshes are frustum culled by a widened pose-computed sphere (see {@link widenSkinBounds});
+ * one whose bounds cannot be computed is never culled.
  */
 export function instantiateAsset(source: Object3D, scale: number): Group {
+  widenSkinBounds(source);
   const clone = cloneModel(source);
   const wrapper = new Group();
   wrapper.name = 'asset';
   wrapper.add(clone);
   if (scale !== 1) clone.scale.multiplyScalar(scale);
   clone.traverse((o) => {
-    if ((o as { isSkinnedMesh?: boolean }).isSkinnedMesh) o.frustumCulled = false;
+    const m = o as SkinnedLike;
+    if (m.isSkinnedMesh === true && m.boundingSphere === null) o.frustumCulled = false;
   });
   clone.updateMatrix();
   return wrapper;

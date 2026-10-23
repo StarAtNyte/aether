@@ -78,6 +78,7 @@ import { ArchView, type ArchViewState } from './view/arch-view';
 import { daylightLampFactor } from './sync/lights';
 import { collectFramingItems, FOCUS_TAG } from './view/content-items';
 import { GROW_OVERSHOOT_MAX_RADIUS, GrowIn, growDelay } from './view/grow-in';
+import { installRenderPatches } from './three-patches';
 import { createGpuRenderer, type BackendKind, type BackendPreference, type BackendReason, type GpuInfo } from './gpu/backend';
 import { opaqueSort, type SortItem } from './gpu/render-order';
 import { BlackScreenWatchdog, GpuLogCapture, measureFrame, WATCHDOG_STEPS, type FrameSample, type WatchdogAction, type WatchdogOptions } from './gpu/watchdog';
@@ -954,6 +955,7 @@ export class WorldRenderer {
       pixelRatioCap: 1,
       ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
     });
+    installRenderPatches(renderer);
     const width = Math.max(1, canvas.clientWidth || canvas.width || 1);
     const height = Math.max(1, canvas.clientHeight || canvas.height || 1);
     const camera = new PerspectiveCamera(55, width / height, 0.1, SKY_RADIUS * 2.5);
@@ -2306,7 +2308,7 @@ export class WorldRenderer {
   /** Advance people and animated assets; true when a redraw is needed. */
   private stepAnimations(dt: number): boolean {
     this.characters.setCamera(this.perspective);
-    let animated = this.sync.updateAnimations(dt);
+    let animated = this.sync.updateAnimations(dt, this.perspective.position);
     if (this.characters.update(dt)) animated = true;
     if (this.avatar.isPlaced && this.avatar.character) {
       this.avatar.headPosition(_avatarHead);

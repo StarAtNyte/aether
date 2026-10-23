@@ -6038,3 +6038,27 @@ Follow-up (same day): the depth estimate is also run before the photo is read an
 ## 2026-10-23 Photo to room: the shell-size answer is explicit and accountable
 
 The depth line reached the model but a 3.6 m shell stayed 3.6 m even when the shell-size item failed. Now the analysis writes a one-line `shell-size` reconciliation (width, depth evidence lower bound, beds plus walkway minimum, larger adopted or why not), and in repair a failed shell-size item or an unresolved space refusal must be answered in the round (design_plan, or declare_repair keep_shell with a reason recorded in the assumptions). No numeric rule; no extra analysis turn.
+
+## 2026-10-23 CPU-side render cost: measured, three fixes
+
+Measured with `tests/e2e/cpu-perf.e2e.ts` (new; per world: load, idle draws, orbit under the CDP sampling profiler, scene census; `--shot` for stills, `--profile-load`, `--heap`), Chromium headless on WebGPU over the discrete GPU, 1280x720, automatic tier (ultra on this machine), governor and adaptive resolution held off, one warm turn before measuring. `render()` JS ms is the time inside `WorldRenderer.render` for drawn frames (the draw submission included, GPU time not).
+
+Ranked CPU costs found:
+
+1. Shadow-pass render-object churn (three r186). The shadow passes draw every caster with one override material and copy the caster's `alphaTest` onto it; three bumps `material.version` on every on/off flip, so every render object saw a stale version each frame and recomputed its whole material cache key (property scan, regexes, strings: `getMaterialCacheKey` + `customProgramCacheKey` + `getOwnPropertyNames`, 8 to 13 ms and 5 to 11 MB of garbage per frame in the big worlds). Fixed in `packages/render/src/three-patches.ts`: no version bump for shadow-pass materials, the on/off bit goes into the render object's dynamic key instead, so a caster whose own alpha test really changes still rebuilds its program.
+2. Skinned meshes were never frustum culled (`frustumCulled = false` on all of them: 368 meshes in Highland Trail, each a draw call in the main pass and in every shadow cascade whatever the view). `instantiateAsset` now gives each source skinned mesh a pose-computed bounding sphere widened by 1.5x + 0.5 m and culls by it (`geometry/model-loader.ts`; test `skin-bounds.test.ts`).
+3. Animation mixers ran every frame for every animal. `AssetAnimator.update(dt, eye)` now steps assets beyond 45 m every 3rd frame and beyond 110 m every 6th (skipped time is owed, so pace is kept), and hidden ones not at all (test in `assets.test.ts`).
+
+Before / after (render() JS median ms per drawn frame; draw calls of the last frame in brackets):
+
+| world | before | after |
+| --- | --- | --- |
+| Hotel, Twin, Vaulted (photo rooms) | 0.2 to 0.3 | 0.2 to 0.3 (unchanged: nothing to win) |
+| Skyline Penthouse | 5.1 (p90 24.2) | 3.9 (p90 6.2) |
+| Casa Patio | 6.6 [716] | 4.2 [342] |
+| Hollow Gate (people) | 2.2 | 1.9 |
+| Highland Trail | 41.3 (p90 1149) | 11.6 |
+
+Stills: pixel diff before/after on hotel, twin and vaulted is 0.00 to 0.02 / 255 mean (0.00 to 0.05 % of pixels over 8): the same pictures. Content-keyed lightmap hashes are untouched (no geometry is merged or changed).
+
+Honest limits. The Highland "before" run fell back from WebGPU to WebGL after a black-frame watchdog step in that run, so its 41 ms is inflated; the repeatable part is the profile (cache-key work was 13 of 24 ms before, about 2.7 ms after). On this machine headless WebGPU on Highland and the game worlds is unstable (device lost, watchdog steps), so those numbers are from single runs. Every room and the two big architecture worlds are under the 16.6 ms JS budget on a fast CPU at ultra; the missing 60 fps on an integrated GPU is a GPU-side cost (the render submission waits in `writeTexture`/`submit` on the integrated GPU: 500+ ms per frame in one run), which belongs to the quality chain, not to this change. Not done and why: static merging and instancing already exist (`sync/static-merges.ts`, `static-batches.ts`); matrix updates are 0.3 ms/frame; per-frame allocation in the steady state is now small (the remaining three.js garbage is the render-object creation when an animal first enters a shadow frustum, spread over the first turn instead of one spike); WASM SIMD and workers had no hot loop over 2 ms to justify them. Startup (4 to 10 s to an open world at ultra here) is shader compile and world build; not changed.

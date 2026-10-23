@@ -1175,8 +1175,8 @@ export class SceneSync {
   }
 
   /** Advance asset animations (characters, animals). Returns true when a redraw is needed. */
-  updateAnimations(dt: number): boolean {
-    const animated = this.animatorRef?.update(dt) ?? false;
+  updateAnimations(dt: number, eye?: { x: number; y: number; z: number }): boolean {
+    const animated = this.animatorRef?.update(dt, eye) ?? false;
     const driven = this.vehicles.update(dt);
     return animated || driven;
   }

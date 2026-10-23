@@ -31,13 +31,32 @@ interface Animated {
   last: Vector3;
   speed: number;
   primed: boolean;
+  /** Seconds not yet given to the mixer (levels of detail skip frames). */
+  owed: number;
 }
 
 const _pos = new Vector3();
 
+/**
+ * Animation levels of detail: beyond {@link LOD_NEAR} metres from the eye a mixer is advanced every 3rd frame, beyond
+ * {@link LOD_FAR} every 6th (with the skipped time added, so the motion keeps its pace), and a hidden asset not at all.
+ * Staggered by index so the work spreads evenly over the frames.
+ */
+export const LOD_NEAR = 45;
+export const LOD_FAR = 110;
+
 function clipNamed(clips: readonly AnimationClip[], name: string | undefined): AnimationClip | null {
   if (!name) return null;
   return clips.find((c) => c.name === name) ?? null;
+}
+
+/** True when the asset or any object between it and its entity node is hidden. */
+function hidden(it: Animated): boolean {
+  for (let o: Object3D | null = it.root; o; o = o.parent) {
+    if (!o.visible) return true;
+    if (o === it.tracked) return false;
+  }
+  return false;
 }
 
 /** Gait for a horizontal speed (m/s). */
@@ -88,6 +107,7 @@ export class AssetAnimator {
       last: new Vector3(),
       speed: 0,
       primed: false,
+      owed: 0,
     };
     item.current = item.fixed ?? item.idle;
     item.current?.play();
@@ -113,23 +133,50 @@ export class AssetAnimator {
     return this.items.get(id)?.gait ?? null;
   }
 
-  /** Advance every animation by `dt` seconds. Returns true when anything animated (a redraw is needed). */
-  update(dt: number): boolean {
+  private tick = 0;
+
+  /**
+   * Advance every animation by `dt` seconds. With the eye position, distant assets step at a lower rate and hidden
+   * ones not at all (see {@link LOD_NEAR}). Returns true when anything animated (a redraw is needed).
+   */
+  update(dt: number, eye?: { x: number; y: number; z: number }): boolean {
     const list = this.list;
     if (list.length === 0 || !(dt > 0)) return false;
-    const k = Math.min(1, dt * 8);
+    const frame = ++this.tick;
+    const near2 = LOD_NEAR * LOD_NEAR;
+    const far2 = LOD_FAR * LOD_FAR;
     for (let i = 0; i < list.length; i++) {
       const it = list[i] as Animated;
+      if (eye && hidden(it)) {
+        // Hidden (far-culled): nothing to move; the next step must not read the jump as a sprint.
+        it.owed = 0;
+        it.primed = false;
+        continue;
+      }
       it.tracked.getWorldPosition(_pos);
+      let step = dt;
+      if (eye) {
+        const ex = _pos.x - eye.x;
+        const ey = _pos.y - eye.y;
+        const ez = _pos.z - eye.z;
+        const d2 = ex * ex + ey * ey + ez * ez;
+        const every = d2 > far2 ? 6 : d2 > near2 ? 3 : 1;
+        if (every > 1 && (frame + i) % every !== 0) {
+          it.owed += dt;
+          continue;
+        }
+        step = dt + it.owed;
+        it.owed = 0;
+      }
       const dx = _pos.x - it.last.x;
       const dz = _pos.z - it.last.z;
       it.last.copy(_pos);
       // The first frame after a teleport / load would read as a sprint: skip it.
-      const raw = it.primed ? Math.sqrt(dx * dx + dz * dz) / dt : 0;
+      const raw = it.primed ? Math.sqrt(dx * dx + dz * dz) / step : 0;
       it.primed = true;
-      it.speed += (Math.min(raw, 30) - it.speed) * k;
+      it.speed += (Math.min(raw, 30) - it.speed) * Math.min(1, step * 8);
       if (!it.fixed) this.applyGait(it);
-      it.mixer.update(dt);
+      it.mixer.update(step);
     }
     return true;
   }
