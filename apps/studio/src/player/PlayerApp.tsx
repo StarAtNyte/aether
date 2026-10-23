@@ -9,7 +9,7 @@
  */
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { History, type Json, type WorldDoc } from '@aether/core';
-import { creditsFor, loadCatalog, setCatalog, type Credit } from '@aether/assets';
+import { creditsFor, loadCatalog, setCatalog, setLibraryRemote, type Credit } from '@aether/assets';
 import { createWorkerSandbox, type SandboxRunner } from '@aether/procgen';
 import { prefersReducedMotion, Simulation } from '../engine/Simulation';
 import { formatStateValue } from '../lib/format';
@@ -68,6 +68,7 @@ async function relativeLibrary(): Promise<void> {
   const c = await loadCatalog();
   const base = new URL('assets/lib/', document.baseURI).pathname;
   if (c.base !== base) {
+    setLibraryRemote(null);
     try {
       setCatalog({ ...c, base });
     } catch {

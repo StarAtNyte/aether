@@ -7,7 +7,7 @@
 import { Box3, Group, Mesh, Sphere, Vector3, type Material, type Object3D } from 'three';
 import type { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { isAllowedModelUrl, MAX_MODEL_URL_LENGTH } from '@aether/core';
-import { loadTextureVariants, textureVariantUrl } from '@aether/assets';
+import { isLibraryRemoteUrl, loadTextureVariants, textureVariantUrl } from '@aether/assets';
 import type { TextureCompression } from '../gpu/texture-compression';
 import { errorMessage, log } from '../log';
 import { RefCache } from '../refcache';
@@ -28,7 +28,8 @@ export { MAX_MODEL_URL_LENGTH };
  * world validation (`isAllowedModelUrl` in @aether/core).
  */
 export function isSafeModelUrl(url: string): boolean {
-  return isAllowedModelUrl(url);
+  // Plus the library CDN of a lean studio build (its base is fixed at build time, see `isLibraryRemoteUrl`).
+  return isAllowedModelUrl(url) || isLibraryRemoteUrl(url);
 }
 
 /** Skeleton-aware clone (three's `SkeletonUtils.clone`), installed when the glTF loader module loads. */

@@ -168,7 +168,7 @@ export function sealStamp(proof: ProofLike | undefined): string | undefined {
 }
 
 async function defaultFetch(path: string): Promise<Uint8Array> {
-  const res = await fetch(`/${path}`, { cache: 'force-cache', credentials: 'same-origin' });
+  const res = await fetch(/^https?:\/\//.test(path) ? path : `/${path}`, { cache: 'force-cache', credentials: /^https?:\/\//.test(path) ? 'omit' : 'same-origin' });
   if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
   return new Uint8Array(await res.arrayBuffer());
 }

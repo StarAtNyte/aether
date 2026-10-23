@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { rapierWasm } from '../../scripts/vite/rapier-wasm.ts';
-import { assetLibrary } from '../../scripts/vite/asset-library.ts';
+import { assetLibrary, libraryCdn } from '../../scripts/vite/asset-library.ts';
 import { playerManifest } from '../../scripts/vite/player-manifest.ts';
 import { siteMeta } from '../../scripts/vite/site-meta.ts';
 
@@ -35,9 +35,13 @@ function playRoute() {
   return { name: 'aether-play-route', configureServer: rewrite, configurePreviewServer: rewrite };
 }
 
-export default defineConfig({
+export default defineConfig(async ({ command }) => {
+  // A lean build (see scripts/vite/asset-library.ts) ships a subset of the library and fetches the rest from a pinned CDN copy.
+  const libCdn = command === 'build' ? await libraryCdn(process.env, LIBRARY_DIR) : undefined;
+  return {
+  define: { __AETHER_LIB_LEAN__: JSON.stringify(libCdn !== undefined) },
   // Rapier's wasm ships as a cached `.wasm` file (streaming compile) instead of a 4 MB base64 string.
-  plugins: [react(), rapierWasm({ warn: (m) => console.warn(m) }), assetLibrary(LIBRARY_DIR), playRoute(), playerManifest(), siteMeta()],
+  plugins: [react(), rapierWasm({ warn: (m) => console.warn(m) }), assetLibrary(LIBRARY_DIR, libCdn), playRoute(), playerManifest(), siteMeta()],
   experimental: {
     // The player page and every chunk reference files relative to themselves, so a published
     // build works from any sub-path (itch.io, GitHub Pages, a folder on any static host).
@@ -105,4 +109,5 @@ export default defineConfig({
       },
     },
   },
+};
 });

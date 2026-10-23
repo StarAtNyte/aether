@@ -8,9 +8,10 @@
  * Dev requests are confined to the library directory (no `..`, no
  * absolute paths, regular files only) and only known media types are served.
  */
-import { cpSync, createReadStream, existsSync, statSync } from 'node:fs';
+import { cpSync, createReadStream, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { extname, join, resolve, sep } from 'node:path';
+import { dirname, extname, join, resolve, sep } from 'node:path';
+import { shippedPaths } from './ship-set';
 
 /** URL prefix of the library. */
 export const LIBRARY_PREFIX = '/assets/lib/';
@@ -57,8 +58,13 @@ function middleware(libDir: string) {
   };
 }
 
-/** The plugin. `libDir` is the repository's `assets/lib`. */
-export function assetLibrary(libDir: string) {
+/**
+ * The plugin. `libDir` is the repository's `assets/lib`. With `cdn` (a base URL ending in `/` that serves the
+ * same tree, pinned to a commit) the build ships only {@link shippedPaths} plus `remote.json`
+ * (`{ base, shipped }`); the app fetches every other file from `cdn`. Without it the whole library ships.
+ * Dev and preview always serve the whole local library.
+ */
+export function assetLibrary(libDir: string, cdn?: string) {
   let outDir = 'dist';
   let root = process.cwd();
   return {
@@ -75,7 +81,45 @@ export function assetLibrary(libDir: string) {
     },
     closeBundle() {
       if (!existsSync(libDir)) return;
-      cpSync(libDir, join(resolve(root, outDir), 'assets', 'lib'), { recursive: true });
+      const dest = join(resolve(root, outDir), 'assets', 'lib');
+      if (!cdn) {
+        cpSync(libDir, dest, { recursive: true });
+        return;
+      }
+      const repoRoot = resolve(libDir, '..', '..');
+      const shipped = shippedPaths(repoRoot, libDir);
+      for (const p of shipped) {
+        mkdirSync(dirname(join(dest, p)), { recursive: true });
+        cpSync(join(libDir, p), join(dest, p));
+      }
+      writeFileSync(join(dest, REMOTE_FILE), JSON.stringify({ base: cdn, shipped }));
     },
   };
+}
+
+/** Name of the lean build's index under the library prefix. */
+export const REMOTE_FILE = 'remote.json';
+
+/**
+ * The CDN base for a lean build, or undefined (ship everything) when none is configured or the CDN does not
+ * serve the library yet (a private repository, a commit that is not pushed). `AETHER_LIB_CDN` names a base
+ * directly; `AETHER_LIB_REPO` (`owner/name`) with `VERCEL_GIT_COMMIT_SHA` / `AETHER_LIB_REF` builds a jsDelivr one.
+ */
+export async function libraryCdn(env: Record<string, string | undefined>, libDir: string): Promise<string | undefined> {
+  let base = env['AETHER_LIB_CDN'];
+  const ref = env['AETHER_LIB_REF'] ?? env['VERCEL_GIT_COMMIT_SHA'];
+  if (!base && env['AETHER_LIB_REPO'] && ref) base = `https://cdn.jsdelivr.net/gh/${env['AETHER_LIB_REPO']}@${ref}/assets/lib/`;
+  if (!base) return undefined;
+  if (!base.endsWith('/')) base += '/';
+  try {
+    const probe = existsSync(join(libDir, 'k')) ? 'k/' : 'm/';
+    const name = existsSync(join(libDir, probe)) ? readdirSync(join(libDir, probe))[0] : undefined;
+    if (!name) return undefined;
+    const res = await fetch(`${base}${probe}${name}`, { method: 'HEAD', signal: AbortSignal.timeout(15000) });
+    if (res.ok) return base;
+    console.warn(`[asset-library] ${base} answered ${res.status}: shipping the whole library`);
+  } catch (e) {
+    console.warn(`[asset-library] ${base} unreachable (${e instanceof Error ? e.message : 'error'}): shipping the whole library`);
+  }
+  return undefined;
 }

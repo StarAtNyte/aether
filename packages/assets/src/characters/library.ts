@@ -7,6 +7,7 @@
  * renderer and tests.
  */
 import { GENERATED_LIBRARY } from './generated';
+import { libraryUrl } from '../registry';
 
 /** One baked body as written by the build. */
 export interface CastFile {
@@ -113,5 +114,5 @@ export function clipTable(gender: 'male' | 'female'): ReadonlyMap<string, ClipIn
 
 /** Public URL of a library file under `base` (the catalog base, `/assets/lib/` by default). */
 export function characterUrl(file: string, base = '/assets/lib/'): string {
-  return `${base}${file}`;
+  return libraryUrl(file, { base });
 }

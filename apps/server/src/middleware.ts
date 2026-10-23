@@ -105,6 +105,9 @@ export const WEBLLM_HOSTS: readonly string[] = Object.freeze([
   'https://raw.githubusercontent.com',
 ]);
 
+/** CDN that serves the library files a lean studio build does not ship (a pinned GitHub commit, see scripts/vite/asset-library.ts). */
+export const LIBRARY_CDN_HOSTS: readonly string[] = Object.freeze(['https://cdn.jsdelivr.net']);
+
 /**
  * Model APIs the studio calls straight from the browser with the user's own
  * key (bring your own key): Anthropic, OpenAI, OpenRouter, Google Gemini.
@@ -124,7 +127,7 @@ export const CSP_DIRECTIVES = Object.freeze({
   // Loopback (any port): the visitor's own Aether Bridge (token-paired, see apps/bridge) — the only wildcard.
   // The explicit hosts serve the opt-in on-device model (WebLLM weights and model libraries)
   // and the model APIs a user's own key is sent to (never to Aether's server).
-  connectSrc: ["'self'", 'blob:', 'data:', 'http://127.0.0.1:*', 'http://localhost:*', ...BYOK_API_HOSTS, ...WEBLLM_HOSTS],
+  connectSrc: ["'self'", 'blob:', 'data:', 'http://127.0.0.1:*', 'http://localhost:*', ...BYOK_API_HOSTS, ...WEBLLM_HOSTS, ...LIBRARY_CDN_HOSTS],
   styleSrc: ["'self'", "'unsafe-inline'"],
   fontSrc: ["'self'", 'data:'],
   objectSrc: ["'none'"],

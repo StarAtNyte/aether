@@ -15,7 +15,7 @@
  */
 import { z } from 'zod';
 import { LibraryPath } from './schema';
-import { getCatalog } from './registry';
+import { getCatalog, libraryPathOf, libraryUrl } from './registry';
 
 const Hex64 = z.string().regex(/^[0-9a-f]{64}$/);
 
@@ -97,10 +97,10 @@ export function loadTextureVariants(): Promise<TextureVariants> {
  * index not loaded). Query strings and fragments are never matched.
  */
 export function textureVariantUrl(url: string, index: TextureVariants | null = current, base: string = getCatalog()?.base ?? '/assets/lib/'): string | null {
-  if (!index || !url.startsWith(base)) return null;
-  const rel = url.slice(base.length);
+  const rel = index ? libraryPathOf(url, base) : null;
+  if (!index || rel === null) return null;
   const hit = Object.hasOwn(index.entries, rel) ? index.entries[rel] : undefined;
-  return hit ? `${base}${hit.file}` : null;
+  return hit ? libraryUrl(hit.file, { base }) : null;
 }
 
 /** Library-relative path of the twin of a library path (`m/sofa.0123abcd.glb` → `k/sofa.89abcdef.glb`), or null. */

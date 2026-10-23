@@ -7,18 +7,18 @@
  */
 import { bakeFlipY } from '../gpu/gecko-safe';
 import { DataUtils, EquirectangularReflectionMapping, type Scene, type Texture } from 'three';
-import { assetInfo, loadCatalog } from '@aether/assets';
+import { assetInfo, isLibraryRemoteUrl, loadCatalog } from '@aether/assets';
 
 /** Loads an HDR file into an equirectangular texture. Injected so tests can fake it. */
 export interface HdriSource {
   load(url: string): Promise<Texture>;
 }
 
-/** Browser loader (three's `HDRLoader`, imported on first use). Same-origin paths and `blob:` URLs only. */
+/** Browser loader (three's `HDRLoader`, imported on first use). Same-origin paths, `blob:` URLs and the lean build's library CDN. */
 export function createHdriSource(): HdriSource {
   return {
     async load(url: string): Promise<Texture> {
-      if (!(url.startsWith('blob:') || (url.startsWith('/') && !url.startsWith('//')))) throw new Error('HDRI url rejected');
+      if (!(url.startsWith('blob:') || (url.startsWith('/') && !url.startsWith('//')) || isLibraryRemoteUrl(url))) throw new Error('HDRI url rejected');
       const { HDRLoader } = await import('three/addons/loaders/HDRLoader.js');
       return new HDRLoader().loadAsync(url);
     },

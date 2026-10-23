@@ -4,6 +4,11 @@
   "installCommand": "npm ci --no-audit --no-fund",
   "buildCommand": "npm run build -w @aether/studio",
   "outputDirectory": "apps/studio/dist",
+  "build": {
+    "env": {
+      "AETHER_LIB_REPO": "StarAtNyte/aether"
+    }
+  },
   "cleanUrls": true,
   "trailingSlash": false,
   "rewrites": [
@@ -18,7 +23,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob: data: http://127.0.0.1:* http://localhost:* https://api.anthropic.com https://api.openai.com https://openrouter.ai https://generativelanguage.googleapis.com https://huggingface.co https://cdn-lfs.huggingface.co https://cdn-lfs-us-1.huggingface.co https://cdn-lfs.hf.co https://cdn-lfs-us-1.hf.co https://cas-bridge.xethub.hf.co https://raw.githubusercontent.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+          "value": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob: data: http://127.0.0.1:* http://localhost:* https://api.anthropic.com https://api.openai.com https://openrouter.ai https://generativelanguage.googleapis.com https://huggingface.co https://cdn-lfs.huggingface.co https://cdn-lfs-us-1.huggingface.co https://cdn-lfs.hf.co https://cdn-lfs-us-1.hf.co https://cas-bridge.xethub.hf.co https://raw.githubusercontent.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
         },
         {
           "key": "Cross-Origin-Opener-Policy",
