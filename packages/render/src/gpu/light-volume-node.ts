@@ -18,6 +18,7 @@ import { AnalyticLightNode, type NodeBuilder } from 'three/webgpu';
 import { T, type Nd } from '../materials/tsl-lite';
 import { LIGHTMAP_ATTRIBUTE, LightVolume } from '../environment/light-volume-light';
 import { ATLAS_SUBVOLUMES, FREE_SLACK, FREE_STEPS } from '../environment/light-volume';
+import { VIS_BASE, VIS_SPAN } from '../environment/lightmap';
 
 interface LightingContext {
   irradiance: Nd;
@@ -67,9 +68,10 @@ export class LightVolumeNode extends AnalyticLightNode<LightVolume> {
       const uMap = T.uniform(this.vMap);
       const uParamsLm = T.uniform(this.vParams);
       const s = T.texture(light.lightmap).sample(T.attribute(LIGHTMAP_ATTRIBUTE, 'vec2').mul(uMap.x));
-      const has = T.step(0.5 / 255, s.a);
+      // Alpha is the stored visibility, offset so that "no data" (0) survives a lossy image (see `encodeVis`).
+      const has = T.step(VIS_BASE / 2 / 255, s.a);
       const wm = has.mul(uMap.z);
-      const vis = T.mix(T.float(1), s.a, wm);
+      const vis = T.mix(T.float(1), T.clamp(s.a.sub(VIS_BASE / 255).mul(255 / VIS_SPAN), 0, 1), wm);
       const visC = T.max(vis, uParamsLm.z);
       const bounce = s.rgb.mul(s.rgb).mul(uMap.y).mul(wm);
       ctx.ambientOcclusion.mulAssign(visC);

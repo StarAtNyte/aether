@@ -74,6 +74,38 @@ describe('light volume controller: trace input', () => {
     expect(input.albedo.length / 3).toBe(2 * 12);
   });
 
+  it('leaves a curtain out of the occluders (its box would shut the window), keeps other furniture', () => {
+    const bounds = new Box3();
+    const wall = slab(0, 1.5, 0, 6, 3, 0.2, 'wall');
+    const curtain = { ...slab(0, 1.25, 1, 1, 2.5, 0.12, 'fixture'), kind: 'curtain' };
+    const chair = { ...slab(1, 0.5, 1, 0.8, 1, 0.8, 'furniture'), kind: 'armchair' };
+    const input = collectTraceInput([wall, curtain, chair], bounds)!;
+    expect(input.albedo.length / 3).toBe(12 + 12);
+  });
+
+  it('boxes a four-poster as high as most of its surface reaches, not up to the tips of its posts', () => {
+    const bounds = new Box3();
+    const object = new Group();
+    const body = new Mesh(new BoxGeometry(2, 0.7, 2.1), new MeshStandardMaterial({ color: '#f4f4f2' }));
+    body.position.set(0, 0.35, 0);
+    const post = new Mesh(new BoxGeometry(0.05, 2.1, 0.05), new MeshStandardMaterial({ color: '#f4f4f2' }));
+    post.position.set(0.95, 1.05, 1);
+    object.add(body, post);
+    object.updateMatrixWorld(true);
+    const proxies: Array<{ lo: [number, number, number]; hi: [number, number, number]; tri: number }> = [];
+    const wall = slab(0, 1.5, 4, 6, 3, 0.2, 'wall');
+    const bed: VolumePart = { role: 'furniture', kind: 'bed', object, meshes: [body, post].map((mesh) => ({ mesh, seeThrough: false, doubleSided: false })) };
+    collectTraceInput([wall, bed], bounds, proxies);
+    expect(proxies).toHaveLength(1);
+    expect(proxies[0]!.hi[1]).toBeLessThan(1);
+    expect(proxies[0]!.hi[1]).toBeGreaterThan(0.6);
+    // A solid piece keeps the whole box.
+    const sofa = { ...slab(0, 0.45, 0, 2, 0.9, 1, 'furniture'), kind: 'sofa' };
+    const solid: Array<{ lo: [number, number, number]; hi: [number, number, number]; tri: number }> = [];
+    collectTraceInput([wall, sofa], bounds, solid);
+    expect(solid[0]!.hi[1]).toBeGreaterThan(0.8);
+  });
+
   it('reads the resolved albedo a material carries, else its colour', () => {
     const out: [number, number, number] = [0, 0, 0];
     const m = new MeshStandardMaterial({ color: '#ffffff' });

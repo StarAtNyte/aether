@@ -5933,6 +5933,34 @@ Not fixed, with what is known
 
 Gates (worktree `aether-expo`): `tsc` 0 errors; vitest packages/render + packages/agent 166 files, 1756 tests passed (one earlier full run had a single failure that did not reproduce on rerun; not identified); smoke 34/34; `showcase:bake --check` exit 0; `showcase:lightmaps --verify` six static; `e2e:weak` WEAK GPU OK.
 
+## 2026-10-23 Interior light: why the photo rooms asked for more than +3 EV, the sun behind the window wall, white squares, canopy and curtain boxes
+
+Task: on the bundled rooms walls came out grey and darker than before, four of six worlds sat on the +3 EV clamp (raw 3.3 to 10 EV), a pale blotch stood on the four-poster canopy, and white squares and bars stood on walls and curtains.
+
+Measured with a throw-away probe (room floor plan, 5 x 5 points at 1.5 m: sky visibility, bounce, raw demand), before = `59bf14ee`:
+- Not a volume bug. The volume agrees with an independent estimate: in a clean 5.8 x 6.8 x 2.5 m box with two 1 x 2.2 m windows (albedo 0.6 to 0.8, sky only, the same bake code) the room mean is 55 to 70 % of the integrating-sphere value `flux / (area x (1 - albedo))`, and the baked vaulted room (2 910 triangles dumped from the browser, re-baked offline) reproduces the runtime volume to the byte. The lightmap does not dim twice (vaulted bedroom left wall, same camera: 122 of 255 with the bundled lightmap against 97 with the volume only; the floor 161 against 156). A room lit by about 4 m2 of glass is a few percent of the outdoor light, so a sky-lit room needs about 4.5 to 5 EV; that is physics, not a leak.
+- The vaulted bedroom had no sun. Its world says `sky: dawn`, `timeOfDay: 18` (the description's pair). The sky model clamps the hour into the preset's window (dawn 6.4 to 7 h), so the sun stood in the east, behind a room whose windows face west: the volume saw 0.03 bounce (raw 4.9 EV), the room read as a grey sky-lit box. Only the four-poster (east window, morning) had a sun that could come in, and it is the one room below the clamp (2.87 EV). `deriveBuild` now keeps a golden-hour preset on the side of noon its hour is on (`dawn` after noon is `sunset`, `sunset` before noon is `dawn`; test `photo-light-hour.test.ts`). The bundled vaulted bedroom is set to `day` 16.4 h, the hour its own rule (`hourForWall`) gives for a west window, which keeps the sun on the window side and the walls cream (a `sunset` sun at 17.6 h gave salmon walls).
+- Curtain panels were solid boxes in the trace (every `furniture` or `fixture` part is a box proxy): two panels beside a window shut most of it. `curtain` pieces are no occluders now (`SOFT_KINDS`): the bounce at the room's points rose by about a fifth (twin 4.81 to 4.52 EV raw).
+- A four-poster's box proxy ran to the tips of its slim posts (2.1 m): a solid 2 x 2 x 2.1 m block that put the room's eye-height sample points inside it (zero light) and shadowed the room. A proxy is now as high as 90 % of the piece's surface (by triangle area) reaches (`surfaceTop`); a sofa or wardrobe keeps its whole box. (Pale canopy blotch: the volume-only render has none; the blotch in the lightmap stills was the next item, not the box.)
+- White squares and bars: found by bisecting the render code with built commits (`bb3eb480` none, `79b482d3` volume only none, `1a3fd795` the lightmaps rebaked against the closed-room volume: squares and bars). The atlas stores sky visibility in the alpha byte and 0 means "no data" (the shader then shows open sky). In a closed room the visibility of most texels is 1/255 to 3/255 and the WebP the bundled files use rounds those to 0 over whole 8 x 8 blocks, so the blocks read as bluish white (hotel, twin, four-poster, casa and vaulted rooms all had them; decoding the bundled `.lmap` showed identical values inside and outside a square except that byte). Not the curtains' textures: the earlier note blamed a merged commit; the volume-only render has no squares. The byte is now stored as `16 + vis x 239` (`encodeVis`, shader reads `(a - 16/255) x 255/239`, no-data threshold 8/255), `LIGHTMAP_VERSION` 3. Leftover texels (a chart inside a solid) now take the light volume's value at their own spot instead of the building-wide mean.
+
+Result (raw EV of the room, clamp +3; before to after; the clamp holds only where the room is physically that dark):
+| room | before | after | note |
+| --- | --- | --- | --- |
+| vaulted bedroom | 4.89 | 3.47 | sun now enters the west windows; 0.47 over the clamp |
+| four-poster | 2.87 | 2.62 | below the clamp |
+| hotel bedroom | 5.18 | 5.10 | north window, overcast: sky light only |
+| twin room | 4.81 | 4.52 | north window: sky light only |
+| casa patio, daylit rooms | 3.15 to 4.13 | 3.15 to 3.98 | |
+| casa patio, bathroom and hall | 10.2 and 6.9 | 10.3 and 6.9 | windowless; the ceiling lamps are off by day, so the room is dark by design |
+| Skyline Penthouse | -1.96 to +1.04 | -1.95 to +1.03 | lamps on at dusk, off the clamp |
+
+Honest reading: the clamp still holds the hotel, twin and most of the casa rooms. Their demand is real (north window, overcast or windowless), not a leak; I did not raise the clamp. What would lower the demand there is more light in the room (a sun on the window side, lamps), not a different bake.
+
+Stills: `~/.local/share/aether/look15/before`, `after` (640 x 360, spawn and back); the squares and bars are gone in all six worlds, the vaulted bedroom reads cream with a sun patch, not grey.
+
+Not done: a `sunset` golden-hour description still gives a deep orange room (physical for a 7 degree sun); the interior grade does not take much of it out.
+
 ## 2026-10-23 Photo to room: live runs on all four photos, what was wrong, what changed, honest numbers
 
 Setup: Claude Code backend (Codex answered a trivial call but the limit was not tested for real runs, so everything below is Claude Code), full staged harness, three judges with cross-check, GPU-still renders on software GL (`--render=gpu`, SwiftShader, `nice -n 19` under `heavy2.lock`, one run at a time). Outputs: `~/.local/share/aether/qa/live3/{a,b,c}-<photo>/<photo>/{montage,final,first}.png` and logs `…/live3/*.log`. Run `a` is the harness before any change, `c` the harness after. Run `b` was an intermediate state (hotel failed on a Claude Code tool-exposure refusal, not a harness fault).

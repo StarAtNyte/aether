@@ -25,7 +25,7 @@
 import { sampleVolume, TraceScene, type V3, type VolumeGrid, type VolumeLamp } from './light-volume';
 
 /** Bump when the unwrap, the bake or the encoding changes: stored lightmaps stop matching. */
-export const LIGHTMAP_VERSION = 2;
+export const LIGHTMAP_VERSION = 3;
 /** Most triangles baked in one lightmap (the rest keep the volume). */
 export const LIGHTMAP_MAX_TRIANGLES = 160_000;
 /** Empty texels around every chart (bilinear filtering never reaches another chart). */
@@ -872,30 +872,22 @@ export class LightmapBaker {
       if (fixed.length === 0) break;
       for (const o of fixed) this.bad[o] = 0;
     }
-    // Whatever is left (a chart that lies inside a solid: a thin curtain, a canopy) takes the mean of the building's good
-    // texels: open sky (full visibility, no bounce) read as a pale blue patch on the surface.
-    let n = 0, mv = 0, mr = 0, mg = 0, mb = 0;
+    // Whatever is left (a chart that lies inside a solid: a thin curtain, a canopy, a wall behind a box) takes what the light volume
+    // holds at its own spot: a building-wide mean (or open sky) read as a pale patch against the walls around it.
+    const { grid, volume } = this.input;
+    const half = grid.spacing * 0.5;
     let left = 0;
     for (let o = 0; o < S * S; o++) {
-      if (this.bad[o]) {
-        left++;
-        continue;
-      }
-      if (t.cov[o] !== 1) continue;
-      n++;
-      mv += this.vis[o] as number;
-      mr += this.bounce[o * 3] as number;
-      mg += this.bounce[o * 3 + 1] as number;
-      mb += this.bounce[o * 3 + 2] as number;
+      if (!this.bad[o]) continue;
+      left++;
+      const nx = t.nrm[o * 3] as number, ny = t.nrm[o * 3 + 1] as number, nz = t.nrm[o * 3 + 2] as number;
+      const v = sampleVolume(grid, volume, (t.pos[o * 3] as number) + nx * half, (t.pos[o * 3 + 1] as number) + ny * half, (t.pos[o * 3 + 2] as number) + nz * half, [nx, ny, nz], this.volScratch);
+      this.vis[o] = v.vis;
+      this.bounce[o * 3] = v.bounce[0];
+      this.bounce[o * 3 + 1] = v.bounce[1];
+      this.bounce[o * 3 + 2] = v.bounce[2];
     }
     this.leftover = left;
-    for (let o = 0; o < S * S; o++) {
-      if (!this.bad[o]) continue;
-      this.vis[o] = n > 0 ? mv / n : 0.2;
-      this.bounce[o * 3] = n > 0 ? mr / n : 0;
-      this.bounce[o * 3 + 1] = n > 0 ? mg / n : 0;
-      this.bounce[o * 3 + 2] = n > 0 ? mb / n : 0;
-    }
   }
 
   private encode(): void {
@@ -914,8 +906,7 @@ export class LightmapBaker {
         const v = Math.max(0, (this.bounce[src * 3 + c] as number) / scale);
         rgba[o * 4 + c] = Math.max(0, Math.min(255, Math.round(255 * Math.sqrt(Math.min(1, v)))));
       }
-      // 0 means "no data": a covered texel is at least 1.
-      rgba[o * 4 + 3] = Math.max(1, Math.min(255, Math.round((this.vis[src] as number) * 255)));
+      rgba[o * 4 + 3] = encodeVis(this.vis[src] as number);
     }
     this.result = { size: S, rgba, scale, texels: t.covered, rays: this.rays };
   }
@@ -931,11 +922,25 @@ function radicalInverse2(k: number): number {
   return bits / 4294967296;
 }
 
+/**
+ * Sky visibility in the atlas' alpha byte. Alpha 0 means "no data" (the surface keeps the volume's light), so a covered texel is
+ * stored from {@link VIS_BASE} up: a lossy image (WebP) moves values near zero by a few steps, and a dark room's visibility
+ * (a few percent) stored as it was came back as 0 over whole blocks, which the shader read as "no data" (open sky, white squares).
+ */
+export const VIS_BASE = 16;
+export const VIS_SPAN = 255 - VIS_BASE;
+export function encodeVis(vis: number): number {
+  return VIS_BASE + Math.max(0, Math.min(VIS_SPAN, Math.round((Number.isFinite(vis) ? vis : 0) * VIS_SPAN)));
+}
+export function decodeVis(alpha: number): number {
+  return Math.max(0, Math.min(1, (alpha - VIS_BASE) / VIS_SPAN));
+}
+
 /** Decode one atlas texel the way the shader does (tests, diagnostics). */
 export function decodeTexel(rgba: Uint8Array, scale: number, x: number, y: number, size: number): { vis: number; bounce: [number, number, number] } | null {
   const o = (y * size + x) * 4;
   const a = rgba[o + 3] as number;
   if (a === 0) return null;
   const d = (c: number): number => ((rgba[o + c] as number) / 255) ** 2 * scale;
-  return { vis: a / 255, bounce: [d(0), d(1), d(2)] };
+  return { vis: decodeVis(a), bounce: [d(0), d(1), d(2)] };
 }

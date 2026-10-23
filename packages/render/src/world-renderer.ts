@@ -1379,7 +1379,7 @@ export class WorldRenderer {
           return;
         }
         const movable = e.behaviors.length > 0 || (e.physics !== undefined && e.physics.body !== 'static');
-        parts.push({ role: a.role, object: node.object, movable, meshes: node.bindings.map((b) => ({ mesh: b.mesh, seeThrough: b.seeThrough, doubleSided: b.doubleSided })) });
+        parts.push({ role: a.role, ...(a.kind ? { kind: a.kind } : {}), object: node.object, movable, meshes: node.bindings.map((b) => ({ mesh: b.mesh, seeThrough: b.seeThrough, doubleSided: b.doubleSided })) });
       });
     });
     this.placeContactShadows(parts);

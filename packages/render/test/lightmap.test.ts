@@ -4,6 +4,8 @@ import {
   CHART_PAD,
   LightmapBaker,
   decodeTexel,
+  decodeVis,
+  encodeVis,
   dequantizeUv,
   meshTriangleCount,
   planLightmap,
@@ -76,6 +78,15 @@ function bakeInput(window: boolean, samples = 24, maxSize = 256): { input: Light
   const v = volumeFor(scene);
   return { meshes, input: { scene, proxies: [], meshes, layout, grid: v.grid, volume: v.data, sun: SUN, ambient: v.base.ambient, ground: v.base.ground, lamps: [], samples } };
 }
+
+describe('lightmap visibility byte', () => {
+  it('keeps a covered texel away from the no-data value, also after a lossy image moves it a few steps', () => {
+    expect(encodeVis(0)).toBeGreaterThanOrEqual(16);
+    expect(encodeVis(1)).toBe(255);
+    for (const v of [0, 0.004, 0.02, 0.5, 1]) expect(Math.abs(decodeVis(encodeVis(v)) - v)).toBeLessThan(0.005);
+    expect(encodeVis(0) - 5).toBeGreaterThan(8);
+  });
+});
 
 describe('lightmap: plan', () => {
   it('maps a quality to an atlas edge and a ray count, with a clamped override', () => {
@@ -204,7 +215,7 @@ describe('lightmap: bake', () => {
       for (let o = 0; o < r.rgba.length / 4; o++) {
         if (!r.rgba[o * 4 + 3]) continue;
         n++;
-        s += ch === 'vis' ? r.rgba[o * 4 + 3]! / 255 : ((r.rgba[o * 4]! / 255) ** 2 * r.scale);
+        s += ch === 'vis' ? decodeVis(r.rgba[o * 4 + 3]!) : ((r.rgba[o * 4]! / 255) ** 2 * r.scale);
       }
       return s / n;
     };

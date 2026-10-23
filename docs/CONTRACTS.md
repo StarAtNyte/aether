@@ -3094,7 +3094,7 @@ environment/lightmap.ts         pure, deterministic, no three.js: planLightmap(q
                                 // bounces = final gather); edge-aware denoise inside the atlas; LIGHTMAP_MAX_TRIANGLES 160 000 (the rest keeps the volume)
 environment/lightmap.worker.ts  module worker that runs a bake; lightmap-protocol.ts validates request and reply in both directions
 environment/lightmap-asset.ts   the `.lmap` file: magic, JSON meta (version, key, size, quality, samples, bake ms ...), 16-bit chart coordinates, one
-                                stacked image (size x 2 size RGB: sqrt bounce on top, sky visibility as grey below; WebP when the browser encodes it, else
+                                stacked image (size x 2 size RGB: sqrt bounce on top, sky visibility as grey below, stored from 16 up of 255 (`encodeVis`: 0 is "no data" and a lossy image rounded a dark room's few percent to 0 over whole blocks, white squares); WebP when the browser encodes it, else
                                 PNG, else raw). LIGHTMAP_MAX_ASSET_BYTES 2 MiB (re-encoded lower, then dropped). lightmapKey(contentHash(geometry, volume),
                                 plan, light, grid) = `lm<version>-<32 hex>`: a content key, file-safe
 environment/lightmap-cache.ts   IndexedDB cache of `.lmap` bytes, LRU, 8 entries / 16 MiB, bakes under 1.5 s are not kept

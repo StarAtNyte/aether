@@ -32,6 +32,9 @@ export const SHELL_ROLES: ReadonlySet<string> = new Set(['wall', 'room', 'ceilin
 /** Arch roles that become box proxies (their bounding box, their mean colour). */
 export const PROXY_ROLES: ReadonlySet<string> = new Set(['furniture', 'fixture']);
 
+/** Pieces that hang over a window and let its light through (a curtain is a thin cloth, its box would shut the window): no box proxy. */
+export const SOFT_KINDS: ReadonlySet<string> = new Set(['curtain']);
+
 /** One mesh of a building part, as the scene sync holds it. */
 export interface VolumeMesh {
   mesh: Mesh;
@@ -43,6 +46,8 @@ export interface VolumeMesh {
 /** One building part offered to the bake. */
 export interface VolumePart {
   role: string;
+  /** The arch kind of the piece (`curtain`, `bed`, ...), when it has one. */
+  kind?: string;
   object: Object3D;
   meshes: readonly VolumeMesh[];
   /**
@@ -144,7 +149,7 @@ export function collectTraceInput(parts: readonly VolumePart[], bounds: Box3, pr
           tris++;
         }
       }
-    } else if (PROXY_ROLES.has(part.role)) {
+    } else if (PROXY_ROLES.has(part.role) && !(part.kind && SOFT_KINDS.has(part.kind))) {
       _box.setFromObject(part.object);
       if (_box.isEmpty()) continue;
       const sx = _box.max.x - _box.min.x;
@@ -168,13 +173,56 @@ export function collectTraceInput(parts: readonly VolumePart[], bounds: Box3, pr
       // Shrunk a little: a sofa's box is fuller than the sofa.
       const sh = 0.08;
       const lo: V3 = [_box.min.x + sx * sh, _box.min.y, _box.min.z + sz * sh];
-      const hi: V3 = [_box.max.x - sx * sh, _box.max.y - sy * sh * 0.5, _box.max.z - sz * sh];
+      // A piece with a slim frame standing over its body (a four-poster's canopy) is a box only as high as most of its surface reaches.
+      const hi: V3 = [_box.max.x - sx * sh, Math.min(_box.max.y - sy * sh * 0.5, Math.max(_box.min.y + 0.3, surfaceTop(part, SOLID_SHARE))), _box.max.z - sz * sh];
       proxies?.push({ lo, hi, tri: tris });
       tris += pushBox(pos, alb, two, lo, hi, col);
     }
   }
   if (tris === 0) return null;
   return { positions: Float32Array.from(pos), albedo: Float32Array.from(alb), twoSided: Uint8Array.from(two) };
+}
+
+/** Share of a piece's surface that lies under the top of its box proxy. */
+export const SOLID_SHARE = 0.9;
+
+/** Height (world metres) below which `share` of the piece's surface area (by triangle centre) lies; +Infinity without geometry. */
+export function surfaceTop(part: VolumePart, share: number): number {
+  const ys: number[] = [];
+  const as: number[] = [];
+  let total = 0;
+  const p0 = new Vector3();
+  const p1 = new Vector3();
+  const p2 = new Vector3();
+  for (const vm of part.meshes) {
+    if (vm.seeThrough || (vm.mesh as Mesh & { isInstancedMesh?: boolean }).isInstancedMesh) continue;
+    const g = vm.mesh.geometry as BufferGeometry;
+    const p = g.getAttribute('position');
+    if (!p) continue;
+    const index = g.getIndex();
+    const count = index ? index.count : p.count;
+    for (let i = 0; i + 2 < count; i += 3) {
+      p0.fromBufferAttribute(p, index ? index.getX(i) : i).applyMatrix4(vm.mesh.matrixWorld);
+      p1.fromBufferAttribute(p, index ? index.getX(i + 1) : i + 1).applyMatrix4(vm.mesh.matrixWorld);
+      p2.fromBufferAttribute(p, index ? index.getX(i + 2) : i + 2).applyMatrix4(vm.mesh.matrixWorld);
+      p1.sub(p0);
+      p2.sub(p0);
+      const cy = p0.y + (p1.y + p2.y) / 3;
+      const area = p1.cross(p2).length() / 2;
+      if (!(area > 0)) continue;
+      ys.push(cy);
+      as.push(area);
+      total += area;
+    }
+  }
+  if (ys.length === 0) return Number.POSITIVE_INFINITY;
+  const order = ys.map((_, i) => i).sort((a, b) => (ys[a] as number) - (ys[b] as number));
+  let run = 0;
+  for (const i of order) {
+    run += as[i] as number;
+    if (run >= total * share) return ys[i] as number;
+  }
+  return ys[order[order.length - 1] as number] as number;
 }
 
 function pushBox(pos: number[], alb: number[], two: number[], lo: V3, hi: V3, col: readonly number[]): number {
