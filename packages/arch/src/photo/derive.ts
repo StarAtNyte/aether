@@ -552,7 +552,11 @@ export function deriveBuild(d: RoomDescription): PhotoBuild {
   // Sunlight comes in through the window wall the photograph shows it on: the hour of the day whose sun stands outside that wall.
   const sunHour = light.sky === 'day' && light.from !== 'none' ? hourForWall(light.from) : null;
   if (sunHour) notes.push(`The photo's light comes through the ${light.from} window: the sun is set to ${sunHour.hour.toFixed(1)} h, ${Math.round(sunHour.off)}° off that wall's outward direction.`);
-  const environment: Record<string, Json> = { sky: light.sky, timeOfDay: sunHour ? sunHour.hour : light.timeOfDay };
+  const hour = sunHour ? sunHour.hour : light.timeOfDay;
+  // A golden-hour sky belongs to the side of noon its hour is on: the sky model clamps the hour into the preset's own window,
+  // so a 'dawn' sky at 18 h stood the sun in the east, behind the window wall of a room whose light comes from the west.
+  const sky = light.sky === 'dawn' && hour >= 12 ? 'sunset' : light.sky === 'sunset' && hour < 12 ? 'dawn' : light.sky;
+  const environment: Record<string, Json> = { sky, timeOfDay: hour };
   // The colour of the light as described: a warm photo gets a warm sun and white balance, a cool one a cool pair (the assistant refines both with tune_look).
   if (light.warmth !== 'neutral') {
     const warm = light.warmth === 'warm';
