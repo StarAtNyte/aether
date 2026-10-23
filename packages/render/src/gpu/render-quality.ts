@@ -49,6 +49,34 @@ export interface QualityPlan {
   accumulateFrames: number;
   /** Adaptive resolution may lower the resolution (never while refining a still). */
   adaptiveResolution: boolean;
+  /**
+   * Effects drawn while the view moves (null: the same as {@link effects} always). The studio look on an integrated GPU keeps
+   * the cheap composite chain in motion and runs the full chain once the view rests (see {@link QualityOptions.split}).
+   */
+  moveEffects: PostEffects | null;
+  /** Tier and still flag the sun shadows are planned for (the same in motion and at rest: a change recompiles materials). */
+  shadowTier: RenderTier;
+  shadowStill: boolean;
+}
+
+/** Options of {@link qualityPlan} beyond the budget. */
+export interface QualityOptions {
+  /**
+   * Split the studio chain into a light one for motion and the full one at rest, with the medium tier's sun shadows
+   * throughout (one fitted map, no doubled map). For integrated GPUs, which cannot hold 60 fps with the whole chain.
+   */
+  split?: boolean;
+  /** Most expensive tier the performance ladder still allows (null: any). */
+  tierCap?: RenderTier | null;
+}
+
+/** The effects of `base` that `cap`'s tier also runs. */
+function clampEffects(base: PostEffects, cap: RenderTier | null | undefined): PostEffects {
+  if (!cap || cap === 'ultra') return base;
+  const allow = effectsOf(cap);
+  const out = { ...base };
+  for (const k of Object.keys(out) as (keyof PostEffects)[]) out[k] = base[k] && allow[k];
+  return out;
 }
 
 /** Largest single draw (pixels per side) a still may use, by GPU class (see {@link stillPlan}). */
@@ -101,7 +129,7 @@ export function postQualityOf(effects: PostEffects): PostQuality | null {
  * is drawn once. `tier` (default: `low` on software rasterisers, `medium` otherwise) only matters for
  * realtime.
  */
-export function qualityPlan(quality: RenderQuality, budget: Pick<RenderBudget, 'post' | 'shadowMapCap'>, software = false, tier?: RenderTier): QualityPlan {
+export function qualityPlan(quality: RenderQuality, budget: Pick<RenderBudget, 'post' | 'shadowMapCap'>, software = false, tier?: RenderTier, opts: QualityOptions = {}): QualityPlan {
   const cap = Number.isFinite(budget.shadowMapCap) && budget.shadowMapCap > 0 ? budget.shadowMapCap : 1024;
   if (quality === 'realtime' || !studioAvailable(budget)) {
     const t: RenderTier = !budget.post ? 'low' : (tier ?? (software ? 'low' : 'medium'));
@@ -116,20 +144,29 @@ export function qualityPlan(quality: RenderQuality, budget: Pick<RenderBudget, '
       shadowRadius: refined ? TIER_SHADOW_RADIUS : SHADOW_RADIUS.realtime,
       accumulateFrames: refined ? (software ? TIER_ACCUMULATE_FRAMES_SOFTWARE : TIER_ACCUMULATE_FRAMES) : 0,
       adaptiveResolution: true,
+      moveEffects: null,
+      shadowTier: t,
+      shadowStill: false,
     };
   }
   const final = quality === 'final';
   const stillFrames = software ? STUDIO_ACCUMULATE_FRAMES_SOFTWARE : STUDIO_ACCUMULATE_FRAMES;
   const finalFrames = software ? FINAL_ACCUMULATE_FRAMES_SOFTWARE : FINAL_ACCUMULATE_FRAMES;
+  const split = opts.split === true && !final && !software;
+  const effects = clampEffects(stillEffects(final), opts.tierCap);
+  const move = split ? clampEffects(effectsOf('medium'), opts.tierCap) : null;
   return {
     quality,
     tier: 'ultra',
-    effects: stillEffects(final),
+    effects,
     post: 'studio',
-    shadowMapCap: Math.min(STUDIO_SHADOW_MAP_MAX, software ? cap : cap * 2),
-    shadowRadius: SHADOW_RADIUS[quality],
+    shadowMapCap: split ? cap : Math.min(STUDIO_SHADOW_MAP_MAX, software ? cap : cap * 2),
+    shadowRadius: split ? TIER_SHADOW_RADIUS : SHADOW_RADIUS[quality],
     accumulateFrames: final ? finalFrames : stillFrames,
-    adaptiveResolution: false,
+    adaptiveResolution: split,
+    moveEffects: move,
+    shadowTier: split ? 'medium' : 'ultra',
+    shadowStill: !split,
   };
 }
 

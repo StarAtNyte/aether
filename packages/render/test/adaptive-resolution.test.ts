@@ -15,11 +15,12 @@ describe('AdaptiveResolution', () => {
     expect(a.scale).toBe(1);
   });
 
-  it('scales down after sustained frames under 40 fps, one step at a time, down to the floor', () => {
+  it('scales down after sustained frames under 50 fps, by the step the frame time asks for, down to the floor', () => {
     const a = new AdaptiveResolution();
-    expect(feed(a, 30, 1)).toBe(0);
+    expect(feed(a, 30, 0.5)).toBe(0);
     expect(feed(a, 30, 1)).toBe(1);
-    expect(a.scale).toBe(ADAPTIVE_DEFAULTS.step);
+    // Pixels follow the frame time: 30 fps aiming at 58 takes sqrt(30 / 58) of the scale.
+    expect(a.scale).toBe(Math.round(Math.sqrt(30 / ADAPTIVE_DEFAULTS.targetFps) * 100) / 100);
     feed(a, 20, 60);
     expect(a.scale).toBe(ADAPTIVE_DEFAULTS.minScale);
   });
@@ -33,18 +34,25 @@ describe('AdaptiveResolution', () => {
   });
 
   it('scales back up with headroom, and backs off when an upscale has to be undone', () => {
+    /** Seconds of 60 fps until the scale rises (null: not within `max`). */
+    const secondsToUp = (a: AdaptiveResolution, max = 60): number | null => {
+      const from = a.scale;
+      for (let t = 0; t < max; t++) {
+        feed(a, 60, 1);
+        if (a.scale > from) return t + 1;
+      }
+      return null;
+    };
     const a = new AdaptiveResolution();
-    feed(a, 30, 2);
+    feed(a, 30, 1.2);
     expect(a.scale).toBeLessThan(1);
-    // +1 s: the p90 window (48 frames) first has to flush the slow frames.
-    feed(a, 60, ADAPTIVE_DEFAULTS.upAfter + 1);
-    expect(a.scale).toBe(1);
-    // Too slow again right away: the next upscale waits twice as long.
-    feed(a, 30, 2);
+    const first = secondsToUp(a) as number;
+    expect(first).toBeGreaterThan(ADAPTIVE_DEFAULTS.upAfter - 1);
+    while (a.scale < 1) expect(secondsToUp(a)).not.toBeNull();
+    // Too slow again right away: the next upscale waits longer than the first did.
+    feed(a, 30, 1.6);
     expect(a.scale).toBeLessThan(1);
-    expect(feed(a, 60, ADAPTIVE_DEFAULTS.upAfter + 1)).toBe(0);
-    expect(feed(a, 60, ADAPTIVE_DEFAULTS.upAfter + 1)).toBe(1);
-    expect(a.scale).toBe(1);
+    expect(secondsToUp(a) as number).toBeGreaterThan(first);
   });
 
   it('does nothing while disabled and reset() restores full scale', () => {

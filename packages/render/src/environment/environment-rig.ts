@@ -115,6 +115,9 @@ function tintVertices(g: BufferGeometry): void {
   g.setAttribute('uv', new BufferAttribute(uvs, 2));
 }
 
+/** Render order of the ground: after every opaque item of order 0, so what stands on it hides it before it is shaded. */
+export const GROUND_RENDER_ORDER = 1;
+
 function createGroundGeometry(size: number): PlaneGeometry {
   const g = new PlaneGeometry(size, size, GROUND_SEGMENTS, GROUND_SEGMENTS);
   g.rotateX(-Math.PI / 2);
@@ -500,6 +503,14 @@ export class EnvironmentRig {
     this.groundMaterialKey = handle.key;
     const ground = new Mesh(createGroundGeometry(size), handle.material);
     ground.name = 'aether:ground';
+    // The ground is the largest and most expensive surface of most scenes (layered, anti-tiled, weathered) and the nearest
+    // object by centre distance, so the front-to-back sort drew it first and every floor, wall and prop then painted over
+    // fragments it had shaded for nothing (a hotel room: 24 of 53 ms of GPU time on an integrated GPU). Drawn after the
+    // opaque items it is shaded where it is seen. The depth bias keeps a floor slab at ground level in front of it.
+    ground.renderOrder = GROUND_RENDER_ORDER;
+    handle.material.polygonOffset = true;
+    handle.material.polygonOffsetFactor = 1;
+    handle.material.polygonOffsetUnits = 1;
     ground.receiveShadow = true;
     ground.castShadow = false;
     ground.matrixAutoUpdate = false;
@@ -508,6 +519,7 @@ export class EnvironmentRig {
     if (spec.skirt !== false && size / 2 < GROUND_SKIRT_RADIUS) {
       const skirt = new Mesh(createSkirtGeometry(size), handle.material);
       skirt.name = 'aether:ground-skirt';
+      skirt.renderOrder = GROUND_RENDER_ORDER;
       skirt.receiveShadow = false;
       skirt.castShadow = false;
       skirt.matrixAutoUpdate = false;

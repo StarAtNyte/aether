@@ -23,13 +23,17 @@ const WINDOW = 48;
 
 /** Tunables of {@link AdaptiveResolution}. */
 export const ADAPTIVE_DEFAULTS = Object.freeze({
-  lowFps: 40,
-  highFps: 56,
+  lowFps: 50,
+  highFps: 57,
+  /** The frame rate a down step aims at: the pixel count (scale squared) follows the frame time, so the step is sqrt(fps / target). */
+  targetFps: 58,
   minScale: 0.5,
-  /** Multiplicative step per change. */
-  step: 0.8,
+  /** Largest multiplicative step per change (a frame rate just under `lowFps` takes this one). */
+  step: 0.9,
+  /** Smallest step: a very slow frame rate does not drop below this at once (the next step follows after `downAfter`). */
+  minStep: 0.6,
   /** Seconds below `lowFps` before scaling down. */
-  downAfter: 1.5,
+  downAfter: 1,
   /** Seconds above `highFps` before trying to scale up again. */
   upAfter: 5,
   /** Longest wait before an upscale attempt after repeated failures (s). */
@@ -118,11 +122,12 @@ export class AdaptiveResolution {
     }
     if (this.below >= this.o.downAfter && this.scale > this.o.minScale) {
       if (this.sinceUpscale < this.o.failWindow) this.upWait = Math.min(this.o.maxUpAfter, this.upWait * 2);
-      return this.set(Math.max(this.o.minScale, this.scale * this.o.step));
+      const factor = Math.max(this.o.minStep, Math.min(this.o.step, Math.sqrt(Math.max(this.fps, 1) / this.o.targetFps)));
+      return this.set(Math.max(this.o.minScale, this.scale * factor));
     }
     if (this.above >= this.upWait && this.scale < 1) {
       this.sinceUpscale = 0;
-      return this.set(Math.min(1, this.scale / this.o.step));
+      return this.set(Math.min(1, this.scale / 0.8));
     }
     return false;
   }

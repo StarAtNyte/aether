@@ -362,6 +362,11 @@ const PROOF_MIN_SHARE = 0.22;
 /** Shadow refit / debug rebuild throttle (seconds) while content streams in. */
 const REFIT_INTERVAL = 0.35;
 /** Draws a pipeline with sun shafts waits for the sun's shadow map before giving the shafts up for this world. */
+/** Milliseconds the view stays still before the split studio chain switches to its full version. */
+const REST_DELAY_MS = 220;
+/** Frame time (s) beyond which an animating scene at rest cannot afford the full chain, and for how many frames in a row. */
+const REST_SLOW_DT = 0.034;
+const REST_SLOW_FRAMES = 10;
 const SHAFT_WAIT_FRAMES = 4;
 const JPEG_QUALITY = 0.8;
 /** Capture render targets kept (critique views and thumbnails use two sizes). */
@@ -750,6 +755,15 @@ export class WorldRenderer {
   /** The user/host wants adaptive resolution (the studio quality suspends it). */
   private adaptiveWanted = true;
   private postPending = false;
+  /** The pipeline of the other phase (motion / rest of the split studio chain), kept built so the switch costs nothing. */
+  private postStash: PostPipeline | null = null;
+  /** The sun shadow map edge each pipeline with shafts was built against. */
+  private readonly postBuiltSize = new WeakMap<PostPipeline, number>();
+  /** The view has rested long enough for the full chain (always true for plans that do not split). */
+  private atRest = true;
+  private lastChangeAt = 0;
+  /** Adaptive scale in force before the view rested (restored when it moves again). */
+  private motionScale = 1;
   private readonly onContextLost: ((info: ContextLossInfo) => void) | undefined;
   /** Draw counters of the last frame actually drawn (stable while on-demand rendering idles). */
   private lastDrawCalls = 0;
@@ -3041,6 +3055,8 @@ export class WorldRenderer {
     this.cullFarAnimals();
     const step = Number.isFinite(dt) ? Math.min(Math.max(dt, 0), 0.1) : 0;
     const cameraMoved = this.rig.update(step);
+    // The view or the content was asked to change from outside (camera, edits, resizes), as against content that merely animates.
+    const motion = cameraMoved || this.needsDraw;
     // Hit-stop slows the game's own motion (people, particles) to a crawl; the camera and the world around keep time.
     // An idle editor (`animate: false`) freezes the effects like the weather, so it stops drawing.
     const gameStep = step * this.fx.frame(opts.animate !== false ? step : 0, this.perspective, this.avatar.group);
@@ -3102,6 +3118,7 @@ export class WorldRenderer {
     // Studio stills keep refining (temporal AA / AO converge) for a while after the view rests.
     const changed = cameraMoved || this.needsDraw || (animate && this.env.animating);
     if (changed) this.refinement.restart();
+    this.syncRest(motion, changed && !motion);
     const refine = !changed && this.refinement.next();
     // The first frame's programs are linking (see warmShaders): a draw now would link the missing ones one by one on this thread.
     if (this.warming) {
@@ -3130,8 +3147,20 @@ export class WorldRenderer {
     this.lastDrawCalls = info.drawCalls ?? info.frameCalls ?? 0;
     this.lastTriangles = info.triangles ?? 0;
     this.frameStats.record(dt, now() - t0);
-    if (this.adaptive.record(dt, this.drewLastFrame)) this.resize(this.cssWidth, this.cssHeight);
-    if (this.governor.record(dt, this.drewLastFrame, this.adaptive.enabled ? this.adaptive.scale : 0)) this.applyPerformance();
+    if (this.restAnimating && this.drewLastFrame) {
+      this.restSlow = dt > REST_SLOW_DT ? this.restSlow + 1 : 0;
+      if (this.restSlow >= REST_SLOW_FRAMES) {
+        this.restDeferred = true;
+        this.atRest = false;
+        this.restAnimating = false;
+        this.needsDraw = true;
+      }
+    }
+    // A split studio chain refines at rest with its full (slow) chain: those frames say nothing about motion.
+    if (this.qualityPlan.moveEffects === null || !this.atRest) {
+      if (this.adaptive.record(dt, this.drewLastFrame)) this.resize(this.cssWidth, this.cssHeight);
+      if (this.governor.record(dt, this.drewLastFrame, this.adaptive.enabled ? this.adaptive.scale : 0)) this.applyPerformance();
+    }
     this.drewLastFrame = true;
     return true;
   }
@@ -3201,14 +3230,12 @@ export class WorldRenderer {
     // shaders can be checked on SwiftShader's WebGPU and WebGL2.
     if (!this.env.sun.castShadow) return;
     const q = this.qualityPlan;
-    const plan = planSunShadows({ tier: q.tier, still: q.quality !== 'realtime', shadowMapCap: q.shadowMapCap, contentRadius: this.framing?.radius ?? 0, voxel: this.voxelLayer !== null, cascades: this.cuts.cascades, nearestCompare: this.geckoSafe, software: this.gpu.tier === 'software' && (globalThis as { __SUN_SHADOWS_ON_SOFTWARE?: boolean }).__SUN_SHADOWS_ON_SOFTWARE !== true });
+    const plan = planSunShadows({ tier: q.shadowTier, still: q.shadowStill, shadowMapCap: q.shadowMapCap, contentRadius: this.framing?.radius ?? 0, voxel: this.voxelLayer !== null, cascades: this.cuts.cascades, nearestCompare: this.geckoSafe, software: this.gpu.tier === 'software' && (globalThis as { __SUN_SHADOWS_ON_SOFTWARE?: boolean }).__SUN_SHADOWS_ON_SOFTWARE !== true });
     if (!this.env.setSunShadows(plan, this.perspective)) return;
     this.env.sun.shadow.radius = q.shadowRadius;
     if (this.post || this.postPending) {
-      this.post?.dispose();
-      this.post = null;
+      this.dropPost();
       this.postPending = false;
-      this.postGen++;
     }
     this.shaftWait = 0;
     this.needsDraw = true;
@@ -3276,9 +3303,14 @@ export class WorldRenderer {
    * bloom. Null: render directly.
    */
   private wantedEffects(): PostEffects | null {
+    return this.effectsFor(this.qualityPlan.moveEffects === null || this.atRest || this.captureActive);
+  }
+
+  /** The effect set of the rest phase (`rest`) or of the motion phase of a split chain (see {@link wantedEffects}). */
+  private effectsFor(rest: boolean): PostEffects | null {
     if (!this.budget.post) return null;
     const plan = this.qualityPlan;
-    let effects = resolveEffects(plan.effects, this.effectOverrides, this.failedEffects);
+    let effects = resolveEffects(!rest && plan.moveEffects !== null ? plan.moveEffects : plan.effects, this.effectOverrides, this.failedEffects);
     // Not on a weak machine: the bloom chain is the one post pass the low tier could still run, and on a machine
     // that cannot spare the frame time (or whose driver draws it black) the direct draw is the safe one.
     if (!effects.composite && plan.tier === 'low' && this.effectOverrides.composite !== false && this.env.bloom > 0.001 && !weakHardware(this.hardware) && !this.safe) effects = { ...effects, composite: true };
@@ -3880,7 +3912,8 @@ export class WorldRenderer {
   private applyQuality(quality: RenderQuality): RenderQuality {
     const before = this.qualityPlan.quality;
     this.shaftsUnavailable = false;
-    this.qualityPlan = qualityPlan(quality, this.budget, this.gpu.tier === 'software', this.tierChoice === 'auto' ? this.autoTierNow() : this.tierChoice);
+    this.restDeferred = false;
+    this.qualityPlan = qualityPlan(quality, this.budget, this.gpu.tier === 'software', this.tierChoice === 'auto' ? this.autoTierNow() : this.tierChoice, { split: this.tierChoice === 'auto' && this.gpu.tier !== 'discrete', tierCap: this.tierChoice === 'auto' ? this.cuts.tierCap : null });
     const plan = this.qualityPlan;
     // The high and ultra tiers (and stills) light and reflect with a photographed sky.
     this.env.setAutoHdri(plan.tier === 'high' || plan.tier === 'ultra');
@@ -3914,12 +3947,22 @@ export class WorldRenderer {
     const want = this.wantedEffects();
     const wantKey = want ? effectsKey(want) : null;
     if (this.post && this.post.key !== wantKey) {
-      this.post.dispose();
-      this.post = null;
-      this.postGen++;
-      this.applyLook();
+      if (this.postStash && this.postStash.key === wantKey) {
+        // The other phase of the split chain is built already: swap, no work.
+        const other = this.post;
+        this.post = this.postStash;
+        this.postStash = other;
+        this.applyLook();
+        if (this.vignetteOff) this.post.setVignette(0);
+      } else if (want !== null && this.phaseKeys().includes(this.post.key)) {
+        // The pipeline of the other phase draws until this one is built.
+      } else {
+        this.dropPost();
+        this.applyLook();
+      }
     }
-    if (want === null || this.post || this.postPending) return;
+    if (want === null || this.post?.key === wantKey || this.postPending) return;
+    // The phase not in use is built while the first one draws: the first frame never waits for both.
     // The shafts march the sun's (outermost) shadow map, which three creates on the first draw that uses it: draw
     // directly until it exists (a world whose content receives no shadows never gets one: no shafts there).
     if (want.shafts && !this.env.shaftLight) {
@@ -3931,21 +3974,32 @@ export class WorldRenderer {
     this.postPending = true;
     this.postShadowSize = this.env.shaftMapSize;
     const gen = ++this.postGen;
-    createPostPipeline(this.renderer, this.scene, this.perspective, this.env.bloom, postQualityOf(want) ?? 'standard', { effects: want, sun: this.env.shaftLight ?? this.env.sun, contactLight: this.env.sun })
+    const builtAt = this.postShadowSize;
+    createPostPipeline(this.renderer, this.scene, this.perspective, this.env.bloom, postQualityOf(want) ?? 'standard', { effects: want, sun: this.env.shaftLight ?? this.env.sun, contactLight: this.env.sun, aoScale: this.qualityPlan.moveEffects !== null ? 0.5 : undefined })
       .then((p) => {
         this.postPending = false;
         if (!p) {
           this.postCreationFailed(want);
           return;
         }
+        this.postBuiltSize.set(p, builtAt);
         const now = this.wantedEffects();
-        if (gen !== this.postGen || this.disposed || !now || effectsKey(now) !== p.key) p.dispose();
-        else {
+        if (gen !== this.postGen || this.disposed || !now) p.dispose();
+        else if (effectsKey(now) === p.key) {
+          // The pipeline that was drawing (the other phase of the split chain) is kept for the swap back.
+          if (this.post && this.phaseKeys().includes(this.post.key)) {
+            this.postStash?.dispose();
+            this.postStash = this.post;
+          } else this.post?.dispose();
           this.post = p;
           this.applyLook();
           if (this.vignetteOff) p.setVignette(0);
           this.needsDraw = true;
-        }
+        } else if (this.phaseKeys().includes(p.key) && this.post && this.post.key !== p.key) {
+          // The phase changed while it was building: keep it for the next swap.
+          this.postStash?.dispose();
+          this.postStash = p;
+        } else p.dispose();
       })
       .catch(() => {
         this.postPending = false;
@@ -3972,6 +4026,66 @@ export class WorldRenderer {
     }
     this.needsDraw = true;
   }
+
+  /** The effect keys of the two phases of the plan (the rest key alone when the chain does not split). */
+  private phaseKeys(): string[] {
+    const keys: string[] = [];
+    for (const rest of [true, false]) {
+      const e = this.effectsFor(rest);
+      if (e) keys.push(effectsKey(e));
+    }
+    return keys;
+  }
+
+  /** Release the pipelines and invalidate a build in flight. */
+  private dropPost(): void {
+    this.post?.dispose();
+    this.post = null;
+    this.postStash?.dispose();
+    this.postStash = null;
+    this.postGen++;
+  }
+
+  /**
+   * Motion and rest of the split studio chain. The view moves: the light chain draws and adaptive resolution holds the frame
+   * rate. The view has rested for {@link REST_DELAY_MS}: full resolution and the full chain, which then refines frame by frame.
+   */
+  private syncRest(motion: boolean, animating: boolean): void {
+    if (this.qualityPlan.moveEffects === null) {
+      this.atRest = true;
+      return;
+    }
+    const t = now();
+    // A scene that animates while the view rests (people, water) draws the full chain every frame: when that is too slow it
+    // keeps the light chain, and the view counts as moving.
+    if (this.restDeferred) motion = true;
+    if (motion) {
+      this.lastChangeAt = t;
+      if (this.atRest) {
+        this.atRest = false;
+        if (this.motionScale < 1 && this.adaptive.enabled) {
+          this.adaptive.scale = this.motionScale;
+          this.resize(this.cssWidth, this.cssHeight);
+        }
+      }
+    } else if (!this.atRest && t - this.lastChangeAt > REST_DELAY_MS) {
+      this.atRest = true;
+      this.restSlow = 0;
+      this.refinement.restart();
+      this.motionScale = this.adaptive.scale;
+      if (this.adaptive.scale < 1) {
+        this.adaptive.reset();
+        this.resize(this.cssWidth, this.cssHeight);
+      }
+    }
+    this.restAnimating = this.atRest && animating;
+  }
+
+  /** The view is at rest and the content animates (frames at rest are not refinement frames). */
+  private restAnimating = false;
+  private restSlow = 0;
+  /** The full chain was too slow for an animating scene at rest: the light chain stays (until the quality changes). */
+  private restDeferred = false;
 
   private postFailed = false;
   /** Draws waited for the sun's shadow map before building a pipeline with shafts. */
@@ -4011,10 +4125,14 @@ export class WorldRenderer {
     }
     // A resized sun shadow map reallocates its textures on the next draw; shafts built against the old
     // ones would sample destroyed textures. Drop the pipeline, draw once directly, and let it rebuild.
-    if ((this.post || this.postPending) && this.postShadowSize !== this.env.shaftMapSize && (this.post?.effects.shafts || this.postPending)) {
-      this.post?.dispose();
-      this.post = null;
-      this.postGen++;
+    const mapSize = this.env.shaftMapSize;
+    const stale = (p: PostPipeline | null): boolean => p !== null && p.effects.shafts && this.postBuiltSize.get(p) !== mapSize;
+    if (stale(this.postStash)) {
+      this.postStash?.dispose();
+      this.postStash = null;
+    }
+    if ((this.postPending && this.postShadowSize !== mapSize) || stale(this.post)) {
+      this.dropPost();
       this.postPending = false;
       this.postShadowSize = this.env.shaftMapSize;
       this.renderer.render(this.scene, this.perspective);
@@ -4041,9 +4159,7 @@ export class WorldRenderer {
           this.renderer.render(this.scene, this.perspective);
           if (!this.env.shaftLight) {
             this.shaftsUnavailable = true;
-            this.post.dispose();
-            this.post = null;
-            this.postGen++;
+            this.dropPost();
             this.needsDraw = true;
             return;
           }
@@ -4055,9 +4171,7 @@ export class WorldRenderer {
       if (this.post) {
         log.warn(`post-processing (${effectsKey(this.post.effects)}) failed: ${errorMessage(e)}`);
         const effects = this.post.effects;
-        this.post.dispose();
-        this.post = null;
-        this.postGen++;
+        this.dropPost();
         this.postCreationFailed({ ...effects });
       } else {
         throw e;
@@ -4842,9 +4956,7 @@ export class WorldRenderer {
     this.proofSync?.dispose();
     this.proofSync = null;
     this.blueprint.dispose();
-    this.post?.dispose();
-    this.post = null;
-    this.postGen++;
+    this.dropPost();
     for (const rt of this.captureTargets.values()) rt.dispose();
     this.captureTargets.clear();
     if (this.encodeCanvas) {

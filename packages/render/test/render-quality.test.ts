@@ -29,6 +29,9 @@ describe('qualityPlan', () => {
       shadowRadius: SHADOW_RADIUS.realtime,
       accumulateFrames: 0,
       adaptiveResolution: true,
+      moveEffects: null,
+      shadowTier: 'medium',
+      shadowStill: false,
     });
   });
   it('the tier picks the effect set, the pipeline variant and the refinement of the realtime look', () => {
@@ -61,6 +64,20 @@ describe('qualityPlan', () => {
     expect(p.shadowRadius).toBeGreaterThan(SHADOW_RADIUS.realtime);
     expect(p.accumulateFrames).toBe(STUDIO_ACCUMULATE_FRAMES);
     expect(p.adaptiveResolution).toBe(false);
+  });
+  it('the split studio look of an integrated GPU: light chain in motion, full chain at rest, medium shadows, adaptive resolution', () => {
+    const b = renderBudget('integrated', false);
+    const p = qualityPlan('studio', b, false, undefined, { split: true });
+    expect(p.effects.ssr && p.effects.ao && p.effects.taa).toBe(true);
+    expect(p.moveEffects).toEqual(effectsOf('medium'));
+    expect(p.shadowMapCap).toBe(b.shadowMapCap);
+    expect(p.shadowTier).toBe('medium');
+    expect(p.shadowStill).toBe(false);
+    expect(p.adaptiveResolution).toBe(true);
+    const capped = qualityPlan('studio', b, false, undefined, { split: true, tierCap: 'medium' });
+    expect(capped.effects).toEqual(effectsOf('medium'));
+    expect(qualityPlan('final', b, false, undefined, { split: true }).moveEffects).toBeNull();
+    expect(qualityPlan('studio', b, true, undefined, { split: true }).moveEffects).toBeNull();
   });
   it('final adds depth of field and refines much longer', () => {
     const b = renderBudget('discrete', false);

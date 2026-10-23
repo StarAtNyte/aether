@@ -129,6 +129,8 @@ export interface PostOptions {
   effects?: PostEffects;
   /** The shadow-casting sun, or the light whose shadow map the sun shafts march (the outermost cascade). */
   sun?: DirectionalLight | null;
+  /** Resolution of the ambient occlusion pass relative to the frame (default {@link STUDIO_AO}`.resolutionScale`; half on integrated GPUs, whose studio chain refines at rest). */
+  aoScale?: number;
   /** The sun itself: screen-space contact shadows are traced toward it and darken its direct light only. */
   contactLight?: DirectionalLight | null;
 }
@@ -190,7 +192,7 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
     }
     if (effects.ao && gtao && prePassDepth && prePassNormal) {
       const aoPass = gtao.ao(prePassDepth, prePassNormal, camera);
-      aoPass.resolutionScale = STUDIO_AO.resolutionScale;
+      aoPass.resolutionScale = opts.aoScale ?? STUDIO_AO.resolutionScale;
       aoPass.useTemporalFiltering = effects.taa;
       aoPass.radius.value = STUDIO_AO.radius;
       aoPass.thickness.value = STUDIO_AO.thickness;
