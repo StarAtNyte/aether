@@ -291,6 +291,17 @@
   }
 }
 
+/* The dialogue card sits above the key legend (Move/Act tray), never under it. */
+@media (pointer: fine) and (min-width: 561px) {
+  .viewport:has(.play-hint) .npc-card {
+    bottom: 56px;
+  }
+
+  .viewport:has(.walk-hint) .npc-card {
+    bottom: 104px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .npc-bubble,
   .npc-prompt,
