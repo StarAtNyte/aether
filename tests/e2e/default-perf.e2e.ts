@@ -180,7 +180,7 @@ async function measure(page: Page, pose: readonly number[], cfg: Cfg): Promise<{
           governor: { level: number };
           applyPerformance(): void;
           plainMaterials(on: boolean): void;
-          scene: { environment: unknown; background: unknown; __env?: unknown; overrideMaterial: unknown; traverse(f: (o: { material?: { constructor: new (o: object) => unknown } }) => void): void };
+          scene: { environment: unknown; environmentNode: unknown; background: unknown; __env?: unknown; overrideMaterial: unknown; traverse(f: (o: { material?: { constructor: new (o: object) => unknown } }) => void): void };
           resize(w: number, h: number): void;
           cssWidth: number;
           cssHeight: number;
@@ -221,8 +221,13 @@ async function measure(page: Page, pose: readonly number[], cfg: Cfg): Promise<{
         if (name === 'no-env') {
           x.scene.__env = x.scene.environment;
           x.scene.environment = null;
+          (x.scene as unknown as { __envNode?: unknown; environmentNode: unknown }).__envNode = x.scene.environmentNode;
+          x.scene.environmentNode = null;
         }
-        if (name === 'env-on') x.scene.environment = x.scene.__env ?? null;
+        if (name === 'env-on') {
+          x.scene.environment = x.scene.__env ?? null;
+          x.scene.environmentNode = (x.scene as unknown as { __envNode?: unknown }).__envNode ?? null;
+        }
         if (name === 'std' || name === 'std-noshadow') {
           let ctor: (new (o: object) => unknown) | null = null;
           x.scene.traverse((o) => {
@@ -508,7 +513,11 @@ async function main(): Promise<void> {
         log(`${slug}: ${await describe(page)}`);
         log(`${slug}: lights ${await lights(page)}`);
         if (arg('bisect') !== undefined) {
-          await page.evaluate(() => (window.__aether?.simulation?.renderer as unknown as R).setRenderTier('low'));
+          await page.evaluate((lean) => {
+            const rr = window.__aether?.simulation?.renderer as unknown as R & { forceLean: boolean | null };
+            rr.setRenderTier('low');
+            if (lean) rr.forceLean = true;
+          }, arg('bisect') === 'lean');
           await page.waitForTimeout(3000);
           for (const line of await bisect(page, pose)) log(`${slug}: ${line}`);
         }

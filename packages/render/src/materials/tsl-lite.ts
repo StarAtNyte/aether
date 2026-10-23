@@ -19,6 +19,13 @@ export interface Nd {
   oneMinus(): Nd;
   element(i: number): Nd;
   sample(uv: Nd): Nd;
+  /** A texture read at an explicit mip level (legal in non-uniform control flow on every backend). */
+  level(l: Nd | number): Nd;
+  lessThan(o: Nd | number): Nd;
+  greaterThan(o: Nd | number): Nd;
+  and(o: Nd): Nd;
+  toVar(): Nd;
+  assign(o: Nd | number): void;
   clone(): Nd;
   addAssign(o: Nd): Nd;
   mulAssign(o: Nd | number): Nd;
@@ -42,6 +49,8 @@ type NodeArg = Nd | number;
 
 /** The TSL functions and built-in nodes the shaders of this package use. */
 export interface Tsl {
+  /** A shader branch; `Else` takes the other side. */
+  If(cond: Nd, body: () => void): { Else(body: () => void): void };
   float(v: NodeArg): Nd;
   vec2(...v: NodeArg[]): Nd;
   vec3(...v: Array<NodeArg | import('three').Color | import('three').Vector3>): Nd;

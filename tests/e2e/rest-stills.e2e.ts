@@ -63,6 +63,7 @@ async function main(): Promise<void> {
       const context = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
       await context.addInitScript({ content: SKIP_FIRST_RUN });
       await context.addInitScript({ content: 'globalThis.__name = (f) => f;' });
+      if (process.env['AETHER_INIT']) await context.addInitScript({ content: process.env['AETHER_INIT'] });
       if (process.env['AETHER_RICH'] === '1') await context.addInitScript({ content: 'globalThis.__AETHER_RICH = true;' });
       if (process.env['GEN_GPU'] === 'intel' && process.env['AETHER_WEBGPU'] !== '1') {
         await context.addInitScript(() => {
