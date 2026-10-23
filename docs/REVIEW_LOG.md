@@ -6062,3 +6062,45 @@ Before / after (render() JS median ms per drawn frame; draw calls of the last fr
 Stills: pixel diff before/after on hotel, twin and vaulted is 0.00 to 0.02 / 255 mean (0.00 to 0.05 % of pixels over 8): the same pictures. Content-keyed lightmap hashes are untouched (no geometry is merged or changed).
 
 Honest limits. The Highland "before" run fell back from WebGPU to WebGL after a black-frame watchdog step in that run, so its 41 ms is inflated; the repeatable part is the profile (cache-key work was 13 of 24 ms before, about 2.7 ms after). On this machine headless WebGPU on Highland and the game worlds is unstable (device lost, watchdog steps), so those numbers are from single runs. Every room and the two big architecture worlds are under the 16.6 ms JS budget on a fast CPU at ultra; the missing 60 fps on an integrated GPU is a GPU-side cost (the render submission waits in `writeTexture`/`submit` on the integrated GPU: 500+ ms per frame in one run), which belongs to the quality chain, not to this change. Not done and why: static merging and instancing already exist (`sync/static-merges.ts`, `static-batches.ts`); matrix updates are 0.3 ms/frame; per-frame allocation in the steady state is now small (the remaining three.js garbage is the render-object creation when an animal first enters a shadow frustum, spread over the first turn instead of one spike); WASM SIMD and workers had no hot loop over 2 ms to justify them. Startup (4 to 10 s to an open world at ultra here) is shader compile and world build; not changed.
+
+## 2026-10-23 Studio render as the default view on an integrated GPU: where the frame went, what was cut
+
+Task: studio render became the default view, which on an integrated GPU ran the whole ultra chain (ambient occlusion, reflections, sun shafts, contact shadows, halation, aberration, temporal AA) plus a doubled sun map on every frame, including while orbiting. Aim: 60 fps in motion at the default setting with the studio look kept where the picture rests.
+
+Method. Intel UHD 770 (Mesa, ANGLE/GL, WebGL2), headless Chromium, 1856 x 1016 drawing buffer, a slow orbit of the default camera. The RTX was not used. The harness is `tests/e2e/default-perf.e2e.ts` (`GEN_GPU=intel npx tsx tests/e2e/default-perf.e2e.ts --worlds=... --rows=... --vsync=1`). Two traps found on the way: (1) with vsync off the frame interval is the CPU's submission time, not the GPU's (a 60 ms GPU frame read as 2 ms), so numbers are taken with vsync on (the interval of `requestAnimationFrame` is then the real frame time) and with `EXT_disjoint_timer_query_webgl2` wrapped around each draw for GPU milliseconds; (2) the iGPU was shared with other jobs, so every figure is the smallest of three blocks, and A/B pairs ran back to back.
+
+What the GPU time is made of (hotel room, low tier, default orbit view, GPU ms per frame):
+
+| piece | ms |
+|---|---:|
+| whole frame, direct draw | 23 to 26 |
+| ground hidden | 8 |
+| ground drawn with a plain standard material | 14 |
+| half or quarter resolution | 6.7 (not 4x less: about 6.5 ms is fixed cost) |
+| shadows off, lightmap off, light volume off, environment off | each 0 to 2 |
+| anti-tiling of finish textures (all finishes) | 7 |
+| full studio chain on top of the medium frame (hotel) | +36 (ssr, halation, aberration about 45 each when added to the high chain; shafts 13) |
+
+Ranking of cost: (1) the per-pixel work of lit surfaces, and above all the ground (a lawn or plaza covers 40 to 65 % of the default view and is the heaviest material: layered, anti-tiled, weathered; 17 of 25 ms in the hotel view); (2) the studio post chain (pre-pass plus six screen-space passes, 36 to 57 ms at 1080p); (3) geometry that does not scale with resolution (skyline about 30 ms, casa about 40 ms of fixed cost: 0.75 and 4 million triangles per frame with the shadow pass); (4) shadows (about 12 ms on the skyline), light volume and lightmap (about 2 ms): not the problem.
+
+What changed (all generic, no per-room code):
+- The studio look splits into two chains on integrated and unknown GPUs when the tier is automatic (`QualityPlan.moveEffects`, `world-renderer.ts: syncRest`). While the view moves (camera, edits, resizes) the light chain draws (composite, bloom, grade, grain) and adaptive resolution holds the frame rate; 220 ms after the view stops, the full studio chain takes over at full resolution and refines for 48 frames, as before. Both pipelines stay built (the one not in use is kept as `postStash`, swapped without a rebuild; a stale one is dropped when the sun map is reallocated). Scenes that animate while the view rests (people, water) keep the full chain only while a frame stays under 34 ms; otherwise they keep the light chain until the quality is changed. Discrete GPUs, an explicit tier from Settings, final renders and stills are unchanged.
+- That plan also plans its sun shadows once, as the medium tier does (one content-fitted map, no doubled map, no cascade rebuild), so a switch between the chains recompiles no material.
+- Adaptive resolution is on for the split studio view, steps by what the frame time asks for (`sqrt(fps / 58)`, between 0.6 and 0.9 of the scale, floor 0.5), acts after 1 s below 50 fps instead of 1.5 s below 40, and steps up again after 5 s above 57 fps. Frames drawn at rest do not feed it or the performance ladder.
+- The performance ladder's tier cap now reaches the studio chain (it did not before: a slow studio view could never step down).
+- Ambient occlusion runs at half resolution in the split plan (full on discrete GPUs).
+- The ground and its skirt draw after the opaque items with a small depth bias; this did not change the measured time here (the frame cost is the ground's own shading where it is visible), but it stops the nearest-by-centre sort from shading it under floors in other views.
+
+Before and after, same machine, default orbit of the default camera, studio render, vsync on (frame interval; fps in brackets):
+
+| room | before | after | scale in motion | GPU ms after |
+|---|---:|---:|---:|---:|
+| hotel bedroom | 66.7 ms (15) | 16.7 ms (60) | 0.75 | 11 |
+| twin room | 66.7 ms (15) | 16.7 ms (60) | 0.52 | 9 |
+| vaulted bedroom | 66.7 ms (15) | 16.7 ms (60) | 0.52 | 9 |
+| skyline penthouse | 133 ms (7.5) | 33 to 50 ms (20 to 30) | 0.5 | 35 |
+| casa patio | 267 ms (3.7) | 50 to 67 ms (15 to 20) | 0.5 | 51 |
+
+The three photo rooms hold 60 fps in motion. The skyline and the casa do not: at the resolution floor their cost is geometry and the shadow pass (0.75 and 4 million triangles drawn per frame, 600 to 780 draw calls), which resolution does not reduce. Next levers, not done: a cached sun map for static content (the medium plan's map no longer depends on the camera, so it can be kept until content or sun change; needs a dirty signal from the scene sync), merged and instanced static meshes, a cheaper far ground. Stills: at rest the hotel and skyline look as before (viewed side by side); the skyline's leaf shimmer is calmer. Other things found: the skyline and the casa still bake their light in the browser on open (their bundled lightmap keys no longer match after later renderer changes; `showcase:lightmaps` regenerates them), and the lit material of anti-tiled finishes costs 7 of 25 ms in the hotel view with no single part (noise, second lookup, mottle) responsible.
+
+Gates: `tsc --noEmit` clean; vitest `packages/render` and `apps/studio` pass (the adaptive-resolution tests were rewritten for proportional steps, a quality-plan test covers the split); `npm run e2e:weak` ok; smoke 34/34.
