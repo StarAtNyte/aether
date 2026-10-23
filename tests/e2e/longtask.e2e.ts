@@ -104,7 +104,7 @@ function attribute(prof: Prof, pageStart: number, tasks: Task[]): void {
         .slice(0, k)
         .map(([n, v]) => `${v.toFixed(0)}ms ${n}`)
         .join(' | ');
-    t.fn = `self: ${top(self, 3)}  incl: ${top(incl, 6)}`;
+    t.fn = `self: ${top(self, 3)}  incl: ${top(incl, t.dur > 1000 ? 30 : 6)}`;
   }
 }
 

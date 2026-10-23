@@ -76,3 +76,4 @@ scope.onmessage = (e: MessageEvent<Request>): void => {
     scope.postMessage({ id, error: err instanceof Error ? err.message : String(err) });
   }
 };
+export {};

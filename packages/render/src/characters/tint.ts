@@ -134,8 +134,51 @@ export function recolorHairCards(rgba: Uint8ClampedArray, width: number, height:
   if (hair) recolorPixels(rgba, width, height, hair, refs.hair, () => 1);
 }
 
-/** Decode a mask image file (webp, opaque) into pixels. Browser only. */
+let maskWorker: Worker | null = null;
+let maskId = 0;
+const maskWaiting = new Map<number, { resolve(m: TintMasks): void; reject(e: Error): void }>();
+
+/** The shared decode worker (null where workers are unavailable or it failed once). */
+function maskDecoder(): Worker | null {
+  if (maskWorker) return maskWorker;
+  if (typeof Worker === 'undefined') return null;
+  try {
+    const w = new Worker(new URL('./mask-decode.worker.ts', import.meta.url), { type: 'module', name: 'aether-mask-decode' });
+    w.onmessage = (e: MessageEvent): void => {
+      const d = e.data as { id: number; width?: number; height?: number; data?: ArrayBuffer; error?: string };
+      const job = maskWaiting.get(d.id);
+      if (!job) return;
+      maskWaiting.delete(d.id);
+      if (d.data && d.width && d.height) job.resolve({ width: d.width, height: d.height, data: new Uint8ClampedArray(d.data) });
+      else job.reject(new Error(d.error ?? 'mask decode failed'));
+    };
+    w.onerror = (): void => {
+      for (const job of maskWaiting.values()) job.reject(new Error('mask decode worker failed'));
+      maskWaiting.clear();
+      w.terminate();
+      maskWorker = null;
+    };
+    maskWorker = w;
+    return w;
+  } catch {
+    return null;
+  }
+}
+
+/** Decode a mask image file (webp, opaque) into pixels, in a worker where there is one. Browser only. */
 export async function decodeMasks(blob: Blob): Promise<TintMasks> {
+  const w = maskDecoder();
+  if (w) {
+    try {
+      return await new Promise<TintMasks>((resolve, reject) => {
+        const id = ++maskId;
+        maskWaiting.set(id, { resolve, reject });
+        w.postMessage({ id, blob });
+      });
+    } catch {
+      // Fall through to the page's own decode.
+    }
+  }
   const bmp = await createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
   try {
     const canvas = new OffscreenCanvas(bmp.width, bmp.height);

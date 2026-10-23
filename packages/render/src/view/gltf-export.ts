@@ -480,6 +480,23 @@ async function premergeMetalRough(root: Object3D): Promise<Texture[]> {
   return made;
 }
 
+/**
+ * While the exporter runs its scratch 2D canvases are software canvases: it draws every texture to one and encodes it with
+ * `toBlob`, and on a GPU-accelerated canvas that encode waits for a read-back of the GPU (seconds for a furnished room, on
+ * the page). `willReadFrequently` keeps the pixels in memory. Returns the function that restores `getContext`.
+ */
+function softwareCanvases(): () => void {
+  if (typeof HTMLCanvasElement === 'undefined') return () => undefined;
+  const proto = HTMLCanvasElement.prototype as unknown as { getContext: (this: HTMLCanvasElement, type: string, attrs?: Record<string, unknown>) => unknown };
+  const original = proto.getContext;
+  proto.getContext = function (this: HTMLCanvasElement, type: string, attrs?: Record<string, unknown>): unknown {
+    return original.call(this, type, type === '2d' ? { willReadFrequently: true, ...attrs } : attrs);
+  };
+  return () => {
+    proto.getContext = original;
+  };
+}
+
 /** Export options. */
 export interface GltfExportOptions {
   /** GLB (one binary file, default) or glTF JSON with embedded buffers. */
@@ -515,7 +532,13 @@ export async function exportGltf(content: Object3D, camera: Camera | null, opts:
     const exporter = new GLTFExporter();
     exporter.setTextureUtils(textureUtils);
     const binary = opts.binary !== false;
-    const out = (await exporter.parseAsync(scene.root, { binary, onlyVisible: true, maxTextureSize: MAX_EXPORT_TEXTURE, includeCustomExtensions: false })) as ArrayBuffer | Record<string, unknown>;
+    const restore = softwareCanvases();
+    let out: ArrayBuffer | Record<string, unknown>;
+    try {
+      out = (await exporter.parseAsync(scene.root, { binary, onlyVisible: true, maxTextureSize: MAX_EXPORT_TEXTURE, includeCustomExtensions: false })) as ArrayBuffer | Record<string, unknown>;
+    } finally {
+      restore();
+    }
     const data = out instanceof ArrayBuffer ? new Uint8Array(out) : JSON.stringify(out);
     return { data, meshes: scene.meshes, triangles: scene.triangles, skipped: scene.skipped };
   } finally {
