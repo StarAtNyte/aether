@@ -36,7 +36,9 @@ import {
   RGB_ETC2_Format,
   RGB_PVRTC_4BPPV1_Format,
   RGB_S3TC_DXT1_Format,
+  NoColorSpace,
   SRGBColorSpace,
+  Source,
   Vector3,
   type Camera,
   type SkinnedMesh,
@@ -377,6 +379,107 @@ export function buildExportScene(content: Object3D, camera: Camera | null, maxTr
   };
 }
 
+interface MergeSource {
+  bitmap?: ImageBitmap;
+  data?: Uint8ClampedArray;
+  width: number;
+  height: number;
+  srgb: boolean;
+}
+
+/** A texture's pixels as something a worker can take (an ImageBitmap snapshot or a copy of its data), or null. */
+async function mergeSource(t: Texture | null | undefined): Promise<MergeSource | null | undefined> {
+  if (!t) return null;
+  if ((t as { isCompressedTexture?: boolean }).isCompressedTexture) return undefined;
+  const srgb = t.colorSpace === SRGBColorSpace;
+  const px = rgbaPixels(t);
+  if (px) return { data: new Uint8ClampedArray(px.data.buffer.slice(px.data.byteOffset, px.data.byteOffset + px.width * px.height * 4)), width: px.width, height: px.height, srgb };
+  const img = t.image as { width?: number; height?: number } | null;
+  if (!isDrawable(img) || typeof createImageBitmap !== 'function' || !img?.width || !img.height) return undefined;
+  return { bitmap: await createImageBitmap(img as ImageBitmapSource), width: img.width, height: img.height, srgb };
+}
+
+/**
+ * Give every material that has a roughness map and no (or another) metalness map the single merged texture the exporter
+ * would otherwise build on the main thread (a full-size read-back per texture): the composite is made in a worker and both
+ * slots then hold the same texture, which the exporter writes as it is. Anything that cannot be merged here is left alone
+ * (the exporter merges it itself). Returns the textures made, for disposal.
+ */
+async function premergeMetalRough(root: Object3D): Promise<Texture[]> {
+  if (typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined') return [];
+  const pairs = new Map<string, { rough: Texture | null; metal: Texture | null; mats: MeshStandardMaterial[] }>();
+  const ids = new Map<Texture, number>();
+  const idOf = (t: Texture | null): number => (t ? (ids.get(t) ?? (ids.set(t, ids.size + 1), ids.size)) : 0);
+  root.traverse((o) => {
+    if (!(o instanceof Mesh)) return;
+    for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+      if (!(m instanceof MeshStandardMaterial) || m.roughnessMap === m.metalnessMap || (!m.roughnessMap && !m.metalnessMap)) continue;
+      const key = `${idOf(m.roughnessMap)}/${idOf(m.metalnessMap)}`;
+      const e = pairs.get(key) ?? { rough: m.roughnessMap, metal: m.metalnessMap, mats: [] };
+      if (!e.mats.includes(m)) e.mats.push(m);
+      pairs.set(key, e);
+    }
+  });
+  if (pairs.size === 0) return [];
+  let worker: Worker;
+  try {
+    worker = new Worker(new URL('./metal-rough.worker.ts', import.meta.url), { type: 'module', name: 'aether-metal-rough' });
+  } catch {
+    return [];
+  }
+  const made: Texture[] = [];
+  let nextId = 0;
+  const run = (req: { rough: MergeSource | null; metal: MergeSource | null }): Promise<HTMLCanvasElement | null> =>
+    new Promise((resolve) => {
+      const id = ++nextId;
+      worker.onmessage = (e: MessageEvent): void => {
+        const d = e.data as { id: number; data?: ArrayBuffer; width?: number; height?: number };
+        if (d.id !== id) return;
+        if (!d.data || !d.width || !d.height) return resolve(null);
+        // A CPU-backed canvas (as the exporter's own merge makes): drawing and encoding it later does not wait for the GPU.
+        const canvas = document.createElement('canvas');
+        canvas.width = d.width;
+        canvas.height = d.height;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (!ctx) return resolve(null);
+        ctx.putImageData(new ImageData(new Uint8ClampedArray(d.data), d.width, d.height), 0, 0);
+        resolve(canvas);
+      };
+      worker.onerror = (): void => resolve(null);
+      const transfer: Transferable[] = [];
+      for (const s of [req.rough, req.metal]) {
+        if (s?.bitmap) transfer.push(s.bitmap);
+        else if (s?.data) transfer.push(s.data.buffer);
+      }
+      worker.postMessage({ id, ...req }, transfer);
+    });
+  try {
+    for (const e of pairs.values()) {
+      const rough = await mergeSource(e.rough);
+      const metal = await mergeSource(e.metal);
+      if (rough === undefined || metal === undefined) {
+        for (const s of [rough, metal]) s?.bitmap?.close();
+        continue;
+      }
+      const canvas = await run({ rough, metal });
+      if (!canvas) continue;
+      const reference = (e.metal ?? e.rough) as Texture;
+      const merged = reference.clone();
+      merged.source = new Source(canvas);
+      merged.colorSpace = NoColorSpace;
+      merged.needsUpdate = true;
+      made.push(merged);
+      for (const m of e.mats) {
+        m.roughnessMap = merged;
+        m.metalnessMap = merged;
+      }
+    }
+  } finally {
+    worker.terminate();
+  }
+  return made;
+}
+
 /** Export options. */
 export interface GltfExportOptions {
   /** GLB (one binary file, default) or glTF JSON with embedded buffers. */
@@ -402,10 +505,13 @@ export async function exportGltf(content: Object3D, camera: Camera | null, opts:
   const max = opts.maxTriangles ?? MAX_EXPORT_TRIANGLES;
   // Compressed library textures are decompressed by the exporter (WebGL2 texture utilities, loaded with it).
   const scene = buildExportScene(content, camera, max, 'keep');
+  let madeTextures: Texture[] = [];
   try {
     if (scene.meshes === 0 && scene.skipped > 0) throw new Error(`the scene is over the export limit of ${max.toLocaleString('en-US')} triangles`);
     if (scene.meshes === 0) throw new Error('there is nothing to export yet');
     const [{ GLTFExporter }, textureUtils] = await Promise.all([import('three/addons/exporters/GLTFExporter.js'), import('three/addons/utils/WebGLTextureUtils.js')]);
+    const merged = await premergeMetalRough(scene.root).catch(() => [] as Texture[]);
+    madeTextures = merged;
     const exporter = new GLTFExporter();
     exporter.setTextureUtils(textureUtils);
     const binary = opts.binary !== false;
@@ -413,6 +519,14 @@ export async function exportGltf(content: Object3D, camera: Camera | null, opts:
     const data = out instanceof ArrayBuffer ? new Uint8Array(out) : JSON.stringify(out);
     return { data, meshes: scene.meshes, triangles: scene.triangles, skipped: scene.skipped };
   } finally {
+    for (const t of madeTextures) {
+      const img = t.image as HTMLCanvasElement | null;
+      t.dispose();
+      if (img) {
+        img.width = 0;
+        img.height = 0;
+      }
+    }
     scene.dispose();
   }
 }
