@@ -3357,9 +3357,60 @@ export class WorldRenderer {
       this.watchNudge = t;
       this.needsDraw = true;
     }
-    if (drew && settled && this.watchdog.wantsSample(t, this.framesDrawn)) sample = this.sampleView();
+    if (drew && settled && !this.sampling && this.watchdog.wantsSample(t, this.framesDrawn)) {
+      if (typeof createImageBitmap === 'function') this.sampleViewAsync();
+      else sample = this.sampleView();
+    }
     const action = this.watchdog.tick(t, this.framesDrawn, sample);
     if (action) this.onWatchdogAction(action);
+  }
+
+  /** An asynchronous view sample is in flight. */
+  private sampling = false;
+
+  private sampleWorker: Worker | null = null;
+  private sampleId = 0;
+
+  /**
+   * The same 16×16 read-back without waiting for the GPU on the main thread: `createImageBitmap` takes its snapshot of the
+   * canvas in this task (so it is the frame just drawn) and a worker reads it (the synchronous `getImageData` stalls the
+   * page for as long as the GPU needs to finish the frame: seconds while the first programs build).
+   */
+  private sampleViewAsync(): void {
+    const src = this.renderer.domElement as HTMLCanvasElement;
+    if (!(src.width > 0 && src.height > 0)) return;
+    this.sampling = true;
+    try {
+      if (!this.sampleWorker) {
+        const w = new Worker(new URL('./view/frame-sample.worker.ts', import.meta.url), { type: 'module', name: 'aether-frame-sample' });
+        w.onmessage = (e: MessageEvent): void => {
+          const d = e.data as { id?: number; sample?: FrameSample | null };
+          if (d.id !== this.sampleId) return;
+          this.sampling = false;
+          if (this.disposed || this.watchdog.finished || !d.sample) return;
+          const action = this.watchdog.tick(now(), this.framesDrawn, d.sample);
+          if (action) this.onWatchdogAction(action);
+        };
+        w.onerror = (): void => {
+          this.sampling = false;
+          this.sampleWorker?.terminate();
+          this.sampleWorker = null;
+        };
+        this.sampleWorker = w;
+      }
+      const id = ++this.sampleId;
+      const w = this.sampleWorker;
+      createImageBitmap(src)
+        .then((bmp) => {
+          if (this.disposed || !w) bmp.close();
+          else w.postMessage({ id, bitmap: bmp }, [bmp]);
+        })
+        .catch(() => {
+          this.sampling = false;
+        });
+    } catch {
+      this.sampling = false;
+    }
   }
 
   /** The drawn frame as a 16×16 read-back (null where the browser cannot give one). Same task as the draw. */
@@ -4945,6 +4996,8 @@ export class WorldRenderer {
     this.capture?.end();
     this.capture = null;
     this.disposed = true;
+    this.sampleWorker?.terminate();
+    this.sampleWorker = null;
     this.uninstallGpuLog?.();
     this.uninstallGpuLog = null;
     this.pathOverlay.dispose();
