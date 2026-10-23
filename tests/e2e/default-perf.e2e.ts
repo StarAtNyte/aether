@@ -69,6 +69,13 @@ const EXTRA: Cfg[] = [
   { id: 'gs-novol', ...BASE, js: 'ground-simple+vol-off', after: 'ground-restore+vol-on' },
   { id: 'gs-alloff', ...BASE, js: 'ground-simple+all-off', after: 'ground-restore+all-on' },
   { id: 'gs-alloff-noenv', ...BASE, js: 'ground-simple+all-off+no-env', after: 'ground-restore+all-on+env-on' },
+  { id: 'default-nocast', auto: true, js: 'cast-off', after: 'cast-on' },
+  { id: 'default-frozen-map', auto: true, js: 'map-freeze', after: 'map-thaw' },
+  { id: 'default-noshadow', auto: true, js: 'sun-off', after: 'sun-on' },
+  { id: 'default-no-fields', auto: true, js: 'fields-hide', after: 'fields-show' },
+  { id: 'default-no-terrain', auto: true, js: 'terrain-hide', after: 'terrain-show' },
+  { id: 'default-terrain-plain', auto: true, js: 'terrain-plain', after: 'terrain-restore' },
+  { id: 'default-no-people', auto: true, js: 'people-hide', after: 'people-show' },
   { id: 'default-no-hdri', auto: true, js: 'no-hdri' },
   { id: 'default-no-skydetail', auto: true, js: 'no-sky' },
   { id: 'default-no-hdri-no-sky', auto: true, js: 'no-hdri-sky' },
@@ -238,6 +245,32 @@ async function measure(page: Page, pose: readonly number[], cfg: Cfg): Promise<{
             if (name === 'ground-restore' && m.__mat) m.material = m.__mat;
           });
         }
+        const walk = (f: (o: { name: string; visible: boolean; castShadow: boolean; isMesh?: boolean; parent?: unknown; isSkinnedMesh?: boolean; __cs?: boolean; __vs?: boolean }) => void): void => {
+          x.scene.traverse((o) => f(o as never));
+        };
+        const named = (o: { name: string; parent?: unknown }, re: RegExp): boolean => {
+          for (let p: { name: string; parent?: unknown } | undefined = o; p; p = p.parent as typeof p) if (re.test(p.name)) return true;
+          return false;
+        };
+        if (name === 'cast-off') walk((o) => { if (o.isMesh) { o.__cs = o.castShadow; o.castShadow = false; } });
+        if (name === 'cast-on') walk((o) => { if (o.isMesh && o.__cs !== undefined) o.castShadow = o.__cs; });
+        if (name === 'map-freeze') (x.env.sun as unknown as { shadow: { autoUpdate: boolean; needsUpdate: boolean } }).shadow.autoUpdate = false;
+        if (name === 'map-thaw') (x.env.sun as unknown as { shadow: { autoUpdate: boolean } }).shadow.autoUpdate = true;
+        if (name === 'sun-off') x.env.sun.castShadow = false;
+        if (name === 'sun-on') x.env.sun.castShadow = true;
+        if (name === 'fields-hide' || name === 'fields-show') walk((o) => { if (o.isMesh && /^field:/.test(o.name)) o.visible = name === 'fields-show'; });
+        if (name === 'terrain-hide' || name === 'terrain-show') walk((o) => { if (o.isMesh && named(o, /^landscape/)) o.visible = name === 'terrain-show'; });
+        if (name === 'terrain-plain' || name === 'terrain-restore') {
+          walk((o) => {
+            const m = o as unknown as { isMesh?: boolean; material: { constructor: new (q: object) => unknown }; __tm?: unknown; name: string; parent?: unknown };
+            if (!m.isMesh || !named(m, /^landscape/)) return;
+            if (name === 'terrain-plain') {
+              m.__tm = m.material;
+              m.material = new m.material.constructor({ color: 0x8a8a50, roughness: 0.9 }) as never;
+            } else if (m.__tm) m.material = m.__tm as never;
+          });
+        }
+        if (name === 'people-hide' || name === 'people-show') walk((o) => { if (o.isSkinnedMesh) o.visible = name === 'people-show'; });
         if (name === 'std-off') {
           x.scene.overrideMaterial = null;
           x.env.sun.castShadow = true;
