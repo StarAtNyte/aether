@@ -1,18 +1,18 @@
 {
   "keys": [
-    "lm3-54530dc7aa32fd0d8866990b633e8b88",
     "lm3-64ccdd776cc19fcdb58893dbebc1e2ae",
-    "lm3-7d5913bd921ba642a475e0231532ba73",
     "lm3-83357235e946007399dc29c05d6e5490",
     "lm3-8c64b9bb6b80dc15a9d9a95c889465b2",
+    "lm3-d3d8e9e47f975fd9e16ee07d11eecbea",
+    "lm3-e9529aece1de6ffb7c7e3dacc0940c40",
     "lm3-ffa3bca1b983a782720997ab477177cb"
   ],
   "worlds": {
     "casa-patio": {
-      "key": "lm3-7d5913bd921ba642a475e0231532ba73",
+      "key": "lm3-d3d8e9e47f975fd9e16ee07d11eecbea",
       "quality": "medium",
       "samples": 48,
-      "bytes": 748516
+      "bytes": 747428
     },
     "photo-four-poster": {
       "key": "lm3-8c64b9bb6b80dc15a9d9a95c889465b2",
@@ -39,10 +39,10 @@
       "bytes": 252996
     },
     "skyline-penthouse": {
-      "key": "lm3-54530dc7aa32fd0d8866990b633e8b88",
+      "key": "lm3-e9529aece1de6ffb7c7e3dacc0940c40",
       "quality": "medium",
       "samples": 48,
-      "bytes": 747432
+      "bytes": 747156
     }
   }
 }
