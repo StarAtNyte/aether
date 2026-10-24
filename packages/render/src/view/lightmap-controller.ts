@@ -29,6 +29,7 @@ import {
 } from '../environment/lightmap';
 import { LIGHTMAP_MAX_ASSET_BYTES, contentHash, lightmapKey, packAsset, stackAtlas, unpackAsset, unstackAtlas, type LightmapAssetMeta } from '../environment/lightmap-asset';
 import { LIGHTMAP_CACHE_MIN_BAKE_MS, createIdbLightmapCache, type LightmapCache } from '../environment/lightmap-cache';
+import { VOLUME_BAKE_VERSION } from '../environment/light-volume-cache';
 import { decodeImage, encodeImage } from '../environment/lightmap-codec';
 import { parseLightmapReply, type LightmapRequest } from '../environment/lightmap-protocol';
 import { collectTraceInput, type TraceProxy, type VolumeLighting, type VolumePart } from './light-volume-controller';
@@ -104,6 +105,13 @@ export interface LightmapOptions {
 
 const _box = new Box3();
 
+/** Numbers as integers in steps of 1 / `perUnit` (two runs that differ by less than a step hash the same, unless one sits on a step edge). */
+function quantize(values: Float32Array, perUnit: number): Int32Array {
+  const out = new Int32Array(values.length);
+  for (let i = 0; i < values.length; i++) out[i] = Math.round((values[i] as number) * perUnit);
+  return out;
+}
+
 function defaultWorker(): LightmapWorkerLike {
   return new Worker(new URL('../environment/lightmap.worker.ts', import.meta.url), { type: 'module' }) as unknown as LightmapWorkerLike;
 }
@@ -174,6 +182,11 @@ export class LightmapController implements LightmapSource {
   private disposed = false;
   /** A bake is scheduled or being decided (gathering, looking for a stored lightmap): not final yet. */
   private deciding = false;
+  /** A bundled or cached file is being given to the surfaces (a few slices): not a bake, so no status pill, but not final either. */
+  private applying = false;
+  /** What the last key was made of (a bundled file that does not match: compare this with the one it was baked from). */
+  keyInputs: { content: string; scalars: string } | null = null;
+  keyParts: string[] | null = null;
   /** Bakes handed to the worker since the controller was made (a bundled or cached lightmap never counts). */
   bakesStarted = 0;
   private readonly cache: LightmapCache | null;
@@ -192,7 +205,7 @@ export class LightmapController implements LightmapSource {
 
   /** A bake is waiting for the volume, gathering, or running (captures that want the final light wait for it). */
   get baking(): boolean {
-    return this.enabled && (this.state === 'baking' || this.state === 'waiting' || this.deciding);
+    return this.enabled && (this.state === 'baking' || this.state === 'waiting' || this.deciding || this.applying);
   }
 
   /** A lightmap is applied to the building. */
@@ -356,6 +369,7 @@ export class LightmapController implements LightmapSource {
   /** Running work stops (a result still in flight is ignored). */
   private stop(): void {
     this.gen++;
+    this.applying = false;
     this.cancelJob();
   }
 
@@ -490,15 +504,22 @@ export class LightmapController implements LightmapSource {
   /** The key of this building and light for `plan` (the geometry is hashed once per bake attempt). */
   private keyOf(p: Prepared, plan: LightmapPlan): string {
     if (!p.content) {
-      // The walls are in the trace input as built; their drawn meshes (which a view may section) are left out.
-      const arrays: ArrayBufferView[] = [p.input.positions, p.input.albedo, p.input.twoSided, p.volume];
+      // The walls are in the trace input as built; their drawn meshes (which a view may section) are left out. The numbers are
+      // rounded (2 cm, 1 % albedo) and the probe volume's floats are left out (it is a function of the trace and the light, which
+      // the key holds): two backends build the same building a fraction of a millimetre apart (a chair box 0.5 mm lower), and the
+      // file must match on both.
+      const arrays: ArrayBufferView[] = [quantize(p.input.positions, 50), quantize(p.input.albedo, 100), p.input.twoSided];
       p.data.forEach((d, i) => {
-        if (!p.slots[i]?.wall) arrays.push(d.positions, d.normals);
+        if (!p.slots[i]?.wall) arrays.push(quantize(d.positions, 50), quantize(d.normals, 50));
       });
       p.content = contentHash(arrays);
+      // Diagnostics (set `globalThis.__AETHER_KEYDEBUG` before the world opens): one hash per array, to see which one differs between two runs.
+      if ((globalThis as { __AETHER_KEYDEBUG?: boolean }).__AETHER_KEYDEBUG) this.keyParts = arrays.map((a, i) => `${i < 3 ? ['trace', 'albedo', 'twoSided'][i] : `mesh${i - 3}`}:${contentHash([a]).slice(0, 8)}:${(a as { length?: number }).length}`);
     }
     const lamps = p.lighting.lamps.map((l) => [l.position, l.color, l.range, l.room ?? null]);
-    return lightmapKey(p.content, [plan.size, plan.samples, plan.density, p.data.map((d, i) => (p.slots[i]?.wall ? -1 : meshTriangleCount(d))), p.grid, p.lighting.sun, p.lighting.ambient, p.groundY, lamps]);
+    const scalars = [VOLUME_BAKE_VERSION, plan.size, plan.samples, plan.density, p.data.map((d, i) => (p.slots[i]?.wall ? -1 : meshTriangleCount(d))), p.grid, p.lighting.sun, p.lighting.ambient, p.groundY, lamps];
+    this.keyInputs = { content: p.content, scalars: JSON.stringify(scalars) };
+    return lightmapKey(p.content, scalars);
   }
 
   private async lookup(keys: readonly string[]): Promise<{ bytes: Uint8Array; source: 'static' | 'cache' } | null> {
@@ -702,7 +723,9 @@ export class LightmapController implements LightmapSource {
 
   private applyDecoded(meta: LightmapAssetMeta, rgba: Uint8Array, uv: Array<Float32Array | null>, p: Prepared, source: 'bake' | 'cache' | 'static', bytes: Uint8Array, wallMs: number, gen: number): void {
     if (gen !== this.gen || !this.enabled) return;
-    this.setState('baking', 'applying baked light', 1);
+    // A file from the bundle or the cache is not a bake: the pill (state 'baking' / 'waiting') stays away, the status keeps its state.
+    if (source === 'bake') this.setState('baking', 'applying baked light', 1);
+    else this.applying = true;
     this.light.setLightmap(rgba, meta.size, meta.scale);
     // The same surfaces re-baked (another hour) have the same coordinates: nothing is rebuilt, only the atlas changed.
     let same = this.uvs.size > 0;
@@ -763,6 +786,7 @@ export class LightmapController implements LightmapSource {
   }
 
   private finishApply(meta: LightmapAssetMeta, source: 'bake' | 'cache' | 'static', bytes: Uint8Array, wallMs: number, meshes: number, gen: number): void {
+    this.applying = false;
     if (gen !== this.gen || !this.enabled) return;
     this.appliedKey = meta.key;
     this.appliedBytes = bytes;

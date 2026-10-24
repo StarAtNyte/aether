@@ -13,12 +13,15 @@ const ARGS = process.argv.slice(2);
 const arg = (name: string): string | undefined => ARGS.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
 const WORLDS = (arg('worlds') ?? 'photo-hotel-bedroom,photo-twin-room,photo-four-poster,photo-vaulted-bedroom,skyline-penthouse,casa-patio').split(',').filter(Boolean);
 /** The architecture views each world is also opened in (its cover shot's, plus the lowered plan view). */
+/** Backends the worlds are opened on: the default (WebGPU where the browser has it) and WebGL2 (`--webgl2` or `--default` for one). */
+const BACKENDS: Array<'default' | 'webgl2'> = ARGS.includes('--webgl2') ? ['webgl2'] : ARGS.includes('--default') ? ['default'] : ['default', 'webgl2'];
 const VIEWS: Record<string, Array<'cutaway' | 'down'>> = { 'skyline-penthouse': ['cutaway', 'down'], 'casa-patio': ['cutaway', 'down'] };
 
 interface R {
   lightmapStatus: { state: string; message: string };
   lightmapStats: { source: string; key: string } | null;
   lightmapBakesStarted: number;
+  lightmapKeyInputs: { content: string; scalars: string; parts: string[] | null } | null;
   setCameraPose(x: number, y: number, z: number, yaw: number, pitch: number): void;
   requestRender(): void;
 }
@@ -56,14 +59,14 @@ async function open(page: Page, url: string, slug: string): Promise<void> {
   });
 }
 
-async function settle(page: Page, seconds: number): Promise<{ log: string[]; bakes: number; source: string | null; state: string }> {
+async function settle(page: Page, seconds: number): Promise<{ log: string[]; bakes: number; source: string | null; state: string; keyInputs: unknown }> {
   await page
     .waitForFunction(() => (window.__aether?.simulation?.renderer as unknown as R).lightmapStatus.state === 'applied', null, { timeout: 90_000, polling: 250 })
     .catch(() => undefined);
   await page.waitForTimeout(seconds * 1000);
   return page.evaluate(() => {
     const r = window.__aether?.simulation?.renderer as unknown as R;
-    return { log: (window as unknown as { __lm: string[] }).__lm, bakes: r.lightmapBakesStarted, source: r.lightmapStats?.source ?? null, state: r.lightmapStatus.state };
+    return { log: (window as unknown as { __lm: string[] }).__lm, bakes: r.lightmapBakesStarted, source: r.lightmapStats?.source ?? null, state: r.lightmapStatus.state, keyInputs: r.lightmapKeyInputs };
   });
 }
 
@@ -71,15 +74,16 @@ async function main(): Promise<void> {
   const server = await startServer((l) => process.stdout.write(`${l}\n`));
   const browser = await chromium.launch({ executablePath: findChrome(), args: [...CHROME_ARGS] });
   let failed = 0;
-  const check = (label: string, r: { log: string[]; bakes: number; source: string | null; state: string }): void => {
+  const check = (label: string, r: { log: string[]; bakes: number; source: string | null; state: string; keyInputs: unknown }): void => {
     const pill = r.log.filter((l) => /^(baking|waiting)\|/.test(l) ? !l.endsWith('|applying baked light') : l.endsWith('|PILL'));
     const ok = r.state === 'applied' && r.source === 'static' && r.bakes === 0 && pill.length === 0;
     process.stdout.write(`${ok ? 'ok  ' : 'FAIL'} ${label}: state=${r.state} source=${r.source} bakes=${r.bakes}${pill.length ? ` pill=${pill.join(' / ')}` : ''}\n`);
     if (process.env['TRACE']) process.stdout.write(`     ${r.log.join('  >  ')}\n`);
     if (!ok) failed++;
+    if (!ok || process.env['TRACE']) process.stdout.write(`     key inputs: ${JSON.stringify(r.keyInputs)}\n`);
   };
   try {
-    for (const slug of WORLDS) {
+    for (const [slug, backend] of WORLDS.flatMap((w) => BACKENDS.map((b) => [w, b] as const))) {
       // One page per case: opened as is, switched to an architecture view once the lightmap is on, and opened already in that view
       // (the view is set before the lightmap has settled, as a restored session or a cover shot does).
       const cases: Array<{ walls: 'cutaway' | 'down' | null; early: boolean }> = [{ walls: null, early: false }];
@@ -88,6 +92,13 @@ async function main(): Promise<void> {
         const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
         await context.addInitScript({ content: SKIP_FIRST_RUN });
         await context.addInitScript({ content: 'globalThis.__name = (f) => f;' });
+        if (process.env['KEYDEBUG']) await context.addInitScript({ content: 'globalThis.__AETHER_KEYDEBUG = true;' });
+        // The WebGL2 pass hides WebGPU so the studio draws through its WebGL2 backend (the bundled files must match on both).
+        if (backend === 'webgl2') {
+          await context.addInitScript(() => {
+            delete (Navigator.prototype as unknown as Record<string, unknown>)['gpu'];
+          });
+        }
         try {
           const page = await context.newPage();
           await open(page, server.url, slug);
@@ -106,9 +117,9 @@ async function main(): Promise<void> {
             );
           };
           if (c.walls && c.early) await view(c.walls);
-          const label = `${slug} ${c.walls === null ? 'as opened' : c.early ? `opened in ${c.walls}` : `switched to ${c.walls}`}`;
+          const label = `${slug} [${backend}] ${c.walls === null ? 'as opened' : c.early ? `opened in ${c.walls}` : `switched to ${c.walls}`}`;
           if (c.walls && !c.early) {
-            check(`${slug} as opened`, await settle(page, 2));
+            check(`${slug} [${backend}] as opened`, await settle(page, 2));
             await view(c.walls);
             check(label, await settle(page, 8));
           } else check(label, await settle(page, c.walls ? 8 : 3));
