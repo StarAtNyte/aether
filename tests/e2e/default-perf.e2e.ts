@@ -29,6 +29,8 @@ const FORCE_DRAW = arg('forcedraw') !== undefined;
 const PROFILE = arg('profile') !== undefined;
 const MOVESHOT = arg('moveshot');
 const PIN = arg('pin') === undefined ? null : Number(arg('pin'));
+const VARIANT = arg('var');
+const NOBIAS = arg('nobias') !== undefined;
 const TIMEOUT = 150_000;
 const t0 = performance.now();
 const log = (line: string): void => void process.stdout.write(`[${((performance.now() - t0) / 1000).toFixed(1).padStart(6)}s] ${line}\n`);
@@ -565,6 +567,8 @@ async function main(): Promise<void> {
       const context = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
       await context.addInitScript({ content: SKIP_FIRST_RUN });
       await context.addInitScript({ content: 'globalThis.__name = (f) => f;' });
+      if (VARIANT) await context.addInitScript({ content: `globalThis.__UPVAR = ${JSON.stringify(VARIANT)};` });
+      if (NOBIAS) await context.addInitScript({ content: 'globalThis.__NOBIAS = true;' });
       if (WEAK) {
         await context.addInitScript(() => {
           Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 2 });

@@ -19,6 +19,7 @@ import type { WebGPURenderer } from 'three/webgpu';
 import { errorMessage, log } from '../log';
 import { ABERRATION_STRENGTH, GRAIN_AMPLITUDE, effectsKey, needsPrePass, type PostEffects } from './finishing';
 import { NEUTRAL_GRADE, type Grade } from './grade';
+import { createUpsampler, type Upsampler } from './upsample';
 
 /** Post pipeline variant: composite only, or with the opaque pre-pass (AO, TAA, reflections, shafts, DOF). */
 export type PostQuality = 'standard' | 'studio';
@@ -173,6 +174,12 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
     const { bloom } = bloomMod;
     const disposables: Array<{ dispose(): void }> = [];
     // Temporal AA replaces MSAA (its history needs single-sampled targets); without it the scene pass keeps MSAA.
+    const variant = (globalThis as { __UPVAR?: string }).__UPVAR ?? 'taau:bilin:cross:hcr:w15';
+    // The temporal pass reads the scene pass's depth, which a multisampled pass only resolves on the WebGL2 backend (WebGPU keeps the
+    // spatial filter and MSAA until its depth read is tested).
+    const temporalOk = (renderer as unknown as { backend?: { isWebGPUBackend?: boolean } }).backend?.isWebGPUBackend !== true;
+    const temporalScene = !needsPrePass(effects) && temporalOk && variant.startsWith('taau');
+    // MSAA stays: cut-out foliage is alpha-to-coverage, which without multisampling came out as bright speckle (measured, see the review log).
     const scenePass = effects.taa ? pass(scene, camera, { samples: 0 }) : pass(scene, camera);
     disposables.push(scenePass);
     type Value = ReturnType<typeof float>;
@@ -247,7 +254,12 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
     const uSharp = uniform(0);
     const uTexel = uniform(new three.Vector2(0, 0));
     let hdr = color.rgb;
-    if (!prepass) {
+    let upsampler: Upsampler | null = null;
+    if (!prepass && variant !== 'old' && variant !== 'bilinear') {
+      upsampler = createUpsampler(three, tsl, renderer, scenePass, camera, temporalScene, variant);
+      disposables.push(upsampler);
+      hdr = upsampler.rgb;
+    } else if (!prepass) {
       const c = color.rgb;
       const up = color.sample(screenUV.add(vec2(0, uTexel.y))).rgb;
       const down = color.sample(screenUV.sub(vec2(0, uTexel.y))).rgb;
@@ -377,13 +389,14 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
       sceneScalable: !prepass,
       setSceneScale: (scale: number, width: number, height: number) => {
         if (prepass) return;
-        const k = Number.isFinite(scale) ? Math.max(0.25, Math.min(1, scale)) : 1;
+        const k = Number.isFinite(scale) ? Math.max(0.15, Math.min(1, scale)) : 1;
         if (k === sceneScale && uTexel.value.x > 0) return;
         sceneScale = k;
         scenePass.setResolutionScale(k);
         // One texel of the scaled target in frame UV units; the sharpening fades out as the scale nears 1.
         uTexel.value.set(1 / Math.max(1, Math.floor(width * k)), 1 / Math.max(1, Math.floor(height * k)));
-        uSharp.value = k >= 0.98 ? 0 : SCENE_SHARPEN;
+        uSharp.value = k >= 0.98 || variant === 'bilinear' ? 0 : SCENE_SHARPEN;
+        upsampler?.setScale(k, Math.max(1, Math.floor(width * k)), Math.max(1, Math.floor(height * k)), width, height);
       },
       quality: prepass ? 'studio' : 'standard',
       effects,
@@ -391,7 +404,12 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
       render: () => {
         seed = (seed + 1) % 4096;
         uSeed.value = seed;
-        pipeline.render();
+        upsampler?.begin();
+        try {
+          pipeline.render();
+        } finally {
+          upsampler?.end();
+        }
       },
       setBloom: (s: number) => {
         bloomNode.strength.value = bloomStrength(s);

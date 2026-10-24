@@ -80,6 +80,7 @@ import { daylightLampFactor } from './sync/lights';
 import { collectFramingItems, FOCUS_TAG } from './view/content-items';
 import { GROW_OVERSHOOT_MAX_RADIUS, GrowIn, growDelay } from './view/grow-in';
 import { installRenderPatches } from './three-patches';
+import { installLodBias, lodBiasFor, setTextureLodBias } from './gpu/lod-bias';
 import { createGpuRenderer, type BackendKind, type BackendPreference, type BackendReason, type GpuInfo } from './gpu/backend';
 import { opaqueSort, type SortItem } from './gpu/render-order';
 import { BlackScreenWatchdog, GpuLogCapture, measureFrame, WATCHDOG_STEPS, type FrameSample, type WatchdogAction, type WatchdogOptions } from './gpu/watchdog';
@@ -368,7 +369,7 @@ const REST_DELAY_MS = 220;
 /** Size of the planar water mirror relative to the frame at full scale (see PlanarMirror). */
 const MIRROR_SCALE = 0.5;
 /** Lowest adaptive scale of a scene pass that is upsampled and sharpened (the drawing buffer's own floor is 0.5). */
-const PASS_SCALE_FLOOR = 0.25;
+const PASS_SCALE_FLOOR = 0.15;
 /** Frame time (s) beyond which an animating scene at rest cannot afford the full chain, and for how many frames in a row. */
 const REST_SLOW_DT = 0.034;
 const REST_SLOW_FRAMES = 10;
@@ -1005,6 +1006,7 @@ export class WorldRenderer {
       ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
     });
     installRenderPatches(renderer);
+    void installLodBias();
     const width = Math.max(1, canvas.clientWidth || canvas.width || 1);
     const height = Math.max(1, canvas.clientHeight || canvas.height || 1);
     const camera = new PerspectiveCamera(55, width / height, 0.1, SKY_RADIUS * 2.5);
@@ -5050,6 +5052,7 @@ export class WorldRenderer {
       if (!this.captureActive) this.sizeBuffer(this.cssWidth, this.cssHeight);
     }
     const k = via ? this.adaptive.scale : 1;
+    setTextureLodBias(lodBiasFor(k));
     // The planar water mirror and the scene backdrop are sized from the drawing buffer: they follow the scene pass.
     this.materials.mirror.mirror.scale = MIRROR_SCALE * k;
     this.materials.backdrop.scale = k;
