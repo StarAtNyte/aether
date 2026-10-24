@@ -3325,7 +3325,8 @@ before.
 - Planner tool `tune_look` (`TuneLookInput`, `look-edit.ts`): `exposure?`, `exposureEv?`, `temperature?`,
   `tint?`, `saturation?`, `contrast?`, `bloom?`, `ambientIntensity?`, `sunIntensity?`, `hdriIntensity?`, `fogColor?`,
   `fogDensity?`, `fogVisibility?`, `interiorWarmth?`, `interiorBalance?`, `lampStrength?`, `vignette?`, `sunTint?`,
-  `ambientTint?`, `foliageTint?`, `reset?` (names back to default; `fog` removes it), `message?` → one `setEnvironment`
+  `ambientTint?`, `foliageTint?`, `surroundings?` (preset), `hills?`, `hillDistance?`, `treeDensity?`, `treeSpecies?`, `farFields?`,
+  `clearRadius?`, `reset?` (names back to default; `fog` removes it, `surroundings` removes the block), `message?` → one `setEnvironment`
   patch (one undo step). `lookPatches`, `lookText(world)`, `currentLook`. The guidance lives in the tool description,
   not the system prompt.
 - Planner tool `tune_feel` (`TuneFeelInput`: `preset?`, `events?` (cue or `null` per event, merged), `footsteps?`,
@@ -3416,3 +3417,40 @@ photo's; the credits text says fine grain is added by the app.
 `AgentHost.storeTexture?` / `encodeTextureMap?`, `ImageGenerator` (`createOpenAiImageGenerator`, `createBridgeImageGenerator`, `imageChain`,
 `texturePrompt`), photo phase `textures`. Bridge: `POST /v1/image` ({ prompt, size?, reference? } -> { image, model }; bearer token),
 local app `POST /api/local/image`, status `backends[].image`. Details and the Codex finding: `docs/IMAGE_GENERATION.md`.
+
+
+## Exterior context, facade depth, neon, section poche (additive)
+
+**`environment.surroundings`** (`@aether/core`, optional; presentation only, never the simulation, the physics world, the light volume or a baked
+lightmap): `{ preset?: 'none' | 'meadow' | 'countryside' | 'woodland' | 'suburb' (default countryside), hills? 0..200 m, hillDistance? 150..1500 m,
+trees? 0..1, species? 'broadleaf' | 'conifer' | 'mixed', fields? boolean, clearRadius? 10..400 m, seed? int }`. The preset sets all of them
+(`SURROUNDING_PRESETS` in `environment/surroundings.ts`: countryside = hills 45 m at 650 m, trees 0.55 mixed, fields, 55 m clear), the other fields override it.
+`SurroundingsRig` (one per `EnvironmentRig`, `rig.surroundings`) draws: two hill layers (a closed vertex-coloured strip following the camera in
+the ground plane, colours from the sky's horizon, not fogged: the haze is in the colours), a tree belt (`planTrees`: up to 420 trees in groves and
+gaps around the clear radius, one `InstancedMesh` per species, merged low-poly geometry with baked vertex colours, no shadows cast) and a field ring
+(80 m to 1.3 km, patches by value noise, transparent at its inner edge). Three to five draw calls, about 20 to 60 thousand triangles at full density,
+rebuilt only when the data changes (colours when the sky does). A change to `surroundings` alone does not invalidate the light volume or the lightmap
+(`WorldRenderer.lightEnvKey`). Photo rooms get `{ preset: 'countryside' }` from `arch/photo/derive.ts`; the four bundled photo worlds carry it.
+`tune_look` sets it (see `docs/AGENT_TOOLS.md`).
+
+**Exterior exposure.** The eye's exposure is raised inside a lit room (up to +3 EV); the sky and the far scenery are not part of the room's light, so
+`EnvironmentRig.setExteriorScale(2^(-0.6 * eyeEv))` (floor 0.3) scales the HDRI background (`scene.backgroundIntensity`), the sky dome, the sun disc
+and the surroundings back down while a volume is ready. A window and a cutaway show a sky instead of white; the sky's light, the sun and the ground are
+unchanged.
+
+**Facades.** The `facade` finish (`procgen/finish-pixels.ts`) now draws the floor slab (light projecting lip with a dark shadow line under it), a
+spandrel panel under each pane, pier lines at the bay edges, mullions in most panes and transoms in some (also in the lit-window mask). The window
+glow was already decided per window from the world position (per-floor bias, pairs, cool and warm lights). `skyline-tower` roofs carry cooling units
+(setback terraces one each, the top deck two) and the generator's triangle budget is about 300.
+
+**Neon and emission.** `createMaterial` keeps any glow over `EMISSION_SOFT_CAP` (1.6) from getting brighter (`capEmission`: the excess counts a quarter and
+moves the emissive colour toward white, up to 50 %), so a sign driven to 3 stays a saturated tube with a pale core instead of a bloom smear. Lava (its
+emission is a map) and the ghost / proof variants are untouched; the bloom pass itself is not changed.
+
+**Section poche.** `MaterialFinish` gains `poche` (pattern `hatch`: a dark solid with 45 degree hatch lines, 30 cm tile); `SECTION_CAP` in `@aether/arch`
+(the cut face of a sectioned wall) uses it instead of flat dark paint.
+
+**Lightmap key and backends.** The key now hashes the trace and the meshes rounded (2 cm, 1 % albedo) and leaves out the probe volume's floats
+(`VOLUME_BAKE_VERSION` and the grid are in the key; the volume is a function of the trace and the light): WebGPU and WebGL2 build the same room a
+fraction of a millimetre apart (a chair's box 0.5 mm lower), and a bundled file must match on both. `tests/e2e/lightmap-open.e2e.ts` opens every bundled
+world on both backends; `KEYDEBUG=1 TRACE=1` prints the hash of every input array (`WorldRenderer.lightmapKeyInputs`) to find what differs.

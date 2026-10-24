@@ -261,8 +261,15 @@ See [Eyes](#query_scene-1).
   `saturation` 0.4..1.8, `contrast` 0.6..1.6, `sunTint`, `ambientTint`, `foliageTint` (`#rrggbb` multipliers; white
   keeps the colour). Fog: `fogColor`, `fogDensity` 0..1 (required when the world has no fog), `fogVisibility` 30..20000 (metres).
   Interiors: `interiorWarmth` -1..1.5 (0.45), `interiorBalance` 0..1.5 (1), `lampStrength` 0..3 (1). `vignette`
-  0..1 (0.22). `reset` lists names to put back to the default (`fog` removes the fog). `message` (≤200) is the history
+  0..1 (0.22). Exterior context beyond the plot (`environment.surroundings`, see `docs/CONTRACTS.md`): `surroundings` (preset
+  `none | meadow | countryside | woodland | suburb`), `hills` 0..200 (ridge height, m), `hillDistance` 150..1500 (m), `treeDensity` 0..1,
+  `treeSpecies` `broadleaf | conifer | mixed`, `farFields` (boolean), `clearRadius` 10..400 (m kept free of trees); every field after the
+  preset overrides it. `reset: ['surroundings']` removes the whole block. `reset` lists names to put back to the default (`fog` removes the fog). `message` (≤200) is the history
   line.
+- **Exterior context.** A room built from a photo or a plan stands on a lawn; a photo room carries `surroundings: { preset: 'countryside' }`
+  from the photo flow (`derive.ts`), so a window shows hills, a tree line and fields under a sky, not an empty plane to a white horizon.
+  The assistant changes it with `tune_look` (cheap: instanced trees, two hill layers and one field ring, no physics, no effect on the baked
+  light) and adds specific props near the house (a fence, a hedge, three named trees) with `find_model` and `place_items`.
 - **Returns.** `Look changed: exposure 1 -> 1.4; grade.temperature default -> 0.2.` or "Nothing changed: those values
   are already set", plus refused parts.
 - **When to use it.** In a review round or a photo compare round when the pictures show the whole image reading
