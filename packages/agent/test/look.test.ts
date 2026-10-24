@@ -12,6 +12,28 @@ import { MemoryHost, TEST_CATALOGS } from './helpers';
 
 const run = async (host: MemoryHost, input: unknown) => executeTool({ host } as never, 'tune_look', input);
 
+describe('tune_look surroundings', () => {
+  it('sets the exterior context as one patch, merges later fields into it and removes it on reset', async () => {
+    const host = new MemoryHost(createWorld());
+    const a = await run(host, { surroundings: 'woodland', treeDensity: 0.4, message: 'empty lawn under a pale sky' });
+    expect(a.isError).toBe(false);
+    expect(a.content).toContain('surroundings.preset default → woodland');
+    expect(host.world.environment.surroundings).toEqual({ preset: 'woodland', trees: 0.4 });
+    expect(Environment.safeParse(host.world.environment).success).toBe(true);
+    await run(host, { hills: 60, farFields: true });
+    expect(host.world.environment.surroundings).toEqual({ preset: 'woodland', trees: 0.4, hills: 60, fields: true });
+    await run(host, { reset: ['surroundings'] });
+    expect(host.world.environment.surroundings).toBeUndefined();
+    expect(host.commits).toHaveLength(3);
+  });
+
+  it('rejects values outside the ranges and lists the exterior in the look text', async () => {
+    const host = new MemoryHost(createWorld());
+    expect((await run(host, { treeDensity: 3 })).isError).toBe(true);
+    expect(lookText(createWorld())).toContain('surroundings: none');
+  });
+});
+
 describe('tune_look', () => {
   it('stores the look in the World IR as one undo step and reports each value before and after', async () => {
     const host = new MemoryHost(createWorld());

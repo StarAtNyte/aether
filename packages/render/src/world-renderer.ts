@@ -726,6 +726,8 @@ export class WorldRenderer {
   private readonly lightmap: LightmapController;
   /** What the world asked for (`environment.lightBake`): undefined is the automatic policy. */
   private lightBake: { quality: 'off' | LightmapQuality; samples?: number } | undefined;
+  /** The environment as the baked light sees it (everything but the exterior), to tell a change of light from a change of scenery. */
+  private lightEnvKey = '';
   /** Soft footprints under the furniture of buildings (see `view/contact-shadows.ts`). */
   private readonly contact = new ContactShadows();
   /** Scene syncs still generating geometry (the light volume waits for them). */
@@ -1260,6 +1262,11 @@ export class WorldRenderer {
   /** Bakes the worker was given since the renderer started (0 when every lightmap came from a bundled file or the cache). */
   get lightmapBakesStarted(): number {
     return this.lightmap.bakesStarted;
+  }
+
+  /** What the key of the last lightmap lookup was made of (diagnostics: why a bundled file did not match). */
+  get lightmapKeyInputs(): { content: string; scalars: string; parts: string[] | null } | null {
+    return this.lightmap.keyInputs ? { ...this.lightmap.keyInputs, parts: this.lightmap.keyParts } : null;
   }
 
   /** The `.lmap` file of the lightmap on screen (save it with the project or ship it with a bundled world). */
@@ -1996,8 +2003,13 @@ export class WorldRenderer {
     this.docGrade = env.grade ?? null;
     this.docLook = env.look ?? null;
     setFoliageTint(env.look?.foliageTint ?? null);
-    this.lightVolume.invalidate();
-    this.lightmap.invalidate('light');
+    // The exterior (`surroundings`) is drawn beyond the plot and is not in the light the building bakes: changing only it keeps the baked light.
+    const lightKey = JSON.stringify({ ...env, surroundings: undefined });
+    if (lightKey !== this.lightEnvKey) {
+      this.lightEnvKey = lightKey;
+      this.lightVolume.invalidate();
+      this.lightmap.invalidate('light');
+    }
     this.applyLightBake(env.lightBake);
     this.syncInteriorLight();
     this.sync.setArchLampScale(daylightLampFactor(this.env.skyState.elevation));
@@ -3845,6 +3857,8 @@ export class WorldRenderer {
     // A baked light volume occludes the image light itself and tells the exposure how dark the spot is.
     const volume = this.lightVolume.ready;
     this.env.setEnvScale(volume ? 1 : eye.envScale);
+    // Outside the room's light the sky and the scenery take back part of the eye's interior exposure (a window shows a sky, not white).
+    this.env.setExteriorScale(volume ? 2 ** (-EnvironmentRig.EXTERIOR_COMPENSATION * Math.max(0, this.eyeEv)) : 1);
     this.env.setInteriorFill(this.eyeFactor);
     this.renderer.toneMappingExposure = volume ? toneExposure(this.env.exposure, this.eyeEv) : this.env.exposure * eye.exposure;
     if (post) {

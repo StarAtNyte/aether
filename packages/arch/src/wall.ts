@@ -112,7 +112,7 @@ export function clipConvexX(poly: readonly P2[], x0: number, x1: number): P2[] {
 }
 
 /** Material of the cut face of a sectioned wall (architectural poche). */
-export const SECTION_CAP: Readonly<MaterialSpec> = Object.freeze({ finish: 'paint', color: '#2b2d31', roughness: 0.9 });
+export const SECTION_CAP: Readonly<MaterialSpec> = Object.freeze({ finish: 'poche', roughness: 0.85 });
 
 /** Build a wall (see the module docs). */
 export function buildWall(p: WallParams): ArchOutput {

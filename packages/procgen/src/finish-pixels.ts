@@ -488,14 +488,23 @@ const facade: Pattern = (f, random, seed) => {
       const blind = h2 < 0.14 ? 1 : 0;
       const g = grain[k] as number;
       // Wall: weathered, with a slab edge line at each floor.
-      const slab = 1 - aaStep(Math.abs(iy - cell * 0.97), 1.5 * px, 1 * px) * 0.0;
-      const wallShade = 0.9 + (g - 0.5) * 0.25 + (iy > cell * 0.93 ? -0.1 : 0) * slab;
+      // Floor slab: a light projecting edge at the floor line (the bay's top and bottom rows) with a dark shadow line under it, and
+      // a spandrel panel (a tone darker) between the sill and the slab; a pier line at each bay edge.
+      const slabLip = 1 - aaStep(iy, 3.2 * px, 1 * px);
+      const slabShadow = aaStep(iy, 3.2 * px, 1 * px) * (1 - aaStep(iy, 8 * px, 3 * px));
+      const spandrel = iy > bottom + 2 * px ? 1 : 0;
+      const pier = 1 - aaStep(Math.min(ix, cell - ix), 2 * px, 1 * px);
+      const wallShade = 0.9 + (g - 0.5) * 0.25 + slabLip * 0.14 - slabShadow * 0.2 - spandrel * 0.07 - pier * 0.06;
+      // Mullions: a thin vertical bar in the middle of most panes and a transom bar in some, cut into the glass (frame colour, raised).
+      const pu0 = (ix - left) / (right - left);
+      const pv0 = (iy - top) / (bottom - top);
+      const mullion = pane > 0.5 && ((h2 < 0.7 && Math.abs(pu0 - 0.5) < 1.6 * px / (right - left)) || (h2 > 0.45 && Math.abs(pv0 - 0.34) < 1.4 * px / (bottom - top))) ? 1 : 0;
       const paneShade = 0.55 + h * 0.85;
-      f.accent[k] = pane * (blind ? 0.35 : 1);
-      f.shade[k] = pane > 0.5 ? paneShade : frame > 0.5 ? 0.62 : wallShade;
-      f.height[k] = pane > 0.5 ? 0.15 : frame > 0.5 ? 1 : 0.7 + (g - 0.5) * 0.06;
+      f.accent[k] = pane * (blind ? 0.35 : 1) * (1 - mullion);
+      f.shade[k] = mullion > 0 ? 0.62 : pane > 0.5 ? paneShade : frame > 0.5 ? 0.62 : wallShade;
+      f.height[k] = mullion > 0 ? 1 : pane > 0.5 ? 0.15 : frame > 0.5 ? 1 : 0.7 + (g - 0.5) * 0.06 + slabLip * 0.2;
       f.rough[k] = pane > 0.5 ? (blind ? 1.4 : 0.22) : frame > 0.5 ? 0.8 : 1.5 + (g - 0.5) * 0.3;
-      f.ao[k] = pane > 0.5 ? 0.65 + 0.35 * clamp01(dIn / (14 * px)) : frame > 0.5 ? 0.8 : 1;
+      f.ao[k] = pane > 0.5 ? 0.65 + 0.35 * clamp01(dIn / (14 * px)) : frame > 0.5 ? 0.8 : 1 - slabShadow * 0.35;
       // Every pane may glow; which ones do is decided per window in the shader (world position hash), so the 4 × 4 tile's lit pattern never repeats.
       // What the glow shows: a lit room, not a flat pane. Ceiling wash (brightest under the ceiling), furniture dark at the sill,
       // curtains at the sides, a mullion cross in some panes and drawn blinds as slats.
@@ -509,7 +518,7 @@ const facade: Pattern = (f, random, seed) => {
         if (Math.abs(pu - 0.5) < 0.018 || (cellHash(seed + 91, fx, fy) < 0.3 && Math.abs(pv - 0.5) < 0.018)) room *= 0.12;
         if (blind) room = 0.35 + 0.3 * (0.5 + 0.5 * Math.sin(pv * Math.PI * 14));
       }
-      lit[k] = pane * room;
+      lit[k] = pane * room * (1 - mullion * 0.85);
     }
   }
 };
@@ -986,6 +995,33 @@ const woodSlats: Pattern = (f, random, seed) => {
   }
 };
 
+/**
+ * Section poche: a dark solid cut face with fine 45 degree hatch lines (one tile is 30 cm, four lines across it), a faint
+ * grain so a long wall top does not read as a flat fill, and a slightly lower, matte line (the hatch is drawn, not carved).
+ */
+const hatch: Pattern = (f, random) => {
+  const n = f.n;
+  const grain = fbmField(random, n, 16, 16, 2);
+  const lines = 4;
+  const px = n / 256;
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      const k = y * n + x;
+      // Distance to the nearest diagonal line in tile fractions (the tile repeats in both directions, so lines are continuous).
+      const d = ((x + y) / n) * lines;
+      const frac = d - Math.floor(d);
+      const dist = Math.min(frac, 1 - frac) * (n / lines);
+      const line = 1 - aaStep(dist, 2.4 * px, 1 * px);
+      const g = grain[k] as number;
+      f.accent[k] = line * 0.9;
+      f.shade[k] = 0.92 + (g - 0.5) * 0.2;
+      f.height[k] = 0.5 - line * 0.05;
+      f.rough[k] = 1;
+      f.ao[k] = 1;
+    }
+  }
+};
+
 /** Pattern of every texture recipe. */
 const PATTERNS: Readonly<Record<FinishDef['pattern'], Pattern>> = Object.freeze({
   planks: boards(12, 0.9, 0.85, 0.8),
@@ -1022,6 +1058,7 @@ const PATTERNS: Readonly<Record<FinishDef['pattern'], Pattern>> = Object.freeze(
   'paper-geometric': wallpaperGeometric,
   'panel-shaker': panelling(2),
   slats: woodSlats,
+  hatch,
   facade,
 });
 

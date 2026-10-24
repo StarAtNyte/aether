@@ -87,6 +87,7 @@ export class SkyDome {
   readonly cirrus = new CloudLayer(SKY_RADIUS * 0.99, 'cirrus');
   private readonly sunDir = new Vector3(0, 1, 0);
   private detail = true;
+  private brightness = 1;
   private last: { state: SkyState; fogColor: string | undefined } | null = null;
 
   constructor() {
@@ -178,13 +179,13 @@ export class SkyDome {
 
     const above = state.lightDirection[1] > -0.02;
     this.disc.visible = above && !state.moon && glow > 0;
-    this.disc.material.color.set(state.lightColor).lerp(_c.set('#ffffff'), 0.35).multiplyScalar(7);
+    this.disc.material.color.set(state.lightColor).lerp(_c.set('#ffffff'), 0.35).multiplyScalar(7 * this.brightness);
     // Rays: strongest as the sun nears the horizon (a long path through haze), gone high up and in daylight's glare.
     const rayStrength = above && !state.moon ? raysStrength(state.elevation, state.preset) : 0;
     this.rays.visible = this.detail && rayStrength > 0.01;
-    this.rays.material.color.set(state.lightColor).multiplyScalar(rayStrength);
+    this.rays.material.color.set(state.lightColor).multiplyScalar(rayStrength * this.brightness);
     this.moonDisc.visible = above && state.moon;
-    this.moonDisc.material.color.set('#ffffff').multiplyScalar(1.5);
+    this.moonDisc.material.color.set('#ffffff').multiplyScalar(1.5 * this.brightness);
     this.stars.material.opacity = state.stars;
     this.stars.visible = state.stars > 0.01;
   }
@@ -199,6 +200,15 @@ export class SkyDome {
     if (this.detail === on) return;
     this.detail = on;
     if (this.last) this.apply(this.last.state, this.last.fogColor);
+  }
+
+  /** Multiply the dome's and the sun disc's brightness (the eye's exposure boost indoors is partly taken back, see the rig). */
+  setBrightness(scale: number): void {
+    const k = scale / this.brightness;
+    this.brightness = scale;
+    this.dome.material.color.setScalar(scale);
+    // Sun, rays and moon carry the same factor (rescaled in place; the next apply builds them with it).
+    for (const m of [this.disc, this.rays, this.moonDisc]) m.material.color.multiplyScalar(k);
   }
 
   /** Whether the full sky (cirrus and rays) is drawn. */

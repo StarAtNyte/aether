@@ -53,7 +53,7 @@ describe('skyline-tower generator', () => {
     const facade = a.parts.find((p) => p.material?.finish === 'facade');
     expect(facade).toBeDefined();
     const tris = a.parts.reduce((n, p) => n + p.indices.length / 3, 0);
-    expect(tris).toBeLessThan(250);
+    expect(tris).toBeLessThan(300);
     // Authored metre UVs reach the height of the tower (the renderer keeps them for finish materials).
     const uv = facade!.uvs as Float32Array;
     let maxV = 0;

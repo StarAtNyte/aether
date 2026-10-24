@@ -33,6 +33,7 @@ import { resolveMaterial } from '../materials/presets';
 import { computeSkyState, type SkyState } from './sky-state';
 import { SkyDome, SKY_RADIUS } from './sky-dome';
 import { WeatherSystem } from './weather';
+import { SurroundingsRig } from './surroundings';
 import { fitShadowCamera } from './shadow-fit';
 import { INTERIOR_FILL, interiorBounce } from './bounce';
 import { resolveFog, MAX_FOG_DENSITY, type FogParams } from './fog';
@@ -176,6 +177,8 @@ export class EnvironmentRig {
   private envScale = 1;
   readonly sky = new SkyDome();
   readonly weather: WeatherSystem;
+  /** Hills, tree line and fields beyond the plot (`environment.surroundings`). */
+  readonly surroundings = new SurroundingsRig();
   private readonly fog = new FogExp2('#c4def4', 0);
   private ground: Mesh | null = null;
   private skirt: Mesh | null = null;
@@ -245,7 +248,7 @@ export class EnvironmentRig {
     this.sun.shadow.bias = -0.0004;
     this.sun.shadow.normalBias = 0.03;
     this.sun.shadow.mapSize.set(2048, 2048);
-    this.group.add(this.sun, this.sun.target, this.hemi, this.bounce, this.fill, this.sky.group);
+    this.group.add(this.sun, this.sun.target, this.hemi, this.bounce, this.fill, this.sky.group, this.surroundings.group);
     this.weather = new WeatherSystem(this.group);
     this.state = computeSkyState({ sky: 'day', sunIntensity: 2.5, ambientIntensity: 0.4 });
   }
@@ -256,6 +259,24 @@ export class EnvironmentRig {
     if (Math.abs(s - this.envScale) < 1e-4) return;
     this.envScale = s;
     if (this.scene) this.scene.environmentIntensity = this.envBase * s;
+  }
+
+  /** Share of the eye's interior exposure boost the sky and the far scenery take back (they are not part of the room's light). */
+  static readonly EXTERIOR_COMPENSATION = 0.6;
+  private exteriorScale = 1;
+
+  /**
+   * Dim what lies outside a lit room (the sky, the hills, the trees, the fields) when the eye's exposure is raised for the room:
+   * through a window or over a cutaway wall the outdoors stays a sky instead of white. 1 restores it. Presentation only; the
+   * sky's light, the sun and the ground are untouched.
+   */
+  setExteriorScale(scale: number): void {
+    const s = Number.isFinite(scale) ? Math.max(0.3, Math.min(1, scale)) : 1;
+    if (Math.abs(s - this.exteriorScale) < 1e-3) return;
+    this.exteriorScale = s;
+    if (this.scene) this.scene.backgroundIntensity = s;
+    this.sky.setBrightness(s);
+    this.surroundings.setBrightness(s);
   }
 
   /** Turn the interior floor-bounce fill on for worlds with buildings (see `bounce.ts`). */
@@ -425,6 +446,7 @@ export class EnvironmentRig {
     // Only a visible horizon (ground or terrain worlds) blends into the fog; space keeps its black.
     const horizon = fog && (s.showGround || this.fogDistance !== null) ? fog.color : undefined;
     this.sky.apply(s, horizon);
+    this.surroundings.apply(env.surroundings, s, fog?.color);
     this.updateEnvironmentMap(scene, horizon ?? s.horizon);
   }
 
@@ -676,6 +698,7 @@ export class EnvironmentRig {
 
   update(dt: number, camera: Camera): void {
     this.sky.update(camera);
+    this.surroundings.update(camera);
     this.weather.update(dt, camera);
   }
 
@@ -702,6 +725,7 @@ export class EnvironmentRig {
     this.envMap?.dispose();
     this.envMap = null;
     this.sky.dispose();
+    this.surroundings.dispose();
     this.weather.dispose();
     (this.sun.shadow as NodeLightShadow).shadowNode?.dispose();
     this.cascadeNode = null;

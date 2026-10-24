@@ -16,7 +16,7 @@ export type FinishPattern =
   | 'planks' | 'herringbone' | 'veined' | 'speckle' | 'plaster' | 'smooth' | 'grid-tiles' | 'subway' | 'flagstone' | 'granite' | 'bricks'
   | 'weave' | 'velvet' | 'grain-leather' | 'pile' | 'brushed' | 'mirror' | 'glass' | 'frosted' | 'glaze' | 'roof-tiles'
   | 'standing-seam' | 'deck-boards' | 'turf' | 'pebbles' | 'ripples'
-  | 'leaves' | 'facade' | 'paper-plain' | 'paper-stripe' | 'paper-floral' | 'paper-damask' | 'paper-geometric' | 'panel-shaker' | 'slats';
+  | 'leaves' | 'facade' | 'paper-plain' | 'paper-stripe' | 'paper-floral' | 'paper-damask' | 'paper-geometric' | 'panel-shaker' | 'slats' | 'hatch';
 
 /** One entry of the finish library. */
 export interface FinishDef {
@@ -88,6 +88,8 @@ export const FINISHES: Readonly<Record<MaterialFinish, FinishDef>> = Object.free
   foliage: { color: '#6f8a52', accent: '#8ea75d', roughness: 0.62, metalness: 0, tintable: true, tile: 0.7, pattern: 'leaves', bump: 1.1 },
   // Building facade: 4 × 4 window bays in one 12 m tile (3 m floors and bays); the ORM blue channel marks the windows that glow at night.
   facade: { color: '#b9b2a6', accent: '#2a3644', roughness: 0.55, metalness: 0, tintable: true, tile: 12, pattern: 'facade', bump: 0.5 },
+  // Section poche: the cut face of a wall in a cutaway, a dark solid with fine diagonal hatch lines (30 cm tile, 45 degrees).
+  poche: { color: '#26282c', accent: '#5b5e66', roughness: 0.85, metalness: 0, tintable: false, tile: 0.3, pattern: 'hatch', bump: 0.15 },
   // Ground and wall surfaces with real relief: granite setts, rough limestone masonry, packed dry earth, pine cladding.
   cobble: { color: '#8d887e', accent: '#5f5b52', roughness: 0.88, metalness: 0, tintable: false, tile: 2, pattern: 'flagstone', bump: 0.6 },
   limestone: { color: '#b9aa8c', accent: '#8b7f69', roughness: 0.9, metalness: 0, tintable: false, tile: 2, pattern: 'flagstone', bump: 0.75 },

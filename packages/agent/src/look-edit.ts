@@ -18,6 +18,7 @@ export const LOOK_RESET_KEYS = [
   'exposure', 'bloom', 'ambientIntensity', 'sunIntensity', 'hdriIntensity', 'fog',
   'temperature', 'tint', 'saturation', 'contrast', 'exposureEv',
   'interiorWarmth', 'interiorBalance', 'sunTint', 'ambientTint', 'foliageTint', 'lampStrength', 'vignette',
+  'surroundings',
 ] as const;
 export type LookResetKey = (typeof LOOK_RESET_KEYS)[number];
 
@@ -59,6 +60,22 @@ export const TuneLookInput = z.object({
   lampStrength: unit(0, 3).optional(),
   /** Edge darkening, 0 none .. 1 strong (default 0.22). */
   vignette: unit(0, 1).optional(),
+  /**
+   * Exterior context beyond the plot (`environment.surroundings`): a preset (none, meadow, countryside, woodland, suburb) of
+   * distant hills, a tree line with groves and a patchwork of fields, seen through windows and from a cutaway.
+   */
+  surroundings: z.enum(['none', 'meadow', 'countryside', 'woodland', 'suburb']).optional(),
+  /** Height of the nearer hills in metres (0 none), over the preset. */
+  hills: unit(0, 200).optional(),
+  /** Distance of the nearer hills in metres. */
+  hillDistance: unit(150, 1500).optional(),
+  /** Density of the tree line and groves, 0 none .. 1 dense. */
+  treeDensity: unit(0, 1).optional(),
+  treeSpecies: z.enum(['broadleaf', 'conifer', 'mixed']).optional(),
+  /** Patchwork of fields beyond the lawn. */
+  farFields: z.boolean().optional(),
+  /** Radius around the origin in metres kept free of trees. */
+  clearRadius: unit(10, 400).optional(),
   /** Parameters to put back to the renderer's default (also valid with new values for others). */
   reset: z.array(z.enum(LOOK_RESET_KEYS)).max(LOOK_RESET_KEYS.length).optional(),
   /** Why, in a sentence: shown in the history. */
@@ -68,6 +85,8 @@ export type TuneLookInput = z.infer<typeof TuneLookInput>;
 
 const ENV_FIELDS = ['exposure', 'bloom', 'ambientIntensity', 'sunIntensity', 'hdriIntensity'] as const;
 const GRADE_FIELDS = ['temperature', 'tint', 'saturation', 'contrast', 'exposureEv'] as const;
+/** Tool input name → `environment.surroundings` field. */
+const SURROUND_FIELDS = { surroundings: 'preset', hills: 'hills', hillDistance: 'hillDistance', treeDensity: 'trees', treeSpecies: 'species', farFields: 'fields', clearRadius: 'clearRadius' } as const;
 const LOOK_FIELDS = ['interiorWarmth', 'interiorBalance', 'sunTint', 'ambientTint', 'foliageTint', 'lampStrength', 'vignette'] as const;
 
 /** Result of {@link lookPatches}. */
@@ -138,6 +157,18 @@ export function lookPatches(world: WorldDoc, input: TuneLookInput): LookEditResu
       note(`look.${k}`, k, undefined);
     }
   }
+  const around: Record<string, unknown> = {};
+  for (const [k, field] of Object.entries(SURROUND_FIELDS) as Array<[keyof typeof SURROUND_FIELDS, string]>) {
+    const v = input[k];
+    if (v === undefined) continue;
+    around[field] = v;
+    const from = (world.environment.surroundings as Record<string, unknown> | undefined)?.[field];
+    if (JSON.stringify(from ?? null) !== JSON.stringify(v)) notes.push(`surroundings.${field} ${show(from)} → ${show(v)}`);
+  }
+  if (reset.has('surroundings') && input.surroundings === undefined && Object.keys(around).length === 0) {
+    if (world.environment.surroundings) notes.push('surroundings removed');
+    set['surroundings'] = null;
+  } else if (Object.keys(around).length > 0) set['surroundings'] = around;
   if (Object.keys(grade).length > 0) set['grade'] = grade;
   if (Object.keys(look).length > 0) set['look'] = look;
   // Fog: a colour, density or range changes the fog object; without any fog, a density is needed to create one.
@@ -173,6 +204,7 @@ export function lookText(world: WorldDoc): string {
     `sky ${e.sky}${e.timeOfDay !== undefined ? ` at ${e.timeOfDay} h` : ''}; exposure ${d(e.exposure, '1')}, bloom ${d(e.bloom, '0.4')}, ambient ${d(e.ambientIntensity, '0.4')}, sun ${d(e.sunIntensity, '2.5')}`,
     `grade: temperature ${d(g.temperature, 'preset')}, tint ${d(g.tint, 'preset')}, saturation ${d(g.saturation, 'preset')}, contrast ${d(g.contrast, 'preset')}, exposureEv ${d(g.exposureEv, 'preset')}`,
     `look: interiorWarmth ${d(l.interiorWarmth, '0.45')}, interiorBalance ${d(l.interiorBalance, '1')}, sunTint ${d(l.sunTint, 'white')}, ambientTint ${d(l.ambientTint, 'white')}, foliageTint ${d(l.foliageTint, 'white')}, lampStrength ${d(l.lampStrength, '1')}, vignette ${d(l.vignette, '0.22')}`,
+    `surroundings: ${e.surroundings ? JSON.stringify(e.surroundings) : 'none (an empty lawn to the horizon; surroundings sets hills, trees and fields)'}`,
     bakeText(world),
     `fog: ${e.fog ? `${e.fog.color}, density ${e.fog.density}${e.fog.visibility ? `, range ${e.fog.visibility} m` : ''}` : 'none'}`,
   ].join('\n');

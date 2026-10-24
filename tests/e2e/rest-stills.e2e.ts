@@ -4,6 +4,8 @@
  * (the lean path), taken the same way every run.
  *
  * Run: `npm run build && GEN_GPU=intel npx tsx tests/e2e/rest-stills.e2e.ts --out=dir [--worlds=a,b] [--size=1920x1080] [--moving]`
+ * `AETHER_ENV='{"surroundings":{...}}'` commits an environment patch after the world opens (look development without editing a world);
+ * `--cam=px,py,pz>tx,ty,tz` replaces the cover camera (`--arch=cutaway|up|down` its wall mode) for every world of the run.
  * Compare two folders with `scripts/image-diff.py a b`.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -76,7 +78,15 @@ async function main(): Promise<void> {
           if (m.type() === 'error' || m.type() === 'warning') process.stdout.write(`console ${m.type()}: ${m.text().slice(0, 300)}\n`);
         });
         await open(page, server.url, slug);
-        const cam = COVER_CAMERAS[slug];
+        if (process.env['AETHER_ENV']) {
+          await page.evaluate((env) => {
+            window.__aether?.history.commit([{ op: 'setEnvironment', set: JSON.parse(env) as never }], 'look development', 'user');
+          }, process.env['AETHER_ENV']);
+          await page.waitForTimeout(1500);
+        }
+        const camArg = arg('cam')?.split('>').map((v) => v.split(',').map(Number));
+        const archArg = arg('arch') as 'up' | 'cutaway' | 'down' | undefined;
+        const cam = camArg && camArg.length === 2 ? { pos: camArg[0] as [number, number, number], target: camArg[1] as [number, number, number], arch: archArg ? { walls: archArg } : undefined } : COVER_CAMERAS[slug];
         let pose: number[] = await page.evaluate(() => {
           const r = window.__aether?.simulation?.renderer as unknown as R;
           const c = r.cameraPose();
@@ -102,8 +112,8 @@ async function main(): Promise<void> {
           if (process.env['TRACE']) process.stdout.write(`  t=${i * 0.5}: ${await page.evaluate(() => { const r = window.__aether?.simulation?.renderer as unknown as Record<string, unknown>; return `atRest=${String(r['atRest'])} animating=${String(r['restAnimating'])} slow=${String(r['restSlow'])} deferred=${String(r['restDeferred'])} frames=${String(r['frameCount'])}`; })}\n`);
         }
         const st = await page.evaluate(() => {
-          const r = window.__aether?.simulation?.renderer as unknown as { atRest: boolean; restDeferred: boolean; post?: { key: string } | null; stats(): Record<string, number>; intendedEffects: string[] };
-          return `atRest=${String(r.atRest)} restDeferred=${String(r.restDeferred)} post=${r.post?.key ?? 'none'} scale=${r.stats()['resolutionScale']} level=${r.stats()['performanceLevel']} frameMs=${r.stats()['frameMs']} fps=${r.stats()['fps']} sunDraws=${String((r as unknown as { sunMapDraws?: number }).sunMapDraws)} fx=${r.intendedEffects.join('+')}`;
+          const r = window.__aether?.simulation?.renderer as unknown as { lightmapStatus: { state: string; message: string }; lightmapBakesStarted: number; atRest: boolean; restDeferred: boolean; post?: { key: string } | null; stats(): Record<string, number>; intendedEffects: string[] };
+          return `lightmap=${r.lightmapStatus.state}(${r.lightmapStatus.message})/bakes=${r.lightmapBakesStarted} atRest=${String(r.atRest)} restDeferred=${String(r.restDeferred)} post=${r.post?.key ?? 'none'} scale=${r.stats()['resolutionScale']} level=${r.stats()['performanceLevel']} frameMs=${r.stats()['frameMs']} fps=${r.stats()['fps']} sunDraws=${String((r as unknown as { sunMapDraws?: number }).sunMapDraws)} fx=${r.intendedEffects.join('+')}`;
         });
         process.stdout.write(`${slug}: ${st}\n`);
         writeFileSync(join(OUT, `${slug}-rest.png`), await page.screenshot());

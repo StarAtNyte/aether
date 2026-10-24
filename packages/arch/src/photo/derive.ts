@@ -557,6 +557,9 @@ export function deriveBuild(d: RoomDescription): PhotoBuild {
   // so a 'dawn' sky at 18 h stood the sun in the east, behind the window wall of a room whose light comes from the west.
   const sky = light.sky === 'dawn' && hour >= 12 ? 'sunset' : light.sky === 'sunset' && hour < 12 ? 'dawn' : light.sky;
   const environment: Record<string, Json> = { sky, timeOfDay: hour };
+  // A room has a place outside its windows: distant hills, a tree line and fields instead of an empty lawn to a pale horizon
+  // (`environment.surroundings`; the assistant changes it with tune_look, and place_items adds fences and trees near the house).
+  if (sky !== 'night') environment['surroundings'] = { preset: 'countryside' };
   // The colour of the light as described: a warm photo gets a warm sun and white balance, a cool one a cool pair (the assistant refines both with tune_look).
   if (light.warmth !== 'neutral') {
     const warm = light.warmth === 'warm';

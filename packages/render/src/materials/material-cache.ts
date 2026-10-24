@@ -58,6 +58,8 @@ export function setWaterLook(m: MeshStandardMaterial, reflective: boolean): void
   m.needsUpdate = true;
 }
 
+const _white = new Color(1, 1, 1);
+
 /** A material handle: release it with {@link MaterialCache.release} using `key`. */
 export interface MaterialHandle {
   key: string;
@@ -69,6 +71,21 @@ export interface MaterialHandle {
  * Build a three.js material from resolved parameters. With `surfaces`,
  * lava and water (standard variant) get their procedural detail maps.
  */
+/** Emission (linear radiance factor) above which a glowing surface is no longer made brighter, only whiter (see {@link capEmission}). */
+export const EMISSION_SOFT_CAP = 1.6;
+
+/**
+ * A neon tube or sign driven to 3 or 4 times white blooms into a smear that eats the street around it. Past the soft cap the
+ * extra intensity is kept at a quarter of its value and moves the colour toward white instead (a hot tube has a pale core, the
+ * saturated hue is its halo), so every glowing surface stays inside what the bloom pass can hold. Returns the emissive intensity and
+ * the share (0..0.5) of white to mix into the emissive colour; below the cap nothing changes.
+ */
+export function capEmission(intensity: number): { intensity: number; white: number } {
+  if (!(intensity > EMISSION_SOFT_CAP)) return { intensity, white: 0 };
+  const over = intensity - EMISSION_SOFT_CAP;
+  return { intensity: EMISSION_SOFT_CAP + over * 0.25, white: Math.min(0.5, (over / intensity) * 0.9) };
+}
+
 export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, surfaces?: SurfaceTextures, finishes?: FinishTextures, antiTile = false, foliage?: FoliageTextures, layered = true, waterTier: WaterTier | null = null, mirror: PlanarReflection | null = null, groundDetail = false, backdrop: SceneBackdrop | null = null): MeshStandardMaterial {
   const m = new MeshStandardMaterial({
     color: r.color,
@@ -80,6 +97,12 @@ export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, su
     vertexColors: r.vertexColors,
     side: r.doubleSided ? DoubleSide : FrontSide,
   });
+  // Lava keeps its own brightness (its emission map carries the cracks); every other glow is capped.
+  if (!r.surface && variant !== 'ghost' && variant !== 'proof' && r.emissiveIntensity > EMISSION_SOFT_CAP) {
+    const cap = capEmission(r.emissiveIntensity);
+    m.emissiveIntensity = cap.intensity;
+    m.emissive.lerp(_white, cap.white);
+  }
   // The resolved colour as linear albedo, before finish maps rescale `color` (the light volume bakes with it).
   m.userData['aetherAlbedo'] = [m.color.r, m.color.g, m.color.b];
   const ghostLike = variant === 'ghost' || variant === 'proof';

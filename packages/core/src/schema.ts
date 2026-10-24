@@ -92,6 +92,8 @@ export const MaterialFinish = z.enum([
   'facade',
   // Additive: ground and wall surfaces with real relief (granite setts, rough limestone masonry, dry packed earth, pine cladding).
   'cobble', 'limestone', 'dry-earth', 'cladding',
+  // Additive: the cut face of a sectioned wall (architectural poche: dark solid with a diagonal hatch).
+  'poche',
 ]);
 export type MaterialFinish = z.infer<typeof MaterialFinish>;
 
@@ -685,6 +687,30 @@ export const Environment = z.object({
       lampStrength: z.number().min(0).max(3).optional(),
       /** Edge darkening of the picture, 0 none .. 1 strong (default: the grade preset's). */
       vignette: z.number().min(0).max(1).optional(),
+    })
+    .optional(),
+  /**
+   * Additive: exterior context beyond the plot, seen through windows and from a cutaway: distant hills that melt into the horizon
+   * haze, a tree line and groves of instanced trees, and a patchwork of fields past the lawn. A `preset` sets sensible values
+   * (`meadow`, `countryside` (default), `woodland`, `suburb`, `none`); every other field overrides the preset. Presentation
+   * only: it never changes the simulation, the physics world, the light volume or the baked lightmap.
+   */
+  surroundings: z
+    .object({
+      preset: z.enum(['none', 'meadow', 'countryside', 'woodland', 'suburb']).optional(),
+      /** Ridge height of the nearer hills in metres (0 = no hills). */
+      hills: z.number().min(0).max(200).optional(),
+      /** Distance of the nearer hill layer in metres. */
+      hillDistance: z.number().min(150).max(1500).optional(),
+      /** Density of the tree line and groves, 0 none .. 1 dense. */
+      trees: z.number().min(0).max(1).optional(),
+      species: z.enum(['broadleaf', 'conifer', 'mixed']).optional(),
+      /** Patchwork of fields beyond the plot. */
+      fields: z.boolean().optional(),
+      /** Radius around the origin (metres) kept free of trees. */
+      clearRadius: z.number().min(10).max(400).optional(),
+      /** Layout seed (the same data always draws the same landscape). */
+      seed: z.number().int().min(0).max(1_000_000).optional(),
     })
     .optional(),
   /**

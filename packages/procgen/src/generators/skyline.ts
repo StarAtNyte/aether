@@ -2,7 +2,7 @@
  * Skyline generator: a believable distant (or street-level) high-rise built from a few stacked, setback
  * volumes. Walls use the `facade` finish (a window grid with recessed glass and mullions that lights up
  * after dark, see `finish-pixels.ts`), roofs are concrete decks with plant rooms, a water tank and an
- * mast (above 45 m). Geometry stays below 150 triangles, so a skyline of sixty towers costs nothing; the
+ * mast (above 45 m). Geometry stays below about 300 triangles, so a skyline of sixty towers costs nothing; the
  * facade's metre UVs are authored so the 3 m window grid lines up with the floors, whatever the size.
  */
 import type { MaterialSpec } from '@aether/core';
@@ -146,6 +146,13 @@ const skylineTower = defineGenerator({
         topSection = s;
       }
     }
+    // Setback terraces carry a cooling unit each (a low plant box that is not the tallest roof's), so stepped roofs are not bare slabs.
+    for (const s of sections) {
+      if (s === topSection || s.width < 9) continue;
+      const w = Math.max(2, s.width * 0.22);
+      const d = Math.max(1.6, s.depth * 0.12);
+      api.add(api.box(w, 1.2, d).translate(s.dx + (api.range(0, 1) - 0.5) * s.width * 0.5, s.y1 + 0.6 + 0.6, s.dz + (api.range(0, 1) - 0.5) * s.depth * 0.5), dark);
+    }
     if (topSection) {
       const s = topSection;
       // Plant room and stair bulkhead on the roof deck, a water tank, and the mast.
@@ -154,6 +161,10 @@ const skylineTower = defineGenerator({
       api.add(api.box(pw, 3.4, pd).translate(s.dx - s.width * 0.18, top + 0.6 + 1.7, s.dz + s.depth * 0.14), roof);
       api.add(api.box(Math.max(2, s.width * 0.14), 2.4, Math.max(2, s.depth * 0.14)).translate(s.dx + s.width * 0.28, top + 0.6 + 1.2, s.dz - s.depth * 0.2), roof);
       if (s.width >= 12) api.add(api.cylinder(1.4, 1.4, 3.2, 10).translate(s.dx + s.width * 0.2, top + 0.6 + 1.6, s.dz + s.depth * 0.22), dark);
+      // Cooling units in a row along the deck edge, with a gap between them.
+      if (s.width >= 9) {
+        for (let i = 0; i < 2; i++) api.add(api.box(Math.max(1.4, s.width * 0.1), 1.1, Math.max(1.4, s.depth * 0.1)).translate(s.dx - s.width * 0.3 + i * s.width * 0.16, top + 0.6 + 0.55, s.dz - s.depth * 0.3), dark);
+      }
       if (top >= 45) api.add(api.cylinder(0.12, 0.3, Math.min(40, 6 + top * 0.12), 6).translate(s.dx, top + 0.6 + Math.min(40, 6 + top * 0.12) / 2, s.dz), dark);
     }
     const base = sections[0];
