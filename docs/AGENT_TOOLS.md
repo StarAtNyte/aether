@@ -112,7 +112,17 @@ refusals as text with a fix.
     `stairs[]` (`{room}` to fit one, or exact `{at, heading, shape, width}`).
   - `furniture[]` with `relations` (`against_wall`, `centred_on_wall`, `in_corner`, `flanks`, `beside`,
     `above_centred`, `centred_on_opening`, `on_top`, `faces`).
-  - `roof`.
+  - `roof`, `site`, `exteriorWall {finish}` (a light brick, plaster or cladding) and `facade` (see below).
+  - **Facade.** A building made from a design plan gets its front by default (`packages/arch/src/facade.ts`): an entrance
+    with a door surround (two pilasters and a lintel) and a canopy on two columns, a cornice band round the roofline, a
+    paved forecourt in front of the entrance, a lamp post at each corner of it (with a real light), trough and urn
+    planters, two benches facing the street, and a warm light under the canopy. `facade {sign: "NAME"}` adds a sign with
+    block lettering in an emissive material on a dark panel (`arch-sign`, 5 x 7 pixel face, standing on the canopy; its own
+    real light); `canopy`, `doorSurround`, `cornice`, `forecourt`, `lamps`, `planters`, `bench`, `light` each switch a part
+    off, `surround` (box, board, stone, none) sets the window surrounds, `signColor` and `signPanel` the colours;
+    `facade: false` keeps a bare front. `build_architecture` `set_facade {building, facade}` changes it later (merged into
+    the stored plan, re-compiled). Without a `facade` on a plan (photo rooms, hand-written plans) nothing changes: the
+    style's own articulation stays.
 - **Returns.** The built shell, or a refusal that says what to change.
 - **When to use it.** First, for any building, apartment, room or interior (system prompt, "Buildings").
   Sending it again revises the shell, and pieces already placed stay.
@@ -153,7 +163,7 @@ refusals as text with a fix.
   - `oven`: freestanding cooker with hob, grates, knobs and a glazed door. `width` (0.9+ gives six burners),
     `finish`, `color`, `trim`. `extractor`: wall cooker hood; `width`, `height` (flue), `finish`.
   - `rug` also takes `pattern` `diamonds`, `kilim` and `shag` (high pile, 3 cm) besides `plain`, `zigzag`, `stripes`.
-  - **Venue and public-space parts** (`packages/arch/src/furniture/venue.ts`, `civic.ts`, `world.ts`; each one mesh per material, under 5k triangles, so copies instance): `cinema-seat` (flip-up padded seat, head roll, armrests, cup holder, `seatUp`), `tier-steps` (stepped floor, `rows`, `riser`, `growth`), `cinema-screen` (frame, velvet masking, curved glowing picture), `stage` (deck, fascia, steps, pleated `curtains` open/closed, valance, backdrop), `speaker` (cabinet, surround, column, monitor), `acoustic-panel` (fabric, slat, diffuser), `booth-port` (projection booth window), `step-light`, `lectern` (lectern, podium, pulpit), `pew`, `altar`, `library-stack`, `vitrine` (case, plinth, table; exhibit vase, bowl, bust, urn), `reception-desk` (reception, concession, bar with back bar), `school-desk`, `blackboard`, `treadmill`, `weight-bench` (flat, incline, rack with barbell), `dumbbell-rack`, `hospital-bed`, `bus-stop`, `market-stall`; `art` takes `frame: "gilt"` and `subject: "landscape" | "portrait"`. `furnitureByKind` and `place_items` resolve aliases ("theatre seat", "display case", "church pew", "concession counter", "painting").
+  - **Venue and public-space parts** (`packages/arch/src/furniture/venue.ts`, `civic.ts`, `world.ts`; each one mesh per material, under 5k triangles, so copies instance): `cinema-seat` (flip-up padded seat, head roll, armrests, cup holder, `seatUp`), `tier-steps` (stepped floor, `rows`, `riser`, `growth`), `cinema-screen` (frame, velvet masking, curved glowing picture), `stage` (deck, fascia, steps, pleated `curtains` open/closed, valance, backdrop), `speaker` (cabinet, surround, column, monitor), `acoustic-panel` (fabric, slat, diffuser), `booth-port` (projection booth window), `step-light`, `lectern` (lectern, podium, pulpit), `pew`, `altar`, `library-stack`, `vitrine` (case, plinth, table; exhibit vase, bowl, bust, urn), `reception-desk` (reception, concession, bar with back bar), `school-desk`, `blackboard`, `treadmill`, `weight-bench` (flat, incline, rack with barbell), `dumbbell-rack`, `hospital-bed`, `bus-stop`, `market-stall`; and the small pieces that make a venue read as the real place (`packages/arch/src/furniture/display.ts`): `statue` (robed figure, bust or abstract on a plinth; marble, bronze, stone or patina), `rope-stanchion` (post, ball top and velvet rope sagging to the next post; `shape_land along` sets the span from the spacing), `plaque` (wall label: card, brass or slate), `place-setting` (plate, napkin, fork, knife, spoon, wine and water glass), `candle` (votive, taper or pillar with an emissive flame), `column` (round, fluted, square or wall pilaster), `ceiling-baffle` (fin, raft or coffer hung from the ceiling) and `planter` (trough, urn or round, with shrubs, flowers or grass); `art` takes `frame: "gilt"` and `subject: "landscape" | "portrait"`. `furnitureByKind` and `place_items` resolve aliases ("theatre seat", "display case", "church pew", "concession counter", "painting", "table setting", "velvet rope", "wall label", "tea light", "pillar", "acoustic baffle", "potted plant").
   - **Discovery: `find_model`** lists the crafted parts that match the words first (`findCrafted`, aliases per part), each with its parameters and how to place it (free world: shape `{kind:"procedural", generator:"furn-..."}`; many: `shape_land`; in a room: `place_items {kind}`), then library models.
 - **Returns.** Accepted and refused items, with measurements.
 - **When to use it.** After `design_plan`, for every planned piece.
@@ -205,6 +215,7 @@ See [Eyes](#query_scene-1).
   | `set_residents` | `building`, `count` 0..8 |
   | `dress_room` | `building`, `room` (id or `all`), `dress` |
   | `set_site` | `building`, `site {garden?, surroundings?: none\|estate, planting?, terrace?, pool?}` |
+  | `set_facade` | `building`, `facade {sign?, canopy?, doorSurround?, cornice?, forecourt?, lamps?, planters?, bench?, light?, surround?}` or `false` |
 
 - **Returns.** One line per applied op. Each refused op comes back as `[index] op code: message Fix: hint`. If a
   usability report fails, the result says what to fix. The call counts as an error only when every op was
@@ -231,7 +242,7 @@ See [Eyes](#query_scene-1).
 - **What it does.** Builds real ground for outdoor worlds, as one undo step (`packages/agent/src/land.ts`,
   `LandInput`). Everything it adds is tagged `land`. Heights come from the same heightfield physics uses, so
   `query_level` and `place_level_items` agree with it.
-- **Input.** One of four ops:
+- **Input.** One of these ops (land, mound, path, grid, tier, wall, along, around, perimeter, row):
   - `{op:"land", kind: meadow|forest|snow|canyon, size 120..800 (420), relief 0..120 (48), color?, plot?
     {x, z, radius 4..200 (20)}, stream? {z, half 1..12, bend 0..30, depth 0.4..4}, lake? {x, z, radius 3..120,
     depth 0.5..10}, woods? {conifers ≤400, broadleaf ≤400, birch ≤200, scrub ≤600, boulders ≤200}, cover? {grass?,
@@ -242,7 +253,10 @@ See [Eyes](#query_scene-1).
     color?, name?}` lays a path over the terrain.
   - `{op:"tier", at:[x,z], rows 1..40, seatsPerRow, of ("furn-cinema-seat"), facing, aisles (1), aisleWidth (1.1), rowDepth (1.05), riser ("auto" | m), screenDistance (6), screenBottom (1), eye (1.1), clearance (0.12), stepLights (true), finish, color}` builds a raked auditorium (`packages/agent/src/layout.ts`): one `furn-tier-steps` floor, one instanced seat block with each seat at its row's tread height, optional aisle step lights; `at` is the centre of the front row, `facing` (north is -Z, south +Z, east +X, west -X, or yaw degrees) is where the seats look. `riser:"auto"` solves a rise and growth per row so each row sees the bottom of the screen `clearance` over the eye in front (`solveTier`); the answer reports front and back row positions, the back tread height and the tightest clearance, and says when the rise had to be capped. At most 2000 seats.
   - `{op:"wall", from:[x,z], to:[x,z], of ("furn-frame"), params, variants:[params...], count | spacing, y (1), facing, inset (0.4), gaps:[[t0,t1]...], offset (0.02), light:{every, type, color, intensity, range, rise, out}}` hangs N pieces along one wall in one call (`layout.ts`, `alongPatches`): evenly spaced from the wall's two ends (its inner face), all looking away from the wall (default to the left of `from` to `to`), one instanced entity per variant (variants are taken in turn, so a gallery has different subjects and frames), stretches in `gaps` left empty for doors and windows, and optional real lights beside every `every`-th piece (an instanced piece lights nothing; at most 24 lights). `{op:"along", from, to, of, count | spacing, y, facing, variants, light}` is the same on a free-standing line: display cases down a hall, columns, lamps, stools along a counter.
-  - `{op:"perimeter", at:[[x,z],...], table:{of:"furn-table", params, yaw}, of ("furn-chair"), shape ("rect" | "round"), long (2), ends (0), count (4, round), size, gap (0.18), facing ("in" | "out")}` puts the table and its seats at every listed position in one call (14 tables of 4 is 56 seats and 14 tables in four or five instanced entities, each seat looking at its table); the answer gives the table spacing that keeps walkways clear.
+  - `{op:"perimeter", at:[[x,z],...], table:{of:"furn-table", params, yaw}, of ("furn-chair"), shape ("rect" | "round"), long (2), ends (0), count (4, round), size, gap (0.18), facing ("in" | "out"), settings:{of:"furn-place-setting", y (0.75), inset (0.24)}, centre:{of:"furn-candle", y}}` puts the table and its seats at every listed position in one call, with a cover (plate, glasses, cutlery, facing the seat) at every seat and a piece in the middle of every table when `settings` and `centre` are given (14 tables of 4 are 56 covers and 14 candles in the same call) (14 tables of 4 is 56 seats and 14 tables in four or five instanced entities, each seat looking at its table); the answer gives the table spacing that keeps walkways clear.
+  - `{op:"around", rect:[x0,z0,x1,z1], of, mode ("along" stands the pieces in a line inside each wall | "wall" hangs them), spacing | count (per side), y, inset (0.6), offset (0.3 off the wall), sides (all four), gaps:{north:[[t0,t1]],...}, variants, params, light}` places the same piece on every wall of a rectangular room in one call, all facing in (`layout.ts`, `aroundPatches`: four `along` runs): columns or pilasters round a hall (`furn-column`, variant "pilaster" flush, y 0), planters, sconces, panels, stanchions.
+  - `wall` and `along` also take `labels:{of ("furn-plaque"), y (1.25), side ("right" | "left", as seen from the room), gap (0.12), params}`: a small piece beside every piece in the same call (30 paintings get 30 wall labels). A piece with a `span` param (`furn-rope-stanchion`) gets the pitch as its span unless the call sets one, so a line of posts is one continuous rope. Ceiling baffles or coffers are a `grid` with `y` at the ceiling height; statues are an `along` run.
+  - `tier` puts step lights on every riser along each aisle and along both outer edges of the block when the margin is 0.3 m or more (rows minus one, times aisles plus two).
   - `of` takes a generator id or the plain name of a crafted part ("chair", "painting", "display case"). They work inside a building by world coordinates.
   - `{op:"grid", at:[x,z], cols, rows, of, params?, spacingX?, spacingZ?, facing?, aisles?, aisleWidth?, y?}` one instanced entity of rows by columns (a nave of pews, a classroom, a restaurant floor, library stacks), aisles splitting each row into blocks; at most 3000 pieces.
   - `{op:"row", points[2..64], of: generator id (built-in, library or defined), spacing 0.25..60 (4), jitter 0..1
@@ -376,6 +390,7 @@ See [Eyes](#query_level-1).
   The model judges the candidates (and later the render) and places one with `place_items` in a room, or with an
   `apply_patches` entity `shape {"kind":"asset","id":"<id>"}` in an open world. Colours are measured from the model's
   own base-colour texture, not written by hand.
+- **No exact match.** Crafted venue parts come first (`findCrafted`: statue, rope barrier, wall label, table setting, candle, column, acoustic baffle, planter ...). When the library has no model named like the request (the head noun, `headNoun` and `lacksNoun` in `@aether/assets`) and no crafted part answers, the result says so and tells the model to name the substitute in its notes, pick the nearest piece only if it still reads as the thing, or craft one from primitives; a bench is not a pew and a tree is not a statue. `pew` is no longer a synonym of `bench`.
 - **When to use it.** Before placing seating, tables, beds, lamps, plants and decor, before dressing a landscape,
   street, harbour, factory or fantasy set with props, and in the photo compare loop when a piece differs in shape,
   style or colour.
@@ -518,6 +533,7 @@ them to the next user turn:
 - The host renders the views through `AgentHost.captureReview(views)`.
 - The poses come from `reviewPoses` and the numbered marks from `projectMarks`. A legend maps each number to a
   piece (`legendText`, `@aether/arch`).
+- A building's review also gets two exterior views when there is room for them (`exteriorPoses`, `@aether/arch`): `exterior-street` at eye height facing the entrance from where a passer-by would stand, and `exterior-aerial` from three quarters above. No marks are drawn on them. The turn text asks the model to judge the entrance, sign, window rhythm, roofline and forecourt, and to fix a bare front with `set_facade`.
 - Review images have an aspect of 1.5 (`REVIEW_ASPECT`). At most 8 images go in one round (`MAX_REVIEW_VIEWS`).
   The studio asks for 6 (`maxViews: 6` in `Studio.ts`).
 - The studio renders with its viewport (`AgentBridge.captureReview`). The headless software renderer
@@ -650,7 +666,7 @@ Full text: [GENERATION_BRIEF.md](GENERATION_BRIEF.md). Source: `packages/agent/s
 
 | Tool | Offered to | What it does |
 | --- | --- | --- |
-| `submit_brief` | the brief call only (never the planner) | `{elaboration: elaborate|moderate|minimal, elaboration_reason, kind, summary, scale, zones, elements:[{name, count, size?, note?, find?}], materials, lighting, richness:{kinds, pieces}, reference:{generate, reason, prompt?}}`. Validated by zod; a refusal names the fields once. |
+| `submit_brief` | the brief call only (never the planner) | `{elaboration: elaborate|moderate|minimal, elaboration_reason, kind, summary, scale, zones, elements:[{name, count, size?, note?, find?}], materials, lighting, richness:{kinds, pieces, note?, basis?}, reference:{generate, reason, prompt?}}`. Validated by zod; a refusal names the fields once. |
 | `look_closer` (reference form) | the planner and review turns, only while a generated reference picture exists | `{regions:[{box:[x0,y0,x1,y1] in 0..1}]}` returns crops of the picture; `{whole:true}` the whole picture. Read-only. This is a different schema from the photo flow's `look_closer`, which compares a photo with a render and is offered only inside that flow. |
 
 The model states how elaborate the request is (default `elaborate`; `minimal` only when the user states a small scale or simplicity), and the richness target follows. The reference image is optional: the model decides, a connected image generator makes it (`make_texture`'s path), and the decision and reason are recorded whether or not a picture was made. The review loop then shows the brief, the renders and advisory piece counts per element (`richnessEvidence`) and the model fixes what is missing or sparse. The offline planner skips all of this.
