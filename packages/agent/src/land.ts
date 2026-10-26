@@ -110,6 +110,7 @@ export const LandInput = z.discriminatedUnion('op', [
     inset: z.number().min(0).max(20).default(0.4),
     gaps: z.array(z.tuple([z.number().min(0).max(2000), z.number().min(0).max(2000)])).max(24).optional(),
     offset: z.number().min(0).max(2).default(0.02),
+    light: z.object({ every: z.number().int().min(1).max(50).default(1), type: z.enum(['point', 'spot']).default('point'), color: Color.default('#ffd7a6'), intensity: z.number().min(0.05).max(6).default(0.6), range: z.number().min(1).max(40).default(6), rise: z.number().min(-2).max(10).default(0.3), out: z.number().min(0).max(3).default(0.35) }).optional(),
     name: z.string().max(60).optional(),
   }),
   z.object({
@@ -126,6 +127,7 @@ export const LandInput = z.discriminatedUnion('op', [
     inset: z.number().min(0).max(20).default(0.4),
     gaps: z.array(z.tuple([z.number().min(0).max(2000), z.number().min(0).max(2000)])).max(24).optional(),
     offset: z.number().min(0).max(40).default(0),
+    light: z.object({ every: z.number().int().min(1).max(50).default(1), type: z.enum(['point', 'spot']).default('point'), color: Color.default('#ffd7a6'), intensity: z.number().min(0.05).max(6).default(0.6), range: z.number().min(1).max(40).default(6), rise: z.number().min(-2).max(10).default(0.3), out: z.number().min(0).max(3).default(0.35) }).optional(),
     name: z.string().max(60).optional(),
   }),
   z.object({

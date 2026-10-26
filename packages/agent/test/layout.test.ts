@@ -136,6 +136,15 @@ describe('shape_land wall, along and perimeter', () => {
     for (const p of g.shape.points ?? []) expect(Math.abs(worldPoint(g, p)[0] - 5)).toBeGreaterThan(0.9);
   });
 
+  it('puts real lights beside the hung pieces, no more than 24', () => {
+    const { world, summary } = apply(createWorld(), { op: 'wall', from: [0, 0], to: [40, 0], of: 'furn-sconce', count: 40, y: 2.2, facing: 'south', light: { every: 1, intensity: 0.8 } });
+    const lights = Object.values(world.entities).filter((e) => e.light);
+    expect(lights.length).toBeGreaterThan(10);
+    expect(lights.length).toBeLessThanOrEqual(24);
+    expect(lights[0]?.light?.castShadow).toBe(false);
+    expect(summary).toContain('real point lights');
+  });
+
   it('puts cases along an axis on the floor', () => {
     const { world } = apply(createWorld(), { op: 'along', from: [0, 0], to: [0, 12], of: 'display case', count: 5, facing: 'east', y: 0 });
     const e = all(world, 'along')[0];

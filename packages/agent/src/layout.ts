@@ -323,7 +323,20 @@ export interface AlongInput {
   gaps?: Array<[number, number]> | undefined;
   /** Distance the pieces stand off the line, along the way they look (m). */
   offset: number;
+  /** Real lights beside the pieces (an instanced piece lights nothing by itself): one for every `every`-th piece, at most 24. */
+  light?: LightPlacement | undefined;
   name?: string | undefined;
+}
+
+export interface LightPlacement {
+  every: number;
+  type: 'point' | 'spot';
+  color: string;
+  intensity: number;
+  range: number;
+  /** Height of the light above the piece's origin (m) and distance from it along the way the piece looks (m). */
+  rise: number;
+  out: number;
 }
 
 /**
@@ -386,10 +399,31 @@ export function alongPatches(world: WorldDoc, input: AlongInput, seed: number, k
       }),
     );
   });
+  let lit = 0;
+  const lightIds: string[] = [];
+  if (input.light) {
+    const every = Math.max(input.light.every, Math.ceil(slots.length / 24));
+    slots.forEach((t, i) => {
+      if (i % every !== 0) return;
+      const x = input.from[0] + ux * t + nx * (input.offset + (input.light?.out ?? 0));
+      const z = input.from[1] + uz * t + nz * (input.offset + (input.light?.out ?? 0));
+      lightIds.push(
+        b.add({
+          id: b.id(`${label}-light`),
+          name: `${short} light`,
+          transform: { position: [r2(x), r2(input.y + (input.light?.rise ?? 0)), r2(z)], rotation: [0, 0, 0], scale: [1, 1, 1] },
+          shape: { kind: 'none' },
+          light: { type: input.light?.type ?? 'point', color: input.light?.color ?? '#ffd7a6', intensity: input.light?.intensity ?? 0.6, range: input.light?.range ?? 6, angle: 60, castShadow: false },
+          tags: ['light', input.mode],
+        }),
+      );
+      lit++;
+    });
+  }
   const where = input.mode === 'wall' ? `hung on the wall from (${input.from[0]}, ${input.from[1]}) to (${input.to[0]}, ${input.to[1]}), bottom edge ${input.y} m above the floor` : `along (${input.from[0]}, ${input.from[1]}) to (${input.to[0]}, ${input.to[1]}) at y ${input.y}`;
   return {
     patches: b.build(),
-    summary: `Laid ${slots.length} x ${gen} ${where}, every ${pitch.toFixed(2)} m, all looking ${input.facing !== undefined ? (typeof input.facing === 'number' ? `yaw ${input.facing}` : input.facing) : 'to the left of the line'}${ids.length > 1 ? `, in ${ids.length} instanced entities (variants taken in turn)` : ', one instanced entity'}${dropped > 0 ? `; ${dropped} slot${dropped > 1 ? 's' : ''} skipped over the gaps` : ''}. Entities: ${ids.join(', ')}. If the pieces face into the wall, send it again with facing set to the way they should look.`,
+    summary: `Laid ${slots.length} x ${gen} ${where}, every ${pitch.toFixed(2)} m, all looking ${input.facing !== undefined ? (typeof input.facing === 'number' ? `yaw ${input.facing}` : input.facing) : 'to the left of the line'}${ids.length > 1 ? `, in ${ids.length} instanced entities (variants taken in turn)` : ', one instanced entity'}${dropped > 0 ? `; ${dropped} slot${dropped > 1 ? 's' : ''} skipped over the gaps` : ''}${lit > 0 ? `; ${lit} real ${input.light?.type ?? 'point'} lights beside them` : ''}. Entities: ${[...ids, ...lightIds.slice(0, 3)].join(', ')}${lightIds.length > 3 ? ', ...' : ''}. If the pieces face into the wall, send it again with facing set to the way they should look.`,
   };
 }
 
