@@ -42,8 +42,8 @@ function bustShape(H: number): Geom {
   const g = new Geom();
   g.merge(lathe([[0.001, 0], [0.2, 0], [0.22, 0.04], [0.2, 0.1], [0.001, 0.1]].map(([r, y]) => [(r as number) * H, (y as number) * H] as P2), 16));
   g.merge(roundedBox(0.52 * H, 0.2 * H, 0.26 * H, 0.07 * H, 2).translate(0, 0.19 * H, 0));
-  g.merge(cylinder(0.075 * H, 0.09 * H, 0.2 * H, 10).translate(0, 0.38 * H, 0));
-  g.merge(sphere(0.2 * H, 16).scale(0.9, 1.18, 1.0).translate(0, 0.64 * H, 0));
+  g.merge(cylinder(0.065 * H, 0.09 * H, 0.26 * H, 10).translate(0, 0.25 * H, 0));
+  g.merge(sphere(0.17 * H, 16).scale(0.88, 1.2, 1.0).translate(0, 0.6 * H, 0));
   return g;
 }
 
@@ -85,7 +85,7 @@ export const STATUE: FurnitureDef = {
     const rnd = seeded(seed * 2654435761 + 5);
     const baseCol = paint(p.color('base'), 0.55);
     const m = p.str('material');
-    const stuff = m === 'bronze' ? { finish: 'brass' as const, color: '#5e4a2c', roughness: 0.45 } : m === 'patina' ? { finish: 'brass' as const, color: '#4f7a68', roughness: 0.6 } : m === 'stone' ? mat('stone', '#a9a498') : mat('marble', '#efece6');
+    const stuff = m === 'bronze' ? { finish: 'brass' as const, color: '#5e4a2c', roughness: 0.45 } : m === 'patina' ? { finish: 'brass' as const, color: '#4f7a68', roughness: 0.6 } : m === 'stone' ? mat('stone', '#a9a498') : { finish: 'paint' as const, color: '#ebe7df', roughness: 0.32 };
     set.add(box(-w / 2, 0, -w / 2, w / 2, 0.07, w / 2), baseCol);
     set.add(box(-w / 2 + 0.05, 0.07, -w / 2 + 0.05, w / 2 - 0.05, ph - 0.05, w / 2 - 0.05), baseCol);
     set.add(bevelSlab(-w / 2, ph - 0.05, -w / 2, w / 2, ph, w / 2, 0.012), baseCol);
