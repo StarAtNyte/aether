@@ -12,7 +12,8 @@
  */
 import { z } from 'zod';
 import type { Entity, WorldDoc } from '@aether/core';
-import type { ToolDef } from './types';
+import { REVIEW_ASPECT, type ReviewSnapshot } from './review';
+import type { ReviewViewRequest, ToolDef } from './types';
 
 export const BRIEF_TOOL_NAME = 'submit_brief';
 export const REFERENCE_TOOL_NAME = 'look_closer';
@@ -216,4 +217,58 @@ export interface ReferenceRecord {
   provenance?: 'generated reference';
   via?: string;
   model?: string;
+}
+
+/** Sentinel in `ReviewSnapshot.buildings` that marks a review of a world that is neither a building nor a playable level. */
+export const RICHNESS_SUBJECT = 'world';
+
+/** Where the pieces of a world stand (2nd to 98th percentile, so a far outlier does not stretch it). */
+function bounds(world: WorldDoc): { x0: number; x1: number; z0: number; z1: number } | null {
+  const xs: number[] = [];
+  const zs: number[] = [];
+  for (const e of Object.values(world.entities)) {
+    const [x, , z] = e.transform.position;
+    if (Number.isFinite(x) && Number.isFinite(z) && Math.abs(x) < 500 && Math.abs(z) < 500) {
+      xs.push(x);
+      zs.push(z);
+    }
+  }
+  if (xs.length === 0) return null;
+  xs.sort((a, b) => a - b);
+  zs.sort((a, b) => a - b);
+  const q = (a: number[], p: number): number => a[Math.min(a.length - 1, Math.max(0, Math.floor(a.length * p)))] as number;
+  return { x0: q(xs, 0.02), x1: q(xs, 0.98), z0: q(zs, 0.02), z1: q(zs, 0.98) };
+}
+
+/**
+ * The review of a world built from a brief that has no building plan and no playable level to measure (a village or hall made
+ * of free pieces): no findings, only views to look at (an overview and three at eye height) so the model can compare the
+ * result with its brief. Advisory counts come from {@link richnessEvidence}.
+ */
+export function richnessSnapshot(world: WorldDoc, opts: { maxViews: number; withViews: boolean }): ReviewSnapshot {
+  const views: ReviewViewRequest[] = [];
+  const b = opts.withViews ? bounds(world) : null;
+  if (b) {
+    const cx = (b.x0 + b.x1) / 2;
+    const cz = (b.z0 + b.z1) / 2;
+    const r = Math.max(6, b.x1 - b.x0, b.z1 - b.z0);
+    const mk = (name: string, label: string, position: [number, number, number], target: [number, number, number], fov: number, hideTops: boolean): ReviewViewRequest => ({ name, label, kind: 'corner', pose: { position, target, up: [0, 1, 0], fov }, hideTops, aspect: REVIEW_ASPECT, marks: [] });
+    views.push(
+      mk('overview', 'overview from above and outside (roofs hidden)', [cx + r * 0.7, r * 0.9, b.z1 + r * 0.7], [cx, 0.5, cz], 55, true),
+      mk('eye-near', 'eye height, 1.6 m, from the near end looking across', [cx, 1.6, b.z0 + 0.8], [cx, 1.5, b.z1], 70, false),
+      mk('eye-far', 'eye height, 1.6 m, from the far end looking back', [cx, 1.6, b.z1 - 0.8], [cx, 1.5, b.z0], 70, false),
+      mk('eye-side', 'eye height, 1.6 m, from the side', [b.x0 + 0.8, 1.6, cz], [b.x1, 1.5, cz], 70, false),
+    );
+  }
+  return { buildings: [RICHNESS_SUBJECT], findings: [], score: 100, keys: new Set(), views: views.slice(0, Math.max(1, opts.maxViews)), legend: '', advice: '' };
+}
+
+/** The opening of a richness-only review turn (the brief comparison itself follows it). */
+export function richnessOnlyTurnText(round: number, opts: { hasImages: boolean; lastEdited: boolean }): string {
+  return [
+    `REVIEW round ${round}. ${opts.lastEdited ? 'You changed the world; this is how it looks now.' : 'Look at the world as a critical designer before it is shown to the user.'}`,
+    'There is no automatic checker for this kind of world: you are the judge, from the images and the brief below.',
+    opts.hasImages ? 'The images are an overview and views at eye height (1.6 m), the way a visitor sees it.' : 'No renders could be shown this round; use query_scene and inspect to read the world.',
+    'Fix what is missing, sparse, floating or crossing with apply_patches, place_items, edit_items or place_level_items, whichever the world was built with; make the smallest change that works.',
+  ].join('\n');
 }

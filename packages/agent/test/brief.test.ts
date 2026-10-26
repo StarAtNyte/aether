@@ -206,6 +206,33 @@ describe('brief -> build -> richness review', () => {
   });
 });
 
+describe('richness review of a world made of free pieces', () => {
+  it('still compares the result with the brief, with an overview and eye-height views, when there is no plan to measure', async () => {
+    const add = (id: string, x: number, z: number) => ({ op: 'add', entity: { id, name: id, transform: { position: [x, 0.5, z] } } });
+    const provider = scripted(brief({ kind: 'village', reference: { generate: false, reason: 'known' } }), [
+      () => [call('apply_patches', { patches: [add('house-1', -6, -6), add('house-2', 6, 6)], message: 'two houses' })],
+      () => [finish('built')],
+      () => [call('apply_patches', { patches: [add('well-1', 0, 0)], message: 'a well' })],
+      () => [finish('added a well')],
+      () => [finish('rich enough')],
+    ]);
+    const asked: string[] = [];
+    const host = Object.assign(new MemoryHost(), {
+      captureReview: async (views: ReadonlyArray<{ name: string }>) => {
+        asked.push(...views.map((v) => v.name));
+        return views.map((v) => ({ name: v.name, dataUrl: PNG }));
+      },
+    });
+    const events = await collect(new WorldAgent({ provider, catalogs: TEST_CATALOGS, maxTurns: 12, brief: {}, review: { vision: true } }).run('make a village', host, { intent: 'new' }));
+    expect(asked).toEqual(expect.arrayContaining(['overview', 'eye-near']));
+    const text = provider.requests.map((r) => r.messages.map(textOf).join('\n')).join('\n');
+    expect(text).toContain('RICHNESS REVIEW');
+    expect(text).toContain('There is no automatic checker');
+    expect(events.some((e) => e.type === 'review' && e.phase === 'approved')).toBe(true);
+    expect(Object.keys(host.world.entities)).toContain('well-1');
+  });
+});
+
 describe('brief helpers', () => {
   it('rejects a brief without elements and names the problem', () => {
     const r = parseBrief({ ...brief(), elements: [] });

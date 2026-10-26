@@ -32,7 +32,7 @@ import { guardVerificationClaim } from './honesty';
 import { DIFFERENCES_TOOL, DIFFERENCES_TOOL_NAME, DifferenceLedger, differenceViews } from './photo/differences';
 import { READ_ONLY_TOOLS, REVIEW_CROSSCHECK_SEED, REVIEW_CROSSCHECK_SYSTEM, requirementText, reviewCrossCheckText } from './review-diff';
 import { CallLedger, budgetNote, stepLabel, compactConversation, drainSteer, guardedTool, steerText, trimToAnswered } from './harness';
-import { briefChecklistText, REFERENCE_TOOL, REFERENCE_TOOL_NAME, richnessReviewText } from './brief';
+import { briefChecklistText, richnessOnlyTurnText, richnessSnapshot, RICHNESS_SUBJECT, REFERENCE_TOOL, REFERENCE_TOOL_NAME, richnessReviewText } from './brief';
 import { briefStage, lookReference, type BriefReviewer, type BriefStageResult } from './brief-stage';
 import { LEVEL_SUBJECT, levelSnapshot, levelTurnText } from './level-review';
 import type { AgentEvent, AgentHost, AgentOptions, ChatMessage, CompletionResponse, ContentBlock, ReviewOptions, ToolDef, UsageTotals } from './types';
@@ -758,10 +758,13 @@ export class WorldAgent {
       // No building: a game or outdoor level is reviewed with the level tools, when the host has them.
       if (snap.buildings.length === 0) {
         const lvl = this.opts.levelTools ? await raceAbort(levelSnapshot(this.opts.levelTools, world, { maxViews, withViews }), signal) : null;
-        if (!lvl) return;
-        snap = lvl;
+        // A world made of free pieces with no plan and nothing to measure is still compared with its brief.
+        const snapped = lvl ?? (this.briefState ? richnessSnapshot(world, { maxViews, withViews }) : null);
+        if (!snapped) return;
+        snap = snapped;
       }
       const isLevel = snap.buildings[0] === LEVEL_SUBJECT;
+      const richOnly = snap.buildings[0] === RICHNESS_SUBJECT;
       yield { type: 'review', round, phase: 'checking', text: round === 1 ? (isLevel ? 'Checking the level…' : 'Checking the building…') : 'Checking again…', score: snap.score, findings: snap.findings.length };
       const verdict = tracker.observe({ keys: snap.keys, score: snap.score, edited: lastEdited });
       if (verdict.stalled) {
@@ -791,7 +794,7 @@ export class WorldAgent {
       images.forEach((im, i) => {
         content.push({ type: 'text', text: `Image ${i + 1}: ${im.name}, ${im.label}` }, { type: 'image', dataUrl: im.dataUrl });
       });
-      content.push({ type: 'text', text: (isLevel ? levelTurnText : reviewTurnText)(round, snap, { hasImages: images.length > 0, lastEdited }) });
+      content.push({ type: 'text', text: (richOnly ? (r: number, _s: ReviewSnapshot, o: { hasImages: boolean; lastEdited: boolean }) => richnessOnlyTurnText(r, o) : isLevel ? levelTurnText : reviewTurnText)(round, snap, { hasImages: images.length > 0, lastEdited }) });
       if (diffs) {
         // The request, point by point, against the renders (and the user's reference pictures beside them).
         const refs = this.reviewAsk.images.slice(0, 2);
@@ -904,7 +907,7 @@ export class WorldAgent {
       lastEdited = editedThisRound;
       before = world;
       if (!editedThisRound && declared) {
-        const after: ReviewSnapshot = isLevel && this.opts.levelTools ? ((await raceAbort(levelSnapshot(this.opts.levelTools, host.getWorld(), { maxViews: 1, withViews: false }), signal)) ?? snap) : snapshotForReview(host.getWorld(), null, { maxViews: 1, withViews: false });
+        const after: ReviewSnapshot = richOnly ? richnessSnapshot(host.getWorld(), { maxViews: 1, withViews: false }) : isLevel && this.opts.levelTools ? ((await raceAbort(levelSnapshot(this.opts.levelTools, host.getWorld(), { maxViews: 1, withViews: false }), signal)) ?? snap) : snapshotForReview(host.getWorld(), null, { maxViews: 1, withViews: false });
         const errors = after.findings.filter((f) => f.severity === 'error');
         // Warnings are real until the model has seen them once more and still leaves them: ask again, once per set.
         const open = after.findings.filter((f) => f.severity === 'warning');
