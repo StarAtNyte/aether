@@ -62,3 +62,16 @@ describe('exposure trim', () => {
     }
   });
 });
+
+describe('headroom to dim a lit room', () => {
+  it('lets the trim take back the exposure the author raised by eye', async () => {
+    const { trimFloor } = await import('../src/view/exposure-trim');
+    expect(trimFloor()).toBe(TRIM_MIN_EV);
+    expect(trimFloor({ biasEv: 1.1 })).toBeCloseTo(TRIM_MIN_EV - 1.1);
+    expect(trimFloor({ biasEv: -1 })).toBe(TRIM_MIN_EV);
+    let t = 0;
+    for (let i = 0; i < 40; i++) t = nextTrim(t, { mean: 250, high: 0.3, low: 0 }, { key: 'dim', biasEv: 1.1 });
+    expect(t).toBeLessThan(TRIM_MIN_EV);
+    expect(t).toBeGreaterThanOrEqual(TRIM_MIN_EV - 1.1);
+  });
+});

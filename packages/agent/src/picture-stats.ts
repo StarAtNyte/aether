@@ -27,10 +27,20 @@ export function pictureStats(data: ArrayLike<number>): PictureStats | null {
   return { mean: sum / n, washed: hi / n, crushed: lo / n };
 }
 
+/** Mean display luminance (0..1) a picture may have for a stated key: above `hi` it is over-lit for that key. */
+const KEY_BANDS: Record<'dim' | 'moderate' | 'bright', { hi: number }> = { dim: { hi: 0.38 }, moderate: { hi: 0.58 }, bright: { hi: 0.68 } };
+
 /** One advisory line per picture, plus what the intent line of the world says; empty when nothing was measured. */
-export function lightEvidenceText(rows: ReadonlyArray<{ name: string; stats: PictureStats }>, intent: string | null): string {
+export function lightEvidenceText(rows: ReadonlyArray<{ name: string; stats: PictureStats }>, intent: string | null, key?: 'dim' | 'moderate' | 'bright'): string {
   if (rows.length === 0) return '';
   const pct = (v: number): string => `${Math.round(v * 100)}%`;
   const lines = rows.map((r) => `${r.name}: mean ${Math.round(r.stats.mean)}/255, washed (near white) ${pct(r.stats.washed)}, crushed (near black) ${pct(r.stats.crushed)}`);
-  return `Picture histograms (advisory, measured on the images above; you judge by looking; windows and lamp shades legitimately clip, a dim venue legitimately has dark corners). Lighting intent: ${intent ?? 'not stated (set one with tune_look {intent})'}.\n${lines.join('\n')}`;
+  // The band of mean luminance each stated key allows (the same bands the exposure trim steers toward in packages/render).
+  const band = key ? KEY_BANDS[key] : undefined;
+  const flags = band
+    ? rows
+        .filter((r) => r.stats.mean / 255 > band.hi)
+        .map((r) => `OVER-LIT for a ${key} intent: ${r.name} (mean ${Math.round(r.stats.mean)}/255, a ${key} picture reads at most about ${Math.round(band.hi * 255)}). Fix the light, not the exposure: lower the lamp and sconce intensities, the ambient fill and any bright emissive piece, and keep the screen or the focus the brightest thing.`)
+    : [];
+  return `Picture histograms (advisory, measured on the images above; you judge by looking; windows and lamp shades legitimately clip, a dim venue legitimately has dark corners). Lighting intent: ${intent ?? 'not stated (set one with tune_look {intent})'}.\n${lines.join('\n')}${flags.length ? `\n${flags.join('\n')}` : ''}`;
 }

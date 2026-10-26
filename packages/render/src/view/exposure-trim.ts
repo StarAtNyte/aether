@@ -55,6 +55,16 @@ export function trimBand(intent?: TrimIntent): { lo: number; hi: number } {
   return { lo: Math.min(0.9, b.lo * f), hi: Math.min(0.95, b.hi * f) };
 }
 
+/**
+ * Lowest trim for an intent. The author's own boost (`exposure` above 1, `exposureEv` above 0) is part of the picture the
+ * trim sees, so it must be able to take that boost back and still have its whole range to dim a lit room: a model that
+ * set +1.1 EV by eye and has lamps on would otherwise stand at the limit with a picture it cannot dim.
+ */
+export function trimFloor(intent?: TrimIntent): number {
+  const boost = Number.isFinite(intent?.biasEv) ? Math.max(0, Math.min(2, intent?.biasEv as number)) : 0;
+  return TRIM_MIN_EV - boost;
+}
+
 /** The trim after one more read-back of a picture drawn with `current`. */
 export function nextTrim(current: number, s: TrimSample, intent?: TrimIntent): number {
   if (!Number.isFinite(s.mean) || s.mean <= 0 && s.high <= 0) return current;
@@ -69,5 +79,5 @@ export function nextTrim(current: number, s: TrimSample, intent?: TrimIntent): n
   else if (s.low > 0.4 && s.high < 0.04 && key < (lo + hi) / 2) want = 0.3;
   const step = Math.max(-TRIM_STEP_EV, Math.min(TRIM_STEP_EV, want));
   if (Math.abs(step) < TRIM_DEADBAND_EV) return current;
-  return Math.max(TRIM_MIN_EV, Math.min(TRIM_MAX_EV, current + step));
+  return Math.max(trimFloor(intent), Math.min(TRIM_MAX_EV, current + step));
 }

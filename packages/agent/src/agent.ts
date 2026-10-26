@@ -831,7 +831,7 @@ export class WorldAgent {
           if (stats) rows.push({ name: im.name, stats });
         }
         const intent = host.getWorld().environment.look?.intent;
-        const text = lightEvidenceText(rows, intent ? `${intent.key ?? 'moderate'}${intent.text ? ` (${intent.text})` : ''}` : null);
+        const text = lightEvidenceText(rows, intent ? `${intent.key ?? 'moderate'}${intent.text ? ` (${intent.text})` : ''}` : null, intent?.key);
         if (text) content.push({ type: 'text', text });
       }
       if (this.briefState) content.push({ type: 'text', text: richnessReviewText(this.briefState.brief, host.getWorld(), round, this.briefState.notes) });

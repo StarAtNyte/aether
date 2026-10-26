@@ -35,3 +35,7 @@ Unchanged. Offline there is no brief, no reference image and no review; the run 
 ## Limits
 
 The brief is only as good as the model's knowledge of the kind of place. Counts are estimates for a size, not a quota; a hand-placed piece named unlike its element will read as missing in the evidence, which is why the model, not the count, judges.
+
+## Dim keys
+
+A cinema, theatre, bar, club or gallery states `intent.key: dim` (the word "readable" goes in the text). The checklist then asks for dim light, not a dim exposure: dark wall and floor finishes, `ambientIntensity` about 0.3 to 0.6, `lampStrength` 1 or less, low sconce and step-light intensities and one soft spill light for the screen. Emissive meshes light nothing by themselves. The review adds an `OVER-LIT for a dim intent` line when an image's mean luminance is above the band of the stated key (the same bands as the exposure trim), and the exposure trim may go below its normal -2.5 EV floor by the exposure the author raised by eye, so it can always take that boost back.

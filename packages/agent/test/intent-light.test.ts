@@ -23,3 +23,16 @@ describe('lighting intent', () => {
     expect(lightEvidenceText([], null)).toBe('');
   });
 });
+
+describe('over-lit against the stated key', () => {
+  const lit = { mean: 188, washed: 0.05, crushed: 0 };
+  it('flags a dim intent with a bright picture and says to fix the light', () => {
+    const t = lightEvidenceText([{ name: 'eye', stats: lit }], 'dim', 'dim');
+    expect(t).toContain('OVER-LIT for a dim intent');
+    expect(t).toContain('lamp');
+  });
+  it('flags nothing for a moderate intent at the same picture', () => {
+    expect(lightEvidenceText([{ name: 'eye', stats: { ...lit, mean: 120 } }], 'moderate', 'moderate')).not.toContain('OVER-LIT');
+    expect(lightEvidenceText([{ name: 'eye', stats: lit }], 'dim')).not.toContain('OVER-LIT');
+  });
+});
