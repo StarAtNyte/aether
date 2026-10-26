@@ -12,6 +12,12 @@ const LIBRARY_DIR = fileURLToPath(new URL('../../assets/lib', import.meta.url));
 /** Backend (apps/server) used for `/api` during `vite dev` and `vite preview`. */
 const API_TARGET = process.env.AETHER_API_TARGET ?? 'http://localhost:8787';
 
+/**
+ * Extra Host headers the dev and preview servers accept (comma separated, e.g. ".trycloudflare.com" for a quick tunnel).
+ * Empty by default, so a plain dev server answers to localhost only and a DNS-rebinding page cannot reach it.
+ */
+const ALLOWED_HOSTS = (process.env.AETHER_DEV_ALLOWED_HOSTS ?? '').split(',').map(h => h.trim()).filter(Boolean);
+
 const apiProxy = {
   '/api': { target: API_TARGET, changeOrigin: true },
 };
@@ -52,11 +58,12 @@ export default defineConfig(async ({ command }) => {
   },
   server: {
     port: 5173,
-    allowedHosts: [".trycloudflare.com"],
+    allowedHosts: ALLOWED_HOSTS,
     proxy: apiProxy,
   },
   preview: {
     port: 4173,
+    allowedHosts: ALLOWED_HOSTS,
     proxy: apiProxy,
   },
   worker: {

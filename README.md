@@ -363,6 +363,13 @@ Every script is in [`package.json`](package.json). For browsers, run
 display, the Firefox suites run headed under `xvfb-run`
 (`tests/e2e/support/firefox-gl.sh`).
 
+Sharing a dev server through a tunnel (for example Cloudflare Quick Tunnel):
+the dev and preview servers answer to `localhost` only. Name the tunnel host
+once, comma separated, and start as usual:
+`AETHER_DEV_ALLOWED_HOSTS=.trycloudflare.com npm run dev`. Vite accepts a
+leading dot as a wildcard for subdomains. Point the dev proxy at a server on
+another address with `AETHER_API_TARGET` (default `http://localhost:8787`).
+
 Environment variables (`.env`, see `.env.example`) are documented in
 [`apps/server/README.md`](apps/server/README.md#configuration) and
 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). No key is required. The hosted
