@@ -1,6 +1,6 @@
 /**
  * Stills of a saved world (`world.json`, e.g. from scripts/brief-probe.ts) drawn by the real renderer on the integrated GPU
- * (`GEN_GPU=intel`): an overview from outside and eye-height views from inside, with the renderer's own counts (fps, draw calls,
+ * (`GEN_GPU=intel`): an overview from outside, the street-level and three-quarter-aerial exterior of a building, and eye-height views from inside, with the renderer's own counts (fps, draw calls,
  * triangles, instances) printed before each still.
  *
  *   GEN_GPU=intel npx tsx scripts/world-stills.ts <world.json> <outDir> [--width=960]
@@ -8,7 +8,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createWorld, type WorldDoc } from '@aether/core';
-import { readScene } from '@aether/arch';
+import { exteriorPoses, readScene } from '@aether/arch';
 import { GpuRoom } from './lib/gpu-room';
 
 const [file, outArg, ...rest] = process.argv.slice(2);
@@ -55,6 +55,8 @@ if (room) {
     ['eye-side', [x0 + 1.2, 1.6, cz], [x1, 1.4, cz], 70],
   ];
 }
+// A building is also drawn from the street (eye height, facing the entrance) and from a three-quarter aerial.
+if (building) for (const p of exteriorPoses(world, building.id)) views.push([p.name, p.position, p.target, p.fov]);
 const gpu = await GpuRoom.open({});
 try {
   await gpu.load(world);

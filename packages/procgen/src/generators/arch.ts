@@ -55,6 +55,7 @@ const STRUCTURE_HINTS: Record<StructureId, Record<string, ParamSpec>> = {
   'arch-sash': { width: { type: 'number', default: 1, min: 0.2, max: 3, description: 'casement width' }, height: { type: 'number', default: 1.2, min: 0.2, max: 3, description: 'casement height' } },
   'arch-railing': { height: { type: 'number', default: 1.05, min: 0.3, max: 2, description: 'points [[x,z]…] required' } },
   'arch-column': { size: { type: 'number', default: 0.3, min: 0.05, max: 3, description: 'diameter / side' }, height: { type: 'number', default: 2.8, min: 0.2, max: 30, description: 'height' } },
+  'arch-sign': { height: { type: 'number', default: 0.55, min: 0.15, max: 3, description: 'panel height (m); text (string, required, up to 40 characters), width, letters colour, glow, panel and rim materials' } },
   'arch-basin': { width: { type: 'number', default: 8, min: 0.5, max: 60, description: 'pool X' }, length: { type: 'number', default: 4, min: 0.5, max: 60, description: 'pool Z' } },
 };
 

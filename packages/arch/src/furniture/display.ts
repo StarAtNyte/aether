@@ -118,7 +118,7 @@ export const ROPE_STANCHION: FurnitureDef = {
   mount: 'floor',
   againstWall: false,
   frontClearance: 0.3,
-  size: (p) => [0.36, p.num('height'), 0.36],
+  size: (p) => [Math.max(0.36, p.num('span')), p.num('height'), 0.36],
   build(p) {
     const set = new PartSet();
     const H = p.num('height');

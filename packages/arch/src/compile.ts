@@ -13,6 +13,7 @@ import type { EntityInput, Json, LightSpec, MaterialSpec, PatchInput } from '@ae
 import { BuildingPlan, MAX_BUILDING_ENTITIES, type BuildingPlanInput, type Compass, type PlanDoor, type PlanLevel, type PlanRoom, type PlanWindow, type RoomType } from './plan';
 import { palette, exteriorPalette, floorFor, habitable, type StylePalette } from './style';
 import { compileGrounds } from './site';
+import { compileFacade } from './facade';
 import { wallNetwork, type NetworkWall } from './wall-network';
 import { solveWallJoins } from './wall-joins';
 import { compassNormal, compassOf, edgePoint, exteriorSpans, outlineLoops, offsetPolygon, roomEdges, roomPolygon, sharedSpans, type EdgeSpan, type RoomEdge } from './rooms';
@@ -254,7 +255,9 @@ function round(n: number, d = 1000): number {
 export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: { seed?: number } = {}): CompiledBuilding {
   const plan = parsePlan(input);
   const pal = palette(plan.style);
-  const xp = exteriorPalette(plan.style);
+  const xp0 = exteriorPalette(plan.style);
+  // A facade the plan asks for takes the canopy over from the style, and may choose the window surrounds.
+  const xp = plan.facade ? { ...xp0, canopy: false, ...(plan.facade.surround ? { surround: plan.facade.surround === 'none' ? null : plan.facade.surround } : {}) } : xp0;
   // The schema's default facade stands for "not chosen": the style then articulates it (a clad upper storey over a
   // rendered base, for example); a facade the plan names is used on every storey.
   const fin = plan.exteriorWall.finish;
@@ -1054,6 +1057,22 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       maxX = Math.max(maxX, grounds.plot[2]);
       maxZ = Math.max(maxZ, grounds.plot[3]);
     }
+  }
+
+  // --- facade: entrance, canopy, sign, cornice, forecourt, lamps, planters -----------------------------------------------
+  if (plan.facade) {
+    for (const e of compileFacade({
+      bid,
+      facade: plan.facade,
+      door: front.door,
+      ext,
+      plinth: plan.plinth,
+      ceiling: (plan.levels[0] as PlanLevel).height,
+      wallTop: elevation,
+      topLoops: levelOutlines[topIndex] ?? [],
+      groundLoops: levelOutlines[0] ?? [],
+      xp,
+    })) add(e);
   }
 
   // Spawn: just inside the main entrance facing into the house (the first frame of a walkthrough is the

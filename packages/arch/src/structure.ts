@@ -12,6 +12,7 @@ import { buildWall } from './wall';
 import { buildBasin, buildCeiling, buildColumn, buildRailing, buildSlab } from './elements';
 import { buildRoof } from './roof';
 import { buildStair } from './stair';
+import { buildSign } from './sign';
 import { buildDoor, buildFrame, buildSash, buildWindow } from './openings';
 
 /** Ids of the structural generators. */
@@ -72,6 +73,8 @@ export function buildStructure(id: StructureId, params: Record<string, Json> | u
       return buildColumn(parseWith(id, S[id], params));
     case 'arch-basin':
       return buildBasin(parseWith(id, S[id], params));
+    case 'arch-sign':
+      return buildSign(parseWith(id, S[id], params));
   }
 }
 
@@ -89,4 +92,5 @@ export const STRUCTURE_DESCRIPTIONS: Readonly<Record<StructureId, string>> = Obj
   'arch-railing': 'Railing along a plan polyline (glass, bars, cable or solid).',
   'arch-column': 'Round or square column.',
   'arch-basin': 'Swimming pool basin recessed below y = 0 with coping and water.',
+  'arch-sign': 'Sign: block lettering from `text` in an emissive material on a dark panel with a brass rim; origin bottom centre, front +Z.',
 });

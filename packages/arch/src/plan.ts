@@ -214,6 +214,30 @@ export const PlanSite = z.object({
   surroundings: z.enum(['none', 'estate']).default('none'),
 });
 
+/**
+ * The front of the building: an entrance with a door surround and a canopy on columns, a sign with emissive lettering, a cornice at
+ * the roofline, a paved forecourt with lamp posts, planters and benches, and the light over the door (see `facade.ts`). Every part is
+ * on once a facade is given; switch off what does not suit. Without a facade the building keeps the plain style articulation.
+ */
+export const PlanFacade = z.object({
+  /** Lettering of the sign (the name of the place); none = no sign. */
+  sign: z.string().trim().min(1).max(24).optional(),
+  signColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#ffe0a0'),
+  signPanel: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#1b1d21'),
+  canopy: z.boolean().default(true),
+  doorSurround: z.boolean().default(true),
+  cornice: z.boolean().default(true),
+  forecourt: z.boolean().default(true),
+  lamps: z.boolean().default(true),
+  planters: z.boolean().default(true),
+  bench: z.boolean().default(true),
+  /** Real lights over the door, on the sign and on the lamp posts. */
+  light: z.boolean().default(true),
+  /** Window surrounds on the outdoor face (default: from the style). */
+  surround: z.enum(['box', 'board', 'stone', 'none']).optional(),
+});
+export type PlanFacade = z.infer<typeof PlanFacade>;
+
 /** A whole building. */
 export const BuildingPlan = z.object({
   id: Slug.default('house'),
@@ -231,6 +255,8 @@ export const BuildingPlan = z.object({
   /** Swing doors are physical: dynamic leaves on hinge joints (stops, no clipping through the player). */
   physicalDoors: z.boolean().default(true),
   site: PlanSite.optional(),
+  /** The front: entrance, canopy, sign, cornice, forecourt, lamps, planters (see {@link PlanFacade}). */
+  facade: PlanFacade.optional(),
   /**
    * People living in or visiting the building (0 to 8): idle-animated characters standing where people do (near the
    * sofa, at the counter), clear of doorways and walkways. Compiled with the building; omit for an empty house.

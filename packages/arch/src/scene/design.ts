@@ -12,7 +12,7 @@
  */
 import { z } from 'zod';
 import { MaterialSpec, Color, type EntityId } from '@aether/core';
-import { ArchStyle, Compass, PlanDoor, PlanRoof, PlanSite, PlanStair, RoomType, type BuildingPlanInput } from '../plan';
+import { ArchStyle, Compass, PlanDoor, PlanFacade, PlanRoof, PlanSite, PlanStair, RoomType, type BuildingPlanInput } from '../plan';
 import { PlanPoint, PlanPolygon, WallDado } from '../params';
 import { CeilingDetail, Cornice, DOOR_STYLES, Muntins, Niche, PictureRail, Skirting, WINDOW_STYLES } from '../shell';
 import { DesignItem, DesignRecord, DesignProgramme, DesignCirculation } from '../design-record';
@@ -127,6 +127,14 @@ export const DesignPlan = z.object({
   furniture: z.array(DesignItem).max(160).default([]),
   roof: PlanRoof.optional(),
   site: PlanSite.optional(),
+  /** The outer walls: a light brick, plaster or cladding, never near-black (the default is the style's own). */
+  exteriorWall: z.object({ finish: MaterialSpec.optional(), thickness: z.number().min(0.12).max(0.6).optional() }).optional(),
+  /**
+   * The front of the building (entrance with door surround and canopy, sign with the name, cornice, forecourt, lamps, planters, bench,
+   * door light). On by default for a building made from a design; give `{sign: "<name>"}` to light the name, switch parts off, or `false`
+   * for a bare front.
+   */
+  facade: z.union([PlanFacade, z.literal(false)]).optional(),
   origin: PlanPoint.optional(),
   rotation: z.number().min(-360).max(360).optional(),
 });
@@ -368,7 +376,7 @@ export function designToBuildingPlan(plan: DesignPlan, aliases: Readonly<Record<
       }
     }
   }
-  return { id: plan.id, name: plan.name, style: plan.style, levels, ...(plan.roof ? { roof: plan.roof } : {}), ...(plan.site ? { site: plan.site } : {}), ...(plan.origin ? { origin: plan.origin } : {}), ...(plan.rotation !== undefined ? { rotation: plan.rotation } : {}), design: record };
+  return { id: plan.id, name: plan.name, style: plan.style, levels, ...(plan.roof ? { roof: plan.roof } : {}), ...(plan.site ? { site: plan.site } : {}), ...(plan.exteriorWall ? { exteriorWall: { ...(plan.exteriorWall.finish ? { finish: plan.exteriorWall.finish } : {}), ...(plan.exteriorWall.thickness !== undefined ? { thickness: plan.exteriorWall.thickness } : {}) } as never } : {}), ...(plan.facade === false ? {} : { facade: PlanFacade.parse(plan.facade ?? {}) }), ...(plan.origin ? { origin: plan.origin } : {}), ...(plan.rotation !== undefined ? { rotation: plan.rotation } : {}), design: record };
 }
 
 /** Result of {@link resolveDesignStairs}. */

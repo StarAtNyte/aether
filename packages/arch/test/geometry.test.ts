@@ -277,6 +277,7 @@ describe('every structural generator', () => {
     'arch-railing': { points: [[0, 0], [3, 0], [3, 2]], style: 'glass' },
     'arch-column': { shape: 'round' },
     'arch-basin': { width: 8, length: 4 },
+    'arch-sign': { text: 'Cinema Aurora' },
   };
   for (const id of STRUCTURE_IDS) {
     it(`${id} builds clean geometry`, () => {

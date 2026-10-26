@@ -356,6 +356,21 @@ export const BasinParams = z.object({
 });
 export type BasinParams = z.infer<typeof BasinParams>;
 
+/** `arch-sign` params: block lettering in an emissive material on a panel. */
+export const SignParams = z.object({
+  text: z.string().trim().min(1).max(40),
+  height: z.number().min(0.15).max(3).default(0.55),
+  /** Panel width; default from the text. */
+  width: z.number().min(0.3).max(24).optional(),
+  depth: z.number().min(0.02).max(0.5).default(0.07),
+  relief: z.number().min(0.005).max(0.1).default(0.02),
+  glow: z.number().min(0).max(12).default(3.5),
+  letters: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#ffe0a0'),
+  panel: MaterialSpec.default({ finish: 'paint', color: '#1b1d21' }),
+  rim: MaterialSpec.default({ finish: 'brass' }),
+});
+export type SignParams = z.infer<typeof SignParams>;
+
 /** Every structural generator id and its params schema. */
 export const STRUCTURE_SCHEMAS = Object.freeze({
   'arch-wall': WallParams,
@@ -370,6 +385,7 @@ export const STRUCTURE_SCHEMAS = Object.freeze({
   'arch-railing': RailingParams,
   'arch-column': ColumnParams,
   'arch-basin': BasinParams,
+  'arch-sign': SignParams,
 });
 
 /** Id of a structural generator. */

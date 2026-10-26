@@ -16,7 +16,7 @@ import { area } from './math2';
 import { convexOverlap } from './layout';
 import { readScene } from './scene/read';
 import { WallDado } from './params';
-import { ArchStyle, Compass, PlanDoor, PlanItem, PlanLevel, PlanRoof, PlanRoom, PlanSite, PlanStair, PlanWindow, type BuildingPlan } from './plan';
+import { ArchStyle, Compass, PlanDoor, PlanFacade, PlanItem, PlanLevel, PlanRoof, PlanRoom, PlanSite, PlanStair, PlanWindow, type BuildingPlan } from './plan';
 import { roomPolygon } from './rooms';
 import { planWindowAddition } from './window-fit';
 import { checkStair, fitStair, levelDoors, settleStairs, stairJson } from './stair-fit';
@@ -78,6 +78,8 @@ export const ArchOp = z.discriminatedUnion('op', [
   z.object({ op: z.literal('set_residents'), building: Id, count: z.number().int().min(0).max(8) }),
   z.object({ op: z.literal('dress_room'), building: Id, room: z.union([Id, z.literal('all')]).default('all'), dress: z.boolean().default(true) }),
   z.object({ op: z.literal('set_site'), building: Id, site: PlanSiteEdit }),
+  // The front: entrance, canopy, sign, cornice, forecourt, lamps, planters, bench (merged into the plan's facade); false = a bare front.
+  z.object({ op: z.literal('set_facade'), building: Id, facade: z.union([Unknown, z.literal(false)]) }),
   z.object({ op: z.literal('set_material'), building: Id, target: z.enum(['exterior', 'roof', 'floor', 'walls']), room: Id.optional(), material: MaterialSpec }),
 ]);
 export type ArchOp = z.infer<typeof ArchOp>;
@@ -363,6 +365,18 @@ export function applyArchOps(world: WorldDoc, rawOps: readonly unknown[]): ArchO
           const rooms = op.room === 'all' ? plan.levels.flatMap((l) => l.rooms) : [roomOf(plan, op.room).room];
           for (const r of rooms) r.dress = op.dress;
           lines.push(`dress_room ${op.room === 'all' ? `all ${rooms.length} rooms` : (rooms[0]?.id ?? op.room)}${op.dress ? '' : ' (off)'}`);
+          break;
+        }
+        case 'set_facade': {
+          const plan = load(op.building);
+          if (op.facade === false) {
+            delete plan.facade;
+            lines.push('set_facade none');
+            break;
+          }
+          const given = op.facade && typeof op.facade === 'object' && !Array.isArray(op.facade) ? (op.facade as Record<string, unknown>) : {};
+          plan.facade = parseWith(PlanFacade, { ...(plan.facade ?? {}), ...Object.fromEntries(Object.entries(given).filter(([, v]) => v !== undefined)) }, 'facade', 'facade: {sign?: "NAME", signColor?, signPanel?, canopy?, doorSurround?, cornice?, forecourt?, lamps?, planters?, bench?, light?, surround?: "box"|"board"|"stone"|"none"} or false.');
+          lines.push(`set_facade ${[plan.facade.sign ? `sign "${plan.facade.sign}"` : '', plan.facade.canopy ? 'canopy' : '', plan.facade.cornice ? 'cornice' : '', plan.facade.forecourt ? 'forecourt' : ''].filter(Boolean).join(', ') || 'plain'}`);
           break;
         }
         case 'set_site': {
