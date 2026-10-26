@@ -19,7 +19,7 @@ import { z } from 'zod';
 import { Builder, r2, type Mood } from './providers/mock/builder';
 import { naturalGround, scatterBelt, type ThemeCtx } from './providers/mock/decor';
 import { groundRibbon, terrainHeight } from './providers/mock/showcase/kit';
-import { gridPatches, tierPatches, type Facing } from './layout';
+import { alongPatches, gridPatches, perimeterPatches, tierPatches, type Facing } from './layout';
 
 const XZ = z.number().min(-2000).max(2000);
 const FacingSchema = z.union([z.enum(['north', 'south', 'east', 'west']), z.number().min(-360).max(360)]);
@@ -97,6 +97,54 @@ export const LandInput = z.discriminatedUnion('op', [
     name: z.string().max(60).optional(),
   }),
   z.object({
+    op: z.literal('wall'),
+    from: z.tuple([XZ, XZ]),
+    to: z.tuple([XZ, XZ]),
+    of: z.string().min(1).max(64).default('furn-frame'),
+    params: z.record(z.string(), z.unknown()).optional(),
+    variants: z.array(z.record(z.string(), z.unknown())).max(8).optional(),
+    count: z.number().int().min(1).max(400).optional(),
+    spacing: z.number().min(0.1).max(30).optional(),
+    y: z.number().min(0).max(20).default(1),
+    facing: FacingSchema.optional(),
+    inset: z.number().min(0).max(20).default(0.4),
+    gaps: z.array(z.tuple([z.number().min(0).max(2000), z.number().min(0).max(2000)])).max(24).optional(),
+    offset: z.number().min(0).max(2).default(0.02),
+    name: z.string().max(60).optional(),
+  }),
+  z.object({
+    op: z.literal('along'),
+    from: z.tuple([XZ, XZ]),
+    to: z.tuple([XZ, XZ]),
+    of: z.string().min(1).max(64),
+    params: z.record(z.string(), z.unknown()).optional(),
+    variants: z.array(z.record(z.string(), z.unknown())).max(8).optional(),
+    count: z.number().int().min(1).max(400).optional(),
+    spacing: z.number().min(0.1).max(60).optional(),
+    y: z.number().min(-50).max(500).default(0),
+    facing: FacingSchema.optional(),
+    inset: z.number().min(0).max(20).default(0.4),
+    gaps: z.array(z.tuple([z.number().min(0).max(2000), z.number().min(0).max(2000)])).max(24).optional(),
+    offset: z.number().min(0).max(40).default(0),
+    name: z.string().max(60).optional(),
+  }),
+  z.object({
+    op: z.literal('perimeter'),
+    at: z.array(z.tuple([XZ, XZ])).min(1).max(200),
+    of: z.string().min(1).max(64).default('furn-chair'),
+    params: z.record(z.string(), z.unknown()).optional(),
+    table: z.object({ of: z.string().min(1).max(64).default('furn-table'), params: z.record(z.string(), z.unknown()).optional(), y: z.number().min(-50).max(500).optional(), yaw: z.number().min(-360).max(360).optional() }).optional(),
+    shape: z.enum(['rect', 'round']).default('rect'),
+    size: z.tuple([z.number().min(0.3).max(12), z.number().min(0.3).max(12)]).optional(),
+    long: z.number().int().min(0).max(12).default(2),
+    ends: z.number().int().min(0).max(4).default(0),
+    count: z.number().int().min(0).max(24).default(4),
+    gap: z.number().min(-0.2).max(2).default(0.18),
+    y: z.number().min(-50).max(500).default(0),
+    facing: z.enum(['in', 'out']).default('in'),
+    name: z.string().max(60).optional(),
+  }),
+  z.object({
     op: z.literal('row'),
     points: z.array(z.tuple([XZ, XZ])).min(2).max(64),
     of: z.string().min(1).max(64),
@@ -147,6 +195,8 @@ export function landPatches(world: WorldDoc, input: LandInput): { patches: Patch
   const ids = Object.keys(world.entities);
   if (input.op === 'row') return rowPatches(world, input, seed, ids);
   if (input.op === 'grid') return gridPatches(world, { ...input, facing: input.facing as Facing, params: input.params as Record<string, Json> | undefined }, seed, knownGenerator(world));
+  if (input.op === 'wall' || input.op === 'along') return alongPatches(world, { ...input, mode: input.op, facing: input.facing as Facing | undefined, params: input.params as Record<string, Json> | undefined, variants: input.variants as Array<Record<string, Json>> | undefined }, seed, knownGenerator(world));
+  if (input.op === 'perimeter') return perimeterPatches(world, { ...input, params: input.params as Record<string, Json> | undefined, table: input.table ? { ...input.table, params: input.table.params as Record<string, Json> | undefined } : undefined }, seed, knownGenerator(world));
   if (input.op === 'tier') return tierPatches(world, { ...input, facing: input.facing as Facing, params: input.params as Record<string, Json> | undefined }, seed, knownGenerator(world));
   if (input.op === 'mound') {
     const b = new Builder(seed, ids, CALM);

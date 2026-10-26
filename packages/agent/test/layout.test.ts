@@ -90,10 +90,83 @@ describe('shape_land grid', () => {
     expect(Object.keys(host.world.entities).length).toBeGreaterThanOrEqual(2);
     const found = await executeTool(ctx, 'find_model', { what: 'theatre seat' });
     expect(found.content).toContain('furn-cinema-seat');
-    expect(found.content).toContain('shape_land {op:"row"|"grid"|"tier"');
+    expect(found.content).toContain('shape_land {op:"grid" | "along" | "perimeter"');
+    expect((await executeTool(ctx, 'find_model', { what: 'painting' })).content).toContain('shape_land {op:"wall"');
     const pew = await executeTool(ctx, 'find_model', { what: 'church pews' });
     expect(pew.content).toContain('furn-pew');
     const case1 = await executeTool(ctx, 'find_model', { what: 'museum display case' });
     expect(case1.content).toContain('furn-vitrine');
+  });
+});
+
+describe('shape_land wall, along and perimeter', () => {
+  const worldPoint = (e: Entity, p: readonly number[]): [number, number] => {
+    const a = (e.transform.rotation[1] * Math.PI) / 180;
+    return [e.transform.position[0] + (p[0] as number) * Math.cos(a) + (p[2] as number) * Math.sin(a), e.transform.position[2] - (p[0] as number) * Math.sin(a) + (p[2] as number) * Math.cos(a)];
+  };
+  const all = (w: WorldDoc, tag: string): Entity[] => Object.values(w.entities).filter((x) => x.tags.includes(tag));
+
+  it('hangs N paintings along a wall in one entity per variant, facing into the room, skipping the gaps', () => {
+    // A wall along the north side (z = -5) from x = -6 to x = 6: the room is to the south (+Z), so the pieces look south.
+    const { world, summary } = apply(createWorld(), { op: 'wall', from: [-6, -5], to: [6, -5], count: 8, y: 1.1, facing: 'south', variants: [{ subject: 'landscape', frame: 'gilt' }, { subject: 'portrait', frame: 'gilt' }] });
+    const sets = all(world, 'wall');
+    expect(sets.length).toBe(2);
+    let n = 0;
+    for (const e of sets) {
+      if (e.shape.kind !== 'scatter') throw new Error('x');
+      n += e.shape.points?.length ?? 0;
+      expect(e.transform.rotation[1]).toBeCloseTo(0, 5);
+      for (const p of e.shape.points ?? []) {
+        const [x, z] = worldPoint(e, p);
+        expect(z).toBeCloseTo(-5 + 0.02, 2);
+        expect(x).toBeGreaterThan(-6);
+        expect(x).toBeLessThan(6);
+        expect(p[1]).toBe(1.1);
+      }
+    }
+    expect(n).toBe(8);
+    expect(summary).toContain('8 x furn-frame');
+    // Default facing is to the left of from -> to: walking east, left is north (-Z): yaw 180.
+    const left = apply(createWorld(), { op: 'wall', from: [-6, 5], to: [6, 5], count: 4 });
+    expect(all(left.world, 'wall')[0]?.transform.rotation[1]).toBeCloseTo(180, 5);
+    const gap = apply(createWorld(), { op: 'wall', from: [0, 0], to: [10, 0], spacing: 1.5, gaps: [[4, 6]], of: 'painting' });
+    expect(gap.summary).toContain('skipped over the gaps');
+    const g = all(gap.world, 'wall')[0];
+    if (!g || g.shape.kind !== 'scatter') throw new Error('x');
+    for (const p of g.shape.points ?? []) expect(Math.abs(worldPoint(g, p)[0] - 5)).toBeGreaterThan(0.9);
+  });
+
+  it('puts cases along an axis on the floor', () => {
+    const { world } = apply(createWorld(), { op: 'along', from: [0, 0], to: [0, 12], of: 'display case', count: 5, facing: 'east', y: 0 });
+    const e = all(world, 'along')[0];
+    if (!e || e.shape.kind !== 'scatter') throw new Error('x');
+    expect(e.shape.points?.length).toBe(5);
+    expect(e.shape.of.kind === 'procedural' && e.shape.of.generator).toBe('furn-vitrine');
+    const zs = (e.shape.points ?? []).map((p) => worldPoint(e, p)[1]).sort((a, b) => a - b);
+    expect(zs[0]).toBeGreaterThan(0);
+    expect(zs[4]).toBeLessThan(12);
+  });
+
+  it('seats every table: 14 tables of 4 are 56 seats in a few instanced entities, each looking at its table', () => {
+    const at: Array<[number, number]> = Array.from({ length: 14 }, (_, i) => [(i % 5) * 3, Math.floor(i / 5) * 3]);
+    const { world, summary } = apply(createWorld(), { op: 'perimeter', at, table: { of: 'furn-table', params: { width: 1.2, depth: 0.8 } }, long: 2 });
+    const seats = all(world, 'seats');
+    expect(seats.length).toBe(2);
+    const n = seats.reduce((a, e) => a + (e.shape.kind === 'scatter' ? (e.shape.points?.length ?? 0) : 0), 0);
+    expect(n).toBe(56);
+    expect(all(world, 'tables').length).toBe(1);
+    expect(summary).toContain('Seated 56');
+    // A seat on the +Z side of table 0 looks -Z (yaw 180) and stands 0.4 + 0.18 m from its centre.
+    const north = seats.find((e) => Math.abs(e.transform.rotation[1] - 180) < 1);
+    if (!north || north.shape.kind !== 'scatter') throw new Error('x');
+    const near = (north.shape.points ?? []).map((p) => worldPoint(north, p)).find(([x, z]) => Math.abs(x - 0.3) < 0.01 && z > 0);
+    expect(near?.[1]).toBeCloseTo(0.58, 2);
+  });
+
+  it('seats round tables around their edge, and refuses unknown pieces', () => {
+    const { world } = apply(createWorld(), { op: 'perimeter', at: [[0, 0], [4, 0]], shape: 'round', count: 6, size: [1.2, 1.2], of: 'chair' });
+    expect(all(world, 'seats').reduce((a, e) => a + (e.shape.kind === 'scatter' ? (e.shape.points?.length ?? 0) : 0), 0)).toBe(12);
+    const r = landPatches(createWorld(), LandInput.parse({ op: 'wall', from: [0, 0], to: [4, 0], of: 'not-a-thing' }));
+    expect(r.refused).toBe(true);
   });
 });
