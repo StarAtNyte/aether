@@ -3585,6 +3585,7 @@ export class WorldRenderer {
    * let the room's exposure trim follow it (see `view/exposure-trim.ts`). Never while the view moves or programs link.
    */
   private trimWatch(): void {
+    if ((globalThis as { __NOTRIM?: boolean }).__NOTRIM) return;
     if (this.sampling || this.disposed || this.lost || !this.lightVolume.ready || !this.roomPick) return;
     // The eye has to have stood still for a moment (at rest in the editor, or a walker who stopped): never while it moves.
     const t = now();
@@ -3601,7 +3602,8 @@ export class WorldRenderer {
     if (typeof createImageBitmap !== 'function' || this.captureActive) return;
     if (this.warming || this.grow.active || this.preparation.pending > 0 || this.programs.pending > 0) return;
     if (Math.abs((this.roomTrim.get(this.roomPick.id) ?? 0) - this.trimNow) > 0.02) return;
-    if (t - this.trimAt < 700) return;
+    // A picture that stopped changing the trim is looked at only now and then (an animated world draws every frame).
+    if (t - this.trimAt < (this.trimQuiet >= 3 ? 5000 : 700)) return;
     this.trimAt = t;
     this.trimRoom = this.roomPick.id;
     this.sampleViewAsync(true);
@@ -3613,7 +3615,11 @@ export class WorldRenderer {
     if (!s || s.high === undefined || room === null || this.disposed || this.roomPick?.id !== room) return;
     const cur = this.roomTrim.get(room) ?? 0;
     const next = nextTrim(cur, { mean: s.mean, high: s.high, low: s.low ?? 0 });
-    if (next === cur) return;
+    if (next === cur) {
+      this.trimQuiet++;
+      return;
+    }
+    this.trimQuiet = 0;
     this.roomTrim.set(room, next);
     this.eyeClock = 1;
     this.needsDraw = true;
@@ -4058,6 +4064,8 @@ export class WorldRenderer {
   private trimNow = 0;
   private trimAt = 0;
   private trimStillAt = 0;
+  /** Read-backs in a row that left the trim as it was. */
+  private trimQuiet = 0;
   private readonly trimPose: number[] = new Array<number>(16).fill(0);
   /** An exposure read-back is in flight (its answer goes to the trim, not to the watchdog). */
   private trimSampling = false;

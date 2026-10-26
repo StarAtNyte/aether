@@ -34,6 +34,8 @@
     "e2e:voxel": "tsx tests/e2e/voxel.e2e.ts",
     "e2e:backend": "tsx tests/e2e/backend.e2e.ts",
     "e2e:weak": "tsx tests/e2e/weak-gpu.e2e.ts",
+    "e2e:blank": "tsx tests/e2e/blank-frames.e2e.ts",
+    "e2e:eyelight": "tsx tests/e2e/eye-light.e2e.ts",
     "e2e:parity": "tsx tests/e2e/gpu-parity.e2e.ts",
     "e2e:capture": "tsx tests/e2e/capture-aspect.e2e.ts",
     "e2e:arch": "tsx tests/e2e/arch.e2e.ts",

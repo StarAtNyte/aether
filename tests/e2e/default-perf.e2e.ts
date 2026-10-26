@@ -568,6 +568,7 @@ async function main(): Promise<void> {
       await context.addInitScript({ content: SKIP_FIRST_RUN });
       await context.addInitScript({ content: 'globalThis.__name = (f) => f;' });
       if (VARIANT) await context.addInitScript({ content: `globalThis.__UPVAR = ${JSON.stringify(VARIANT)};` });
+      if (process.env['AETHER_NOTRIM']) await context.addInitScript({ content: 'globalThis.__NOTRIM = true;' });
       if (NOBIAS) await context.addInitScript({ content: 'globalThis.__NOBIAS = true;' });
       if (WEAK) {
         await context.addInitScript(() => {
