@@ -282,7 +282,7 @@ See [Eyes](#query_scene-1).
   `bloom` 0..3, `ambientIntensity` 0..8 (0.4), `sunIntensity` 0..16 (2.5), `hdriIntensity` 0..8. Colour: `temperature` and `tint` -1..1,
   `saturation` 0.4..1.8, `contrast` 0.6..1.6, `sunTint`, `ambientTint`, `foliageTint` (`#rrggbb` multipliers; white
   keeps the colour). Fog: `fogColor`, `fogDensity` 0..1 (required when the world has no fog), `fogVisibility` 30..20000 (metres).
-  Interiors: `interiorWarmth` -1..1.5 (0.45), `interiorBalance` 0..1.5 (1), `lampStrength` 0..3 (1). `vignette`
+  Lighting intent: `intent {key: dim | moderate | bright, text}`; the renderer derives the exposure from the picture at eye height against it, `exposure` / `exposureEv` only bias it (so state the intent, do not crank the exposure). Review turns also carry advisory histograms of the images (mean, washed and crushed shares). Interiors: `interiorWarmth` -1..1.5 (0.45), `interiorBalance` 0..1.5 (1), `lampStrength` 0..3 (1). `vignette`
   0..1 (0.22). Exterior context beyond the plot (`environment.surroundings`, see `docs/CONTRACTS.md`): `surroundings` (preset
   `none | meadow | countryside | woodland | suburb`), `hills` 0..200 (ridge height, m), `hillDistance` 150..1500 (m), `treeDensity` 0..1,
   `treeSpecies` `broadleaf | conifer | mixed`, `farFields` (boolean), `clearRadius` 10..400 (m kept free of trees); every field after the

@@ -318,7 +318,8 @@ describe('furniture catalogue', () => {
       expect(b[3] - b[0], `${def.id} width`).toBeLessThanOrEqual(w + 2 * tol + (def.kind === 'floor-lamp' ? 1.2 : 0));
       expect(b[5] - b[2], `${def.id} depth`).toBeLessThanOrEqual(d + 2 * tol + (def.kind === 'plant' ? 1 : 0) + (def.kind === 'kitchen' ? 0.2 : 0));
       if (def.mount === 'floor') {
-        expect(b[1], `${def.id} rests on the floor`).toBeGreaterThanOrEqual(-0.001);
+        // A boat floats: its origin is the waterline and the keel hangs below it.
+        if (def.kind !== 'boat') expect(b[1], `${def.id} rests on the floor`).toBeGreaterThanOrEqual(-0.001);
         expect(b[4], `${def.id} height`).toBeLessThanOrEqual(h + 0.25 + (def.kind === 'plant' ? 0.5 : 0));
         // Rugs are walked over: no collider.
         if (def.kind !== 'rug') expect(out.colliders.length, `${def.id} colliders`).toBeGreaterThan(0);

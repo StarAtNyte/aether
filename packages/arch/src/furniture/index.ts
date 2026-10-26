@@ -21,13 +21,14 @@ import { VENUE } from './venue';
 import { CIVIC } from './civic';
 import { WORLD_PIECES } from './world';
 import { DISPLAY } from './display';
+import { HARBOUR } from './harbour';
 
 export type { FurnitureDef, Mount, MovableMotion, MovableSpec, ParamReader } from './kit';
 export { glowMaterial } from './lighting';
 export { tierHeights, TIER_BASE } from './venue';
 
 /** Every furniture generator, in a stable order. */
-export const FURNITURE: readonly FurnitureDef[] = Object.freeze([...SEATING, ...CANE, ...TABLES, ...BEDROOM, ...KITCHEN_SET, ...BATH, ...SINKS, ...DECOR, ...LIGHTING, ...TREES, ...VENUE, ...CIVIC, ...WORLD_PIECES, ...DISPLAY]);
+export const FURNITURE: readonly FurnitureDef[] = Object.freeze([...SEATING, ...CANE, ...TABLES, ...BEDROOM, ...KITCHEN_SET, ...BATH, ...SINKS, ...DECOR, ...LIGHTING, ...TREES, ...VENUE, ...CIVIC, ...WORLD_PIECES, ...DISPLAY, ...HARBOUR]);
 
 const BY_ID: ReadonlyMap<string, FurnitureDef> = new Map(FURNITURE.map((f) => [f.id, f]));
 const BY_KIND: ReadonlyMap<string, FurnitureDef> = new Map(FURNITURE.map((f) => [f.kind, f]));

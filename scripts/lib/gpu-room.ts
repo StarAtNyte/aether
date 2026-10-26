@@ -42,6 +42,8 @@ export class GpuRoom {
       browser = await chromium.launch({ executablePath: findChrome(), args: [...CHROME_ARGS], headless: opts.headed !== true });
       const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
       await ctx.addInitScript(SKIP_FIRST_RUN);
+      // tsx wraps functions in `__name(...)`; a function run in the page by `evaluate` needs it defined there.
+      await ctx.addInitScript({ content: 'globalThis.__name = (f) => f;' });
       // On the integrated GPU the page draws through WebGL2: the machine's only WebGPU adapter is SwiftShader (software), which
       // fails some post passes and ends in a black picture, so it is hidden as the weak-GPU and frame-recorder harnesses do.
       // The stills are drawn by a `nice`d job on a shared machine: the first frame of a heavy world can take longer than the watchdog's

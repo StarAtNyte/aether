@@ -3636,22 +3636,42 @@ export class WorldRenderer {
    */
   private async settleTrim(draw: () => void, w: number, h: number): Promise<void> {
     if (!this.lightVolume.ready || (globalThis as { __NOTRIM?: boolean }).__NOTRIM) return;
+    const debug = (globalThis as { __TRIMLOG?: boolean }).__TRIMLOG === true;
     for (let i = 0; i < 3; i++) {
       const room = this.roomPick?.id;
       if (room === undefined || this.disposed || this.lost) return;
-      let pixels: Uint8Array;
-      try {
-        pixels = await this.renderToPixels(w, h, () => {
-          draw();
-          this.prepareBatches(true);
-          this.renderer.render(this.scene, this.perspective);
-        }, () => undefined);
-      } catch {
-        return;
+      let s: FrameSample | null = null;
+      if (!this.asyncCaptureFailed) {
+        try {
+          const pixels = await this.grow.withFullScale(() =>
+            this.renderToPixels(w, h, () => {
+              draw();
+              this.prepareBatches(true);
+              this.renderer.render(this.scene, this.perspective);
+            }, () => undefined),
+          );
+          s = measurePixels(pixels, w, h);
+        } catch (e) {
+          this.asyncCaptureFailed = true;
+          log.warn(`asynchronous capture unavailable, using canvas readback: ${errorMessage(e)}`);
+          if (debug) console.warn(`[trim] async read-back failed: ${errorMessage(e)}`);
+        }
       }
-      const s = measurePixels(pixels, w, h);
+      if (!s) {
+        // No asynchronous read-back on this backend (WebGL2): draw small into the canvas and read that back.
+        s = this.grow.withFullScale(() =>
+          this.withTemporarySize(w, h, () => {
+            draw();
+            this.prepareBatches(true);
+            this.renderer.render(this.scene, this.perspective);
+            return this.sampleView();
+          }),
+        );
+        if (!s) return;
+      }
       const cur = this.roomTrim.get(room) ?? 0;
       const next = nextTrim(cur, { mean: s.mean, high: s.high ?? 0, low: s.low ?? 0 }, this.trimIntent());
+      if (debug) console.warn(`[trim] async ${!this.asyncCaptureFailed} room ${room} pass ${i} mean ${s.mean.toFixed(0)} high ${(s.high ?? 0).toFixed(3)} trim ${cur.toFixed(2)} -> ${next.toFixed(2)}`);
       if (next === cur) return;
       this.roomTrim.set(room, next);
     }
@@ -4231,28 +4251,33 @@ export class WorldRenderer {
     }
   }
 
-  /** The trim for the room a still's pose stands in (see {@link settleTrim}); the live camera is put back afterwards. */
-  private async settleStillTrim(pose: { pos: readonly number[]; target: readonly number[] } | undefined): Promise<void> {
-    if (!pose || !pose.pos.every(Number.isFinite) || !pose.target.every(Number.isFinite) || !this.lightVolume.ready || this.captureActive) return;
-    const cam = this.perspective;
-    const savedPos = cam.position.clone();
-    const savedQuat = cam.quaternion.clone();
-    try {
-      await this.settleTrim(() => {
-        cam.position.set(pose.pos[0] as number, pose.pos[1] as number, pose.pos[2] as number);
-        cam.lookAt(pose.target[0] as number, pose.target[1] as number, pose.target[2] as number);
-        cam.updateMatrixWorld(true);
-        this.snapEye();
-      }, 192, 128);
-      cam.position.set(pose.pos[0] as number, pose.pos[1] as number, pose.pos[2] as number);
-      cam.lookAt(pose.target[0] as number, pose.target[1] as number, pose.target[2] as number);
-      cam.updateMatrixWorld(true);
-      this.snapEye();
-    } finally {
-      cam.position.copy(savedPos);
-      cam.quaternion.copy(savedQuat);
-      cam.updateMatrixWorld(true);
-      this.eyeClock = 1;
+  /**
+   * The trim for the room a still's pose stands in: up to three small stills of the pose itself, drawn with the real chain,
+   * each moving the room's trim one step toward the lighting intent (the exposure the author set only biases it).
+   */
+  private async settleStillTrim(opts: StillOptions, open: (w: number, h: number, vignette: boolean) => CaptureSession): Promise<void> {
+    if (!this.lightVolume.ready || (globalThis as { __NOTRIM?: boolean }).__NOTRIM || !opts.pose) return;
+    const debug = (globalThis as { __TRIMLOG?: boolean }).__TRIMLOG === true;
+    const w = 192;
+    const h = Math.max(64, Math.round((w * opts.height) / Math.max(1, opts.width)));
+    for (let i = -1; i < 3; i++) {
+      this.adaptEyeToPose(opts.pose);
+      const room = this.roomPick?.id;
+      if (room === undefined || this.disposed || this.lost) return;
+      let tiny: StillImage;
+      try {
+        tiny = await captureStill(open, { width: w, height: h, pose: opts.pose, frames: 1, vignetteStrength: opts.vignetteStrength ?? 0 });
+      } catch {
+        return;
+      }
+      // The first small still of a pose is a warm-up (the first frame of a session is not the converged picture): not read.
+      if (i < 0) continue;
+      const s = measurePixels(tiny.data, tiny.width, tiny.height);
+      const cur = this.roomTrim.get(room) ?? 0;
+      const next = nextTrim(cur, { mean: s.mean, high: s.high ?? 0, low: s.low ?? 0 }, this.trimIntent());
+      if (debug) console.warn(`[trim] still room ${room} pass ${i} mean ${s.mean.toFixed(0)} high ${(s.high ?? 0).toFixed(3)} trim ${cur.toFixed(2)} -> ${next.toFixed(2)}`);
+      if (next === cur) return;
+      this.roomTrim.set(room, next);
     }
   }
 
@@ -4760,8 +4785,8 @@ export class WorldRenderer {
     await this.preparePost();
     const open = (w: number, h: number, vignette: boolean): CaptureSession => this.beginCapture(w, h, { vignette });
     opts = { ...opts, vignetteStrength: this.vignetteStrength() };
+    await this.settleStillTrim(opts, open);
     this.adaptEyeToPose(opts.pose);
-    await this.settleStillTrim(opts.pose);
     const image = await captureStill(open, opts);
     // The first capture after a post pipeline is (re)built can come out as one flat colour on some software GPUs
     // (temporal AA history primed at the viewport size); an identical second render is right. Render once more.

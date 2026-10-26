@@ -1635,6 +1635,12 @@ floor plan (draw a room, add a door, undo) → walk in through the front door
   which is therefore only a default. `interiorWarmth` also applies with a document `grade` when it is set explicitly.
   `lampStrength` scales the room lamps in the baked light volume (it re-bakes). `vignette` reaches tiled stills
   (`StillOptions.vignetteStrength`, `applyVignette(px, W, H, strength?)`, `vignetteFactor(d, strength?)`).
+  `look.intent?: { key?: 'dim' | 'moderate' | 'bright', text?: string }` is the author's lighting intent (additive,
+  optional, presentation only: it is left out of the baked-light key). The renderer derives each room's exposure from the
+  measured picture against the key (`view/exposure-trim.ts`: a band of mean display luminance per key, 0.15-0.38 dim,
+  0.26-0.58 moderate (the default), 0.40-0.68 bright; outside it the room's trim moves up to 0.4 EV per read-back, range
+  -2.5..+1.2 EV, learned only at rest and, for stills and review captures, from up to three small drawings of the pose
+  itself); `environment.exposure` and `grade.exposureEv` only bias the band (a third of a stop per stop).
   `setFoliageTint(hex | null)` (`materials/foliage-shading.ts`) multiplies leaf, needle and grass cards.
 - Room description (`@aether/arch/photo`): beds gain `headboardStyle` (slab, panel, tufted, slats), `pattern` (plain, floral,
   stripe, damask), `canopy` and `canopyHeight`; nightstands gain `style` (cabinet, round, wire), `height`, `diameter`; plants

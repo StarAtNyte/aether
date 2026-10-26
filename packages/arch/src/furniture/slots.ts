@@ -98,6 +98,10 @@ export const FURNITURE_SLOTS: Readonly<Record<string, Readonly<Record<string, Sl
   column: { shaft: s('finish', 'color', 'body', 'stone', 'plaster') },
   'ceiling-baffle': { surface: s('finish', 'color', 'felt', 'fin', 'panel') },
   planter: { body: s('finish', undefined, 'box', 'pot', 'trough'), bloom: s(undefined, 'bloom', 'flowers', 'blossom') },
+  boat: { hull: s(undefined, 'hull', 'paint', 'body'), trim: s(undefined, 'trim', 'gunwale', 'cabin', 'sail') },
+  bollard: { iron: s(undefined, 'iron', 'metal', 'cast iron') },
+  'lobster-pot': { slats: s(undefined, 'colour', 'wood', 'timber'), float: s(undefined, 'float', 'buoy') },
+  seagull: { mantle: s(undefined, 'mantle', 'back', 'wings') },
   switch: { plate: s('finish', undefined, 'cover', 'finish') },
 });
 
