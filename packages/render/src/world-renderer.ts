@@ -70,6 +70,7 @@ import { AdaptiveResolution } from './view/adaptive-resolution';
 import { MeshBasicNodeMaterial } from 'three/webgpu';
 import { textureWork } from './gpu/task-queue';
 import { BATCHED_LAYER } from './sync/static-batches';
+import { nextTrim } from './view/exposure-trim';
 import { adaptStep, adaptedLook, interiorBalance, interiorFactor, toneExposure, volumeExposure, type CeilingBox } from './view/eye-adapt';
 import { looksInside } from './view/arch-view';
 import { ROOM_MAX_EV, ROOM_MIN_EV, RoomSelector, roomLight, roomSamplePoints, type PointLight, type RoomBox, type RoomLight } from './view/room-exposure';
@@ -3301,6 +3302,7 @@ export class WorldRenderer {
     this.framesDrawn++;
     if (!this.atRest) this.motionFrameReady = true;
     if (this.watchdogOn) this.watch(true);
+    this.trimWatch();
     const info = this.renderer.info.render;
     this.lastDrawCalls = info.drawCalls ?? info.frameCalls ?? 0;
     this.lastTriangles = info.triangles ?? 0;
@@ -3575,6 +3577,37 @@ export class WorldRenderer {
     if (action) this.onWatchdogAction(action);
   }
 
+  /** The room a trim read-back was asked for. */
+  private trimRoom: string | null = null;
+
+  /**
+   * At rest inside a building, now and then read the finished picture back (a 16 x 16 snapshot, read in a worker) and
+   * let the room's exposure trim follow it (see `view/exposure-trim.ts`). Never while the view moves or programs link.
+   */
+  private trimWatch(): void {
+    if (!this.atRest || this.sampling || this.disposed || this.lost || !this.lightVolume.ready || !this.roomPick) return;
+    if (typeof createImageBitmap !== 'function' || this.captureActive) return;
+    if (this.warming || this.grow.active || this.preparation.pending > 0 || this.programs.pending > 0) return;
+    if (Math.abs((this.roomTrim.get(this.roomPick.id) ?? 0) - this.trimNow) > 0.02) return;
+    const t = now();
+    if (t - this.trimAt < 700) return;
+    this.trimAt = t;
+    this.trimRoom = this.roomPick.id;
+    this.sampleViewAsync(true);
+  }
+
+  private onTrimSample(s: FrameSample | null): void {
+    const room = this.trimRoom;
+    this.trimRoom = null;
+    if (!s || s.high === undefined || room === null || this.disposed || !this.atRest || this.roomPick?.id !== room) return;
+    const cur = this.roomTrim.get(room) ?? 0;
+    const next = nextTrim(cur, { mean: s.mean, high: s.high, low: s.low ?? 0 });
+    if (next === cur) return;
+    this.roomTrim.set(room, next);
+    this.eyeClock = 1;
+    this.needsDraw = true;
+  }
+
   /** An asynchronous view sample is in flight. */
   private sampling = false;
 
@@ -3586,10 +3619,11 @@ export class WorldRenderer {
    * canvas in this task (so it is the frame just drawn) and a worker reads it (the synchronous `getImageData` stalls the
    * page for as long as the GPU needs to finish the frame: seconds while the first programs build).
    */
-  private sampleViewAsync(): void {
+  private sampleViewAsync(forTrim = false): void {
     const src = this.renderer.domElement as HTMLCanvasElement;
     if (!(src.width > 0 && src.height > 0)) return;
     this.sampling = true;
+    this.trimSampling = forTrim;
     try {
       if (!this.sampleWorker) {
         const w = new Worker(new URL('./view/frame-sample.worker.ts', import.meta.url), { type: 'module', name: 'aether-frame-sample' });
@@ -3597,6 +3631,12 @@ export class WorldRenderer {
           const d = e.data as { id?: number; sample?: FrameSample | null };
           if (d.id !== this.sampleId) return;
           this.sampling = false;
+          const forTrim = this.trimSampling;
+          this.trimSampling = false;
+          if (forTrim) {
+            this.onTrimSample(d.sample ?? null);
+            return;
+          }
           if (this.disposed || this.watchdog.finished || !d.sample) return;
           const action = this.watchdog.tick(now(), this.framesDrawn, d.sample, this.sync.batchPreparationPending > 0);
           if (action) this.onWatchdogAction(action);
@@ -3975,7 +4015,7 @@ export class WorldRenderer {
     // Outside the room's light the sky and the scenery take back part of the eye's interior exposure (a window shows a sky, not white).
     this.env.setExteriorScale(volume ? 2 ** (-EnvironmentRig.EXTERIOR_COMPENSATION * Math.max(0, this.eyeEv)) : 1);
     this.env.setInteriorFill(this.eyeFactor);
-    this.renderer.toneMappingExposure = volume ? toneExposure(this.env.exposure, this.eyeEv) : this.env.exposure * eye.exposure;
+    this.renderer.toneMappingExposure = volume ? toneExposure(this.env.exposure, this.eyeEv + this.trimNow) : this.env.exposure * eye.exposure;
     if (post) {
       // Inside a lit building the grade warms a little, as an interior photographer balances it (not for a document grade).
       // Most of the room light's own colour cast (a wood floor's bounce, warm lamps) is balanced out first.
@@ -4002,6 +4042,12 @@ export class WorldRenderer {
   private eyeEv = 0;
   /** Smoothed white-balance shift (grade temperature) for the colour of the light at the eye. */
   private eyeBalance = 0;
+  /** Exposure trim (stops) learned per room from the picture at rest, the room it is learned for, and the value now shown. */
+  private readonly roomTrim = new Map<string, number>();
+  private trimNow = 0;
+  private trimAt = 0;
+  /** An exposure read-back is in flight (its answer goes to the trim, not to the watchdog). */
+  private trimSampling = false;
   /** The sun's shadow map is fitted to the building the eye stands in. */
   private shadowInside = false;
   /** Eye position at the last adaptation tick. */
@@ -4022,6 +4068,7 @@ export class WorldRenderer {
   private invalidateCeilings(): void {
     this.ceilings = null;
     this.roomLights = null;
+    this.roomTrim.clear();
     this.roomScanAt = -1e9;
     this.roomRetries = 0;
   }
@@ -4087,9 +4134,9 @@ export class WorldRenderer {
   }
 
   /** Diagnostics: the exposure the eye has settled on and the rooms it comes from. */
-  get eyeExposure(): { ev: number; ceilings: number; retries: number; room: string | null; weight: number; subject: boolean; rooms: Array<{ id: string; name: string | null; ev: number; raw: number; used: number; trimmed: number; box: RoomBox }> } {
+  get eyeExposure(): { ev: number; trim: number; ceilings: number; retries: number; room: string | null; weight: number; subject: boolean; rooms: Array<{ id: string; name: string | null; ev: number; raw: number; used: number; trimmed: number; box: RoomBox }> } {
     const rooms = this.roomLights ? [...this.roomLights.lights].map(([id, l]) => ({ id, name: this.sync.node(id)?.entity.arch?.name ?? null, ev: l.ev, raw: l.raw, used: l.used, trimmed: l.trimmed, box: this.roomLights?.boxes.find((b) => b.id === id) as RoomBox })) : [];
-    return { ev: this.eyeEv, ceilings: this.ceilings?.length ?? -1, retries: this.roomRetries, room: this.roomPick?.id ?? null, weight: this.roomPick?.weight ?? 0, subject: this.roomPick?.subject ?? false, rooms };
+    return { ev: this.eyeEv, trim: this.trimNow, ceilings: this.ceilings?.length ?? -1, retries: this.roomRetries, room: this.roomPick?.id ?? null, weight: this.roomPick?.weight ?? 0, subject: this.roomPick?.subject ?? false, rooms };
   }
 
   private adaptEye(dt: number): void {
@@ -4155,7 +4202,10 @@ export class WorldRenderer {
     // A camera that jumped (a cut, a teleport, a capture pose) sees with adapted eyes at once.
     const jumped = this.lastEye.distanceToSquared(p) > 2.25;
     this.lastEye.copy(p);
-    if (Math.abs(target - this.eyeFactor) < 0.002 && Math.abs(targetEv - this.eyeEv) < 0.01 && Math.abs(targetBalance - this.eyeBalance) < 0.005) return;
+    const trimTarget = this.roomPick ? (this.roomTrim.get(this.roomPick.id) ?? 0) : 0;
+    const trimDone = Math.abs(trimTarget - this.trimNow) < 0.01;
+    if (Math.abs(target - this.eyeFactor) < 0.002 && Math.abs(targetEv - this.eyeEv) < 0.01 && Math.abs(targetBalance - this.eyeBalance) < 0.005 && trimDone) return;
+    this.trimNow = jumped ? trimTarget : adaptStep(this.trimNow, trimTarget, step);
     this.eyeFactor = jumped ? target : adaptStep(this.eyeFactor, target, step);
     this.eyeEv = jumped ? targetEv : adaptStep(this.eyeEv, targetEv, step);
     this.eyeBalance = jumped ? targetBalance : adaptStep(this.eyeBalance, targetBalance, step);

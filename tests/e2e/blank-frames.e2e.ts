@@ -27,6 +27,8 @@ const FRESH = (arg('fresh') ?? '1') !== '0';
 const [W, H] = (arg('size') ?? '1280x720').split('x').map(Number) as [number, number];
 const OUT = arg('out');
 const SHOTS = arg('shots');
+/** `--cast=0`: no screencast (it adds read-backs; use it when the gaps matter more than the blank check). */
+const CAST = (arg('cast') ?? '1') !== '0';
 const GAP_MS = Number(arg('gap') ?? 250);
 /** Gaps depend on the machine (shared CPU, integrated GPU): reported always, gated only with `--strict-gaps`. */
 const STRICT_GAPS = arg('strict-gaps') !== undefined;
@@ -114,13 +116,14 @@ class Screencast {
     });
   }
   async start(): Promise<void> {
+    if (!CAST) return;
     const box = await this.page.locator('.viewport__host canvas').first().boundingBox().catch(() => null);
     const vp = this.page.viewportSize() ?? { width: W, height: H };
     if (box) this.crop = { x: (box.x + box.width * 0.2) / vp.width, y: (box.y + box.height * 0.2) / vp.height, w: (box.width * 0.6) / vp.width, h: (box.height * 0.6) / vp.height };
     this.shots = []; this.on = true;
     await this.cdp.send('Page.startScreencast', { format: 'png', maxWidth: 160, maxHeight: 100, everyNthFrame: 1 });
   }
-  async stop(): Promise<Shot[]> { this.on = false; await this.cdp.send('Page.stopScreencast').catch(() => undefined); return this.shots; }
+  async stop(): Promise<Shot[]> { if (!CAST) return []; this.on = false; await this.cdp.send('Page.stopScreencast').catch(() => undefined); return this.shots; }
 }
 
 async function scenario(page: Page, cast: Screencast, world: string, name: string, fn: () => Promise<void>, opts: { overlayAllowed?: boolean; moving?: boolean } = {}): Promise<Verdict> {

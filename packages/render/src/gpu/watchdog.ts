@@ -40,6 +40,10 @@ export interface FrameSample {
   mean: number;
   /** Largest minus smallest luminance. */
   spread: number;
+  /** Share of texels above 245 (the exposure trim reads this; the watchdog does not). */
+  high?: number;
+  /** Share of texels below 14. */
+  low?: number;
 }
 
 /** Reduce RGBA bytes (any size) to {@link FrameSample}. */
@@ -47,14 +51,18 @@ export function measureFrame(rgba: ArrayLike<number>): FrameSample {
   let sum = 0;
   let lo = 255;
   let hi = 0;
+  let bright = 0;
+  let dark = 0;
   const n = Math.floor(rgba.length / 4);
   for (let i = 0; i < n; i++) {
     const l = 0.2126 * (rgba[i * 4] as number) + 0.7152 * (rgba[i * 4 + 1] as number) + 0.0722 * (rgba[i * 4 + 2] as number);
     sum += l;
     if (l < lo) lo = l;
     if (l > hi) hi = l;
+    if (l > 245) bright++;
+    if (l < 14) dark++;
   }
-  return n === 0 ? { mean: 0, spread: 0 } : { mean: sum / n, spread: hi - lo };
+  return n === 0 ? { mean: 0, spread: 0 } : { mean: sum / n, spread: hi - lo, high: bright / n, low: dark / n };
 }
 
 /** One flat colour that is dark: what a view that drew nothing looks like. */
