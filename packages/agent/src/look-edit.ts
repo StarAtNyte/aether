@@ -18,13 +18,19 @@ export const LOOK_RESET_KEYS = [
   'exposure', 'bloom', 'ambientIntensity', 'sunIntensity', 'hdriIntensity', 'fog',
   'temperature', 'tint', 'saturation', 'contrast', 'exposureEv',
   'interiorWarmth', 'interiorBalance', 'sunTint', 'ambientTint', 'foliageTint', 'lampStrength', 'vignette',
-  'surroundings',
+  'surroundings', 'intent',
 ] as const;
 export type LookResetKey = (typeof LOOK_RESET_KEYS)[number];
 
 /** Input of the `tune_look` tool. Every field is optional; what is omitted is left as it is. */
 export const TuneLookInput = z.object({
-  /** Overall exposure multiplier of the tone mapping (1 = neutral). */
+  /**
+   * The lighting INTENT, stated instead of guessing an exposure: `key` dim (cinema, lounge, night bar), moderate (most rooms) or
+   * bright (airy cafe, daylit gallery), `text` your words ("dim cinema ambience, readable"). The renderer measures the finished
+   * picture at eye height and derives the exposure from it against the key, so a washed or crushed room corrects itself.
+   */
+  intent: z.object({ key: z.enum(['dim', 'moderate', 'bright']).optional(), text: z.string().max(120).optional() }).optional(),
+  /** Exposure multiplier of the tone mapping (1 = neutral): only a BIAS on the derived exposure when an intent is set. */
   exposure: unit(0.1, 4).optional(),
   /** Extra exposure in stops on top of `exposure` (the grade's own). */
   exposureEv: unit(-3, 3).optional(),
@@ -157,6 +163,17 @@ export function lookPatches(world: WorldDoc, input: TuneLookInput): LookEditResu
       note(`look.${k}`, k, undefined);
     }
   }
+  if (input.intent !== undefined) {
+    const from = world.environment.look?.intent;
+    const to = { ...(input.intent.key ? { key: input.intent.key } : from?.key ? { key: from.key } : {}), ...(input.intent.text ? { text: input.intent.text } : from?.text ? { text: from.text } : {}) };
+    if (JSON.stringify(from ?? null) !== JSON.stringify(to)) {
+      look['intent'] = to;
+      notes.push(`look.intent ${show(from ? `${from.key ?? ''} ${from.text ?? ''}`.trim() : undefined)} → ${show(`${to.key ?? ''} ${to.text ?? ''}`.trim())}`);
+    }
+  } else if (reset.has('intent' as never)) {
+    look['intent'] = null;
+    if (world.environment.look?.intent) notes.push('look.intent removed');
+  }
   const around: Record<string, unknown> = {};
   for (const [k, field] of Object.entries(SURROUND_FIELDS) as Array<[keyof typeof SURROUND_FIELDS, string]>) {
     const v = input[k];
@@ -204,6 +221,7 @@ export function lookText(world: WorldDoc): string {
     `sky ${e.sky}${e.timeOfDay !== undefined ? ` at ${e.timeOfDay} h` : ''}; exposure ${d(e.exposure, '1')}, bloom ${d(e.bloom, '0.4')}, ambient ${d(e.ambientIntensity, '0.4')}, sun ${d(e.sunIntensity, '2.5')}`,
     `grade: temperature ${d(g.temperature, 'preset')}, tint ${d(g.tint, 'preset')}, saturation ${d(g.saturation, 'preset')}, contrast ${d(g.contrast, 'preset')}, exposureEv ${d(g.exposureEv, 'preset')}`,
     `look: interiorWarmth ${d(l.interiorWarmth, '0.45')}, interiorBalance ${d(l.interiorBalance, '1')}, sunTint ${d(l.sunTint, 'white')}, ambientTint ${d(l.ambientTint, 'white')}, foliageTint ${d(l.foliageTint, 'white')}, lampStrength ${d(l.lampStrength, '1')}, vignette ${d(l.vignette, '0.22')}`,
+    `lighting intent: ${l.intent ? `${l.intent.key ?? 'moderate'}${l.intent.text ? ` (${l.intent.text})` : ''}` : 'not stated (moderate, readable)'}; exposure and exposureEv only bias the exposure the renderer derives from the picture`,
     `surroundings: ${e.surroundings ? JSON.stringify(e.surroundings) : 'none (an empty lawn to the horizon; surroundings sets hills, trees and fields)'}`,
     bakeText(world),
     `fog: ${e.fog ? `${e.fog.color}, density ${e.fog.density}${e.fog.visibility ? `, range ${e.fog.visibility} m` : ''}` : 'none'}`,

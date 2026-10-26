@@ -27,6 +27,7 @@ import { errorMessage, isAbortError } from './providers/errors';
 import { AGENT_TOOLS, COMPACT_TOOLS, LEVEL_TOOLS } from './tools';
 import { MAKE_TEXTURE_TOOL } from './textures';
 import { findingKey, findingsText } from '@aether/arch';
+import { lightEvidenceText, pictureStats, type PictureStats } from './picture-stats';
 import { MAX_REVIEW_VIEWS, reviewTurnText, snapshotForReview, StallTracker, type ReviewSnapshot } from './review';
 import { guardVerificationClaim } from './honesty';
 import { DIFFERENCES_TOOL, DIFFERENCES_TOOL_NAME, DifferenceLedger, differenceViews } from './photo/differences';
@@ -822,6 +823,17 @@ export class WorldAgent {
       }
       // A world built from a brief is compared with it: the model lists what is missing or sparse and fixes it. The counts are
       // evidence for its judgement; nothing here passes or fails on a number.
+      if (images.length > 0 && host.decodeImage) {
+        const rows: Array<{ name: string; stats: PictureStats }> = [];
+        for (const im of images) {
+          const px = await raceAbort(host.decodeImage(im.dataUrl, 128), signal).catch(() => null);
+          const stats = px ? pictureStats(px.data) : null;
+          if (stats) rows.push({ name: im.name, stats });
+        }
+        const intent = host.getWorld().environment.look?.intent;
+        const text = lightEvidenceText(rows, intent ? `${intent.key ?? 'moderate'}${intent.text ? ` (${intent.text})` : ''}` : null);
+        if (text) content.push({ type: 'text', text });
+      }
       if (this.briefState) content.push({ type: 'text', text: richnessReviewText(this.briefState.brief, host.getWorld(), round, this.briefState.notes) });
       if (shortAsk) content.push({ type: 'text', text: `The checker keeps repeating itself, but your brief's counts are still well short: ${shortAsk.slice(0, 900)}. Build the rest in one call each (shape_land tier, grid, perimeter, wall or along, as the brief says), or say plainly why each stays short, then finish.` });
       if (images.length > 0) yield { type: 'step', tool: 'look', label: round === 1 ? 'Looking at the renders' : 'Looking at the renders again', ok: true, looked: images.map((im) => ({ label: im.label, dataUrl: im.dataUrl })) };

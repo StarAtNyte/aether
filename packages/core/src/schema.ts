@@ -687,6 +687,14 @@ export const Environment = z.object({
       lampStrength: z.number().min(0).max(3).optional(),
       /** Edge darkening of the picture, 0 none .. 1 strong (default: the grade preset's). */
       vignette: z.number().min(0).max(1).optional(),
+      /**
+       * The lighting INTENT of the world, stated by the author instead of guessing an exposure: `key` is how bright the picture
+       * should read at eye height (dim: a cinema or lounge, moderate: most rooms, bright: an airy cafe or a bright gallery) and
+       * `text` is the author's own words. The renderer derives the exposure from the measured picture against the key (the
+       * closed-loop trim); `exposure` and `grade.exposureEv` then act only as a bias. Presentation only: the baked light does
+       * not depend on it.
+       */
+      intent: z.object({ key: z.enum(['dim', 'moderate', 'bright']).optional(), text: z.string().max(120).optional() }).optional(),
     })
     .optional(),
   /**

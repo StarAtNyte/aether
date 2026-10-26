@@ -70,7 +70,7 @@ import { AdaptiveResolution } from './view/adaptive-resolution';
 import { MeshBasicNodeMaterial } from 'three/webgpu';
 import { textureWork } from './gpu/task-queue';
 import { BATCHED_LAYER } from './sync/static-batches';
-import { nextTrim } from './view/exposure-trim';
+import { nextTrim, type TrimIntent } from './view/exposure-trim';
 import { adaptStep, adaptedLook, interiorBalance, interiorFactor, toneExposure, volumeExposure, type CeilingBox } from './view/eye-adapt';
 import { looksInside } from './view/arch-view';
 import { ROOM_MAX_EV, ROOM_MIN_EV, RoomSelector, roomLight, roomSamplePoints, type PointLight, type RoomBox, type RoomLight } from './view/room-exposure';
@@ -299,6 +299,19 @@ export function surfaceOfFinish(finish: string): SurfaceClass {
 }
 
 /** A raycaster that also tests batched static props (their meshes live on {@link BATCHED_LAYER}). */
+/** The statistics of a picture read back as RGBA (a 24 x 24 grid of points), as the live read-back reports them. */
+function measurePixels(rgba: Uint8Array, w: number, h: number): FrameSample {
+  const n = 24;
+  const grid = new Uint8Array(n * n * 4);
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      const si = (Math.min(h - 1, Math.floor(((y + 0.5) * h) / n)) * w + Math.min(w - 1, Math.floor(((x + 0.5) * w) / n))) * 4;
+      grid.set(rgba.subarray(si, si + 4), (y * n + x) * 4);
+    }
+  }
+  return measureFrame(grid);
+}
+
 function createRaycaster(): Raycaster {
   const r = new Raycaster();
   r.layers.enable(BATCHED_LAYER);
@@ -2061,7 +2074,7 @@ export class WorldRenderer {
     this.docLook = env.look ?? null;
     setFoliageTint(env.look?.foliageTint ?? null);
     // The exterior (`surroundings`) is drawn beyond the plot and is not in the light the building bakes: changing only it keeps the baked light.
-    const lightKey = JSON.stringify({ ...env, surroundings: undefined });
+    const lightKey = JSON.stringify({ ...env, surroundings: undefined, look: env.look ? { ...env.look, intent: undefined } : undefined });
     if (lightKey !== this.lightEnvKey) {
       this.lightEnvKey = lightKey;
       this.lightVolume.invalidate();
@@ -3609,12 +3622,47 @@ export class WorldRenderer {
     this.sampleViewAsync(true);
   }
 
+  /** The author's lighting intent and the exposure they set by eye (a bias): what the trim steers the picture toward. */
+  private trimIntent(): TrimIntent {
+    const ev = Math.log2(Math.max(0.05, this.env.exposure)) + (this.docGrade?.exposureEv ?? 0);
+    return { ...(this.docLook?.intent?.key ? { key: this.docLook.intent.key } : {}), biasEv: ev };
+  }
+
+  /**
+   * A capture from eye height inside a building shows the trim the room has learned. The live view learns it at rest; a
+   * pose that was never stood in has none yet, so it is learned here from small drawings of the pose itself (at most
+   * three, each moves at most one step) and kept for the room, which is also what the live eye then finds.
+   * `draw` aims the camera and renders one frame into the capture target.
+   */
+  private async settleTrim(draw: () => void, w: number, h: number): Promise<void> {
+    if (!this.lightVolume.ready || (globalThis as { __NOTRIM?: boolean }).__NOTRIM) return;
+    for (let i = 0; i < 3; i++) {
+      const room = this.roomPick?.id;
+      if (room === undefined || this.disposed || this.lost) return;
+      let pixels: Uint8Array;
+      try {
+        pixels = await this.renderToPixels(w, h, () => {
+          draw();
+          this.prepareBatches(true);
+          this.renderer.render(this.scene, this.perspective);
+        }, () => undefined);
+      } catch {
+        return;
+      }
+      const s = measurePixels(pixels, w, h);
+      const cur = this.roomTrim.get(room) ?? 0;
+      const next = nextTrim(cur, { mean: s.mean, high: s.high ?? 0, low: s.low ?? 0 }, this.trimIntent());
+      if (next === cur) return;
+      this.roomTrim.set(room, next);
+    }
+  }
+
   private onTrimSample(s: FrameSample | null): void {
     const room = this.trimRoom;
     this.trimRoom = null;
     if (!s || s.high === undefined || room === null || this.disposed || this.roomPick?.id !== room) return;
     const cur = this.roomTrim.get(room) ?? 0;
-    const next = nextTrim(cur, { mean: s.mean, high: s.high, low: s.low ?? 0 });
+    const next = nextTrim(cur, { mean: s.mean, high: s.high, low: s.low ?? 0 }, this.trimIntent());
     if (next === cur) {
       this.trimQuiet++;
       return;
@@ -4183,6 +4231,31 @@ export class WorldRenderer {
     }
   }
 
+  /** The trim for the room a still's pose stands in (see {@link settleTrim}); the live camera is put back afterwards. */
+  private async settleStillTrim(pose: { pos: readonly number[]; target: readonly number[] } | undefined): Promise<void> {
+    if (!pose || !pose.pos.every(Number.isFinite) || !pose.target.every(Number.isFinite) || !this.lightVolume.ready || this.captureActive) return;
+    const cam = this.perspective;
+    const savedPos = cam.position.clone();
+    const savedQuat = cam.quaternion.clone();
+    try {
+      await this.settleTrim(() => {
+        cam.position.set(pose.pos[0] as number, pose.pos[1] as number, pose.pos[2] as number);
+        cam.lookAt(pose.target[0] as number, pose.target[1] as number, pose.target[2] as number);
+        cam.updateMatrixWorld(true);
+        this.snapEye();
+      }, 192, 128);
+      cam.position.set(pose.pos[0] as number, pose.pos[1] as number, pose.pos[2] as number);
+      cam.lookAt(pose.target[0] as number, pose.target[1] as number, pose.target[2] as number);
+      cam.updateMatrixWorld(true);
+      this.snapEye();
+    } finally {
+      cam.position.copy(savedPos);
+      cam.quaternion.copy(savedQuat);
+      cam.updateMatrixWorld(true);
+      this.eyeClock = 1;
+    }
+  }
+
   /** The eye adapts to the camera where it stands now at once (a cut): a capture is exposed for its own view. */
   private snapEye(): void {
     if (!this.lightVolume.ready) return;
@@ -4688,6 +4761,7 @@ export class WorldRenderer {
     const open = (w: number, h: number, vignette: boolean): CaptureSession => this.beginCapture(w, h, { vignette });
     opts = { ...opts, vignetteStrength: this.vignetteStrength() };
     this.adaptEyeToPose(opts.pose);
+    await this.settleStillTrim(opts.pose);
     const image = await captureStill(open, opts);
     // The first capture after a post pipeline is (re)built can come out as one flat colour on some software GPUs
     // (temporal AA history primed at the viewport size); an identical second render is right. Render once more.
@@ -5045,6 +5119,10 @@ export class WorldRenderer {
       for (const pose of list) {
         if (!this.asyncCaptureFailed) {
           try {
+            await this.settleTrim(() => {
+              aim(pose);
+              this.snapEye();
+            }, 192, Math.max(64, Math.round((192 * h) / w)));
             const pixels = await this.grow.withFullScale(() =>
               this.renderToPixels(w, h, () => {
                 aim(pose);
