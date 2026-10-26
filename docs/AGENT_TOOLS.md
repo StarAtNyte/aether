@@ -19,6 +19,7 @@ and a fix. A tool result is plain text written for the model. A refusal never st
 - [Eyes: inspection, measuring, renders](#eyes-inspection-measuring-renders)
 - [Verification and playtest](#verification-and-playtest)
 - [Photo to room](#photo-to-room)
+- [Generation brief and richness review](#generation-brief-and-richness-review)
 - [Conversation control](#conversation-control)
 - [How the loop works](#how-the-loop-works)
 - [Offline planner](#offline-planner)
@@ -635,6 +636,19 @@ exist for the review loop of a prompt-built world (`ReviewOptions.differences`, 
 request (and any reference pictures the user attached, shown side by side with a render), the gaps are ranked and fixed largest
 first and confirmed on the next renders, an approval that leaves a gap of size 4 or 5 open is asked about once, and an
 independent seat checks the final renders against the request. Both options are off in `WorldAgent` unless set and on in the studio.
+
+## Generation brief and richness review
+
+Full text: [GENERATION_BRIEF.md](GENERATION_BRIEF.md). Source: `packages/agent/src/brief.ts`, `brief-stage.ts`; hooks in `agent.ts`. On only when `AgentOptions.brief` is set, the provider is not the offline planner, no picture is attached, and the run starts a new world (`intent: 'new'`, or an empty world).
+
+| Tool | Offered to | What it does |
+| --- | --- | --- |
+| `submit_brief` | the brief call only (never the planner) | `{elaboration: elaborate|moderate|minimal, elaboration_reason, kind, summary, scale, zones, elements:[{name, count, size?, note?, find?}], materials, lighting, richness:{kinds, pieces}, reference:{generate, reason, prompt?}}`. Validated by zod; a refusal names the fields once. |
+| `look_closer` (reference form) | the planner and review turns, only while a generated reference picture exists | `{regions:[{box:[x0,y0,x1,y1] in 0..1}]}` returns crops of the picture; `{whole:true}` the whole picture. Read-only. This is a different schema from the photo flow's `look_closer`, which compares a photo with a render and is offered only inside that flow. |
+
+The model states how elaborate the request is (default `elaborate`; `minimal` only when the user states a small scale or simplicity), and the richness target follows. The reference image is optional: the model decides, a connected image generator makes it (`make_texture`'s path), and the decision and reason are recorded whether or not a picture was made. The review loop then shows the brief, the renders and advisory piece counts per element (`richnessEvidence`) and the model fixes what is missing or sparse. The offline planner skips all of this.
+
+Events: `brief` (`BriefView`: the brief, `editable`, the reference record, the user's notes). `RunOptions.reviewBrief` lets the host pause for the user's edit; absent, the run carries on.
 
 ## Conversation control
 
