@@ -6555,3 +6555,29 @@ Honest limits: single runs, counts move between runs; the evidence matches the m
 ### Gates
 
 `tsc` clean; vitest packages/agent, assets, arch, render, apps/studio 372 files, 3535 tests passed (new: exposure bands and bias, intent in `tune_look`, picture statistics, outdoor brief text and views, harbour parts); smoke 34/34; `showcase:bake --check` up to date; `showcase:lightmaps --verify` 6/6 (keys unchanged: the intent is not in the light key); `e2e:lightmap-open` ok. The RTX was left alone.
+
+## Forest camp scale: land sized to the scene, thick woods, trails
+
+Task: a live forest camp was a small camp in a large foggy landscape (default land 420 m, 220 spruce over 17 ha, nothing to walk on).
+
+### What changed
+
+- `shape_land land`: `size` and `relief` are optional. Without a size the land follows the plot: about seven plot radii, 140 to 520 m (a camp clearing of 18 m radius gets 140 m; a canyon keeps 420 m); relief defaults to 12 % of the size up to 48 m (it was 48 m on any size). A stated size is kept.
+- A forest without `woods` counts gets them per hectare (34 conifers, 12 broadleaf, 5 birch, 60 scrub, 8 boulders; capped at the schema limits) instead of a fixed 220/70/30, so a 140 m forest is thick and a 420 m one is as before in kind. Tree spread margin shrinks on small lands (never above the old 20 m, so bigger lands are unchanged).
+- `trails` (default 2 for a forest): winding soil trails leave the plot edge towards the land edge at their own bearings, clear of the stream and the lake; trees, scrub and rocks keep 2.4 m off them (`keepFree` in `naturalGround`).
+- Brief text for outdoor worlds: land edge about 6 to 8 times the built area's radius, stated in the scale; a camp is a clearing with forest around it, trails, a stream or lake edge, props at camp density; woods count from the area (a tree per 12 to 25 m2, not per 50 m2). Tool and prompt text say the same.
+- No bundled room or showcase changed: `showcase:bake --check` up to date, `showcase:lightmaps --verify` 6/6, `e2e:lightmap-open` ok.
+
+### Live runs (Claude Code, low effort, one run each, Intel iGPU stills)
+
+| run | land | trees | draw calls | fps |
+| --- | --- | --- | --- | --- |
+| before (model chose 120 m itself; scale stated "60 x 50") | 120 m, relief 6 | sparse tall spruce, flat | 115 to 178 | 27 to 60 |
+| after, first text (150 m, relief 18) | 150 m, clearing 18 m | 45-tree arithmetic: still airy | 206 | 60 |
+| after, woods counted from area | 160 m | 79 spruce + 7 birch + rows, scrub, boulders | 426 overview, about 8 ms frame | 60 overview, 28 to 35 at the busy eye views |
+
+Stills viewed (overview, eye height): the camp now sits in a clearing with tents of different kinds, fire pit with log seats, lanterns, rocks and plants at a prop every few metres, a stream along one side, hills closing the horizon and a trail. It still reads thinner than a real forest (the model's own counts win over defaults when it passes `woods`), and the overview draws 426 calls and 3 M triangles from the trees.
+
+### Honest limits
+
+Single runs. The model, not code, picks counts when it passes `woods`; the text now asks for forest density but nothing enforces it. One run showed fallen logs hanging in the air (model placement, not investigated here). Only one of the two default trails was laid in that run (the other bearings crossed the stream).
