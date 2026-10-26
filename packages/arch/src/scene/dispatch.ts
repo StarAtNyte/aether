@@ -33,7 +33,7 @@ export const DESIGN_TOOL_NAMES = ['design_plan', 'place_items', 'edit_items', 'q
 export type DesignToolName = (typeof DESIGN_TOOL_NAMES)[number];
 
 /** Bounds of a design tool call. */
-export const DESIGN_LIMITS = Object.freeze({ MAX_ITEMS: 40, MAX_EDITS: 40, MAX_QUERIES: 12, MAX_TEXT: 14_000, MAX_REF: 100 });
+export const DESIGN_LIMITS = Object.freeze({ MAX_ITEMS: 40, MAX_EDITS: 40, MAX_QUERIES: 12, MAX_TEXT: 20_000, MAX_REF: 100 });
 
 /** True when `name` is a design tool. */
 export function isDesignTool(name: string): name is DesignToolName {

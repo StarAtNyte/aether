@@ -17,12 +17,14 @@ import { CANE } from './cane';
 import { DECOR } from './decor';
 import { LIGHTING } from './lighting';
 import { TREES } from './trees';
+import { VENUE } from './venue';
+import { CIVIC } from './civic';
 
 export type { FurnitureDef, Mount, MovableMotion, MovableSpec, ParamReader } from './kit';
 export { glowMaterial } from './lighting';
 
 /** Every furniture generator, in a stable order. */
-export const FURNITURE: readonly FurnitureDef[] = Object.freeze([...SEATING, ...CANE, ...TABLES, ...BEDROOM, ...KITCHEN_SET, ...BATH, ...SINKS, ...DECOR, ...LIGHTING, ...TREES]);
+export const FURNITURE: readonly FurnitureDef[] = Object.freeze([...SEATING, ...CANE, ...TABLES, ...BEDROOM, ...KITCHEN_SET, ...BATH, ...SINKS, ...DECOR, ...LIGHTING, ...TREES, ...VENUE, ...CIVIC]);
 
 const BY_ID: ReadonlyMap<string, FurnitureDef> = new Map(FURNITURE.map((f) => [f.id, f]));
 const BY_KIND: ReadonlyMap<string, FurnitureDef> = new Map(FURNITURE.map((f) => [f.kind, f]));
