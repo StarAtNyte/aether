@@ -6504,3 +6504,54 @@ tsc clean; vitest packages/agent, assets, arch, render, apps/studio 369 files, 3
 
 Single runs per prompt, so counts move between runs. The model still leaves things out (harbour boats and bollards, market stalls as tents, museum pilasters, restaurant exit signs) and still piles up what is cheap (crates, barrels). The facade is a front, not a designed elevation: the other three sides stay plain walls, windows come from the plan, and a tall hall keeps a large blank wall. The default facade is on for every design_plan building, houses included (a house gets a canopy, forecourt, lamps and benches; set `facade: false` or switch parts off). The exterior element sometimes matches door entities by its find words and reads OVER. Interiors are still washed out in places because the model sets exposure by eye. The bust and statue are low-poly stand-ins that read at 3 m, not sculpture.
 
+
+## 2026-10-26 Exposure from a stated intent and the measured picture; harbour parts and outdoor briefs
+
+Task: generated interiors read washed out because the model set exposure by eye (`tune_look exposure`) and the per-room trim only partly corrected it, and outdoor worlds were weak (the harbour over-placed crates, barrels and seawall blocks and left out boats and bollards, 595 to 609 draw calls).
+
+### 1. Lighting intent, exposure from the picture
+
+- `environment.look.intent {key: dim | moderate | bright, text}` (`tune_look {intent}`): the model states how the place should read ("dim cinema ambience, readable", "bright airy cafe"); it is presentation only and is left out of the baked-light key (no lightmap key moved). `view/exposure-trim.ts` now steers each room's trim toward a band of mean display luminance per key (dim 0.15-0.38, moderate 0.26-0.58 (the default, the old thresholds), bright 0.40-0.68); the author's own `exposure` and `grade.exposureEv` shift the band by a third of a stop per stop (so a raw exposure is a bias, not the answer); range -2.5 to +1.2 EV, at most 0.4 EV per read-back. The brief checklist, the `tune_look` text and the review text say: state the intent, do not crank the exposure, fix the light.
+- Stills and review captures learn their room's trim from the pose itself: up to three small drawings of the pose (a warm-up one is discarded), each one step. Stills use `captureStill` at 192 px with the real chain; review captures use a plain small draw (the plain draw is black under the studio quality, hence the separate path). The value is kept per room, which is also what the live eye then finds.
+- Found while measuring: the live trim never learned in a still view of a static world (it was only evaluated after a drawn frame and nothing draws at rest), which is why photo rooms stayed crushed and the earlier numbers moved so little. An idle view in a building now draws one more frame every 0.7 s until three reads in a row leave the trim as it is (the counter starts again when the eye moves).
+- Review evidence: each review turn carries advisory histograms of the images the model is shown (mean, washed share over 247, crushed share under 8, `packages/agent/src/picture-stats.ts`) next to the world's stated intent; the LLM judges by looking. `scripts/exposure-audit.ts` (stills at eye height inside the largest room, histogram per still, two walks across the room with the trim read every frame) and the e2e `eye-light` are the measuring tools.
+
+| world (eye height, 4 stills) | before: mean, washed, crushed | after: mean, washed, crushed |
+| --- | --- | --- |
+| cinema (model's exposure 1.5, +0.5 EV, lamps 1.5) | 183, 7.5 %, 0 | no intent 181, 4.0 %, 0; with intent dim 131, 0.1 %, 0 |
+| museum (model's exposure 0.35) | 211, 0, 0 | 120, 0, 0.2 % (trim at its -2.5 limit) |
+| restaurant | 151, 4.8 %, 0.9 % | 145, 4.0 %, 1.0 % (inside the band, left alone) |
+| library (generated with this text, intent moderate) | 149, 0.7 %, 0.8 % | 123, 0.3 %, 0.9 % |
+| living room (generated with this text, intent moderate) | 120, 0.9 %, 0.8 % | 114, 0.8 %, 0.9 % |
+| photo hotel bedroom (live at rest, `eye-light`, 8 stills) | 76, 0.7 %, 11.4 % | 96, 0.7 %, 1.1 % |
+| photo twin room | 103, 0.6 %, 8.0 % | 117, 0.6 %, 5.8 % |
+| photo four-poster | 157, 0.9 %, 0.1 % | 143, 0.4 %, 0.3 % |
+| photo vaulted bedroom | 145, 4.0 %, 0.1 % | 122, 1.6 %, 0.3 % |
+
+Stills viewed: the museum went from a cream wall of white vitrines to readable depth (wall tones, shadow under the cases); the cinema stage view from a white-pink wash to saturated red seats and a wood floor with a dark curtain; the hotel door went from black to a visible panelled door. Restaurant, library and living room were already inside the band and look the same, as intended.
+
+No pumping: while walking 90 frames across the room the trim changed by 0.000 per frame in the second walk of all five worlds (cinema, museum, library, living room, restaurant); the first walk of the restaurant shows the last 0.05 EV of the learned value easing in (0.009 EV per frame), and the library learned its -0.27 during the rest between the walks, not while moving. A late read-back asked for at rest can arrive when the walk starts: it applies as one eased step (seen in the old build too).
+
+Honest limits: the cinema, museum and restaurant worlds were generated before the intent existed; "with intent" adds the intent the model would state (library and living room were generated with the new text and the model stated `moderate` itself). The cinema is still bright live (mean 188 of 255 at the -2.5 EV limit: an emissive white screen and 1.5 times lamps): the trim cannot make an over-lit scene dim, that needs the lights, which is what the review text asks. Stills are read from 192 px single-frame drawings.
+
+### 2. Outdoor worlds
+
+- Brief: for an outdoor world the instruction asks for the defining elements as the real place has them (harbour: quay edge with bollards and cleats, moored boats of varied size, cranes, warehouses, nets and lobster pots, lamp posts, signage, water, crates and barrels in small groups, gulls; market, village, forest camp likewise), the edges they follow, and counts from area and spacing (a bollard per 8 to 12 m of quay edge, a boat per 10 to 15 m of berth, a stall per 4 to 6 m of frontage; crates and barrels in clusters of 3 to 8, 20 to 40 on a 60 x 40 m quay). The build checklist puts each element in one instanced call (`shape_land` land, along, row, grid), asks `find_model` first, names the crafted parts, and asks for under 400 draw calls. The review of a world without a building looks from an overview and from spots well inside its edge at eye height (the old views stood 0.8 m from the rim, in the water for a harbour) and asks for missing defining elements as well as over-placing.
+- New crafted parts (`furniture/harbour.ts`, one mesh per material, under 6k triangles): `furn-boat` (rowboat, dinghy, fishing boat with wheelhouse and mast, sailboat with mast, boom, sail and jib, motor launch with windscreen; any length; the origin is the waterline, so `furniture` tests exempt boats from "rests on the floor"), `furn-bollard` (bollard, cleat, mooring pile), `furn-lobster-pot`, `furn-seagull`. The photographed library has only two realistic ships and no bollard, rowboat or net, and its Kenney watercraft are low-poly (hidden by the realistic default of `find_model`), which is why the model said "the library has no matching models".
+
+| prompt (single Claude Code runs, review 10-round budget, Intel iGPU stills and 150-frame walk at eye height) | entities / instances | against the brief | draw calls, frame |
+| --- | --- | --- | --- |
+| harbour, before (previous entry) | 53 / 381 | crates 115 of 30, barrels 59 of 20, blocks 97 of 40, sailboats 2 of 6, no bollards, no boats | 595-609 |
+| harbour, brief text only | 52 / 690 | crates 62 of 28, barrels 72 of 16 (still over), no bollards (barrels stood in), boats from the old generic boat generator, cranes 2 of 2 | 215-233, median 16.7 ms |
+| harbour, with the parts | 53 / 2510 | bollards 40 of 10 (over), boats of five kinds in about 14 entities (the evidence matched none of the brief's boat names: ids were along-of-boat-n), crates 28 of 28, barrels 10 of 16, lobster pots 12 of 12, gulls 17 of 14, lamps 8 of 9, warehouses 5 of 5; no nets, buoys, containers, carts or signs | 225-237, median 16.7 ms, p90 30.6 |
+| market square | 75 / 2963 | stalls 14 of 14, houses 11 of 12, lamps 12 of 14, crates 18 of 28, barrels 13 of 18, bunting 2 of 10, trees 129 of 8 (the `land` call's woods); hanging signs missing | 269, 60 fps |
+| village | 81 / 2838 | houses 10 of 14, fences 64 of 40, lamps 8 of 8, haystacks 9 of 8, animals 11 of 10; gravestones and signposts missing | 246, median 16.7 ms |
+| forest camp | 63 / 768 | tents 4 of 4, stools 4 of 4, lanterns 6 of 6, firewood 3 of 3; log seats and camp table missing | 90, median 16.7 ms, p90 27 |
+
+Stills viewed (overview and eye height): the harbour now has a quay with bollards and gulls, lobster pots, sailboats, fishing boats, rowboats and a cargo ship in the basin, five warehouses and a crane; the sails are large and the hulls simple (a two-metre-wide launch seen from the bow reads as a wedge), and the model put the whole thing on forest land, so spruce stand round the basin. The market reads well from the air and from the stalls (the bunting reads as a floating bar). The village houses are the generic suburban house generator (cartoon green roofs), not a village. The camp is small in a large foggy landscape.
+
+Honest limits: single runs, counts move between runs; the evidence matches the model's `find` words against names and ids, so boats placed by variants read as missing; the model still piles up what is cheap (bollards 40 of 10, trees); draw calls were already low (215 to 270) once the brief stopped the pile-up, so no new instancing was added for library models, and the cartoon house generator remains the only village house.
+
+### Gates
+
+`tsc` clean; vitest packages/agent, assets, arch, render, apps/studio 372 files, 3535 tests passed (new: exposure bands and bias, intent in `tune_look`, picture statistics, outdoor brief text and views, harbour parts); smoke 34/34; `showcase:bake --check` up to date; `showcase:lightmaps --verify` 6/6 (keys unchanged: the intent is not in the light key); `e2e:lightmap-open` ok. The RTX was left alone.
