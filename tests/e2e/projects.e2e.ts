@@ -7,7 +7,7 @@
  *  2. a template creates a project from its saved world and opens the
  *     editor, which autosaves it;
  *  3. back on the home page the project card shows a live thumbnail;
- *  4. rename, duplicate, delete with confirm and Undo from the card menu;
+ *  4. rename, duplicate, delete with confirm and Undo from the card menu, the card's trash button and a bulk selection;
  *  5. export (.aether.json) and import round trip;
  *  6. search, sort by name, list view;
  *  7. projects persist across a reload (IndexedDB);
@@ -117,6 +117,26 @@ async function homeFlow(page: Page, base: string): Promise<void> {
   await page.waitForFunction(() => document.querySelectorAll('.card--project').length === 2, null, { timeout: 10_000 });
   log('  rename, duplicate, delete + undo');
 
+  // 4b. Trash button on the card, then select mode: delete several with one confirm and one Undo.
+  const count = (n: number): Promise<unknown> => page.waitForFunction((x) => document.querySelectorAll('.card--project').length === x, n, { timeout: 10_000 });
+  await page.locator('.card--project').filter({ hasText: 'Treasure beach copy' }).hover();
+  await page.getByRole('button', { name: 'Delete Treasure beach copy' }).click();
+  await page.getByRole('button', { name: 'Delete', exact: true }).click();
+  await count(1);
+  await page.getByRole('button', { name: 'Undo' }).last().click();
+  await count(2);
+  await page.getByRole('button', { name: 'Select', exact: true }).click();
+  await page.getByLabel('Select all').check();
+  await page.getByRole('button', { name: 'Delete selected (2)' }).click();
+  await page.getByRole('button', { name: 'Delete 2', exact: true }).click();
+  await count(0);
+  await page.getByRole('button', { name: 'Undo' }).last().click();
+  await count(2);
+  await page.getByRole('button', { name: 'Select', exact: true }).click();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Select', exact: true }).waitFor();
+  log('  trash button, bulk delete, one Undo restores all, Escape leaves select mode');
+
   // 5. Export → import round trip.
   await openCardMenu(page, 'Treasure beach');
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('menuitem', { name: 'Export .aether.json' }).click()]);
@@ -159,6 +179,16 @@ async function homeFlow(page: Page, base: string): Promise<void> {
   await waitEditorBuilt(page);
   check((await page.evaluate(() => window.__aether?.history.current.name)) !== 'Untitled world', 'palette template did not build');
   log('  command palette created a project from a template');
+
+  // 9. Delete from inside the open project: confirm, back on the home page, Undo brings it back.
+  await page.getByRole('button', { name: 'Aether menu' }).click();
+  await page.getByRole('menuitem', { name: 'Delete project…' }).click();
+  await page.getByRole('button', { name: 'Delete', exact: true }).click();
+  await page.waitForURL(/#\/$/, { timeout: 20_000 });
+  await page.waitForFunction(() => document.querySelectorAll('.card--project').length === 3, null, { timeout: 10_000 });
+  await page.getByRole('button', { name: 'Undo' }).last().click();
+  await page.waitForFunction(() => document.querySelectorAll('.card--project').length === 4, null, { timeout: 10_000 });
+  log('  delete from the editor, Undo on the home page');
 }
 
 async function migrationFlow(browser: Browser, base: string, worldText: string, errors: string[]): Promise<void> {

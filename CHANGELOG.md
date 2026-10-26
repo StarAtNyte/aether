@@ -5,6 +5,9 @@ and `docs/REVIEW_LOG.md` carries the measured detail. Workspace packages share t
 
 ## Unreleased
 
+### Studio
+- Project cards and rows show the actions button (…) at all times as a frosted 32 px button with a visible focus ring, plus a trash button. A Select mode deletes several projects with one confirmation and one Undo, with a message when some could not be deleted or restored. Delete or Backspace on a focused card opens the confirmation, Escape leaves Select, and the editor's Aether menu has Delete project….
+
 ### Security
 - The dev and preview servers answer to localhost only. A tunnel host is allowed by naming it in `AETHER_DEV_ALLOWED_HOSTS`.
 - Lockfile: `body-parser` 2.4.0 and `fast-uri` 3.1.9 clear the high-severity audit finding. `npm audit` reports 0 findings.

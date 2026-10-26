@@ -266,6 +266,11 @@ screen and in the exported `CREDITS.txt`.
 
 Projects live in your browser (IndexedDB) with thumbnails, search, sort,
 rename, duplicate, delete with Undo, and `.aether.json` export and import.
+Each project card has a visible actions button (…) and a trash button.
+**Select** on the projects page picks several projects (Escape leaves it), and
+**Delete selected** removes them with one confirmation and one Undo; Delete or
+Backspace on a focused card asks to delete it. Inside a project, the Aether
+menu has **Delete project…**. Example worlds are not projects and are never deleted.
 To recover from a world that will not load, open the studio with `?safe=1`,
 which boots the starter scene and keeps your last world one Undo away.
 `?debug=1` turns on verbose logging.

@@ -16,6 +16,7 @@ import type { LayoutMode } from '../lib/layout';
 import { Icon } from './Icon';
 import { Logomark } from './Logo';
 import { Menu, type MenuEntry } from './ui/Menu';
+import { ConfirmDialog } from './ui/Dialog';
 import { SignInChip } from '../onboarding/FirstRunHost';
 
 /** Inline-editable project (world) name. */
@@ -93,6 +94,8 @@ export const TopBar = memo(function TopBar({ layout }: { layout: LayoutMode }): 
   const selection = useUI((s) => s.selection);
   const { canUndo, canRedo } = useHistoryState();
   const fileRef = useRef<HTMLInputElement>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const world = useWorld();
   const playing = mode === 'play';
   const phone = layout === 'phone';
   const st = (): ReturnType<typeof studio.store.getState> => studio.store.getState();
@@ -141,6 +144,12 @@ export const TopBar = memo(function TopBar({ layout }: { layout: LayoutMode }): 
     { id: 'palette', label: 'Command palette', icon: 'command', shortcut: shortcut('Mod+K'), onSelect: () => st().setPaletteOpen(true) },
     { id: 'theme', label: settings.darkTheme ? 'Light theme' : 'Dark theme', icon: settings.darkTheme ? 'sun' : 'moon', onSelect: () => st().updateSettings({ darkTheme: !settings.darkTheme }) },
     { id: 'settings', label: 'Settings', icon: 'settings', onSelect: () => st().setSettingsOpen(true) },
+    ...(editor
+      ? ([
+          { kind: 'separator', id: 's2' },
+          { id: 'delete', label: 'Delete project…', icon: 'trash', danger: true, disabled: playing, onSelect: () => setConfirmDelete(true) },
+        ] satisfies MenuEntry[])
+      : []),
   ];
 
   const addMenu: MenuEntry[] = [
@@ -328,6 +337,17 @@ export const TopBar = memo(function TopBar({ layout }: { layout: LayoutMode }): 
         )}
         <input ref={fileRef} type="file" accept="application/json,.json,.zip,application/zip" hidden onChange={onFile} />
       </div>
+      {editor && (
+        <ConfirmDialog
+          open={confirmDelete}
+          title="Delete project?"
+          description={`“${world.name}” will be removed from this browser. You can undo right after, from the projects page.`}
+          confirmLabel="Delete"
+          danger
+          onConfirm={() => void editor.deleteProject()}
+          onClose={() => setConfirmDelete(false)}
+        />
+      )}
     </header>
   );
 });

@@ -15,6 +15,7 @@ import { takeRun } from '../projects/pending';
 import { abandonedPromptReply } from '../projects/create';
 import type { ProjectRepo } from '../projects/repo';
 import { Icon } from '../components/Icon';
+import { useProjectActions } from '../home/useProjectActions';
 import { EditorContext, type EditorServices } from './editorContext';
 import { EditorShell } from './EditorShell';
 import { EditorSkeleton } from './EditorSkeleton';
@@ -92,6 +93,7 @@ export const EditorRoute = memo(function EditorRoute({ id }: { id: string }): Re
   const { repo, store, navigate } = useApp();
   const [studio, setStudio] = useState<Studio | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const projectActions = useProjectActions();
 
   useEffect(() => {
     if (!repo) return;
@@ -211,8 +213,23 @@ export const EditorRoute = memo(function EditorRoute({ id }: { id: string }): Re
         if (r.ok) navigate({ name: 'editor', id: r.value.id });
         else studio.store.getState().toast(r.error, 'error', 6);
       },
+      deleteProject: async () => {
+        // Write pending edits first so Undo restores the latest state, then delete and leave.
+        await studio.flush();
+        const meta = await repo.meta(id);
+        if (!meta) {
+          navigate({ name: 'home' });
+          return;
+        }
+        const gone = await projectActions.removeMany([meta]);
+        if (gone.length === 0) {
+          studio.store.getState().toast('Could not delete this project. It is still saved.', 'error', 6);
+          return;
+        }
+        navigate({ name: 'home' });
+      },
     };
-  }, [studio, repo, id, navigate, store]);
+  }, [studio, repo, id, navigate, store, projectActions]);
 
   if (error) return <EditorError message={error} onBack={() => navigate({ name: 'home' })} />;
   if (!studio || !services) return <EditorSkeleton />;

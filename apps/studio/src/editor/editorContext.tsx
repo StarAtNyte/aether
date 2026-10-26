@@ -10,6 +10,8 @@ export interface EditorServices {
   newProject(): Promise<void>;
   /** Duplicate the open project (after saving) and open the copy. */
   duplicate(): Promise<void>;
+  /** Delete the open project (after the caller confirmed) and go back to the projects home; the home shows the Undo toast. */
+  deleteProject(): Promise<void>;
 }
 
 /** Context (null outside an editor route, e.g. in unit tests). */
