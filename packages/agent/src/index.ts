@@ -92,3 +92,5 @@ export { createRecordingProvider, createReplayProvider, TranscriptSchema, TRANSC
 export type { PhotoStageView, PhotoResumeState, PhotoPhase, PhotoAssumptionView, PhotoScoreView, PhotoReadsView, PhotoOptions } from './types';
 export { CallLedger, REPEAT_LIMIT, STREAK_LIMIT, budgetNote, drainSteer, guardedTool, steerText, trimToAnswered } from './harness';
 export { StageMachine, RepairGuard, AssumptionsLedger, STAGES, STAGE_IDS, GATE_TOOL, REPAIR_TOOL, CAMERA_TOOL, buildProvenance, hashDataUrl, type StageId, type StageStatus, type Provenance } from './photo/stages';
+export { BRIEF_TOOL, BRIEF_TOOL_NAME, BriefSchema, REFERENCE_TOOL, briefChecklistText, briefSystem, parseBrief, richnessEvidence, richnessReviewText, type Brief, type BriefView, type Elaboration, type ReferenceRecord } from './brief';
+export { briefStage, lookReference, referencePrompt, type BriefReviewer, type BriefStageResult } from './brief-stage';

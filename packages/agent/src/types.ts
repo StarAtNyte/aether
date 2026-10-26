@@ -77,6 +77,8 @@ export interface Provider {
 export type AgentEvent =
   | { type: 'status'; text: string }
   | { type: 'plan'; text: string }
+  /** The generation brief of a world built from a text prompt (the plan the build follows), with the reference-image decision. */
+  | { type: 'brief'; view: import('./brief').BriefView }
   | { type: 'patches'; patches: Patch[]; message: string; result: { applied: number; errors: PatchError[] } }
   | { type: 'generator'; def: GeneratorDef; ok: boolean; error?: string }
   | { type: 'verify'; passed: boolean; summary: string; report: unknown }
@@ -359,6 +361,12 @@ export interface AgentOptions {
    * the model are satisfied or progress stalls), set a high finite number for paid keys.
    */
   photo?: PhotoOptions;
+  /**
+   * The brief step of a world built from a text prompt (see `brief.ts`): the model first writes what the space must contain,
+   * the build follows it as a checklist and the review compares the result with it. Absent: no brief (the planner as before).
+   * `webSearch`: the provider can search the web (ideas in text only). The reference image needs `textures.images`.
+   */
+  brief?: { webSearch?: boolean };
 }
 
 /** Options of the room-from-photo flow. */

@@ -32,6 +32,8 @@ import { guardVerificationClaim } from './honesty';
 import { DIFFERENCES_TOOL, DIFFERENCES_TOOL_NAME, DifferenceLedger, differenceViews } from './photo/differences';
 import { READ_ONLY_TOOLS, REVIEW_CROSSCHECK_SEED, REVIEW_CROSSCHECK_SYSTEM, requirementText, reviewCrossCheckText } from './review-diff';
 import { CallLedger, budgetNote, stepLabel, compactConversation, drainSteer, guardedTool, steerText, trimToAnswered } from './harness';
+import { briefChecklistText, REFERENCE_TOOL, REFERENCE_TOOL_NAME, richnessReviewText } from './brief';
+import { briefStage, lookReference, type BriefReviewer, type BriefStageResult } from './brief-stage';
 import { LEVEL_SUBJECT, levelSnapshot, levelTurnText } from './level-review';
 import type { AgentEvent, AgentHost, AgentOptions, ChatMessage, CompletionResponse, ContentBlock, ReviewOptions, ToolDef, UsageTotals } from './types';
 
@@ -75,6 +77,11 @@ export interface RunOptions {
    * event reports it. Return the new messages only (the host empties its queue as it hands them over).
    */
   steer?: () => readonly string[] | Promise<readonly string[]>;
+  /**
+   * The brief step (when `AgentOptions.brief` is set): called with the plan before the build. Return an edited brief and/or
+   * notes to change it; return nothing to carry on. Absent: the plan is shown and the build continues at once.
+   */
+  reviewBrief?: BriefReviewer;
 }
 
 /** The transform an object settled with (from a level tool's update patch). */
@@ -189,6 +196,8 @@ export class WorldAgent {
   private seen: WorldDoc | null = null;
   /** What the user asked for and the pictures they attached (the review compares the renders with them). */
   private reviewAsk: { request: string; images: string[] } = { request: '', images: [] };
+  /** The brief of the current run (the build's checklist and the richness review's yardstick), with its reference picture. */
+  private briefState: BriefStageResult | null = null;
 
   constructor(opts: AgentOptions) {
     this.opts = opts;
@@ -208,6 +217,11 @@ export class WorldAgent {
     this.builtinGenerators = ids;
   }
 
+  /** The tools of the current run: the planner's, plus `look_closer` while a generated reference picture exists. */
+  private get runTools(): ToolDef[] {
+    return this.briefState?.reference ? [...this.tools, REFERENCE_TOOL] : this.tools;
+  }
+
   /** The (cached) planner system prompt. */
   get system(): string {
     this.systemPrompt ??= this.compact ? buildCompactSystemPrompt(this.opts.catalogs) : buildSystemPrompt(this.opts.catalogs, { level: this.opts.levelTools !== undefined });
@@ -224,6 +238,7 @@ export class WorldAgent {
     const usage: UsageTotals = { inputTokens: 0, outputTokens: 0, calls: 0 };
     const session = opts.session && SESSION_RE.test(opts.session) ? opts.session : undefined;
     this.conversation = null;
+    this.briefState = null;
     let failed = false;
     let cancelled = false;
     this.seen = null;
@@ -250,6 +265,7 @@ export class WorldAgent {
       else if (this.conversation) store.save(session, this.system, withoutImages(this.conversation), host.getWorld());
     }
     this.conversation = null;
+    this.briefState = null;
     yield { type: 'done', usage: { ...usage, ...(usage.models ? { models: [...usage.models] } : {}) } };
   }
 
@@ -432,7 +448,29 @@ export class WorldAgent {
     const earlier = session && !this.compact ? this.conversations.continuable(session, this.system) : null;
     const changes = earlier ? sceneChangesText(earlier.world, world0) : null;
     const turnText = changes !== null ? formatFollowUpTurn([changes, inScope, ambiguity].filter(Boolean).join('\n'), request, mode) : formatUserTurn([fullSummary(), inScope, ambiguity].filter(Boolean).join('\n'), request, mode);
-    const first: ContentBlock[] = [...images.map((dataUrl): ContentBlock => ({ type: 'image', dataUrl })), { type: 'text', text: turnText }];
+    // A world from a text prompt starts with the brief: what this kind of space must contain, and how elaborate it should be.
+    this.briefState = null;
+    const wantsBrief = this.opts.brief !== undefined && !this.compact && this.opts.provider.name !== 'mock' && images.length === 0 && (intent === 'new' || !hasWorld);
+    const briefBlocks: ContentBlock[] = [];
+    if (wantsBrief) {
+      const got = yield* briefStage({
+        provider: this.opts.provider,
+        request,
+        usage,
+        maxTokens: this.maxTokens,
+        ...(signal ? { signal } : {}),
+        ...(this.opts.brief?.webSearch ? { webSearch: true } : {}),
+        images: this.opts.textures?.images ?? null,
+        ...(opts.reviewBrief ? { review: opts.reviewBrief } : {}),
+      });
+      this.briefState = got;
+      if (got) {
+        if (got.reference) briefBlocks.push({ type: 'text', text: got.reference.label }, { type: 'image', dataUrl: got.reference.dataUrl });
+        briefBlocks.push({ type: 'text', text: briefChecklistText(got.brief, got.notes) });
+        if (got.reference) briefBlocks.push({ type: 'text', text: 'You can study the reference image with look_closer (crops by box) to pull details worth building.' });
+      }
+    }
+    const first: ContentBlock[] = [...images.map((dataUrl): ContentBlock => ({ type: 'image', dataUrl })), { type: 'text', text: turnText }, ...briefBlocks];
     let messages: ChatMessage[];
     if (earlier) {
       // The last run's closing tool results were never sent: the new turn joins them.
@@ -473,7 +511,7 @@ export class WorldAgent {
       if (warn && turn > 0) pushUserText(messages, warn);
       // The conversation stays append-only; a request carries at most the newest images.
       const res: CompletionResponse = await raceAbort(
-        this.opts.provider.complete({ role: 'planner', system: this.system, messages: requestView(messages), tools: this.tools, maxTokens: this.maxTokens, ...(session ? { session } : {}) }, signal),
+        this.opts.provider.complete({ role: 'planner', system: this.system, messages: requestView(messages), tools: this.runTools, maxTokens: this.maxTokens, ...(session ? { session } : {}) }, signal),
         signal,
       );
       addUsage(usage, res);
@@ -491,6 +529,7 @@ export class WorldAgent {
       let finished: { message: string } | undefined;
       if (calls.length > 0) {
         const results: ContentBlock[] = [];
+        const lookBlocks: ContentBlock[] = [];
         let batchRefused = false;
         for (const call of calls) {
           if (signal?.aborted) throw new Error('aborted');
@@ -499,6 +538,13 @@ export class WorldAgent {
             continue;
           }
           toolCalls++;
+          if (call.name === REFERENCE_TOOL_NAME && this.briefState?.reference) {
+            const look = await lookReference(this.briefState.reference, host, call.input);
+            results.push({ type: 'tool_result', toolUseId: call.id, content: look.text, ...(look.isError ? { isError: true } : {}) });
+            lookBlocks.push(...look.blocks);
+            yield { type: 'step', tool: call.name, label: stepLabel(call.name, call.input, !look.isError), ok: !look.isError };
+            continue;
+          }
           const out = await guardedTool(ledger, ctx, call.name, call.input);
           if (call.name !== 'finish') yield { type: 'step', tool: call.name, label: stepLabel(call.name, call.input, !out.isError), ok: !out.isError };
           for (const ev of out.events) yield ev;
@@ -518,7 +564,7 @@ export class WorldAgent {
           finished = undefined;
           results.push({ type: 'text', text: 'A call in that reply was refused, so finish was ignored: read the reasons above, fix them and call the tools again, then finish.' });
         }
-        messages.push({ role: 'user', content: results });
+        messages.push({ role: 'user', content: [...results, ...lookBlocks] });
         this.seen = host.getWorld();
         if (finished?.message) {
           let said = finished.message;
@@ -698,7 +744,7 @@ export class WorldAgent {
     const ledger = new CallLedger();
     const diffs = cfg.differences === true ? new DifferenceLedger() : null;
     held.diffs = diffs;
-    const roundTools = diffs ? [...this.tools, DIFFERENCES_TOOL] : this.tools;
+    const roundTools = diffs ? [...this.runTools, DIFFERENCES_TOOL] : this.runTools;
     const imageCap = diffs ? 10 : undefined;
     const pushedBack = new Set<string>();
     let before: WorldDoc | null = startWorld;
@@ -723,7 +769,7 @@ export class WorldAgent {
         return;
       }
       // Nothing to look at and nothing to judge: the checks are clean and the model cannot see.
-      if (snap.findings.length === 0 && !withViews) {
+      if (snap.findings.length === 0 && !withViews && !this.briefState) {
         yield { type: 'review', round, phase: 'approved', text: `${lastEdited ? 'The automatic checks pass after the fixes' : 'The automatic checks pass'}; no renders were shown to the assistant, so nobody has judged how it looks.`, score: snap.score, findings: 0 };
         return;
       }
@@ -761,6 +807,9 @@ export class WorldAgent {
         if (list) content.push({ type: 'text', text: list });
         content.push({ type: 'text', text: requirementText(this.reviewAsk.request, refs.length > 0, round, list.length > 0) });
       }
+      // A world built from a brief is compared with it: the model lists what is missing or sparse and fixes it. The counts are
+      // evidence for its judgement; nothing here passes or fails on a number.
+      if (this.briefState) content.push({ type: 'text', text: richnessReviewText(this.briefState.brief, host.getWorld(), round, this.briefState.notes) });
       if (images.length > 0) yield { type: 'step', tool: 'look', label: round === 1 ? 'Looking at the renders' : 'Looking at the renders again', ok: true, looked: images.map((im) => ({ label: im.label, dataUrl: im.dataUrl })) };
       pushUserBlocks(messages, content);
       // One round: the model works with the tools until it calls finish (or answers without a tool call).
@@ -801,6 +850,7 @@ export class WorldAgent {
         }
         if (text) yield { type: 'plan', text };
         const results: ContentBlock[] = [];
+        const roundLooks: ContentBlock[] = [];
         for (const call of diffs ? [...calls].sort((a, b) => Number(b.name === DIFFERENCES_TOOL_NAME) - Number(a.name === DIFFERENCES_TOOL_NAME)) : calls) {
           if (signal?.aborted) throw new Error('aborted');
           if (toolCalls >= this.maxToolCalls && call.name !== DIFFERENCES_TOOL_NAME) {
@@ -828,6 +878,13 @@ export class WorldAgent {
             continue;
           }
           toolCalls++;
+          if (call.name === REFERENCE_TOOL_NAME && this.briefState?.reference) {
+            const look = await lookReference(this.briefState.reference, host, call.input);
+            results.push({ type: 'tool_result', toolUseId: call.id, content: look.text, ...(look.isError ? { isError: true } : {}) });
+            roundLooks.push(...look.blocks);
+            yield { type: 'step', tool: call.name, label: stepLabel(call.name, call.input, !look.isError), ok: !look.isError };
+            continue;
+          }
           const out = await guardedTool(ledger, ctx, call.name, call.input);
           if (call.name !== 'finish') yield { type: 'step', tool: call.name, label: stepLabel(call.name, call.input, !out.isError), ok: !out.isError };
           for (const ev of out.events) yield ev;
@@ -841,7 +898,7 @@ export class WorldAgent {
           }
           results.push({ type: 'tool_result', toolUseId: call.id, content: out.content, ...(out.isError ? { isError: true } : {}) });
         }
-        messages.push({ role: 'user', content: results });
+        messages.push({ role: 'user', content: [...results, ...roundLooks] });
         this.seen = host.getWorld();
       }
       lastEdited = editedThisRound;
