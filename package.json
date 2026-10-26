@@ -25,6 +25,8 @@
     "test": "vitest run",
     "start": "NODE_ENV=production node --import tsx apps/server/src/main.ts",
     "smoke": "tsx scripts/smoke.ts",
+    "budget": "tsx scripts/check-budget.ts",
+    "licences": "tsx scripts/check-licences.ts",
     "e2e": "tsx tests/e2e/studio.e2e.ts",
     "e2e:memory": "tsx tests/e2e/memory.e2e.ts",
     "e2e:switch": "tsx tests/e2e/worldswitch.e2e.ts",

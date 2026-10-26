@@ -27,6 +27,7 @@ import { createAppStore } from './app/appStore';
 import { applyTheme, themeFromSetting } from './lib/theme';
 import { installTooltips } from './components/ui/tooltips';
 import { extractBridgeLink } from './ai/deepLink';
+import { installGlobalErrorReporting, type GlobalErrorTarget } from './lib/globalErrors';
 
 // A bridge pairing deep link is removed from the address bar before anything else reads it.
 const bridgeLink = extractBridgeLink(location.href);
@@ -49,6 +50,7 @@ if (bridgeLink.link) {
     });
   });
 }
+installGlobalErrorReporting(window as unknown as GlobalErrorTarget, { toast: (text) => store.getState().toast(text, 'error', 8) });
 installTooltips(document);
 applyTheme(document, themeFromSetting(store.getState().settings.darkTheme));
 const repoPromise = openRepo();

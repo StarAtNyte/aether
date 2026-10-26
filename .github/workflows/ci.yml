@@ -34,6 +34,8 @@ jobs:
       - run: npm test -- --maxWorkers=2
       - run: npm run build
       - run: npm run smoke
+      - run: npm run budget
+      - run: npm run licences
       # Offline benchmark subset: fails when a documented claim (docs/BENCHMARK.md) stops holding.
       - run: npm run bench:quick
       - run: npm audit --omit=dev --audit-level=high
