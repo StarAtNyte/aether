@@ -3585,11 +3585,22 @@ export class WorldRenderer {
    * let the room's exposure trim follow it (see `view/exposure-trim.ts`). Never while the view moves or programs link.
    */
   private trimWatch(): void {
-    if (!this.atRest || this.sampling || this.disposed || this.lost || !this.lightVolume.ready || !this.roomPick) return;
+    if (this.sampling || this.disposed || this.lost || !this.lightVolume.ready || !this.roomPick) return;
+    // The eye has to have stood still for a moment (at rest in the editor, or a walker who stopped): never while it moves.
+    const t = now();
+    const e = this.perspective.matrixWorld.elements;
+    let still = true;
+    for (let i = 0; i < 16; i++) {
+      if (Math.abs((e[i] as number) - (this.trimPose[i] as number)) > 0.01) {
+        still = false;
+        this.trimPose[i] = e[i] as number;
+      }
+    }
+    if (!still) this.trimStillAt = t;
+    if (t - this.trimStillAt < 400) return;
     if (typeof createImageBitmap !== 'function' || this.captureActive) return;
     if (this.warming || this.grow.active || this.preparation.pending > 0 || this.programs.pending > 0) return;
     if (Math.abs((this.roomTrim.get(this.roomPick.id) ?? 0) - this.trimNow) > 0.02) return;
-    const t = now();
     if (t - this.trimAt < 700) return;
     this.trimAt = t;
     this.trimRoom = this.roomPick.id;
@@ -3599,7 +3610,7 @@ export class WorldRenderer {
   private onTrimSample(s: FrameSample | null): void {
     const room = this.trimRoom;
     this.trimRoom = null;
-    if (!s || s.high === undefined || room === null || this.disposed || !this.atRest || this.roomPick?.id !== room) return;
+    if (!s || s.high === undefined || room === null || this.disposed || this.roomPick?.id !== room) return;
     const cur = this.roomTrim.get(room) ?? 0;
     const next = nextTrim(cur, { mean: s.mean, high: s.high, low: s.low ?? 0 });
     if (next === cur) return;
@@ -4046,6 +4057,8 @@ export class WorldRenderer {
   private readonly roomTrim = new Map<string, number>();
   private trimNow = 0;
   private trimAt = 0;
+  private trimStillAt = 0;
+  private readonly trimPose: number[] = new Array<number>(16).fill(0);
   /** An exposure read-back is in flight (its answer goes to the trim, not to the watchdog). */
   private trimSampling = false;
   /** The sun's shadow map is fitted to the building the eye stands in. */

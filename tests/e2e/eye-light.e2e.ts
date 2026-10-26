@@ -52,6 +52,8 @@ async function main(): Promise<void> {
       const ctx = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
       await ctx.addInitScript({ content: SKIP_FIRST_RUN });
       await ctx.addInitScript({ content: 'globalThis.__name = (f) => f;' });
+      // On the integrated GPU the studio draws through WebGL2 (a WebGPU adapter here would be SwiftShader, software).
+      if (process.env['GEN_GPU'] === 'intel' && process.env['AETHER_WEBGPU'] !== '1') await ctx.addInitScript(() => { delete (Navigator.prototype as unknown as Record<string, unknown>)['gpu']; });
       try {
         const page = await ctx.newPage();
         await page.goto(`${server.url}/?debug=1#/new/${slug}`, { waitUntil: 'commit' });

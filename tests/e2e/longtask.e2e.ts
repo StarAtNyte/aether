@@ -192,6 +192,8 @@ async function main(): Promise<void> {
       await context.addInitScript({ content: SKIP_FIRST_RUN });
       await context.addInitScript({ content: 'globalThis.__name = (f) => f;' });
       await context.addInitScript({ content: PROBE });
+      // The integrated GPU draws through WebGL2 (a WebGPU adapter on this machine is SwiftShader, software).
+      if (process.env['GEN_GPU'] === 'intel' && process.env['AETHER_WEBGPU'] !== '1') await context.addInitScript(() => { delete (Navigator.prototype as unknown as Record<string, unknown>)['gpu']; });
       try {
         const page = await context.newPage();
         page.on('dialog', (d) => void d.dismiss().catch(() => undefined));

@@ -199,6 +199,16 @@ async function runScenarios(page: Page, cast: Screencast, world: string, results
     await page.waitForFunction(() => !window.__aether?.store.getState().agentBusy, null, { timeout: TIMEOUT, polling: 100 });
     await settle();
   }));
+  // A camera still flying to frame what the agent added is not the pose to compare: wait until it holds still.
+  const poseNow = (): Promise<{ pos: number[]; target: number[] }> => page.evaluate(() => (window.__aether!.simulation!.renderer as unknown as { cameraPose(): { pos: number[]; target: number[] } }).cameraPose());
+  let editPose = await poseNow();
+  for (let i = 0; i < 20; i++) {
+    await page.waitForTimeout(300);
+    const next = await poseNow();
+    const d = Math.hypot(...next.pos.map((v, k) => v - (editPose.pos[k] as number)));
+    editPose = next;
+    if (d < 1e-3) break;
+  }
   results.push(await scenario(page, cast, world, 'enter-play', async () => {
     await page.evaluate(async () => window.__aether?.studio.togglePlay());
     await page.waitForTimeout(3000);
@@ -216,6 +226,12 @@ async function runScenarios(page: Page, cast: Screencast, world: string, results
     await page.evaluate(async () => window.__aether?.studio.togglePlay());
     await page.waitForTimeout(1500);
   }));
+  // Stop puts the editor camera back where it was (it used to stay at the player's eye, in front of a wall).
+  const after = await page.evaluate(() => (window.__aether!.simulation!.renderer as unknown as { cameraPose(): { pos: number[]; target: number[] } }).cameraPose());
+  const moved = Math.hypot(...after.pos.map((v, i) => v - (editPose.pos[i] as number)));
+  const ok = moved < 0.05;
+  log(`${ok ? 'ok  ' : 'FAIL'} ${world} / camera-restored: the editor eye moved ${moved.toFixed(2)} m over a Play and Stop`);
+  results.push({ world, scenario: 'camera-restored', samples: 0, blank: 0, overlay: [], maxDrawnGapMs: 0, maxRafGapMs: 0, minMean: 0, ok, note: ok ? '' : `editor camera not restored after Stop (${moved.toFixed(2)} m)` });
 }
 
 async function main(): Promise<void> {
@@ -229,6 +245,8 @@ async function main(): Promise<void> {
       await context.addInitScript({ content: SKIP_FIRST_RUN });
       await context.addInitScript({ content: 'globalThis.__name = (f) => f;' });
       await context.addInitScript({ content: RECORDER });
+      // On the integrated GPU the studio draws through WebGL2 (a WebGPU adapter here would be SwiftShader, software).
+      if (process.env['GEN_GPU'] === 'intel' && process.env['AETHER_WEBGPU'] !== '1') await context.addInitScript(() => { delete (Navigator.prototype as unknown as Record<string, unknown>)['gpu']; });
       try {
         const page = await context.newPage();
         page.on('dialog', (d) => void d.dismiss().catch(() => undefined));

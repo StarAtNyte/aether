@@ -292,6 +292,8 @@ export class Simulation {
   private readonly unsubscribe: () => void;
   private readonly resizeObserver: ResizeObserver | null;
   private session: PlaySession | null = null;
+  /** The editor camera when Play began: Stop puts it back (a walk must not leave the editor eye in front of a wall). */
+  private editPose: ReturnType<WorldRenderer['cameraPose']> | null = null;
   private transition: Promise<void> = Promise.resolve();
   private syncChain: Promise<void> = Promise.resolve();
   private syncedWorldDoc: WorldDoc | null = null;
@@ -1007,6 +1009,7 @@ export class Simulation {
    */
   private async startSession(): Promise<void> {
     if (this.session || this.disposed) return;
+    this.editPose = this.renderer.cameraPose();
     const world = this.history.current;
     this.requestSync(world);
     await this.whenSynced();
@@ -1146,6 +1149,11 @@ export class Simulation {
     } finally {
       this.table.clear();
       safely('camera reset', () => this.renderer.setCameraMode('orbit'));
+      safely('camera restore', () => {
+        const p = this.editPose;
+        this.editPose = null;
+        if (p && !s.voxel) this.renderer.lookAt(p.pos, p.target, p.fov);
+      });
       safely('highlight', () => this.renderer.highlight(this.selection));
       safely('tool navigation', () => this.renderer.setLeftDragNavigation(this.viewportTool === null));
       this.listener.onModeChange?.('edit');
