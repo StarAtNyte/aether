@@ -161,6 +161,33 @@ export class GpuRoom {
   }
 
   /**
+   * Frame intervals of the live viewport (default tier, no vsync override) while the eye walks `frames` small steps along a line at
+   * eye height inside the world: median and 90th percentile in milliseconds, with the renderer's own draw and triangle counts.
+   */
+  async frameCost(from: readonly [number, number, number], to: readonly [number, number, number], frames: number): Promise<{ medianMs: number; p90Ms: number; stats: unknown }> {
+    await this.page.evaluate(() => window.__aether?.store.getState().setArch({ walls: 'up' }));
+    return this.page.evaluate(
+      async ([a, b, n]) => {
+        const r = window.__aether?.simulation?.renderer as unknown as { setCameraPose(x: number, y: number, z: number, yaw: number, pitch: number): void; stats(): unknown };
+        const yaw = Math.atan2(-(b[0] - a[0]), -(b[2] - a[2]));
+        const dts: number[] = [];
+        let last = performance.now();
+        for (let i = 0; i < (n as number) + 30; i++) {
+          const t = i / (n as number);
+          r.setCameraPose(a[0] + (b[0] - a[0]) * t, a[1], a[2] + (b[2] - a[2]) * t, yaw, -0.05 + 0.1 * Math.sin(i / 7));
+          await new Promise((res) => requestAnimationFrame(() => res(null)));
+          const now = performance.now();
+          if (i >= 30) dts.push(now - last);
+          last = now;
+        }
+        dts.sort((x, y) => x - y);
+        return { medianMs: Math.round((dts[Math.floor(dts.length / 2)] as number) * 10) / 10, p90Ms: Math.round((dts[Math.floor(dts.length * 0.9)] as number) * 10) / 10, stats: r.stats() };
+      },
+      [[...from], [...to], frames] as const,
+    );
+  }
+
+  /**
    * Review captures exactly as the studio hands them to the agent (`Simulation.capturePoses`: the live scene, the eye adapted to
    * each pose, no post chain), as JPEG data URLs in the order of `poses`; null for one that could not be drawn.
    */
