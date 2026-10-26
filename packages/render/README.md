@@ -925,3 +925,25 @@ completion/removal; the live cached counters also matched the actual ready group
 A deployed startup profile had no sampled main-thread merge-kernel calls. It still
 showed script initialization, texture uploads and shader completion stalls, so
 this does not establish that all startup or render-thread work is nonblocking.
+
+### Lighting experiments and GPU timing
+
+Two follow-up light-bake experiments were rejected. Visiting the nearer BVH half
+first for any-hit shadow rays preserved 100,000 answers over 6,000 generated
+triangles but slowed the measured Node workload by about 15%. Reusing volume-sample
+results and removing an incident-light temporary array produced byte-identical
+lightmaps (52,367 texels and 2,513,616 rays per room case), but median whole-bake
+times were neutral to slower in Chromium and Firefox. Neither change ships.
+
+`node scripts/bench/gpu-frame-cost.mjs` isolates GPU pixel cost from CPU contention
+using a generated WebGL2 shader. Set `AETHER_BENCH_BROWSER=firefox` for Firefox.
+It follows the [Khronos timer-query contract](https://registry.khronos.org/webgl/extensions/EXT_disjoint_timer_query_webgl2/):
+poll availability after returning to the browser, reject disjoint results, and
+never request an unavailable result. Unsupported contexts are reported explicitly.
+Each case warms four draws and reports ten valid samples when available.
+
+On the measured integrated GPU in Chromium, adding a 25 ms CPU delay left GPU
+duration at 0.193 ms; increasing shader work raised it to 4.517 ms, and halving
+both drawing dimensions reduced that to 1.140 ms. This demonstrates why frame
+rate alone cannot identify a resolution bottleneck. The probe does not yet alter
+the runtime quality policy or establish a whole-app speedup.
