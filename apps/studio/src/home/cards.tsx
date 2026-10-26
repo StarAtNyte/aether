@@ -1,5 +1,5 @@
 /** Template and project cards for the home page (grid and list variants). */
-import { memo, useState, type ReactElement } from 'react';
+import { memo, useState, type KeyboardEvent, type ReactElement } from 'react';
 import { TEMPLATE_KIND_LABEL, templateThumbnail, type WorldTemplate } from '../lib/examples';
 import { formatRelative, formatTimestamp } from '../lib/relativeTime';
 import type { ProjectMeta } from '../projects/model';
@@ -53,6 +53,27 @@ export interface ProjectCardActions {
   onDuplicate: (p: ProjectMeta) => void;
   onExport: (p: ProjectMeta) => void;
   onDelete: (p: ProjectMeta) => void;
+  /** Flip a project's selection (select mode). */
+  onToggle: (p: ProjectMeta) => void;
+  /** False for anything that is not a user project (never offered for deletion). */
+  canDelete: (p: ProjectMeta) => boolean;
+}
+
+/** Select-mode state of one card or row. */
+export interface SelectState {
+  selecting: boolean;
+  selected: boolean;
+}
+
+/** Delete / Backspace on a focused card or row asks to delete it (not from inside a menu or a field). */
+function deleteKey(e: KeyboardEvent<HTMLElement>, p: ProjectMeta, a: ProjectCardActions): void {
+  if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+  const t = e.target as HTMLElement;
+  // The row's menu is portaled but React still bubbles its events here: only react to the card's own elements.
+  if (!e.currentTarget.contains(t) || t.closest('[role="menu"]') || t.tagName === 'INPUT' && t.getAttribute('type') !== 'checkbox') return;
+  if (!a.canDelete(p)) return;
+  e.preventDefault();
+  a.onDelete(p);
 }
 
 function projectMenu(p: ProjectMeta, a: ProjectCardActions): MenuEntry[] {
@@ -71,9 +92,9 @@ const CardMenu = memo(function CardMenu({ project, actions }: { project: Project
     <Menu
       label={`${project.name} actions`}
       align="end"
-      items={projectMenu(project, actions)}
+      items={projectMenu(project, actions).filter((m) => m.id !== 'delete' && m.id !== 'sep' || actions.canDelete(project))}
       trigger={(t) => (
-        <button {...t} type="button" className="icon-btn icon-btn--sm card__menu" aria-label={`Actions for ${project.name}`} data-tip="More actions">
+        <button {...t} type="button" className="icon-btn card__menu" aria-label={`Actions for ${project.name}`} data-tip="More actions">
           <Icon name="more" />
         </button>
       )}
@@ -81,19 +102,52 @@ const CardMenu = memo(function CardMenu({ project, actions }: { project: Project
   );
 });
 
-/** A project card (grid view). */
-export const ProjectCard = memo(function ProjectCard({ project, thumb, actions, now }: { project: ProjectMeta; thumb: string | null; actions: ProjectCardActions; now: number }): ReactElement {
+/** Quick delete button (opens the confirm; the menu keeps its own Delete entry). */
+const TrashButton = memo(function TrashButton({ project, actions }: { project: ProjectMeta; actions: ProjectCardActions }): ReactElement | null {
+  if (!actions.canDelete(project)) return null;
   return (
-    <div className="card card--project" data-project={project.id}>
-      <button type="button" className="card__hit" onClick={() => actions.onOpen(project)} aria-label={`Open ${project.name}`}>
+    <button type="button" className="icon-btn card__trash" aria-label={`Delete ${project.name}`} data-tip="Delete" onClick={() => actions.onDelete(project)}>
+      <Icon name="trash" />
+    </button>
+  );
+});
+
+/** Selection checkbox of a card or row. */
+const SelectBox = memo(function SelectBox({ project, selected, actions }: { project: ProjectMeta; selected: boolean; actions: ProjectCardActions }): ReactElement {
+  return (
+    <input
+      type="checkbox"
+      className="select-box"
+      checked={selected}
+      disabled={!actions.canDelete(project)}
+      aria-label={`Select ${project.name}`}
+      onChange={() => actions.onToggle(project)}
+    />
+  );
+});
+
+/** A project card (grid view). */
+export const ProjectCard = memo(function ProjectCard({ project, thumb, actions, now, selecting, selected }: { project: ProjectMeta; thumb: string | null; actions: ProjectCardActions; now: number } & SelectState): ReactElement {
+  return (
+    <div className={`card card--project${selected ? ' is-selected' : ''}`} data-project={project.id} onKeyDown={(e) => deleteKey(e, project, actions)}>
+      <button type="button" className="card__hit" onClick={() => (selecting ? actions.onToggle(project) : actions.onOpen(project))} aria-label={selecting ? `Select ${project.name}` : `Open ${project.name}`} aria-pressed={selecting ? selected : undefined}>
         <Thumb src={thumb} alt="" />
       </button>
+      <div className="card__tools">
+        {selecting ? (
+          <SelectBox project={project} selected={selected} actions={actions} />
+        ) : (
+          <>
+            <TrashButton project={project} actions={actions} />
+            <CardMenu project={project} actions={actions} />
+          </>
+        )}
+      </div>
       <div className="card__body">
         <div className="card__title-row">
           <span className="card__title" title={project.name}>
             {project.name}
           </span>
-          <CardMenu project={project} actions={actions} />
         </div>
         <div className="card__meta">
           <span title={formatTimestamp(project.updatedAt)}>Edited {formatRelative(project.updatedAt, now).replace(/^Just now$/, 'just now')}</span>
@@ -105,10 +159,10 @@ export const ProjectCard = memo(function ProjectCard({ project, thumb, actions, 
 });
 
 /** A project row (list view). */
-export const ProjectRow = memo(function ProjectRow({ project, thumb, actions, now }: { project: ProjectMeta; thumb: string | null; actions: ProjectCardActions; now: number }): ReactElement {
+export const ProjectRow = memo(function ProjectRow({ project, thumb, actions, now, selecting, selected }: { project: ProjectMeta; thumb: string | null; actions: ProjectCardActions; now: number } & SelectState): ReactElement {
   return (
-    <div className="project-row" role="row" data-project={project.id}>
-      <button type="button" className="project-row__hit" onClick={() => actions.onOpen(project)} aria-label={`Open ${project.name}`}>
+    <div className={`project-row${selected ? ' is-selected' : ''}`} role="row" data-project={project.id} onKeyDown={(e) => deleteKey(e, project, actions)}>
+      <button type="button" className="project-row__hit" onClick={() => (selecting ? actions.onToggle(project) : actions.onOpen(project))} aria-label={selecting ? `Select ${project.name}` : `Open ${project.name}`} aria-pressed={selecting ? selected : undefined}>
         <Thumb src={thumb} alt="" />
         <span className="project-row__name" title={project.name}>
           {project.name}
@@ -124,7 +178,14 @@ export const ProjectRow = memo(function ProjectRow({ project, thumb, actions, no
         {formatRelative(project.createdAt, now)}
       </span>
       <span className="project-row__menu" role="cell">
-        <CardMenu project={project} actions={actions} />
+        {selecting ? (
+          <SelectBox project={project} selected={selected} actions={actions} />
+        ) : (
+          <>
+            <TrashButton project={project} actions={actions} />
+            <CardMenu project={project} actions={actions} />
+          </>
+        )}
       </span>
     </div>
   );

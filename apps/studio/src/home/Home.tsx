@@ -30,6 +30,7 @@ import { ProjectCard, ProjectRow, TemplateCard, type ProjectCardActions } from '
 import { NewProjectDialog, RenameDialog } from './dialogs';
 import { Docs } from './Docs';
 import { Hero } from './Hero';
+import { describeProjects, isDeletable } from '../projects/bulkDelete';
 import { isHelpKey, setShortcutsOpen, ShortcutsDialog } from '../components/ShortcutsDialog';
 import { useProjectActions } from './useProjectActions';
 import { useProjectList, useThumbnails } from './useProjects';
@@ -159,12 +160,16 @@ const ProjectCollection = memo(function ProjectCollection({
   thumbs,
   actions,
   now,
+  selecting,
+  selection,
 }: {
   projects: readonly ProjectMeta[];
   view: 'grid' | 'list';
   thumbs: ReadonlyMap<string, string>;
   actions: ProjectCardActions;
   now: number;
+  selecting: boolean;
+  selection: ReadonlySet<string>;
 }): ReactElement {
   if (view === 'list') {
     return (
@@ -185,7 +190,7 @@ const ProjectCollection = memo(function ProjectCollection({
           <span className="project-row__menu" role="columnheader" aria-label="Actions" />
         </div>
         {projects.map((p) => (
-          <ProjectRow key={p.id} project={p} thumb={thumbs.get(p.id) ?? null} actions={actions} now={now} />
+          <ProjectRow key={p.id} project={p} thumb={thumbs.get(p.id) ?? null} actions={actions} now={now} selecting={selecting} selected={selection.has(p.id)} />
         ))}
       </div>
     );
@@ -193,7 +198,7 @@ const ProjectCollection = memo(function ProjectCollection({
   return (
     <div className="project-grid">
       {projects.map((p) => (
-        <ProjectCard key={p.id} project={p} thumb={thumbs.get(p.id) ?? null} actions={actions} now={now} />
+        <ProjectCard key={p.id} project={p} thumb={thumbs.get(p.id) ?? null} actions={actions} now={now} selecting={selecting} selected={selection.has(p.id)} />
       ))}
     </div>
   );
@@ -218,6 +223,11 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
   const [renaming, setRenaming] = useState<ProjectMeta | null>(null);
   const [deleting, setDeleting] = useState<ProjectMeta | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [selecting, setSelecting] = useState(false);
+  const [selection, setSelection] = useState<ReadonlySet<string>>(() => new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [announce, setAnnounce] = useState('');
+  const headingRef = useRef<HTMLHeadingElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -236,16 +246,58 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
   const shown = section === 'projects' || searching ? searched : recent;
   const thumbs = useThumbnails(repo, shown);
 
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
+  const toggle = useCallback((p: ProjectMeta) => {
+    setSelection((cur) => {
+      const next = new Set(cur);
+      if (!next.delete(p.id)) next.add(p.id);
+      return next;
+    });
+  }, []);
   const cardActions = useMemo<ProjectCardActions>(
     () => ({
       onOpen: (p) => actions.open(p.id),
       onRename: (p) => setRenaming(p),
       onDuplicate: (p) => void actions.duplicate(p.id),
       onExport: (p) => void actions.exportProject(p.id),
-      onDelete: (p) => setDeleting(p),
+      // Delete on a card that is part of a multi-selection deletes the whole selection.
+      onDelete: (p) => (selectionRef.current.size > 1 && selectionRef.current.has(p.id) ? setBulkOpen(true) : setDeleting(p)),
+      onToggle: toggle,
+      canDelete: (p) => isDeletable(p),
     }),
-    [actions],
+    [actions, toggle],
   );
+  const exitSelect = useCallback(() => {
+    setSelecting(false);
+    setSelection(new Set());
+    setBulkOpen(false);
+  }, []);
+  // Selected projects that no longer exist (deleted, other tab) drop out of the selection.
+  useEffect(() => {
+    setSelection((cur) => {
+      if (cur.size === 0) return cur;
+      const live = new Set(projects.map((p) => p.id));
+      const next = new Set([...cur].filter((id) => live.has(id)));
+      return next.size === cur.size ? cur : next;
+    });
+  }, [projects]);
+  const selectable = useMemo(() => shown.filter((p) => isDeletable(p)), [shown]);
+  const chosen = useMemo(() => projects.filter((p) => selection.has(p.id)), [projects, selection]);
+  const allChosen = selectable.length > 0 && selectable.every((p) => selection.has(p.id));
+  /** After a delete the focused card is gone: land on the section heading and tell screen readers what happened. */
+  const afterDelete = useCallback((ids: readonly string[], what: string) => {
+    if (ids.length === 0) return;
+    setAnnounce(`${what} deleted. Undo is available for a few seconds.`);
+    requestAnimationFrame(() => headingRef.current?.focus());
+  }, []);
+  const deleteSelected = useCallback(async () => {
+    const batch = chosen;
+    const gone = await actions.removeMany(batch);
+    afterDelete(gone, gone.length === 1 ? describeProjects(batch.filter((p) => p.id === gone[0])) : `${gone.length} projects`);
+    if (gone.length === batch.length) exitSelect();
+    else setSelection((cur) => new Set([...cur].filter((id) => !gone.includes(id))));
+  }, [actions, afterDelete, chosen, exitSelect]);
   const openNew = useCallback(() => store.getState().setNewProjectOpen(true), [store]);
   const pickTemplate = useCallback((slug: string) => void actions.createFromTemplate(slug), [actions]);
   const importFiles = useCallback(
@@ -269,6 +321,10 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
         store.getState().setPaletteOpen(!store.getState().paletteOpen);
         return;
       }
+      if (e.key === 'Escape' && selecting && !document.querySelector('dialog[open]') && !document.querySelector('[role="menu"]')) {
+        exitSelect();
+        return;
+      }
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
       if (document.querySelector('dialog[open]')) return;
@@ -285,7 +341,7 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [store, openNew]);
+  }, [store, openNew, selecting, exitSelect]);
 
   const newFromPrompt = useCallback((q: string): Command => ({ id: 'new-from-prompt', title: `Build a new world: “${q}”`, group: 'Create', icon: 'sparkles', shortcut: '↵', run: () => void actions.createFromPrompt(q) }), [actions]);
   const commands = useMemo<Command[]>(() => {
@@ -403,10 +459,37 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
         )}
         <section className="home-section" aria-labelledby="h-projects">
           <div className="section-head">
-            <h2 id="h-projects" className="section-head__title">
+            <h2 id="h-projects" className="section-head__title" ref={headingRef} tabIndex={-1}>
               {searching ? `Results for “${query.trim()}”` : section === 'projects' ? `All projects${list ? ` · ${projects.length}` : ''}` : 'Recently opened'}
             </h2>
             <div className="section-head__tools">
+              {selecting && (
+                <>
+                  <label className="select-all">
+                    <input
+                      type="checkbox"
+                      className="select-box"
+                      checked={allChosen}
+                      onChange={() => setSelection(allChosen ? new Set() : new Set(selectable.map((p) => p.id)))}
+                    />
+                    <span>Select all</span>
+                  </label>
+                  <span className="select-count" aria-live="polite">
+                    {selection.size} selected
+                  </span>
+                  <button type="button" className="btn btn--danger btn--sm" disabled={selection.size === 0} onClick={() => setBulkOpen(true)}>
+                    <Icon name="trash" /> Delete selected ({selection.size})
+                  </button>
+                  <button type="button" className="btn btn--ghost btn--sm" onClick={exitSelect}>
+                    Done
+                  </button>
+                </>
+              )}
+              {!selecting && list !== null && shown.length > 0 && (
+                <button type="button" className="btn btn--ghost btn--sm" onClick={() => setSelecting(true)} data-tip="Select several projects to delete">
+                  <Icon name="check" /> Select
+                </button>
+              )}
               {(section === 'projects' || searching) && (
                 <Menu
                   label="Sort projects"
@@ -422,7 +505,7 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
               {viewToggle}
             </div>
           </div>
-          {list === null ? <ProjectSkeletons /> : shown.length === 0 ? <EmptyProjects onNew={openNew} searching={searching} /> : <ProjectCollection projects={shown} view={prefs.view} thumbs={thumbs} actions={cardActions} now={now} />}
+          {list === null ? <ProjectSkeletons /> : shown.length === 0 ? <EmptyProjects onNew={openNew} searching={searching} /> : <ProjectCollection projects={shown} view={prefs.view} thumbs={thumbs} actions={cardActions} now={now} selecting={selecting} selection={selection} />}
         </section>
       </>
     );
@@ -546,10 +629,22 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
         confirmLabel="Delete"
         danger
         onConfirm={() => {
-          if (deleting) void actions.remove(deleting);
+          if (deleting) void actions.remove(deleting).then((ok) => ok && afterDelete([deleting.id], describeProjects([deleting])));
         }}
         onClose={() => setDeleting(null)}
       />
+      <ConfirmDialog
+        open={bulkOpen}
+        title={`Delete ${selection.size} ${selection.size === 1 ? 'project' : 'projects'}?`}
+        description={`${describeProjects(chosen)} will be removed from this browser. One Undo restores ${selection.size === 1 ? 'it' : 'all of them'}.`}
+        confirmLabel={`Delete ${selection.size}`}
+        danger
+        onConfirm={() => void deleteSelected()}
+        onClose={() => setBulkOpen(false)}
+      />
+      <div className="sr-only" role="status" aria-live="polite">
+        {announce}
+      </div>
       <SettingsDialog
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
