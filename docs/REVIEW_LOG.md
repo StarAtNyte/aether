@@ -6350,3 +6350,9 @@ What was found: all gates pass on a fresh clone (5286 tests, build, smoke). `npm
 
 What shipped: opt-in dev hosts (`AETHER_DEV_ALLOWED_HOSTS`), the three-internals test and contract table, lockfile audit fix, global error reporting, `npm run budget` and `npm run licences` in CI, CHANGELOG and a docs index. Details and what was left are in `docs/PRODUCTION_READINESS.md`.
 
+
+## Agent guidance: lighting from walking height
+
+- Changed: the building review turn (`packages/agent/src/review.ts`, `EYE_HEIGHT_LIGHT_CHECK`) now tells the model to judge light from eye height (1.6-1.7 m): dark corridors and entries, blown windows, fixtures that do not visibly light nearby surfaces, flat ambient, flicker, brightness jumps between rooms; to fix with `tune_look` and nearby lights, then look again. `tune_look` tool text and the photo compare prompt carry the same guidance. The photo look evidence (`photo/grade.ts`) adds an advisory eye-height summary of the render (mean, p5/p95, clipped share).
+- Test: `packages/agent/test/eye-height-light.test.ts` (checklist in review text; pixel summary; scripted "corridor too dark, lamp flat" reply leads to an executed `tune_look` and a second review round).
+- Limits: all figures are advisory, no gate. No near-fixture luminance hint (review.ts has no pixels). Not added to the main system prompt, which is at its size budget. The scripted test proves the wiring, not that a real model judges well.

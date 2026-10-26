@@ -156,6 +156,13 @@ function toRequest(p: ReviewPose, marks: ReviewViewRequest['marks']): ReviewView
   return { name: p.name, label: p.label, kind: p.kind, pose: { position: p.position, target: p.target, up: p.up, fov: p.fov }, hideTops: p.hideTops, aspect: REVIEW_ASPECT, marks };
 }
 
+/**
+ * The lighting checklist of a review turn: judged from what the eye-height images show, never from a number.
+ * Exported so the other review prompts and tests share one wording.
+ */
+export const EYE_HEIGHT_LIGHT_CHECK =
+  'LIGHTING FROM WALKING HEIGHT (eye 1.6-1.7 m): look at the eye-height views (corner and wall views, or render one with the look tools at about 1.65 m) the way a person walking in would, and judge: corridors, halls and entries that are too dark to walk; windows blown out to flat white; whether each lamp, pendant, sconce or other light fixture visibly lights its surroundings (a bright pool on the wall, table or ceiling beside it that fades with distance; a flat glowing blob that lights nothing is wrong); flat ambient light with no contrast between lit and shadowed areas; flicker; brightness that jumps from one room to the next. Any luminance figures in the evidence are advisory, you decide from the images. Fix what reads wrong: tune_look for exposure, ambient, contrast and lamp strength, and add or adjust lights (a point or spot light close to the fixture, lower or raise intensity) with place_items / edit_items, then look again at the same eye-height view to confirm the fix worked before you finish.';
+
 /** The text of a review turn (the images are attached by the caller, each labelled). */
 export function reviewTurnText(round: number, snap: ReviewSnapshot, opts: { hasImages: boolean; lastEdited: boolean }): string {
   const errors = snap.findings.filter((f) => f.severity === 'error').length;
@@ -168,6 +175,7 @@ export function reviewTurnText(round: number, snap: ReviewSnapshot, opts: { hasI
   if (opts.hasImages) lines.push(`Numbers drawn on the images are pieces of the building. Use them to say exactly what you mean:\n${snap.legend}`);
   lines.push(
     'Fix every real error and warning with edit_items / place_items (measure first with query_scene; make the smallest change that works; never rebuild a room to move one piece). Judge what the checker cannot: scale and proportion, clutter or emptiness, furniture facing the right way, pieces floating or crossing walls, style and colour consistency, lighting and mood, whether a person could live here. If the light or colour reads wrong (too cold, too dark, flat, washed out, green foliage that does not suit the season), set the look with tune_look rather than repainting surfaces. If a finding is a false alarm, say why in your final message.',
+    EYE_HEIGHT_LIGHT_CHECK,
     'When YOU judge the building right from the images, call finish with one sentence on what you checked and fixed. Do not call finish while a measured error (impossible geometry) remains.',
   );
   return lines.join('\n');

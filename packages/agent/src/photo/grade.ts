@@ -23,6 +23,10 @@ export interface PhotoGrade {
   /** 5th and 95th percentile of luminance, 0..1. */
   p5: number;
   p95: number;
+  /** Mean luminance, 0..1. */
+  mean?: number;
+  /** Share of pixels at or near white (luminance above 0.97), 0..1. */
+  clipped?: number;
   /** Mean saturation (HSV), 0..1. */
   saturation: number;
   /** Colour of the light as red, green and blue gains that would turn the brightest near-neutral surfaces grey (green = 1). */
@@ -105,7 +109,13 @@ export function estimatePhotoGrade(r: Raster): PhotoGrade | null {
   const cast: [number, number, number] = [castOf(sr), 1, castOf(sb)];
   // Warm light has its red high and its blue low: the correction that neutralises it lowers red and raises blue.
   const warmth = clamp(Math.log(cast[2] / cast[0]) / Math.log(1.6), -1, 1);
-  return { median, p5, p95, saturation: sat / n, cast, warmth };
+  let total = 0;
+  let clip = 0;
+  for (let i = 0; i < n; i++) {
+    total += ys[i] as number;
+    if ((ys[i] as number) > 0.97) clip++;
+  }
+  return { median, p5, p95, mean: total / n, clipped: clip / n, saturation: sat / n, cast, warmth };
 }
 
 /**
@@ -226,7 +236,8 @@ export function lookEvidenceText(world: WorldDoc, photo: PhotoGrade, render: Pho
   if (Math.abs(grade.contrast - (env.grade?.contrast ?? 1)) > 0.04) suggestion.push(`contrast ${env.grade?.contrast ?? 1} -> ${grade.contrast}`);
   return [
     `Look evidence (measured from pixels, advisory: you decide the look by comparing the two pictures; nothing was changed automatically): median brightness photo ${pct(photo.median)} vs render ${pct(render.median)}; white point photo ${warmWord(photo.warmth)} (${signed(photo.warmth)}) vs render ${warmWord(render.warmth)} (${signed(render.warmth)}); saturation photo ${pct(photo.saturation)} vs render ${pct(render.saturation)}; tonal spread photo ${pct(photo.p95 - photo.p5)} vs render ${pct(render.p95 - render.p5)}.`,
+    render.mean !== undefined && render.clipped !== undefined ? `Eye-height light summary of the render (advisory, from pixels): mean ${pct(render.mean)}, p5 ${pct(render.p5)}, p95 ${pct(render.p95)}, clipped (near white) ${pct(render.clipped)}. A very low p95 suggests a dark room, a high clipped share blown windows or lamps; look at the picture before you act.` : '',
     suggestion.length > 0 ? `A mechanical match would try: ${suggestion.join(', ')}. Use it, adjust it or ignore it according to what you see; mood and the light of the room are yours to judge. Set the look with tune_look (it also covers interior warmth, fog, light and foliage tints).` : 'A mechanical match would leave the look as it is. If the pictures still differ in mood or light, set the look with tune_look.',
     `Current look:\n${lookText(world)}`,
-  ].join('\n');
+  ].filter((l) => l.length > 0).join('\n');
 }
