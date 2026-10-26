@@ -257,4 +257,32 @@ describe('brief helpers', () => {
     expect(text).toMatch(/screen: brief 1, found 1 \(ok\)/);
     expect(text).toMatch(/exit signs: brief 4, found 0 \(NONE FOUND\)/);
   });
+
+  it('marks an element far over its count as OVER and says why that matters, both ways', async () => {
+    const { applyPatches } = await import('@aether/core');
+    const host = new MemoryHost();
+    const ps = Array.from({ length: 60 }, (_, i) => ({ op: 'add', entity: { id: `painting-${i}`, name: `painting ${i}` } }));
+    const res = applyPatches(host.world, ps as never);
+    const b = brief({ elements: [{ name: 'paintings', count: 20, find: ['painting'] }], richness: { kinds: 6, pieces: 30, basis: '100 m of wall at 2.5 m per painting, one row' } });
+    const text = richnessEvidence(res.world, b);
+    expect(text).toMatch(/paintings: brief 20, found 60 \(OVER/);
+    expect(text).toContain('clutter');
+    expect(text).toContain('too few and too many');
+    expect(text).toContain('look for over-filling');
+    // The same count just under the line is fine.
+    const ok = applyPatches(host.world, ps.slice(0, 25) as never);
+    expect(richnessEvidence(ok.world, b)).toMatch(/paintings: brief 20, found 25 \(ok\)/);
+  });
+
+  it('accepts the basis of the counts and the new layout names, and states the calibration in the instruction', async () => {
+    const { briefSystem, briefChecklistText } = await import('../src/brief');
+    const r = parseBrief({ ...brief(), elements: [{ name: 'columns', count: 12, how: 'around' }], richness: { kinds: 8, pieces: 80, basis: 'colonnade 5 m pitch round 60 m of wall' } });
+    expect(r.ok).toBe(true);
+    const sys = briefSystem();
+    expect(sys).toContain('richness.basis');
+    expect(sys).toContain('not 150');
+    expect(sys).toContain('Exterior facade');
+    expect(sys).toContain('never stand in a different kind of object'.replace('never', 'Never'));
+    if (r.ok) expect(briefChecklistText(r.brief)).toContain('Basis: colonnade 5 m pitch');
+  });
 });
