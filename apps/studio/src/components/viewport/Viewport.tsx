@@ -174,20 +174,18 @@ const NavHint = memo(function NavHint(): ReactElement | null {
   );
 });
 
-/** Processing feedback for agent work, mode switches and pending renderer/worker jobs. */
+/**
+ * Feedback for work the person asked for: the agent's own status line while it works, and a still image render. Mode
+ * switches, scene or texture preparation, lighting updates, checks and play tests never put text over the picture: the
+ * last good frame stays on screen and the toolbar buttons carry their own state.
+ */
 const BusyIndicator = memo(function BusyIndicator(): ReactElement | null {
   const busy = useUI((s) => s.agentBusy);
   const line = useUI(liveAgentLine);
-  const modeBusy = useUI((s) => s.modeBusy);
   const stage = useUI((s) => s.processing);
-  const playing = useUI((s) => s.mode === 'play');
-  const checking = useUI((s) => s.verify.status === 'running');
-  const playtesting = useUI((s) => s.playtest.status === 'running');
   const loading = useUI((s) => s.loading);
   const fatal = useUI((s) => s.fatal);
-  const messages = { scene: 'Updating scene…', materials: 'Preparing textures…', render: 'Preparing view…', lighting: 'Updating lighting…', capture: 'Rendering image…' };
-  const foregroundStage = stage && (!playing || stage === 'capture') ? stage : null;
-  const text = busy ? line : modeBusy ? 'Switching mode…' : foregroundStage ? messages[foregroundStage] : checking ? 'Checking world…' : playtesting ? 'Testing play…' : null;
+  const text = busy ? line : stage === 'capture' ? 'Rendering image…' : null;
   if (!text || loading || fatal) return null;
   return (
     <>
