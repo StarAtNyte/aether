@@ -133,6 +133,8 @@ export function backdropMountains(c: ThemeCtx, count: number, color: string, sno
 
 /** Options of {@link naturalGround}. */
 export interface NaturalGroundOptions {
+  /** Polylines of (x, z) kept free of trees, rocks and scrub (trails laid after the ground). */
+  keepFree?: ReadonlyArray<ReadonlyArray<readonly [number, number]>>;
   /** Radius of the level plot round the theme's origin (activities that need flat ground stand in it). */
   pad: number;
   /** Relief of the hills that close the horizon in metres (default 48). */
@@ -209,9 +211,16 @@ export function naturalGround(c: ThemeCtx, o: NaturalGroundOptions): boolean {
       b.keepClear(x, z, st.half + 0.6);
     }
   }
+  for (const line of o.keepFree ?? []) {
+    for (let i = 0; i + 1 < line.length; i++) {
+      const [a, c] = [line[i] as readonly [number, number], line[i + 1] as readonly [number, number]];
+      const n = Math.max(1, Math.ceil(Math.hypot(c[0] - a[0], c[1] - a[1]) / 2));
+      for (let k = 0; k <= n; k++) b.reserve(a[0] + ((c[0] - a[0]) * k) / n, a[1] + ((c[1] - a[1]) * k) / n, 2.4);
+    }
+  }
   const woods = o.woods ?? {};
   const wooded = (minD: number) => (x: number, z: number): boolean => Math.hypot(x - c.x, z - c.z) > minD && land.slope(x, z) < 30 && (!b.stream || Math.abs(z - b.stream.z(x)) > b.stream.half + 3) && (!o.lake || Math.hypot(x - o.lake.x, z - o.lake.z) > o.lake.radius * 1.3 + 2);
-  const half = size / 2 - 20;
+  const half = size / 2 - Math.min(20, size * 0.06);
   const spruce: Record<string, Json> = { height: o.conifer?.height ?? 14, detail: 0.5, color: o.conifer?.color ?? '#2f4f32', ...(o.snow ? { snow: 0.8 } : {}) };
   if ((woods.conifers ?? 150) > 0) grove(b, 'woods-spruce', 'Spruce woods', 'tree-spruce', spruce, landPoints(b, woods.conifers ?? 150, half, wooded(o.pad + 12), 6, land.h), [0.75, 1.35], land.id, size);
   if ((woods.broadleaf ?? 110) > 0) grove(b, 'woods-oak', 'Broadleaf woods', 'tree-broadleaf', { height: 10, detail: 0.5, color: o.broadleafColor ?? '#4f7a34', variant: 1, ...(o.bare ? { leaf: 0 } : {}) }, landPoints(b, woods.broadleaf ?? 110, half, wooded(o.pad + 8), 7, land.h), [0.8, 1.3], land.id, size);

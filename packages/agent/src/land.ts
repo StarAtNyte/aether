@@ -13,7 +13,7 @@
  * Deterministic for its input. Everything it adds is tagged `land`; positions are measured from the same heightfield
  * physics uses, so `place_level_items` and `query_level` agree with it.
  */
-import { Color, hashString, rng, type Json, type PatchInput, type WorldDoc } from '@aether/core';
+import { Color, hashString, rng, streamCourse, type Json, type PatchInput, type WorldDoc } from '@aether/core';
 import { getBuiltinGenerator, isLibraryGenerator } from '@aether/procgen';
 import { z } from 'zod';
 import { Builder, r2, type Mood } from './providers/mock/builder';
@@ -29,10 +29,11 @@ export const LandInput = z.discriminatedUnion('op', [
   z.object({
     op: z.literal('land'),
     kind: z.enum(['meadow', 'forest', 'snow', 'canyon']).default('meadow'),
-    size: z.number().min(120).max(800).default(420),
-    relief: z.number().min(0).max(120).default(48),
+    size: z.number().min(60).max(800).optional(),
+    relief: z.number().min(0).max(120).optional(),
     color: Color.optional(),
     plot: z.object({ x: XZ.default(0), z: XZ.default(0), radius: z.number().min(4).max(200).default(20) }).default({ x: 0, z: 0, radius: 20 }),
+    trails: z.number().int().min(0).max(4).optional(),
     stream: z.object({ z: XZ, half: z.number().min(1).max(12).default(2.5), bend: z.number().min(0).max(30).default(5), depth: z.number().min(0.4).max(4).default(1.4) }).optional(),
     lake: z.object({ x: XZ, z: XZ, radius: z.number().min(3).max(120), depth: z.number().min(0.5).max(10).default(2.5) }).optional(),
     woods: z.object({ conifers: z.number().int().min(0).max(400), broadleaf: z.number().int().min(0).max(400), birch: z.number().int().min(0).max(200), scrub: z.number().int().min(0).max(600), boulders: z.number().int().min(0).max(200) }).partial().optional(),
@@ -212,6 +213,57 @@ function tagLand(patches: PatchInput[]): PatchInput[] {
   return patches;
 }
 
+/**
+ * Edge length of a land. Unless the model states one, the land follows the plot: about seven plot radii (a 20 m camp
+ * clearing sits in 140 m of land, a 60 m village green in 420 m) between 140 and 520 m, 420 m for a canyon.
+ */
+export function landSize(input: Extract<LandInput, { op: 'land' }>): number {
+  if (input.size !== undefined) return input.size;
+  if (input.kind === 'canyon') return 420;
+  return Math.min(520, Math.max(140, Math.round((input.plot.radius * 7) / 10) * 10));
+}
+
+/** Tree and rock counts for a forest of `size` metres: per hectare, not a fixed number, so a small land is a thick forest. */
+export function forestCounts(size: number): { conifers: number; broadleaf: number; birch: number; scrub: number; boulders: number } {
+  const ha = (size * size) / 10_000;
+  const n = (perHa: number, cap: number): number => Math.min(cap, Math.round(perHa * ha));
+  return { conifers: n(34, 400), broadleaf: n(12, 200), birch: n(5, 100), scrub: n(60, 600), boulders: n(8, 200) };
+}
+
+/** Where the trails go: winding polylines from the plot edge towards the land edge, each at its own bearing, clear of the stream and the lake. */
+function planTrails(input: Extract<LandInput, { op: 'land' }>, size: number, seed: number, count: number): Array<Array<[number, number]>> {
+  const random = rng(seed ^ 0x7a11);
+  const { x: px, z: pz, radius } = input.plot;
+  const reach = size * 0.4;
+  const st = input.stream;
+  const blocked = (x: number, z: number): boolean =>
+    (st !== undefined && Math.abs(z - streamCourse(x, st.z, st.bend)) < st.half + 4) ||
+    (input.lake !== undefined && Math.hypot(x - input.lake.x, z - input.lake.z) < input.lake.radius + 4);
+  const lines: Array<Array<[number, number]>> = [];
+  const used: number[] = [];
+  const start = random() * Math.PI * 2;
+  for (let k = 0; k < 24 && lines.length < count; k++) {
+    const a = start + k * 2.399;
+    if (used.some((u) => Math.abs(Math.atan2(Math.sin(a - u), Math.cos(a - u))) < 1.0)) continue;
+    const pts: Array<[number, number]> = [];
+    const wob = (random() - 0.5) * 0.9;
+    let bad = false;
+    const steps = 6;
+    for (let i = 0; i <= steps; i++) {
+      const d = radius * 0.8 + (reach - radius * 0.8) * (i / steps);
+      const ang = a + wob * Math.sin((i / steps) * Math.PI * 1.5);
+      const x = r2(px + Math.cos(ang) * d);
+      const z = r2(pz + Math.sin(ang) * d);
+      if (blocked(x, z)) bad = true;
+      pts.push([x, z]);
+    }
+    if (bad) continue;
+    used.push(a);
+    lines.push(pts);
+  }
+  return lines;
+}
+
 /** The patches for one `shape_land` call against `world`, and a summary for the model. */
 export function landPatches(world: WorldDoc, input: LandInput): { patches: PatchInput[]; summary: string; refused?: boolean } {
   const seed = hashString(JSON.stringify(input)) >>> 0;
@@ -256,39 +308,43 @@ export function landPatches(world: WorldDoc, input: LandInput): { patches: Patch
   // A new land replaces the one built before (its terrain, water, woods and cover).
   const removals: PatchInput[] = Object.values(world.entities).filter((e) => !e.parent && e.tags.includes('land') && !e.tags.includes('path') && !e.tags.includes('hill')).map((e) => ({ op: 'remove', id: e.id, recursive: true }));
   const removed = new Set(removals.map((p) => (p.op === 'remove' ? p.id : '')));
+  const size = landSize(input);
+  const relief = input.relief ?? Math.round(Math.min(48, Math.max(10, size * 0.12)));
   const b = new Builder(seed, ids.filter((id) => !removed.has(id)), CALM);
   b.realisticNature = true;
   const color = input.color ?? KIND_COLOR[input.kind];
   b.env({ ground: { material: { preset: 'grass', color }, size: 400 } });
   const c: ThemeCtx = { b, x: input.plot.x, z: input.plot.z, clear: 0, primary: true };
   let terrain = '';
+  const trailCount = input.kind === 'canyon' ? 0 : input.trails ?? (input.kind === 'forest' ? 2 : 0);
+  const trailPlan = trailCount > 0 ? planTrails(input, size, seed, trailCount) : [];
   if (input.kind === 'canyon') {
-    const params: Record<string, Json> = { size: input.size, height: Math.max(12, input.relief), resolution: 384, roughness: 0.55, color, variant: 3 };
+    const params: Record<string, Json> = { size: size, height: Math.max(12, relief), resolution: 384, roughness: 0.55, color, variant: 3 };
     const tseed = seed % 100_000;
     b.env({ ground: null });
     terrain = b.add({ id: b.id('canyon'), name: 'Canyon', shape: { kind: 'procedural', generator: 'terrain', params, seed: tseed }, transform: { position: [0, 0, 0] }, physics: { body: 'static', friction: 0.9 }, tags: ['terrain'] });
-    b.ground = { h: terrainHeight(params, tseed, input.size), surface: terrain };
+    b.ground = { h: terrainHeight(params, tseed, size), surface: terrain };
     const w = input.woods ?? {};
     const random = rng(seed);
     for (let k = 0; k < (w.boulders ?? 40); k++) {
-      const z = r2((random() - 0.5) * input.size * 0.8);
-      const x = r2((random() - 0.5) * input.size * 0.12);
+      const z = r2((random() - 0.5) * size * 0.8);
+      const x = r2((random() - 0.5) * size * 0.12);
       b.gen('boulder', 'boulder', { size: r2(0.8 + random() * 2.6), lichen: 0, color: '#c49a72', variant: 1 }, [x, 0, z], { yaw: r2(random() * 360), physics: 'static' });
     }
     for (let k = 0; k < Math.min(120, (w.scrub ?? 30)); k++) {
-      const z = r2((random() - 0.5) * input.size * 0.8);
-      const x = r2((random() - 0.5) * input.size * 0.12);
+      const z = r2((random() - 0.5) * size * 0.8);
+      const x = r2((random() - 0.5) * size * 0.12);
       b.gen('cactus', 'cactus', { height: r2(3 + random() * 4), arms: Math.floor(random() * 4) }, [x, 0, z], { yaw: r2(random() * 360), physics: 'static' });
     }
   } else {
     naturalGround(c, {
       pad: input.plot.radius,
-      relief: input.relief,
-      size: input.size,
+      relief: relief,
+      size: size,
       color,
       ...(input.stream ? { stream: input.stream } : {}),
       ...(input.lake ? { lake: input.lake } : {}),
-      ...(input.woods ? { woods: input.woods } : input.kind === 'forest' ? { woods: { conifers: 220, broadleaf: 70, birch: 30, scrub: 260, boulders: 50 } } : {}),
+      ...(input.woods ? { woods: input.woods } : input.kind === 'forest' ? { woods: forestCounts(size) } : {}),
       ...(input.kind === 'snow' ? { snow: true } : {}),
     });
     terrain = b.ground?.surface ?? '';
@@ -302,12 +358,15 @@ export function landPatches(world: WorldDoc, input: LandInput): { patches: Patch
     scatterBelt(c, 'meadow', 'meadow-grass', { color: grass, size: 0.55 }, Math.round(520 * k), inner, outer, { scaleRange: [0.6, 1.4], minSpacing: 0.3 });
     for (const f of cov.flowers ?? []) scatterBelt(c, 'wildflowers', 'wildflowers', { color: f, size: 0.5 }, Math.round(60 * k), inner + 2, outer, { minSpacing: 0.5 });
   }
+  const trails = trailPlan.map((l) => l[l.length - 1] as [number, number]);
+  for (const pts of trailPlan) groundRibbon(b, { id: b.id('trail'), name: 'Trail', paths: [pts], height: (x, z) => b.groundAt(x, z), width: 1.6, lift: 0.045, centre: SURFACE_COLOR['soil'] as string, edge: SURFACE_COLOR['soil'] as string, material: { finish: 'soil', roughness: 0.95 }, tags: ['path', 'trail'], taper: true });
   const patches = [...removals, ...tagLand(b.build())];
   const stream = b.stream;
   const parts = [
-    `Built the land: ${input.kind === 'canyon' ? 'a sandstone canyon' : 'a terrain'} ${input.size} m across with ${input.relief} m of relief, the level ${input.kind === 'canyon' ? 'canyon floor at y = 0 running along Z' : `plot of radius ${input.plot.radius} m at (${input.plot.x}, ${input.plot.z}) at y = 0`} (terrain "${terrain}", the flat ground plane is off).`,
+    `Built the land: ${input.kind === 'canyon' ? 'a sandstone canyon' : 'a terrain'} ${size} m across with ${relief} m of relief, the level ${input.kind === 'canyon' ? 'canyon floor at y = 0 running along Z' : `plot of radius ${input.plot.radius} m at (${input.plot.x}, ${input.plot.z}) at y = 0`} (terrain "${terrain}", the flat ground plane is off).`,
     stream ? `A stream runs along X at z ≈ ${input.stream?.z ?? 0} (bends of ±${input.stream?.bend ?? 5} m), ${(stream.half * 2).toFixed(1)} m wide, water surface at y = ${stream.waterY}: cross it with a bridge generator (it spans X, so yaw 90) or stepping stones.` : '',
     `Outside the plot the ground rises: place things with place_level_items or read heights with query_level {op:"ground"}; scatter layers can set onSurface "${terrain}". Lay trails and roads with shape_land {op:"path"}.`,
+    trails.length > 0 ? `${trails.length} soil trail${trails.length === 1 ? '' : 's'} already leave the plot edge towards the land edge (${trails.map((t) => `to (${t[0]}, ${t[1]})`).join(', ')}); add camp paths and lanes with shape_land {op:"path"}.` : '',
     removals.length > 0 ? `Replaced the previous land (${removals.length} entities).` : '',
   ];
   return { patches, summary: parts.filter(Boolean).join(' ') };

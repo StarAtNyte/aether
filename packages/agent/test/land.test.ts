@@ -1,6 +1,6 @@
 import { applyPatches, createWorld, streamCourse, type WorldDoc } from '@aether/core';
 import { describe, expect, it } from 'vitest';
-import { landPatches, LandInput, worldGround } from '../src/land';
+import { forestCounts, landPatches, LandInput, landSize, worldGround } from '../src/land';
 import { executeTool, type ExecutorContext } from '../src/executor';
 import { realisticWorld } from '../src/providers/mock/realistic';
 import { MemoryHost } from './helpers';
@@ -13,6 +13,31 @@ function apply(world: WorldDoc, input: unknown): WorldDoc {
 }
 
 const roots = (w: WorldDoc) => Object.values(w.entities).filter((e) => !e.parent);
+
+describe('shape_land sizing', () => {
+  const parse = (i: unknown) => LandInput.parse(i) as Extract<LandInput, { op: 'land' }>;
+  it('sizes the land to the plot unless a size is stated', () => {
+    expect(landSize(parse({ op: 'land', kind: 'forest', plot: { radius: 18 } }))).toBe(140);
+    expect(landSize(parse({ op: 'land', kind: 'meadow', plot: { radius: 60 } }))).toBe(420);
+    expect(landSize(parse({ op: 'land', kind: 'meadow', plot: { radius: 200 } }))).toBe(520);
+    expect(landSize(parse({ op: 'land', kind: 'forest', size: 90 }))).toBe(90);
+  });
+  it('a camp clearing is a small land with a thick forest and trails that keep out of the stream', () => {
+    const w = apply(createWorld(), { op: 'land', kind: 'forest', plot: { x: 0, z: 0, radius: 16 }, stream: { z: -30, half: 2 } });
+    const terrain = roots(w).find((e) => e.shape.kind === 'procedural' && e.shape.generator === 'terrain');
+    const size = (terrain?.shape as unknown as { params: { size: number } }).params.size;
+    expect(size).toBeLessThanOrEqual(150);
+    const trails = roots(w).filter((e) => e.tags.includes('trail'));
+    expect(trails.length).toBeGreaterThanOrEqual(1);
+    const trees = roots(w).filter((e) => e.shape.kind === 'scatter' && e.shape.of.kind === 'procedural' && e.shape.of.generator === 'tree-spruce');
+    const n = trees.reduce((s, e) => s + (e.shape.kind === 'scatter' ? e.shape.count : 0), 0);
+    expect(n / ((size * size) / 10_000)).toBeGreaterThan(20);
+  });
+  it('forest counts follow the area', () => {
+    expect(forestCounts(140).conifers).toBeLessThan(forestCounts(420).conifers);
+    expect(forestCounts(800).conifers).toBeLessThanOrEqual(400);
+  });
+});
 
 describe('shape_land', () => {
   it('builds a terrain with a level plot, a stream with water, woods and ground cover, and turns the flat plane off', () => {
