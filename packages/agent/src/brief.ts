@@ -51,7 +51,7 @@ export const BriefSchema = z.object({
   elements: z.array(BriefElement).min(1).max(60),
   materials: z.array(short(80)).max(14),
   lighting: short(300),
-  richness: z.object({ kinds: z.number().int().min(1).max(400), pieces: z.number().int().min(1).max(20000), note: z.string().trim().max(200).optional(), /** How the counts follow from the floor area, the wall length and the spacing of the pieces. */ basis: z.string().trim().max(400).optional() }),
+  richness: z.object({ kinds: z.number().int().min(1).max(400), pieces: z.number().int().min(1).max(20000), note: z.string().trim().max(200).optional(), /** How the counts follow from the floor area, the wall length and the spacing of the pieces. */ basis: z.string().trim().max(900).optional() }),
   reference: z.object({ generate: z.boolean(), reason: short(240), prompt: z.string().trim().max(600).optional() }),
 });
 export type Brief = z.infer<typeof BriefSchema>;

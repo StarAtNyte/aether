@@ -50,6 +50,8 @@ export async function* briefStage(a: BriefStageArgs): AsyncGenerator<AgentEvent,
       res = await raceAbort(a.provider.complete({ role: 'planner', system: briefSystem({ ...(a.webSearch ? { webSearch: true } : {}) }), messages, tools: [BRIEF_TOOL], maxTokens: Math.min(a.maxTokens, 6000) }, a.signal), a.signal);
     } catch (e) {
       if (a.signal?.aborted) throw e;
+      // One more try: a provider that fails once (a dropped connection, a stray tool call from a CLI) usually answers the second time.
+      if (attempt === 0) continue;
       yield { type: 'step', tool: BRIEF_TOOL_NAME, label: `Brief unavailable (${errorMessage(e).slice(0, 80)})`, ok: false };
       return null;
     }
