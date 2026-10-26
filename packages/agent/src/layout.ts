@@ -252,16 +252,18 @@ export function tierPatches(world: WorldDoc, input: TierInput, seed: number, kno
     tags: ['seats'],
   });
   let lights = 0;
-  if (input.stepLights && aisleX.length > 0) {
+  if (input.stepLights && (aisleX.length > 0 || input.margin >= 0.3)) {
     const pts: Array<[number, number, number]> = [];
+    // Along every aisle and, where there is a margin, along both outer edges of the block: the way a hall is marked in the dark.
+    const lineX = [...aisleX, ...(input.margin >= 0.3 ? [-(seatsWidth / 2 + 0.12), seatsWidth / 2 + 0.12] : [])];
     for (let k = 1; k < input.rows; k++) {
       const zRiser = depthTotal / 2 - d / 2 - k * d + d / 2;
-      for (const ax of aisleX) pts.push([r2(ax), r2((heights[k - 1] as number) + 0.07), r2(zRiser + 0.002)]);
+      for (const ax of lineX) pts.push([r2(ax), r2((heights[k - 1] as number) + 0.07), r2(zRiser + 0.002)]);
     }
     if (pts.length > 0) {
       b.add({
         id: b.id('step-lights'),
-        name: `${pts.length} aisle step lights`,
+        name: `${pts.length} aisle and edge step lights`,
         transform: { position: [r2(centre[0]), 0, r2(centre[1])], rotation: rot },
         shape: { kind: 'scatter', of: { kind: 'procedural', generator: 'furn-step-light', params: {} }, count: pts.length, area: [1, 1], seed: seed % 100_000, scaleRange: [1, 1], randomYaw: false, points: pts },
         tags: ['step-lights'],
@@ -325,7 +327,20 @@ export interface AlongInput {
   offset: number;
   /** Real lights beside the pieces (an instanced piece lights nothing by itself): one for every `every`-th piece, at most 24. */
   light?: LightPlacement | undefined;
+  /** A small piece beside every piece, in the same call: wall labels next to paintings, a bollard by each case. */
+  labels?: LabelPlacement | undefined;
   name?: string | undefined;
+}
+
+export interface LabelPlacement {
+  of: string;
+  params?: Record<string, Json> | undefined;
+  /** Height of the label's origin above the floor (m). */
+  y: number;
+  /** Which side of each piece it goes, looking at the wall from the room. */
+  side: 'right' | 'left';
+  /** Clear space between the piece and the label (m). */
+  gap: number;
 }
 
 export interface LightPlacement {
@@ -361,6 +376,10 @@ export function alongPatches(world: WorldDoc, input: AlongInput, seed: number, k
   const count = input.count ?? Math.max(1, Math.floor(usable / (input.spacing ?? width + 0.5)));
   if (count > 400) return { patches: [], refused: true, summary: `shape_land ${label} refused: ${count} pieces on one line (limit 400).` };
   const pitch = input.count !== undefined || input.spacing === undefined ? usable / count : input.spacing;
+  // A piece that joins the next one (a rope between posts) gets the pitch as its span unless the call set one.
+  const hasSpan = !!furnitureById(gen)?.params['span'];
+  const spanNote = hasSpan && (input.params ?? {})['span'] === undefined && !variants.some((v) => v['span'] !== undefined);
+  if (spanNote) for (let i = 0; i < variants.length; i++) variants[i] = { ...(variants[i] as Record<string, Json>), span: r2(pitch) };
   const run = pitch * count;
   const start = input.inset + (usable - run) / 2 + pitch / 2;
   // Looks to the left of the way from `from` to `to` unless told otherwise (walking east, left is north).
@@ -399,6 +418,33 @@ export function alongPatches(world: WorldDoc, input: AlongInput, seed: number, k
       }),
     );
   });
+  let labelled = 0;
+  const labelGen = input.labels ? resolveGenerator(input.labels.of, known) : undefined;
+  if (input.labels && !labelGen) return { patches: [], refused: true, summary: `shape_land ${label} refused: label piece "${input.labels.of}" is not a generator (furn-plaque is the wall label).` };
+  if (input.labels && labelGen) {
+    const lsize = pieceSize(labelGen, input.labels.params);
+    const lw = lsize ? lsize[0] : 0.2;
+    // Seen from the room (looking at the wall, against the way the pieces face) "right" is the direction (nz, -nx).
+    const sign = (input.labels.side === 'right' ? 1 : -1) * (nz * ux - nx * uz >= 0 ? 1 : -1);
+    const shift = (width / 2 + lw / 2 + input.labels.gap) * sign;
+    const pts: Array<[number, number, number]> = [];
+    for (const t of slots) {
+      const [lx, lz] = toLocal(origin, yaw, input.from[0] + ux * (t + shift) + nx * input.offset, input.from[1] + uz * (t + shift) + nz * input.offset);
+      pts.push([r2(lx), input.labels.y, r2(lz)]);
+    }
+    if (pts.length > 0) {
+      ids.push(
+        b.add({
+          id: b.id(input.name ? `${input.name}-labels` : `${label}-labels`),
+          name: `${pts.length} x ${labelGen.replace(/^furn-/, '')} beside the pieces`,
+          transform: { position: [r2(origin[0]), 0, r2(origin[1])], rotation: [0, yaw, 0] },
+          shape: { kind: 'scatter', of: { kind: 'procedural', generator: labelGen, params: input.labels.params ?? {} }, count: pts.length, area: [1, 1], seed: seed % 100_000, scaleRange: [1, 1], randomYaw: false, points: pts },
+          tags: [input.mode, 'labels'],
+        }),
+      );
+      labelled = pts.length;
+    }
+  }
   let lit = 0;
   const lightIds: string[] = [];
   if (input.light) {
@@ -423,7 +469,7 @@ export function alongPatches(world: WorldDoc, input: AlongInput, seed: number, k
   const where = input.mode === 'wall' ? `hung on the wall from (${input.from[0]}, ${input.from[1]}) to (${input.to[0]}, ${input.to[1]}), bottom edge ${input.y} m above the floor` : `along (${input.from[0]}, ${input.from[1]}) to (${input.to[0]}, ${input.to[1]}) at y ${input.y}`;
   return {
     patches: b.build(),
-    summary: `Laid ${slots.length} x ${gen} ${where}, every ${pitch.toFixed(2)} m, all looking ${input.facing !== undefined ? (typeof input.facing === 'number' ? `yaw ${input.facing}` : input.facing) : 'to the left of the line'}${ids.length > 1 ? `, in ${ids.length} instanced entities (variants taken in turn)` : ', one instanced entity'}${dropped > 0 ? `; ${dropped} slot${dropped > 1 ? 's' : ''} skipped over the gaps` : ''}${lit > 0 ? `; ${lit} real ${input.light?.type ?? 'point'} lights beside them` : ''}. Entities: ${[...ids, ...lightIds.slice(0, 3)].join(', ')}${lightIds.length > 3 ? ', ...' : ''}. If the pieces face into the wall, send it again with facing set to the way they should look.`,
+    summary: `Laid ${slots.length} x ${gen} ${where}, every ${pitch.toFixed(2)} m, all looking ${input.facing !== undefined ? (typeof input.facing === 'number' ? `yaw ${input.facing}` : input.facing) : 'to the left of the line'}${ids.length > 1 ? `, in ${ids.length} instanced entities (variants taken in turn)` : ', one instanced entity'}${dropped > 0 ? `; ${dropped} slot${dropped > 1 ? 's' : ''} skipped over the gaps` : ''}${lit > 0 ? `; ${lit} real ${input.light?.type ?? 'point'} lights beside them` : ''}${labelled > 0 ? `; ${labelled} labels beside them` : ''}${spanNote ? `; each post's rope spans ${pitch.toFixed(2)} m to the next` : ''}. Entities: ${[...ids, ...lightIds.slice(0, 3)].join(', ')}${lightIds.length > 3 ? ', ...' : ''}. If the pieces face into the wall, send it again with facing set to the way they should look.`,
   };
 }
 
@@ -447,6 +493,10 @@ export interface PerimeterInput {
   y: number;
   /** "in": seats look at the table; "out": away from it. */
   facing: 'in' | 'out';
+  /** A cover (plate, glass, cutlery) on the table at every seat, in the same call. `y` is the table-top height above the floor. */
+  settings?: { of: string; params?: Record<string, Json> | undefined; y?: number | undefined; inset: number } | undefined;
+  /** One piece in the middle of every table (a candle, a vase, a menu stand). */
+  centre?: { of: string; params?: Record<string, Json> | undefined; y?: number | undefined } | undefined;
   name?: string | undefined;
 }
 
@@ -465,7 +515,7 @@ export function perimeterPatches(world: WorldDoc, input: PerimeterInput, seed: n
   const seatDepth = seat ? seat[2] : 0.5;
   const seatWidth = seat ? seat[0] : 0.46;
   // Seats (distance from the centre, yaw) around one table, in the table's frame.
-  const local: Array<{ x: number; z: number; yaw: number }> = [];
+  const local: Array<{ x: number; z: number; yaw: number; sx: number; sz: number }> = [];
   const inward = input.facing === 'in';
   if (input.shape === 'round') {
     const r = Math.min(tw, td) / 2 + input.gap;
@@ -473,18 +523,20 @@ export function perimeterPatches(world: WorldDoc, input: PerimeterInput, seed: n
       const a = (k / input.count) * Math.PI * 2;
       const x = Math.sin(a) * r;
       const z = Math.cos(a) * r;
-      local.push({ x, z, yaw: yawOf(inward ? -x : x, inward ? -z : z) });
+      const k2 = Math.max(0.05, r - input.gap - (input.settings?.inset ?? 0.24)) / r;
+      local.push({ x, z, yaw: yawOf(inward ? -x : x, inward ? -z : z), sx: x * k2, sz: z * k2 });
     }
   } else {
     const edge = (n: number, span: number): number[] => Array.from({ length: n }, (_, i) => -span / 2 + (span * (i + 0.5)) / n);
+    const ins = input.settings?.inset ?? 0.24;
     for (const x of edge(input.long, tw)) {
-      local.push({ x, z: td / 2 + input.gap, yaw: inward ? 180 : 0 });
-      local.push({ x, z: -td / 2 - input.gap, yaw: inward ? 0 : 180 });
+      local.push({ x, z: td / 2 + input.gap, yaw: inward ? 180 : 0, sx: x, sz: td / 2 - ins });
+      local.push({ x, z: -td / 2 - input.gap, yaw: inward ? 0 : 180, sx: x, sz: -td / 2 + ins });
     }
     for (let i = 0; i < input.ends; i++) {
       const z = input.ends === 1 ? 0 : edge(input.ends, td)[i] as number;
-      local.push({ x: tw / 2 + input.gap, z, yaw: inward ? 270 : 90 });
-      local.push({ x: -tw / 2 - input.gap, z, yaw: inward ? 90 : 270 });
+      local.push({ x: tw / 2 + input.gap, z, yaw: inward ? 270 : 90, sx: tw / 2 - ins, sz: z });
+      local.push({ x: -tw / 2 - input.gap, z, yaw: inward ? 90 : 270, sx: -tw / 2 + ins, sz: z });
     }
   }
   const perTable = local.length;
@@ -536,8 +588,134 @@ export function perimeterPatches(world: WorldDoc, input: PerimeterInput, seed: n
     });
     tables = ` and ${input.at.length} x ${tableGen} ("${id}")`;
   }
+  let covers = '';
+  if (input.settings) {
+    const sg = resolveGenerator(input.settings.of, known);
+    if (!sg) return { patches: [], refused: true, summary: `shape_land perimeter refused: settings piece "${input.settings.of}" is not a generator (furn-place-setting is one cover: plate, glasses, cutlery).` };
+    const top = (input.table?.y ?? input.y) + (input.settings.y ?? (tsize ? tsize[1] : 0.75));
+    const byY = new Map<number, Array<[number, number, number]>>();
+    for (const [cx, cz] of input.at) {
+      for (const sl of local) {
+        const tyaw = input.table?.yaw ?? 0;
+        const c = Math.cos((tyaw * Math.PI) / 180);
+        const sn = Math.sin((tyaw * Math.PI) / 180);
+        const wx = cx + sl.sx * c + sl.sz * sn;
+        const wz = cz - sl.sx * sn + sl.sz * c;
+        const yaw = quant((inward ? sl.yaw : sl.yaw + 180) + tyaw);
+        const [lx, lz] = toLocal([0, 0], yaw, wx, wz);
+        (byY.get(yaw) ?? byY.set(yaw, []).get(yaw) as Array<[number, number, number]>).push([r2(lx), r2(top), r2(lz)]);
+      }
+    }
+    let n = 0;
+    for (const [yaw, pts] of [...byY.entries()].sort((a, c) => a[0] - c[0])) {
+      b.add({
+        id: b.id(input.name ? `${input.name}-settings` : 'table-settings'),
+        name: `${pts.length} x ${sg.replace(/^furn-/, '')}`,
+        transform: { position: [0, 0, 0], rotation: [0, yaw, 0] },
+        shape: { kind: 'scatter', of: { kind: 'procedural', generator: sg, params: input.settings.params ?? {} }, count: pts.length, area: [1, 1], seed: seed % 100_000, scaleRange: [1, 1], randomYaw: false, points: pts },
+        tags: ['settings'],
+      });
+      n += pts.length;
+    }
+    covers += `, ${n} x ${sg} (one cover at every seat, on the table top at ${top.toFixed(2)} m)`;
+  }
+  if (input.centre) {
+    const cg = resolveGenerator(input.centre.of, known);
+    if (!cg) return { patches: [], refused: true, summary: `shape_land perimeter refused: centre piece "${input.centre.of}" is not a generator (furn-candle, furn-planter, furn-vitrine...).` };
+    const top = (input.table?.y ?? input.y) + (input.centre.y ?? (tsize ? tsize[1] : 0.75));
+    const tyaw = input.table?.yaw ?? 0;
+    const pts = input.at.map(([x, z]) => {
+      const [lx, lz] = toLocal([0, 0], tyaw, x, z);
+      return [r2(lx), r2(top), r2(lz)] as [number, number, number];
+    });
+    b.add({
+      id: b.id(input.name ? `${input.name}-centre` : 'table-centres'),
+      name: `${pts.length} x ${cg.replace(/^furn-/, '')} on the tables`,
+      transform: { position: [0, 0, 0], rotation: [0, tyaw, 0] },
+      shape: { kind: 'scatter', of: { kind: 'procedural', generator: cg, params: input.centre.params ?? {} }, count: pts.length, area: [1, 1], seed: seed % 100_000, scaleRange: [1, 1], randomYaw: false, points: pts },
+      tags: ['centres'],
+    });
+    covers += `, ${pts.length} x ${cg} in the middle of the tables`;
+  }
   return {
     patches: b.build(),
-    summary: `Seated ${total} x ${gen} (${perTable} at each of ${input.at.length} ${input.table ? 'tables' : 'centres'}${input.shape === 'round' ? `, round, ${input.count} each` : `, ${input.long} on each long side${input.ends > 0 ? ` and ${input.ends} on each end` : ''}`}, ${inward ? 'looking at the table' : 'looking away'}) in ${ids.length} instanced entit${ids.length === 1 ? 'y' : 'ies'}${tables}. Table footprint ${tw.toFixed(2)} x ${td.toFixed(2)} m, seat ${seatWidth.toFixed(2)} wide: keep tables at least ${(Math.max(tw, td) + 2 * (seatDepth + input.gap) + 0.5).toFixed(1)} m apart centre to centre so seats and walkways stay clear.`,
+    summary: `Seated ${total} x ${gen} (${perTable} at each of ${input.at.length} ${input.table ? 'tables' : 'centres'}${input.shape === 'round' ? `, round, ${input.count} each` : `, ${input.long} on each long side${input.ends > 0 ? ` and ${input.ends} on each end` : ''}`}, ${inward ? 'looking at the table' : 'looking away'}) in ${ids.length} instanced entit${ids.length === 1 ? 'y' : 'ies'}${tables}${covers}. Table footprint ${tw.toFixed(2)} x ${td.toFixed(2)} m, seat ${seatWidth.toFixed(2)} wide: keep tables at least ${(Math.max(tw, td) + 2 * (seatDepth + input.gap) + 0.5).toFixed(1)} m apart centre to centre so seats and walkways stay clear.`,
   };
+}
+
+
+export interface AroundInput {
+  /** The room as [x0, z0, x1, z1] (the inner faces of its walls, or any rectangle). */
+  rect: [number, number, number, number];
+  /** `wall` hangs pieces on the walls; `along` stands them in a line inside each wall (columns, planters, stanchions). */
+  mode: 'wall' | 'along';
+  of: string;
+  params?: Record<string, Json> | undefined;
+  variants?: Array<Record<string, Json>> | undefined;
+  /** Metres between pieces (centre to centre), or a count per side. */
+  spacing?: number | undefined;
+  count?: number | undefined;
+  y: number;
+  inset: number;
+  /** Distance the pieces stand off the line, into the room (m). */
+  offset: number;
+  sides: Array<'north' | 'east' | 'south' | 'west'>;
+  /** Stretches (metres from the start of that side, clockwise from the north-west corner) that stay empty: doors, windows. */
+  gaps?: Partial<Record<'north' | 'east' | 'south' | 'west', Array<[number, number]>>> | undefined;
+  light?: LightPlacement | undefined;
+  labels?: LabelPlacement | undefined;
+  name?: string | undefined;
+}
+
+/**
+ * `around`: the same pieces on every wall of a rectangular room in ONE call, all facing into the room: columns or pilasters
+ * round a hall, sconces or panels on all four walls, planters along a forecourt, stanchions round a gallery. Each side is one
+ * instanced entity (or one per variant).
+ */
+export function aroundPatches(world: WorldDoc, input: AroundInput, seed: number, known: (id: string) => boolean): LayoutResult {
+  const [x0, z0, x1, z1] = input.rect;
+  if (!(x1 - x0 > 0.5 && z1 - z0 > 0.5)) return { patches: [], refused: true, summary: 'shape_land around refused: rect must be [x0, z0, x1, z1] with x1 > x0 and z1 > z0 (the inner faces of the room).' };
+  const sides: Array<{ id: 'north' | 'east' | 'south' | 'west'; from: [number, number]; to: [number, number]; facing: Facing }> = [
+    { id: 'north', from: [x0, z0], to: [x1, z0], facing: 'south' },
+    { id: 'east', from: [x1, z0], to: [x1, z1], facing: 'west' },
+    { id: 'south', from: [x1, z1], to: [x0, z1], facing: 'north' },
+    { id: 'west', from: [x0, z1], to: [x0, z0], facing: 'east' },
+  ];
+  const patches: PatchInput[] = [];
+  const summaries: string[] = [];
+  const used = world;
+  for (const side of sides) {
+    if (!input.sides.includes(side.id)) continue;
+    const r = alongPatches(
+      used,
+      {
+        mode: input.mode,
+        from: side.from,
+        to: side.to,
+        of: input.of,
+        params: input.params,
+        variants: input.variants,
+        count: input.count,
+        spacing: input.spacing,
+        y: input.y,
+        facing: side.facing,
+        inset: input.inset,
+        gaps: input.gaps?.[side.id],
+        offset: input.offset,
+        light: input.light,
+        labels: input.labels,
+        name: `${input.name ?? `around-${(resolveGenerator(input.of, known) ?? input.of).replace(/^furn-/, '')}`}-${side.id}`,
+      },
+      seed + patches.length,
+      known,
+    );
+    if (r.refused) {
+      summaries.push(`${side.id}: ${r.summary.replace(/^shape_land (wall|along) refused: /, '')}`);
+      continue;
+    }
+    patches.push(...r.patches);
+    summaries.push(`${side.id}: ${r.summary.split('. Entities:')[0]?.replace(/^Laid /, '')}`);
+  }
+  if (patches.length === 0) return { patches: [], refused: true, summary: `shape_land around refused: nothing fits on ${input.sides.join(', ')}. ${summaries.join('; ')}` };
+  return { patches, summary: `Placed ${input.of} on ${summaries.length} side${summaries.length > 1 ? 's' : ''} of the room (${x0}, ${z0}) to (${x1}, ${z1}), all facing into the room. ${summaries.join('. ')}.` };
 }

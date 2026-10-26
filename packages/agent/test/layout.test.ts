@@ -178,4 +178,61 @@ describe('shape_land wall, along and perimeter', () => {
     const r = landPatches(createWorld(), LandInput.parse({ op: 'wall', from: [0, 0], to: [4, 0], of: 'not-a-thing' }));
     expect(r.refused).toBe(true);
   });
+
+  it('puts a cover at every seat and a candle on every table in the same call, on the table top', () => {
+    const at: Array<[number, number]> = [[0, 0], [4, 0], [8, 0]];
+    const { world, summary } = apply(createWorld(), { op: 'perimeter', at, table: { of: 'furn-table', params: { width: 1.2, depth: 0.8 } }, long: 2, settings: { of: 'place setting' }, centre: { of: 'candle' } });
+    const covers = all(world, 'settings');
+    const n = covers.reduce((a, e) => a + (e.shape.kind === 'scatter' ? (e.shape.points?.length ?? 0) : 0), 0);
+    expect(n).toBe(12);
+    for (const e of covers) {
+      if (e.shape.kind !== 'scatter') throw new Error('x');
+      expect(e.shape.of.kind === 'procedural' && e.shape.of.generator).toBe('furn-place-setting');
+      for (const p of e.shape.points ?? []) {
+        expect(p[1]).toBeGreaterThan(0.6);
+        const [x, z] = worldPoint(e, p);
+        // Inside the footprint of one of the tables.
+        expect(at.some(([tx, tz]) => Math.abs(x - tx) < 0.62 && Math.abs(z - tz) < 0.42)).toBe(true);
+      }
+    }
+    expect(all(world, 'centres')[0]?.shape.kind === 'scatter' && (all(world, 'centres')[0] as Entity & { shape: { count: number } }).shape.count).toBe(3);
+    expect(summary).toContain('12 x furn-place-setting');
+  });
+
+  it('puts a label beside every painting and sizes each stanchion rope to the pitch', () => {
+    const { world } = apply(createWorld(), { op: 'wall', from: [0, 0], to: [12, 0], count: 4, y: 1.0, facing: 'south', labels: { y: 1.25 } });
+    const labels = all(world, 'labels');
+    expect(labels.length).toBe(1);
+    const lab = labels[0];
+    const art = all(world, 'wall').find((e) => !e.tags.includes('labels'));
+    if (!lab || lab.shape.kind !== 'scatter' || !art || art.shape.kind !== 'scatter') throw new Error('x');
+    expect(lab.shape.points?.length).toBe(4);
+    const lx = (lab.shape.points ?? []).map((p) => worldPoint(lab, p)[0]);
+    const ax = (art.shape.points ?? []).map((p) => worldPoint(art, p)[0]);
+    // Seen from the room (looking north) right is east: each label is east of its picture.
+    lx.forEach((x, i) => expect(x).toBeGreaterThan(ax[i] as number));
+    const rope = apply(createWorld(), { op: 'along', from: [0, 0], to: [10, 0], of: 'rope stanchion', spacing: 2, y: 0 });
+    const post = all(rope.world, 'along')[0];
+    if (!post || post.shape.kind !== 'scatter' || post.shape.of.kind !== 'procedural') throw new Error('x');
+    expect(post.shape.of.params['span']).toBeCloseTo(2, 1);
+  });
+
+  it('places columns on all four walls of a room in one call, facing in', () => {
+    const { world, summary } = apply(createWorld(), { op: 'around', rect: [0, 0, 20, 12], of: 'column', spacing: 4, offset: 0.4 });
+    const sets = all(world, 'along');
+    expect(sets.length).toBe(4);
+    for (const e of sets) {
+      if (e.shape.kind !== 'scatter') throw new Error('x');
+      for (const p of e.shape.points ?? []) {
+        const [x, z] = worldPoint(e, p);
+        expect(x).toBeGreaterThanOrEqual(0);
+        expect(x).toBeLessThanOrEqual(20);
+        expect(z).toBeGreaterThanOrEqual(0);
+        expect(z).toBeLessThanOrEqual(12);
+      }
+    }
+    expect(summary).toContain('north');
+    const north = sets.find((e) => e.id.includes('north'));
+    expect(north?.transform.rotation[1]).toBeCloseTo(0, 3);
+  });
 });
