@@ -44,6 +44,19 @@ const CASES: Array<[string, Record<string, unknown>]> = [
   ['school-desk', {}],
   ['school-desk', { chair: false }],
   ['blackboard', {}],
+  ['art', { frame: 'gilt', subject: 'landscape', width: 1.2, height: 0.8 }],
+  ['art', { frame: 'gilt', subject: 'portrait' }],
+  ['treadmill', {}],
+  ['weight-bench', {}],
+  ['weight-bench', { variant: 'incline' }],
+  ['weight-bench', { variant: 'rack', plates: '6' }],
+  ['dumbbell-rack', {}],
+  ['hospital-bed', {}],
+  ['hospital-bed', { back: 60, ivPole: true }],
+  ['bus-stop', {}],
+  ['market-stall', {}],
+  ['market-stall', { goods: 'flowers', stripe: '#2a6f4f' }],
+  ['market-stall', { goods: 'bread' }],
 ];
 
 const tris = (o: ArchOutput): number => o.parts.reduce((a, p) => a + p.indices.length / 3, 0);
@@ -82,7 +95,7 @@ describe('venue and public-space furniture', () => {
       const out = buildFurniture(def!, params as never, 3);
       expect(tris(out)).toBeGreaterThan(8);
       expect(tris(out), 'under the per-piece budget').toBeLessThan(10_000);
-      expect(out.colliders.length).toBeGreaterThan(0);
+      if (kind !== 'art') expect(out.colliders.length).toBeGreaterThan(0);
       expect(out.parts.length).toBeLessThanOrEqual(16);
       const b = bounds(out);
       expect(b.every(Number.isFinite)).toBe(true);
@@ -121,9 +134,9 @@ describe('venue and public-space furniture', () => {
   });
 
   it('is registered with slots', () => {
-    for (const [kind] of CASES) {
+    for (const [kind] of CASES.filter(([k]) => k !== 'art')) {
       expect(FURNITURE.find((f) => f.kind === kind)?.id).toBe(`furn-${kind}`);
     }
-    for (const k of ['cinema-seat', 'tier-steps', 'stage', 'speaker', 'acoustic-panel', 'lectern', 'pew', 'altar', 'library-stack', 'vitrine', 'reception-desk', 'school-desk', 'blackboard']) expect(slotNames(k).length, k).toBeGreaterThan(0);
+    for (const k of ['cinema-seat', 'tier-steps', 'stage', 'speaker', 'acoustic-panel', 'lectern', 'pew', 'altar', 'library-stack', 'vitrine', 'reception-desk', 'school-desk', 'blackboard', 'treadmill', 'weight-bench', 'dumbbell-rack', 'hospital-bed', 'bus-stop', 'market-stall']) expect(slotNames(k).length, k).toBeGreaterThan(0);
   });
 });

@@ -85,6 +85,12 @@ export const FURNITURE_SLOTS: Readonly<Record<string, Readonly<Record<string, Sl
   'reception-desk': { front: s('front', undefined, 'panels', 'body', 'panelling'), top: s('top', undefined, 'worktop', 'counter', 'surface'), accent: s(undefined, 'accent', 'stripes', 'menu') },
   'school-desk': { top: s(undefined, 'top', 'desktop', 'surface'), seat: s(undefined, 'seat', 'chair'), frame: s('frame', undefined, 'tubes', 'legs', 'metal') },
   blackboard: { frame: s('wood', undefined, 'timber', 'border') },
+  treadmill: { body: s(undefined, 'body', 'frame'), trim: s(undefined, 'accent', 'accent') },
+  'weight-bench': { pad: s(undefined, 'pad', 'cushion', 'upholstery'), frame: s(undefined, 'frame', 'steel', 'rack') },
+  'dumbbell-rack': { frame: s(undefined, 'frame', 'stand', 'rack') },
+  'hospital-bed': { linen: s(undefined, 'linen', 'sheets', 'sheet'), blanket: s(undefined, 'blanket', 'cover', 'throw') },
+  'bus-stop': { frame: s(undefined, 'frame', 'steel', 'shelter'), sign: s(undefined, 'sign', 'plate') },
+  'market-stall': { awning: s(undefined, 'stripe', 'canopy', 'stripes', 'canvas'), wood: s('wood', undefined, 'posts', 'counter', 'timber') },
   switch: { plate: s('finish', undefined, 'cover', 'finish') },
 });
 

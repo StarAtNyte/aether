@@ -270,34 +270,100 @@ const ART_PALETTES: readonly (readonly string[])[] = [
   ['#ebe5dc', '#7d4b5f', '#e0b8a8', '#2d2d2d'],
 ];
 
+/** Dominant dark of a portrait ground (a muted tone from the matt colour). */
+function pal0(p: ParamReader): string {
+  return p.color('ink');
+}
+
 export const FRAME: FurnitureDef = {
   id: 'furn-frame',
   kind: 'art',
-  description: 'Framed abstract artwork (seeded composition) with a white mat; hangs on a wall (back at z = 0).',
+  description: 'Framed artwork for a wall (back at z = 0, origin at the bottom centre): abstract composition, a painted landscape or an oval portrait, in a plain frame or an ornate gilt gallery frame with a stepped moulding and a liner; with a white mat or none (paintings in gilt frames hang without a mat).',
+  aliases: ['painting', 'oil painting', 'framed painting', 'gallery painting', 'portrait painting', 'landscape painting', 'framed art', 'picture frame', 'wall art', 'artwork'],
   params: {
     width: num(0.8, 0.2, 3, 'frame width (m)'),
     height: num(1.0, 0.2, 2.5, 'frame height (m)'),
-    frame: choice(['oak', 'walnut', 'black-metal', 'brass'], 'black-metal', 'frame finish'),
+    frame: choice(['oak', 'walnut', 'black-metal', 'brass', 'gilt'], 'black-metal', 'frame finish; gilt is an ornate stepped gold gallery frame'),
     palette: int(0, 0, 3, 'colour palette'),
-    subject: choice(['abstract', 'round', 'blank'], 'abstract', 'abstract composition, a round (fisheye-like) photo on a wide white mat, or a blank mat'),
+    subject: choice(['abstract', 'round', 'blank', 'landscape', 'portrait'], 'abstract', 'abstract composition, a round (fisheye-like) photo on a wide white mat, a blank mat, a painted landscape or an oval portrait'),
     matColor: color('#f3f1ec', 'mat board colour'),
     ink: color('#2b2833', 'dominant tone of a round photo'),
   },
   mount: 'wall',
   againstWall: true,
   frontClearance: 0,
-  size: (p) => [p.num('width'), p.num('height'), 0.035],
+  size: (p) => [p.num('width'), p.num('height'), p.str('frame') === 'gilt' ? 0.07 : 0.035],
   build(p, seed) {
     const set = new PartSet();
     const w = p.num('width');
     const h = p.num('height');
-    const fw = 0.025;
+    const gilt = p.str('frame') === 'gilt';
+    const painting = p.str('subject') === 'landscape' || p.str('subject') === 'portrait';
+    const fw = gilt ? 0.07 : 0.025;
     const frame = new Geom();
-    frame.merge(box(-w / 2, -h / 2, 0, w / 2, -h / 2 + fw, 0.035));
-    frame.merge(box(-w / 2, h / 2 - fw, 0, w / 2, h / 2, 0.035));
-    frame.merge(box(-w / 2, -h / 2 + fw, 0, -w / 2 + fw, h / 2 - fw, 0.035));
-    frame.merge(box(w / 2 - fw, -h / 2 + fw, 0, w / 2, h / 2 - fw, 0.035));
-    set.add(frame.translate(0, h / 2, 0), mat(p.str('frame')));
+    const ring = (o: number, wd: number, z0: number, z1: number): Geom => {
+      const g = new Geom();
+      g.merge(box(-w / 2 + o, -h / 2 + o, z0, w / 2 - o, -h / 2 + o + wd, z1));
+      g.merge(box(-w / 2 + o, h / 2 - o - wd, z0, w / 2 - o, h / 2 - o, z1));
+      g.merge(box(-w / 2 + o, -h / 2 + o + wd, z0, -w / 2 + o + wd, h / 2 - o - wd, z1));
+      g.merge(box(w / 2 - o - wd, -h / 2 + o + wd, z0, w / 2 - o, h / 2 - o - wd, z1));
+      return g;
+    };
+    if (gilt) {
+      // Stepped moulding: a broad outer cove, a raised bead, a flat, a liner nearest the picture.
+      frame.merge(ring(0, 0.024, 0, 0.045));
+      frame.merge(ring(0.024, 0.016, 0, 0.065));
+      frame.merge(ring(0.04, 0.016, 0, 0.05));
+      frame.merge(ring(0.056, 0.014, 0, 0.034));
+      // Corner rosettes.
+      for (const sx of [-1, 1] as const) for (const sy of [-1, 1] as const) frame.merge(cylinder(0.022, 0.022, 0.012, 10).rotateX(90).translate(sx * (w / 2 - 0.035), sy * (h / 2 - 0.035), 0.062));
+    } else frame.merge(ring(0, fw, 0, 0.035));
+    set.add(frame.translate(0, h / 2, 0), gilt ? { finish: 'brass', color: '#c9a24a', roughness: 0.38 } : mat(p.str('frame')));
+    if (painting) {
+      const x0 = -w / 2 + fw;
+      const x1 = w / 2 - fw;
+      const y0 = fw;
+      const y1 = h - fw;
+      const px = (u: number): number => x0 + (x1 - x0) * u;
+      const py = (v: number): number => y0 + (y1 - y0) * v;
+      const z = 0.02;
+      const layer = (k: number, col: string, lo: (u: number) => number, hi: (u: number) => number): void => {
+        const g = new Geom();
+        const n = 28;
+        for (let c = 0; c <= n; c++) {
+          const u = c / n;
+          g.vertex(px(u), py(lo(u)), z + k * 0.0004, 0, 0, 1, u, lo(u));
+          g.vertex(px(u), py(hi(u)), z + k * 0.0004, 0, 0, 1, u, hi(u));
+        }
+        for (let c = 0; c < n; c++) g.tri(c * 2, c * 2 + 2, c * 2 + 3).tri(c * 2, c * 2 + 3, c * 2 + 1);
+        set.add(g, { finish: 'paint', color: col, roughness: 0.55 });
+      };
+      if (p.str('subject') === 'landscape') {
+        const pal = ART_PALETTES[p.int('palette') % ART_PALETTES.length] as readonly string[];
+        const sky = mixHex('#8fb0cf', pal[0] as string, 0.25);
+        layer(0, sky, () => 0, () => 1);
+        layer(1, mixHex('#e9d3a8', sky, 0.2), () => 0.5, () => 0.62);
+        layer(2, mixHex('#6e86a0', pal[2] as string, 0.3), () => 0.18, (u) => 0.5 + 0.1 * Math.sin(u * 7 + seed) + 0.04 * Math.sin(u * 17));
+        layer(3, mixHex('#5b7a4a', pal[1] as string, 0.3), () => 0.0, (u) => 0.32 + 0.07 * Math.sin(u * 5 + 2 + seed * 0.3));
+        layer(4, mixHex('#2f4a2b', pal[2] as string, 0.4), () => 0.0, (u) => 0.12 + 0.05 * Math.sin(u * 9 + 1));
+        return set.build();
+      }
+      layer(0, mixHex('#1d1a17', pal0(p), 0.15), () => 0, () => 1);
+      const ov = (rx: number, ry: number, cx: number, cy: number, col: string, k: number): void => {
+        const g = new Geom();
+        const n = 28;
+        const c0 = g.vertexCount;
+        g.vertex(px(cx), py(cy), z + k * 0.0004, 0, 0, 1, 0, 0);
+        for (let i = 0; i <= n; i++) g.vertex(px(cx + Math.cos((i / n) * Math.PI * 2) * rx), py(cy + Math.sin((i / n) * Math.PI * 2) * ry), z + k * 0.0004, 0, 0, 1, 1, 1);
+        for (let i = 0; i < n; i++) g.tri(c0, c0 + 1 + i, c0 + 2 + i);
+        set.add(g, { finish: 'paint', color: col, roughness: 0.6 });
+      };
+      ov(0.46, 0.49, 0.5, 0.5, mixHex('#2a2420', '#7a5a3a', 0.3), 1);
+      ov(0.34, 0.2, 0.5, 0.14, '#241d1a', 2);
+      ov(0.12, 0.17, 0.5, 0.56, '#e2c3a0', 3);
+      ov(0.15, 0.1, 0.5, 0.7, '#2a2420', 4);
+      return set.build();
+    }
     const matBoard = new Geom().quadAuto([-w / 2 + fw, fw, 0.02], [w / 2 - fw, fw, 0.02], [w / 2 - fw, h - fw, 0.02], [-w / 2 + fw, h - fw, 0.02]);
     set.add(matBoard, { finish: 'paint', color: p.color('matColor') });
     if (p.str('subject') === 'blank') return set.build();
