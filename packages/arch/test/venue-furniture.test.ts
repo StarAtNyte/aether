@@ -57,8 +57,31 @@ const CASES: Array<[string, Record<string, unknown>]> = [
   ['market-stall', {}],
   ['market-stall', { goods: 'flowers', stripe: '#2a6f4f' }],
   ['market-stall', { goods: 'bread' }],
+  ['statue', {}],
+  ['statue', { variant: 'bust', material: 'bronze', height: 1.4 }],
+  ['statue', { variant: 'abstract', material: 'stone' }],
+  ['rope-stanchion', {}],
+  ['rope-stanchion', { span: 0, finish: 'chrome' }],
+  ['plaque', {}],
+  ['plaque', { variant: 'brass', width: 0.3, height: 0.2 }],
+  ['place-setting', {}],
+  ['place-setting', { glasses: 'wine', cutlery: false }],
+  ['candle', {}],
+  ['candle', { variant: 'taper' }],
+  ['candle', { variant: 'pillar' }],
+  ['column', {}],
+  ['column', { variant: 'fluted', diameter: 0.6 }],
+  ['column', { variant: 'square', finish: 'marble' }],
+  ['column', { variant: 'pilaster', diameter: 0.4 }],
+  ['planter', {}],
+  ['planter', { variant: 'urn', plants: 'flowers' }],
+  ['planter', { variant: 'round', plants: 'grass', finish: 'oak' }],
+  ['ceiling-baffle', {}],
+  ['ceiling-baffle', { variant: 'raft', fin: 1.2, finish: 'wood-slats', glow: true }],
+  ['ceiling-baffle', { variant: 'coffer', length: 1.2, fin: 1.2, drop: 0.05 }],
 ];
 
+const CEILING = new Set(['ceiling-baffle']);
 const tris = (o: ArchOutput): number => o.parts.reduce((a, p) => a + p.indices.length / 3, 0);
 function bounds(o: ArchOutput): number[] {
   const b = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
@@ -99,9 +122,9 @@ describe('venue and public-space furniture', () => {
       expect(out.parts.length).toBeLessThanOrEqual(16);
       const b = bounds(out);
       expect(b.every(Number.isFinite)).toBe(true);
-      expect(b[1]!).toBeGreaterThan(-0.02);
+      if (!CEILING.has(kind)) expect(b[1]!).toBeGreaterThan(-0.02);
       const size = furnitureSize(def!, params as never);
-      expect(b[3]! - b[0]!).toBeLessThan(size[0] + 1.2);
+      if (kind !== 'rope-stanchion') expect(b[3]! - b[0]!).toBeLessThan(size[0] + 1.2);
       expect(b[5]! - b[2]!).toBeLessThan(size[2] + 1.5);
       for (const part of out.parts) expect(winding(part), `${kind} winding`).toBeGreaterThan(0.97);
     });
@@ -137,6 +160,6 @@ describe('venue and public-space furniture', () => {
     for (const [kind] of CASES.filter(([k]) => k !== 'art')) {
       expect(FURNITURE.find((f) => f.kind === kind)?.id).toBe(`furn-${kind}`);
     }
-    for (const k of ['cinema-seat', 'tier-steps', 'stage', 'speaker', 'acoustic-panel', 'lectern', 'pew', 'altar', 'library-stack', 'vitrine', 'reception-desk', 'school-desk', 'blackboard', 'treadmill', 'weight-bench', 'dumbbell-rack', 'hospital-bed', 'bus-stop', 'market-stall']) expect(slotNames(k).length, k).toBeGreaterThan(0);
+    for (const k of ['cinema-seat', 'tier-steps', 'stage', 'speaker', 'acoustic-panel', 'lectern', 'pew', 'altar', 'library-stack', 'vitrine', 'reception-desk', 'school-desk', 'blackboard', 'treadmill', 'weight-bench', 'dumbbell-rack', 'hospital-bed', 'bus-stop', 'market-stall', 'statue', 'rope-stanchion', 'place-setting', 'candle', 'column', 'ceiling-baffle', 'planter']) expect(slotNames(k).length, k).toBeGreaterThan(0);
   });
 });

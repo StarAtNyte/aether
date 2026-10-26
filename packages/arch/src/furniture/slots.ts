@@ -91,6 +91,13 @@ export const FURNITURE_SLOTS: Readonly<Record<string, Readonly<Record<string, Sl
   'hospital-bed': { linen: s(undefined, 'linen', 'sheets', 'sheet'), blanket: s(undefined, 'blanket', 'cover', 'throw') },
   'bus-stop': { frame: s(undefined, 'frame', 'steel', 'shelter'), sign: s(undefined, 'sign', 'plate') },
   'market-stall': { awning: s(undefined, 'stripe', 'canopy', 'stripes', 'canvas'), wood: s('wood', undefined, 'posts', 'counter', 'timber') },
+  statue: { plinth: s(undefined, 'base', 'plinth', 'pedestal', 'stand') },
+  'rope-stanchion': { rope: s(undefined, 'rope', 'velvet', 'cord'), post: s('finish', undefined, 'pole', 'metal', 'post') },
+  'place-setting': { napkin: s(undefined, 'napkin', 'serviette'), plate: s(undefined, 'plate', 'china', 'dish'), rim: s(undefined, 'rim', 'border') },
+  candle: { wax: s(undefined, 'wax', 'candle'), flame: s(undefined, 'flame', 'light') },
+  column: { shaft: s('finish', 'color', 'body', 'stone', 'plaster') },
+  'ceiling-baffle': { surface: s('finish', 'color', 'felt', 'fin', 'panel') },
+  planter: { body: s('finish', undefined, 'box', 'pot', 'trough'), bloom: s(undefined, 'bloom', 'flowers', 'blossom') },
   switch: { plate: s('finish', undefined, 'cover', 'finish') },
 });
 

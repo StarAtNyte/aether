@@ -20,13 +20,14 @@ import { TREES } from './trees';
 import { VENUE } from './venue';
 import { CIVIC } from './civic';
 import { WORLD_PIECES } from './world';
+import { DISPLAY } from './display';
 
 export type { FurnitureDef, Mount, MovableMotion, MovableSpec, ParamReader } from './kit';
 export { glowMaterial } from './lighting';
 export { tierHeights, TIER_BASE } from './venue';
 
 /** Every furniture generator, in a stable order. */
-export const FURNITURE: readonly FurnitureDef[] = Object.freeze([...SEATING, ...CANE, ...TABLES, ...BEDROOM, ...KITCHEN_SET, ...BATH, ...SINKS, ...DECOR, ...LIGHTING, ...TREES, ...VENUE, ...CIVIC, ...WORLD_PIECES]);
+export const FURNITURE: readonly FurnitureDef[] = Object.freeze([...SEATING, ...CANE, ...TABLES, ...BEDROOM, ...KITCHEN_SET, ...BATH, ...SINKS, ...DECOR, ...LIGHTING, ...TREES, ...VENUE, ...CIVIC, ...WORLD_PIECES, ...DISPLAY]);
 
 const BY_ID: ReadonlyMap<string, FurnitureDef> = new Map(FURNITURE.map((f) => [f.id, f]));
 const BY_KIND: ReadonlyMap<string, FurnitureDef> = new Map(FURNITURE.map((f) => [f.kind, f]));
@@ -47,6 +48,7 @@ const EXTRA_ALIASES: Readonly<Record<string, readonly string[]>> = {
   'office-chair': ['desk chair', 'swivel chair', 'task chair'],
   'dining-table': ['restaurant table', 'dining table', 'kitchen table'],
   tree: ['indoor tree', 'potted tree'],
+  plant: ['potted plant', 'house plant', 'houseplant', 'indoor plant', 'plant pot', 'foliage plant', 'fiddle leaf fig', 'olive tree pot'],
 };
 
 const STOP = new Set(['a', 'an', 'the', 'of', 'for', 'and', 'with', 'in', 'on', 'to', 'small', 'big', 'large', 'old', 'new', 'wooden', 'modern']);
