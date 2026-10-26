@@ -14,6 +14,7 @@ import { FrameInvalidation } from './view/frame-invalidation';
 import { deferRenderPreparation, type RenderPreparation } from './gpu/render-preparation';
 import { parallelPrograms, type ParallelPrograms } from './gpu/parallel-programs';
 import { gpuFrameCost } from './gpu/frame-cost';
+import { warmProceduralFields } from './gpu/procedural-fields-client';
 import { ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, Box3, BufferAttribute, BufferGeometry, Color, FogExp2, Mesh as ThreeMesh, MeshBasicMaterial, Frustum, Group, Matrix4, PerspectiveCamera, Plane, Quaternion, Raycaster, RenderTarget, Scene, Vector2, Vector3, Vector4, type Intersection, type Light, type Material, type Mesh, type Object3D, type Texture } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
 import type { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
@@ -1025,6 +1026,7 @@ export class WorldRenderer {
 
   /** Create a renderer on `canvas` (WebGPU when possible, else WebGL2). */
   static async create(canvas: HTMLCanvasElement, opts: RendererOptions = {}): Promise<WorldRenderer> {
+    const fields = warmProceduralFields();
     const lowMemory = opts.lowMemory === true || opts.lowPower === true;
     const { renderer, backend, gpu } = await createGpuRenderer(canvas, {
       preference: opts.backend ?? (opts.preferWebGPU === false ? 'webgl2' : 'auto'),
@@ -1078,6 +1080,7 @@ export class WorldRenderer {
       log.warn(`light volume unavailable: ${errorMessage(e)}`);
     }
     (renderer as unknown as { setOpaqueSort(f: (a: SortItem, b: SortItem) => number): void }).setOpaqueSort(opaqueSort);
+    await fields;
     const wr = new WorldRenderer(renderer, canvas, backend, controls, camera, opts, gpu);
     // A lost device/context stops drawing and tells the host (three's default only logs an error).
     renderer.onDeviceLost = (info: { message?: unknown }) => wr.handleContextLost(typeof info?.message === 'string' ? info.message : 'unknown reason');

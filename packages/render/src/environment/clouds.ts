@@ -9,21 +9,17 @@
  * change. No per-frame work.
  */
 import { BackSide, BufferAttribute, Color, DataTexture, LinearFilter, LinearMipmapLinearFilter, Mesh, MeshBasicMaterial, NoColorSpace, RGBAFormat, RepeatWrapping, SphereGeometry, Vector3 } from 'three';
-import { rng } from '@aether/core/random';
+import { cloudNoiseField } from '../gpu/procedural-fields';
+import { CLOUD_TEXTURE_SIZE } from './cloud-noise';
 import type { SkyState } from './sky-state';
+export { fractalNoise, CLOUD_TEXTURE_SIZE } from './cloud-noise';
 
-/** Cloud texture edge in pixels (power of two, tileable). */
-export const CLOUD_TEXTURE_SIZE = 256;
 /** Cloud cover is quantised to this step, so the texture is only rebuilt for a visible change. */
 export const COVER_STEP = 0.05;
 /** Texture repeats per unit of the cloud-plane projection. */
 const PLANE_SCALE = 0.55;
 /** Lifts the projection's denominator, so the zenith does not blow up into one huge tile. */
 const PLANE_LIFT = 0.08;
-const CLOUD_SEED = 0xc10d5;
-/** Octaves of the fractal noise and the lattice period of the first one. */
-const OCTAVES = 6;
-const BASE_PERIOD = 4;
 
 function smoothstep(e0: number, e1: number, x: number): number {
   const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
@@ -41,51 +37,6 @@ export function cloudUv(dx: number, dy: number, dz: number, out: [number, number
   const k = scale / (Math.max(0, dy) + PLANE_LIFT);
   out[0] = dx * k;
   out[1] = dz * k;
-  return out;
-}
-
-/**
- * Tileable fractal noise in [0, 1], `OCTAVES` octaves starting at `BASE_PERIOD` lattice cells per tile.
- * `stretch` (an integer ≥ 1) multiplies the lattice density along y, which draws streaks along x.
- */
-export function fractalNoise(size: number, seed: number, stretch = 1): Float32Array {
-  const random = rng(seed);
-  const out = new Float32Array(size * size);
-  let amp = 1;
-  let total = 0;
-  // Reused by all octaves; Float64 retains the original JS arithmetic exactly.
-  const x0 = new Uint16Array(size), x1 = new Uint16Array(size), weights = new Float64Array(size);
-  for (let o = 0; o < OCTAVES; o++) {
-    const period = BASE_PERIOD << o;
-    const periodY = Math.min(256, period * stretch);
-    const lattice = new Float32Array(period * periodY);
-    for (let i = 0; i < lattice.length; i++) lattice[i] = random();
-    // X weights repeat in every row.
-    for (let x = 0; x < size; x++) {
-      const fx = (x / size) * period, xi = Math.floor(fx), tx = fx - xi;
-      x0[x] = xi % period; x1[x] = (xi + 1) % period;
-      weights[x] = tx * tx * (3 - 2 * tx);
-    }
-    for (let y = 0; y < size; y++) {
-      const fy = (y / size) * periodY;
-      const yi = Math.floor(fy);
-      const ty = fy - yi;
-      const sy = ty * ty * (3 - 2 * ty);
-      const row0 = (yi % periodY) * period, row1 = ((yi + 1) % periodY) * period;
-      for (let x = 0; x < size; x++) {
-        const lo = x0[x]!, hi = x1[x]!, sx = weights[x]!;
-        const a0 = lattice[row0 + lo]!, a1 = lattice[row0 + hi]!;
-        const b0 = lattice[row1 + lo]!, b1 = lattice[row1 + hi]!;
-        const a = a0 + (a1 - a0) * sx;
-        const b = b0 + (b1 - b0) * sx;
-        const k = y * size + x;
-        out[k] = (out[k] as number) + amp * (a + (b - a) * sy);
-      }
-    }
-    total += amp;
-    amp *= 0.52;
-  }
-  for (let i = 0; i < out.length; i++) out[i] = (out[i] as number) / total;
   return out;
 }
 
@@ -243,7 +194,7 @@ export class CloudLayer {
     if (cover !== this.cover || (!cirrus && sunKey !== this.sunKey)) {
       const sunAz = Math.round(az / SUN_STEP) * SUN_STEP;
       const reach = 1.2 + 3.2 * (1 - Math.min(1, Math.max(0, _sun.y)));
-      this.fbm ??= fractalNoise(CLOUD_TEXTURE_SIZE, CLOUD_SEED + (cirrus ? 7 : 0), cirrus ? 4 : 1);
+      this.fbm ??= cloudNoiseField(cirrus);
       const pixels = cirrus ? cirrusPixels(CLOUD_TEXTURE_SIZE, cover, this.fbm) : cloudPixels(CLOUD_TEXTURE_SIZE, cover, this.fbm, { x: Math.cos(sunAz) * reach, y: Math.sin(sunAz) * reach });
       (this.texture.image.data as Uint8Array).set(pixels);
       this.texture.needsUpdate = true;

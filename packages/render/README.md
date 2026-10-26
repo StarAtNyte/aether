@@ -968,3 +968,28 @@ policy checks, not whole-app throughput claims. Unit tests cover expiry, missing
 results, disjoint/context loss, query ownership, resolution/pipeline changes and
 fallback. Browser regression checks cover camera movement, hidden-batch restoration,
 worker-backed characters and foliage, screenshot/capture output and restored sizing.
+
+### Worker preparation for shared procedural fields
+
+Renderer creation starts a small worker alongside GPU initialization to prepare
+the two fixed cloud-noise fields and the shared material-noise texture. It uses
+the original kernels, seeds, octaves and Float32/RGBA8 output. The transferred
+arrays are reused across renderer instances; cloud coverage and lighting still
+use their existing calculations. Existing synchronous exports remain available.
+The worker terminates after its reply. Unsupported workers, load/post/decode
+errors, malformed replies and a three-second deadline preserve exact synchronous
+fallback. A late reply cannot replace a field already used by a live texture.
+
+`node scripts/bench/procedural-fields-worker.mjs` checks all field bytes, worker
+lifecycle and timer gaps against inline generation. With Chrome's main thread
+throttled 4×, one cold probe's largest gap was 889→13 ms. Firefox's native probe
+measured 19→5 ms gaps, but cold wall time grew from 18→74 ms: this is a scheduling
+change, not a claim that worker startup is free. Set `AETHER_BENCH_BLOCK_WORKER=1`
+to verify the browser's load-failure fallback, or `AETHER_BENCH_BROWSER=firefox`.
+
+A production startup profile at 4× CPU had no sampled main-thread cloud/material
+noise kernel calls and showed the preparation worker closing. Startup wall time
+was essentially unchanged (10.15→10.14 s in this run). Other startup tasks still
+reached 293 ms and atomic shader completion 223 ms; this does not make the entire
+UI thread nonblocking. Renderer/studio tests, worker failure tests and live
+geometry/character/foliage/capture checks cover the change.
