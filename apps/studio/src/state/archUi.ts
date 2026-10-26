@@ -47,8 +47,6 @@ export interface ArchUiState {
   sunHour: number | null;
   /** Walkthrough photo mode (interface hidden, studio quality). */
   photo: boolean;
-  /** Plan reveal in progress: progress 0..1 (null: not running). */
-  reveal: number | null;
 }
 
 /** Initial state (no building). */
@@ -67,7 +65,6 @@ export const DEFAULT_ARCH_UI: Readonly<ArchUiState> = Object.freeze({
   studioAvailable: true,
   sunHour: null,
   photo: false,
-  reveal: null,
 }) as Readonly<ArchUiState>;
 
 /** Section heights the slider offers (metres above the ground floor). */
@@ -102,7 +99,6 @@ export function mergeArchUi(cur: ArchUiState, patch: Partial<ArchUiState>): Arch
     studioAvailable: n.studioAvailable !== false,
     sunHour: n.sunHour === null ? null : finite(n.sunHour) ? Math.max(0, Math.min(24, n.sunHour)) : cur.sunHour,
     photo: n.photo === true,
-    reveal: n.reveal === null || n.reveal === undefined ? null : finite(n.reveal) ? Math.max(0, Math.min(1, n.reveal)) : null,
   };
 }
 

@@ -2034,10 +2034,6 @@ them, headless verification drives the same joints, and the playtest bot plans t
 finds the piece (through overlapping colliders), the HUD shows "E · Open drawer", E acts on exactly that piece, a mug can be picked up, carried in
 front of you, thrown with a click and lands with its own mass, and a sofa can be sat on (capsule off, eye down, walk to stand).
 
-**Plan to 3D.** The Architecture bar's Reveal draws the plan in ink on paper (walls, openings, furniture outlines, room names and areas), then the
-walls rise out of it as an animated section cut while the camera descends from overhead. The pure timeline and the ink strokes live in
-`apps/studio/src/lib/reveal.ts`; `ArchController.scrubReveal(t)` shows any single frame (stills, tests).
-
 **Flagship.** *Casa del Patio*, a courtyard house in the hills above Sintra: seven rooms ring a stone patio with a lap pool and a pergola, sliding glass
 from every room, a papered library with a panelled dado, a panelled living room, a damask-papered master bedroom, golden hour, an olive grove, cypress
 drive and the serra behind. Flat roofs stop at the courtyard.

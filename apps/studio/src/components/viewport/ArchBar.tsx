@@ -115,12 +115,6 @@ export const ArchBar = memo(function ArchBar(): ReactElement | null {
           </Popover>
         </>
       )}
-      {!a.plan && (
-        <button type="button" className={`vp-btn vp-btn--label${a.reveal !== null ? ' is-on' : ''}`} aria-label="Reveal" data-tip="Reveal: the plan drawn in ink, the walls rising out of it" onClick={() => (a.reveal !== null ? studio.arch.cancelReveal() : studio.arch.startReveal())}>
-          <Icon name="plan" />
-          <span>Reveal</span>
-        </button>
-      )}
       <span className="arch-bar__sep" aria-hidden="true" />
       <Popover
         label="Daylight study"

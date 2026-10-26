@@ -226,8 +226,7 @@ The prompt is the main tool, but everything can be edited directly:
 - The agent sees your hand edits and never touches locked objects.
 
 For buildings, the building bar has a cutaway, walls down, exploded and
-single storeys, x-ray, a section cut, a daylight study, a studio render and
-**Reveal** (the plan drawn in ink, then the walls rising). The floor plan
+single storeys, x-ray, a section cut, a daylight study, and a studio render. The floor plan
 view shows room areas and dimensions, and you can draw rooms, doors and
 windows on it.
 

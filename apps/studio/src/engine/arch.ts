@@ -17,7 +17,6 @@ import { skyForHour, type ArchUiState } from '../state/archUi';
 import type { Simulation } from './Simulation';
 import { Walkthrough } from './walkthrough';
 import { createLogger } from '../lib/log';
-import { REVEAL_SECONDS, cameraArc, cameraAt, revealPhase, sectionHeightFor, type CameraArc } from '../lib/reveal';
 
 const log = createLogger('arch');
 
@@ -48,8 +47,6 @@ export class ArchController {
   private lastEnv: WorldDoc['environment'] | null = null;
   /** Walkthrough interactions of the running play session (buildings only). */
   private walk: Walkthrough | null = null;
-  /** The running plan reveal (animation frame, start time, camera path, the view to restore). */
-  private revealing: { raf: number; t: number; last: number; seconds: number; arc: CameraArc; radius: number; total: number; saved: Pick<ArchUiState, 'walls' | 'levelMode' | 'xray' | 'section'>; lastSection: number | null } | null = null;
 
   constructor(private readonly host: ArchHost) {
     this.refreshBuildings(host.history.current, true);
@@ -150,7 +147,6 @@ export class ArchController {
   /** Play hides the view modes (the walkthrough needs walls and ceilings); Stop brings them back. */
   private onMode(mode: StudioState['mode']): void {
     const st = this.host.store.getState();
-    this.cancelReveal();
     this.walk?.dispose();
     this.walk = null;
     if (mode === 'play') {
@@ -251,117 +247,12 @@ export class ArchController {
     return this.guarded(({ building }) => ({ ops: [{ ...op, building }], message }));
   }
 
-  /**
-   * Plan reveal: the floor plan is drawn in ink on paper (the overlay), then the
-   * walls rise out of it (an animated section cut) while the camera comes down
-   * from overhead to where the editor camera was. Any click, key or Stop skips to
-   * the end; the previous view comes back. Returns false when there is nothing to
-   * reveal (no building, playing, no renderer).
-   */
-  startReveal(seconds = REVEAL_SECONDS): boolean {
-    if (!this.beginReveal(seconds)) return false;
-    const tick = (): void => {
-      const r = this.revealing;
-      if (!r) return;
-      // Frame time, clamped: a slow device plays the reveal slower instead of skipping the ink.
-      const now = performance.now();
-      r.t = Math.min(1, r.t + Math.min(0.06, (now - r.last) / 1000) / r.seconds);
-      r.last = now;
-      this.applyReveal(r.t);
-      if (r.t >= 1) this.finishReveal();
-      else r.raf = requestAnimationFrame(tick);
-    };
-    if (this.revealing) this.revealing.raf = requestAnimationFrame(tick);
-    return true;
-  }
-
-  /**
-   * Show one frame of the reveal and hold it (stills, tests, a scrubber): `t` in 0..1.
-   * Starts the reveal if it is not running; {@link cancelReveal} ends it.
-   */
-  scrubReveal(t: number): boolean {
-    if (!this.revealing && !this.beginReveal(REVEAL_SECONDS)) return false;
-    const r = this.revealing;
-    if (!r) return false;
-    cancelAnimationFrame(r.raf);
-    r.t = Math.max(0, Math.min(1, Number.isFinite(t) ? t : 0));
-    this.applyReveal(r.t);
-    return true;
-  }
-
-  private beginReveal(seconds: number): boolean {
-    const st = this.host.store.getState();
-    const sim = this.host.simulation;
-    const id = st.arch.building;
-    if (!sim || !id || st.mode !== 'edit') return false;
-    const world = this.host.history.current;
-    const building = world.entities[id];
-    const plan = floorPlan2d(world, id, 0);
-    if (!building || !plan) return false;
-    this.cancelReveal();
-    const total = listLevels(world, id).reduce((s, l) => s + l.height, 0) || 3;
-    const [x0, z0, x1, z1] = plan.bounds;
-    const c = planToWorld([building.transform.position[0], building.transform.position[2]], building.transform.rotation[1], [(x0 + x1) / 2, (z0 + z1) / 2]);
-    const centre: [number, number, number] = [c[0], building.transform.position[1] + total * 0.4, c[1]];
-    const cam = sim.renderer.camera.position;
-    const arc = cameraArc(centre, [cam.x, cam.y, cam.z]);
-    const radius = Math.hypot(x1 - x0, z1 - z0) / 2 + 3;
-    const a = st.arch;
-    const reduced = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (reduced) return false;
-    this.revealing = { raf: 0, t: 0, last: performance.now(), seconds: Math.max(1, Math.min(30, seconds)), arc, radius, total, saved: { walls: a.walls, levelMode: a.levelMode, xray: a.xray, section: a.section }, lastSection: null };
-    st.setArch({ plan: false, walls: 'up', levelMode: 'stacked', xray: false, section: 0.12, reveal: 0 });
-    return true;
-  }
-
-  private applyReveal(t: number): void {
-    const r = this.revealing;
-    if (!r) return;
-    const phase = revealPhase(t);
-    const section = sectionHeightFor(phase.rise, r.total);
-    const patch: Partial<ArchUiState> = { reveal: t };
-    if (section !== r.lastSection) {
-      r.lastSection = section;
-      patch.section = section;
-    }
-    this.host.store.getState().setArch(patch);
-    const pose = cameraAt(r.arc, phase.cam);
-    this.host.simulation?.renderer.setCameraPose(pose.position[0], pose.position[1], pose.position[2], pose.yaw, pose.pitch);
-  }
-
-  /** Skip the running reveal to its end (the walls stand, the previous view is back). */
-  cancelReveal(): void {
-    if (this.revealing) this.finishReveal();
-  }
-
-  private finishReveal(): void {
-    const r = this.revealing;
-    if (!r) return;
-    this.revealing = null;
-    cancelAnimationFrame(r.raf);
-    const st = this.host.store.getState();
-    const sim = this.host.simulation;
-    st.setArch({ ...r.saved, reveal: null });
-    if (sim) {
-      // Back to the orbit camera at the pose the reveal ended on.
-      const end = cameraAt(r.arc, 1);
-      sim.renderer.setCameraMode('orbit');
-      sim.renderer.frameSphere(r.arc.centre, r.radius, [end.position[0] - r.arc.centre[0], end.position[1] - r.arc.centre[1], end.position[2] - r.arc.centre[2]], 0);
-    }
-  }
-
-  /** True while the plan reveal runs. */
-  get isRevealing(): boolean {
-    return this.revealing !== null;
-  }
-
   /** The walkthrough of the running play session (tests, debug handle). */
   get walkthrough(): Walkthrough | null {
     return this.walk;
   }
 
   dispose(): void {
-    this.cancelReveal();
     this.walk?.dispose();
     this.walk = null;
     for (const c of this.cleanups.splice(0)) c();

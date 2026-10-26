@@ -30,7 +30,6 @@ import { GraphicsAlert } from './GraphicsAlert';
 import { GeometryBadge } from './GeometryBadge';
 import { NpcSpeech } from './NpcSpeech';
 import { InteractPromptView, PlayHud, TitleCard } from './PlayHud';
-import { RevealOverlay } from './RevealOverlay';
 import { PlayTweak } from './PlayTweak';
 import { ArchBar } from './ArchBar';
 import { PlanView } from './PlanView';
@@ -435,7 +434,6 @@ export const Viewport = memo(function Viewport(): ReactElement {
       )}
       <NpcSpeech />
       {!voxelGame && <InteractPromptView />}
-      <RevealOverlay />
       <TitleCard />
       {ready && playing && !voxelUi && <PlayTweak />}
       {ready && playing && !voxelUi && !titleHeld && <TouchControls />}

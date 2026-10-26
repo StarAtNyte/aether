@@ -3045,7 +3045,7 @@ previous view. Frame time is clamped (slow devices play it slower instead of ski
 ### Scripts
 
 `npm run e2e:interact` (Chromium WebGPU + WebGL2, Firefox: drawer, cabinet door, window, front door on its joint, tap, mug pick-up and throw, sofa),
-`npm run e2e:reveal`, `tests/e2e/archshots.e2e.ts` (eye-level stills of any building: `--slug` / `--prompt`, `--cams=<json>`, `--gpu`, `--hide`, `--set`).
+`tests/e2e/archshots.e2e.ts` (eye-level stills of any building: `--slug` / `--prompt`, `--cams=<json>`, `--gpu`, `--hide`, `--set`).
 
 ## Interior and architecture look (additive, backward compatible)
 

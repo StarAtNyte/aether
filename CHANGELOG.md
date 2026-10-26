@@ -6,6 +6,7 @@ and `docs/REVIEW_LOG.md` carries the measured detail. Workspace packages share t
 ## Unreleased
 
 ### Studio
+- Removed the Plan Reveal (the arch bar's Reveal button, the ink-on-paper plan overlay and the rising-walls animation). The Reveal video camera move in Publish stays.
 - Project cards and rows show the actions button (…) at all times as a frosted 32 px button with a visible focus ring, plus a trash button. A Select mode deletes several projects with one confirmation and one Undo, with a message when some could not be deleted or restored. Delete or Backspace on a focused card opens the confirmation, Escape leaves Select, and the editor's Aether menu has Delete project….
 
 ### Security
