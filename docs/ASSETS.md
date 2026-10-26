@@ -50,6 +50,8 @@ town, nature, city, survival...) instead.
 | Medieval, fantasy | castle door, shields, swords, statue, candlestick | castle kit (walls, towers, gates, siege engines, bridges), fantasy town kit |
 | Interiors | the 98 furniture and decor models; sinks, cane chairs, rugs, fridges and ovens are procedural parts (`sink`, `cane-chair`, `fridge`, `oven`) | furniture kit |
 
+Venue, civic, gym, clinic and street pieces that no photographed model covers are crafted procedural parts (see [AGENT_TOOLS.md](AGENT_TOOLS.md#place_items): cinema seat, tier floor, cinema screen, stage, pew, altar, library stack, vitrine, counters, school desk, blackboard, treadmill, hospital bed, bus shelter, market stall and more), found by `find_model` through their aliases before library models; photographed models remain the choice for chairs, tables, lamps, benches, street lamps and props.
+
 Gaps that remain: dense photographed trees and grass (procedural foliage covers them), bathtub and toilet (procedural
 parts), curtains and rugs (procedural parts), window views (sky HDRIs).
 
