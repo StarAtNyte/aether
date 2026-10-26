@@ -285,4 +285,16 @@ describe('brief helpers', () => {
     expect(sys).toContain('never stand in a different kind of object'.replace('never', 'Never'));
     if (r.ok) expect(briefChecklistText(r.brief)).toContain('Basis: colonnade 5 m pitch');
   });
+
+  it('finds crafted pieces by their part when the element is worded differently from the ids', async () => {
+    const { applyPatches } = await import('@aether/core');
+    const host = new MemoryHost();
+    const seats = { op: 'add', entity: { id: 'seats-chair-1', name: '56 x chair facing 180 deg', shape: { kind: 'scatter', of: { kind: 'procedural', generator: 'furn-chair', params: {} }, count: 56, area: [1, 1], seed: 1, scaleRange: [1, 1], randomYaw: false, points: Array.from({ length: 56 }, (_, i) => [i, 0, 0]) } } };
+    const sign = { op: 'add', entity: { id: 'sign', name: 'Sign', shape: { kind: 'procedural', generator: 'arch-sign', params: { text: 'X' } } } };
+    const res = applyPatches(host.world, [seats, sign] as never);
+    const b = brief({ elements: [{ name: 'Dining chair', count: 56, find: ['dining chair'] }, { name: 'Exit sign', count: 3, find: ['exit sign'] }] });
+    const text = richnessEvidence(res.world, b);
+    expect(text).toMatch(/Dining chair: brief 56, found 56 .*\(ok\)/);
+    expect(text).toMatch(/Exit sign: brief 3, found 0 \(NONE FOUND\)/);
+  });
 });

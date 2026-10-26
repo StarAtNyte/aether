@@ -182,6 +182,12 @@ function instancesOf(e: Entity): number {
   return e.shape.kind === 'scatter' ? Math.max(1, e.shape.points ? e.shape.points.length : e.shape.count) : 1;
 }
 
+/** Words of the crafted part an entity (or the scatter of it) stands for: furn-chair gives "chair". */
+function craftedWords(e: Entity): string {
+  const g = e.shape.kind === 'procedural' ? e.shape.generator : e.shape.kind === 'scatter' && e.shape.of.kind === 'procedural' ? e.shape.of.generator : '';
+  return g.startsWith('furn-') ? ` ${norm(g.slice(5))} ` : '';
+}
+
 function entityText(e: Entity, id: string): string {
   const kind = e.shape.kind === 'procedural' ? e.shape.generator : e.shape.kind === 'asset' ? e.shape.id : e.shape.kind === 'scatter' && e.shape.of.kind === 'procedural' ? `scatter ${e.shape.of.generator}` : e.shape.kind;
   return norm(`${id} ${e.name} ${e.tags.join(' ')} ${kind}`);
@@ -196,7 +202,7 @@ interface ElementCount {
 /** Pieces found for each brief element, matched by the model's own `find` words (a scatter of 120 seats is 120 pieces). */
 function countElements(world: WorldDoc, b: Brief): { ids: string[]; kinds: number; counts: ElementCount[] } {
   const ids = Object.keys(world.entities);
-  const texts = ids.map((id) => ({ id, text: ` ${entityText(world.entities[id] as Entity, id)} ` }));
+  const texts = ids.map((id) => ({ id, text: ` ${entityText(world.entities[id] as Entity, id)} `, crafted: craftedWords(world.entities[id] as Entity) }));
   const kinds = new Set<string>();
   for (const id of ids) {
     const e = world.entities[id] as Entity;
@@ -204,7 +210,11 @@ function countElements(world: WorldDoc, b: Brief): { ids: string[]; kinds: numbe
   }
   const counts = b.elements.map((el) => {
     const words = (el.find && el.find.length > 0 ? el.find : [el.name]).map((w) => norm(w)).filter(Boolean);
-    const hitIds = texts.filter((t) => words.some((w) => w.split(' ').every((p) => t.text.includes(` ${p} `) || t.text.includes(` ${stem(p)}`)))).map((t) => t.id);
+    // A phrase matches when all its words are in the names, ids or tags, or when its last word is the crafted part the piece is
+    // ("dining chair" finds furn-chair pieces whatever they were named): the model's wording of an element rarely equals its ids.
+    const hitIds = texts
+      .filter((t) => words.some((w) => w.split(' ').every((p) => t.text.includes(` ${p} `) || t.text.includes(` ${stem(p)}`)) || (t.crafted !== '' && t.crafted.includes(` ${stem(w.split(' ').pop() as string)} `))))
+      .map((t) => t.id);
     return { el, hitIds, found: hitIds.reduce((n, id) => n + instancesOf(world.entities[id] as Entity), 0) };
   });
   return { ids, kinds: kinds.size, counts };
