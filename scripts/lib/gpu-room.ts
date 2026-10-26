@@ -76,6 +76,17 @@ export class GpuRoom {
     }
   }
 
+  /** Run `fn` in the studio page (the renderer is `window.__aether?.simulation?.renderer`). */
+  evaluate<T, A>(fn: (arg: A) => T | Promise<T>, arg: A): Promise<T> {
+    return this.page.evaluate(fn as never, arg as never) as Promise<T>;
+  }
+
+  /** A PNG of the viewport canvas as it is drawn now (the live picture, not a still). */
+  async screenshot(): Promise<Buffer> {
+    const box = await this.page.locator('.viewport__host canvas').first().boundingBox();
+    return this.page.screenshot(box ? { clip: { x: box.x, y: box.y, width: box.width, height: box.height } } : {});
+  }
+
   /** Texture sets the page already knows (ids), so each is registered once. */
   private readonly known = new Set<string>();
 
