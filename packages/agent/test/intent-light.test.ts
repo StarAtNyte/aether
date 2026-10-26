@@ -10,7 +10,7 @@ describe('lighting intent', () => {
     const r = lookPatches(w, input);
     expect(r.patches).toHaveLength(1);
     expect(r.summary).toContain('look.intent');
-    const op = r.patches[0] as { set: { look: { intent: { key: string } } } };
+    const op = r.patches[0] as unknown as { set: { look: { intent: { key: string } } } };
     expect(op.set.look.intent.key).toBe('dim');
     expect(lookText(w)).toContain('lighting intent: not stated');
   });
