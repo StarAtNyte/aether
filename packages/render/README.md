@@ -993,3 +993,26 @@ was essentially unchanged (10.15→10.14 s in this run). Other startup tasks sti
 reached 293 ms and atomic shader completion 223 ms; this does not make the entire
 UI thread nonblocking. Renderer/studio tests, worker failure tests and live
 geometry/character/foliage/capture checks cover the change.
+
+### Environment-filter shader preparation experiment
+
+`AETHER_BENCH_CPU_RATE=4 node scripts/bench/pmrem-preparation.mjs` probes shader
+preparation before the atomic PMREM environment-filter pass. This experiment is
+not enabled in the runtime. It compares the current public compile helper,
+discovery of the actual filter materials, reuse by a fresh generator, and release
+of staging textures before that generator draws. It rotates execution order over
+three rounds, two image sizes, linear float and sRGB byte images, and cube maps.
+
+All 72 comparisons matched every filtered output byte, returned no WebGL errors,
+and restored renderer targets and compilation state. Prepared programs were reused
+by fresh generators without new pipeline creation in the final filtering pass.
+After releasing staging targets, tracked live GL textures fell from three to one;
+peak tracked texture count remained three, matching the reference. This counts
+objects, not driver-internal VRAM allocation.
+
+In the measured 4× CPU run, median final-filter timer gaps were 41.5→29.2 ms for
+float images, 38.8→30.5 ms for sRGB bytes and 38.2→29.4 ms for cube maps. Preparation
+itself had approximately 16 ms maximum gaps. These isolated scheduling results
+do not establish a whole-app speedup. Runtime integration still needs ownership,
+concurrent/cancelled warmup and context-loss handling, and verification against
+the app's actual environment-node cache and capture paths.
