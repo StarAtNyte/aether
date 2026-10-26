@@ -18,6 +18,7 @@ export interface FacadeInput {
     canopy: boolean;
     doorSurround: boolean;
     cornice: boolean;
+    pilasters: boolean;
     forecourt: boolean;
     lamps: boolean;
     planters: boolean;
@@ -39,6 +40,8 @@ export interface FacadeInput {
   /** Outline loops of the ground floor (wall centrelines). */
   groundLoops: readonly (readonly P2[])[];
   xp: ExteriorPalette;
+  /** The wall that carries the entrance: start, unit direction, length and openings (centre along it, width). */
+  frontWall?: { a: P2; dir: P2; len: number; openings: ReadonlyArray<{ offset: number; width: number }> } | undefined;
 }
 
 const r3 = (n: number): number => Math.round(n * 1000) / 1000;
@@ -153,6 +156,19 @@ export function compileFacade(g: FacadeInput): EntityInput[] {
     if (f.light) {
       const q = at(0, o + (onCanopy ? depth + 0.9 : 1.1));
       add({ id: `${g.bid}-sign-light`, parent: g.bid, name: 'Sign light', transform: { position: [q[0], r3(y + 0.9), q[1]] }, shape: { kind: 'none' }, light: { type: 'point', color: '#ffe3b0', intensity: 1.4, range: 8, angle: 60, castShadow: false }, arch: { ...SITE, kind: 'light', name: 'Sign light' }, tags: [...tag, 'light'] });
+    }
+  }
+
+  // --- rhythm: shallow pilasters between the openings of the front wall, so a long front is not one blank sheet --------------
+  const fwl = g.frontWall;
+  if (f.pilasters && fwl && fwl.len >= 7) {
+    const bays = Math.max(2, Math.round(fwl.len / 4.2));
+    const h = g.wallTop - g.plinth - 0.3;
+    for (let k = 1; k < bays; k++) {
+      const tt = (fwl.len * k) / bays;
+      if (fwl.openings.some((q) => Math.abs(q.offset - tt) < q.width / 2 + 0.5)) continue;
+      const p: P2 = [r3(fwl.a[0] + fwl.dir[0] * tt + n[0] * (o + 0.07)), r3(fwl.a[1] + fwl.dir[1] * tt + n[1] * (o + 0.07))];
+      add({ id: `${g.bid}-pilaster${k}`, parent: g.bid, name: 'Facade pilaster', transform: { position: [p[0], r3(g.plinth + h / 2), p[1]], rotation: [0, r3(yawOf(fwl.dir[0], fwl.dir[1])), 0] }, shape: { kind: 'primitive', primitive: 'box', size: [0.42, r3(h), 0.16] }, material: trim, arch: { ...SITE, kind: 'pilaster', name: 'Facade pilaster' }, tags: tag });
     }
   }
 

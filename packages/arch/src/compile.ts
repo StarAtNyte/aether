@@ -1072,6 +1072,11 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
       topLoops: levelOutlines[topIndex] ?? [],
       groundLoops: levelOutlines[0] ?? [],
       xp,
+      frontWall: (() => {
+        const dr = front.door;
+        const rec = dr && groundPlan ? groundPlan.walls.find((w) => w.w.exterior && pointSegmentDistance(dr.c[0], dr.c[1], w.w.a[0], w.w.a[1], w.w.b[0], w.w.b[1]) < 0.05) : undefined;
+        return rec ? { a: rec.w.a, dir: rec.dir, len: rec.len, openings: rec.openings.map((q) => ({ offset: q.offset, width: q.width })) } : undefined;
+      })(),
     })) add(e);
   }
 

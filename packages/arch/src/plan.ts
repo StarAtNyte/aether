@@ -227,6 +227,8 @@ export const PlanFacade = z.object({
   canopy: z.boolean().default(true),
   doorSurround: z.boolean().default(true),
   cornice: z.boolean().default(true),
+  /** Shallow pilasters between the openings of a long front wall. */
+  pilasters: z.boolean().default(true),
   forecourt: z.boolean().default(true),
   lamps: z.boolean().default(true),
   planters: z.boolean().default(true),
