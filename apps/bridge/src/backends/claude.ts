@@ -112,6 +112,8 @@ export interface ClaudeObserved {
   strayCalls?: number;
   /** Set when the model kept calling protocol tools directly (not a security issue). */
   stray?: boolean;
+  /** The direct calls themselves (name and input), kept so the run can be recovered. */
+  strayInputs?: Array<{ name: string; input: unknown }>;
 }
 
 /**
@@ -151,6 +153,7 @@ export function observeClaudeLine(line: string, into: ClaudeObserved, protocolTo
         if (name === STRUCTURED_OUTPUT_TOOL) continue;
         if (into.initVerified === true && typeof name === 'string' && protocolTools.has(name)) {
           into.strayCalls = (into.strayCalls ?? 0) + 1;
+          (into.strayInputs ??= []).push({ name, input: (b as { input?: unknown }).input ?? {} });
           if (into.strayCalls > MAX_STRAY_PROTOCOL_CALLS) {
             into.stray = true;
             return 'stray';
@@ -178,6 +181,29 @@ export function protocolToolSet(names: readonly string[] | undefined): ReadonlyS
   const denied = new Set<string>([...CLAUDE_DENIED_TOOLS, STRUCTURED_OUTPUT_TOOL]);
   const out = new Set<string>();
   for (const n of (names ?? []).slice(0, 64)) if (/^[a-z][a-z0-9_]{0,63}$/.test(n) && !denied.has(n) && !n.startsWith('mcp__')) out.add(n);
+  return out;
+}
+
+/**
+ * Direct calls the model made to protocol tools, as protocol `tool_calls`: repeats of the same call (the CLI
+ * answered "no such tool" and the model retried) collapse to one, at most 16 in order.
+ */
+export function recoverStrayCalls(calls: ReadonlyArray<{ name: string; input: unknown }>): Array<{ name: string; input: Record<string, unknown> }> {
+  const seen = new Set<string>();
+  const out: Array<{ name: string; input: Record<string, unknown> }> = [];
+  for (const c of calls) {
+    if (typeof c.input !== 'object' || c.input === null || Array.isArray(c.input)) continue;
+    let key: string;
+    try {
+      key = `${c.name}|${JSON.stringify(c.input)}`;
+    } catch {
+      continue;
+    }
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ name: c.name, input: c.input as Record<string, unknown> });
+    if (out.length >= 16) break;
+  }
   return out;
 }
 
@@ -235,7 +261,12 @@ export function createClaudeCodeBackend(opts: ClaudeBackendOptions = {}): TextBa
           if (run.stopped === 'aborted') throw new BridgeError('backend_error', 'cancelled');
           if (run.stopped === 'timeout') throw new BridgeError('timeout', `Claude Code did not answer within ${Math.round(timeoutMs / 1000)} s.`);
           if (observed.violation) throw new BridgeError('tool_violation', `Refused: the Claude Code run exposed or used a tool (${observed.violation}).`);
-          if (observed.stray) throw new BridgeError('backend_error', 'Claude Code kept calling tools directly instead of replying with JSON. Try again or pick another model.');
+          if (observed.stray) {
+            // The model meant these calls: send them through the protocol instead of failing the turn.
+            const calls = recoverStrayCalls(observed.strayInputs ?? []);
+            if (calls.length === 0) throw new BridgeError('backend_error', 'Claude Code kept calling tools directly instead of replying with JSON. Try again or pick another model.');
+            return { text: '', structured: { thoughts: '', tool_calls: calls, final_message: '' }, usage: { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0 } };
+          }
           if (run.stopped === 'stdout_cap') throw new BridgeError('backend_error', 'Claude Code produced too much output.');
           const res = observed.result;
           if (observed.rateLimited && (!res || res['is_error'] === true)) throw new BridgeError('rate_limited', "Claude Code reports that your subscription's usage limit is reached. Try again later.", { retryAfterSec: 60 });

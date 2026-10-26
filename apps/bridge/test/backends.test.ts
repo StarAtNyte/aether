@@ -119,10 +119,11 @@ describe('Claude Code backend', () => {
       await expect(createClaudeCodeBackend({ spawn: f.spawn, tmpRoot: root }).complete({ ...REQ, toolNames: ['Read'] })).rejects.toMatchObject({ code: 'tool_violation' });
     });
 
-    it('stops a run that keeps calling protocol tools directly (backend error, not a violation)', async () => {
+    it('recovers a run that keeps calling protocol tools directly: the calls become the reply', async () => {
       const lines = [INIT, ...Array.from({ length: MAX_STRAY_PROTOCOL_CALLS + 1 }, () => stray('apply_patches'))];
       const f = fakeSpawn([{ lines, hang: true }]);
-      await expect(createClaudeCodeBackend({ spawn: f.spawn, tmpRoot: root }).complete(PROTO_REQ)).rejects.toMatchObject({ code: 'backend_error' });
+      const r = await createClaudeCodeBackend({ spawn: f.spawn, tmpRoot: root }).complete(PROTO_REQ);
+      expect(r.structured).toEqual({ thoughts: '', tool_calls: [{ name: 'apply_patches', input: { patches: [] } }], final_message: '' });
       expect(f.calls[0]?.killed).toBe(true);
     });
   });
