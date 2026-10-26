@@ -12,6 +12,7 @@
  * - Pure node (TSL) code: identical on the WebGPU and WebGL2 backends. Like the anti-tiled finishes,
  *   the nodes are attached to the classic material, which the node renderer converts.
  */
+import { staticShadowAlpha } from '../gpu/shadow-alpha';
 import { abs, attribute, Fn, If, cameraPosition, float, int, materialColor, max, mix, modelWorldMatrix, mx_noise_float, normalLocal, normalMap, positionWorld, pow, smoothstep, texture, transformDirection, uniform, uv, vec2, vec3, vec4 } from 'three/tsl';
 import type { Material } from 'three';
 import type { MaterialFinish } from '@aether/core';
@@ -162,7 +163,7 @@ export function applySplat(material: Material, maps: (id: MaterialFinish) => Fin
   })();
   const vary = float(1).add(patch.mul(MACRO_VARIATION.patch)).add(finer.w.sub(1));
   const tint = vec3(finer.x, finer.y, finer.z);
-  m.colorNode = vec4(materialColor.rgb.mul(vec3(rgb.r, rgb.g, rgb.b)).mul(tint).mul(vary), 1);
+  m.colorNode = staticShadowAlpha(vec4(materialColor.rgb.mul(vec3(rgb.r, rgb.g, rgb.b)).mul(tint).mul(vary), 1));
   m.roughnessNode = ormMix.g;
   m.aoNode = ormMix.r;
   m.normalNode = normalMap(nrm, vec2(strength, strength));

@@ -14,7 +14,7 @@ import { Box3, Mesh, Sphere, Vector3, type Camera, type Material, type MeshStand
 import { castById, characterUrl, clipTable, getCatalog, loadCatalog, motionSet, type CastMember, type ResolvedLook } from '@aether/assets';
 import { cloneModel, COMPRESSED_SOURCE_KEY, type ModelCache } from '../geometry/model-loader';
 import { CharacterRig, type Foot } from './rig';
-import { DEFAULT_REFS, decodeMasks, hasTint, materialsOf, originalBaseColours, partOf, tintedMaterial, tintKey, type Tint, type TintMasks, type TintRefs } from './tint';
+import { DEFAULT_REFS, decodeMasks, hasTint, materialsOf, originalBaseColours, partOf, tintedMaterialAsync, tintKey, type Tint, type TintMasks, type TintRefs } from './tint';
 import type { Prop } from './props';
 
 /** Distances (m) at which detail steps down. */
@@ -236,10 +236,12 @@ export class CharacterSystem {
     const original = source.userData[COMPRESSED_SOURCE_KEY] as unknown;
     const compressed = typeof original === 'string' && materialsOf(source).some((m) => ((m as MeshStandardMaterial).map as { isCompressedTexture?: boolean } | null)?.isCompressedTexture === true);
     set.ready = Promise.all([this.masksOf(body, base), compressed ? originalBaseColours(original) : Promise.resolve(null)])
-      .then(([masks, images]) => {
+      .then(async ([masks, images]) => {
         try {
           for (const m of materialsOf(source)) {
-            const { material, texture } = tintedMaterial(m as MeshStandardMaterial, partOf(m), tint, refs, masks, images?.get(m.name) ?? null);
+            if (this.disposed || this.tinted.get(key) !== set || set.users <= 0) break;
+            const { material, texture } = await tintedMaterialAsync(m as MeshStandardMaterial, partOf(m), tint, refs, masks, images?.get(m.name) ?? null);
+            if (this.disposed || this.tinted.get(key) !== set || set.users <= 0) { material.dispose(); texture?.dispose(); break; }
             set.materials.set(m, material);
             if (texture) set.textures.push(texture);
           }

@@ -10,6 +10,7 @@
  * they time JS on the main thread, not the GPU). Prints Markdown rows.
  *
  * Run: `npm run build && npx tsx tests/e2e/cpu-perf.e2e.ts [--worlds=a,b] [--frames=120] [--profile] [--size=1280x720]`
+ * `--tier=low|medium|high|ultra` uses realtime quality unless `--quality=realtime|studio|final` is explicit.
  */
 import { chromium, type CDPSession, type Page } from 'playwright';
 import { CHROME_ARGS, SKIP_FIRST_RUN, findChrome, startServer } from './support/env';
@@ -24,6 +25,9 @@ const PROFILE = ARGS.includes('--profile');
 /** The sampling heap profiler slows the page down a lot: opt in. */
 const WARM_TURN = Number(arg("warm") ?? 90);
 const HEAP = ARGS.includes('--heap');
+const QUALITY = arg('quality');
+if (QUALITY && !['realtime', 'studio', 'final'].includes(QUALITY)) throw new Error('Unknown --quality');
+if (arg('tier') && !['low', 'medium', 'high', 'ultra'].includes(arg('tier')!)) throw new Error('Unknown --tier');
 const TIMEOUT = 240_000;
 const t0 = performance.now();
 const log = (line: string): void => void process.stdout.write(`[${((performance.now() - t0) / 1000).toFixed(1).padStart(6)}s] ${line}\n`);
@@ -85,6 +89,8 @@ async function sceneStats(page: Page): Promise<Record<string, number>> {
     let meshes = 0;
     let visibleMeshes = 0;
     let skinned = 0;
+    const skeletons = new Set<import('three').Skeleton>();
+    const skeletonBindings = new Set<string>();
     let instanced = 0;
     let autoUpdate = 0;
     let nonCulled = 0;
@@ -103,7 +109,12 @@ async function sceneStats(page: Page): Promise<Record<string, number>> {
         for (let p: import('three').Object3D | null = o; p; p = p.parent) if (!p.visible) vis = false;
         if (vis) visibleMeshes++;
         if (!m.frustumCulled) nonCulled++;
-        if ((o as { isSkinnedMesh?: boolean }).isSkinnedMesh) skinned++;
+        if ((o as { isSkinnedMesh?: boolean }).isSkinnedMesh) {
+          skinned++;
+          const skeleton = (o as import('three').SkinnedMesh).skeleton;
+          skeletons.add(skeleton);
+          skeletonBindings.add(skeleton.bones.map((b) => b.uuid).join('|') + '#' + skeleton.boneInverses.map((m) => m.elements.join(',')).join('|'));
+        }
         if ((o as { isInstancedMesh?: boolean }).isInstancedMesh) instanced++;
         if (m.matrixAutoUpdate && !(o as { isSkinnedMesh?: boolean }).isSkinnedMesh) matrixAutoStatic++;
         geos.add(m.geometry);
@@ -117,6 +128,8 @@ async function sceneStats(page: Page): Promise<Record<string, number>> {
       meshes,
       visibleMeshes,
       skinned,
+      skeletons: skeletons.size,
+      skeletonBindings: skeletonBindings.size,
       instanced,
       matrixAuto: autoUpdate,
       nonCulled,
@@ -219,17 +232,18 @@ async function main(): Promise<void> {
         const m1 = await metrics(cdp);
         const idleScriptMs = ((m1['ScriptDuration'] ?? 0) - (m0['ScriptDuration'] ?? 0)) * 1000;
         const idleTaskMs = ((m1['TaskDuration'] ?? 0) - (m0['TaskDuration'] ?? 0)) * 1000;
-        const sceneS = await sceneStats(page);
         // Orbit under profilers.
         // Fixed tier, no adaptive resolution: a mid-run tier change would put its rebuild into the numbers.
-        const tier = await page.evaluate((t) => {
-          const r = window.__aether?.simulation?.renderer as unknown as { qualityPlan: { tier: string }; setRenderTier(t: string): void; setAdaptiveResolution(on: boolean): void };
+        const plan = await page.evaluate(([t, q]) => {
+          const r = window.__aether?.simulation?.renderer as unknown as { qualityPlan: { tier: string; quality: string }; setRenderTier(t: string): void; setRenderQuality(q: string): void; setAdaptiveResolution(on: boolean): void };
           const tier = t ?? r.qualityPlan.tier;
+          if (q || t) r.setRenderQuality(q ?? 'realtime');
           r.setAdaptiveResolution(false);
-          // The performance governor is switched off (it would step the tier down mid-run), the tier itself is not re-applied.
+          // Apply the requested tier: reporting it without setting it silently measures the previous plan.
+          r.setRenderTier(tier);
           (r as unknown as { governor: { enabled: boolean } }).governor.enabled = false;
-          return tier;
-        }, arg('tier') ?? null);
+          return { tier: r.qualityPlan.tier, quality: r.qualityPlan.quality };
+        }, [arg('tier') ?? null, QUALITY ?? null]);
         await page.waitForTimeout(1500);
         // One quick turn first so every visible program is compiled and every render object exists (steady state).
         await page.evaluate(async ([p, turn]) => {
@@ -247,7 +261,8 @@ async function main(): Promise<void> {
           });
         }, [pose, WARM_TURN] as const);
         await page.waitForTimeout(1500);
-        log(`tier ${tier}, warmed`);
+        log(`quality ${plan.quality}, tier ${plan.tier}, warmed`);
+        const sceneS = await sceneStats(page);
         await cdp.send('Profiler.enable');
         await cdp.send('HeapProfiler.enable');
         await page.evaluate(() => (window as unknown as { gc?: () => void }).gc?.());

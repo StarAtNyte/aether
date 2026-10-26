@@ -10,7 +10,7 @@
  * object-space `normal`, `faceIndex`, `object`), the same material-side
  * culling and the same near/far filtering.
  *
- * The tree is built lazily on the first raycast (a linear BVH: triangles
+ * The tree is warmed in a worker, or built lazily on the first raycast (a linear BVH: triangles
  * sorted by the Morton code of their centroids, at most
  * {@link LEAF_TRIANGLES} per leaf), cached per geometry, and refitted in
  * O(n) when the position attribute changes
@@ -20,38 +20,68 @@
  * Meshes with geometry groups, multi-materials, morph targets, skinning or a
  * custom draw range keep three's own raycast.
  */
-import { BackSide, DoubleSide, Matrix4, Mesh, Ray, Sphere, Vector3, type BufferAttribute, type BufferGeometry, type Intersection, type Material, type Raycaster } from 'three';
+import { BackSide, DoubleSide, Matrix4, Mesh, Ray, Sphere, Vector3, type BufferAttribute, type BufferGeometry, type Intersection, type Material, type Object3D, type Raycaster } from 'three';
+
+import { buildTriangleBvh, refitTriangleBvh, type TriangleBvh } from './raycast-bvh-build';
+import { BvhBuildClient } from './raycast-bvh-client';
+export type { TriangleBvh } from './raycast-bvh-build';
+const LEAF_BIT = 0x80000000;
 
 /** Meshes with fewer triangles keep three's brute-force raycast (cheaper than a tree). */
 export const BVH_MIN_TRIANGLES = 512;
 /** Triangles per leaf. */
-export const LEAF_TRIANGLES = 8;
+export { LEAF_TRIANGLES } from './raycast-bvh-build';
 /** Traversal stack depth (Morton splits: at most 30 code bits plus log2(n) equal-code halvings). */
 const STACK_SIZE = 96;
 
-/** A built tree. */
-export interface TriangleBvh {
-  /** Node boxes: min xyz, max xyz (6 floats per node). */
-  boxes: Float32Array;
-  /**
-   * Per node, two uint32: leaves store `[start, count | LEAF_BIT]` into
-   * {@link tris}; inner nodes store `[rightChild, 0]` (left child is the next node).
-   */
-  nodes: Uint32Array;
-  /** Triangle ids ordered by leaf. */
-  tris: Uint32Array;
-  /** Position array the tree was built from (raw access without per-ray lookups). */
-  positions: Float32Array;
-  /** Index array (null for non-indexed geometry). */
-  index: ArrayLike<number> | null;
-  nodeCount: number;
-  triangleCount: number;
-  positionVersion: number;
-  indexVersion: number;
+const cache = new WeakMap<BufferGeometry, TriangleBvh>();
+const warmups = new WeakMap<BufferGeometry, Promise<void>>();
+const bvhBuilds = new BvhBuildClient();
+
+/** Initial camera sight tests should await warmup rather than forcing cold BVHs onto the UI thread. */
+export async function warmRaycastTrees(root: Object3D): Promise<void> {
+  if (!bvhBuilds.available) return;
+  const geometries = new Set<BufferGeometry>();
+  root.traverse(object => {
+    const mesh = object as Mesh;
+    if (mesh.isMesh && mesh.raycast === bvhRaycast && bvhEligible(mesh)) geometries.add(mesh.geometry);
+  });
+  await Promise.all([...geometries].map(geometry => warmTriangleBvh(geometry)));
 }
 
-const LEAF_BIT = 0x80000000;
-const cache = new WeakMap<BufferGeometry, TriangleBvh>();
+/** Build the idle picking cache off-thread; never install results for edited or disposed geometry. */
+export function warmTriangleBvh(geometry: BufferGeometry, client = bvhBuilds): Promise<void> {
+  const pending = warmups.get(geometry);
+  if (pending) return pending;
+  const raw = plainArrays(geometry), position = geometry.getAttribute('position') as BufferAttribute | undefined;
+  const index = geometry.getIndex(), n = triangleCount(geometry);
+  if (!raw || !position || n < BVH_MIN_TRIANGLES) return Promise.resolve();
+  const positionVersion = position.version, indexVersion = index?.version ?? 0;
+  const current = cache.get(geometry);
+  if (current && current.positions === raw.p && current.index === raw.idx && current.triangleCount === n
+    && current.positionVersion === positionVersion && current.indexVersion === indexVersion) return Promise.resolve();
+  let disposed = false;
+  const onDispose = (): void => { disposed = true; };
+  geometry.addEventListener('dispose', onDispose);
+  const install = (result: Awaited<ReturnType<BvhBuildClient['build']>>): void => {
+    if (disposed || geometry.getAttribute('position') !== position || geometry.getIndex() !== index
+      || position.array !== raw.p || position.version !== positionVersion || (index?.array ?? null) !== raw.idx
+      || (index?.version ?? 0) !== indexVersion || triangleCount(geometry) !== n) return;
+    // A real pick may have built/refitted the current tree while warmup was pending. Preserve its identity.
+    const existing = cache.get(geometry);
+    if (existing && existing.positions === raw.p && existing.index === raw.idx && existing.triangleCount === n
+      && existing.positionVersion === positionVersion && existing.indexVersion === indexVersion) return;
+    if (result) cache.set(geometry, { ...result, positions: raw.p, index: raw.idx, positionVersion, indexVersion });
+    else triangleBvh(geometry);
+  };
+  const done = client.build(raw.p, raw.idx as Uint16Array | Uint32Array | null, n).then(result => {
+    if (result) install(result);
+    // A failed worker must not turn every queued warmup into one uninterruptible microtask chain.
+    else return new Promise<void>(resolve => onIdle(() => { install(null); resolve(); }));
+  }).finally(() => { geometry.removeEventListener('dispose', onDispose); warmups.delete(geometry); });
+  warmups.set(geometry, done);
+  return done;
+}
 
 function triangleCount(g: BufferGeometry): number {
   const index = g.getIndex();
@@ -92,198 +122,16 @@ export function triangleBvh(geometry: BufferGeometry): TriangleBvh | null {
   const cached = cache.get(geometry);
   if (cached && cached.triangleCount === n && cached.indexVersion === (index?.version ?? 0) && cached.positions === pos.array && cached.index === (index ? index.array : null)) {
     if (cached.positionVersion !== pos.version) {
-      refit(cached, cached.positions, cached.index);
+      refitTriangleBvh(cached, cached.positions, cached.index);
       cached.positionVersion = pos.version;
     }
     return cached;
   }
   const raw = plainArrays(geometry);
   if (!raw) return null;
-  const built = build(raw.p, raw.idx, n, pos.version, index?.version ?? 0);
+  const built = buildTriangleBvh(raw.p, raw.idx, n, pos.version, index?.version ?? 0);
   cache.set(geometry, built);
   return built;
-}
-
-/** Spread the low 10 bits of `v` so two zero bits separate each (Morton encoding). */
-function spread10(v: number): number {
-  let x = v & 0x3ff;
-  x = (x | (x << 16)) & 0x030000ff;
-  x = (x | (x << 8)) & 0x0300f00f;
-  x = (x | (x << 4)) & 0x030c30c3;
-  x = (x | (x << 2)) & 0x09249249;
-  return x;
-}
-
-/**
- * Linear BVH build: sort triangles by the Morton code of their centroids
- * (LSD radix sort, O(n)), split each range at the highest differing code
- * bit (binary search), then compute every box bottom-up with {@link refit}.
- * About 10x faster than a median-split build with similar query cost on
- * terrain-like meshes.
- */
-function build(p: Float32Array, idx: ArrayLike<number> | null, n: number, positionVersion: number, indexVersion: number): TriangleBvh {
-  const cx = new Float32Array(n);
-  const cy = new Float32Array(n);
-  const cz = new Float32Array(n);
-  let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
-  for (let t = 0; t < n; t++) {
-    const a = (idx ? (idx[t * 3] as number) : t * 3) * 3;
-    const b = (idx ? (idx[t * 3 + 1] as number) : t * 3 + 1) * 3;
-    const c = (idx ? (idx[t * 3 + 2] as number) : t * 3 + 2) * 3;
-    const x = ((p[a] as number) + (p[b] as number) + (p[c] as number)) / 3;
-    const y = ((p[a + 1] as number) + (p[b + 1] as number) + (p[c + 1] as number)) / 3;
-    const z = ((p[a + 2] as number) + (p[b + 2] as number) + (p[c + 2] as number)) / 3;
-    cx[t] = x;
-    cy[t] = y;
-    cz[t] = z;
-    if (x < minX) minX = x;
-    if (y < minY) minY = y;
-    if (z < minZ) minZ = z;
-    if (x > maxX) maxX = x;
-    if (y > maxY) maxY = y;
-    if (z > maxZ) maxZ = z;
-  }
-  const sx = maxX > minX ? 1023 / (maxX - minX) : 0;
-  const sy = maxY > minY ? 1023 / (maxY - minY) : 0;
-  const sz = maxZ > minZ ? 1023 / (maxZ - minZ) : 0;
-  let codes = new Uint32Array(n);
-  let tris = new Uint32Array(n);
-  for (let t = 0; t < n; t++) {
-    const qx = Number.isFinite(cx[t] as number) ? Math.floor(((cx[t] as number) - minX) * sx) : 0;
-    const qy = Number.isFinite(cy[t] as number) ? Math.floor(((cy[t] as number) - minY) * sy) : 0;
-    const qz = Number.isFinite(cz[t] as number) ? Math.floor(((cz[t] as number) - minZ) * sz) : 0;
-    codes[t] = ((spread10(qx) << 2) | (spread10(qy) << 1) | spread10(qz)) >>> 0;
-    tris[t] = t;
-  }
-  // LSD radix sort (4 × 8 bits) of (code, triangle) pairs.
-  let codesB = new Uint32Array(n);
-  let trisB = new Uint32Array(n);
-  const counts = new Uint32Array(256);
-  for (let shift = 0; shift < 32; shift += 8) {
-    counts.fill(0);
-    for (let i = 0; i < n; i++) {
-      const bucket = ((codes[i] as number) >>> shift) & 0xff;
-      counts[bucket] = (counts[bucket] as number) + 1;
-    }
-    let sum = 0;
-    for (let k = 0; k < 256; k++) {
-      const c = counts[k] as number;
-      counts[k] = sum;
-      sum += c;
-    }
-    for (let i = 0; i < n; i++) {
-      const code = codes[i] as number;
-      const bucket = (code >>> shift) & 0xff;
-      const slot = counts[bucket] as number;
-      counts[bucket] = slot + 1;
-      codesB[slot] = code;
-      trisB[slot] = tris[i] as number;
-    }
-    [codes, codesB] = [codesB, codes];
-    [tris, trisB] = [trisB, tris];
-  }
-  // Topology in preorder (left child = parent + 1, inner nodes store the right child).
-  const maxNodes = Math.max(1, 2 * n);
-  const nodes = new Uint32Array(maxNodes * 2);
-  let nodeCount = 0;
-  const stackStart: number[] = [0];
-  const stackEnd: number[] = [n];
-  const stackPatch: number[] = [-1];
-  while (stackStart.length > 0) {
-    const start = stackStart.pop() as number;
-    const end = stackEnd.pop() as number;
-    const patch = stackPatch.pop() as number;
-    const node = nodeCount++;
-    if (patch >= 0) nodes[patch * 2] = node;
-    const count = end - start;
-    if (count <= LEAF_TRIANGLES) {
-      nodes[node * 2] = start;
-      nodes[node * 2 + 1] = (count | LEAF_BIT) >>> 0;
-      continue;
-    }
-    const first = codes[start] as number;
-    const last = codes[end - 1] as number;
-    let mid: number;
-    if (first === last) {
-      mid = (start + end) >> 1;
-    } else {
-      // Highest differing bit; the first index whose code has it set splits the range.
-      const bit = 31 - Math.clz32((first ^ last) >>> 0);
-      const prefix = (last >>> bit) << bit;
-      let lo = start;
-      let hi = end - 1;
-      while (lo < hi) {
-        const m = (lo + hi) >> 1;
-        if ((codes[m] as number) >= prefix) hi = m;
-        else lo = m + 1;
-      }
-      mid = lo;
-      // Keep leaves reasonably balanced when one side would be tiny.
-      if (mid - start < 1 || end - mid < 1) mid = (start + end) >> 1;
-    }
-    nodes[node * 2 + 1] = 0;
-    // The left subtree is emitted next (node + 1); the right child patches this node's slot.
-    stackStart.push(mid);
-    stackEnd.push(end);
-    stackPatch.push(node);
-    stackStart.push(start);
-    stackEnd.push(mid);
-    stackPatch.push(-1);
-  }
-  const tree: TriangleBvh = {
-    boxes: new Float32Array(nodeCount * 6),
-    nodes: nodes.slice(0, nodeCount * 2),
-    tris,
-    positions: p,
-    index: idx,
-    nodeCount,
-    triangleCount: n,
-    positionVersion,
-    indexVersion,
-  };
-  refit(tree, p, idx);
-  return tree;
-}
-
-/** Recompute node boxes after vertices moved (same topology). Allocation-free. */
-function refit(tree: TriangleBvh, p: Float32Array, idx: ArrayLike<number> | null): void {
-  const { boxes, nodes, tris } = tree;
-  // Children always have larger indices than their parent (preorder): walk backwards.
-  for (let node = tree.nodeCount - 1; node >= 0; node--) {
-    const meta = nodes[node * 2 + 1] as number;
-    const b = node * 6;
-    if ((meta & LEAF_BIT) !== 0) {
-      const start = nodes[node * 2] as number;
-      const count = meta & ~LEAF_BIT;
-      let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
-      for (let i = start; i < start + count; i++) {
-        const t = tris[i] as number;
-        for (let k = 0; k < 3; k++) {
-          const v = (idx ? (idx[t * 3 + k] as number) : t * 3 + k) * 3;
-          const x = p[v] as number, y = p[v + 1] as number, z = p[v + 2] as number;
-          if (x < minX) minX = x;
-          if (y < minY) minY = y;
-          if (z < minZ) minZ = z;
-          if (x > maxX) maxX = x;
-          if (y > maxY) maxY = y;
-          if (z > maxZ) maxZ = z;
-        }
-      }
-      boxes[b] = minX;
-      boxes[b + 1] = minY;
-      boxes[b + 2] = minZ;
-      boxes[b + 3] = maxX;
-      boxes[b + 4] = maxY;
-      boxes[b + 5] = maxZ;
-    } else {
-      const l = (node + 1) * 6;
-      const r = (nodes[node * 2] as number) * 6;
-      for (let k = 0; k < 3; k++) {
-        boxes[b + k] = Math.min(boxes[l + k] as number, boxes[r + k] as number);
-        boxes[b + 3 + k] = Math.max(boxes[l + 3 + k] as number, boxes[r + 3 + k] as number);
-      }
-    }
-  }
 }
 
 // Scratch (module-level: raycasts are synchronous and never re-entrant).
@@ -338,9 +186,9 @@ function boxEntry(boxes: Float32Array, b: number): boolean {
 /**
  * Nearest local-space hit along `ray` (Möller–Trumbore). Returns the hit
  * distance (in local ray units) and writes the triangle id into `out[0]`,
- * or Infinity when nothing is hit.
+ * or Infinity when nothing is hit before the optional local-space upper bound.
  */
-export function bvhNearest(tree: TriangleBvh, p: Float32Array, idx: ArrayLike<number> | null, ray: Ray, side: number, out: Int32Array): number {
+export function bvhNearest(tree: TriangleBvh, p: Float32Array, idx: ArrayLike<number> | null, ray: Ray, side: number, out: Int32Array, maxDistance = Infinity): number {
   const { boxes, nodes, tris } = tree;
   const dx = ray.direction.x, dy = ray.direction.y, dz = ray.direction.z;
   const r = _rayS;
@@ -355,7 +203,7 @@ export function bvhNearest(tree: TriangleBvh, p: Float32Array, idx: ArrayLike<nu
   r[7] = dy !== 0 ? 1 / dy : 1e30;
   r[8] = dz !== 0 ? 1 / dz : 1e30;
   r[9] = side;
-  let best = Infinity;
+  let best = maxDistance;
   _best[0] = best;
   let bestTri = -1;
   let sp = 0;
@@ -398,7 +246,7 @@ export function bvhNearest(tree: TriangleBvh, p: Float32Array, idx: ArrayLike<nu
     }
   }
   out[0] = bestTri;
-  return best;
+  return bestTri < 0 ? Infinity : best;
 }
 
 /** Ray/triangle (_a, _b, _c) test with three's material-side culling; the hit distance goes to `_out[1]`. */
@@ -456,7 +304,19 @@ export function bvhRaycast(this: Mesh, raycaster: Raycaster, intersects: Interse
   const index = geometry.getIndex();
   _inverse.copy(this.matrixWorld).invert();
   _ray.copy(raycaster.ray).applyMatrix4(_inverse);
-  const local = bvhNearest(tree, tree.positions, tree.index, _ray, material.side, _hit);
+  let limit = Infinity;
+  const origin = raycaster.ray.origin;
+  // A cheap coverage hint avoids scale-bound setup for ordinary nearby meshes.
+  if (Number.isFinite(raycaster.far) && raycaster.far >= 0 && raycaster.far < _sphere.radius
+    + Math.abs(origin.x - _sphere.center.x) + Math.abs(origin.y - _sphere.center.y) + Math.abs(origin.z - _sphere.center.z)) {
+    // sqrt(3) * max column norm bounds the inverse's operator norm, including shear.
+    // It maps a world-space distance to a conservative local radius, not a guessed scale along the ray.
+    const e = this.matrixWorld.elements;
+    const rounding = (Math.abs(origin.x) + Math.abs(origin.y) + Math.abs(origin.z)
+      + Math.abs(e[12]!) + Math.abs(e[13]!) + Math.abs(e[14]!)) * Number.EPSILON * 16;
+    limit = (raycaster.far + rounding) * _inverse.getMaxScaleOnAxis() * Math.sqrt(3) + 1e-9;
+  }
+  const local = bvhNearest(tree, tree.positions, tree.index, _ray, material.side, _hit, limit);
   const tri = _hit[0] as number;
   if (local === Infinity || tri < 0) return;
   _ray.at(local, _point);
@@ -484,17 +344,25 @@ const onIdle: IdleScheduler = (cb) => {
 
 /**
  * Use the BVH raycast for `mesh` when it is large enough (no-op otherwise)
- * and build its tree at the next idle moment, so the first pick or camera
- * occlusion test never pays for the build. Returns true when enabled.
+ * and warm its tree in a worker at the next idle moment. Early picks retain
+ * synchronous construction; custom schedulers retain their synchronous callback.
+ * Returns true when enabled.
  */
 export function accelerateRaycast(mesh: Mesh, idle: IdleScheduler | null = onIdle): boolean {
   if (!(mesh instanceof Mesh) || !bvhEligible(mesh)) return false;
   mesh.raycast = bvhRaycast;
   const geometry = mesh.geometry as BufferGeometry;
   if (idle && !cache.has(geometry)) {
+    let disposed = false;
+    const onDispose = (): void => { disposed = true; };
+    geometry.addEventListener('dispose', onDispose);
     idle(() => {
+      geometry.removeEventListener('dispose', onDispose);
       // Skip geometries that were disposed or replaced in the meantime.
-      if (mesh.geometry === geometry && geometry.getAttribute('position')) triangleBvh(geometry);
+      if (!disposed && mesh.geometry === geometry && geometry.getAttribute('position')) {
+        if (idle === onIdle) void warmTriangleBvh(geometry);
+        else triangleBvh(geometry);
+      }
     });
   }
   return true;

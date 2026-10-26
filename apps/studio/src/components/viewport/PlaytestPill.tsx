@@ -31,7 +31,7 @@ export const PlaytestPill = memo(function PlaytestPill(): ReactElement | null {
       data-verified={badge.verified ? 'true' : 'false'}
       data-tone={badge.tone}
     >
-      <span className="vp-btn__status" aria-hidden="true" />
+      <span className={pt.status === 'running' ? 'spinner' : 'vp-btn__status'} aria-hidden="true" />
       <span>{badge.text}</span>
     </button>
   );

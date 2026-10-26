@@ -105,6 +105,20 @@ function fakeHost(log: string[]): CaptureHost & { camera: PerspectiveCamera } {
 }
 
 describe('capture sessions', () => {
+  it('waits for pending shader links and does not draw after cancellation while waiting', async () => {
+    const log: string[] = [], host = fakeHost(log);
+    let ready!: () => void;
+    host.ready = () => new Promise<void>(resolve => { ready = resolve; });
+    const session = openCaptureSession(host, 32, 32);
+    const pending = session.frame({ pos: [4, 5, 6], target: [0, 0, 0] });
+    expect(host.camera.position.toArray()).toEqual([1, 2, 3]);
+    expect(log).toHaveLength(1);
+    session.end();
+    ready();
+    await expect(pending).rejects.toThrow('capture session ended');
+    expect(log).toEqual(['begin 32x32 vignette=true', 'finish']);
+  });
+
   it('poses the camera, accumulates, reads back and restores everything', async () => {
     const log: string[] = [];
     const host = fakeHost(log);

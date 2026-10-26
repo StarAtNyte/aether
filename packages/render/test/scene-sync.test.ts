@@ -397,6 +397,48 @@ describe('SceneSync runtime', () => {
     expect((performance.now() - t0) / 30).toBeLessThan(8);
   });
 
+  it('converts sibling physics poses correctly when their parent changes inside the same update', async () => {
+    const { sync } = makeSync();
+    await sync.setWorld(world([
+      { id: 'ancestor', transform: { position: [3, 0, 0] } },
+      { id: 'holder', parent: 'ancestor', transform: { position: [2, 0, 0], rotation: [0, 30, 0], scale: [2, 2, 2] } },
+      { id: 'a', parent: 'holder' }, { id: 'b', parent: 'holder' }, { id: 'c', parent: 'holder' },
+    ]));
+    const pose = (x: number) => [x, 1, 2, 0, 0, 0, 1];
+    // Prime clean descendants, then move an ancestor between sibling conversions.
+    sync.root.updateMatrixWorld(true);
+    sync.applyTransforms(new Float32Array([...pose(10), ...pose(20), ...pose(30), ...pose(40)]), ['a', 'b', 'ancestor', 'c']);
+    sync.root.updateMatrixWorld(true);
+    const p = new Vector3().setFromMatrixPosition(sync.object('c')!.matrixWorld);
+    expect(p.x).toBeCloseTo(40, 5);
+    expect(p.y).toBeCloseTo(1, 5);
+    expect(p.z).toBeCloseTo(2, 5);
+    // A singular parent must skip every sibling; the next valid update must recover.
+    const holder = sync.object('holder')!;
+    holder.scale.set(0, 0, 0); holder.updateMatrix();
+    const before = sync.object('c')!.position.clone();
+    sync.applyTransforms(new Float32Array([...pose(50), ...pose(60)]), ['b', 'c']);
+    expect(sync.object('c')!.position.equals(before)).toBe(true);
+    holder.scale.set(2, 2, 2); holder.updateMatrix();
+    sync.applyTransforms(new Float32Array([...pose(50), ...pose(60)]), ['b', 'c']);
+    sync.root.updateMatrixWorld(true);
+    p.setFromMatrixPosition(sync.object('c')!.matrixWorld);
+    expect(p.x).toBeCloseTo(60, 5);
+    expect(p.y).toBeCloseTo(1, 5);
+    expect(p.z).toBeCloseTo(2, 5);
+    const rotation = new Quaternion();
+    sync.object('c')!.matrixWorld.decompose(new Vector3(), rotation, new Vector3());
+    expect(Math.abs(rotation.w)).toBeCloseTo(1, 5);
+    // Architectural/runtime reparenting must use the new parent's conversion.
+    sync.object('ancestor')!.add(sync.object('c')!);
+    sync.applyTransforms(new Float32Array(pose(70)), ['c']);
+    sync.root.updateMatrixWorld(true);
+    p.setFromMatrixPosition(sync.object('c')!.matrixWorld);
+    expect(p.x).toBeCloseTo(70, 5);
+    expect(p.y).toBeCloseTo(1, 5);
+    expect(p.z).toBeCloseTo(2, 5);
+  });
+
   it('runtime property overrides: fast paths, generic paths, rejection and reset', async () => {
     const { sync } = makeSync();
     const w = world([box('a', [0, 0.5, 0], { light: { type: 'point', intensity: 1 } })]);

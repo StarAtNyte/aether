@@ -219,6 +219,7 @@
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: first-run-spin 0.8s linear infinite;
+  will-change: transform;
 }
 
 @keyframes first-run-spin {
@@ -229,6 +230,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .spinner {
+    will-change: auto;
     animation: none;
     border-top-color: var(--border-strong);
   }

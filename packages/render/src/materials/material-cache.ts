@@ -220,7 +220,15 @@ function applyFinish(m: MeshStandardMaterial, r: ResolvedMaterial, finishes: Fin
  * specs that resolve identically share one GPU material (and one pipeline).
  */
 export class MaterialCache {
-  private readonly cache = new RefCache<Material>((m) => m.dispose());
+  private waterList: readonly Material[] = [];
+  private waterListDirty = false;
+  private readonly cache = new RefCache<Material>((m) => {
+    if (m.userData[WATER_SHADER_KEY]) {
+      this.waterList = []; // Do not retain a disposed shader when no later water pass requests the list.
+      this.waterListDirty = true;
+    }
+    m.dispose();
+  });
   /** Procedural surface textures shared by this cache's lava/water materials. */
   readonly surfaces = new SurfaceTextures();
   /** Texture maps of the physically based finishes (architecture). */
@@ -259,12 +267,16 @@ export class MaterialCache {
   backdropWater = false;
 
   /** The live water materials (hidden while the planar mirror is drawn). */
-  waterMaterials(): Material[] {
-    const out: Material[] = [];
-    this.cache.forEach((m) => {
-      if (m.userData[WATER_SHADER_KEY]) out.push(m);
-    });
-    return out;
+  waterMaterials(): readonly Material[] {
+    if (this.waterListDirty) {
+      const out: Material[] = [];
+      this.cache.forEach((m) => {
+        if (m.userData[WATER_SHADER_KEY]) out.push(m);
+      });
+      this.waterList = out;
+      this.waterListDirty = false;
+    }
+    return this.waterList;
   }
 
   /** Re-derive every water shader's waves from the current wind (call after `setWind`). */
@@ -310,6 +322,7 @@ export class MaterialCache {
     const material = this.cache.acquire(key, () => {
       const m = createMaterial(resolved, variant, this.surfaces, this.finishes, this.antiTile, this.foliage, this.layeredTerrain, variant === 'standard' ? tier : null, this.mirror, this.groundDetail, this.backdropWater ? this.backdrop : null);
       if (this.reflectiveWater && m.userData[WATER_KEY] === true) setWaterLook(m, true);
+      if (m.userData[WATER_SHADER_KEY]) this.waterListDirty = true;
       return m;
     });
     return { key, material, resolved };
@@ -333,6 +346,8 @@ export class MaterialCache {
   /** Dispose every material and the surface textures. */
   dispose(): void {
     this.cache.clear();
+    this.waterList = [];
+    this.waterListDirty = false;
     this.surfaces.dispose();
     this.finishes.dispose();
     this.foliage.dispose();

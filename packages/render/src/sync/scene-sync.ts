@@ -16,6 +16,7 @@ import {
   Box3,
   BoxGeometry,
   Group,
+  Frustum,
   InstancedBufferAttribute,
   InstancedMesh,
   LOD,
@@ -56,8 +57,9 @@ import { mergeMaterial, resolveMaterial, type MaterialVariant, type ResolvedMate
 import { softenKeyed } from '../geometry/soften';
 import { FINISH_NODES_KEY } from '../materials/anti-tile';
 import { FOLIAGE_GENERATORS } from '../materials/wind';
-import { createMaterial } from '../materials/material-cache';
-import { instantiateAsset, instantiateModel, type ModelCache } from '../geometry/model-loader';
+import { WATER_SHADER_KEY } from '../materials/water';
+import { createMaterial, WATER_KEY } from '../materials/material-cache';
+import { disposeModelInstance, instantiateAsset, instantiateModel, type ModelCache } from '../geometry/model-loader';
 import { createPoster, shareMaterials, type TextureCache } from '../geometry/poster';
 import type { AssetAnimator } from './asset-animator';
 import { isVehicleModel, VehicleRig } from './vehicle-rig';
@@ -131,8 +133,12 @@ export interface SceneSyncOptions {
   maxScatterTriangles?: number;
   /** Called after any entity's content (geometry/bounds) changed. */
   onContentChanged?: (id: EntityId) => void;
+  /** A background merge completed or needs another preparation pass. */
+  onBatchesChanged?: () => void;
   /** Draw identical static props as instanced batches (default true; never for the ghost variant). */
   staticBatching?: boolean;
+  /** Off-thread merges; the host must hold drawing while batchPreparationPending is nonzero (WorldRenderer does). */
+  backgroundMerges?: boolean;
   /** The scene's people: entities with `character` show a cast member instead of their shape. */
   characters?: CharacterSystem;
   /**
@@ -160,7 +166,6 @@ export const DEFAULT_VIRTUAL_TRIANGLES = 1_500_000;
 // Scratch objects (no per-frame allocations in applyTransforms).
 const _inv = new Matrix4();
 const _pPos = new Vector3();
-const _pQuat = new Quaternion();
 const _pScale = new Vector3();
 const _q = new Quaternion();
 const _v = new Vector3();
@@ -322,7 +327,7 @@ export class SceneSync {
     this.placeholderGeometry = new BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
     this.placeholderMaterial = new MeshStandardMaterial({ color: '#9aa4b2', roughness: 0.9, transparent: true, opacity: 0.35, depthWrite: false });
     this.batches = this.variant === 'standard' && opts.staticBatching !== false ? new StaticBatches(this.root) : null;
-    this.merges = this.variant === 'standard' && opts.staticBatching !== false ? new StaticMerges() : null;
+    this.merges = this.variant === 'standard' && opts.staticBatching !== false ? new StaticMerges({ background: opts.backgroundMerges === true, changed: opts.onBatchesChanged }) : null;
     this.fieldBudget = this.variant === 'standard' && opts.fields !== false ? (opts.fields ?? DEFAULT_FIELD_BUDGET) : null;
     const virtual = this.variant === 'standard' && opts.virtual !== false ? (opts.virtual ?? { triangles: DEFAULT_VIRTUAL_TRIANGLES }) : null;
     this.dags = virtual ? new DagClient(virtual.dag) : null;
@@ -438,13 +443,17 @@ export class SceneSync {
         this.mergesPending = false;
         merged = m.rebuild(this.nodes.values());
       }
-      if (m.count > 0 && m.update()) merged = true;
+      if ((m.count > 0 || m.pending > 0) && m.update()) merged = true;
     }
     return regrouped || moved || merged;
   }
 
   /** A regroup of the merges is due when merging resumes. */
   private mergesPending = true;
+
+  get batchPreparationPending(): number { return this.merges?.pending ?? 0; }
+  async waitForBatches(): Promise<void> { await this.merges?.idle(); }
+  synchronousBatches<T>(draw: () => T): T { return this.merges ? this.merges.synchronous(draw) : draw(); }
 
   /**
    * Pause or resume building merges. While paused (content growing in, every
@@ -459,7 +468,7 @@ export class SceneSync {
 
   /** Whether {@link updateBatches} has work (batches exist or a regroup is pending). */
   get batchesActive(): boolean {
-    const merging = this.merges !== null && !this.mergesSuspended && (this.mergesPending || this.merges.count > 0);
+    const merging = this.merges !== null && !this.mergesSuspended && (this.mergesPending || this.merges.count > 0 || this.merges.pending > 0);
     return (this.batches !== null && (this.batchesStale || this.batches.count > 0 || this.batches.needsRebuild)) || merging;
   }
 
@@ -528,12 +537,12 @@ export class SceneSync {
 
   /** No build or model load is in flight. */
   get idle(): boolean {
-    return this.inflight.size === 0;
+    return this.inflight.size === 0 && this.batchPreparationPending === 0;
   }
 
   /** Resolves when every in-flight build (including model loads) settled. */
   async whenIdle(): Promise<void> {
-    while (this.inflight.size > 0) await Promise.allSettled([...this.inflight]);
+    while (!this.idle) await Promise.allSettled([...this.inflight, this.waitForBatches()]);
   }
 
   /**
@@ -817,13 +826,19 @@ export class SceneSync {
     return best;
   }
 
+  private readonly physicsParents = new WeakMap<Object3D, {
+    world: Matrix4; inverse: Matrix4; rotation: Quaternion; invertible: boolean;
+  }>();
+
   /**
    * Apply packed world-space poses `[px,py,pz,qx,qy,qz,qw]*` (from
-   * `PhysicsWorld.writeTransforms`). Zero allocations. Parented bodies are
-   * converted into their parent's space.
+   * `PhysicsWorld.writeTransforms`). Parented bodies are converted into their
+   * parent's space; conversions are allocated on first use and reused thereafter.
    */
   applyTransforms(packed: Float32Array, order: readonly EntityId[]): void {
     const n = Math.min(order.length, Math.floor(packed.length / 7));
+    let previousParent: Object3D | null = null;
+    let conversion: { world: Matrix4; inverse: Matrix4; rotation: Quaternion; invertible: boolean } | undefined;
     for (let i = 0; i < n; i++) {
       const node = this.nodes.get(order[i] as EntityId);
       if (!node) continue;
@@ -842,14 +857,32 @@ export class SceneSync {
         obj.position.set(px, py, pz);
         obj.quaternion.set(qx, qy, qz, qw);
       } else {
-        parent.updateWorldMatrix(true, false);
+        updateWorldChain(parent);
         const pm = parent.matrixWorld;
-        if (pm.determinant() === 0) continue;
-        pm.decompose(_pPos, _pQuat, _pScale);
-        _inv.copy(pm).invert();
-        obj.position.set(px, py, pz).applyMatrix4(_inv);
+        if (parent !== previousParent) {
+          previousParent = parent;
+          conversion = this.physicsParents.get(parent);
+        }
+        const fresh = conversion === undefined;
+        if (!conversion) {
+          conversion = { world: new Matrix4(), inverse: new Matrix4(), rotation: new Quaternion(), invertible: false };
+          this.physicsParents.set(parent, conversion);
+        }
+        // Reuse the conversion across siblings and frames, checking the current world matrix.
+        // A parent or ancestor may itself have moved earlier in this packed update.
+        if (fresh || !pm.equals(conversion.world)) {
+          conversion.world.copy(pm);
+          conversion.invertible = pm.determinant() !== 0;
+          if (conversion.invertible) {
+            pm.decompose(_pPos, conversion.rotation, _pScale);
+            conversion.rotation.invert();
+            conversion.inverse.copy(pm).invert();
+          }
+        }
+        if (!conversion.invertible) continue;
+        obj.position.set(px, py, pz).applyMatrix4(conversion.inverse);
         _q.set(qx, qy, qz, qw);
-        obj.quaternion.copy(_pQuat.invert()).multiply(_q);
+        obj.quaternion.copy(conversion.rotation).multiply(_q);
       }
       obj.updateMatrix();
       // A moving high-poly mesh re-plans its cut on the next frame.
@@ -897,6 +930,7 @@ export class SceneSync {
   dispose(): void {
     if (this.disposed) return;
     this.clear();
+    this.merges?.dispose();
     this.disposed = true;
     this.dags?.dispose();
     this.placeholderGeometry.dispose();
@@ -986,6 +1020,7 @@ export class SceneSync {
   }
 
   private removeNode(node: EntityNode): void {
+    this.unindexWater(node);
     node.token++;
     if (node.characterBody !== null) this.opts.characters?.remove(node.id);
     this.batchesStale = true;
@@ -1167,6 +1202,7 @@ export class SceneSync {
       if (!this.isCurrent(node, token)) return;
       this.clearPlaceholder(node);
       const model = instantiateModel(source, fitSize);
+      node.releases.push(() => disposeModelInstance(model));
       model.traverse((o) => {
         if (o instanceof Mesh) {
           o.castShadow = this.variant === 'standard' && node.entity.castShadow;
@@ -1175,6 +1211,49 @@ export class SceneSync {
       });
       node.content.add(model);
     });
+  }
+
+  /** Only candidate water nodes are checked before the expensive reflection/refraction scene passes. */
+  private readonly waterNodes: EntityNode[] = [];
+  private readonly waterNodeIndex = new Map<EntityNode, number>();
+
+  private unindexWater(node: EntityNode): void {
+    const index = this.waterNodeIndex.get(node);
+    if (index === undefined) return;
+    const last = this.waterNodes.pop()!;
+    this.waterNodeIndex.delete(node);
+    if (index < this.waterNodes.length) {
+      this.waterNodes[index] = last;
+      this.waterNodeIndex.set(last, index);
+    }
+  }
+  private readonly waterFrustum = new Frustum();
+  private readonly waterProjection = new Matrix4();
+
+  /** Conservative draw visibility: uses the same mesh spheres, layers and hierarchy as the renderer. */
+  hasVisibleWater(camera: PerspectiveCamera): boolean {
+    if (this.waterNodes.length === 0) return false;
+    updateWorldChain(camera);
+    this.waterFrustum.setFromProjectionMatrix(this.waterProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse), camera.coordinateSystem, camera.reversedDepth);
+    for (let i = 0; i < this.waterNodes.length; i++) {
+      const node = this.waterNodes[i]!;
+      if (!visibleUnder(node.content, this.root)) continue;
+      // These draw through stand-ins with their own bounds; keep their auxiliary passes until those are tested too.
+      if (node.field || node.virtual.length > 0 || node.instances > 0) return true;
+      for (let j = 0; j < node.bindings.length; j++) {
+        const mesh = node.bindings[j]!.mesh;
+        const material = mesh.material;
+        if (Array.isArray(material)) return true;
+        if (!waterMaterial(material) || !material.visible || !visibleUnder(mesh, this.root)) continue;
+        // A merged/instanced replacement owns the draw bounds, so its picking-only source cannot reject the pass.
+        if (mesh.layers.isEnabled(BATCHED_LAYER)) return true;
+        if (!camera.layers.test(mesh.layers)) continue;
+        if (!mesh.frustumCulled) return true;
+        updateWorldChain(mesh);
+        if (this.waterFrustum.intersectsObject(mesh)) return true;
+      }
+    }
+    return false;
   }
 
   /** Advance asset animations (characters, animals). Returns true when a redraw is needed. */
@@ -1298,6 +1377,7 @@ export class SceneSync {
       }
     });
     node.content.add(content);
+    node.releases.push(() => disposeModelInstance(content));
     if (standard) {
       this.paintAsset(node);
       if (isVehicleModel(main)) {
@@ -1848,6 +1928,14 @@ export class SceneSync {
 
   private applyShadowFlags(node: EntityNode): void {
     this.batchesStale = true;
+    const hasWater = node.entity.material?.preset === 'water' || node.bindings.some((b) => {
+      const m = b.mesh.material;
+      return Array.isArray(m) ? m.some((part) => waterMaterial(part)) : waterMaterial(m);
+    });
+    if (hasWater && !this.waterNodeIndex.has(node)) {
+      this.waterNodeIndex.set(node, this.waterNodes.length);
+      this.waterNodes.push(node);
+    } else if (!hasWater) this.unindexWater(node);
     const standard = this.variant === 'standard';
     // Dense scatter layers (grass, pebbles) would double their draw cost in the shadow pass.
     const shadowCaster = node.instances <= SCATTER_SHADOW_MAX_INSTANCES;
@@ -1970,4 +2058,23 @@ export class SceneSync {
       return h === h ? (h - pos.y) / sy : Number.NaN;
     };
   }
+}
+
+/** Visibility does not inherit layer masks, but it does inherit every ancestor's visible flag. */
+function visibleUnder(object: Object3D, root: Object3D): boolean {
+  for (let o: Object3D | null = object; o; o = o.parent) {
+    if (!o.visible) return false;
+    if (o === root) return true;
+  }
+  return false;
+}
+
+function waterMaterial(material: Material): boolean {
+  return material.userData[WATER_KEY] === true || material.userData[WATER_SHADER_KEY] !== undefined;
+}
+
+/** r186's updateWorldMatrix does not propagate an updated ancestor to clean descendants. */
+function updateWorldChain(object: Object3D): void {
+  if (object.parent) updateWorldChain(object.parent);
+  object.updateWorldMatrix(false, false, true);
 }

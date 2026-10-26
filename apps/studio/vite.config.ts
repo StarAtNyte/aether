@@ -10,7 +10,7 @@ import { siteMeta } from '../../scripts/vite/site-meta.ts';
 const LIBRARY_DIR = fileURLToPath(new URL('../../assets/lib', import.meta.url));
 
 /** Backend (apps/server) used for `/api` during `vite dev` and `vite preview`. */
-const API_TARGET = 'http://localhost:8787';
+const API_TARGET = process.env.AETHER_API_TARGET ?? 'http://localhost:8787';
 
 const apiProxy = {
   '/api': { target: API_TARGET, changeOrigin: true },
@@ -52,6 +52,7 @@ export default defineConfig(async ({ command }) => {
   },
   server: {
     port: 5173,
+    allowedHosts: [".trycloudflare.com"],
     proxy: apiProxy,
   },
   preview: {

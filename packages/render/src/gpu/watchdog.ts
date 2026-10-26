@@ -82,6 +82,8 @@ export class BlackScreenWatchdog {
   private dark = 0;
   private taken = 0;
   private over = false;
+  private lastTick = 0;
+  private waiting = false;
   /** An image was seen. */
   healthy = false;
   /** Last read-back (diagnostics). */
@@ -97,6 +99,7 @@ export class BlackScreenWatchdog {
     this.begunAt = now;
     this.since = now;
     this.lastSample = now;
+    this.lastTick = now;
     this.framesAtStep = frames;
   }
 
@@ -118,9 +121,16 @@ export class BlackScreenWatchdog {
   /**
    * Advance the watch. `frames` counts frames drawn so far; `sample` is the read-back of the frame just drawn (null when
    * none was taken). Returns the next step when one is due.
+   * `preparing` pauses no-frame and give-up clocks while the host intentionally holds drawing for CPU preparation.
    */
-  tick(now: number, frames: number, sample: FrameSample | null): WatchdogAction | null {
+  tick(now: number, frames: number, sample: FrameSample | null, preparing = false): WatchdogAction | null {
     if (this.begunAt < 0 || this.finished) return null;
+    if (preparing || this.waiting) {
+      const elapsed = Math.max(0, now - this.lastTick);
+      this.begunAt += elapsed; this.since += elapsed;
+    }
+    this.lastTick = now; this.waiting = preparing;
+    if (preparing) return null;
     if (now - this.begunAt > this.o.giveUpMs) {
       this.over = true;
       return null;

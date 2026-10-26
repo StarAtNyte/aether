@@ -259,6 +259,124 @@ describe('asset animation', () => {
     );
     expect(r.bytesPerIteration, describeSites(r)).toBeLessThan(16);
   });
+  it('draws a distant-only scene ten times per sixty frames while preserving animation time', () => {
+    const animator = new AssetAnimator();
+    const tracked = new Group();
+    const root = new Group();
+    root.add(new Object3D());
+    root.animations = [clip('idle')];
+    tracked.add(root);
+    tracked.position.x = 200;
+    animator.add('far', root, tracked, { idle: 'idle' }, 'idle');
+    const eye = { x: 0, y: 0, z: 0 };
+    let draws = 0;
+    for (let frame = 0; frame < 60; frame++) if (animator.update(1 / 60, eye)) draws++;
+    expect(draws).toBe(10);
+    const item = (animator as unknown as { list: Array<{ mixer: { time: number } }> }).list[0]!;
+    expect(item.mixer.time).toBeCloseTo(1);
+    tracked.visible = false;
+    for (let frame = 0; frame < 60; frame++) expect(animator.update(1 / 60, eye)).toBe(false);
+    expect(item.mixer.time).toBeCloseTo(1);
+    animator.clear();
+  });
+
+  it('bounds mixed-distance allocation to scheduled steps rather than every actor', async () => {
+    const animator = new AssetAnimator();
+    const parents: Group[] = [];
+    for (let i = 0; i < 24; i++) {
+      const parent = new Group(), root = new Group();
+      root.add(new Object3D());
+      root.animations = [clip('idle'), clip('walk'), clip('run')];
+      parent.position.z = [5, 80, 200][i % 3]!;
+      parent.add(root);
+      animator.add(`lod-${i}`, root, parent, { idle: 'idle', walk: 'walk', run: 'run' }, undefined);
+      parents.push(parent);
+    }
+    let time = 0;
+    const eye = { x: 0, y: 0, z: 0 };
+    const report = await probeAllocations(() => {
+      time += 1 / 60;
+      for (let i = 0; i < parents.length; i++) {
+        parents[i]!.position.x = Math.sin(time + i) * 3;
+        parents[i]!.updateMatrixWorld();
+      }
+      animator.update(1 / 60, eye);
+    }, { iterations: 800, warmup: 12000, match: /packages\/render\/src\/sync\/asset-animator/ });
+    // Eight mid/far actors each: ~4 accumulated mixer steps/frame, at most one boxed
+    // timestep each. Allow sampling noise, but reject per-skipped-actor temporaries.
+    expect(report.bytesPerIteration, describeSites(report)).toBeLessThan(128);
+    animator.clear();
+  });
+
+  it('keeps independent mixer times when near, mid and far actors share variable timesteps', () => {
+    const animator = new AssetAnimator();
+    const parents: Group[] = [];
+    const every = [6, 1, 3, 1, 6];
+    const owed = every.map(() => 0), expected = every.map(() => 0);
+    for (let i = 0; i < every.length; i++) {
+      const parent = new Group(), root = new Group();
+      root.add(new Object3D());
+      root.animations = [clip('idle')];
+      parent.position.x = every[i] === 6 ? 200 : every[i] === 3 ? 80 : 5;
+      parent.add(root);
+      animator.add(`mixed-${i}`, root, parent, { idle: 'idle' }, i % 2 ? undefined : 'idle');
+      parents.push(parent);
+    }
+    const items = (animator as unknown as { list: Array<{ mixer: { time: number } }> }).list;
+    for (let frame = 1; frame <= 120; frame++) {
+      const dt = 0.01 + (frame % 7) * 0.001;
+      const eye = frame % 17 ? { x: 0, y: 0, z: 0 } : undefined;
+      parents[0]!.visible = frame < 20 || frame > 30;
+      animator.update(dt, eye);
+      for (let i = 0; i < every.length; i++) {
+        if (!parents[i]!.visible) owed[i] = 0;
+        else if (eye && (frame + i) % every[i]! !== 0) owed[i] = owed[i]! + dt;
+        else {
+          expected[i] = expected[i]! + (dt + owed[i]!);
+          owed[i] = 0;
+        }
+        expect(items[i]!.mixer.time).toBeCloseTo(expected[i]!, 12);
+      }
+    }
+    animator.clear();
+  });
+
+  it('requests redraws only on scheduled visible animation steps and carries skipped time across LOD changes', () => {
+    const animator = new AssetAnimator();
+    const storey = new Group();
+    const tracked = new Group();
+    const root = new Group();
+    root.add(new Object3D());
+    root.animations = [clip('idle')];
+    storey.add(tracked);
+    tracked.add(root);
+    tracked.position.x = 200;
+    storey.updateMatrixWorld(true);
+    animator.add('w', root, tracked, { idle: 'idle' }, 'idle');
+    const eye = { x: 0, y: 0, z: 0 };
+    const dt = 1 / 60;
+    const item = (animator as unknown as { list: Array<{ mixer: { time: number } }> }).list[0]!;
+    expect(animator.update(dt, eye)).toBe(false);
+    expect(animator.update(dt, eye)).toBe(false);
+    expect(item.mixer.time).toBe(0);
+    // Calling without distance scheduling must still advance the owed two frames.
+    expect(animator.update(dt)).toBe(true);
+    expect(item.mixer.time).toBeCloseTo(3 * dt);
+    expect(animator.update(dt)).toBe(true);
+    expect(item.mixer.time).toBeCloseTo(4 * dt);
+    // Hidden ancestors above the tracked entity must stop both the mixer and redraws.
+    storey.visible = false;
+    expect(animator.update(dt, eye)).toBe(false);
+    expect(animator.update(dt)).toBe(false);
+    expect(item.mixer.time).toBeCloseTo(4 * dt);
+    storey.visible = true;
+    expect(animator.update(dt)).toBe(true);
+    expect(item.mixer.time).toBeCloseTo(5 * dt);
+    for (const invalid of [Infinity, Number.NaN, 0, -dt]) expect(animator.update(invalid)).toBe(false);
+    expect(item.mixer.time).toBeCloseTo(5 * dt);
+    animator.clear();
+  });
+
   it('distant animators step at a lower rate with the skipped time owed, and hidden ones not at all', () => {
     const animator = new AssetAnimator();
     const make = (id: string, x: number): { tracked: Object3D; root: Group } => {

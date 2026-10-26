@@ -24,6 +24,28 @@ describe('boomFreeDistance', () => {
     expect(BOOM_RADIUS).toBeGreaterThan(0.1);
   });
 
+  it('compares offset hits after projecting them onto the boom axis', () => {
+    let rays = 0;
+    const radius = 1;
+    const axisLength = 1;
+    const rawOffset = 0.52;
+    const projected = rawOffset * axisLength / Math.sqrt(axisLength * axisLength + (radius * 0.4) ** 2);
+    const distance = boomFreeDistance(() => ++rays === 1 ? 0.5 : rawOffset, new Vector3(), new Vector3(0, 0, axisLength), radius);
+    expect(projected).toBeLessThan(0.5);
+    expect(distance).toBeCloseTo(projected, 12);
+    expect(rays).toBe(5);
+  });
+
+  it.each([[0, 0.01, 0], [1, 2, 3], [-5, 1, 0.2], [0, 0, 5]])('projects ring distances consistently for boom direction %j', (x, y, z) => {
+    const from = new Vector3(10, 20, -30);
+    const to = from.clone().add(new Vector3(x, y, z));
+    const fractions = [0.5, 0.25, 0.7, 0.5, 0.6];
+    let ray = 0;
+    const free = boomFreeDistance((a, b) => a.distanceTo(b) * fractions[ray++]!, from, to, 1);
+    expect(free).toBeCloseTo(from.distanceTo(to) * 0.25, 11);
+    expect(ray).toBe(5);
+  });
+
   it('handles a vertical boom', () => {
     expect(boomFreeDistance(wallAtZ(0.5), new Vector3(0, 0, 0), new Vector3(0, 6, 0))).toBe(Number.POSITIVE_INFINITY);
   });

@@ -14,6 +14,7 @@
  */
 import { DepthTexture, HalfFloatType, RenderTarget, UnsignedIntType, Vector2, type Camera, type Scene, type Texture } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
+import { PassVisibility } from '../gpu/pass-visibility';
 
 const _size = new Vector2();
 
@@ -24,6 +25,7 @@ export class SceneBackdrop {
   private readonly depth: DepthTexture;
   /** Fraction of the drawing buffer the target covers. */
   scale = 1;
+  private readonly visibility = new PassVisibility();
   /** True once a frame was drawn into the target (the shader waits for it). */
   ready = false;
   /** True once a water material sampled it (the renderer then draws it each frame). */
@@ -71,8 +73,7 @@ export class SceneBackdrop {
     else renderer.getDrawingBufferSize(_size);
     this.resize(_size.x, _size.y);
 
-    const hidden = hide.map((o) => o.visible);
-    for (const o of hide) o.visible = false;
+    this.visibility.hide(hide);
     const prevTarget = renderer.getRenderTarget();
     const prevMRT = renderer.getMRT();
     const prevAuto = renderer.autoClear;
@@ -87,9 +88,7 @@ export class SceneBackdrop {
       renderer.setMRT(prevMRT);
       renderer.setRenderTarget(prevTarget);
       renderer.autoClear = prevAuto;
-      hide.forEach((o, i) => {
-        o.visible = hidden[i] as boolean;
-      });
+      this.visibility.restore();
     }
   }
 

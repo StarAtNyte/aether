@@ -88,6 +88,8 @@ export class SkyDome {
   private readonly sunDir = new Vector3(0, 1, 0);
   private detail = true;
   private brightness = 1;
+  /** One exact integration result per vertex for the current physical state, before fog/weight blending. */
+  private atmosphere: { position: unknown; version: number; sx: number; sy: number; sz: number; turbidity: number; colors: Float64Array } | null = null;
   private last: { state: SkyState; fogColor: string | undefined } | null = null;
 
   constructor() {
@@ -142,6 +144,14 @@ export class SkyDome {
     const col = this.dome.geometry.getAttribute('color') as BufferAttribute;
     const glow = state.sunGlowStrength;
     const phys = state.physical;
+    const version = pos instanceof BufferAttribute ? pos.version : NaN;
+    const cached = this.atmosphere;
+    const reuse = !!phys && !!cached && cached.position === pos && cached.version === version && cached.colors.length === pos.count * 3
+      && Object.is(cached.sx, phys.sunDirection[0]) && Object.is(cached.sy, phys.sunDirection[1])
+      && Object.is(cached.sz, phys.sunDirection[2]) && Object.is(cached.turbidity, phys.turbidity);
+    const physicalColors = phys ? (cached?.colors.length === pos.count * 3 ? cached.colors : new Float64Array(pos.count * 3)) : null;
+    // Reuse storage as the sun moves, but never publish a partially rebuilt cache.
+    if (phys && !reuse) this.atmosphere = null;
     if (fogColor) _fog.set(fogColor);
     for (let i = 0; i < pos.count; i++) {
       _d.set(pos.getX(i), pos.getY(i), pos.getZ(i)).normalize();
@@ -150,7 +160,12 @@ export class SkyDome {
       else _c.copy(_horizon).lerp(_nadir, Math.min(1, Math.pow(-t, 0.4) * 1.4));
       if (phys && t > 0) {
         // Physically based colour per direction, melting into the fog colour toward the horizon.
-        skyDisplay(_d.x, _d.y, _d.z, phys.sunDirection[0], phys.sunDirection[1], phys.sunDirection[2], phys.turbidity, _phys);
+        if (reuse) {
+          _phys[0] = physicalColors![i * 3]!; _phys[1] = physicalColors![i * 3 + 1]!; _phys[2] = physicalColors![i * 3 + 2]!;
+        } else {
+          skyDisplay(_d.x, _d.y, _d.z, phys.sunDirection[0], phys.sunDirection[1], phys.sunDirection[2], phys.turbidity, _phys);
+          physicalColors![i * 3] = _phys[0]; physicalColors![i * 3 + 1] = _phys[1]; physicalColors![i * 3 + 2] = _phys[2];
+        }
         _p.setRGB(_phys[0], _phys[1], _phys[2]);
         if (fogColor) _p.lerp(_fog, HORIZON_FOG_BLEND * 0.8 * (1 - smooth(0, 0.18, t)));
         _c.lerp(_p, phys.weight);
@@ -172,6 +187,7 @@ export class SkyDome {
       }
       col.setXYZ(i, _c.r, _c.g, _c.b);
     }
+    if (phys && !reuse) this.atmosphere = { position: pos, version, sx: phys.sunDirection[0], sy: phys.sunDirection[1], sz: phys.sunDirection[2], turbidity: phys.turbidity, colors: physicalColors! };
     col.needsUpdate = true;
     this.clouds.apply(state, _horizon);
     this.cirrus.apply(state, _horizon);
@@ -240,6 +256,7 @@ export class SkyDome {
 
   /** Release GPU resources. */
   dispose(): void {
+    this.atmosphere = null;
     this.dome.geometry.dispose();
     this.dome.material.dispose();
     this.disc.geometry.dispose();

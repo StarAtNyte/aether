@@ -1665,7 +1665,13 @@ floor plan (draw a room, add a door, undo) → walk in through the front door
   usable compressed textures (`'keep'`) for the path tracer and the glTF
   export;
   `cloneModel` / `instantiateAsset` clone skinned models with
-  `SkeletonUtils`.
+  `SkeletonUtils`, including custom model loaders before any glTF load.
+  Equivalent skeleton palettes share storage within a clone; actors keep
+  independent bones. `disposeModelInstance(root)` releases clone-owned
+  draw state and skeleton palettes once, including nested wrappers and LODs, while leaving
+  borrowed source geometry, materials and textures intact. `SceneSync`
+  retirement and `CharacterRig.dispose()` call it automatically; callers
+  managing clones directly pair it with their own source-cache releases.
 - `HdriController` (`environment.hdri`): lazy `HDRLoader`, binds
   `scene.environment` (× 0.6 of the sky's IBL scale) and the background,
   dims the hemisphere ambient; the analytic sky stays the fallback.

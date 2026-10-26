@@ -117,7 +117,7 @@ describe('PerformanceGovernor', () => {
       g.start(2);
       expect(feed(g, 120, 1 / 60, 0.8)).toBe(0);
     });
-    it('pins the floor when a climb is undone at once, and never climbs there again', () => {
+    it('backs off after a failed climb, then retries after sustained new headroom', () => {
       const g = new PerformanceGovernor();
       g.start(2);
       feed(g, 25, 1 / 60, 1);
@@ -126,10 +126,42 @@ describe('PerformanceGovernor', () => {
       expect(feed(g, 3.2, 1 / 6, 1)).toBe(1);
       expect(g.lastMove).toBe(1);
       expect(g.level).toBe(2);
-      expect(g.floor).toBe(1);
-      feed(g, 300, 1 / 60, 1);
+      expect(g.floor).toBe(2);
+      feed(g, 60, 1 / 60, 1);
+      expect(g.level).toBe(2);
+      expect(g.floor).toBe(2);
+      feed(g, 100, 1 / 60, 1);
       expect(g.level).toBe(1);
+      expect(g.floor).toBe(1);
+      feed(g, 140, 1 / 60, 1);
+      expect(g.level).toBe(0);
+      expect(g.floor).toBe(0);
     });
+    it('requires uninterrupted full-resolution headroom to retry and backs off repeated failures', () => {
+      const g = new PerformanceGovernor();
+      g.start(1);
+      feed(g, 25, 1 / 60, 1);
+      expect(g.level).toBe(0);
+      feed(g, 3.2, 1 / 6, 1);
+      expect(g.level).toBe(1);
+      expect(g.floor).toBe(1);
+      feed(g, 110, 1 / 60, 1);
+      g.record(1 / 60, false, 1);
+      feed(g, 110, 1 / 60, 1);
+      expect(g.level).toBe(1);
+      feed(g, 60, 1 / 60, 0.8);
+      expect(g.level).toBe(1);
+      feed(g, 140, 1 / 60, 1);
+      expect(g.level).toBe(0);
+      // A second failed experiment now waits 240 seconds of new headroom.
+      feed(g, 3.2, 1 / 6, 1);
+      expect(g.level).toBe(1);
+      feed(g, 200, 1 / 60, 1);
+      expect(g.level).toBe(1);
+      feed(g, 70, 1 / 60, 1);
+      expect(g.level).toBe(0);
+    });
+
     it('is idle when disabled and ignores hidden-tab stalls', () => {
       const g = new PerformanceGovernor();
       g.start(4);

@@ -4,7 +4,8 @@
  * models are shared per URL (refcounted) and each entity gets a lightweight
  * clone that reuses the source geometry and materials.
  */
-import { Box3, Group, Mesh, Sphere, Vector3, type Material, type Object3D } from 'three';
+import { Box3, Group, Mesh, Sphere, Vector3, type Material, type Object3D, type Skeleton, type SkinnedMesh } from 'three';
+import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 import type { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { isAllowedModelUrl, MAX_MODEL_URL_LENGTH } from '@aether/core';
 import { isLibraryRemoteUrl, loadTextureVariants, textureVariantUrl } from '@aether/assets';
@@ -32,8 +33,12 @@ export function isSafeModelUrl(url: string): boolean {
   return isAllowedModelUrl(url) || isLibraryRemoteUrl(url);
 }
 
-/** Skeleton-aware clone (three's `SkeletonUtils.clone`), installed when the glTF loader module loads. */
-let skeletonClone: ((source: Object3D) => Object3D) | null = null;
+/** Draw objects and palettes belong to an instance; geometry/material resources belong to the source cache. */
+interface ModelInstance {
+  objects: Object3D[];
+  skeletons: Set<Skeleton> | null;
+}
+const ownedInstances = new WeakMap<Object3D, ModelInstance>();
 
 /** Options of {@link createGltfModelLoader}. */
 export interface GltfLoaderOptions {
@@ -61,8 +66,8 @@ interface GltfLike {
 }
 
 /**
- * Default glTF loader (lazy-imports `GLTFLoader`, the meshopt decoder and
- * `SkeletonUtils`, so Node tests and worlds without models never load them).
+ * Default glTF loader (lazy-imports `GLTFLoader` and the meshopt decoder,
+ * so Node tests and worlds without glTF files never load them).
  * Library files are meshopt-compressed (`EXT_meshopt_compression`); the
  * decoder is a small WebAssembly module (allowed by the `wasm-unsafe-eval`
  * CSP). Animation clips are kept on `scene.animations`. With
@@ -77,9 +82,7 @@ export function createGltfModelLoader(opts: GltfLoaderOptions = {}): ModelLoader
     (loader ??= Promise.all([
       import('three/addons/loaders/GLTFLoader.js'),
       import('three/addons/libs/meshopt_decoder.module.js'),
-      import('three/addons/utils/SkeletonUtils.js'),
-    ]).then(([{ GLTFLoader }, { MeshoptDecoder }, { clone }]) => {
-      skeletonClone = clone;
+    ]).then(([{ GLTFLoader }, { MeshoptDecoder }]) => {
       return new GLTFLoader().setMeshoptDecoder(MeshoptDecoder) as unknown as GltfLike;
     }));
   /** The glTF loader with the KTX2 loader attached, or null when compressed textures are off. */
@@ -131,9 +134,80 @@ export function hasSkin(root: Object3D): boolean {
 
 /** Clone a loaded model for one entity (geometry and materials shared; skeletons rebound). */
 export function cloneModel(source: Object3D): Object3D {
-  const clone = skeletonClone && hasSkin(source) ? skeletonClone(source) : source.clone(true);
+  const skinned = hasSkin(source);
+  const clone = skinned ? cloneSkeleton(source) : source.clone(true);
+  if (skinned) shareSkeletons(clone);
+  const instance: ModelInstance = { objects: [], skeletons: skinned ? new Set<Skeleton>() : null };
+  clone.traverse((object) => {
+    const draw = object as Object3D & { isMesh?: boolean; isLine?: boolean; isPoints?: boolean; isSprite?: boolean };
+    if (draw.isMesh || draw.isLine || draw.isPoints || draw.isSprite) instance.objects.push(object);
+    const mesh = object as SkinnedMesh;
+    if (mesh.isSkinnedMesh && mesh.skeleton) instance.skeletons?.add(mesh.skeleton);
+  });
+  ownedInstances.set(clone, instance);
   clone.animations = source.animations;
   return clone;
+}
+
+/**
+ * Release instance draw state and palettes once, through wrappers and LODs. Source geometry/materials
+ * and their textures are untouched. Collect before notifying listeners, which may alter the tree.
+ */
+export function disposeModelInstance(root: Object3D): void {
+  const instances: ModelInstance[] = [];
+  root.traverse((object) => {
+    const instance = ownedInstances.get(object);
+    if (!instance) return;
+    ownedInstances.delete(object);
+    instances.push(instance);
+  });
+  for (const instance of instances) {
+    for (const object of instance.objects) {
+      // The common renderer subscribes to object disposal to free render objects, bindings and uniform buffers.
+      (object as unknown as { dispatchEvent(event: { type: 'dispose' }): void }).dispatchEvent({ type: 'dispose' });
+    }
+    if (instance.skeletons) for (const skeleton of instance.skeletons) skeleton.dispose();
+  }
+}
+
+/**
+ * SkeletonUtils forks a palette per mesh. Parts of one fresh model can share the palette when every
+ * bone reference and inverse bind matrix is identical. Instance-local scope prevents actors sharing poses.
+ * Already uploaded skeletons are left alone: no GPU resource is discarded by this setup optimization.
+ */
+export function shareSkeletons(root: Object3D): number {
+  const groups = new WeakMap<Object3D, Skeleton[]>();
+  let shared = 0;
+  root.traverse((object) => {
+    const mesh = object as SkinnedMesh;
+    if (!mesh.isSkinnedMesh) return;
+    const skeleton = mesh.skeleton;
+    const first = skeleton?.bones[0];
+    if (!first || skeleton.boneTexture !== null) return;
+    let candidates = groups.get(first);
+    if (!candidates) {
+      candidates = [];
+      groups.set(first, candidates);
+    }
+    for (const candidate of candidates) {
+      if (candidate === skeleton) return;
+      if (!sameSkinBindings(candidate, skeleton)) continue;
+      mesh.skeleton = candidate;
+      shared++;
+      return;
+    }
+    candidates.push(skeleton);
+  });
+  return shared;
+}
+
+function sameSkinBindings(a: Skeleton, b: Skeleton): boolean {
+  if (a.bones.length !== b.bones.length || a.boneInverses.length !== b.boneInverses.length) return false;
+  for (let i = 0; i < a.bones.length; i++) if (a.bones[i] !== b.bones[i]) return false;
+  for (let i = 0; i < a.boneInverses.length; i++) {
+    if (a.boneInverses[i] !== b.boneInverses[i] && !a.boneInverses[i]!.equals(b.boneInverses[i]!)) return false;
+  }
+  return true;
 }
 
 type SkinnedLike = Object3D & { isSkinnedMesh?: boolean; boundingSphere: Sphere | null; computeBoundingSphere(): void; skeleton: { update(): void } };

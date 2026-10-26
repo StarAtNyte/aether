@@ -37,7 +37,7 @@ export const VerifyPill = memo(function VerifyPill(): ReactElement | null {
       data-tip-align="end"
       disabled={verify.status === 'running'}
     >
-      <span className="vp-btn__status" aria-hidden="true" />
+      <span className={verify.status === 'running' ? 'spinner' : 'vp-btn__status'} aria-hidden="true" />
       <span>{text}</span>
     </button>
   );

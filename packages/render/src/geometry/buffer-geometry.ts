@@ -10,6 +10,7 @@
  */
 import { BufferAttribute, BufferGeometry } from 'three';
 import type { MeshPart } from '../types';
+import { setPositionBounds } from './position-bounds';
 import { RefCache } from '../refcache';
 
 /** Thrown for malformed mesh data (never happens with validated procgen output). */
@@ -103,8 +104,7 @@ export function partToBufferGeometry(part: MeshPart): BufferGeometry {
       ? terrainUvs(positions)
       : boxProjectedUvs(positions, g.getAttribute('normal').array as Float32Array);
   g.setAttribute('uv', new BufferAttribute(uvs, 2));
-  g.computeBoundingBox();
-  g.computeBoundingSphere();
+  setPositionBounds(g, positions);
   return g;
 }
 

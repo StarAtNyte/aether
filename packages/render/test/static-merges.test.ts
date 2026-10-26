@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { BufferAttribute, BufferGeometry, Matrix4, Mesh } from 'three';
+import { BufferAttribute, BufferGeometry, Group, Matrix4, Mesh, MeshBasicMaterial } from 'three';
 import { applyPatches, createWorld, type WorldDoc } from '@aether/core';
 import { compileBuilding } from '@aether/arch';
 import { BATCHED_LAYER } from '../src/sync/static-batches';
-import { MIN_MERGE, mergeGeometries } from '../src/sync/static-merges';
+import { MAX_MERGE_VERTICES, MIN_MERGE, StaticMerges, mergeGeometries } from '../src/sync/static-merges';
+import { createEntityNode } from '../src/sync/entity-node';
 import { box, makeSync, tick, world } from './helpers';
 
 function house(): WorldDoc {
@@ -57,6 +58,38 @@ describe('StaticMerges (building geometry)', () => {
     expect(sync.updateBatches()).toBe(false);
   });
 
+  it('skips matrix arithmetic for unchanged merges and retains merges when their parent moves', async () => {
+    const { sync } = await setup();
+    const before = merged(sync);
+    const invert = vi.spyOn(Matrix4.prototype, 'invert');
+    const multiply = vi.spyOn(Matrix4.prototype, 'multiplyMatrices');
+    try {
+      expect(sync.updateBatches()).toBe(false);
+      expect(invert).not.toHaveBeenCalled();
+      expect(multiply).not.toHaveBeenCalled();
+      // Exploded-storey views move both the parent and its members together.
+      const parent = before[0]!.parent!;
+      parent.position.y += 7;
+      parent.updateMatrix();
+      sync.root.updateMatrixWorld(true);
+      invert.mockClear();
+      multiply.mockClear();
+      expect(sync.updateBatches()).toBe(false);
+      expect(invert).toHaveBeenCalled();
+      expect(merged(sync)).toEqual(before);
+      // The newly checked transforms are cached too.
+      invert.mockClear();
+      multiply.mockClear();
+      expect(sync.updateBatches()).toBe(false);
+      expect(invert).not.toHaveBeenCalled();
+      expect(multiply).not.toHaveBeenCalled();
+    } finally {
+      invert.mockRestore();
+      multiply.mockRestore();
+      sync.clear();
+    }
+  });
+
   it('evicts a member that moves, is hidden or re-materialised, and re-merges the rest', async () => {
     const { sync, w } = await setup();
     const before = sync.batchStats().drawCallsSaved;
@@ -97,6 +130,51 @@ describe('StaticMerges (building geometry)', () => {
     sync.updateBatches();
     expect(sync.batchStats().merges).toBe(0);
     expect(MIN_MERGE).toBeGreaterThan(1);
+  });
+});
+
+describe('large static merge partitions', () => {
+  it('retains unchanged buffers and restores a leftover group that becomes too small to merge', () => {
+    const vertices = Math.floor(MAX_MERGE_VERTICES / 4) + 1;
+    const geometry = new BufferGeometry();
+    geometry.setAttribute('position', new BufferAttribute(new Float32Array(vertices * 3), 3));
+    const normals = new Float32Array(vertices * 3);
+    for (let i = 2; i < normals.length; i += 3) normals[i] = 1;
+    geometry.setAttribute('normal', new BufferAttribute(normals, 3));
+    geometry.setIndex([0, 1, 2]);
+    const material = new MeshBasicMaterial();
+    const parent = new Group();
+    const w = world(Array.from({ length: 9 }, (_, i) => ({ id: `part-${i}`, shape: { kind: 'procedural', generator: 'test-part' } })));
+    const nodes = Object.values(w.entities).map((entity, i) => {
+      const node = createEntityNode(entity, false);
+      node.object.position.x = i;
+      node.object.updateMatrix();
+      const mesh = new Mesh(geometry, material);
+      node.content.add(mesh);
+      node.bindings.push({ mesh, partMaterial: {}, hasColors: false, doubleSided: false, materialKey: 'shared', seeThrough: false, ownedMaterial: null });
+      node.geometryKeys.push('shared');
+      parent.add(node.object);
+      return node;
+    });
+    parent.updateMatrixWorld(true);
+    const merges = new StaticMerges();
+    expect(merges.rebuild(nodes)).toBe(true);
+    expect(merges.count).toBe(3);
+    const buffers = parent.children.filter((o): o is Mesh => o.name === 'aether:merged').map((m) => m.geometry);
+    const disposals = buffers.map((g) => vi.spyOn(g, 'dispose'));
+    expect(merges.rebuild(nodes)).toBe(false);
+    for (const dispose of disposals) expect(dispose).not.toHaveBeenCalled();
+    expect(merges.rebuild(nodes.slice(0, 8))).toBe(true);
+    expect(merges.count).toBe(2);
+    expect(disposals[0]).not.toHaveBeenCalled();
+    expect(disposals[1]).not.toHaveBeenCalled();
+    expect(disposals[2]).toHaveBeenCalledOnce();
+    for (let i = 0; i < 6; i++) expect(nodes[i]!.bindings[0]!.mesh.layers.isEnabled(BATCHED_LAYER)).toBe(true);
+    for (let i = 6; i < 9; i++) expect(nodes[i]!.bindings[0]!.mesh.layers.isEnabled(0)).toBe(true);
+    expect(merges.update()).toBe(false);
+    merges.clear();
+    geometry.dispose();
+    material.dispose();
   });
 });
 

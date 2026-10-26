@@ -10,6 +10,7 @@
  */
 import { HalfFloatType, Matrix4, PerspectiveCamera, Plane, RenderTarget, Vector2, Vector3, Vector4, WebGPUCoordinateSystem, type Camera, type Scene } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
+import { PassVisibility } from '../gpu/pass-visibility';
 
 const _plane = new Plane();
 const _normal = new Vector3(0, 1, 0);
@@ -30,6 +31,7 @@ export class PlanarMirror {
   private readonly camera = new PerspectiveCamera();
   /** Fraction of the drawing buffer the target covers. */
   scale = 0.5;
+  private readonly visibility = new PassVisibility();
   /** True once a frame was drawn into the target (the shader waits for it). */
   ready = false;
   /** Largest target this mirror has had (diagnostics). */
@@ -92,8 +94,7 @@ export class PlanarMirror {
     p[10] = renderer.coordinateSystem === WebGPUCoordinateSystem ? _clip.z : _clip.z + 1;
     p[14] = _clip.w;
 
-    const hidden = hide.map((o) => o.visible);
-    for (const o of hide) o.visible = false;
+    this.visibility.hide(hide);
     const prevTarget = renderer.getRenderTarget();
     const prevMRT = renderer.getMRT();
     const prevAuto = renderer.autoClear;
@@ -107,9 +108,7 @@ export class PlanarMirror {
       renderer.setMRT(prevMRT);
       renderer.setRenderTarget(prevTarget);
       renderer.autoClear = prevAuto;
-      hide.forEach((o, i) => {
-        o.visible = hidden[i] as boolean;
-      });
+      this.visibility.restore();
     }
     return true;
   }

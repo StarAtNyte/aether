@@ -1,5 +1,6 @@
-/** Placeholder shown while the editor code or a project loads: the editor's frame, quiet skeleton surfaces, no spinner. */
+/** Placeholder and processing feedback while the editor code or a project loads. */
 import type { ReactElement } from 'react';
+import { ViewportLoading } from '../components/viewport/ViewportLoading';
 
 /** Editor loading skeleton (same frame as the editor, so nothing shifts when it arrives). */
 export function EditorSkeleton(): ReactElement {
@@ -11,7 +12,7 @@ export function EditorSkeleton(): ReactElement {
       <div className="editor__body">
         <div className="editor__canvas">
           <div className="viewport">
-            <span className="vp-loading__surface skeleton" />
+            <ViewportLoading text="Loading editor…" />
           </div>
         </div>
       </div>

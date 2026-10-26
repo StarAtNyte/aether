@@ -45,23 +45,29 @@ export function tileableGradientNoise(size: number, period: number, seed: number
   }
   const fade = (t: number): number => t * t * t * (t * (t * 6 - 15) + 10);
   const cell = size / period;
+  // Preserve double precision while sharing identical x interpolation work across all rows.
+  const columns = Math.max(0, Math.ceil(size));
+  const cells0 = new Float64Array(columns), cells1 = new Float64Array(columns);
+  const offsets = new Float64Array(columns), weights = new Float64Array(columns);
+  for (let x = 0; x < size; x++) {
+    const fx = x / cell, x0 = Math.floor(fx), tx = fx - x0;
+    cells0[x] = x0; cells1[x] = (x0 + 1) % period;
+    offsets[x] = tx; weights[x] = fade(tx);
+  }
   for (let y = 0; y < size; y++) {
     const fy = y / cell;
     const y0 = Math.floor(fy);
     const ty = fy - y0;
     const y1 = (y0 + 1) % period;
     const v = fade(ty);
+    const row0 = y0 * period, row1 = y1 * period;
     for (let x = 0; x < size; x++) {
-      const fx = x / cell;
-      const x0 = Math.floor(fx);
-      const tx = fx - x0;
-      const x1 = (x0 + 1) % period;
-      const u = fade(tx);
-      const dot = (cx: number, cy: number, dx: number, dy: number): number => (gx[cy * period + cx] as number) * dx + (gy[cy * period + cx] as number) * dy;
-      const n00 = dot(x0, y0, tx, ty);
-      const n10 = dot(x1, y0, tx - 1, ty);
-      const n01 = dot(x0, y1, tx, ty - 1);
-      const n11 = dot(x1, y1, tx - 1, ty - 1);
+      const x0 = cells0[x]!, x1 = cells1[x]!, tx = offsets[x]!, u = weights[x]!;
+      const i00 = row0 + x0, i10 = row0 + x1, i01 = row1 + x0, i11 = row1 + x1;
+      const n00 = gx[i00]! * tx + gy[i00]! * ty;
+      const n10 = gx[i10]! * (tx - 1) + gy[i10]! * ty;
+      const n01 = gx[i01]! * tx + gy[i01]! * (ty - 1);
+      const n11 = gx[i11]! * (tx - 1) + gy[i11]! * (ty - 1);
       const a = n00 + (n10 - n00) * u;
       const b = n01 + (n11 - n01) * u;
       out[y * size + x] = a + (b - a) * v;
@@ -76,7 +82,7 @@ export function noisePixels(size = NOISE_SIZE, period = NOISE_PERIOD): Uint8Arra
   for (let c = 0; c < 3; c++) {
     const f = tileableGradientNoise(size, period, 17 + c * 101);
     let sq = 0;
-    for (const v of f) sq += v * v;
+    for (let i = 0; i < f.length; i++) { const v = f[i]!; sq += v * v; }
     const gain = NOISE_STD / Math.sqrt(sq / f.length);
     for (let i = 0; i < f.length; i++) {
       const v = Math.max(-1, Math.min(1, (f[i] as number) * gain)) * 0.5 + 0.5;

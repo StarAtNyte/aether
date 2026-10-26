@@ -13,6 +13,7 @@
  * changes ({@link setFoliageSun}); nothing runs per frame on the CPU. The same nodes serve WebGPU and
  * WebGL2.
  */
+import { staticShadowAlpha } from '../gpu/shadow-alpha';
 import { Color, Vector3, type MeshStandardMaterial } from 'three';
 import { Fn, If } from 'three/tsl';
 import { T, type Nd } from './tsl-lite';
@@ -108,7 +109,7 @@ function nodes(): { color: Nd; emissive: Nd; mask: Nd } {
 export function applyFoliageShading(m: MeshStandardMaterial): void {
   const n = nodes();
   const nm = m as unknown as { colorNode: unknown; emissiveNode: unknown; maskNode: unknown };
-  nm.colorNode = n.color;
+  nm.colorNode = staticShadowAlpha(n.color);
   nm.emissiveNode = n.emissive;
   nm.maskNode = n.mask;
 }

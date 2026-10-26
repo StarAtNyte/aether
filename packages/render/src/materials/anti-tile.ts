@@ -11,6 +11,7 @@
  * copies when it converts the material (like the foliage wind, see `wind.ts`). The texture's `repeat`
  * stays a live uniform, so retiling a finish to its photo's real size later recompiles nothing.
  */
+import { staticShadowAlpha } from '../gpu/shadow-alpha';
 import { Fn, If, cameraPosition, clamp, float, materialColor, materialRoughness, mix, normalMap, normalView, normalWorld, positionWorld, smoothstep, texture, uniform, uv, vec2, vec3, vec4 } from 'three/tsl';
 import type { Material, Texture } from 'three';
 import type { Node } from 'three/webgpu';
@@ -205,7 +206,7 @@ export function applyAntiTile(material: Material, maps: AntiTileMaps, normalStre
   const m = material as Material & { colorNode?: unknown; roughnessNode?: unknown; aoNode?: unknown; normalNode?: unknown };
   // The classic maps are not bound on this material (the nodes sample the textures), so the stock colour
   // and roughness accessors give the plain factors the lookups multiply.
-  m.colorNode = vec4(materialColor.rgb.mul(rgb), 1);
+  m.colorNode = staticShadowAlpha(vec4(materialColor.rgb.mul(rgb), 1));
   m.roughnessNode = roughness;
   m.aoNode = orm.r;
   // Lean shading leaves the relief out: the surface keeps its geometric normal, and neither the map nor the tangent frame is read.

@@ -4,6 +4,7 @@
  * roughness change (those banded into blotches under grazing lamp light before). Two noise lookups per fragment, on
  * the tiers that also run the anti-tiling lookups (not on software rasterisers or in low-memory mode).
  */
+import { staticShadowAlpha } from '../gpu/shadow-alpha';
 import type { MeshStandardMaterial } from 'three';
 import { T, type Nd } from './tsl-lite';
 
@@ -22,5 +23,5 @@ export function applyPaintMottle(m: MeshStandardMaterial): void {
     const base = T.materialColor;
     node = T.vec4(base.rgb.mul(k), base.w);
   }
-  (m as unknown as { colorNode: unknown }).colorNode = node;
+  (m as unknown as { colorNode: unknown }).colorNode = staticShadowAlpha(node);
 }

@@ -2,8 +2,9 @@
  * Gameplay effects: the particle pool (seeding, ring overwrite, dirty ranges), the effect system (bursts, emitters,
  * budgets, no per-frame allocation) and the atlas.
  */
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { Group, Object3D, PerspectiveCamera, Scene } from 'three';
+import { Group, Object3D, PerspectiveCamera, Scene, type Mesh, type InstancedBufferAttribute } from 'three';
 import { VfxPreset } from '@aether/core';
 import { ParticlePool, SeededRandom, mixSeed, NO_FLOOR, STRIDE, SPIN_BIAS } from '../src/vfx/pool';
 import { VFX_PRESETS, vfxBudget, CONTINUOUS_VFX } from '../src/vfx/presets';
@@ -27,6 +28,31 @@ function arrays(pool: ParticlePool): Float32Array[] {
 }
 
 describe('particle pool', () => {
+  it('batch emission matches individual writes across presets, direction changes and ring wraparound', () => {
+    const batch = new ParticlePool(17), individual = new ParticlePool(17);
+    const batchRandom = new SeededRandom(123), individualRandom = new SeededRandom(123);
+    const opts = { scale: 1.5, tint: null, floorY: 0.25 };
+    let time = 0;
+    for (const def of Object.values(VFX_PRESETS)) for (const layer of def.layers) {
+      for (const direction of [[0, 1, 0], [0.3, 0.8, -0.1], [-0, -1, 0], [0, 0, 0]]) {
+        for (const count of [0, 1, 31]) {
+          for (const pool of [batch, individual]) pool.at.set([1.2, 2.3, -4.5, ...direction, time]);
+          batch.writeMany(layer, batchRandom, opts, count);
+          for (let i = 0; i < count; i++) individual.write(layer, individualRandom, opts);
+          for (let i = 0; i < 6; i++) expect(new Uint32Array(arrays(batch)[i]!.buffer)).toEqual(new Uint32Array(arrays(individual)[i]!.buffer));
+          expect(batchRandom.state).toBe(individualRandom.state);
+          expect(batch.spawned).toBe(individual.spawned);
+          expect(batch.count).toBe(individual.count);
+          time += 0.1;
+        }
+      }
+    }
+    const a = { start: 0, count: 0 }, b = { start: 0, count: 0 };
+    expect(batch.takeDirty(a)).toBe(individual.takeDirty(b));
+    expect(a).toEqual(b);
+    for (const sample of [time, time + 10]) expect(batch.alive(sample)).toBe(individual.alive(sample));
+  });
+
   it('every preset name of the World IR has a definition with sane numbers', () => {
     for (const name of VfxPreset.options) {
       const def = VFX_PRESETS[name];
@@ -153,10 +179,63 @@ describe('effect system', () => {
     b.dispose();
   });
 
+  it('preserves particle writes across hidden frames and reuses consumed upload records', () => {
+    const scene = new Scene();
+    const v = new VfxSystem(scene, 'low');
+    const cam = camera();
+    const mesh = scene.children.find((o) => o.name === 'aether:vfx:add') as Mesh;
+    const attrs = Object.values(mesh.geometry.attributes).filter((a) => (a as InstancedBufferAttribute).isInstancedBufferAttribute) as InstancedBufferAttribute[];
+    expect(attrs.length).toBe(6);
+    const records = attrs.map((a) => a.updateRanges[0]);
+    v.hidden = true;
+    v.burst('sparks', 0, 1, 0, { seed: 1 });
+    v.update(1 / 60, cam);
+    const first = v.pools.add.count;
+    expect(first).toBeGreaterThan(0);
+    v.burst('sparks', 0, 1, 0, { seed: 2 });
+    v.update(1 / 60, cam);
+    const second = v.pools.add.count;
+    for (const a of attrs) expect(a.updateRanges).toEqual([{ start: 0, count: second * 4 }]);
+    // The renderer consumes only when the hidden layer is eventually drawn.
+    v.hidden = false;
+    v.update(1 / 60, cam);
+    for (const a of attrs) a.clearUpdateRanges();
+    v.burst('sparks', 0, 1, 0, { seed: 3 });
+    v.update(1 / 60, cam);
+    for (let i = 0; i < attrs.length; i++) {
+      expect(attrs[i]!.updateRanges).toEqual([{ start: second * 4, count: (v.pools.add.count - second) * 4 }]);
+      expect(attrs[i]!.updateRanges[0]).toBe(records[i]);
+    }
+    v.dispose();
+  });
+
+  it('preserves the existing seeded particle buffers byte for byte', () => {
+    // Captured before hoisting burst setup and caching preset hashes.
+    const expected = {
+      sparks: '4ee412eaa8c8959917c243c635677539f60a0797174cc58af71f872f2de75589',
+      explosion: 'c1cc493637dbce6842236a8b4e136ec32beb6fa8eca542517860ca7f9277c621',
+      confetti: 'd0d88542fc2bbeace1a4566b2f71ae6b0b1d975c56c6ed497f50b3259327905a',
+      magic: '44cc461e04fdddf823191f21685213af1d49504b1532df4f209f6cb4676ff98e',
+      splash: 'daa37848ebdeec4737cc5a589a492342988d64a90b3eebf9a0ec6c3bac86f5d0',
+    } as const;
+    for (const preset of Object.keys(expected) as Array<keyof typeof expected>) {
+      const v = new VfxSystem(new Scene(), 'low');
+      v.setWorldSeed(123);
+      v.burst(preset, 1.2, 2.3, -4.5, { seed: 987, scale: 1.5, direction: [0.3, 0.8, -0.1], color: '#ff8800', floorY: 0.25 });
+      const hash = createHash('sha256');
+      for (const pool of [v.pools.add, v.pools.alpha]) for (const array of arrays(pool)) hash.update(Buffer.from(array.buffer, array.byteOffset, array.byteLength));
+      expect(hash.digest('hex'), preset).toBe(expected[preset]);
+      v.dispose();
+    }
+  });
+
   it('ignores non-finite positions and unknown presets', () => {
     const v = new VfxSystem(new Scene(), 'low');
     v.burst('sparks', Number.NaN, 0, 0, { seed: 1 });
     v.burst('nope' as never, 0, 0, 0, { seed: 1 });
+    v.burst('constructor' as never, 0, 0, 0, { seed: 1 });
+    v.setEmitter('invalid', { preset: 'constructor' as never, enabled: true }, new Group());
+    expect(v.emitterCount).toBe(0);
     expect(v.spawned).toBe(0);
     v.dispose();
   });
@@ -185,6 +264,47 @@ describe('effect system', () => {
     v.setEmitter('torch', { preset: 'fire', enabled: false }, torch);
     expect(v.emitterCount).toBe(0);
     v.retainEmitters(new Set());
+    v.dispose();
+  });
+
+  it('lets dormant emitters idle after live particles expire and resumes without a backlog', () => {
+    const scene = new Scene();
+    const parent = new Group();
+    const torch = new Object3D();
+    scene.add(parent);
+    parent.add(torch);
+    scene.updateMatrixWorld(true);
+    const v = new VfxSystem(scene, 'medium');
+    const cam = camera();
+    v.setEmitter('torch', { preset: 'fire', enabled: true }, torch);
+    expect(v.animating).toBe(false);
+    for (let i = 0; i < 60; i++) v.update(1 / 60, cam);
+    expect(v.animating).toBe(true);
+    const before = v.spawned;
+    parent.visible = false;
+    for (let i = 0; i < 600; i++) v.update(1 / 60, cam);
+    expect(v.spawned).toBe(before);
+    expect(v.emitterCount).toBe(1);
+    expect(v.animating).toBe(false);
+    parent.visible = true;
+    for (let i = 0; i < 6; i++) v.update(1 / 60, cam);
+    expect(v.spawned - before).toBeGreaterThan(0);
+    expect(v.spawned - before).toBeLessThan(10);
+    expect(v.animating).toBe(true);
+    torch.position.x = 500;
+    torch.updateMatrixWorld(true);
+    const far = v.spawned;
+    for (let i = 0; i < 600; i++) v.update(1 / 60, cam);
+    expect(v.spawned).toBe(far);
+    expect(v.animating).toBe(false);
+    torch.position.x = 0;
+    torch.updateMatrixWorld(true);
+    for (let i = 0; i < 6; i++) v.update(1 / 60, cam);
+    expect(v.animating).toBe(true);
+    v.hidden = true;
+    expect(v.animating).toBe(false);
+    v.hidden = false;
+    expect(v.animating).toBe(true);
     v.dispose();
   });
 

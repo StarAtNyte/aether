@@ -9,7 +9,7 @@
  *   halo around the cut-out.
  * - Pure and deterministic (seeded per kind): identical in the compute worker, inline and in tests.
  */
-import { rng } from '@aether/core';
+import { rng } from '@aether/core/random';
 
 /** The foliage card kinds (mirrors `MaterialSpec.foliage`). */
 export type FoliageKind = 'broadleaf' | 'shrub' | 'needles' | 'grass' | 'fern' | 'blossom' | 'flower';

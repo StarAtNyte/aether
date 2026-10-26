@@ -14,8 +14,8 @@
  * Planning is pure and deterministic ({@link photoPlan}, {@link neutralise}, tested); drawing needs a 2D canvas
  * and runs once per kind when the sheet has loaded. Without a canvas or the sheet the procedural cards stay.
  */
-import { rng } from '@aether/core';
-import type { FoliageKind } from '@aether/procgen';
+import { rng } from '@aether/core/random';
+import type { FoliageKind } from '@aether/procgen/foliage';
 
 /** Sprite kinds of the sheet. */
 export type SpriteUse = 'leaf-broad' | 'leaf-narrow' | 'frond' | 'tuft' | 'needle' | 'blossom' | 'flower';

@@ -19,7 +19,7 @@ describe('@aether/render public contract', () => {
 
   it('exports the GPU-free building blocks', () => {
     for (const name of [
-      'SceneSync', 'MaterialCache', 'GeometryCache', 'computeSkyState', 'scatterPlacements', 'createProcgenGeometrySource', 'EnvironmentRig', 'isSafeModelUrl',
+      'SceneSync', 'cloneModel', 'disposeModelInstance', 'MaterialCache', 'GeometryCache', 'computeSkyState', 'scatterPlacements', 'createProcgenGeometrySource', 'EnvironmentRig', 'isSafeModelUrl',
       'contentFraming', 'framingPose', 'collectFramingItems', 'resolveFog', 'GrowIn', 'SurfaceTextures', 'boxProjectedUvs', 'sunBearing',
     ]) {
       expect((render as Record<string, unknown>)[name], name).toBeDefined();

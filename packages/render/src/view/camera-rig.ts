@@ -102,10 +102,12 @@ export function boomFreeDistance(query: OcclusionQuery, from: Vector3, to: Vecto
 /** {@link boomFreeDistance} with the answer in `_free[1]` (no double crosses a call boundary). */
 function boomFree(query: OcclusionQuery | null, sink: OcclusionSink | null, from: Vector3, to: Vector3, radius: number): void {
   _boom.subVectors(to, from);
-  const len = _boom.length();
+  const len = Math.sqrt(_boom.x * _boom.x + _boom.y * _boom.y + _boom.z * _boom.z);
   _free[1] = Number.POSITIVE_INFINITY;
   if (!(len > 1e-4)) return;
-  _boom.multiplyScalar(1 / len);
+  _boom.x /= len;
+  _boom.y /= len;
+  _boom.z /= len;
   // An orthonormal frame around the boom (world up unless the boom is vertical).
   _up.set(0, 1, 0);
   if (Math.abs(_boom.y) > 0.98) _up.set(1, 0, 0);
@@ -113,6 +115,9 @@ function boomFree(query: OcclusionQuery | null, sink: OcclusionSink | null, from
   _up.crossVectors(_side, _boom).normalize();
   probe(query, sink, from, to);
   _free[1] = _free[0]!;
+  // Every ring ray gains the same orthogonal offset: (1 - 0.6) * radius.
+  // Its length, and therefore its projection factor, is independent of side/up and sign.
+  let along = 0;
   for (let i = 0; i < 4; i++) {
     const sx = i < 2 ? (i === 0 ? 1 : -1) : 0;
     const uy = i >= 2 ? (i === 2 ? 1 : -1) : 0;
@@ -120,7 +125,14 @@ function boomFree(query: OcclusionQuery | null, sink: OcclusionSink | null, from
     _to.copy(to).addScaledVector(_side, sx * radius).addScaledVector(_up, uy * radius);
     probe(query, sink, _from, _to);
     // The offset ray is slightly longer than the boom: measure along the axis.
-    if (_free[0]! < _free[1]!) _free[1] = _free[0]! * (len / Math.max(1e-4, _to.distanceTo(_from)));
+    if (_free[0] !== Number.POSITIVE_INFINITY) {
+      if (along === 0) {
+        const offset = radius * 0.4;
+        along = len / Math.max(1e-4, Math.sqrt(len * len + offset * offset));
+      }
+      const projected = _free[0]! * along;
+      if (projected < _free[1]!) _free[1] = projected;
+    }
   }
 }
 

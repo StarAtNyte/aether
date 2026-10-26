@@ -27,9 +27,10 @@ import type { CharacterController, ColliderProvider, PhysicsWorld } from '@aethe
 import { assetColliderDescs } from '@aether/physics/asset-colliders';
 import { entityColliderBounds, entityWorldBounds } from '@aether/physics/bounds';
 import type { SandboxRunner } from '@aether/procgen';
-import { WorldRenderer, type LightmapStatus, type BackendPreference, type BackendReason, type ContextLossInfo, type WatchdogEvent, type GizmoCommit, type GizmoMode, type GizmoOptions, type ProofTrace, type RenderDiagnostic, type RenderMemoryStats } from '@aether/render';
+import { WorldRenderer, type LightmapStatus, type BackendPreference, type BackendReason, type ContextLossInfo, type WatchdogEvent, type GizmoCommit, type GizmoMode, type GizmoOptions, type ProofTrace, type RenderDiagnostic, type RenderProcessingStage, type RenderMemoryStats } from '@aether/render';
 import { FIXED_DT, MAX_FRAME_DT, MAX_SUBSTEPS, PLAYER_CAPSULE, PLAYER_PSEUDO_ID, STATS_INTERVAL_MS } from '../config';
 import { createLogger, errorMessage } from '../lib/log';
+import { yieldToPaint } from '../lib/yieldToPaint';
 import { FixedStepper } from './FixedStepper';
 import { buildNpcFrame, frameSignature, type NpcFrame } from './npcFrame';
 import { IdleClock } from './IdleClock';
@@ -155,6 +156,7 @@ export interface SimulationStats {
 /** Callbacks from the simulation to the UI layer. */
 export interface SimulationListener {
   onStats?(stats: SimulationStats): void;
+  onProcessing?(stage: RenderProcessingStage | null): void;
   /** Play-mode HUD refresh (4 Hz): values of `world.hud` keys + game time. */
   onHud?(hud: Record<string, Json | undefined>, time: number): void;
   onMessage?(text: string, duration: number): void;
@@ -464,10 +466,13 @@ export class Simulation {
     this.touch();
     const idle = this.pendingWorld === null;
     this.pendingWorld = world;
+    this.emitProcessing();
     if (!idle) return; // the running chain picks up the newest world
     this.syncChain = this.syncChain.then(async () => {
       // Coalesce: always render the newest world requested while waiting.
       while (this.pendingWorld && !this.disposed) {
+        await yieldToPaint();
+        if (!this.pendingWorld || this.disposed) break;
         const next = this.pendingWorld;
         try {
           await this.renderer.setWorld(next);
@@ -479,11 +484,13 @@ export class Simulation {
         }
         if (this.pendingWorld === next) this.pendingWorld = null;
       }
+      if (this.disposed) return;
       this.refreshDebug();
       this.renderer.highlight(this.selection.filter((id) => this.syncedWorldDoc && Object.prototype.hasOwnProperty.call(this.syncedWorldDoc.entities, id)));
       // The entity's rendered object may have been rebuilt: re-attach the gizmo.
       this.applyGizmo();
       this.listener.onSynced?.();
+      this.emitProcessing();
     });
   }
 
@@ -642,6 +649,8 @@ export class Simulation {
     }
     // Buildings frame themselves (the walkthrough spawn sits outside the entrance and would pull the view off).
     const spawnFocus = p.mode !== 'orbit' && !findAvatar(world) && !hasBuilding(world);
+    await this.renderer.prepareFraming();
+    if (this.disposed || this.session || this.history.current !== world) return;
     if (this.renderer.frameContent({ focusPoints: spawnFocus ? [p.spawn] : [], ...(opts.flyIn ? { flyIn: true } : {}) })) return;
     // Nothing rendered yet (e.g. every entity failed to build): fall back to document positions.
     if (spawnFocus) {
@@ -1403,6 +1412,15 @@ export class Simulation {
   // Frame loop
   // ---------------------------------------------------------------------------
 
+  private lastProcessing: RenderProcessingStage | null = null;
+  private emitProcessing(): void {
+    const stage = this.disposed ? null : this.pendingWorld ? 'scene' : this.renderer.processingStage;
+    if (stage === this.lastProcessing) return;
+    this.lastProcessing = stage;
+    try { this.listener.onProcessing?.(stage); }
+    catch (error) { log.warn('processing feedback failed', error); }
+  }
+
   private readonly onAnimationFrame = (t: number): void => {
     if (this.disposed) return;
     this.raf = requestAnimationFrame(this.onAnimationFrame);
@@ -1411,6 +1429,7 @@ export class Simulation {
     const dt = this.lastFrame < 0 ? 0 : Math.max(0, (t - this.lastFrame) / 1000);
     this.lastFrame = t;
     const s = this.session;
+    this.emitProcessing();
     try {
       if (s && !this.paused) {
         this.pollGamepad(dt);
@@ -1431,6 +1450,7 @@ export class Simulation {
     } catch (err) {
       this.onFrameError(err, s);
     }
+    this.emitProcessing();
     if (t - this.lastStats >= STATS_INTERVAL_MS) {
       this.lastStats = t;
       try {
@@ -1956,6 +1976,7 @@ export class Simulation {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.emitProcessing();
     cancelAnimationFrame(this.raf);
     this.raf = 0;
     if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', this.onVisibility);

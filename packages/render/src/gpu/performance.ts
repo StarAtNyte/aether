@@ -109,6 +109,9 @@ export const GOVERNOR_DEFAULTS = Object.freeze({
   settle: 20,
   /** A step down this soon (s) after a step up pins the floor. */
   retreat: 45,
+  /** Sustained full-resolution headroom before retrying a failed climb. */
+  retryAfter: 120,
+  maxRetryAfter: 480,
 });
 
 /**
@@ -119,7 +122,8 @@ export const GOVERNOR_DEFAULTS = Object.freeze({
  * It also climbs back, one step at a time, when frames are comfortably fast: p90 above `upFps` with the resolution at full
  * scale for `upAfter` seconds, and not sooner than `settle` seconds after the last move. Every step recompiles shaders, so
  * the climb is slow on purpose and has hysteresis: `upFps` is well above `lowFps`, and when a climb is undone by a step down
- * within `retreat` seconds, that level becomes the floor and the climb stops there for the rest of the session. A governor
+ * within `retreat` seconds, that level becomes a temporary floor. Sustained full-resolution headroom permits a later
+ * retry, with a longer wait after repeated failures. A governor
  * that starts above level 0 (a machine on a path known to need care) is told with {@link start}. Time here is the sum of
  * the continuous frames recorded, so a hidden tab does not move it. Allocation-free per frame.
  */
@@ -140,6 +144,9 @@ export class PerformanceGovernor {
   private slow = 0;
   private bad = 0;
   private fast = 0;
+  private floorFast = 0;
+  private failedClimbs = 0;
+  private retryWait: number = GOVERNOR_DEFAULTS.retryAfter;
   private clock = 0;
   private lastMoveAt = Number.NEGATIVE_INFINITY;
   private lastUpAt = Number.NEGATIVE_INFINITY;
@@ -154,6 +161,8 @@ export class PerformanceGovernor {
   start(level: number): void {
     this.level = Math.max(0, Math.min(PERFORMANCE_STEPS.length, Math.floor(Number.isFinite(level) ? level : 0)));
     this.floor = 0;
+    this.failedClimbs = 0;
+    this.retryWait = this.o.retryAfter;
     this.lastMove = 0;
     this.lastMoveAt = this.clock;
     this.lastUpAt = Number.NEGATIVE_INFINITY;
@@ -163,8 +172,9 @@ export class PerformanceGovernor {
   /** Frame rate implied by the p90 frame time of the window (0: no data). */
   get fps(): number {
     if (this.filled < 8) return 0;
-    const s = this.sorted.subarray(0, this.filled);
+    const s = this.sorted;
     for (let i = 0; i < this.filled; i++) s[i] = this.ring[i] as number;
+    s.fill(Infinity, this.filled);
     s.sort();
     return 1 / (s[Math.min(this.filled - 1, Math.floor(this.filled * 0.9))] as number);
   }
@@ -176,6 +186,7 @@ export class PerformanceGovernor {
     this.slow = 0;
     this.bad = 0;
     this.fast = 0;
+    this.floorFast = 0;
   }
 
   /**
@@ -200,7 +211,11 @@ export class PerformanceGovernor {
       this.slow = fps < this.o.lowFps && scale <= this.o.afterScale ? this.slow + dt : 0;
       if (this.bad >= this.o.afterBad || this.slow >= this.o.after) {
         // A climb undone at once: the level it climbed to is too much for this machine.
-        if (this.clock - this.lastUpAt <= this.o.retreat) this.floor = Math.max(this.floor, this.level);
+        if (this.clock - this.lastUpAt <= this.o.retreat) {
+          this.floor = Math.max(this.floor, this.level + 1);
+          this.failedClimbs++;
+          this.retryWait = Math.min(this.o.maxRetryAfter, this.o.retryAfter * 2 ** Math.min(8, this.failedClimbs - 1));
+        }
         this.level++;
         this.lastMove = 1;
         this.lastMoveAt = this.clock;
@@ -209,6 +224,11 @@ export class PerformanceGovernor {
       }
     }
     const roomy = fps >= this.o.upFps && (scale === 0 || scale >= 0.99);
+    this.floorFast = roomy && this.floor > 0 && this.level === this.floor ? this.floorFast + dt : 0;
+    if (this.floorFast >= this.retryWait) {
+      this.floor--;
+      this.floorFast = 0;
+    }
     this.fast = roomy && this.level > this.floor ? this.fast + dt : 0;
     if (this.fast >= this.o.upAfter && this.clock - this.lastMoveAt >= this.o.settle) {
       this.level--;

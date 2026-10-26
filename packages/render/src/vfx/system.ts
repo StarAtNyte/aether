@@ -85,11 +85,16 @@ interface Layer {
 const dirty = { start: 0, count: 0 };
 /** Replaces `clearUpdateRanges` on the particle attributes (see `makeLayer`). */
 function keepRanges(this: InstancedBufferAttribute): InstancedBufferAttribute {
+  // The renderer consumed these writes. Keep the records, mark their spans empty.
+  for (let i = 0; i < this.updateRanges.length; i++) this.updateRanges[i]!.count = 0;
   return this;
 }
 const drawScratch = new Float64Array(4);
 const _pos = new Vector3();
 const UP: readonly [number, number, number] = [0, 1, 0];
+/** Preset names never change: hash them once rather than rebuilding the UTF-8 hash closure for every burst. */
+const PRESET_HASHES = new Map<VfxPreset, number>();
+for (const name of Object.keys(VFX_PRESETS) as VfxPreset[]) PRESET_HASHES.set(name, hashString(name));
 
 /** The effects of one renderer. */
 export class VfxSystem {
@@ -195,7 +200,7 @@ export class VfxSystem {
 
   /** True while particles may be on screen (the renderer keeps drawing). */
   get animating(): boolean {
-    return this.emitters.size > 0 || this.layers.add.pool.alive(this.clock) || this.layers.alpha.pool.alive(this.clock);
+    return !this.hidden && (this.layers.add.pool.alive(this.clock) || this.layers.alpha.pool.alive(this.clock));
   }
 
   /** Read-only views of the pools (tests). */
@@ -203,41 +208,44 @@ export class VfxSystem {
     return { add: this.layers.add.pool, alpha: this.layers.alpha.pool };
   }
 
+  private readonly burstRandom = new Float64Array(1);
+
   /** Play a burst of `preset` at (x, y, z). */
   burst(preset: VfxPreset, x: number, y: number, z: number, opts: BurstOptions): void {
     if (this.disposed || !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return;
+    const presetHash = PRESET_HASHES.get(preset);
+    if (presetHash === undefined) return;
     const def = VFX_PRESETS[preset];
-    if (!def) return;
     const scale = clampScale(opts.scale);
     this.spawnOpts.scale = scale;
     this.spawnOpts.tint = opts.color ? linearColor(opts.color) : null;
     this.spawnOpts.floorY = opts.floorY !== undefined && Number.isFinite(opts.floorY) ? opts.floorY : y;
     const dir = opts.direction ?? UP;
     const dl = Math.hypot(dir[0], dir[1], dir[2]) || 1;
-    this.rand.reset(mixSeed(opts.seed, hashString(preset), this.worldSeed));
+    this.rand.reset(mixSeed(opts.seed, presetHash, this.worldSeed));
     const countScale = Math.sqrt(scale);
     for (let li = 0; li < def.layers.length; li++) {
       const layer = def.layers[li] as VfxLayer;
-      const n = Math.max(1, Math.round(this.rand.range(layer.burst[0], layer.burst[1] + 1) * (layer.burst[1] > 1 ? countScale : 1)));
+      this.rand.fill(this.burstRandom, 1);
+      const sampled = layer.burst[0] + (layer.burst[1] + 1 - layer.burst[0]) * this.burstRandom[0]!;
+      const n = Math.max(1, Math.round(sampled * (layer.burst[1] > 1 ? countScale : 1)));
       const pool = layer.blend === 'add' ? this.layers.add.pool : this.layers.alpha.pool;
       const at = pool.at;
-      for (let i = 0; i < n; i++) {
-        at[0] = x;
-        at[1] = y;
-        at[2] = z;
-        at[3] = dir[0] / dl;
-        at[4] = dir[1] / dl;
-        at[5] = dir[2] / dl;
-        at[6] = this.clock;
-        pool.write(layer, this.rand, this.spawnOpts);
-      }
+      at[0] = x;
+      at[1] = y;
+      at[2] = z;
+      at[3] = dir[0] / dl;
+      at[4] = dir[1] / dl;
+      at[5] = dir[2] / dl;
+      at[6] = this.clock;
+      pool.writeMany(layer, this.rand, this.spawnOpts, n);
     }
     this.bursts++;
   }
 
   /** Attach (or replace) a continuous emitter on `target`; `spec.enabled: false` or an unknown preset removes it. */
   setEmitter(id: string, spec: EntityVfx | null, target: Object3D | null): void {
-    if (!spec || !spec.enabled || !target || !VFX_PRESETS[spec.preset]) {
+    if (!spec || !spec.enabled || !target || !PRESET_HASHES.has(spec.preset)) {
       if (this.emitters.delete(id)) this.emitterList = [...this.emitters.values()];
       return;
     }
@@ -319,7 +327,10 @@ export class VfxSystem {
       const em = list[ei] as Emitter;
       const def = VFX_PRESETS[em.preset];
       const t = em.target;
-      if (!inScene(t)) continue;
+      if (!inScene(t)) {
+        em.accum = 0;
+        continue;
+      }
       _pos.copy(em.offset);
       t.localToWorld(_pos);
       const dx = _pos.x - cx;
@@ -370,8 +381,11 @@ export class VfxSystem {
     for (let i = 0; i < l.attrs.length; i++) {
       const attr = l.attrs[i] as InstancedBufferAttribute;
       const range = l.ranges[i] as { start: number; count: number };
-      range.start = dirty.start * 4;
-      range.count = dirty.count * 4;
+      const start = dirty.start * 4;
+      const end = start + dirty.count * 4;
+      const pendingEnd = range.count > 0 ? range.start + range.count : end;
+      range.start = range.count > 0 ? Math.min(range.start, start) : start;
+      range.count = Math.max(pendingEnd, end) - range.start;
       attr.needsUpdate = true;
     }
   }
@@ -390,11 +404,14 @@ export class VfxSystem {
   }
 }
 
-/** True when `o` hangs in a scene (a removed rig or entity keeps its own parents, so walk to the root). Allocation-free. */
+/** True when `o` hangs in a visible scene hierarchy (detached and hidden parents cannot emit). */
 function inScene(o: Object3D): boolean {
   let n: Object3D = o;
-  for (let i = 0; i < 64 && n.parent; i++) n = n.parent;
-  return (n as Object3D & { isScene?: boolean }).isScene === true;
+  for (let i = 0; i < 64 && n.parent; i++) {
+    if (!n.visible) return false;
+    n = n.parent;
+  }
+  return n.visible && (n as Object3D & { isScene?: boolean }).isScene === true;
 }
 
 function clampScale(s: number | undefined): number {

@@ -997,13 +997,13 @@
 
 .vp-status {
   position: absolute;
-  top: var(--s-3);
+  top: calc(var(--s-3) + 2 * var(--control-h) + 2 * var(--s-2));
   left: 50%;
   z-index: var(--z-overlay);
   display: flex;
   align-items: center;
   gap: var(--s-2);
-  max-width: min(360px, calc(100% - 2 * 200px));
+  max-width: min(360px, calc(100% - 24px));
   height: var(--control-h);
   padding: 0 var(--s-3);
   border-radius: var(--r-2);
@@ -1042,6 +1042,27 @@
   inset: 0;
   border-radius: 0;
   opacity: 0.6;
+}
+
+.vp-loading__content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.vp-loading .spinner {
+  width: 24px;
+  height: 24px;
+}
+
+.vp-status .spinner {
+  flex: none;
+}
+
+.vp-status {
+  pointer-events: none;
 }
 
 .vp-loading__text {
@@ -1450,7 +1471,7 @@
   }
 
   .vp-status {
-    max-width: calc(100% - 2 * 120px);
+    max-width: calc(100% - 24px);
   }
 
   .play-hud {
@@ -1489,7 +1510,7 @@
 
   .vp-status {
     max-width: calc(100% - 24px);
-    top: calc(var(--s-3) + var(--control-h) + var(--s-2));
+    top: calc(var(--s-3) + 2 * var(--control-h) + 2 * var(--s-2));
   }
 
   /* Compact performance readout: the frame rate only. */

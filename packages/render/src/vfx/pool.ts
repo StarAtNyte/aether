@@ -120,8 +120,9 @@ export class ParticlePool {
   private head = 0;
   /** Slots ever written (≤ capacity): the instance count to draw. */
   private written = 0;
-  private dirtyLo = Infinity;
-  private dirtyHi = -Infinity;
+  // Integer sentinels keep dirty-slot bookkeeping in integer fields (no boxed infinities per upload).
+  private dirtyLo: number;
+  private dirtyHi = -1;
   /** Time at which the last written particle dies. */
   private lastDeath = -Infinity;
   /** Particles written since construction (diagnostics, tests). */
@@ -132,6 +133,7 @@ export class ParticlePool {
   constructor(capacity: number) {
     const cap = Math.max(1, Math.floor(capacity));
     this.capacity = cap;
+    this.dirtyLo = cap;
     this.origin = new Float32Array(cap * STRIDE);
     this.velocity = new Float32Array(cap * STRIDE);
     this.shape = new Float32Array(cap * STRIDE);
@@ -164,8 +166,8 @@ export class ParticlePool {
     if (this.dirtyHi < this.dirtyLo) return false;
     out.start = this.dirtyLo;
     out.count = this.dirtyHi - this.dirtyLo + 1;
-    this.dirtyLo = Infinity;
-    this.dirtyHi = -Infinity;
+    this.dirtyLo = this.capacity;
+    this.dirtyHi = -1;
     return true;
   }
 
@@ -199,6 +201,38 @@ export class ParticlePool {
    */
   readonly at = new Float64Array(7);
 
+  private batchCone: Float64Array | null = null;
+  private readonly coneBasis = new Float64Array(7);
+
+  /** Write an emission batch sharing the position, direction, time and layer in {@link at}. */
+  writeMany(layer: VfxLayer, rand: SeededRandom, opts: SpawnOptions, count: number): void {
+    if (!(count > 0) || !Number.isFinite(count)) return;
+    if (count <= 1 || layer.shape !== 'cone') {
+      for (let i = 0; i < count; i++) this.write(layer, rand, opts);
+      return;
+    }
+    const e = this.at, b = this.coneBasis;
+    const dx = e[3]!, dy = e[4]!, dz = e[5]!;
+    b[0] = Math.cos(Math.min(Math.PI, layer.spread));
+    let ax = 0, ay = 1;
+    if (Math.abs(dy) > 0.9) { ax = 1; ay = 0; }
+    let t1x = dy * 0 - dz * ay;
+    let t1y = dz * ax - dx * 0;
+    let t1z = dx * ay - dy * ax;
+    const tl = Math.hypot(t1x, t1y, t1z) || 1;
+    t1x /= tl; t1y /= tl; t1z /= tl;
+    b[1] = t1x; b[2] = t1y; b[3] = t1z;
+    b[4] = dy * t1z - dz * t1y;
+    b[5] = dz * t1x - dx * t1z;
+    b[6] = dx * t1y - dy * t1x;
+    this.batchCone = b;
+    try {
+      for (let i = 0; i < count; i++) this.write(layer, rand, opts);
+    } finally {
+      this.batchCone = null;
+    }
+  }
+
   /** Write one particle of `layer` at {@link at}. Zero allocations. */
   write(layer: VfxLayer, rand: SeededRandom, opts: SpawnOptions): void {
     const e = this.at;
@@ -210,7 +244,8 @@ export class ParticlePool {
     const dz = e[5]!;
     const time = e[6]!;
     const i = this.head;
-    this.head = (this.head + 1) % this.capacity;
+    const next = i + 1;
+    this.head = next === this.capacity ? 0 : next;
     if (this.written < this.capacity) this.written++;
     if (i < this.dirtyLo) this.dirtyLo = i;
     if (i > this.dirtyHi) this.dirtyHi = i;
@@ -240,29 +275,37 @@ export class ParticlePool {
       oz = vz * rad;
     } else if (shape === 'cone') {
       // Uniform in the cap of half-angle `spread` around (dx, dy, dz).
-      const cosMax = Math.cos(Math.min(Math.PI, layer.spread));
+      let cosMax: number, t1x: number, t1y: number, t1z: number, t2x: number, t2y: number, t2z: number;
+      const basis = this.batchCone;
+      if (basis) {
+        cosMax = basis[0]!;
+        t1x = basis[1]!; t1y = basis[2]!; t1z = basis[3]!;
+        t2x = basis[4]!; t2y = basis[5]!; t2z = basis[6]!;
+      } else {
+        cosMax = Math.cos(Math.min(Math.PI, layer.spread));
+        // Orthonormal basis around the axis.
+        let ax = 0;
+        let ay = 1;
+        let az = 0;
+        if (Math.abs(dy) > 0.9) {
+          ax = 1;
+          ay = 0;
+        }
+        // t1 = normalize(cross(axis, a)), t2 = cross(axis, t1)
+        t1x = dy * az - dz * ay;
+        t1y = dz * ax - dx * az;
+        t1z = dx * ay - dy * ax;
+        const tl = Math.hypot(t1x, t1y, t1z) || 1;
+        t1x /= tl;
+        t1y /= tl;
+        t1z /= tl;
+        t2x = dy * t1z - dz * t1y;
+        t2y = dz * t1x - dx * t1z;
+        t2z = dx * t1y - dy * t1x;
+      }
       const ct = 1 - r[0]! * (1 - cosMax);
       const st = Math.sqrt(Math.max(0, 1 - ct * ct));
       const phi = r[1]! * Math.PI * 2;
-      // Orthonormal basis around the axis.
-      let ax = 0;
-      let ay = 1;
-      let az = 0;
-      if (Math.abs(dy) > 0.9) {
-        ax = 1;
-        ay = 0;
-      }
-      // t1 = normalize(cross(axis, a)), t2 = cross(axis, t1)
-      let t1x = dy * az - dz * ay;
-      let t1y = dz * ax - dx * az;
-      let t1z = dx * ay - dy * ax;
-      const tl = Math.hypot(t1x, t1y, t1z) || 1;
-      t1x /= tl;
-      t1y /= tl;
-      t1z /= tl;
-      const t2x = dy * t1z - dz * t1y;
-      const t2y = dz * t1x - dx * t1z;
-      const t2z = dx * t1y - dy * t1x;
       const c = Math.cos(phi) * st;
       const s = Math.sin(phi) * st;
       vx = dx * ct + t1x * c + t2x * s;
@@ -270,9 +313,10 @@ export class ParticlePool {
       vz = dz * ct + t1z * c + t2z * s;
       const rad = layer.radius * scale * Math.sqrt(r[2]!);
       const a = r[3]! * Math.PI * 2;
-      ox = (t1x * Math.cos(a) + t2x * Math.sin(a)) * rad;
-      oy = (t1y * Math.cos(a) + t2y * Math.sin(a)) * rad;
-      oz = (t1z * Math.cos(a) + t2z * Math.sin(a)) * rad;
+      const ca = Math.cos(a), sa = Math.sin(a);
+      ox = (t1x * ca + t2x * sa) * rad;
+      oy = (t1y * ca + t2y * sa) * rad;
+      oz = (t1z * ca + t2z * sa) * rad;
     } else if (shape === 'ring') {
       const a = r[0]! * Math.PI * 2;
       const lift = 0.12 + r[1]! * 0.25;

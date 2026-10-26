@@ -169,7 +169,7 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
       effects.aberration ? import('three/addons/tsl/display/ChromaticAberrationNode.js') : Promise.resolve(null),
       contactLight ? import('three/addons/tsl/display/SSSNode.js') : Promise.resolve(null),
     ]);
-    const { RenderPipeline, Vector3, UnsignedByteType, Color } = three;
+    const { RenderPipeline, Vector3, UnsignedByteType, HalfFloatType, RGFormat, Color } = three;
     const { pass, screenUV, screenCoordinate, smoothstep, float, uniform, vec2, vec3, vec4, dot, mix, pow, max, min, clamp, mrt, packNormalToRGB, unpackRGBToNormal, normalView, velocity, sample, context, diffuseColor, convertToTexture, renderOutput, interleavedGradientNoise, metalness, roughness } = tsl;
     const { bloom } = bloomMod;
     const disposables: Array<{ dispose(): void }> = [];
@@ -201,10 +201,23 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
       prePass.setMRT(mrt(attachments as Parameters<typeof mrt>[0]));
       const normalTexture = prePass.getTexture('output');
       normalTexture.type = UnsignedByteType;
+      if (effects.ssr) {
+        // Reflections consume only metalness and roughness; preserve their 8-bit precision without unused BA channels.
+        const materialTexture = prePass.getTexture('material');
+        materialTexture.type = UnsignedByteType;
+        materialTexture.format = RGFormat;
+      }
       const pp = prePass;
       prePassNormal = sample((uv) => unpackRGBToNormal(pp.getTextureNode().sample(uv)));
       prePassDepth = prePass.getTextureNode('depth');
-      if (effects.taa) prePassVelocity = prePass.getTextureNode('velocity');
+      if (effects.taa) {
+        // Motion is signed NDC displacement. Cloning the 8-bit normal target would clamp negative motion to zero.
+        // RG16F keeps both signed components at the same four bytes per pixel as RGBA8.
+        const motionTexture = prePass.getTexture('velocity');
+        motionTexture.type = HalfFloatType;
+        motionTexture.format = RGFormat;
+        prePassVelocity = prePass.getTextureNode('velocity');
+      }
       disposables.push(prePass, { dispose: () => disposeTargetTextures(pp) }, { dispose: () => disposeTargetTextures(scenePass) });
     }
     if (effects.ao && gtao && prePassDepth && prePassNormal) {

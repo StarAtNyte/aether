@@ -17,6 +17,17 @@ describe('measureFrame', () => {
 });
 
 describe('BlackScreenWatchdog', () => {
+  it('does not spend GPU recovery steps or give-up time while background geometry is preparing', () => {
+    const w = new BlackScreenWatchdog({ firstFrameMs: 1000, giveUpMs: 2000 });
+    w.begin(0, 0); expect(w.tick(500, 0, null)).toBeNull();
+    expect(w.tick(1000, 0, null, true)).toBeNull(); expect(w.tick(10000, 0, null, true)).toBeNull();
+    expect(w.finished).toBe(false); expect(w.stepsTaken).toBe(0);
+    expect(w.tick(10010, 0, null)).toBeNull();
+    expect(w.tick(10499, 0, null)).toBeNull(); expect(w.tick(10510, 0, null)?.reason).toBe('no-frame');
+    const ready = new BlackScreenWatchdog({ firstFrameMs: 1000, giveUpMs: 2000 });
+    ready.begin(0, 0); ready.tick(10000, 0, null, true);
+    expect(ready.tick(10010, 1, image)).toBeNull(); expect(ready.healthy).toBe(true);
+  });
   it('stays quiet while frames show an image', () => {
     const w = new BlackScreenWatchdog();
     w.begin(0, 0);

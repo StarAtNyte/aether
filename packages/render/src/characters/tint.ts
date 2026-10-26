@@ -16,6 +16,10 @@
  */
 import { CanvasTexture, Color, LinearFilter, LinearMipmapLinearFilter, SRGBColorSpace, type Material, type MeshStandardMaterial, type Object3D, type Texture } from 'three';
 
+import { recolorPixels, maskWeight } from './tint-pixels';
+export { recolorPixels, maskWeight } from './tint-pixels';
+import { TintBakeClient, type TintOperation } from './tint-bake-client';
+
 /** Tint request. Hex strings (#rrggbb, sRGB); omitted parts keep the original colours. */
 export interface Tint {
   top?: string;
@@ -53,65 +57,10 @@ export function hasTint(t: Tint | undefined): boolean {
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
 
-/** sRGB byte to linear (256 entries) and linear to sRGB byte (4096 entries). */
-const TO_LINEAR = new Float32Array(256);
-const TO_SRGB = new Uint8Array(4096);
-for (let i = 0; i < 256; i++) {
-  const c = i / 255;
-  TO_LINEAR[i] = c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-}
-for (let i = 0; i < 4096; i++) {
-  const l = i / 4095;
-  const c = l <= 0.0031308 ? l * 12.92 : 1.055 * l ** (1 / 2.4) - 0.055;
-  TO_SRGB[i] = Math.max(0, Math.min(255, Math.round(c * 255)));
-}
-
 function linearColor(hex: string | undefined): [number, number, number] | null {
   if (!hex || !HEX.test(hex)) return null;
   const c = new Color(hex);
   return [c.r, c.g, c.b];
-}
-
-const LUM_CLAMP_LO = 0.3;
-const LUM_CLAMP_HI = 2.4;
-
-/**
- * Recolour RGBA pixels in place toward `target` (linear RGB), keeping each
- * texel's own shading: `ref` is the region's mean luminance and `weight(x, y)`
- * the 0..1 strength of the recolour at that texel.
- */
-export function recolorPixels(rgba: Uint8ClampedArray, width: number, height: number, target: readonly [number, number, number], ref: number, weight: (x: number, y: number) => number): void {
-  const inv = 1 / Math.max(1e-4, ref);
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const w = weight(x, y);
-      if (w <= 0.004) continue;
-      const i = (y * width + x) * 4;
-      const r = TO_LINEAR[rgba[i] as number] as number;
-      const g = TO_LINEAR[rgba[i + 1] as number] as number;
-      const b = TO_LINEAR[rgba[i + 2] as number] as number;
-      const lum = r * 0.2126 + g * 0.7152 + b * 0.0722;
-      const k = Math.max(LUM_CLAMP_LO, Math.min(LUM_CLAMP_HI, lum * inv));
-      const nr = r + (target[0] * k - r) * w;
-      const ng = g + (target[1] * k - g) * w;
-      const nb = b + (target[2] * k - b) * w;
-      rgba[i] = TO_SRGB[Math.min(4095, Math.max(0, Math.round(nr * 4095)))] as number;
-      rgba[i + 1] = TO_SRGB[Math.min(4095, Math.max(0, Math.round(ng * 4095)))] as number;
-      rgba[i + 2] = TO_SRGB[Math.min(4095, Math.max(0, Math.round(nb * 4095)))] as number;
-    }
-  }
-}
-
-/** Weight function reading one mask channel of one half (0 = body, 1 = head) of the mask image. */
-export function maskWeight(masks: TintMasks, half: 0 | 1, channel: 0 | 1, width: number, height: number): (x: number, y: number) => number {
-  const halfW = masks.width >> 1;
-  const sx = halfW / width;
-  const sy = masks.height / height;
-  return (x, y) => {
-    const mx = Math.min(halfW - 1, Math.floor(x * sx)) + half * halfW;
-    const my = Math.min(masks.height - 1, Math.floor(y * sy));
-    return (masks.data[(my * masks.width + mx) * 4 + channel] as number) / 255;
-  };
 }
 
 /** Recolour a body base-colour image in place (top and bottom regions). */
@@ -210,6 +159,11 @@ export function bakeTexture(source: Texture, apply: (rgba: Uint8ClampedArray, wi
   const img = ctx.getImageData(0, 0, image.width, image.height);
   apply(img.data, img.width, img.height);
   ctx.putImageData(img, 0, 0);
+  return tintTexture(canvas, source);
+}
+
+/** Apply the existing tint sampling policy to a newly baked canvas. */
+function tintTexture(canvas: OffscreenCanvas, source: Texture): CanvasTexture {
   const t = new CanvasTexture(canvas as unknown as HTMLCanvasElement);
   t.colorSpace = SRGBColorSpace;
   t.flipY = source.flipY;
@@ -250,6 +204,44 @@ export function tintedMaterial(source: MeshStandardMaterial, part: Part, tint: T
   const texture = bakeTexture(source.map, apply, original ?? undefined);
   if (texture) m.map = texture;
   return { material: m, texture };
+}
+
+const tintBakes = new TintBakeClient();
+
+/** Bake readback and recoloring off-thread; source images and textures remain usable by other variants. */
+export async function tintedMaterialAsync(source: MeshStandardMaterial, part: Part, tint: Tint, refs: TintRefs, masks: TintMasks | null, original?: ImageBitmap | null): Promise<ReturnType<typeof tintedMaterial>> {
+  const fallback = async (): Promise<ReturnType<typeof tintedMaterial>> => {
+    // Worker failure must not join every queued variant into one uninterrupted microtask chain.
+    await new Promise<void>(resolve => setTimeout(resolve, 0));
+    return tintedMaterial(source, part, tint, refs, masks, original);
+  };
+  if (!tintBakes.available || !source.map || ((source.map as Texture & { isCompressedTexture?: boolean }).isCompressedTexture && !original)) return fallback();
+  const operations: TintOperation[] = [];
+  if (part === 'hair' && tint.hair) {
+    const target = linearColor(tint.hair); if (target) operations.push({ target, ref: refs.hair });
+  } else if (part === 'head' && tint.hair && masks) {
+    const target = linearColor(tint.hair); if (target) operations.push({ target, ref: refs.hair, half: 1, channel: 0 });
+  } else if (part === 'body' && (tint.top || tint.bottom) && masks) {
+    const top = linearColor(tint.top), bottom = linearColor(tint.bottom);
+    if (top) operations.push({ target: top, ref: refs.top, half: 0, channel: 0 });
+    if (bottom) operations.push({ target: bottom, ref: refs.bottom, half: 0, channel: 1 });
+  }
+  if (!operations.length) return fallback();
+  const image = (original ?? source.map.image) as (ImageBitmapSource & { width: number; height: number }) | null;
+  if (!image?.width || !image?.height) return fallback();
+  let owned: ImageBitmap | null = null;
+  try {
+    const bitmap = image instanceof ImageBitmap ? image : (owned = await createImageBitmap(image));
+    const result = await tintBakes.bake(bitmap, masks, operations);
+    if (!result) return fallback();
+    const canvas = new OffscreenCanvas(result.width, result.height), ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return fallback();
+    ctx.putImageData(new ImageData(result.pixels, result.width, result.height), 0, 0);
+    const texture = tintTexture(canvas, source.map), material = source.clone();
+    material.name = `${source.name}-tint`; material.map = texture;
+    return { material, texture };
+  } catch { return fallback(); }
+  finally { owned?.close(); }
 }
 
 /** Collect the distinct materials of a model. */

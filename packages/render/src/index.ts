@@ -6,7 +6,7 @@
  * (scene sync, material/geometry caches, scatter layout, sky model, …) are
  * exported too for tests, tooling and alternative front-ends.
  */
-export { WorldRenderer, rectsOverlap, type WatchdogEvent, type ContextLossInfo, type EntityHit, type RendererOptions, type RenderMemoryStats, type RenderStats } from './world-renderer';
+export { WorldRenderer, rectsOverlap, type WatchdogEvent, type ContextLossInfo, type EntityHit, type RendererOptions, type RenderMemoryStats, type RenderProcessingStage, type RenderStats } from './world-renderer';
 export { SelectionGizmo, readLocal, topLevelTargets, type GizmoCommit, type GizmoOptions, type GizmoPivot, type GizmoSpace, type GizmoTarget, type GizmoTargetChange, type SelectionControlsLike, type SnapHit } from './view/selection-gizmo';
 export { EditOverlay, MAX_VERTEX_MARKERS, type ComponentMode, type ComponentView } from './view/edit-overlay';
 export { buildMeshGeometry, previewMeshGeometry, type MeshGeometryBundle, type MeshSlotGeometry } from './geometry/mesh-asset';
@@ -40,7 +40,7 @@ export { partToBufferGeometry, partKey, GeometryCache, InvalidMeshError, boxProj
 export { createProcgenGeometrySource, primitiveKey, type ProcgenSourceOptions } from './geometry/procgen-source';
 export { scatterPlacements, composeScatterMatrices, primitiveLift, MAX_SCATTER_INSTANCES, type ScatterParams, type ScatterPlacements, type SurfaceSampler } from './geometry/scatter';
 export { HeightGrid, buildHeightGrid, transformPositions, DEFAULT_GRID_RESOLUTION, type TriangleSource } from './geometry/height-grid';
-export { ModelCache, createGltfModelLoader, isSafeModelUrl, instantiateModel, instantiateAsset, cloneModel, hasSkin, MAX_MODEL_URL_LENGTH, type ModelLoader } from './geometry/model-loader';
+export { ModelCache, createGltfModelLoader, isSafeModelUrl, instantiateModel, instantiateAsset, cloneModel, disposeModelInstance, hasSkin, MAX_MODEL_URL_LENGTH, type ModelLoader } from './geometry/model-loader';
 export { TextureCache, createTextureSource, createPoster, shareMaterials, type TextureSource } from './geometry/poster';
 export { AssetAnimator, gaitFor, GAIT, FADE_SECONDS } from './sync/asset-animator';
 export { planLightmap, LIGHTMAP_VERSION, type LightmapQuality, type LightmapPlan } from './environment/lightmap';

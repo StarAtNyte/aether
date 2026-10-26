@@ -24,6 +24,7 @@ import { ToolDock } from './ToolDock';
 import { ContextBar } from './ContextBar';
 import { Menu, type MenuEntry } from '../ui/Menu';
 import { Segmented } from '../ui/Segmented';
+import { ViewportLoading } from './ViewportLoading';
 import { PerfHud } from './PerfHud';
 import { GraphicsAlert } from './GraphicsAlert';
 import { GeometryBadge } from './GeometryBadge';
@@ -173,17 +174,25 @@ const NavHint = memo(function NavHint(): ReactElement | null {
   );
 });
 
-/** Agent progress: a hairline bar along the top edge and a status line. */
+/** Processing feedback for agent work, mode switches and pending renderer/worker jobs. */
 const BusyIndicator = memo(function BusyIndicator(): ReactElement | null {
   const busy = useUI((s) => s.agentBusy);
   const line = useUI(liveAgentLine);
-  if (!busy) return null;
+  const modeBusy = useUI((s) => s.modeBusy);
+  const stage = useUI((s) => s.processing);
+  const checking = useUI((s) => s.verify.status === 'running');
+  const playtesting = useUI((s) => s.playtest.status === 'running');
+  const loading = useUI((s) => s.loading);
+  const fatal = useUI((s) => s.fatal);
+  const messages = { scene: 'Updating scene…', materials: 'Preparing textures…', render: 'Preparing view…', lighting: 'Updating lighting…', capture: 'Rendering image…' };
+  const text = busy ? line : modeBusy ? 'Switching mode…' : stage ? messages[stage] : checking ? 'Checking world…' : playtesting ? 'Testing play…' : null;
+  if (!text || loading || fatal) return null;
   return (
     <>
-      <span className="vp-progress" aria-hidden="true" />
+      {busy && <span className="vp-progress" aria-hidden="true" />}
       <div className="vp-status" role="status" aria-live="polite">
-        <span className="vp-status__dot" aria-hidden="true" />
-        <span className="vp-status__text">{line}</span>
+        <span className="spinner" aria-hidden="true" />
+        <span className="vp-status__text">{text}</span>
       </div>
     </>
   );
@@ -283,16 +292,6 @@ const ViewOverlays = memo(function ViewOverlays({ playing }: { playing: boolean 
     </>
   );
 });
-
-/** Loading state: a quiet skeleton surface and one line of text. */
-function ViewportLoading({ text }: { text: string }): ReactElement {
-  return (
-    <div className="vp-loading" role="status">
-      <span className="vp-loading__surface skeleton" aria-hidden="true" />
-      <span className="vp-loading__text">{text}</span>
-    </div>
-  );
-}
 
 /** The viewport. */
 export const Viewport = memo(function Viewport(): ReactElement {

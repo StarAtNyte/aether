@@ -10,6 +10,7 @@
  */
 import { BufferAttribute, BufferGeometry } from 'three';
 import type { MeshData } from '@aether/core';
+import { setPositionBounds } from './position-bounds';
 import { boxProjectedUvs } from './buffer-geometry';
 
 /** One material slot of a mesh: its geometry and the global triangle index of each of its triangles. */
@@ -57,8 +58,7 @@ export function buildMeshGeometry(data: MeshData, slotCount: number): MeshGeomet
   const uvArray = data.uvs && data.uvs.length === vertexCount * 2 ? data.uvs.slice() : boxProjectedUvs(position.array as Float32Array, normal.array as Float32Array);
   const uv = new BufferAttribute(uvArray, 2);
   full.setAttribute('uv', uv);
-  full.computeBoundingBox();
-  full.computeBoundingSphere();
+  setPositionBounds(full, position.array as Float32Array);
 
   // Partition triangles by material slot.
   const perSlot: number[][] = Array.from({ length: slots }, () => []);
@@ -124,8 +124,7 @@ export function previewMeshGeometry(bundle: MeshGeometryBundle, positions: Float
     bundle.position.needsUpdate = true;
     bundle.full.computeVertexNormals();
     bundle.normal.needsUpdate = true;
-    bundle.full.computeBoundingBox();
-    bundle.full.computeBoundingSphere();
+    setPositionBounds(bundle.full, bundle.position.array as Float32Array);
     // Copy into the slots' existing bounds (no allocation per preview frame).
     for (const s of bundle.slots) {
       if (bundle.full.boundingBox && s.geometry.boundingBox) s.geometry.boundingBox.copy(bundle.full.boundingBox);

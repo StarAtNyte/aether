@@ -11,10 +11,11 @@
  *   placement: focus boxes snapped to whole texels plus the content fit as the outermost map, chosen per fragment by
  *   containment with a blended band at each box's edge, instead of slices along the view depth.
  */
+import { ShadowMapState, ShadowSceneState } from './shadow-scene-state';
 import { Matrix4, Sphere, Vector2, Vector3, type Camera, type DirectionalLight, type InstancedMesh, type LightShadow, type Mesh, type Object3D, type OrthographicCamera, type PerspectiveCamera } from 'three';
 import { CSMShadowNode } from 'three/addons/csm/CSMShadowNode.js';
 import * as TSL from 'three/tsl';
-import type { Node, NodeBuilder, Renderer } from 'three/webgpu';
+import type { Node, NodeBuilder, NodeFrame, Renderer } from 'three/webgpu';
 import { CASCADE_BLEND, focusHalf, footprintMisses, pcfRadius, snapToTexel, viewFocus, type SunShadowPlan } from '../environment/sun-shadow-plan';
 
 /** A TSL node, typed loosely: TSL is dynamically typed and its generated types reject ordinary node arithmetic. */
@@ -175,13 +176,18 @@ export class SoftShadowFilter {
     T.Loop(this.blockerTaps, ({ i }) => {
       const uv = shadowCoord.xy.add(T.vogelDiskSample(i, this.blockerTaps, phi).mul(search));
       b0.addAssign(lit(uv, zr).oneMinus());
-      b1.addAssign(lit(uv, zr.add(dz1)).oneMinus());
-      b2.addAssign(lit(uv, zr.add(dz2)).oneMinus());
-      b3.addAssign(lit(uv, zr.add(dz3)).oneMinus());
     });
     const result = T.float(1).toVar();
     // A receiver no blocker reaches is lit; otherwise the penumbra follows the mean blocker distance.
     T.If(b0.greaterThan(0.001), () => {
+      // The output is already fully lit when this branch is skipped. Defer the three
+      // distance comparisons until a blocker exists, retaining the same tap order and sum.
+      T.Loop(this.blockerTaps, ({ i }) => {
+        const uv = shadowCoord.xy.add(T.vogelDiskSample(i, this.blockerTaps, phi).mul(search));
+        b1.addAssign(lit(uv, zr.add(dz1)).oneMinus());
+        b2.addAssign(lit(uv, zr.add(dz2)).oneMinus());
+        b3.addAssign(lit(uv, zr.add(dz3)).oneMinus());
+      });
       const inv = T.float(1).div(T.max(b0, 0.001));
       const p1 = T.min(b1.mul(inv), 1);
       const p2 = T.min(b2.mul(inv), p1);
@@ -238,7 +244,7 @@ export interface FocusHints {
 /**
  * The sun's cascades: `plan.cascades - 1` focus boxes and the content fit (the sun's own fitted shadow camera, copied
  * each draw) as the outermost map. Construct, assign to `sun.shadow.shadowNode`; the cascade lights are created on
- * the first shader build (three's CSM life cycle) and follow the hints on every render. Allocation-free per frame.
+ * the first shader build (three's CSM life cycle) and follow the hints on every render. Placement reuses scratch objects.
  */
 export class SunCascades extends CSMShadowNode {
   readonly hints: FocusHints = { target: null, groundY: 0, maxDistance: 200 };
@@ -247,6 +253,20 @@ export class SunCascades extends CSMShadowNode {
   /** World-space PCF penumbra (m) without a soft filter. */
   private readonly pcfPenumbra = 0.06;
   private plan: SunShadowPlan;
+  private cacheEnabled = false;
+  private refreshRequested = true;
+  private previousLiveContext = false;
+  private readonly sceneState = new ShadowSceneState();
+  private readonly contextStates = new WeakMap<object, { version: number; safe: boolean }>();
+  private readonly mapStates = new WeakMap<CascadeLight, ShadowMapState>();
+
+  /** Reuse exact unchanged maps; captures and untracked consumers can retain native live updates. */
+  setCacheEnabled(enabled: boolean): void {
+    if (this.cacheEnabled === enabled) return;
+    this.cacheEnabled = enabled; this.requestRefresh();
+  }
+  requestRefresh(): void { this.refreshRequested = true; this.sceneState.invalidate(); }
+
 
   constructor(
     private readonly sun: DirectionalLight,
@@ -350,6 +370,7 @@ export class SunCascades extends CSMShadowNode {
   /** The scene's casters changed (content added or removed): re-collect the self-culling ones before the next pass. */
   invalidateCasters(): void {
     this.casterAge = Number.POSITIVE_INFINITY;
+    this.requestRefresh();
   }
 
   private collectCasters(): void {
@@ -423,8 +444,44 @@ export class SunCascades extends CSMShadowNode {
     })() as unknown as Node;
   }
 
-  override updateBefore(): boolean | undefined {
+  private safeContext(renderer: Renderer): boolean {
+    const context = renderer.contextNode;
+    if (!context) return true;
+    const cached = this.contextStates.get(context);
+    if (cached?.version === context.version) return cached.safe;
+    // Three r186 exposes this at runtime; its declaration has not caught up.
+    const values = (context as unknown as { getFlowContextData(): Record<string, unknown> }).getFlowContextData();
+    let safe = true;
+    // These lighting-only hooks do not affect the unlit caster depth/alpha shader.
+    for (const key in values) if (key !== 'getAO' && key !== 'getShadow') safe = false;
+    this.contextStates.set(context, { version: context.version, safe });
+    return safe;
+  }
+
+  override updateBefore(frame?: NodeFrame): boolean | undefined {
     this.place();
+    const lights = this.cascadeLights;
+    if (!this.cacheEnabled || !frame?.camera || !frame.renderer) {
+      for (const light of lights) light.shadow.autoUpdate = true;
+      this.sceneState.invalidate();
+      return undefined;
+    }
+    let root: Object3D = this.sun;
+    while (root.parent) root = root.parent;
+    const layers = frame.camera.layers.mask, renderer = frame.renderer;
+    const changed = this.sceneState.changed(root, layers, renderer.shadowMap.type, renderer.reversedDepthBuffer, renderer.coordinateSystem);
+    if (changed && !this.sceneState.dynamicInputs) this.casterAge = Number.POSITIVE_INFINITY;
+    const liveContext = !this.safeContext(renderer) || renderer.shadowMap.transmitted === true;
+    for (const light of lights) {
+      let state = this.mapStates.get(light);
+      if (!state) { state = new ShadowMapState(); this.mapStates.set(light, state); }
+      const moved = state.changed(light, layers);
+      light.shadow.autoUpdate = false;
+      // Leave pending native needsUpdate set until the shadow node actually renders successfully.
+      if (changed || moved || liveContext || this.previousLiveContext || this.refreshRequested || !light.shadow.map) light.shadow.needsUpdate = true;
+    }
+    this.previousLiveContext = liveContext;
+    this.refreshRequested = false;
     return undefined;
   }
 
@@ -528,6 +585,7 @@ export class SunCascades extends CSMShadowNode {
 
   /** Release the cascade lights and their shadow maps. */
   override dispose(): void {
+    this.sceneState.clear();
     const nodes = (this as unknown as { _shadowNodes: Array<{ dispose(): void }> })._shadowNodes;
     for (const n of nodes) n.dispose();
     nodes.length = 0;

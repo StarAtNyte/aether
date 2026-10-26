@@ -43,3 +43,18 @@ built-in offline mock agent and shows an "offline demo mode" badge.
 AI text is never rendered as HTML. Imported, stored and edited JSON is
 size-limited, screened for prototype-pollution keys and schema-validated.
 API keys never reach the browser: all LLM calls go through `/api/llm`.
+
+## Processing feedback
+
+The static boot screen shows a spinner before application scripts load. Renderer
+startup, scene updates and mode switches yield a paint opportunity before starting
+work. The viewport reports pending textures, shaders, lighting and captures,
+with additional feedback for verification, playtests and terrain loading.
+Background refinement stays quiet. Realtime rendering is the default; the Studio
+button beside Daylight explicitly enables Studio rendering.
+The transform animation supports reduced motion and does not depend on frame stats.
+
+Run `node scripts/bench/processing-ui.mjs` from the repository root with
+`AETHER_SMOKE_URL` pointing at the app to check startup paint ordering, scene and mode
+feedback, compositor animation, toolbar clearance and reduced motion. This feedback
+does not move rendering off the main thread.

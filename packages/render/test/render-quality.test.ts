@@ -65,11 +65,11 @@ describe('qualityPlan', () => {
     expect(p.accumulateFrames).toBe(STUDIO_ACCUMULATE_FRAMES);
     expect(p.adaptiveResolution).toBe(false);
   });
-  it('the split studio look of an integrated GPU: light chain in motion, full chain at rest, medium shadows, adaptive resolution', () => {
+  it('retains studio lighting in motion while adapting resolution and keeping medium shadows', () => {
     const b = renderBudget('integrated', false);
     const p = qualityPlan('studio', b, false, undefined, { split: true });
     expect(p.effects.ssr && p.effects.ao && p.effects.taa).toBe(true);
-    expect(p.moveEffects).toEqual(effectsOf('medium'));
+    expect(p.moveEffects).toEqual(p.effects);
     expect(p.shadowMapCap).toBe(b.shadowMapCap);
     expect(p.shadowTier).toBe('medium');
     expect(p.shadowStill).toBe(false);

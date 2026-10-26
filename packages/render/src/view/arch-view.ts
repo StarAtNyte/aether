@@ -53,6 +53,10 @@ export const DEFAULT_ARCH_VIEW: Readonly<ArchViewState> = Object.freeze({ walls:
 
 /** Height of walls sectioned by the cutaway (a window-sill line). */
 export const CUTAWAY_WALL_HEIGHT = 1.05;
+/** Keep a cutaway wall's state near its facing plane instead of rebuilding on small camera reversals. */
+export function cameraFacingWall(distance: number, previous: boolean): boolean {
+  return distance > (previous ? -0.3 : 0.3);
+}
 /** Height of walls in `down` mode (a plan in 3D). */
 export const DOWN_WALL_HEIGHT = 0.3;
 /** Extra lift per storey in the exploded view (metres). */
@@ -156,6 +160,7 @@ interface WallInfo {
   cz: number;
   /** Current section height of this wall (null: full height) — updated on apply. */
   cut: number | null;
+  facing: boolean;
 }
 
 interface LevelInfo {
@@ -251,6 +256,7 @@ export class ArchView {
 
   private index(): void {
     this.indexed = true;
+    const facing = new Map(this.walls.map(w => [w.node, w.facing]));
     this.walls = [];
     this.levels = [];
     this.members = [];
@@ -293,7 +299,7 @@ export class ArchView {
         centres.set(p, centre);
       }
       const e = m.node.entity;
-      this.walls.push({ node: m.node, level: m.level, height: wallNumber(e, 'height', 3), length: wallNumber(e, 'length', 0), thickness: wallNumber(e, 'thickness', 0.15), exterior: e.arch?.kind === 'exterior', cx: centre[0], cz: centre[1], cut: null });
+      this.walls.push({ node: m.node, level: m.level, height: wallNumber(e, 'height', 3), length: wallNumber(e, 'length', 0), thickness: wallNumber(e, 'thickness', 0.15), exterior: e.arch?.kind === 'exterior', cx: centre[0], cz: centre[1], cut: null, facing: facing.get(m.node) ?? false });
     }
     // Wall-mounted pieces: find the wall each one hangs on (same storey, nearest within reach).
     for (const m of this.members) {
@@ -376,7 +382,8 @@ export class ArchView {
       nx = -nx;
       nz = -nz;
     }
-    return nx * (camera.position.x - mx) + nz * (camera.position.z - mz) > 0.3;
+    w.facing = cameraFacingWall(nx * (camera.position.x - mx) + nz * (camera.position.z - mz), w.facing);
+    return w.facing;
   }
 
   private applyLift(): void {

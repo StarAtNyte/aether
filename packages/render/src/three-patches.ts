@@ -4,6 +4,10 @@
  */
 import { Material } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
+import { cacheUniformUploads } from './gpu/buffer-uploads';
+import { cacheUniformBindingKeys } from './gpu/uniform-binding-keys';
+import { cachePixelStoreState } from './gpu/pixel-store-cache';
+import { specializeTextureUvMath } from './gpu/uv-transform';
 
 let alphaSetterPatched = false;
 
@@ -64,6 +68,10 @@ export function installRenderPatches(r: WebGPURenderer): void {
   try {
     patchShadowAlphaTest();
     patchRenderObject(r);
+    cacheUniformUploads(r.backend as unknown as Parameters<typeof cacheUniformUploads>[0]);
+    cacheUniformBindingKeys(r.backend as unknown as Parameters<typeof cacheUniformBindingKeys>[0]);
+    cachePixelStoreState(r.backend as unknown as Parameters<typeof cachePixelStoreState>[0]);
+    specializeTextureUvMath();
   } catch {
     // The default paths still work, only slower.
   }

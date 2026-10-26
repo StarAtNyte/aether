@@ -55,6 +55,8 @@ export interface CaptureHost {
   readonly flipY: boolean;
   /** Take over: drawing buffer `w`×`h` at pixel ratio 1, decorations hidden, viewport drawing paused. */
   begin(width: number, height: number, vignette: boolean): void;
+  /** Await pending viewport shader links before drawing a complete capture. */
+  ready?(): Promise<void>;
   /** Advance animations / environment by `dt` seconds (no draw). */
   advance(dt: number): void;
   /** Draw the current camera view into the capture target without reading it back. */
@@ -133,6 +135,8 @@ export function openCaptureSession(host: CaptureHost, width: number, height: num
       if (busy) throw new Error('capture frames must be awaited one at a time');
       busy = true;
       try {
+        await host.ready?.();
+        if (ended || !host.alive()) throw new Error('capture session ended');
         const v = o.view;
         region = v && Number.isFinite(v.fullWidth) && Number.isFinite(v.fullHeight) ? { fullWidth: Math.max(1, v.fullWidth), fullHeight: Math.max(1, v.fullHeight), x: v.x, y: v.y } : null;
         if (pose.pos.every(Number.isFinite) && pose.target.every(Number.isFinite)) {

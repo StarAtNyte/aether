@@ -2,11 +2,19 @@ import { describe, expect, it } from 'vitest';
 import { Mesh, PerspectiveCamera, PointLight } from 'three';
 import { applyPatches, createWorld, type WorldDoc } from '@aether/core';
 import { compileBuilding } from '@aether/arch';
-import { ArchView, archDecision, CUTAWAY_WALL_HEIGHT, DEFAULT_ARCH_VIEW, distanceToWall, DOWN_WALL_HEIGHT, EXPLODE_GAP, explodeLift, looksInside, type ArchViewState } from '../src/view/arch-view';
+import { ArchView, archDecision, cameraFacingWall, CUTAWAY_WALL_HEIGHT, DEFAULT_ARCH_VIEW, distanceToWall, DOWN_WALL_HEIGHT, EXPLODE_GAP, explodeLift, looksInside, type ArchViewState } from '../src/view/arch-view';
 import { daylightLampFactor, DAYLIGHT_LAMP_FACTOR, LAMP_CUTOFF, LOCAL_LIGHT_SCALE } from '../src/sync/lights';
 import { makeSync, tick } from './helpers';
+import type { EntityNode } from '../src/sync/entity-node';
 
 const view = (patch: Partial<ArchViewState> = {}): ArchViewState => ({ ...DEFAULT_ARCH_VIEW, ...patch });
+
+it('keeps cutaway walls stable across small camera-facing reversals', () => {
+  let facing = false;
+  for (const distance of [.4, .29, .1, -.1, -.29]) { facing = cameraFacingWall(distance, facing); expect(facing).toBe(true); }
+  facing = cameraFacingWall(-.4, facing); expect(facing).toBe(false);
+  for (const distance of [-.29, -.1, .1, .29]) { facing = cameraFacingWall(distance, facing); expect(facing).toBe(false); }
+});
 
 /** A two-storey house compiled into a world. */
 function house(): WorldDoc {
@@ -124,6 +132,20 @@ describe('ArchView on a scene', () => {
     // Ceilings and the roof are hidden while looking in.
     const roof = Object.values(world.entities).find((e) => e.arch?.role === 'roof');
     expect(sync.node(roof!.id)?.content.visible).toBe(false);
+  });
+
+  it('retains facing hysteresis when a wall rebuild makes the view re-index', async () => {
+    const { av, sync } = await setup(); av.set({ walls: 'cutaway' }); av.update(camera(20, 12, 30), 0);
+    const wall = (av as unknown as { walls: Array<{ node: Readonly<EntityNode>; exterior: boolean; length: number; cx: number; cz: number }> }).walls.find(w => w.exterior)!;
+    const e = wall.node.object.matrixWorld.elements, mx = e[12]! + e[0]! * wall.length * .5, mz = e[14]! + e[2]! * wall.length * .5;
+    let nx = e[8]!, nz = e[10]!; if (nx * (mx - wall.cx) + nz * (mz - wall.cz) < 0) { nx = -nx; nz = -nz; }
+    const n2 = nx * nx + nz * nz;
+    const at = (distance: number) => camera(mx + nx * distance / n2, 8, mz + nz * distance / n2);
+    av.update(at(.4), 0); expect(cut(sync, wall.node.id)).toBe(CUTAWAY_WALL_HEIGHT);
+    av.invalidate(); av.update(at(.1), 0); expect(cut(sync, wall.node.id)).toBe(CUTAWAY_WALL_HEIGHT);
+    av.update(at(-.4), 0); expect(cut(sync, wall.node.id)).toBeUndefined();
+    av.invalidate(); av.update(at(-.1), 0); expect(cut(sync, wall.node.id)).toBeUndefined();
+    av.dispose(); sync.dispose();
   });
 
   it('solo hides the other storeys; exploded lifts them and settles back', async () => {

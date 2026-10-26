@@ -65,6 +65,9 @@ export class ComputeClient {
     this.factory = opts.createWorker === null ? null : (opts.createWorker ?? (typeof Worker !== 'undefined' ? defaultWorker : null));
   }
 
+  /** Requests still being processed by the compute worker. */
+  get pendingCount(): number { return this.pending.size; }
+
   /** True when work runs in a worker (false: inline fallback). */
   get usesWorker(): boolean {
     return this.factory !== null && !this.workerFailed;

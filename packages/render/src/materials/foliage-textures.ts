@@ -1,21 +1,23 @@
 /**
  * Cut-out textures of the foliage materials (`material.foliage`): one RGBA atlas of 2 × 2 card variants per kind,
- * synthesised on first use by `@aether/procgen` (`foliagePixels`, a few milliseconds each) and shared by every
+ * synthesised on first use by `@aether/procgen` in a worker and shared by every
  * material of the cache. Colour is stored linear (vertex colours multiply it), alpha is the cut-out.
  *
  * When photographed leaves are enabled ({@link usePhotos}), the atlases of the kinds that have them (trees, shrubs,
  * ferns, grass) are recomposed from the leaf sprite sheet once it has loaded (`foliage-photo.ts`), in place: the
- * texture object and its size stay, so no material is rebuilt.
+ * texture object and its size stay, so no material is rebuilt. Unsupported workers fall back to cooperative tasks.
  */
 import { DataTexture, LinearFilter, LinearMipmapLinearFilter, NoColorSpace, RGBAFormat, ClampToEdgeWrapping, type Texture } from 'three';
-import { FOLIAGE_TEXTURE_SIZE, foliageAtlasSize, foliagePixelsJob, type FoliageKind } from '@aether/procgen';
+import { FOLIAGE_TEXTURE_SIZE, foliageAtlasSize, foliagePixelsJob, type FoliageKind } from '@aether/procgen/foliage';
 import { textureWork } from '../gpu/task-queue';
 import { loadLeafPhotos, photoAtlasJob, PHOTO_KINDS, type LeafPhotos } from './foliage-photo';
+import { FoliageAtlasClient } from './foliage-atlas-client';
 import { TEXTURE_ANISOTROPY } from './anisotropy';
 
 /** Lazily created, shared foliage card textures. */
 export class FoliageTextures {
   private readonly textures = new Map<FoliageKind, DataTexture>();
+  private readonly atlasWorker = new FoliageAtlasClient();
   private size = FOLIAGE_TEXTURE_SIZE;
   private photoBase: string | null = null;
   private photos: Promise<LeafPhotos | null> | null = null;
@@ -36,6 +38,8 @@ export class FoliageTextures {
   usePhotos(baseUrl: string | null): void {
     if (baseUrl === this.photoBase) return;
     this.photoBase = baseUrl;
+    this.atlasWorker.reset();
+    void this.photos?.then(p => p?.image.close()).catch(() => undefined);
     this.photos = null;
     if (baseUrl) for (const [kind, tex] of this.textures) this.upgrade(kind, tex);
   }
@@ -80,12 +84,20 @@ export class FoliageTextures {
   private synthesise(kind: FoliageKind, tex: DataTexture): void {
     this.upgrading++;
     const img = tex.image as { data: Uint8Array; width: number };
-    const job = foliagePixelsJob(kind, img.width);
     const stale = (): boolean => this.disposed || this.textures.get(kind) !== tex || this.composed.has(tex);
     void (async () => {
-      // A card variant per task.
+      const pixels = await this.atlasWorker.compose(kind, img.width, null);
+      if (stale()) return;
+      if (pixels) {
+        img.data = pixels;
+        tex.needsUpdate = true;
+        this.onChange?.();
+        return;
+      }
+      const job = foliagePixelsJob(kind, img.width);
+      // A card variant per task on browsers without module workers.
       for (const step of job.steps) {
-        await textureWork.run(step, `leaf ${kind} procedural`);
+        await textureWork.run(() => { if (!stale()) step(); }, `leaf ${kind} procedural`);
         if (stale()) return;
       }
       if (job.rgba.length !== img.data.length) return;
@@ -102,30 +114,32 @@ export class FoliageTextures {
   private upgrade(kind: FoliageKind, tex: DataTexture): void {
     const base = this.photoBase;
     if (!base || !PHOTO_KINDS.has(kind)) return;
-    this.photos ??= loadLeafPhotos(base);
-    const photos = this.photos;
     this.upgrading++;
     const stale = (): boolean => this.disposed || this.photoBase !== base || this.textures.get(kind) !== tex;
-    void photos
-      .then(async (p) => {
+    void (async () => {
+      const img = tex.image as { data: Uint8Array; width: number; height: number };
+      let px = await this.atlasWorker.compose(kind, img.width, base);
+      if (stale()) return true;
+      if (!px) {
+        this.photos ??= loadLeafPhotos(base);
+        const photos = await this.photos;
         if (stale()) return true;
-        const img = tex.image as { data: Uint8Array; width: number; height: number };
-        const job = p ? photoAtlasJob(kind, img.width, p.sheet, p.image) : null;
+        const job = photos ? photoAtlasJob(kind, img.width, photos.sheet, photos.image) : null;
         if (!job) return false;
-        // Every kind's atlas is ready at once and each is a few hundred milliseconds of drawing: a card variant per task.
         for (const step of job.steps) {
-          await textureWork.run(step, `leaf ${kind} step`);
+          await textureWork.run(() => { if (!stale()) step(); }, `leaf ${kind} step`);
           if (stale()) return true;
         }
-        const px = await textureWork.run(() => job.finish(), `leaf ${kind} finish`);
-        if (stale()) return true;
-        if (px.length !== img.data.length) return false;
-        img.data.set(px);
-        tex.needsUpdate = true;
-        this.composed.add(tex);
-        this.onChange?.();
-        return true;
-      })
+        px = await textureWork.run(() => job.finish(), `leaf ${kind} finish`);
+      }
+      if (stale()) return true;
+      if (px.length !== img.data.length) return false;
+      img.data = px;
+      tex.needsUpdate = true;
+      this.composed.add(tex);
+      this.onChange?.();
+      return true;
+    })()
       // No sheet, no canvas, or a failed load: the procedural card stands in.
       .then((done) => {
         if (!done && !this.disposed && this.textures.get(kind) === tex) this.synthesise(kind, tex);
@@ -146,6 +160,7 @@ export class FoliageTextures {
   /** Release every texture. */
   dispose(): void {
     this.disposed = true;
+    this.atlasWorker.dispose();
     for (const t of this.textures.values()) t.dispose();
     this.textures.clear();
     void this.photos?.then((p) => p?.image.close()).catch(() => undefined);

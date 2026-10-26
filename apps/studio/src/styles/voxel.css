@@ -352,6 +352,11 @@
   font-size: 13px;
 }
 
+.vx-loading .spinner {
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
 .vx-loading__bar {
   width: 220px;
   height: 6px;

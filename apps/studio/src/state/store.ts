@@ -5,6 +5,7 @@
  * `useWorld`. This store holds selection, panels, chat, play-mode HUD,
  * stats (pushed at 4 Hz, never per frame), verification results and toasts.
  */
+import type { RenderProcessingStage } from '@aether/render';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import { MAX_PROMPT_CHARS, MAX_TOASTS } from '../config';
 
@@ -326,6 +327,8 @@ export interface StudioState {
   provider: ProviderState;
   backend: 'webgpu' | 'webgl2' | null;
   loading: string | null;
+  /** Background scene/render work shown without blocking viewport controls. */
+  processing: RenderProcessingStage | null;
   fatal: string | null;
   /** The renderer stepped down (or a shader failed): a message with the Safe mode toggle and the diagnostics. */
   graphicsAlert: GraphicsAlert | null;
@@ -406,6 +409,7 @@ export interface StudioState {
   setProvider(p: ProviderState): void;
   setBackend(b: 'webgpu' | 'webgl2' | null): void;
   setLoading(msg: string | null): void;
+  setProcessing(stage: RenderProcessingStage | null): void;
   setFatal(msg: string | null): void;
   setGraphicsAlert(a: GraphicsAlert | null): void;
   setSafeGraphics(on: boolean): void;
@@ -545,6 +549,7 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     provider: { status: 'checking', name: '' },
     backend: null,
     loading: 'Starting renderer…',
+    processing: null,
     fatal: null,
     graphicsAlert: null,
     safeGraphics: readSafeGraphics(),
@@ -641,6 +646,7 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     setProvider: (provider) => set({ provider }),
     setBackend: (backend) => set({ backend }),
     setLoading: (loading) => set({ loading }),
+    setProcessing: (processing) => set((s) => s.processing === processing ? s : { processing }),
     setFatal: (fatal) => set({ fatal }),
     setGraphicsAlert: (graphicsAlert) => set({ graphicsAlert }),
     setSafeGraphics: (safeGraphics) => {

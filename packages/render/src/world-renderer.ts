@@ -7,6 +7,12 @@
  * GPU-specific code is confined to `create`, `render`, `screenshot` and
  * `renderViews`; everything else lives in GPU-free modules with unit tests.
  */
+import { prepareCompileTextures } from './gpu/compile-textures';
+import { AssetSkinCache } from './gpu/asset-skin-cache';
+import { warmRaycastTrees } from './geometry/raycast-bvh';
+import { FrameInvalidation } from './view/frame-invalidation';
+import { deferRenderPreparation, type RenderPreparation } from './gpu/render-preparation';
+import { parallelPrograms, type ParallelPrograms } from './gpu/parallel-programs';
 import { ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, Box3, BufferAttribute, BufferGeometry, Color, FogExp2, Mesh as ThreeMesh, MeshBasicMaterial, Frustum, Group, Matrix4, PerspectiveCamera, Plane, Quaternion, Raycaster, RenderTarget, Scene, Vector2, Vector3, Vector4, type Intersection, type Light, type Material, type Mesh, type Object3D, type Texture } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
 import type { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
@@ -84,6 +90,7 @@ import { installLodBias, lodBiasFor, setTextureLodBias } from './gpu/lod-bias';
 import { createGpuRenderer, type BackendKind, type BackendPreference, type BackendReason, type GpuInfo } from './gpu/backend';
 import { opaqueSort, type SortItem } from './gpu/render-order';
 import { BlackScreenWatchdog, GpuLogCapture, measureFrame, WATCHDOG_STEPS, type FrameSample, type WatchdogAction, type WatchdogOptions } from './gpu/watchdog';
+import { AdaptiveTier } from './gpu/adaptive-tier';
 import { capTier, cutsAt, hardwareTierCap, PerformanceGovernor, PERFORMANCE_STEPS, readHardware, WEAK_PIXEL_RATIO, weakHardware, type HardwareHints, type PerformanceCuts } from './gpu/performance';
 import { classifyGpu, effectivePixelRatio, estimateFramebufferMB, estimateShadowMB, renderBudget, type GpuTier, type RenderBudget } from './gpu/budget';
 import { createPostPipeline, VIGNETTE_STRENGTH, type PostPipeline, type PostQuality } from './gpu/post';
@@ -366,6 +373,9 @@ const REFIT_INTERVAL = 0.35;
 /** Draws a pipeline with sun shafts waits for the sun's shadow map before giving the shafts up for this world. */
 /** Milliseconds the view stays still before the split studio chain switches to its full version. */
 const REST_DELAY_MS = 220;
+/** Work that can temporarily hold the viewport while its current image stays available. */
+export type RenderProcessingStage = 'scene' | 'materials' | 'render' | 'lighting' | 'capture';
+
 /** Size of the planar water mirror relative to the frame at full scale (see PlanarMirror). */
 const MIRROR_SCALE = 0.5;
 /** Lowest adaptive scale of a scene pass that is upsampled and sharpened (the drawing buffer's own floor is 0.5). */
@@ -659,6 +669,10 @@ export class WorldRenderer {
   private tierChoice: RenderTier | 'auto' = 'auto';
   /** Load-screen text: what the load is waiting for now (stage names, never a made-up percentage). */
   private readonly onProgress: ((msg: string) => void) | null;
+  /** Programs discovered by actual post/shadow passes link without blocking a draw. */
+  private readonly programs: ParallelPrograms;
+  private readonly preparation: RenderPreparation;
+  private readonly compileTextures: { dispose(): void };
   /** The shader warm-up is running: frames are not drawn (never for longer than {@link WARMING_MAX_MS}). */
   private warming_ = false;
   private warmingSince = 0;
@@ -669,12 +683,13 @@ export class WorldRenderer {
     if (on && !this.warming_) this.warmingSince = now();
     this.warming_ = on;
   }
-  /** Time the last shader warm-up took (ms; diagnostics). */
+  /** Pre-draw readiness time (ms); deferred shader work is measured in first-frame timings. */
   shaderWarmupMs = 0;
   /** What the browser says about the machine (cores, memory): weak hardware gets a cheaper automatic tier and pixel ratio. */
   private readonly hardware: HardwareHints = readHardware();
   /** Steps down the performance ladder while frames stay slow (automatic tier only). */
   private readonly governor = new PerformanceGovernor();
+  private readonly adaptiveTier = new AdaptiveTier();
   /** Firefox on WebGL2 with a real GPU: nearest shadow comparison, cleared targets and a light start that climbs (gpu/gecko-safe.ts). */
   private readonly geckoSafe: boolean;
   private cuts: PerformanceCuts = cutsAt(0);
@@ -746,14 +761,14 @@ export class WorldRenderer {
   private asyncCaptureFailed = false;
   private boundsDirty = true;
   /** Something visible changed since the last drawn frame (on-demand rendering). */
-  private _needsDraw = true;
+  private readonly frameInvalidation = new FrameInvalidation();
   private get needsDraw(): boolean {
-    return this._needsDraw;
+    return this.frameInvalidation.dirty;
   }
   /** Any content or view-state change that asks for a frame also asks for a fresh sun shadow map (see {@link cacheSunMap}). */
   private set needsDraw(on: boolean) {
-    this._needsDraw = on;
-    if (on) this.sunMapDirty = true;
+    if (on) { this.frameInvalidation.change(); this.sunMapDirty = true; }
+    else this.frameInvalidation.clear();
   }
   /** The sun's shadow map no longer matches the scene: content changed. */
   private sunMapDirty = true;
@@ -794,6 +809,8 @@ export class WorldRenderer {
   private readonly postBuiltSize = new WeakMap<PostPipeline, number>();
   /** The view has rested long enough for the full chain (always true for plans that do not split). */
   private atRest = true;
+  /** The current motion phase has displayed an actual completed frame. */
+  private motionFrameReady = false;
   /** Measurement hook (tests): true draws every frame with the lean surface shading, null follows the view's motion. */
   forceLean: boolean | null = null;
   private lastChangeAt = 0;
@@ -855,6 +872,14 @@ export class WorldRenderer {
     opts: RendererOptions,
     gpu: GpuInfo,
   ) {
+    this.compileTextures = prepareCompileTextures(renderer);
+    this.programs = parallelPrograms(renderer.backend as unknown as Parameters<typeof parallelPrograms>[0], () => this.requestPreparedFrame(), e => log.warn(`parallel shader linking failed: ${errorMessage(e)}`));
+    this.preparation = deferRenderPreparation(renderer, {
+      ready: () => this.requestPreparedFrame(),
+      error: e => log.warn(`render preparation failed: ${errorMessage(e)}`),
+      blocked: () => this.programs.pending > 0,
+      atomic: draw => this.programs.synchronous(draw),
+    });
     this.backend = backend;
     this.domElement = canvas;
     this.perspective = camera;
@@ -947,9 +972,11 @@ export class WorldRenderer {
       characters: this.characters,
       maxInstances: opts.maxInstances ?? this.budget.maxInstances,
       staticBatching: opts.staticBatching !== false,
+      backgroundMerges: true,
       fields: opts.fields === false ? false : { maxInstances: this.budget.fieldInstances, triangles: this.budget.fieldTriangles },
       // Low-memory mode keeps no hierarchy cache beyond the meshes on screen.
       virtual: opts.virtualGeometry === false ? false : { triangles: this.budget.virtualTriangles, dag: { cacheBytes: this.lowMemory ? 0 : 96 * 1024 * 1024 } },
+      onBatchesChanged: () => this.requestPreparedFrame(),
       onContentChanged: () => {
         this.boundsDirty = true;
         this.debugDirty = true;
@@ -1126,6 +1153,17 @@ export class WorldRenderer {
   /** The buildings' light volume is waiting to bake or baking (captures that want the finished light wait for it). */
   get lightVolumeBaking(): boolean {
     return this.lightVolume.baking || this.lightmap.baking;
+  }
+
+  /** Pending asynchronous work, independent of optional performance-stat collection. */
+  get processingStage(): RenderProcessingStage | null {
+    if (this.disposed || this.lost) return null;
+    if (this.captureActive || this.tracing) return 'capture';
+    if (this.syncing > 0 || !this.sync.idle) return 'scene';
+    if (this.foliagePending || (this.compute?.pendingCount ?? 0) > 0 || textureWork.pending > 0) return 'materials';
+    if (this.warming || this.postPending || this.preparation.pending > 0 || this.programs.pending > 0) return 'render';
+    if (this.lightVolumeBaking) return 'lighting';
+    return null;
   }
 
   /** Photographed leaf cards are still being composed (captures that want the final foliage wait for them). */
@@ -1597,7 +1635,12 @@ export class WorldRenderer {
       if (this.sync.world === world) this.fx.syncEmitters(world);
       // The first world of a session just materialises; later builds show their plan marks first.
       if (added.length > 0) this.startGrow(added, prev !== null);
-      if (!this.framed) this.framed = this.frameContent({ duration: 0 });
+      if (!this.framed) {
+        say?.('Preparing camera…');
+        await warmRaycastTrees(this.sync.root);
+        if (this.disposed || this.sync.world !== world) return;
+        this.framed = this.frameContent({ duration: 0 });
+      }
       this.syncSmallCasters();
       if (hold) await this.warmShaders(say);
     } finally {
@@ -1639,6 +1682,8 @@ export class WorldRenderer {
    */
   private async prepareAndCompile(boundMs = SHADER_WARMUP_MS): Promise<void> {
     this.prepareBatches();
+    await this.sync.waitForBatches();
+    if (this.disposed || this.lost) return;
     this.sync.updateView(this.perspective, Math.max(1, Math.round(this.cssHeight * this.renderer.getPixelRatio())), 0);
     this.syncPost();
     performance.mark('aether:post-wait-start');
@@ -1713,7 +1758,7 @@ export class WorldRenderer {
 
   /** Skinned assets (animals) this renderer hid for being far away on the low tier. */
   private readonly hiddenFar = new Set<Object3D>();
-  private readonly skinnedAsset = new Map<string, boolean>();
+  private readonly skinnedAsset = new AssetSkinCache();
   private farCullFrame = 0;
 
   /**
@@ -1739,17 +1784,14 @@ export class WorldRenderer {
       if (e.template || e.shape.kind !== 'asset') continue;
       const node = this.sync.node(id);
       if (!node) continue;
-      let skinned = this.skinnedAsset.get(id);
-      if (skinned === undefined) {
-        let any = false;
-        node.content.traverse((o) => {
-          if ((o as { isSkinnedMesh?: boolean }).isSkinnedMesh === true) any = true;
-        });
-        // Only once the model has arrived (a placeholder has no skin yet).
-        if (node.content.children.length > 0 && any) this.skinnedAsset.set(id, (skinned = true));
-        else continue;
+      if (!this.skinnedAsset.hasSkin(node)) {
+        // A rebuilt asset may no longer contain skin; release only visibility we own.
+        if (this.hiddenFar.delete(node.content)) {
+          node.content.visible = node.characterBody === null;
+          changed = true;
+        }
+        continue;
       }
-      if (!skinned) continue;
       const m = node.object.matrixWorld.elements;
       const dx = (m[12] as number) - eye.x;
       const dz = (m[14] as number) - eye.z;
@@ -2065,17 +2107,17 @@ export class WorldRenderer {
   }
 
   /** The scene without the water, drawn before the frame for the water's depth and refraction (WebGPU, standard and high tiers). */
-  private renderBackdrop(): void {
+  private renderBackdrop(waterVisible: boolean): void {
     const backdrop = this.materials.backdrop;
-    if (!backdrop.used || this.water.all.length === 0) return;
+    if (!waterVisible || !backdrop.used || this.water.all.length === 0) return;
     backdrop.render(this.renderer, this.scene, this.perspective, this.materials.waterMaterials());
   }
 
   /** The planar water reflection, drawn before the frame (high tier, camera above the dominant surface). */
-  private renderMirror(): void {
+  private renderMirror(waterVisible: boolean): void {
     const mirror = this.materials.mirror;
     const dominant = this.water.dominant;
-    if (!mirror.used || !dominant || this.water.all.length === 0) {
+    if (!waterVisible || !mirror.used || !dominant || this.water.all.length === 0) {
       reflectionOn.value = 0;
       return;
     }
@@ -2121,6 +2163,7 @@ export class WorldRenderer {
    */
   setLowMemory(on: boolean): void {
     this.lowMemory = on;
+    this.adaptiveTier.reset();
     this.budget = this.budgetFor(on);
     this.applyQuality(this.qualityPlan.quality);
     this.generatorCache?.setByteLimit(this.budget.generatorCacheBytes);
@@ -2153,6 +2196,12 @@ export class WorldRenderer {
   /** Ask for a frame on the next on-demand {@link render} (e.g. after an external camera change). */
   requestRender(): void {
     this.needsDraw = true;
+  }
+
+  /** GPU resources becoming ready do not mean the user moved the view again. */
+  private requestPreparedFrame(): void {
+    this.frameInvalidation.prepared();
+    this.sunMapDirty = true;
   }
 
   /**
@@ -2524,6 +2573,11 @@ export class WorldRenderer {
     out[1] = _target.y;
     out[2] = _target.z;
     return out;
+  }
+
+  /** Prepare sight-test acceleration before asynchronous hosts frame newly arrived content. */
+  async prepareFraming(): Promise<void> {
+    if (!this.disposed) await warmRaycastTrees(this.sync.root);
   }
 
   /**
@@ -3112,7 +3166,7 @@ export class WorldRenderer {
     const step = Number.isFinite(dt) ? Math.min(Math.max(dt, 0), 0.1) : 0;
     const cameraMoved = this.rig.update(step);
     // The view or the content was asked to change from outside (camera, edits, resizes), as against content that merely animates.
-    const motion = cameraMoved || this.needsDraw;
+    const motion = cameraMoved || this.frameInvalidation.motion;
     // Hit-stop slows the game's own motion (people, particles) to a crawl; the camera and the world around keep time.
     // An idle editor (`animate: false`) freezes the effects like the weather, so it stops drawing.
     const gameStep = step * this.fx.frame(opts.animate !== false ? step : 0, this.perspective, this.avatar.group);
@@ -3120,7 +3174,7 @@ export class WorldRenderer {
     // A field or virtual mesh was just mounted / moved: draw (draw() re-plans the view).
     // The re-plan is throttled, so the view stays dirty while the camera moves: that asks for a frame, not for a new sun map
     // (re-plans that change what is drawn mark the map for a soft refresh themselves).
-    if (this.sync.viewNeedsUpdate) this._needsDraw = true;
+    if (this.sync.viewNeedsUpdate) this.frameInvalidation.prepared();
     const vox = this.voxelLayer;
     if (vox) {
       const tf = this.env.terrainFog;
@@ -3139,11 +3193,11 @@ export class WorldRenderer {
     if (this.ghostRun.active && this.ghostRun.update(step)) this.needsDraw = true;
     // Characters and animals animate while the world runs or the user works (not in an idle editor).
     if (opts.animate !== false && this.stepAnimations(gameStep)) {
-      this._needsDraw = true;
+      this.frameInvalidation.animate();
       this.sunMapSoft = true;
     }
     if (opts.animate !== false && this.fx.animating) {
-      this._needsDraw = true;
+      this.frameInvalidation.animate();
       this.sunMapSoft = true;
     }
     this.stepWater(step, opts.animate !== false);
@@ -3182,9 +3236,13 @@ export class WorldRenderer {
     // Studio stills keep refining (temporal AA / AO converge) for a while after the view rests.
     const changed = cameraMoved || this.needsDraw || (animate && this.env.animating);
     if (changed) this.refinement.restart();
-    this.syncRest(motion, changed && !motion);
+    this.syncRest(motion, !motion && (this.frameInvalidation.motion || this.frameInvalidation.animating || (animate && this.env.animating)));
     const refine = !changed && this.refinement.next();
-    // The first frame's programs are linking (see warmShaders): a draw now would link the missing ones one by one on this thread.
+    // First-use graph/binding setup and program links finish before another viewport draw.
+    if (this.programs.pending > 0 || this.preparation.pending > 0) {
+      this.drewLastFrame = false;
+      return false;
+    }
     if (this.warming) {
       if (now() - this.warmingSince < WARMING_MAX_MS) {
         this.drewLastFrame = false;
@@ -3193,6 +3251,11 @@ export class WorldRenderer {
       this.warming = false;
     }
     if (opts.onDemand === true && !changed && !refine) {
+      this.drewLastFrame = false;
+      return false;
+    }
+    this.prepareBatches();
+    if (this.sync.batchPreparationPending > 0) {
       this.drewLastFrame = false;
       return false;
     }
@@ -3205,7 +3268,15 @@ export class WorldRenderer {
     } finally {
       this.fx.afterDraw(this.perspective);
     }
+    // A discovery frame may submit new async programs. It is not a completed
+    // image and must not feed the quality governor or the blank-frame watchdog.
+    if (this.programs.pending > 0 || this.preparation.pending > 0) {
+      this.requestPreparedFrame();
+      this.drewLastFrame = false;
+      return false;
+    }
     this.framesDrawn++;
+    if (!this.atRest) this.motionFrameReady = true;
     if (this.watchdogOn) this.watch(true);
     const info = this.renderer.info.render;
     this.lastDrawCalls = info.drawCalls ?? info.frameCalls ?? 0;
@@ -3223,7 +3294,16 @@ export class WorldRenderer {
     // A split studio chain refines at rest with its full (slow) chain: those frames say nothing about motion.
     if (this.qualityPlan.moveEffects === null || !this.atRest) {
       if (this.adaptive.record(dt, this.drewLastFrame)) this.resize(this.cssWidth, this.cssHeight);
-      if (this.governor.record(dt, this.drewLastFrame, this.adaptive.enabled ? this.adaptive.scale : 0)) this.applyPerformance();
+      const scale = this.adaptive.enabled ? this.adaptive.scale : 0;
+      if (this.governor.record(dt, this.drewLastFrame, scale)) this.applyPerformance();
+      const mayProbe = this.tierChoice === 'auto' && this.qualityPlan.quality === 'realtime'
+        && this.governor.level === 0 && this.budget.post && this.gpu.tier !== 'software'
+        && !this.lowMemory && !this.safe && !this.watchPostOff && !this.studioFailed
+        && (this.hardware.memoryGB === undefined || this.hardware.memoryGB > 2);
+      if (this.adaptiveTier.record(dt, this.drewLastFrame, scale, this.autoTierBase(), mayProbe)) {
+        this.applyQuality(this.qualityPlan.quality);
+        log.info(`performance: measured automatic tier ${this.autoTierNow()}`);
+      }
     }
     this.drewLastFrame = true;
     return true;
@@ -3313,8 +3393,10 @@ export class WorldRenderer {
       const k = (this.shadowFrame = (this.shadowFrame + 1) % 64);
       shadowNoiseValue.set((k * 37) % 64, (k * 23) % 64);
     } else if (shadowNoiseValue.x !== 0 || shadowNoiseValue.y !== 0) shadowNoiseValue.set(0, 0);
-    this.cacheSunMap(capture || cascades !== null);
-    if (!cascades) return;
+    if (!cascades) { this.cacheSunMap(capture); return; }
+    cascades.setCacheEnabled(!capture);
+    if (capture || this.sunMapDirty || this.sunMapSoft) cascades.requestRefresh();
+    this.sunMapDirty = false; this.sunMapSoft = false;
     const h = cascades.hints;
     h.target = this.rig.getSubject(_focusTarget) ?? this.probeFocus(capture);
     const f = this.framing;
@@ -3327,7 +3409,7 @@ export class WorldRenderer {
    * through a house with nothing animating) reuses the last map instead of drawing every caster again. The map is drawn
    * again when content changed (anything that asked for a frame besides the camera), the sun or its frustum moved, every
    * few frames while casters animate or scatter fields re-plan with the view, and now and then regardless (a safety net
-   * for a change nobody reported). Cascades follow the view and captures are exact: they always draw.
+   * for a change nobody reported). Cascades use exact caster/placed-map snapshots in SunCascades; captures always draw.
    */
   private cacheSunMap(always: boolean): void {
     const sun = this.env.sun;
@@ -3452,7 +3534,8 @@ export class WorldRenderer {
     if (this.watchdog.finished) return;
     const t = now();
     // Content that is still growing in or waiting for its programs is not a failure to draw.
-    const settled = !this.warming && !this.grow.active;
+    const preparing = this.sync.batchPreparationPending > 0;
+    const settled = !this.warming && !this.grow.active && !preparing;
     let sample: FrameSample | null = null;
     // An idle editor draws nothing, and a watch that has not yet seen an image needs one: ask for a frame now and then.
     if (!drew && settled && this.framesDrawn > 0 && t - this.watchNudge > 1000) {
@@ -3463,7 +3546,7 @@ export class WorldRenderer {
       if (typeof createImageBitmap === 'function') this.sampleViewAsync();
       else sample = this.sampleView();
     }
-    const action = this.watchdog.tick(t, this.framesDrawn, sample);
+    const action = this.watchdog.tick(t, this.framesDrawn, sample, preparing);
     if (action) this.onWatchdogAction(action);
   }
 
@@ -3490,7 +3573,7 @@ export class WorldRenderer {
           if (d.id !== this.sampleId) return;
           this.sampling = false;
           if (this.disposed || this.watchdog.finished || !d.sample) return;
-          const action = this.watchdog.tick(now(), this.framesDrawn, d.sample);
+          const action = this.watchdog.tick(now(), this.framesDrawn, d.sample, this.sync.batchPreparationPending > 0);
           if (action) this.onWatchdogAction(action);
         };
         w.onerror = (): void => {
@@ -3706,6 +3789,7 @@ export class WorldRenderer {
       this.syncInteriorLight();
     }
     this.governor.reset();
+    this.adaptiveTier.reset();
     this.applyQuality(this.qualityPlan.quality);
     return this.qualityPlan.tier;
   }
@@ -3722,7 +3806,11 @@ export class WorldRenderer {
 
   /** The GPU budget's tier, lowered for weak hardware and for what the performance ladder has given up. */
   private autoTierNow(): RenderTier {
-    return capTier(capTier(autoTier(this.gpu.tier, this.budget), hardwareTierCap(this.hardware, this.gpu.tier)), this.cuts.tierCap);
+    return capTier(this.adaptiveTier.resolve(this.autoTierBase()), this.cuts.tierCap);
+  }
+
+  private autoTierBase(): RenderTier {
+    return capTier(autoTier(this.gpu.tier, this.budget), hardwareTierCap(this.hardware, this.gpu.tier));
   }
 
   /** The render budget of the GPU class, with a pixel ratio of 1 on weak hardware. */
@@ -4072,6 +4160,7 @@ export class WorldRenderer {
     const before = this.qualityPlan.quality;
     this.shaftsUnavailable = false;
     this.restDeferred = false;
+    this.motionFrameReady = false;
     this.qualityPlan = qualityPlan(quality, this.budget, this.gpu.tier === 'software', this.tierChoice === 'auto' ? this.autoTierNow() : this.tierChoice, { split: this.tierChoice === 'auto' && this.gpu.tier !== 'discrete', tierCap: this.tierChoice === 'auto' ? this.cuts.tierCap : null });
     const plan = this.qualityPlan;
     // The high and ultra tiers (and stills) light and reflect with a photographed sky.
@@ -4153,7 +4242,7 @@ export class WorldRenderer {
           this.post = p;
           this.applyLook();
           if (this.vignetteOff) p.setVignette(0);
-          this.needsDraw = true;
+          this.requestPreparedFrame();
         } else if (this.phaseKeys().includes(p.key) && this.post && this.post.key !== p.key) {
           // The phase changed while it was building: keep it for the next swap.
           this.postStash?.dispose();
@@ -4212,6 +4301,7 @@ export class WorldRenderer {
   private syncRest(motion: boolean, animating: boolean): void {
     if (this.qualityPlan.moveEffects === null) {
       this.atRest = true;
+      this.restAnimating = motion || animating;
       leanShading.value = this.forceLean === true ? 1 : 0;
       return;
     }
@@ -4223,12 +4313,13 @@ export class WorldRenderer {
       this.lastChangeAt = t;
       if (this.atRest) {
         this.atRest = false;
+        this.motionFrameReady = false;
         if (this.motionScale < 1 && this.adaptive.enabled) {
           this.adaptive.scale = this.motionScale;
           this.resize(this.cssWidth, this.cssHeight);
         }
       }
-    } else if (!this.atRest && t - this.lastChangeAt > REST_DELAY_MS) {
+    } else if (!this.atRest && this.motionFrameReady && this.preparation.pending === 0 && this.programs.pending === 0 && t - this.lastChangeAt > REST_DELAY_MS) {
       this.atRest = true;
       this.restSlow = 0;
       this.refinement.restart();
@@ -4239,8 +4330,8 @@ export class WorldRenderer {
       }
     }
     this.restAnimating = this.atRest && animating;
-    // Moving views take the lean surface shading (one lookup per map); the picture at rest is the full one.
-    leanShading.value = (this.forceLean ?? !this.atRest) ? 1 : 0;
+    // Camera input must not replace UV sampling or remove normal maps. Explicit diagnostic overrides still work.
+    leanShading.value = this.forceLean === true ? 1 : 0;
   }
 
   /** The view is at rest and the content animates (frames at rest are not refinement frames). */
@@ -4261,10 +4352,11 @@ export class WorldRenderer {
    * member transforms. World matrices are updated first only when batches
    * exist (the renderer would otherwise do it inside render()).
    */
-  private prepareBatches(): void {
+  private prepareBatches(capture = false): void {
     if (!this.sync.batchesActive) return;
     this.scene.updateMatrixWorld();
-    this.sync.updateBatches();
+    if (capture) this.sync.synchronousBatches(() => this.sync.updateBatches());
+    else this.sync.updateBatches();
   }
 
   /**
@@ -4273,11 +4365,16 @@ export class WorldRenderer {
    * camera immediately, never throttled.
    */
   private draw(capture = false): void {
+    if (capture) return this.preparation.synchronous(() => this.programs.synchronous(() => this.drawReady(capture)));
+    this.drawReady(capture);
+  }
+
+  private drawReady(capture = false): void {
     // The post chain's scene passes update once per node frame, and the node frame advances once per animation frame:
     // a capture drawn in the same frame as the viewport (another aspect, another size, a camera moved a moment ago) would
     // reuse the viewport's scene pass and only re-composite it, stretched. Advance the frame so the capture renders fresh.
     if (capture) this.advanceNodeFrame();
-    this.prepareBatches();
+    if (capture) this.prepareBatches(true);
     // Scatter fields and virtual geometry re-plan for whatever camera draws this frame
     // (the viewport, or a capture view), only when the view or content changed.
     if (this.viewChanged() || this.sync.viewNeedsUpdate) {
@@ -4307,8 +4404,10 @@ export class WorldRenderer {
     // Water joins the depth pre-pass (and so the screen-space reflections) while they run.
     const reflective = this.post?.effects.ssr === true;
     if (reflective !== this.materials.waterIsReflective) this.materials.setReflectiveWater(reflective);
-    this.renderBackdrop();
-    this.renderMirror();
+    const waterVisible = this.water.all.length > 0 && (this.materials.backdrop.used || this.materials.mirror.used)
+      && this.sync.hasVisibleWater(this.perspective);
+    this.renderBackdrop(waterVisible);
+    this.renderMirror(waterVisible);
     try {
       if (this.post) {
         // Depth of field focuses on the orbit target (allocation-free: scratch vectors).
@@ -4381,6 +4480,7 @@ export class WorldRenderer {
     const deadline = now() + timeoutMs;
     this.syncPost();
     while (!this.disposed && this.postPending && now() < deadline) await new Promise((r) => setTimeout(r, 16));
+    await this.waitForPreparation();
   }
 
   /**
@@ -4517,6 +4617,7 @@ export class WorldRenderer {
       camera: this.perspective,
       flipY: this.backend === 'webgl2',
       alive: () => !this.disposed && !this.lost,
+      ready: () => this.waitForPreparation(),
       begin: (w, h, vignette) => {
         this.captureActive = true;
         this.rig.stopTour();
@@ -4587,6 +4688,14 @@ export class WorldRenderer {
   /** A tiled capture runs: the screen-space vignette is applied on the CPU instead. */
   private vignetteOff = false;
 
+  /** Captures wait for pending context-sensitive setup before changing targets or cameras. */
+  private async waitForPreparation(): Promise<void> {
+    this.prepareBatches();
+    await this.sync.waitForBatches();
+    await this.preparation.idle();
+    await this.programs.idle();
+  }
+
   /** Advance the node frame (see {@link draw}); a no-op if the renderer does not expose it. */
   private advanceNodeFrame(): void {
     const frame = (this.renderer as unknown as { _nodes?: { nodeFrame?: { update?: () => void } } })._nodes?.nodeFrame;
@@ -4641,9 +4750,11 @@ export class WorldRenderer {
     } catch (e) {
       log.warn(`compile before capture failed: ${errorMessage(e)}`);
     }
+    await this.waitForPreparation();
   }
 
   private async captureOnce(width: number | undefined, height: number | undefined, mime: string): Promise<{ url: string; blank: boolean }> {
+    await this.waitForPreparation();
     const canvas = this.domElement;
     const w = captureSize(width, canvas.width);
     const h = captureSize(height, Math.round((w * canvas.height) / Math.max(1, canvas.width)));
@@ -4755,6 +4866,7 @@ export class WorldRenderer {
     poses: ReadonlyArray<{ position: Vec3; target: Vec3; up: Vec3; fov: number }>,
     opts: { width?: number; height?: number; mime?: string } = {},
   ): Promise<string[]> {
+    await this.waitForPreparation();
     if (this.disposed || this.lost) throw new Error(this.lost ? 'GPU context lost' : 'renderer disposed');
     if (this.captureActive) throw new Error('a capture is running');
     const list = (Array.isArray(poses) ? poses : []).slice(0, MAX_VIEWS * 2);
@@ -4806,7 +4918,7 @@ export class WorldRenderer {
             const pixels = await this.grow.withFullScale(() =>
               this.renderToPixels(w, h, () => {
                 aim(pose);
-                this.prepareBatches();
+                this.prepareBatches(true);
                 this.renderer.render(this.scene, cam);
               }, restoreCamera),
             );
@@ -4821,7 +4933,7 @@ export class WorldRenderer {
           this.grow.withFullScale(() =>
             this.withTemporarySize(w, h, () => {
               aim(pose);
-              this.prepareBatches();
+              this.prepareBatches(true);
               this.renderer.render(this.scene, cam);
               const image = grab(this.domElement, w, h, mime);
               restoreCamera();
@@ -4839,6 +4951,7 @@ export class WorldRenderer {
 
   /** Orthographic top/front/side/iso captures framing the scene (for VLM critique). */
   async renderViews(views: Array<'top' | 'front' | 'side' | 'iso'>, size = 512): Promise<string[]> {
+    await this.waitForPreparation();
     if (this.disposed || this.lost) throw new Error(this.lost ? 'GPU context lost' : 'renderer disposed');
     if (this.captureActive) throw new Error('a capture is running');
     const list = (Array.isArray(views) ? views : []).filter((v): v is CaptureView => VIEW_NAMES.has(v)).slice(0, MAX_VIEWS);
@@ -4903,7 +5016,7 @@ export class WorldRenderer {
           cam.lookAt(pose.target[0], pose.target[1], pose.target[2]);
           cam.updateProjectionMatrix();
           cam.updateMatrixWorld();
-          this.prepareBatches();
+          this.prepareBatches(true);
           this.renderer.render(this.scene, cam);
       };
       if (!this.asyncCaptureFailed) {
@@ -5133,6 +5246,9 @@ export class WorldRenderer {
   /** Dispose every GPU resource, control and listener. The renderer is unusable afterwards. */
   dispose(): void {
     if (this.disposed) return;
+    this.compileTextures.dispose();
+    this.preparation.dispose();
+    this.programs.dispose();
     this.fx.dispose();
     this.capture?.end();
     this.capture = null;

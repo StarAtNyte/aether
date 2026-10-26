@@ -50,11 +50,10 @@ function clipNamed(clips: readonly AnimationClip[], name: string | undefined): A
   return clips.find((c) => c.name === name) ?? null;
 }
 
-/** True when the asset or any object between it and its entity node is hidden. */
+/** True when the asset or any ancestor is hidden (including storeys above its entity). */
 function hidden(it: Animated): boolean {
   for (let o: Object3D | null = it.root; o; o = o.parent) {
     if (!o.visible) return true;
-    if (o === it.tracked) return false;
   }
   return false;
 }
@@ -134,6 +133,14 @@ export class AssetAnimator {
   }
 
   private tick = 0;
+  // Keep the timestep as a reusable number reference for mixer calls. A Float64Array load
+  // creates a new boxed argument per mixer in some V8 tiers; starting with null keeps
+  // this array's elements as references rather than an unboxed double array.
+  private readonly frameStep: [number | null] = [null];
+  // Accumulated LOD steps have a separate channel, so a distant actor never replaces
+  // the frame dt reused by nearby actors. Only scheduled actors form an accumulated sum.
+  private readonly accumulatedStep: [number | null] = [null];
+  private activeStep = this.frameStep;
 
   /**
    * Advance every animation by `dt` seconds. With the eye position, distant assets step at a lower rate and hidden
@@ -141,20 +148,21 @@ export class AssetAnimator {
    */
   update(dt: number, eye?: { x: number; y: number; z: number }): boolean {
     const list = this.list;
-    if (list.length === 0 || !(dt > 0)) return false;
+    if (list.length === 0 || !(dt > 0) || !Number.isFinite(dt)) return false;
+    this.frameStep[0] = dt;
     const frame = ++this.tick;
+    let changed = false;
     const near2 = LOD_NEAR * LOD_NEAR;
     const far2 = LOD_FAR * LOD_FAR;
     for (let i = 0; i < list.length; i++) {
       const it = list[i] as Animated;
-      if (eye && hidden(it)) {
+      if (hidden(it)) {
         // Hidden (far-culled): nothing to move; the next step must not read the jump as a sprint.
         it.owed = 0;
         it.primed = false;
         continue;
       }
       it.tracked.getWorldPosition(_pos);
-      let step = dt;
       if (eye) {
         const ex = _pos.x - eye.x;
         const ey = _pos.y - eye.y;
@@ -165,24 +173,36 @@ export class AssetAnimator {
           it.owed += dt;
           continue;
         }
-        step = dt + it.owed;
-        it.owed = 0;
       }
+      this.advance(it);
+      changed = true;
+    }
+    return changed;
+  }
+
+  /** Keep numeric pose work in a small hot function, independent of visibility/LOD scheduling. */
+  private advance(it: Animated): void {
+    if (it.owed > 0) {
+      this.accumulatedStep[0] = this.frameStep[0]! + it.owed;
+      this.activeStep = this.accumulatedStep;
+    } else if (this.activeStep !== this.frameStep) this.activeStep = this.frameStep;
+    it.owed = 0;
+    const step = this.activeStep[0]!;
+    if (!it.fixed) {
       const dx = _pos.x - it.last.x;
       const dz = _pos.z - it.last.z;
       it.last.copy(_pos);
-      // The first frame after a teleport / load would read as a sprint: skip it.
       const raw = it.primed ? Math.sqrt(dx * dx + dz * dz) / step : 0;
       it.primed = true;
       it.speed += (Math.min(raw, 30) - it.speed) * Math.min(1, step * 8);
-      if (!it.fixed) this.applyGait(it);
-      it.mixer.update(step);
+      this.applyGait(it);
     }
-    return true;
+    it.mixer.update(this.activeStep[0]!);
   }
 
   private applyGait(it: Animated): void {
-    let gait = gaitFor(it.speed);
+    // Avoid passing fractional speed through another helper on the per-actor path.
+    let gait: Gait = it.speed >= GAIT.runFrom ? 'run' : it.speed >= GAIT.walkFrom ? 'walk' : 'idle';
     if (gait === 'run' && !it.run) gait = it.walk ? 'walk' : 'idle';
     if (gait === 'walk' && !it.walk) gait = it.run ? 'run' : 'idle';
     const next = gait === 'run' ? it.run : gait === 'walk' ? it.walk : it.idle;

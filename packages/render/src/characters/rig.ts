@@ -11,6 +11,7 @@ import { AnimationMixer, Group, LoopOnce, LoopRepeat, Material, MathUtils, Mesh,
 import type { CharacterHold } from '@aether/core';
 import { LocomotionMachine, type ActionName, type ActorInput, type ClipInfo, type Plan, type ResolvedLook } from '@aether/assets';
 import { applyLook, LookController, solveTwoBone, type LookState } from './ik';
+import { disposeModelInstance } from '../geometry/model-loader';
 import { buildProp, type Prop } from './props';
 import { airPoseOf, landKeep, PELVIS_ABOVE_SEAT, seatBlendOf } from './motion';
 
@@ -743,12 +744,13 @@ export class CharacterRig {
     }
   }
 
-  /** Release the mixer, the prop and the swapped materials. Geometry and textures belong to the model cache. */
+  /** Release mixer, instance GPU state, prop and swapped materials. Source geometry/textures stay cached. */
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
     this.mixer.stopAllAction();
     this.mixer.uncacheRoot(this.opts.scene);
+    disposeModelInstance(this.opts.scene);
     if (this.prop) this.opts.onProp?.(null, this);
     this.prop?.group.removeFromParent();
     this.prop?.dispose();

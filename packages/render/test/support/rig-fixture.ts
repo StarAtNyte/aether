@@ -5,6 +5,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import type { Object3D } from 'three';
 import { clipTable, motionSet, resolveLook, type ResolvedLook } from '@aether/assets';
+import { cloneModel } from '../../src/geometry/model-loader';
 import { CharacterRig } from '../../src/characters/rig';
 
 const LIB = resolve(__dirname, '../../../../assets/lib/');
@@ -47,13 +48,13 @@ export interface Fixture {
 }
 
 /** A rig of the default traveller (or of `seed`'s body). */
-export async function loadRig(seed = 'tester', opts: { castShadow?: boolean } = {}): Promise<Fixture> {
+export async function loadRig(seed = 'tester', opts: { castShadow?: boolean; ownedClone?: boolean } = {}): Promise<Fixture> {
   const look = resolveLook({ wardrobe: 'traveller' }, seed);
   const set = motionSet(look.body.gender);
   if (!set) throw new Error('no motion set');
   const [body, motions] = await Promise.all([parse(look.body.file), parse(set.file)]);
   const rig = new CharacterRig({
-    scene: body.scene,
+    scene: opts.ownedClone ? cloneModel(body.scene) : body.scene,
     clips: motions.animations,
     table: clipTable(look.body.gender),
     look,

@@ -13,6 +13,7 @@ import { createWorkerSandbox, type SandboxRunner } from '@aether/procgen';
 import type { StoreApi } from 'zustand/vanilla';
 import { API, MAX_PROMPT_CHARS, PERSIST_DEBOUNCE_MS } from '../config';
 import { beyondEditCard, buildAgentHistory, toEventView, type ChatEntry, type ChatEventView } from '../lib/chat';
+import { yieldToPaint } from '../lib/yieldToPaint';
 import { formatStateValue } from '../lib/format';
 import { createLogger, errorMessage } from '../lib/log';
 import { createStarterWorld, isPristineStarter } from '../lib/starterWorld';
@@ -424,9 +425,8 @@ export class Studio {
     const gen = ++this.attachGen;
     st.setLoading('Starting renderer…');
     // React StrictMode (development) mounts, unmounts and remounts the viewport in one commit.
-    // Yield once so a superseded attach never creates a GPU context at all: two renderers
-    // initializing side by side would double the GPU memory peak at startup.
-    await Promise.resolve();
+    // Paint the processing indicator before GPU setup, and skip superseded StrictMode attaches.
+    await yieldToPaint();
     if (gen !== this.attachGen) return () => undefined;
     markBooting(this.storage);
     try {
@@ -435,6 +435,7 @@ export class Studio {
         this.history,
         {
           onStats: (s) => this.store.getState().setStats(s),
+          onProcessing: (stage) => { if (gen === this.attachGen) this.store.getState().setProcessing(stage); },
           onHud: (hud, time) => {
             const out: Record<string, string> = {};
             for (const k of Object.keys(hud)) out[k] = formatStateValue(hud[k]);
@@ -557,7 +558,8 @@ export class Studio {
     const st = this.store.getState();
     st.setFatal(null);
     st.setLoading(message);
-    st.bumpRendererEpoch();
+    await yieldToPaint();
+    if (!this.disposed && !this.store.getState().fatal) st.bumpRendererEpoch();
   }
 
   /**
@@ -945,7 +947,10 @@ export class Studio {
     this.dismissProof();
     if (this.sim.mode !== 'play') playUiSound(st.settings, 'play');
     st.setModeBusy(true);
+    const sim = this.sim;
     try {
+      await yieldToPaint();
+      if (this.disposed || this.sim !== sim) return;
       if (this.sim.mode === 'play') {
         this.sim.setHeld(false);
         await this.sim.stop();

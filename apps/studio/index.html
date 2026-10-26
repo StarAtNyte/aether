@@ -26,12 +26,18 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
     <link rel="preload" href="/fonts/inter-var-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="/loading.css" />
     <script src="/theme-boot.js"></script>
     <title>Aether</title>
   </head>
   <body>
     <noscript>Aether needs JavaScript and WebGL2 (or WebGPU) to run.</noscript>
-    <div id="root"></div>
+    <div id="root">
+      <div id="boot-status" role="status" aria-live="polite">
+        <span class="boot-spinner" aria-hidden="true"></span>
+        <span>Starting Aether…</span>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

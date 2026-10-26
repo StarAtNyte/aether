@@ -97,8 +97,9 @@ export class AdaptiveResolution {
   /** 90th-percentile frame time of the window (allocation-free: typed-array sort of a scratch copy). */
   private p90(): number {
     const n = this.filled;
-    const s = this.sorted.subarray(0, n);
+    const s = this.sorted;
     for (let i = 0; i < n; i++) s[i] = this.window[i] as number;
+    s.fill(Infinity, n);
     s.sort();
     return s[Math.min(n - 1, Math.floor(n * 0.9))] as number;
   }

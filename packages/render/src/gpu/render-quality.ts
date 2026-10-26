@@ -50,8 +50,8 @@ export interface QualityPlan {
   /** Adaptive resolution may lower the resolution (never while refining a still). */
   adaptiveResolution: boolean;
   /**
-   * Effects drawn while the view moves (null: the same as {@link effects} always). The studio look on an integrated GPU keeps
-   * the cheap composite chain in motion and runs the full chain once the view rests (see {@link QualityOptions.split}).
+   * Motion phase (null: no separate motion policy). Its lighting effects match the resting view;
+   * adaptive resolution manages motion cost without changing the scene's look.
    */
   moveEffects: PostEffects | null;
   /** Tier and still flag the sun shadows are planned for (the same in motion and at rest: a change recompiles materials). */
@@ -62,8 +62,8 @@ export interface QualityPlan {
 /** Options of {@link qualityPlan} beyond the budget. */
 export interface QualityOptions {
   /**
-   * Split the studio chain into a light one for motion and the full one at rest, with the medium tier's sun shadows
-   * throughout (one fitted map, no doubled map). For integrated GPUs, which cannot hold 60 fps with the whole chain.
+   * Use adaptive resolution in motion and full-resolution refinement at rest, with medium-tier shadows throughout.
+   * Both phases retain the same lighting effects to avoid camera-driven brightness changes.
    */
   split?: boolean;
   /** Most expensive tier the performance ladder still allows (null: any). */
@@ -154,7 +154,7 @@ export function qualityPlan(quality: RenderQuality, budget: Pick<RenderBudget, '
   const finalFrames = software ? FINAL_ACCUMULATE_FRAMES_SOFTWARE : FINAL_ACCUMULATE_FRAMES;
   const split = opts.split === true && !final && !software;
   const effects = clampEffects(stillEffects(final), opts.tierCap);
-  const move = split ? clampEffects(effectsOf('medium'), opts.tierCap) : null;
+  const move = split ? effects : null;
   return {
     quality,
     tier: 'ultra',

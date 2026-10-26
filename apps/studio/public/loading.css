@@ -1,0 +1,25 @@
+/* Visible before the application modules download and evaluate; React replaces this shell. */
+body { margin: 0; }
+#boot-status {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 14px;
+  color: #52606d;
+  background: #ffffff;
+  font: 500 13px system-ui, sans-serif;
+}
+html[data-theme='dark'] #boot-status { color: #c3ccd5; background: #101418; }
+.boot-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: boot-spin .8s linear infinite;
+  will-change: transform;
+}
+@keyframes boot-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .boot-spinner { animation: none; will-change: auto; } }
