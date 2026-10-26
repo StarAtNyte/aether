@@ -86,7 +86,7 @@ export interface SceneRoom {
    * Pieces and lights standing in this room that belong to no level (instanced layouts from `shape_land`, lights made by hand): they
    * are not items, but they furnish and light the room, so the checks count them.
    */
-  free?: { pieces: number; lights: number };
+  free?: { pieces: number; lights: number; kinds: string[] };
 }
 
 /** A piece of furniture, decor, fixture or light. */

@@ -373,7 +373,7 @@ export function programmeFindings(scene: Scene): Finding[] {
     const here = scene.items.filter((i) => i.room === room.id);
     const kinds = new Set(here.map((i) => i.kind));
     const need = ESSENTIALS[room.type];
-    if (need && !need.some((k) => kinds.has(k))) out.push({ code: 'missing_essential', severity: 'warning', message: `${room.key} (${room.type}) has no ${need.join(' or ')}`, entities: [], room: room.key, fix: `Place a ${need[0]} in ${room.key}.` });
+    if (need && !need.some((k) => kinds.has(k) || (room.free?.kinds.includes(k) ?? false))) out.push({ code: 'missing_essential', severity: 'warning', message: `${room.key} (${room.type}) has no ${need.join(' or ')}`, entities: [], room: room.key, fix: `Place a ${need[0]} in ${room.key}.` });
     const floor = here.filter((i) => i.mount === 'floor' && i.kind !== 'rug');
     if (room.area >= 7 && floor.length + (room.free?.pieces ?? 0) < 2 && !['hall', 'entry', 'lobby'].includes(String(room.type))) out.push({ code: 'room_empty', severity: 'warning', message: `${room.key} (${cmr(room.area).toFixed(1)} m²) looks empty: ${floor.length} piece${floor.length === 1 ? '' : 's'} of furniture`, entities: floor.map((i) => i.id), room: room.key, fix: `Furnish ${room.key} to suit a ${room.type}.` });
     // A furnished but bare room reads as a show flat: suggest the dressing pass (information only; never for a photo copy).

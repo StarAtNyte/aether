@@ -11,6 +11,7 @@
 import { hasOwn, type Entity, type EntityId, type WorldDoc } from '@aether/core';
 import { assetShapeSize } from '@aether/assets';
 import { furnitureOfEntity } from '../furniture/assets';
+import { furnitureById } from '../furniture/index';
 import { FLOOR_THICKNESS } from '../compile';
 import { obb, yawFacingIn } from '../layout';
 import { area, bounds, pointInPolygon, positive, rotateYaw, type P2 } from '../math2';
@@ -92,29 +93,43 @@ function attachFreePieces(world: WorldDoc, root: Entity, rooms: SceneRoom[]): vo
   if (rooms.length === 0) return;
   const yaw = root.transform.rotation[1];
   const inPlan = (wx: number, wz: number): P2 => rotateYaw(wx - root.transform.position[0], wz - root.transform.position[2], -yaw);
-  const free = new Map<EntityId, { pieces: number; lights: number }>(rooms.map((r) => [r.id, { pieces: 0, lights: 0 }]));
+  const free = new Map<EntityId, { pieces: number; lights: number; kinds: Set<string> }>(rooms.map((r) => [r.id, { pieces: 0, lights: 0, kinds: new Set<string>() }]));
   const roomAt = (x: number, z: number): SceneRoom | undefined => rooms.find((r) => x >= r.bbox[0] && x <= r.bbox[2] && z >= r.bbox[1] && z <= r.bbox[3] && pointInPolygon(x, z, r.polygon));
   let scanned = 0;
   for (const e of Object.values(world.entities)) {
     if (e.parent || e.id === root.id || ++scanned > 5000) continue;
     const [px, , pz] = e.transform.position;
+    const at = (x: number, z: number): { pieces: number; lights: number; kinds: Set<string> } | undefined => {
+      const [qx, qz] = inPlan(x, z);
+      const room = roomAt(qx, qz);
+      return room ? free.get(room.id) : undefined;
+    };
     if (e.shape.kind === 'scatter' && e.shape.points && e.shape.points.length > 0) {
       const a = e.transform.rotation[1];
+      const kind = e.shape.of.kind === 'procedural' ? furnitureById(e.shape.of.generator)?.kind : undefined;
       for (const p of e.shape.points.slice(0, 5000)) {
         const [dx, dz] = rotateYaw(p[0], p[2], a);
-        const [x, z] = inPlan(px + dx, pz + dz);
-        const room = roomAt(x, z);
-        if (room) (free.get(room.id) as { pieces: number }).pieces++;
+        const f = at(px + dx, pz + dz);
+        if (!f) continue;
+        f.pieces++;
+        if (kind) f.kinds.add(kind);
       }
-    } else if (e.light) {
-      const [x, z] = inPlan(px, pz);
-      const room = roomAt(x, z);
-      if (room) (free.get(room.id) as { lights: number }).lights++;
+    } else if (e.shape.kind === 'procedural' && e.shape.generator.startsWith('furn-')) {
+      const f = at(px, pz);
+      if (f) {
+        f.pieces++;
+        const kind = furnitureById(e.shape.generator)?.kind;
+        if (kind) f.kinds.add(kind);
+      }
+    }
+    if (e.light) {
+      const f = at(px, pz);
+      if (f) f.lights++;
     }
   }
   for (const r of rooms) {
     const f = free.get(r.id);
-    if (f && (f.pieces > 0 || f.lights > 0)) r.free = f;
+    if (f && (f.pieces > 0 || f.lights > 0)) r.free = { pieces: f.pieces, lights: f.lights, kinds: [...f.kinds].sort() };
   }
 }
 

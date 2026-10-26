@@ -28,12 +28,20 @@ describe('pieces and lights that belong to no level', () => {
     const seats: Entity = { id: 'seats', name: 'seats', tags: [], transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }, shape: { kind: 'scatter', of: { kind: 'procedural', generator: 'furn-chair', params: {} }, count: 3, area: [1, 1], seed: 1, scaleRange: [1, 1], randomYaw: false, points: [[3, 0, 3], [4, 0, 3], [5, 0, 3]] } } as unknown as Entity;
     const lamp: Entity = { id: 'lamp', name: 'lamp', tags: [], transform: { position: [5, 2.5, 4], rotation: [0, 0, 0], scale: [1, 1, 1] }, shape: { kind: 'none' }, light: { type: 'point', color: '#ffffff', intensity: 1, range: 6, angle: 30, castShadow: false } } as unknown as Entity;
     const w1 = applyPatches(w0, [{ op: 'add', entity: seats }, { op: 'add', entity: lamp }]).world;
-    expect(readScene(w1, 'hall')?.rooms[0]?.free).toEqual({ pieces: 3, lights: 1 });
+    expect(readScene(w1, 'hall')?.rooms[0]?.free).toEqual({ pieces: 3, lights: 1, kinds: ['chair'] });
     const after = reviewScene(w1, 'hall', { fast: true }).map((f) => f.code);
     expect(after).not.toContain('room_empty');
     expect(after).not.toContain('no_light');
     // Outside the room they count for nothing.
     const away = applyPatches(w0, [{ op: 'add', entity: { ...seats, transform: { ...seats.transform, position: [40, 0, 40] } } }]).world;
     expect(reviewScene(away, 'hall', { fast: true }).map((f) => f.code)).toContain('room_empty');
+  });
+
+  it('a free piece of the kind a room needs is that piece: tables laid by a layout are the dining table', () => {
+    const w0 = built();
+    expect(reviewScene(w0, 'hall', { fast: true }).map((f) => f.code)).toContain('missing_essential');
+    const sofa = { id: 'sofas', name: 'sofas', tags: [], transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }, shape: { kind: 'scatter', of: { kind: 'procedural', generator: 'furn-sofa', params: {} }, count: 1, area: [1, 1], seed: 1, scaleRange: [1, 1], randomYaw: false, points: [[5, 0, 4]] } } as unknown as Entity;
+    const w1 = applyPatches(w0, [{ op: 'add', entity: sofa }]).world;
+    expect(reviewScene(w1, 'hall', { fast: true }).map((f) => f.code)).not.toContain('missing_essential');
   });
 });
