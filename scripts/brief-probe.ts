@@ -19,6 +19,7 @@ import { createNodeSandbox } from '@aether/procgen/node';
 import { createHeadlessProvider } from '../apps/bridge/src/headless';
 import { captureReviewHeadless } from '../apps/cli/src/mcp/review';
 import { CATALOGS, GENERATOR_DRY_RUN_MS, NodeAgentHost } from './lib/headless-world';
+import { GpuRoom } from './lib/gpu-room';
 
 const arg = (n: string, d?: string): string | undefined => process.argv.find((a) => a.startsWith(`--${n}=`))?.slice(n.length + 3) ?? d;
 const id = arg('id', 'probe') as string;
@@ -27,6 +28,8 @@ const withBrief = arg('brief', 'on') === 'on';
 const backend = (arg('backend', 'claude-code') as 'claude-code' | 'codex');
 const effort = (arg('effort', 'low') as 'low' | 'medium' | 'high');
 const rounds = Number(arg('rounds', '4'));
+// --gpu=1: the review views come from the studio's own renderer on the integrated GPU (what the model sees in the app) instead of the flat software one.
+const useGpu = arg('gpu', '0') === '1';
 const out = resolve(arg('out', 'probe-out/brief') as string, `${id}-${withBrief ? 'after' : 'before'}`);
 
 const levelTools: LevelToolRunner = async (world, name, input) => {
@@ -84,11 +87,17 @@ async function main(): Promise<void> {
     },
   };
   class Host extends NodeAgentHost {
-    captureReview = async (v: readonly ReviewViewRequest[], o?: { signal?: AbortSignal }): Promise<Array<{ name: string; dataUrl: string }>> => captureReviewHeadless(this.getWorld(), v, { sandbox, width: 640, ...(o?.signal ? { signal: o.signal } : {}) });
+    captureReview = async (v: readonly ReviewViewRequest[], o?: { signal?: AbortSignal }): Promise<Array<{ name: string; dataUrl: string }>> => {
+      if (!gpuRoom) return captureReviewHeadless(this.getWorld(), v, { sandbox, width: 640, ...(o?.signal ? { signal: o.signal } : {}) });
+      await gpuRoom.load(this.getWorld());
+      const shots = await gpuRoom.capture(v.map((x) => ({ ...x.pose, hideTops: x.hideTops })), { width: 768, height: 512 });
+      return v.flatMap((x, i) => (shots[i] ? [{ name: x.name, dataUrl: shots[i] as string }] : []));
+    };
     override applyPatches(patches: unknown[], message: string): PatchResult {
       return super.applyPatches(patches, message);
     }
   }
+  const gpuRoom: GpuRoom | null = useGpu ? await GpuRoom.open({}) : null;
   const host = new Host(sandbox);
   const events: AgentEvent[] = [];
   const t0 = performance.now();
@@ -132,6 +141,7 @@ async function main(): Promise<void> {
   await writeFile(join(out, 'summary.json'), JSON.stringify(summary, null, 2));
   await writeFile(join(out, 'world.json'), JSON.stringify(world));
   console.log(JSON.stringify(summary, null, 2));
+  await gpuRoom?.close();
   sandbox.dispose();
 }
 

@@ -4174,15 +4174,21 @@ export class WorldRenderer {
       cam.position.set(pose.pos[0] as number, pose.pos[1] as number, pose.pos[2] as number);
       cam.lookAt(pose.target[0] as number, pose.target[1] as number, pose.target[2] as number);
       cam.updateMatrixWorld(true);
-      this.lastEye.set(Number.POSITIVE_INFINITY, 0, 0);
-      this.eyeClock = 1;
-      this.adaptEye(0);
+      this.snapEye();
     } finally {
       cam.position.copy(savedPos);
       cam.quaternion.copy(savedQuat);
       cam.updateMatrixWorld(true);
       this.eyeClock = 1;
     }
+  }
+
+  /** The eye adapts to the camera where it stands now at once (a cut): a capture is exposed for its own view. */
+  private snapEye(): void {
+    if (!this.lightVolume.ready) return;
+    this.lastEye.set(Number.POSITIVE_INFINITY, 0, 0);
+    this.eyeClock = 1;
+    this.adaptEye(0);
   }
 
   private adaptEye(dt: number): void {
@@ -5019,6 +5025,8 @@ export class WorldRenderer {
     const restore = (): void => {
       decorations.forEach((o, i) => (o.visible = wasVisible[i] ?? true));
       restoreCamera();
+      // The live eye was exposed for the last pose: it adapts back to where the viewport stands.
+      this.eyeClock = 1;
     };
     const aim = (pose: { position: Vec3; target: Vec3; up: Vec3; fov: number }): void => {
       cam.fov = Math.max(20, Math.min(120, pose.fov));
@@ -5040,6 +5048,7 @@ export class WorldRenderer {
             const pixels = await this.grow.withFullScale(() =>
               this.renderToPixels(w, h, () => {
                 aim(pose);
+                this.snapEye();
                 this.prepareBatches(true);
                 this.renderer.render(this.scene, cam);
               }, restoreCamera),
@@ -5055,6 +5064,7 @@ export class WorldRenderer {
           this.grow.withFullScale(() =>
             this.withTemporarySize(w, h, () => {
               aim(pose);
+              this.snapEye();
               this.prepareBatches(true);
               this.renderer.render(this.scene, cam);
               const image = grab(this.domElement, w, h, mime);

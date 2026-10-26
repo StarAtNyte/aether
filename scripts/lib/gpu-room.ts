@@ -44,6 +44,9 @@ export class GpuRoom {
       await ctx.addInitScript(SKIP_FIRST_RUN);
       // On the integrated GPU the page draws through WebGL2: the machine's only WebGPU adapter is SwiftShader (software), which
       // fails some post passes and ends in a black picture, so it is hidden as the weak-GPU and frame-recorder harnesses do.
+      // The stills are drawn by a `nice`d job on a shared machine: the first frame of a heavy world can take longer than the watchdog's
+      // 35 s, and the plain-material step it takes then would turn every still after it flat. Give the watch the time the job needs.
+      await ctx.addInitScript({ content: 'globalThis.__aetherWatchdog = { firstFrameMs: 900000, stepFrameMs: 900000, giveUpMs: 900000 };' });
       if (process.env['GEN_GPU'] === 'intel') await ctx.addInitScript({ content: 'delete Navigator.prototype.gpu; try { delete navigator.gpu; } catch {}' });
       const page = await ctx.newPage();
       page.on('pageerror', (e) => log(`  pageerror: ${e.message.slice(0, 200)}`));
@@ -155,6 +158,21 @@ export class GpuRoom {
     );
     if (!dataUrl) throw new Error('still failed');
     return Buffer.from(dataUrl.slice('data:image/png;base64,'.length), 'base64');
+  }
+
+  /**
+   * Review captures exactly as the studio hands them to the agent (`Simulation.capturePoses`: the live scene, the eye adapted to
+   * each pose, no post chain), as JPEG data URLs in the order of `poses`; null for one that could not be drawn.
+   */
+  async capture(poses: ReadonlyArray<{ position: readonly number[]; target: readonly number[]; up?: readonly number[]; fov: number; hideTops?: boolean }>, size: { width: number; height: number }): Promise<Array<string | null>> {
+    return this.page.evaluate(
+      async ([ps, w, h]) => {
+        const sim = window.__aether?.simulation as unknown as { capturePoses(p: unknown[], s: { width: number; height: number }): Promise<Array<string | null>> } | null | undefined;
+        if (!sim) return [];
+        return sim.capturePoses((ps as Array<Record<string, unknown>>).map((p) => ({ up: [0, 1, 0], hideTops: false, ...p })), { width: w as number, height: h as number });
+      },
+      [poses.map((p) => ({ ...p, position: [...p.position], target: [...p.target] })), size.width, size.height] as const,
+    );
   }
 
   /**
