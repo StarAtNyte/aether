@@ -17,6 +17,7 @@ const [file, outArg, ...rest] = process.argv.slice(2);
 if (!file || !outArg) throw new Error('usage: exposure-audit <world.json> <outDir> [--width=N] [--live=1]');
 const width = Number(rest.find((a) => a.startsWith('--width='))?.slice(8) ?? 640);
 const live = (rest.find((a) => a.startsWith('--live='))?.slice(7) ?? '1') === '1';
+const walkOnly = rest.includes('--walk-only');
 const out = resolve(outArg);
 mkdirSync(out, { recursive: true });
 const world = createWorld(JSON.parse(readFileSync(resolve(file), 'utf8'))) as WorldDoc;
@@ -47,42 +48,70 @@ const gpu = await GpuRoom.open({});
 try {
   await gpu.load(world);
   const rows: unknown[] = [];
-  for (const [name, position, target] of views) {
+  for (const [name, position, target] of walkOnly ? [] : views) {
     const png = await gpu.still({ position, target, fov: 70 }, { width, height: Math.round(width * 0.5625) }, 'studio');
     writeFileSync(join(out, `${name}.png`), png);
     const s = stats(png);
     rows.push({ view: name, ...s });
     process.stdout.write(`${name}: ${JSON.stringify(s)}\n`);
   }
-  const mean = Math.round((rows as Array<{ mean: number }>).reduce((a, r) => a + r.mean, 0) / rows.length);
-  const washed = Math.round(((rows as Array<{ washed: number }>).reduce((a, r) => a + r.washed, 0) / rows.length) * 1000) / 1000;
-  const crushed = Math.round(((rows as Array<{ crushed: number }>).reduce((a, r) => a + r.crushed, 0) / rows.length) * 1000) / 1000;
+  const avg = (k: 'mean' | 'washed' | 'crushed'): number => (rows.length === 0 ? 0 : (rows as Array<Record<string, number>>).reduce((a, r) => a + (r[k] as number), 0) / rows.length);
+  const mean = Math.round(avg('mean'));
+  const washed = Math.round(avg('washed') * 1000) / 1000;
+  const crushed = Math.round(avg('crushed') * 1000) / 1000;
   let walk: unknown = null;
   if (live) {
     // Live view: stand at the centre, wait until the trim stops changing, then walk across the room and read the trim every frame.
     walk = await gpu.evaluate(async (a: { cx: number; cz: number; z0: number; z1: number }) => {
-      const r = window.__aether?.simulation?.renderer as unknown as { setCameraPose(x: number, y: number, z: number, yaw: number, pitch: number): void; eyeExposure: { trim: number; ev: number } };
+      const r = window.__aether?.simulation?.renderer as unknown as { setCameraPose(x: number, y: number, z: number, yaw: number, pitch: number): void; eyeExposure: { trim: number; ev: number; room: string | null } };
       const sleep = (ms: number): Promise<void> => new Promise((res) => setTimeout(res, ms));
       r.setCameraPose(a.cx, 1.6, a.z0 + 1, 0, 0);
       let last = Number.NaN;
       let steady = 0;
       const t0 = performance.now();
-      while (steady < 8 && performance.now() - t0 < 60000) {
+      while ((steady < 10 || performance.now() - t0 < 20000) && performance.now() - t0 < 90000) {
         await sleep(1000);
         const t = r.eyeExposure.trim;
         steady = Math.abs(t - last) < 0.01 ? steady + 1 : 0;
         last = t;
       }
       const settled = r.eyeExposure.trim;
-      const seen: number[] = [];
-      const evs: number[] = [];
-      for (let i = 0; i < 90; i++) {
-        r.setCameraPose(a.cx, 1.6, a.z0 + 1 + ((a.z1 - a.z0 - 2) * i) / 90, 0, 0);
-        await new Promise((res) => requestAnimationFrame(() => res(null)));
-        seen.push(r.eyeExposure.trim);
-        evs.push(r.eyeExposure.ev);
-      }
-      return { trimAtRest: Math.round(settled * 100) / 100, trimWhileWalking: { min: Math.round(Math.min(...seen) * 100) / 100, max: Math.round(Math.max(...seen) * 100) / 100 }, roomEv: { min: Math.round(Math.min(...evs) * 100) / 100, max: Math.round(Math.max(...evs) * 100) / 100 }, restedSeconds: Math.round((performance.now() - t0) / 1000) };
+      const r2 = (v: number): number => Math.round(v * 100) / 100;
+      // One walk across the room: the trim read every frame; how far it moves while the eye stays in one room, and the largest step.
+      const walkOnce = async (reverse: boolean): Promise<{ maxStepPerFrame: number; sameRoomDrift: number; roomsCrossed: number; trimMin: number; trimMax: number; evMin: number; evMax: number }> => {
+        const seen: number[] = [];
+        const evs: number[] = [];
+        const rooms: Array<string | null> = [];
+        for (let i = 0; i < 90; i++) {
+          const f = reverse ? 1 - i / 90 : i / 90;
+          r.setCameraPose(a.cx, 1.6, a.z0 + 1 + (a.z1 - a.z0 - 2) * f, reverse ? Math.PI : 0, 0);
+          await new Promise((res) => requestAnimationFrame(() => res(null)));
+          seen.push(r.eyeExposure.trim);
+          evs.push(r.eyeExposure.ev);
+          rooms.push(r.eyeExposure.room);
+        }
+        let maxStep = 0;
+        let drift = 0;
+        let runMin = seen[0] as number;
+        let runMax = seen[0] as number;
+        for (let i = 1; i < seen.length; i++) {
+          maxStep = Math.max(maxStep, Math.abs((seen[i] as number) - (seen[i - 1] as number)));
+          if (rooms[i] === rooms[i - 1]) {
+            runMin = Math.min(runMin, seen[i] as number);
+            runMax = Math.max(runMax, seen[i] as number);
+          } else {
+            drift = Math.max(drift, runMax - runMin);
+            runMin = runMax = seen[i] as number;
+          }
+        }
+        drift = Math.max(drift, runMax - runMin);
+        return { maxStepPerFrame: Math.round(maxStep * 1000) / 1000, sameRoomDrift: r2(drift), roomsCrossed: new Set(rooms).size, trimMin: r2(Math.min(...seen)), trimMax: r2(Math.max(...seen)), evMin: r2(Math.min(...evs)), evMax: r2(Math.max(...evs)) };
+      };
+      const first = await walkOnce(false);
+      // A read-back asked for at rest can still be on its way when the first walk starts: the second walk is the pumping test.
+      await sleep(8000);
+      const second = await walkOnce(true);
+      return { trimAtRest: r2(settled), restedSeconds: Math.round((performance.now() - t0) / 1000), firstWalk: first, secondWalk: second };
     }, { cx, cz, z0: z0 + pz, z1: z1 + pz });
     process.stdout.write(`walk: ${JSON.stringify(walk)}\n`);
   }

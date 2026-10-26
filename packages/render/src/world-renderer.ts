@@ -737,6 +737,8 @@ export class WorldRenderer {
   private docGrade: Environment['grade'] | null = null;
   /** The look the document carries (tuned by the reviewer per world); every field, when omitted, keeps the constant of this module. */
   private docLook: Environment['look'] | null = null;
+  /** `environment.exposure` as the document sets it (the sky preset's own exposure is not the author's bias). */
+  private docExposure = 1;
   /** The grade preset currently applied. */
   private look: GradePreset = GRADE_PRESETS['archviz-daylight'];
   /** Called when the effective render quality changes (e.g. studio fell back to realtime). */
@@ -2072,6 +2074,7 @@ export class WorldRenderer {
     this.applyWind(env.wind);
     this.docGrade = env.grade ?? null;
     this.docLook = env.look ?? null;
+    this.docExposure = env.exposure ?? 1;
     setFoliageTint(env.look?.foliageTint ?? null);
     // The exterior (`surroundings`) is drawn beyond the plot and is not in the light the building bakes: changing only it keeps the baked light.
     const lightKey = JSON.stringify({ ...env, surroundings: undefined, look: env.look ? { ...env.look, intent: undefined } : undefined });
@@ -3276,7 +3279,9 @@ export class WorldRenderer {
       }
       this.warming = false;
     }
-    if (opts.onDemand === true && !changed && !refine) {
+    // A still view inside a building: one more frame now and then so the picture can be read back for the room's exposure trim.
+    const trimDue = opts.onDemand === true && !changed && !refine && this.trimIdleDue();
+    if (opts.onDemand === true && !changed && !refine && !trimDue) {
       // A reduced motion frame must not become the permanent idle editor image.
       if (this.adaptive.scale < 1) {
         this.adaptive.reset();
@@ -3599,7 +3604,16 @@ export class WorldRenderer {
    */
   private trimWatch(): void {
     if ((globalThis as { __NOTRIM?: boolean }).__NOTRIM) return;
-    if (this.sampling || this.disposed || this.lost || !this.lightVolume.ready || !this.roomPick) return;
+    const debug = (globalThis as { __TRIMLOG?: boolean }).__TRIMLOG === true;
+    const why = (reason: string): void => {
+      if (debug && now() - this.trimDebugAt > 1500) {
+        this.trimDebugAt = now();
+        console.warn(`[trim] watch blocked: ${reason}`);
+      }
+    };
+    if (this.sampling || this.disposed || this.lost) return why('sampling or lost');
+    if (!this.lightVolume.ready) return why('light volume not ready');
+    if (!this.roomPick) return why('no room under the eye');
     // The eye has to have stood still for a moment (at rest in the editor, or a walker who stopped): never while it moves.
     const t = now();
     const e = this.perspective.matrixWorld.elements;
@@ -3610,11 +3624,14 @@ export class WorldRenderer {
         this.trimPose[i] = e[i] as number;
       }
     }
-    if (!still) this.trimStillAt = t;
-    if (t - this.trimStillAt < 400) return;
-    if (typeof createImageBitmap !== 'function' || this.captureActive) return;
-    if (this.warming || this.grow.active || this.preparation.pending > 0 || this.programs.pending > 0) return;
-    if (Math.abs((this.roomTrim.get(this.roomPick.id) ?? 0) - this.trimNow) > 0.02) return;
+    if (!still) {
+      this.trimStillAt = t;
+      this.trimQuiet = 0;
+    }
+    if (t - this.trimStillAt < 400) return why('eye moving');
+    if (typeof createImageBitmap !== 'function' || this.captureActive) return why('no bitmap or capture running');
+    if (this.warming || this.grow.active || this.preparation.pending > 0 || this.programs.pending > 0) return why(`busy: warming ${String(this.warming)} grow ${String(this.grow.active)} prep ${this.preparation.pending} programs ${this.programs.pending}`);
+    if (Math.abs((this.roomTrim.get(this.roomPick.id) ?? 0) - this.trimNow) > 0.02) return why('trim still easing');
     // A picture that stopped changing the trim is looked at only now and then (an animated world draws every frame).
     if (t - this.trimAt < (this.trimQuiet >= 3 ? 5000 : 700)) return;
     this.trimAt = t;
@@ -3622,9 +3639,23 @@ export class WorldRenderer {
     this.sampleViewAsync(true);
   }
 
+  private trimDebugAt = 0;
+
+  /**
+   * An idle view (nothing else asks for a frame) inside a building whose trim is still being learned: it draws one more frame every
+   * 0.7 s, at most three reads in a row that leave the trim as it was (the counter starts again when the eye moves), so a view
+   * that comes to rest reaches its exposure without waiting for something to animate.
+   */
+  private trimIdleDue(): boolean {
+    if ((globalThis as { __NOTRIM?: boolean }).__NOTRIM || this.sampling || !this.lightVolume.ready || !this.roomPick) return false;
+    if (this.trimQuiet >= 3 || this.captureActive) return false;
+    const t = now();
+    return t - this.trimStillAt >= 400 && t - this.trimAt >= 700;
+  }
+
   /** The author's lighting intent and the exposure they set by eye (a bias): what the trim steers the picture toward. */
   private trimIntent(): TrimIntent {
-    const ev = Math.log2(Math.max(0.05, this.env.exposure)) + (this.docGrade?.exposureEv ?? 0);
+    const ev = Math.log2(Math.max(0.05, this.docExposure)) + (this.docGrade?.exposureEv ?? 0);
     return { ...(this.docLook?.intent?.key ? { key: this.docLook.intent.key } : {}), biasEv: ev };
   }
 
@@ -3683,6 +3714,7 @@ export class WorldRenderer {
     if (!s || s.high === undefined || room === null || this.disposed || this.roomPick?.id !== room) return;
     const cur = this.roomTrim.get(room) ?? 0;
     const next = nextTrim(cur, { mean: s.mean, high: s.high, low: s.low ?? 0 }, this.trimIntent());
+    if ((globalThis as { __TRIMLOG?: boolean }).__TRIMLOG) console.warn(`[trim] live room ${room} mean ${s.mean.toFixed(0)} high ${s.high.toFixed(3)} trim ${cur.toFixed(2)} -> ${next.toFixed(2)}`);
     if (next === cur) {
       this.trimQuiet++;
       return;
