@@ -5,7 +5,7 @@
  * here, and patches are validated again by the host's `applyPatches`.
  */
 import { describeModel, findModels, loadCatalog, searchAssets } from '@aether/assets';
-import { applyArchOps, runDesignTool, type DesignToolName } from '@aether/arch';
+import { applyArchOps, describePartLine, findCrafted, partInfo, runDesignTool, type DesignToolName } from '@aether/arch';
 import { GeneratorDef, ScriptDef, applyPatches, carryPatches, characterPatches, hasOwn, isPlainObject, type CarriedDependent, type Patch, type PatchError, type WorldDoc } from '@aether/core';
 import { summarizeWorldForModel } from './world-text';
 import type { z } from 'zod';
@@ -392,14 +392,28 @@ async function searchAssetsTool(input: z.infer<typeof ToolInputs.search_assets>)
 }
 
 /** find_model: ranked real models for one piece with the facts to judge them by. */
+/** Crafted procedural parts that answer `what`, as lines the model can place from (free world shape, rows, or a room). */
+function craftedLines(what: string): string[] {
+  const out: string[] = [];
+  for (const def of findCrafted(what, 3)) {
+    const info = partInfo(def.kind);
+    if (!info) continue;
+    const aliases = (def.aliases ?? []).slice(0, 4).join(', ');
+    out.push(`${describePartLine(info)}\n  crafted part "${def.kind}"${aliases ? ` (also: ${aliases})` : ''}, real detail, one cheap mesh that instances: free world shape {"kind":"procedural","generator":"${def.id}","params":{...}}; many at once shape_land {op:"row"|"grid"|"tier", of:"${def.id}"}; in a room place_items {"kind":"${def.kind}"}.`);
+  }
+  return out;
+}
+
 async function findModelTool(input: z.infer<typeof ToolInputs.find_model>): Promise<ToolOutcome> {
+  const crafted = craftedLines(input.what);
   const catalog = await loadCatalog();
-  if (catalog.entries.length === 0) return { content: 'The model library is not available here: use the parametric parts.', isError: false, events: [], edited: false };
+  const craftedBlock = crafted.length > 0 ? `Crafted parts (procedural, built to the real object, preferred over a box or a stretched model):\n${crafted.join('\n')}\n` : '';
+  if (catalog.entries.length === 0) return { content: craftedBlock || 'The model library is not available here: use the parametric parts.', isError: false, events: [], edited: false };
   const hits = findModels(catalog, { text: input.what, limit: input.limit, ...(input.style ? { style: input.style } : {}), ...(input.category ? { category: input.category } : {}), ...(input.look ? { look: input.look } : {}), ...(input.color ? { color: input.color } : {}), ...(input.size ? { size: input.size } : {}) });
-  if (hits.length === 0) return { content: `No library model matches "${input.what.slice(0, 80)}". Use the parametric part for this kind (see the parts list).`, isError: false, events: [], edited: false };
+  if (hits.length === 0) return { content: craftedBlock ? `${craftedBlock}No photographed library model matches "${input.what.slice(0, 80)}".` : `No library model matches "${input.what.slice(0, 80)}". Use the parametric part for this kind (see the parts list).`, isError: false, events: [], edited: false };
   const lines = hits.map(describeModel);
   const same = hits[0]!.entry.interior?.type;
-  return { content: clip(`${lines.join('\n')}\nPlace with place_items {"kind":"model:<id>","room":...,"fit":[w,h,d]} (the model is scaled within 0.5x to 2x). ${same ? `Other ${same} models exist: ask again with another style or colour.` : ''}`), isError: false, events: [], edited: false };
+  return { content: clip(`${craftedBlock}${craftedBlock ? 'Library models:\n' : ''}${lines.join('\n')}\nPlace with place_items {"kind":"model:<id>","room":...,"fit":[w,h,d]} (the model is scaled within 0.5x to 2x); in a free world shape {"kind":"asset","id":"<id>"}. ${same ? `Other ${same} models exist: ask again with another style or colour.` : ''}`), isError: false, events: [], edited: false };
 }
 
 function inspectTool(ctx: ExecutorContext, input: z.infer<typeof ToolInputs.inspect>): ToolOutcome {

@@ -19,8 +19,10 @@ import { z } from 'zod';
 import { Builder, r2, type Mood } from './providers/mock/builder';
 import { naturalGround, scatterBelt, type ThemeCtx } from './providers/mock/decor';
 import { groundRibbon, terrainHeight } from './providers/mock/showcase/kit';
+import { gridPatches, tierPatches, type Facing } from './layout';
 
 const XZ = z.number().min(-2000).max(2000);
+const FacingSchema = z.union([z.enum(['north', 'south', 'east', 'west']), z.number().min(-360).max(360)]);
 
 /** Input of the `shape_land` tool. */
 export const LandInput = z.discriminatedUnion('op', [
@@ -53,6 +55,44 @@ export const LandInput = z.discriminatedUnion('op', [
     points: z.array(z.tuple([XZ, XZ])).min(2).max(64),
     width: z.number().min(0.6).max(14).default(1.8),
     surface: z.enum(['soil', 'gravel', 'cobble', 'sand', 'decking', 'asphalt', 'dry-earth']).default('soil'),
+    color: Color.optional(),
+    name: z.string().max(60).optional(),
+  }),
+  z.object({
+    op: z.literal('grid'),
+    at: z.tuple([XZ, XZ]),
+    cols: z.number().int().min(1).max(100),
+    rows: z.number().int().min(1).max(100),
+    of: z.string().min(1).max(64),
+    params: z.record(z.string(), z.unknown()).optional(),
+    spacingX: z.number().min(0.2).max(30).optional(),
+    spacingZ: z.number().min(0.2).max(30).optional(),
+    facing: FacingSchema.default('north'),
+    aisles: z.number().int().min(0).max(6).default(0),
+    aisleWidth: z.number().min(0.6).max(4).default(1.2),
+    y: z.number().min(-50).max(500).default(0),
+    name: z.string().max(60).optional(),
+  }),
+  z.object({
+    op: z.literal('tier'),
+    at: z.tuple([XZ, XZ]),
+    rows: z.number().int().min(1).max(40),
+    seatsPerRow: z.number().int().min(1).max(100),
+    of: z.string().min(1).max(64).default('furn-cinema-seat'),
+    params: z.record(z.string(), z.unknown()).optional(),
+    seatWidth: z.number().min(0.3).max(2).optional(),
+    rowDepth: z.number().min(0.6).max(2.5).default(1.05),
+    riser: z.union([z.literal('auto'), z.number().min(0).max(0.5)]).default('auto'),
+    facing: FacingSchema.default('north'),
+    aisles: z.number().int().min(0).max(6).default(1),
+    aisleWidth: z.number().min(0.6).max(4).default(1.1),
+    margin: z.number().min(0).max(4).default(0.6),
+    screenDistance: z.number().min(1).max(40).default(6),
+    screenBottom: z.number().min(0).max(8).default(1),
+    eye: z.number().min(0.6).max(1.6).default(1.1),
+    clearance: z.number().min(0).max(0.5).default(0.12),
+    stepLights: z.boolean().default(true),
+    finish: z.enum(['carpet', 'concrete', 'oak', 'tile']).default('carpet'),
     color: Color.optional(),
     name: z.string().max(60).optional(),
   }),
@@ -106,6 +146,8 @@ export function landPatches(world: WorldDoc, input: LandInput): { patches: Patch
   const seed = hashString(JSON.stringify(input)) >>> 0;
   const ids = Object.keys(world.entities);
   if (input.op === 'row') return rowPatches(world, input, seed, ids);
+  if (input.op === 'grid') return gridPatches(world, { ...input, facing: input.facing as Facing, params: input.params as Record<string, Json> | undefined }, seed, knownGenerator(world));
+  if (input.op === 'tier') return tierPatches(world, { ...input, facing: input.facing as Facing, params: input.params as Record<string, Json> | undefined }, seed, knownGenerator(world));
   if (input.op === 'mound') {
     const b = new Builder(seed, ids, CALM);
     const h = worldGround(world);
@@ -217,6 +259,11 @@ function alongPolyline(pts: ReadonlyArray<readonly [number, number]>, spacing: n
     length += len;
   }
   return { at, length };
+}
+
+/** True for a generator id the world can draw: built-in (including crafted furn-*), library, or defined in the world. */
+function knownGenerator(world: WorldDoc): (id: string) => boolean {
+  return (id) => Boolean(getBuiltinGenerator(id)) || isLibraryGenerator(id) || Object.prototype.hasOwnProperty.call(world.generators ?? {}, id);
 }
 
 /** `row`: one instanced scatter of `of`, one instance per step along the polyline, each on the ground at its point. */

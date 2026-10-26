@@ -29,7 +29,7 @@ export const HIT_TOLERANCE = 0.14;
 export const RAY_START = 0.05;
 
 /** Seat surface height (metres above the floor) by furniture kind; kinds without an entry cannot be sat on. */
-export const SEAT_HEIGHT: Readonly<Record<string, number>> = Object.freeze({ sofa: 0.42, armchair: 0.42, chair: 0.45, 'office-chair': 0.46, 'bar-stool': 0.65, 'cane-chair': 0.46, bench: 0.45, stool: 0.45, bed: 0.5, lounger: 0.4 });
+export const SEAT_HEIGHT: Readonly<Record<string, number>> = Object.freeze({ sofa: 0.42, armchair: 0.42, chair: 0.45, 'office-chair': 0.46, 'bar-stool': 0.65, 'cane-chair': 0.46, 'cinema-seat': 0.46, pew: 0.45, bench: 0.45, stool: 0.45, bed: 0.5, lounger: 0.4 });
 /** Eye height above the seat surface while sitting (metres). */
 export const SEATED_EYE = 0.72;
 /** Kinds with a backrest: the pelvis sits toward the back of the seat. */

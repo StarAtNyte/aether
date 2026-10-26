@@ -153,7 +153,11 @@ export function briefChecklistText(b: Brief, notes?: string): string {
   lines.push(
     b.elaboration === 'minimal'
       ? 'The user wants it small and simple: keep it sparse and do not add extras beyond what they asked.'
-      : 'Build the elements at their counts: place repeated things with place_items (op "row" or arrays, sized from the counts), pick real models with find_model where the library has them, and give every zone its own character. Do not stop at the shell and a few props.',
+      : [
+          'Build the elements at their counts, and build each as the real object. First ask find_model for every element: crafted parts with real detail exist for many venue pieces (furn-cinema-seat, furn-tier-steps, furn-cinema-screen, furn-stage, furn-speaker, furn-acoustic-panel, furn-step-light, furn-lectern, furn-pew, furn-altar, furn-library-stack, furn-vitrine, furn-reception-desk, furn-school-desk, furn-blackboard, furn-dining-table, furn-cane-chair, furn-bookshelf, furn-frame ...), then photographed library models; never build a seat, shelf, desk or display case from boxes when a part exists.',
+          'Place repeated things in ONE call each, not one entity per piece: shape_land {op:"tier"} for raked seating on a stepped floor (rows, seatsPerRow, aisles; the sightline is solved and every seat stands at its row height), {op:"grid"} for blocks with aisles (pews, desks, tables, library stacks), {op:"row"} along a line (lamps, fence posts, trees), or a scatter with points. One-offs (screen, stage, counter, altar, booth window) go in with apply_patches as {"kind":"procedural","generator":"furn-..."} at measured positions. Give every zone its own character.',
+          'Light it for a visitor at eye height (1.6 m): a venue is dim but never near-black. The focus glows (screen, stage, altar, display cases), aisle and step lights mark the way, wall sconces or wall washers every 3-4 m, a soft fill so walls, seats and floor read; emissive meshes alone light nothing, so put real point or spot lights near the fixtures, then look from eye height and lift the exposure or ambient with tune_look if it still reads dark.',
+        ].join('\n'),
   );
   return lines.join('\n');
 }
@@ -161,8 +165,13 @@ export function briefChecklistText(b: Brief, notes?: string): string {
 const norm = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const stem = (w: string): string => (w.length > 3 && w.endsWith('s') ? w.slice(0, -1) : w);
 
+/** Instances a scatter stands for (1 for any other entity). */
+function instancesOf(e: Entity): number {
+  return e.shape.kind === 'scatter' ? Math.max(1, e.shape.points ? e.shape.points.length : e.shape.count) : 1;
+}
+
 function entityText(e: Entity, id: string): string {
-  const kind = e.shape.kind === 'procedural' ? e.shape.generator : e.shape.kind === 'asset' ? e.shape.id : e.shape.kind;
+  const kind = e.shape.kind === 'procedural' ? e.shape.generator : e.shape.kind === 'asset' ? e.shape.id : e.shape.kind === 'scatter' && e.shape.of.kind === 'procedural' ? `scatter ${e.shape.of.generator}` : e.shape.kind;
   return norm(`${id} ${e.name} ${e.tags.join(' ')} ${kind}`);
 }
 
@@ -178,9 +187,12 @@ export function richnessEvidence(world: WorldDoc, b: Brief): string {
   const lines = [`Advisory piece counts (evidence for your judgement, not a pass mark): ${ids.length} entities in the world, about ${kinds.size} distinct kinds; the brief aimed at about ${b.richness.pieces} pieces and ${b.richness.kinds} kinds.`];
   for (const el of b.elements) {
     const words = (el.find && el.find.length > 0 ? el.find : [el.name]).map((w) => norm(w)).filter(Boolean);
-    const hits = texts.filter((t) => words.some((w) => w.split(' ').every((p) => t.text.includes(` ${p} `) || t.text.includes(` ${stem(p)}`)))).map((t) => t.id);
-    const mark = hits.length === 0 ? 'NONE FOUND' : hits.length < el.count * 0.5 ? 'sparse' : 'ok';
-    lines.push(`- ${el.name}: brief ${el.count}, found ${hits.length} (${mark})${hits.length > 0 ? `, e.g. ${hits.slice(0, 3).join(', ')}` : ''}`);
+    const hitIds = texts.filter((t) => words.some((w) => w.split(' ').every((p) => t.text.includes(` ${p} `) || t.text.includes(` ${stem(p)}`)))).map((t) => t.id);
+    // A scatter of 120 seats is one entity and 120 pieces.
+    const found = hitIds.reduce((n, id) => n + instancesOf(world.entities[id] as Entity), 0);
+    const mark = found === 0 ? 'NONE FOUND' : found < el.count * 0.5 ? 'sparse' : 'ok';
+    const grouped = found !== hitIds.length ? ` in ${hitIds.length} entit${hitIds.length === 1 ? 'y' : 'ies'}` : '';
+    lines.push(`- ${el.name}: brief ${el.count}, found ${found}${grouped} (${mark})${hitIds.length > 0 ? `, e.g. ${hitIds.slice(0, 3).join(', ')}` : ''}`);
   }
   lines.push('A count is only a hint: pieces may be named differently, or one repeated piece may stand for several. You judge.');
   return lines.join('\n');
@@ -192,7 +204,7 @@ export function richnessReviewText(b: Brief, world: WorldDoc, round: number, not
     'RICHNESS REVIEW. Compare what is built with your brief.',
     briefChecklistText(b, notes),
     richnessEvidence(world, b),
-    round === 1 ? 'Look at the renders (eye height inside, and the overview). Call inspect {groups:true} to read the groups of repeated things. List what is missing or sparse against the brief (zones empty, elements absent, rows too few, bare walls, no light fittings, floor and ceiling plain), then fix the largest gaps with small patches (place_items rows, find_model, edit_items). Call finish when the world is as rich as the brief said it should be, or say plainly what you left out and why.' : 'Look again against the brief: what is still missing or sparse? Fix the largest gaps with small patches, or call finish when it is as rich as the brief said.',
+    round === 1 ? 'Look at the renders (eye height inside, and the overview). Call inspect {groups:true} to read the groups of repeated things. List what is missing or sparse against the brief (zones empty, elements absent, rows too few, bare walls, no light fittings, floor and ceiling plain), then fix the largest gaps with small patches (shape_land tier / grid / row blocks, find_model parts, edit_items). Call finish when the world is as rich as the brief said it should be, or say plainly what you left out and why.' : 'Look again against the brief: what is still missing or sparse? Fix the largest gaps with small patches, or call finish when it is as rich as the brief said.',
     b.elaboration === 'minimal' ? 'The brief is minimal on purpose: do not add extras; only fix what is broken or missing from the few things asked.' : 'The brief asked for an elaborate result unless it says otherwise; do not approve a sparse one.',
   ].join('\n\n');
 }

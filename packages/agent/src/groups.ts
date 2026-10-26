@@ -101,7 +101,7 @@ export function readGroups(world: WorldDoc, only?: readonly string[]): string {
     const pts = list.map((e) => ({ x: e.transform.position[0], y: e.transform.position[1], z: e.transform.position[2] }));
     const n = nearest(pts, 0.6);
     const off = pts.filter((p) => Math.abs(p.y - ground(p.x, p.z)) > 0.35).length;
-    lines.push(`- ${g} x${list.length} as separate entities (${list.slice(0, 4).map((e) => e.id).join(', ')}${list.length > 4 ? ', …' : ''}): ${bounds(pts)}; neighbour distance min ${f(n.min)} m, typical ${f(n.mean)} m; ${n.touching} pair${n.touching === 1 ? '' : 's'} closer than 0.6 m${off > 0 ? `; ${off} more than 0.35 m off the ground height` : ''}. For more than 8 alike, one scatter or shape_land {op:"row"} is cheaper.`);
+    lines.push(`- ${g} x${list.length} as separate entities (${list.slice(0, 4).map((e) => e.id).join(', ')}${list.length > 4 ? ', …' : ''}): ${bounds(pts)}; neighbour distance min ${f(n.min)} m, typical ${f(n.mean)} m; ${n.touching} pair${n.touching === 1 ? '' : 's'} closer than 0.6 m${off > 0 ? `; ${off} more than 0.35 m off the ground height` : ''}. For more than 8 alike, one scatter or shape_land {op:"row"|"grid"|"tier"} is cheaper.`);
   }
   if (lines.length === 0) return 'No groups: no scatter layers and no run of three or more alike entities.';
   const shown = lines.slice(0, MAX_LINES);

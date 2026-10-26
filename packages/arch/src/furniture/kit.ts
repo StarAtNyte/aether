@@ -94,6 +94,8 @@ export interface FurnitureDef {
   /** Furniture kind used by layouts, checks and the agent ("sofa"). */
   kind: string;
   description: string;
+  /** Other names the piece is asked for by ("theatre seat"): `find_model` and `place_items` resolve them to this kind. */
+  aliases?: readonly string[];
   params: Record<string, ParamSpec>;
   mount: Mount;
   /** Back against a wall when placed by layout helpers. */

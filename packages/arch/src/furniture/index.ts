@@ -22,6 +22,7 @@ import { CIVIC } from './civic';
 
 export type { FurnitureDef, Mount, MovableMotion, MovableSpec, ParamReader } from './kit';
 export { glowMaterial } from './lighting';
+export { tierHeights, TIER_BASE } from './venue';
 
 /** Every furniture generator, in a stable order. */
 export const FURNITURE: readonly FurnitureDef[] = Object.freeze([...SEATING, ...CANE, ...TABLES, ...BEDROOM, ...KITCHEN_SET, ...BATH, ...SINKS, ...DECOR, ...LIGHTING, ...TREES, ...VENUE, ...CIVIC]);
@@ -29,14 +30,91 @@ export const FURNITURE: readonly FurnitureDef[] = Object.freeze([...SEATING, ...
 const BY_ID: ReadonlyMap<string, FurnitureDef> = new Map(FURNITURE.map((f) => [f.id, f]));
 const BY_KIND: ReadonlyMap<string, FurnitureDef> = new Map(FURNITURE.map((f) => [f.kind, f]));
 
+/** Names the older pieces are also asked for by (the newer ones carry `aliases` on the definition). */
+const EXTRA_ALIASES: Readonly<Record<string, readonly string[]>> = {
+  'cane-chair': ['rattan chair', 'wicker chair', 'cane chair', 'bentwood chair'],
+  sink: ['washbasin', 'wash basin', 'basin', 'hand basin', 'pedestal sink', 'vessel sink', 'utility sink'],
+  fridge: ['refrigerator', 'fridge freezer'],
+  oven: ['cooker', 'stove', 'range cooker', 'hob'],
+  extractor: ['range hood', 'cooker hood', 'extractor hood'],
+  bookshelf: ['bookcase', 'book shelf', 'bookshelves', 'shelving unit'],
+  art: ['painting', 'picture frame', 'framed art', 'wall art', 'framed painting', 'poster frame', 'artwork'],
+  'cafe-counter': ['coffee counter', 'espresso bar', 'cafe counter', 'coffee bar', 'bakery counter'],
+  whiteboard: ['white board', 'dry erase board'],
+  rug: ['carpet', 'area rug', 'carpet runner'],
+  'bar-stool': ['bar stool', 'counter stool', 'high stool'],
+  'office-chair': ['desk chair', 'swivel chair', 'task chair'],
+  'dining-table': ['restaurant table', 'dining table', 'kitchen table'],
+  tree: ['indoor tree', 'potted tree'],
+};
+
+const STOP = new Set(['a', 'an', 'the', 'of', 'for', 'and', 'with', 'in', 'on', 'to', 'small', 'big', 'large', 'old', 'new', 'wooden', 'modern']);
+const singular = (w: string): string => (w.length > 3 && w.endsWith('s') && !w.endsWith('ss') && !w.endsWith('us') ? w.slice(0, -1) : w);
+/** Normalised phrase: lower case, punctuation to spaces, plural words made singular. */
+function phrase(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter(Boolean)
+    .map(singular)
+    .join(' ');
+}
+
+const ALIAS_KIND: ReadonlyMap<string, string> = (() => {
+  const m = new Map<string, string>();
+  for (const f of FURNITURE) {
+    for (const a of [f.kind, ...(f.aliases ?? []), ...(EXTRA_ALIASES[f.kind] ?? [])]) if (!m.has(phrase(a))) m.set(phrase(a), f.kind);
+  }
+  return m;
+})();
+
+/** The furniture kind a word names: the kind itself, else one of its aliases ("theatre seat" is a cinema-seat), else undefined. */
+export function resolveFurnitureKind(word: string): string | undefined {
+  if (BY_KIND.has(word)) return word;
+  return ALIAS_KIND.get(phrase(word));
+}
+
 /** Furniture definition by generator id. */
 export function furnitureById(id: string): FurnitureDef | undefined {
   return BY_ID.get(id);
 }
 
-/** Furniture definition by kind ("sofa", "bed"). */
+/** Furniture definition by kind ("sofa", "bed") or by one of its aliases ("theatre seat"). */
 export function furnitureByKind(kind: string): FurnitureDef | undefined {
-  return BY_KIND.get(kind);
+  const direct = BY_KIND.get(kind);
+  if (direct) return direct;
+  const k = ALIAS_KIND.get(phrase(kind));
+  return k ? BY_KIND.get(k) : undefined;
+}
+
+/**
+ * The crafted parts that answer a free-text request ("cinema seat", "church pew", "glass display case"), best first. A part
+ * matches by its kind or an alias appearing in the text (strongest), or by the words of the text found in its names and
+ * description. Used by `find_model` so a real piece is offered before a box is built.
+ */
+export function findCrafted(text: string, limit = 4): FurnitureDef[] {
+  const q = phrase(text);
+  if (!q) return [];
+  const words = q.split(' ').filter((w) => !STOP.has(w));
+  const padded = ` ${q} `;
+  const scored: Array<{ def: FurnitureDef; score: number }> = [];
+  for (const f of FURNITURE) {
+    let score = 0;
+    const names = [f.kind, ...(f.aliases ?? []), ...(EXTRA_ALIASES[f.kind] ?? [])].map(phrase);
+    for (const n of names) {
+      if (n === q) score = Math.max(score, 100);
+      else if (padded.includes(` ${n} `)) score = Math.max(score, 60 + n.split(' ').length * 8);
+    }
+    if (score === 0) {
+      const hay = new Set(names.join(' ').split(' ').concat(phrase(f.description.split(/[.;:]/)[0] ?? '').split(' ')));
+      const hits = words.filter((w) => hay.has(w)).length;
+      if (hits > 0 && hits >= Math.ceil(words.length / 2)) score = 20 + 10 * hits;
+    }
+    if (score >= 30) scored.push({ def: f, score });
+  }
+  return scored.sort((a, b) => b.score - a.score).slice(0, limit).map((x) => x.def);
 }
 
 function coerce(spec: ParamSpec, v: unknown): Json | undefined {

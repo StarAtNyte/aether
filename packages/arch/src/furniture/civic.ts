@@ -20,6 +20,7 @@ const TIMBER = ['oak', 'walnut', 'ash'];
 export const PEW: FurnitureDef = {
   id: 'furn-pew',
   kind: 'pew',
+  aliases: ['pew', 'church pew', 'church bench', 'chapel pew', 'chapel bench', 'kneeler bench'],
   description:
     'Church pew / chapel bench: carved end panels, a raked back with a rounded top rail, solid front panel, seat board, a hymn-book shelf on the back and a hinged kneeler with a cushion. The sitter faces +Z. A nave is a grid of these: shape_land {op:"grid", of:"furn-pew"} with a centre aisle.',
   params: {
@@ -101,6 +102,7 @@ function candlestick(set: PartSet, x: number, y: number, z: number, h: number): 
 export const ALTAR: FurnitureDef = {
   id: 'furn-altar',
   kind: 'altar',
+  aliases: ['altar', 'altar table', 'communion table', 'church altar'],
   description:
     'Altar / communion table: panelled front in timber or carved stone, a mensa top, a white linen cloth with a gold fringe, and (with `objects`) a brass cross between two candlesticks with lit candles. Faces +Z (the priest stands behind, at -Z, or the congregation at +Z).',
   params: {
@@ -165,6 +167,7 @@ const SPINES = ['#7a3b2e', '#2f4858', '#d9c7a3', '#556b4f', '#a23f3f', '#3c3a45'
 export const LIBRARY_STACK: FurnitureDef = {
   id: 'furn-library-stack',
   kind: 'library-stack',
+  aliases: ['library stack', 'book stack', 'library shelf', 'library shelves', 'library bookcase', 'double sided bookcase', 'stack shelf'],
   description:
     'Library stack: a freestanding double-sided bookcase of full shelves of books on both faces, thick end panels with label holders, a top cap and a plinth. 0.5 m deep, 2.0 m tall by default. Rows of stacks: shape_land {op:"grid", of:"furn-library-stack"} with 1.6-2 m between rows.',
   params: {
@@ -260,6 +263,7 @@ function exhibit(kind: string, h: number): Geom {
 export const VITRINE: FurnitureDef = {
   id: 'furn-vitrine',
   kind: 'vitrine',
+  aliases: ['vitrine', 'display case', 'museum case', 'museum vitrine', 'glass case', 'display cabinet', 'glass display', 'showcase', 'exhibit case', 'plinth', 'museum plinth', 'pedestal stand', 'display pedestal'],
   description:
     'Museum display: `variant` case (glass vitrine on a plinth with a steel frame and a warm LED strip), plinth (a bare white pedestal with a cap) or table (low flat display table with a glass top). `object` is the exhibit on show: vase, bowl, bust, urn or none. Footprint 0.9 x 0.6 m by default.',
   params: {
@@ -291,7 +295,7 @@ export const VITRINE: FurnitureDef = {
       set.add(box(-w / 2 + 0.03, 0.06, -d / 2 + 0.03, w / 2 - 0.03, H - 0.05, d / 2 - 0.03), baseCol);
       set.add(bevelSlab(-w / 2 - 0.01, H - 0.05, -d / 2 - 0.01, w / 2 + 0.01, H, d / 2 + 0.01, 0.01), baseCol);
       set.add(box(-w / 2 + 0.03, 0.06, d / 2 - 0.032, w / 2 - 0.03, 0.062, d / 2 - 0.03), paint('#2b2b2b'));
-      if (obj !== 'none') set.add(exhibit(obj, Math.min(0.5, w * 0.8)).translate(0, H, 0), mat('ceramic', '#d8c8a8'));
+      if (obj !== 'none') set.add(exhibit(obj, Math.min(0.5, w * 0.8)).translate(0, H, 0), paint('#d9c7a0', 0.5));
       set.boxMinMax(-w / 2, 0, -d / 2, w / 2, H, d / 2);
       return set.build();
     }
@@ -311,7 +315,7 @@ export const VITRINE: FurnitureDef = {
     if (p.bool('lit')) set.add(box(-w / 2 + 0.05, gy1 - fr - 0.012, -d / 2 + 0.05, w / 2 - 0.05, gy1 - fr, -d / 2 + 0.065), EMISSIVE('#ffe4b8', 3));
     // Interior: a velvet bed and the exhibit on a small stand.
     set.add(box(-w / 2 + fr, gy0 + fr, -d / 2 + fr, w / 2 - fr, gy0 + fr + 0.012, d / 2 - fr), { finish: 'velvet', color: '#1f2a36' });
-    if (obj !== 'none') set.add(exhibit(obj, Math.min(0.5, (gy1 - gy0) * 0.6, w * 0.75)).translate(0, gy0 + fr + 0.012, 0), mat('ceramic', '#d9c9a6'));
+    if (obj !== 'none') set.add(exhibit(obj, Math.min(0.5, (gy1 - gy0) * 0.6, w * 0.75)).translate(0, gy0 + fr + 0.012, 0), paint('#dccaa2', 0.5));
     // A small label plate on the base front.
     set.add(box(-0.08, baseH * 0.55, d / 2 - 0.018, 0.08, baseH * 0.55 + 0.05, d / 2 - 0.012), mat('brass'));
     set.boxMinMax(-w / 2, 0, -d / 2, w / 2, H, d / 2);
@@ -326,12 +330,13 @@ export const VITRINE: FurnitureDef = {
 export const RECEPTION_DESK: FurnitureDef = {
   id: 'furn-reception-desk',
   kind: 'reception-desk',
+  aliases: ['reception desk', 'reception', 'front desk', 'ticket desk', 'ticket booth', 'concession counter', 'concession stand', 'snack bar', 'kiosk counter', 'bar counter', 'pub bar', 'service counter', 'check in desk', 'nurse station'],
   description:
     'Service counter: `variant` reception (panelled front, a raised guest ledge at 1.1 m and a working top at 0.75 m, warm under-light), concession (cinema or kiosk counter: glass display case of snacks, a popcorn machine and a lit menu band), bar (panelled bar with a brass foot rail and a back bar of shelves, bottles and a mirror). Customers on +Z, staff behind at -Z. Use `length`. Stools: bar-stool or cane-chair.',
   params: {
     variant: choice(['reception', 'concession', 'bar'], 'reception', 'reception / ticket desk, concession counter or bar'),
     length: num(3.0, 1.2, 8, 'length (m)'),
-    front: choice(['oak', 'walnut', 'paint', 'terrazzo'], 'walnut', 'front panelling'),
+    front: choice(['oak', 'walnut', 'paint', 'terrazzo'], 'oak', 'front panelling'),
     top: choice(['marble', 'terrazzo', 'concrete', 'oak', 'walnut'], 'marble', 'top finish'),
     accent: color('#c0392b', 'accent colour (popcorn stripes, menu band)'),
   },
@@ -446,6 +451,7 @@ export const RECEPTION_DESK: FurnitureDef = {
 export const SCHOOL_DESK: FurnitureDef = {
   id: 'furn-school-desk',
   kind: 'school-desk',
+  aliases: ['school desk', 'classroom desk', 'student desk', 'desk and chair', 'lecture desk', 'exam desk'],
   description:
     'Classroom desk with a chair: a laminate top with a rounded front, a book rack under it on a tube steel frame, and a moulded seat and back on its own frame (`chair` false for a bare desk). The student faces -Z (towards the board), so a classroom is a grid of these with yaw 180, or place the grid rotated.',
   params: {
@@ -499,6 +505,7 @@ export const SCHOOL_DESK: FurnitureDef = {
 export const BLACKBOARD: FurnitureDef = {
   id: 'furn-blackboard',
   kind: 'blackboard',
+  aliases: ['blackboard', 'chalkboard', 'greenboard', 'classroom board', 'school board'],
   description: 'Wall-mounted classroom blackboard (or greenboard) in a timber frame with a chalk ledge, chalk and an eraser, with faint chalk dust; back at z = 0, origin at the bottom centre (hang at about 0.9 m).',
   params: {
     width: num(3.6, 1, 8, 'width (m)'),
@@ -528,7 +535,7 @@ export const BLACKBOARD: FurnitureDef = {
     set.add(box(-w / 2, 0, 0, w / 2, h, 0.025), { finish: 'paint', color: board, roughness: 0.92 });
     const dust = new Geom();
     for (let k = 0; k < 4; k++) dust.merge(new Geom().quadAuto([-w / 2 + w * (0.1 + 0.2 * k), h * 0.2, 0.0262], [-w / 2 + w * (0.2 + 0.2 * k), h * 0.24, 0.0262], [-w / 2 + w * (0.2 + 0.2 * k), h * 0.62, 0.0262], [-w / 2 + w * (0.1 + 0.2 * k), h * 0.7, 0.0262]));
-    set.add(dust, { finish: 'paint', color: mixColor(board, '#ffffff', 0.18), roughness: 0.95 });
+    set.add(dust, { finish: 'paint', color: mixColor(board, '#ffffff', 0.07), roughness: 0.95 });
     const chalk = new Geom();
     for (let k = 0; k < 3; k++) chalk.merge(cylinder(0.006, 0.006, 0.07, 8).rotateZ(90).translate(-w * 0.2 + k * 0.1, -f - 0.04 + 0.0, 0.0).translate(0, 0.012, 0.045));
     set.add(chalk, paint('#f2f0e8', 0.9));

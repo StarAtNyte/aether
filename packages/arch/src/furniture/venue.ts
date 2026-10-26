@@ -22,6 +22,7 @@ const EMISSIVE = (c: string, k: number) => ({ preset: 'emissive' as const, color
 export const CINEMA_SEAT: FurnitureDef = {
   id: 'furn-cinema-seat',
   kind: 'cinema-seat',
+  aliases: ['cinema seat', 'theatre seat', 'theater seat', 'auditorium seat', 'movie seat', 'movie theater seat', 'cinema chair', 'theatre chair', 'stadium seat', 'flip up seat', 'tip up seat', 'lecture hall seat'],
   description:
     'Cinema / theatre / auditorium seat: flip-up padded seat on a hinge, high padded back with head roll, cast steel end standards, armrests with a cup holder. Front faces +Z (the screen is at +Z); one seat is 0.56 m wide, so a row is one scatter. Place rows with shape_land {op:"tier"}.',
   params: {
@@ -98,9 +99,18 @@ export const CINEMA_SEAT: FurnitureDef = {
 /** Height of the floor under the front row (m): the tier's base slab. */
 export const TIER_BASE = 0.04;
 
+/**
+ * Height of the tread of each row of a tier: row k stands `riser` above row k-1, plus `growth` more per row (the risers of a
+ * raked auditorium grow towards the back so the rear rows still see over the heads in front).
+ */
+export function tierHeights(rows: number, riser: number, growth = 0): number[] {
+  return Array.from({ length: rows }, (_, k) => TIER_BASE + k * riser + (growth * k * (k - 1)) / 2);
+}
+
 export const TIER_STEPS: FurnitureDef = {
   id: 'furn-tier-steps',
   kind: 'tier-steps',
+  aliases: ['tiered floor', 'stepped floor', 'raked floor', 'raked seating', 'tiered seating', 'stadium steps', 'auditorium floor', 'tier', 'amphitheatre steps', 'lecture hall steps', 'bleacher steps'],
   description:
     'Stepped (tiered, raked) floor of an auditorium or lecture hall: `rows` treads of depth `depth`, each `riser` higher than the one in front, carpet treads and dark risers, full width. Centred on its footprint; the lowest row is at +Z (towards the screen) and the room rises towards -Z. Tread k is at height 0.04 + k * riser. Seats stand on it: use shape_land {op:"tier"} to lay both.',
   params: {
@@ -108,6 +118,7 @@ export const TIER_STEPS: FurnitureDef = {
     width: num(8, 1, 40, 'width of the tier (m)'),
     depth: num(1.05, 0.6, 2.5, 'tread depth = row pitch (m)'),
     riser: num(0.18, 0.04, 0.5, 'height difference between rows (m)'),
+    growth: num(0, 0, 0.05, 'extra riser per row going back (m): a raked, sightline-correct floor has risers that grow'),
     finish: choice(['carpet', 'concrete', 'oak', 'tile'], 'carpet', 'tread finish'),
     color: color('#6e3441', 'tread colour'),
     riserColor: color('#2b1a20', 'riser and side colour'),
@@ -115,7 +126,7 @@ export const TIER_STEPS: FurnitureDef = {
   mount: 'floor',
   againstWall: false,
   frontClearance: 1,
-  size: (p) => [p.num('width'), TIER_BASE + (p.int('rows') - 1) * p.num('riser'), p.int('rows') * p.num('depth')],
+  size: (p) => [p.num('width'), tierHeights(p.int('rows'), p.num('riser'), p.num('growth')).pop() ?? TIER_BASE, p.int('rows') * p.num('depth')],
   build(p) {
     const set = new PartSet();
     const rows = p.int('rows');
@@ -123,6 +134,7 @@ export const TIER_STEPS: FurnitureDef = {
     const d = p.num('depth');
     const r = p.num('riser');
     const D = rows * d;
+    const heights = tierHeights(rows, r, p.num('growth'));
     const treads = new Geom();
     const risers = new Geom();
     const sides = new Geom();
@@ -130,9 +142,9 @@ export const TIER_STEPS: FurnitureDef = {
       const zc = D / 2 - d / 2 - k * d;
       const z0 = zc - d / 2;
       const z1 = zc + d / 2;
-      const top = TIER_BASE + k * r;
+      const top = heights[k] as number;
       treads.quadAuto([-w / 2, top, z1], [w / 2, top, z1], [w / 2, top, z0], [-w / 2, top, z0], -w / 2, -z1);
-      const below = k === 0 ? 0 : TIER_BASE + (k - 1) * r;
+      const below = k === 0 ? 0 : (heights[k - 1] as number);
       if (top - below > 1e-4) risers.quadAuto([-w / 2, below, z1], [w / 2, below, z1], [w / 2, top, z1], [-w / 2, top, z1], -w / 2, below);
       for (const s of [-1, 1] as const) {
         const x = s * (w / 2);
@@ -144,7 +156,7 @@ export const TIER_STEPS: FurnitureDef = {
     }
     // Back wall of the last step.
     const zBack = -D / 2;
-    const topBack = TIER_BASE + (rows - 1) * r;
+    const topBack = heights[rows - 1] as number;
     sides.quadAuto([w / 2, 0, zBack], [-w / 2, 0, zBack], [-w / 2, topBack, zBack], [w / 2, topBack, zBack], -w / 2, 0);
     const finish = p.str('finish');
     set.add(treads, { finish: finish as 'carpet', color: p.color('color') });
@@ -183,6 +195,7 @@ function screenStrip(w: number, z0: number, sag: number, yLow: (u: number) => nu
 export const CINEMA_SCREEN: FurnitureDef = {
   id: 'furn-cinema-screen',
   kind: 'cinema-screen',
+  aliases: ['cinema screen', 'movie screen', 'projection screen', 'projector screen', 'theatre screen', 'big screen'],
   description:
     'Cinema screen on a wall: black steel frame, black velvet masking on the top and sides, a slightly curved projection surface that glows (a projected film frame by default) so the hall is lit from the front. Origin at the bottom centre, back on the wall (z = 0), the picture faces +Z. Bottom edge about 0.9 m above the stage or floor: set y.',
   params: {
@@ -275,6 +288,7 @@ export const CINEMA_SCREEN: FurnitureDef = {
 export const STAGE: FurnitureDef = {
   id: 'furn-stage',
   kind: 'stage',
+  aliases: ['stage', 'theatre stage', 'theater stage', 'concert stage', 'platform stage', 'bandstand'],
   description:
     'Raised stage with a wooden deck, a black fascia with a brass trim line, front-corner steps and optional pleated velvet curtains (open to the sides or closed), a gathered valance and a black backdrop. Back at -Z, the audience on +Z. Footprint centred on the origin.',
   params: {
@@ -346,6 +360,7 @@ export const STAGE: FurnitureDef = {
 export const SPEAKER: FurnitureDef = {
   id: 'furn-speaker',
   kind: 'speaker',
+  aliases: ['speaker', 'loudspeaker', 'pa speaker', 'speaker box', 'speaker cabinet', 'subwoofer', 'stage monitor', 'surround speaker', 'line array'],
   description:
     'Loudspeaker: `variant` cabinet (PA cabinet with a grille, woofer rings and a horn tweeter, 0.45 x 0.75 m), surround (small wall or stand speaker 0.25 x 0.4 m, bracket), column (tall line-array bar 0.12 x 1.4 m) or monitor (stage wedge). Origin on the floor, the front faces +Z; for a wall speaker set y.',
   params: {
@@ -426,6 +441,7 @@ export const SPEAKER: FurnitureDef = {
 export const ACOUSTIC_PANEL: FurnitureDef = {
   id: 'furn-acoustic-panel',
   kind: 'acoustic-panel',
+  aliases: ['acoustic panel', 'acoustic wall panel', 'sound panel', 'sound absorber', 'sound diffuser', 'diffuser panel', 'soundproofing panel', 'acoustic slats'],
   description:
     'Acoustic wall panel (back on the wall, z = 0, origin at the bottom centre): `variant` fabric (wrapped panel in a bevelled frame, optionally with vertical ribs), slat (timber slats over dark felt) or diffuser (a quadratic-residue diffuser of wells of different depth). Hang rows of them along an auditorium, studio or restaurant wall.',
   params: {
@@ -505,8 +521,9 @@ export const ACOUSTIC_PANEL: FurnitureDef = {
 // ---------------------------------------------------------------------------
 
 export const BOOTH_WINDOW: FurnitureDef = {
-  id: 'furn-booth-window',
-  kind: 'booth-window',
+  id: 'furn-booth-port',
+  kind: 'booth-port',
+  aliases: ['projection booth window', 'projector window', 'booth window', 'projection window', 'projector port'],
   description:
     'Projection booth window for the back wall of an auditorium (back at z = 0 on the wall, origin at the bottom centre, mount about 3 m up): a black steel frame with `ports` small glazed apertures; a lit port glows from behind (the projector). Pair with a light beam or a spotlight aimed at the screen.',
   params: {
@@ -553,6 +570,7 @@ export const BOOTH_WINDOW: FurnitureDef = {
 export const STEP_LIGHT: FurnitureDef = {
   id: 'furn-step-light',
   kind: 'step-light',
+  aliases: ['step light', 'aisle light', 'aisle step light', 'stair light', 'riser light', 'floor marker light', 'aisle marker'],
   description:
     'Aisle step light: a small recessed LED marker with a metal plate and a warm glowing slot, set in a riser or the side of a seat standard; `variant` wall (flat plate, 0.14 x 0.05 m, back at z = 0) or bollard (low post 0.3 m). Cheap: place dozens as one scatter along an aisle.',
   params: {
@@ -588,6 +606,7 @@ export const STEP_LIGHT: FurnitureDef = {
 export const LECTERN: FurnitureDef = {
   id: 'furn-lectern',
   kind: 'lectern',
+  aliases: ['lectern', 'podium', 'pulpit', 'rostrum', 'speaker stand', 'reading desk'],
   description:
     'Lectern / podium / pulpit: `variant` lectern (tapered timber stand with a sloped reading desk, lip, panel inlay and a gooseneck microphone), podium (lower speaker block with a front panel) or pulpit (church: raised octagonal pulpit with a book ledge and a bible). Front (the speaker faces the audience) toward +Z.',
   params: {

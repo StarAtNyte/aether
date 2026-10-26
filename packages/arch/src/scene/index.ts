@@ -46,7 +46,7 @@ export {
   type ReviewOptions,
   type Walkability,
 } from './checks';
-export { listParts, partInfo, partKinds, describeParts, resolvePartParams, defaultWallBottom, wallBottomRange, itemEntity, fittingLight, KIND_SIZE_LIMITS, type PartInfo, type PartParam, type ItemSpec } from './parts';
+export { listParts, partInfo, partKinds, describeParts, describePartLine, resolvePartParams, defaultWallBottom, wallBottomRange, itemEntity, fittingLight, KIND_SIZE_LIMITS, type PartInfo, type PartParam, type ItemSpec } from './parts';
 export {
   placeItem,
   moveItem,

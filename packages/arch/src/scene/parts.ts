@@ -75,17 +75,18 @@ export function partKinds(): string[] {
  * size and parameters (`name=default (min..max)` or `{options}`).
  */
 export function describeParts(): string {
-  return listParts()
-    .map((p) => {
-      const ps = p.params
-        .map((q) => {
-          const range = q.options ? `{${q.options.join('|')}}` : q.min !== undefined && q.max !== undefined ? `(${q.min}..${q.max})` : '';
-          return `${q.name}=${typeof q.default === 'string' ? q.default : JSON.stringify(q.default)}${range}`;
-        })
-        .join(' ');
-      return `- ${p.kind} [${p.mount}${p.againstWall ? ', usually against a wall' : ''}] ${p.size.map((v) => Math.round(v * 100) / 100).join('×')} m, front clearance ${p.frontClearance} m: ${ps}`;
+  return listParts().map(describePartLine).join('\n');
+}
+
+/** One catalogue line of a part: kind, mount, default size, clearance and parameters. */
+export function describePartLine(p: PartInfo): string {
+  const ps = p.params
+    .map((q) => {
+      const range = q.options ? `{${q.options.join('|')}}` : q.min !== undefined && q.max !== undefined ? `(${q.min}..${q.max})` : '';
+      return `${q.name}=${typeof q.default === 'string' ? q.default : JSON.stringify(q.default)}${range}`;
     })
-    .join('\n');
+    .join(' ');
+  return `- ${p.kind} [${p.mount}${p.againstWall ? ', usually against a wall' : ''}] ${p.size.map((v) => Math.round(v * 100) / 100).join('×')} m, front clearance ${p.frontClearance} m: ${ps}`;
 }
 
 /** Parameters of a part after defaults and clamping, plus a note for everything that was changed. */
@@ -127,7 +128,16 @@ export function defaultWallBottom(kind: string, h: number, ceiling: number): num
     case 'switch':
       return 1.1;
     case 'whiteboard':
+    case 'blackboard':
       return 0.9;
+    case 'cinema-screen':
+      return 0.9;
+    case 'acoustic-panel':
+      return 0.6;
+    case 'booth-port':
+      return 2.6;
+    case 'step-light':
+      return 0.12;
     case 'curtain':
     case 'blind':
       return 0;
