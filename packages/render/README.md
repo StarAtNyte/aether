@@ -947,3 +947,24 @@ duration at 0.193 ms; increasing shader work raised it to 4.517 ms, and halving
 both drawing dimensions reduced that to 1.140 ms. This demonstrates why frame
 rate alone cannot identify a resolution bottleneck. The probe does not yet alter
 the runtime quality policy or establish a whole-app speedup.
+
+The runtime now samples GPU draw cost sparsely on WebGL2 devices that expose
+timer queries. Three fresh samples are required before evidence can protect
+resolution, and the p90 must leave 20% of the target frame budget free. CPU-only
+delays then retain sharpness; existing sustained GPU-overload decisions remain.
+Resolution can also recover with measured GPU headroom when CPU frame rate stays
+low. Draw dimensions, scene-pass scale or pipeline changes discard old evidence;
+samples expire after 500 ms. Invalid, disjoint, incomplete and timed-out queries
+are ignored. Queries are bounded and reused, never awaited in the render loop.
+Missing timer support, WebGPU and enabled Three timestamp tracking use the
+existing frame-time policy. Captures retain their atomic drawing path.
+
+`node scripts/bench/gpu-resolution.mjs` (with Vite on `AETHER_BENCH_URL`, default
+5177) compares resolution decisions under a controlled 25 ms CPU delay. On the
+measured integrated GPU, the old policy reached 0.5 scale while the GPU-aware
+policy retained 1.0, both completing 180 frames in 4.5 seconds. Adding real GPU
+shader work still reduced scale to 0.69 in a separate run. These are synthetic
+policy checks, not whole-app throughput claims. Unit tests cover expiry, missing
+results, disjoint/context loss, query ownership, resolution/pipeline changes and
+fallback. Browser regression checks cover camera movement, hidden-batch restoration,
+worker-backed characters and foliage, screenshot/capture output and restored sizing.

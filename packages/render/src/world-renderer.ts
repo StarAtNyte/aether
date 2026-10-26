@@ -13,6 +13,7 @@ import { warmRaycastTrees } from './geometry/raycast-bvh';
 import { FrameInvalidation } from './view/frame-invalidation';
 import { deferRenderPreparation, type RenderPreparation } from './gpu/render-preparation';
 import { parallelPrograms, type ParallelPrograms } from './gpu/parallel-programs';
+import { gpuFrameCost } from './gpu/frame-cost';
 import { ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, Box3, BufferAttribute, BufferGeometry, Color, FogExp2, Mesh as ThreeMesh, MeshBasicMaterial, Frustum, Group, Matrix4, PerspectiveCamera, Plane, Quaternion, Raycaster, RenderTarget, Scene, Vector2, Vector3, Vector4, type Intersection, type Light, type Material, type Mesh, type Object3D, type Texture } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
 import type { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
@@ -671,6 +672,7 @@ export class WorldRenderer {
   private readonly onProgress: ((msg: string) => void) | null;
   /** Programs discovered by actual post/shadow passes link without blocking a draw. */
   private readonly programs: ParallelPrograms;
+  private readonly gpuCost: ReturnType<typeof gpuFrameCost>;
   private readonly preparation: RenderPreparation;
   private readonly compileTextures: { dispose(): void };
   /** The shader warm-up is running: frames are not drawn (never for longer than {@link WARMING_MAX_MS}). */
@@ -874,6 +876,7 @@ export class WorldRenderer {
   ) {
     this.compileTextures = prepareCompileTextures(renderer);
     this.programs = parallelPrograms(renderer.backend as unknown as Parameters<typeof parallelPrograms>[0], () => this.requestPreparedFrame(), e => log.warn(`parallel shader linking failed: ${errorMessage(e)}`));
+    this.gpuCost = gpuFrameCost(renderer.backend as unknown as Parameters<typeof gpuFrameCost>[0]);
     this.preparation = deferRenderPreparation(renderer, {
       ready: () => this.requestPreparedFrame(),
       error: e => log.warn(`render preparation failed: ${errorMessage(e)}`),
@@ -3270,9 +3273,13 @@ export class WorldRenderer {
     this.highlighter.update();
     if (this.materials.surfaces.active) this.materials.surfaces.advance(step);
     this.fx.beforeDraw(this.perspective);
+    this.gpuCost.begin(this.domElement.width, this.domElement.height, this.post, this.adaptive.scale);
+    let timedFrameComplete = false;
     try {
       this.draw();
+      timedFrameComplete = this.programs.pending === 0 && this.preparation.pending === 0;
     } finally {
+      this.gpuCost.end(timedFrameComplete);
       this.fx.afterDraw(this.perspective);
     }
     // A discovery frame may submit new async programs. It is not a completed
@@ -3302,7 +3309,7 @@ export class WorldRenderer {
     if (this.qualityPlan.moveEffects === null || !this.atRest) {
       // CPU contention from a background bake says nothing about GPU pixel cost.
       const measuring = this.drewLastFrame && !this.lightVolumeBaking;
-      if (this.adaptive.record(dt, measuring)) this.resize(this.cssWidth, this.cssHeight);
+      if (this.adaptive.record(dt, measuring, this.gpuCost.seconds)) this.resize(this.cssWidth, this.cssHeight);
       const scale = this.adaptive.enabled ? this.adaptive.scale : 0;
       if (this.governor.record(dt, measuring, scale)) this.applyPerformance();
       const mayProbe = this.tierChoice === 'auto' && this.qualityPlan.quality === 'realtime'
@@ -5258,6 +5265,7 @@ export class WorldRenderer {
     this.compileTextures.dispose();
     this.preparation.dispose();
     this.programs.dispose();
+    this.gpuCost.dispose();
     this.fx.dispose();
     this.capture?.end();
     this.capture = null;

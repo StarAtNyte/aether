@@ -107,9 +107,11 @@ export class AdaptiveResolution {
   /**
    * Record one drawn frame. `dt` is the time since the previous drawn frame
    * (seconds); pass `continuous: false` when the previous animation frame
-   * did not draw. Returns true when {@link scale} changed.
+   * did not draw. Optional `gpuSeconds` is fresh GPU p90 for this exact size
+   * and pipeline; clear headroom prevents CPU delays from reducing pixels.
+   * Returns true when {@link scale} changed.
    */
-  record(dt: number, continuous: boolean): boolean {
+  record(dt: number, continuous: boolean, gpuSeconds?: number): boolean {
     if (!this.enabled || !(dt > 0) || !Number.isFinite(dt)) return false;
     this.sinceUpscale += dt;
     if (!continuous || dt > this.o.maxContinuousDt) {
@@ -123,10 +125,13 @@ export class AdaptiveResolution {
     this.cursor = (this.cursor + 1) % WINDOW;
     if (this.filled < WINDOW) this.filled++;
     this.fps = 1 / this.p90();
-    if (this.fps < this.o.lowFps) {
+    // Clear GPU headroom means reducing pixels cannot fix the observed CPU delay.
+    // Leave margin for the next upscale's extra pixels; absent evidence retains the old policy.
+    const gpuHeadroom = gpuSeconds !== undefined && Number.isFinite(gpuSeconds) && gpuSeconds > 0 && gpuSeconds < .8 / this.o.targetFps;
+    if (this.fps < this.o.lowFps && !gpuHeadroom) {
       this.below += dt;
       this.above = 0;
-    } else if (this.fps > this.o.highFps) {
+    } else if (this.fps > this.o.highFps || gpuHeadroom) {
       this.above += dt;
       this.below = 0;
     } else {
