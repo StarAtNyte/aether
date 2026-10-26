@@ -295,3 +295,16 @@ describe('the world\'s look (tuned per world by the reviewer)', () => {
     expect(rig.sun.color.b).toBeCloseTo(sun.b, 6);
   });
 });
+
+describe('the hemisphere intensity of the baked light', () => {
+  it('does not follow the quality tier or the arrival of the automatic sky map', () => {
+    const rig = new EnvironmentRig(new MaterialCache(), true);
+    const scene = new Scene();
+    rig.apply(env({ sky: 'day' }), scene);
+    const without = rig.bakeHemiIntensity;
+    // The tier that brings the automatic photographed sky scales the drawn hemisphere down; the bake's number stays put.
+    rig.setAutoHdri(true);
+    rig.apply(env({ sky: 'day' }), scene);
+    expect(rig.bakeHemiIntensity).toBe(without);
+  });
+});

@@ -1506,7 +1506,7 @@ export class WorldRenderer {
     const hemi = this.env.hemi;
     const hs = hemi.color;
     const hg = hemi.groundColor;
-    const hi = hemi.intensity;
+    const hi = this.env.bakeHemiIntensity;
     // The image light as a two-tone hemisphere: mean radiance of the sky map's upper and lower halves.
     const sky = skyHalves(this.env.environmentMap);
     const envI = this.env.skyState.envIntensity * Math.PI;

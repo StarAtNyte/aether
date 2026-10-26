@@ -24,6 +24,7 @@ const OUT = join(ROOT, 'apps/studio/public/templates/lightmaps');
 const WORLDS = join(ROOT, 'apps/studio/public/templates/worlds');
 const ARGS = process.argv.slice(2);
 const VERIFY = ARGS.includes('--verify');
+const VERIFY_DETAIL = ARGS.includes('--detail');
 const arg = (name: string): string | undefined => ARGS.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
 const QUALITY = (arg('quality') ?? 'medium') as 'low' | 'medium' | 'high';
 const SAMPLES = arg('samples') ? Number(arg('samples')) : null;
@@ -72,6 +73,7 @@ async function main(): Promise<number> {
       const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
       await ctx.addInitScript(SKIP_FIRST_RUN);
       await ctx.addInitScript('globalThis.__name = (f) => f;');
+      await ctx.addInitScript('globalThis.__AETHER_KEYDEBUG = true;');
       try {
         const page = await ctx.newPage();
         page.on('pageerror', (e) => log(`  pageerror: ${e.message.slice(0, 200)}`));
@@ -122,13 +124,18 @@ async function main(): Promise<number> {
             for (let i = 0; i < a.length; i += 0x8000) s += String.fromCharCode(...a.subarray(i, i + 0x8000));
             b64 = btoa(s);
           }
-          return { status: r.lightmapStatus, stats: r.lightmapStats, b64 };
+          return { status: r.lightmapStatus, stats: r.lightmapStats, b64, inputs: r.lightmapKeyInputs };
         });
         const ok = info?.status.state === 'applied' && info.stats !== null;
         if (VERIFY) {
           const want = index.worlds[slug];
           const good = ok && info?.stats?.source === 'static' && want?.key === info.stats.key;
           log(`${good ? 'ok  ' : 'FAIL'} ${slug}: ${ok ? `${info?.stats?.source} ${info?.stats?.key}` : (info?.status.message ?? 'no status')}${want ? '' : ' (no bundled lightmap)'}`);
+          if (VERIFY_DETAIL || !good) {
+            // Which part of the key moved: compare these lines with a run on a commit that still matched.
+            const sc = info?.inputs?.scalars ?? '';
+            log(`     content ${info?.inputs?.content}; trace/albedo/twoSided ${info?.inputs?.parts?.slice(0, 3).join(' ')}; ${info?.inputs?.parts?.length} arrays; scalars ${sc.length} chars`);
+          }
           if (!good) failed++;
         } else if (ok && info?.b64 && info.stats) {
           const bytes = Buffer.from(info.b64, 'base64');

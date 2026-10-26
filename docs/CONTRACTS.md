@@ -3156,6 +3156,16 @@ light volume lights it; the file's triangle count for it is not compared). A bak
 file or the cache. `tests/e2e/lightmap-open.e2e.ts` opens each bundled world as it is, switches it to the cutaway and the lowered view, and opens
 it already in them, and fails on any worker job or "Baking light" pill.
 
+**What the lightmap key depends on (and only that).** `lightmapKey(content, scalars)` in `view/lightmap-controller.ts`: the trace input (static building geometry, positions
+rounded to 2 cm), albedo (1 %), the two-sided flags, the drawn non-wall meshes' positions and normals (2 cm) and per-mesh triangle counts, the volume grid, the sun
+(direction, irradiance), the ambient two-tone (`WorldRenderer.gatherLightVolume`, from the sky map's halves, the hemisphere colours and
+`EnvironmentRig.bakeHemiIntensity`), the ground height, the lamps, `VOLUME_BAKE_VERSION` and the quality plan (size, samples, density). It must not depend on anything
+that only changes how the world is drawn: the graphics backend, the quality tier (which brings the automatic sky photograph, so `bakeHemiIntensity` treats a sky map
+as present whenever the world or its preset has one), when a file arrives, the camera, the view mode, exposure, surroundings and the facade/poche look. A change
+to any listed input is a legitimate new key: run `npx tsx scripts/showcase/lightmaps.ts` (`npm run showcase:lightmaps`) and commit the files. CI runs
+`showcase:lightmaps --verify` (all six worlds must apply a bundled file; on a miss it prints the key parts to compare with a run that matched) and
+`tests/e2e/lightmap-open.e2e.ts`.
+
 ### Scripts
 
 `tests/e2e/archshots.e2e.ts` gained per-camera `hour` and `js` (a snippet run with `renderer`), cameras without a pose (`frameContent` hooks), `--world=<file>` (a world

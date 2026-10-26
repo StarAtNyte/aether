@@ -343,6 +343,17 @@ export class EnvironmentRig {
     return this.envMap;
   }
 
+  /**
+   * The hemisphere intensity the baked light (light volume, lightmap and its key) is made from. It does not follow what
+   * is on screen: the automatic photographed sky comes with the quality tier and the moment its file arrives, and both
+   * would move the ambient light of the bake (and with it the key of a bundled lightmap) without the world changing.
+   * A sky map that is asked for, or that the preset brings on a high tier, counts as present.
+   */
+  get bakeHemiIntensity(): number {
+    const mapped = this.env?.hdri !== undefined || AUTO_HDRI[this.state.preset] !== undefined;
+    return this.state.hemiIntensity * HEMI_SHARE_WITH_IBL * (mapped ? HDRI_HEMI_SCALE : 1);
+  }
+
   /** Apply an environment (sky, lights, reflections, fog on `scene`, ground, weather). */
   apply(env: Environment, scene: Scene): void {
     this.env = env;

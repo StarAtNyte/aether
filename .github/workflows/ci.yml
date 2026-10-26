@@ -58,6 +58,8 @@ jobs:
         include:
           - name: studio (Chromium WebGPU + WebGL2, Firefox WebGL2)
             run: npm run e2e
+          - name: bundled lightmaps (every showcase world finds its baked light)
+            run: npx tsx scripts/showcase/lightmaps.ts --verify && npm run e2e:lightmap-open
           - name: verified worlds
             run: npm run e2e:verified
           - name: hosted, security, proof, MCP

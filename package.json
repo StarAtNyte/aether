@@ -77,6 +77,8 @@
     "e2e:publish": "tsx tests/e2e/publish.e2e.ts",
     "e2e:proof": "tsx tests/e2e/proof.e2e.ts",
     "showcase:bake": "tsx scripts/showcase/bake.ts",
+    "showcase:lightmaps": "tsx scripts/showcase/lightmaps.ts",
+    "e2e:lightmap-open": "tsx tests/e2e/lightmap-open.e2e.ts",
     "showcase:photo-rooms": "tsx scripts/showcase/photo-rooms.ts",
     "showcase:thumbs": "tsx tests/e2e/showcase.e2e.ts --capture",
     "e2e:showcase": "tsx tests/e2e/showcase.e2e.ts",
