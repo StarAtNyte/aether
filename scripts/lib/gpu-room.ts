@@ -42,6 +42,9 @@ export class GpuRoom {
       browser = await chromium.launch({ executablePath: findChrome(), args: [...CHROME_ARGS], headless: opts.headed !== true });
       const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
       await ctx.addInitScript(SKIP_FIRST_RUN);
+      // On the integrated GPU the page draws through WebGL2: the machine's only WebGPU adapter is SwiftShader (software), which
+      // fails some post passes and ends in a black picture, so it is hidden as the weak-GPU and frame-recorder harnesses do.
+      if (process.env['GEN_GPU'] === 'intel') await ctx.addInitScript({ content: 'delete Navigator.prototype.gpu; try { delete navigator.gpu; } catch {}' });
       const page = await ctx.newPage();
       page.on('pageerror', (e) => log(`  pageerror: ${e.message.slice(0, 200)}`));
       page.on('console', (m) => {

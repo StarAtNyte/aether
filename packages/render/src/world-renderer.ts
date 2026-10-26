@@ -4160,6 +4160,31 @@ export class WorldRenderer {
     return { ev: this.eyeEv, trim: this.trimNow, ceilings: this.ceilings?.length ?? -1, retries: this.roomRetries, room: this.roomPick?.id ?? null, weight: this.roomPick?.weight ?? 0, subject: this.roomPick?.subject ?? false, rooms };
   }
 
+  /**
+   * A still from an explicit pose is exposed for the room that pose stands in, not for wherever the live camera happens to be (a
+   * review or a photo compare drawn from eye height inside a building while the editor camera orbits outside came out black).
+   * The live eye is moved to the pose for one adaptation step, which snaps (it counts as a cut), and put back.
+   */
+  private adaptEyeToPose(pose: { pos: readonly number[]; target: readonly number[] } | undefined): void {
+    if (!pose || !pose.pos.every(Number.isFinite) || !pose.target.every(Number.isFinite) || !this.lightVolume.ready) return;
+    const cam = this.perspective;
+    const savedPos = cam.position.clone();
+    const savedQuat = cam.quaternion.clone();
+    try {
+      cam.position.set(pose.pos[0] as number, pose.pos[1] as number, pose.pos[2] as number);
+      cam.lookAt(pose.target[0] as number, pose.target[1] as number, pose.target[2] as number);
+      cam.updateMatrixWorld(true);
+      this.lastEye.set(Number.POSITIVE_INFINITY, 0, 0);
+      this.eyeClock = 1;
+      this.adaptEye(0);
+    } finally {
+      cam.position.copy(savedPos);
+      cam.quaternion.copy(savedQuat);
+      cam.updateMatrixWorld(true);
+      this.eyeClock = 1;
+    }
+  }
+
   private adaptEye(dt: number): void {
     this.eyeClock += dt;
     if (this.eyeClock < 0.08) return;
@@ -4656,6 +4681,7 @@ export class WorldRenderer {
     await this.preparePost();
     const open = (w: number, h: number, vignette: boolean): CaptureSession => this.beginCapture(w, h, { vignette });
     opts = { ...opts, vignetteStrength: this.vignetteStrength() };
+    this.adaptEyeToPose(opts.pose);
     const image = await captureStill(open, opts);
     // The first capture after a post pipeline is (re)built can come out as one flat colour on some software GPUs
     // (temporal AA history primed at the viewport size); an identical second render is right. Render once more.
