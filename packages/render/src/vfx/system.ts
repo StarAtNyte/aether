@@ -129,6 +129,21 @@ export class VfxSystem {
     this.layers = { add: this.makeLayer('add', addCap), alpha: this.makeLayer('alpha', Math.max(256, this.capacity - addCap)) };
   }
 
+  /** Include both shared shader variants in startup compilation, without emitting particles. */
+  prepareForCompile(): () => void {
+    const add = this.layers.add, alpha = this.layers.alpha;
+    const av = add.mesh.visible, bv = alpha.mesh.visible;
+    const ac = add.geometry.instanceCount, bc = alpha.geometry.instanceCount;
+    add.mesh.visible = alpha.mesh.visible = true;
+    add.geometry.instanceCount = Math.max(1, ac); alpha.geometry.instanceCount = Math.max(1, bc);
+    let restored = false;
+    return () => {
+      if (restored) return; restored = true;
+      add.mesh.visible = av; alpha.mesh.visible = bv;
+      add.geometry.instanceCount = ac; alpha.geometry.instanceCount = bc;
+    };
+  }
+
   private makeLayer(blend: 'add' | 'alpha', capacity: number): Layer {
     const pool = new ParticlePool(capacity);
     const quad = new PlaneGeometry(1, 1);

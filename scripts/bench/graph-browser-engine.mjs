@@ -3,6 +3,7 @@ export * as T from 'three/webgpu';
 export * as C from 'three';
 export * as S from 'three/tsl';
 export { parallelPrograms } from '../../packages/render/src/gpu/parallel-programs';
+export { preparePresentation } from '../../packages/render/src/gpu/presentation';
 
 export { deferRenderPreparation } from '../../packages/render/src/gpu/render-preparation';
 

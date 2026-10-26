@@ -180,12 +180,14 @@ const BusyIndicator = memo(function BusyIndicator(): ReactElement | null {
   const line = useUI(liveAgentLine);
   const modeBusy = useUI((s) => s.modeBusy);
   const stage = useUI((s) => s.processing);
+  const playing = useUI((s) => s.mode === 'play');
   const checking = useUI((s) => s.verify.status === 'running');
   const playtesting = useUI((s) => s.playtest.status === 'running');
   const loading = useUI((s) => s.loading);
   const fatal = useUI((s) => s.fatal);
   const messages = { scene: 'Updating scene…', materials: 'Preparing textures…', render: 'Preparing view…', lighting: 'Updating lighting…', capture: 'Rendering image…' };
-  const text = busy ? line : modeBusy ? 'Switching mode…' : stage ? messages[stage] : checking ? 'Checking world…' : playtesting ? 'Testing play…' : null;
+  const foregroundStage = stage && (!playing || stage === 'capture') ? stage : null;
+  const text = busy ? line : modeBusy ? 'Switching mode…' : foregroundStage ? messages[foregroundStage] : checking ? 'Checking world…' : playtesting ? 'Testing play…' : null;
   if (!text || loading || fatal) return null;
   return (
     <>

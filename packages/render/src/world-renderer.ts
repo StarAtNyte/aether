@@ -14,6 +14,7 @@ import { FrameInvalidation } from './view/frame-invalidation';
 import { deferRenderPreparation, type RenderPreparation } from './gpu/render-preparation';
 import { parallelPrograms, type ParallelPrograms } from './gpu/parallel-programs';
 import { gpuFrameCost } from './gpu/frame-cost';
+import { preparePresentation } from './gpu/presentation';
 import { warmProceduralFields } from './gpu/procedural-fields-client';
 import { ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, Box3, BufferAttribute, BufferGeometry, Color, FogExp2, Mesh as ThreeMesh, MeshBasicMaterial, Frustum, Group, Matrix4, PerspectiveCamera, Plane, Quaternion, Raycaster, RenderTarget, Scene, Vector2, Vector3, Vector4, type Intersection, type Light, type Material, type Mesh, type Object3D, type Texture } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
@@ -674,6 +675,7 @@ export class WorldRenderer {
   /** Programs discovered by actual post/shadow passes link without blocking a draw. */
   private readonly programs: ParallelPrograms;
   private readonly gpuCost: ReturnType<typeof gpuFrameCost>;
+  private readonly presentation: ReturnType<typeof preparePresentation>;
   private readonly preparation: RenderPreparation;
   private readonly compileTextures: { dispose(): void };
   /** The shader warm-up is running: frames are not drawn (never for longer than {@link WARMING_MAX_MS}). */
@@ -884,6 +886,7 @@ export class WorldRenderer {
       blocked: () => this.programs.pending > 0,
       atomic: draw => this.programs.synchronous(draw),
     });
+    this.presentation = preparePresentation(renderer, () => this.preparation.pending > 0 || this.programs.pending > 0);
     this.backend = backend;
     this.domElement = canvas;
     this.perspective = camera;
@@ -1825,6 +1828,7 @@ export class WorldRenderer {
    * (it is gathered synchronously, before the first await). Objects out of view count as well: the camera moves on.
    */
   private async compileScene(boundMs = SHADER_WARMUP_MS): Promise<void> {
+    const restoreEffects = this.fx.vfx.prepareForCompile();
     const changed: Array<{ o: Object3D; visible: boolean; culled: boolean }> = [];
     const seen = new Set<string>();
     this.scene.traverseVisible((o) => {
@@ -1857,6 +1861,7 @@ export class WorldRenderer {
         else c.o.visible = c.visible;
       }
       if (showPrints) prints.visible = false;
+      restoreEffects();
     };
     try {
       const done = this.renderer.compileAsync(this.scene, this.perspective, this.scene);
@@ -3276,6 +3281,7 @@ export class WorldRenderer {
     this.highlighter.update();
     if (this.materials.surfaces.active) this.materials.surfaces.advance(step);
     this.fx.beforeDraw(this.perspective);
+    this.presentation.beginFrame();
     this.gpuCost.begin(this.domElement.width, this.domElement.height, this.post, this.adaptive.scale);
     let timedFrameComplete = false;
     try {
@@ -3287,7 +3293,7 @@ export class WorldRenderer {
     }
     // A discovery frame may submit new async programs. It is not a completed
     // image and must not feed the quality governor or the blank-frame watchdog.
-    if (this.programs.pending > 0 || this.preparation.pending > 0) {
+    if (this.programs.pending > 0 || this.preparation.pending > 0 || this.presentation.skipped) {
       this.requestPreparedFrame();
       this.drewLastFrame = false;
       return false;
@@ -4384,7 +4390,7 @@ export class WorldRenderer {
    * camera immediately, never throttled.
    */
   private draw(capture = false): void {
-    if (capture) return this.preparation.synchronous(() => this.programs.synchronous(() => this.drawReady(capture)));
+    if (capture) return this.presentation.synchronous(() => this.preparation.synchronous(() => this.programs.synchronous(() => this.drawReady(capture))));
     this.drawReady(capture);
   }
 
@@ -5266,6 +5272,7 @@ export class WorldRenderer {
   dispose(): void {
     if (this.disposed) return;
     this.compileTextures.dispose();
+    this.presentation.dispose();
     this.preparation.dispose();
     this.programs.dispose();
     this.gpuCost.dispose();
