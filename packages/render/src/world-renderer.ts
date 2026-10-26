@@ -1162,7 +1162,8 @@ export class WorldRenderer {
     if (this.syncing > 0 || !this.sync.idle) return 'scene';
     if (this.foliagePending || (this.compute?.pendingCount ?? 0) > 0 || textureWork.pending > 0) return 'materials';
     if (this.warming || this.postPending || this.preparation.pending > 0 || this.programs.pending > 0) return 'render';
-    if (this.lightVolumeBaking) return 'lighting';
+    // Background light bakes have their own progress/cancel control. The viewport
+    // remains usable and must not look blocked for the duration of a path trace.
     return null;
   }
 
@@ -3251,6 +3252,12 @@ export class WorldRenderer {
       this.warming = false;
     }
     if (opts.onDemand === true && !changed && !refine) {
+      // A reduced motion frame must not become the permanent idle editor image.
+      if (this.adaptive.scale < 1) {
+        this.adaptive.reset();
+        this.resize(this.cssWidth, this.cssHeight);
+        this.needsDraw = true;
+      }
       this.drewLastFrame = false;
       return false;
     }
@@ -3293,14 +3300,16 @@ export class WorldRenderer {
     }
     // A split studio chain refines at rest with its full (slow) chain: those frames say nothing about motion.
     if (this.qualityPlan.moveEffects === null || !this.atRest) {
-      if (this.adaptive.record(dt, this.drewLastFrame)) this.resize(this.cssWidth, this.cssHeight);
+      // CPU contention from a background bake says nothing about GPU pixel cost.
+      const measuring = this.drewLastFrame && !this.lightVolumeBaking;
+      if (this.adaptive.record(dt, measuring)) this.resize(this.cssWidth, this.cssHeight);
       const scale = this.adaptive.enabled ? this.adaptive.scale : 0;
-      if (this.governor.record(dt, this.drewLastFrame, scale)) this.applyPerformance();
+      if (this.governor.record(dt, measuring, scale)) this.applyPerformance();
       const mayProbe = this.tierChoice === 'auto' && this.qualityPlan.quality === 'realtime'
         && this.governor.level === 0 && this.budget.post && this.gpu.tier !== 'software'
         && !this.lowMemory && !this.safe && !this.watchPostOff && !this.studioFailed
         && (this.hardware.memoryGB === undefined || this.hardware.memoryGB > 2);
-      if (this.adaptiveTier.record(dt, this.drewLastFrame, scale, this.autoTierBase(), mayProbe)) {
+      if (this.adaptiveTier.record(dt, measuring, scale, this.autoTierBase(), mayProbe)) {
         this.applyQuality(this.qualityPlan.quality);
         log.info(`performance: measured automatic tier ${this.autoTierNow()}`);
       }

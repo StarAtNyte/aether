@@ -27,6 +27,8 @@ describe('quality phases while resources prepare', () => {
       atRest: true, restAnimating: false, framesDrawn: 1, refineProgress: 0,
     };
     expect(processing.call(s)).toBeNull();
+    s.lightVolumeBaking = true;
+    expect(processing.call(s)).toBeNull();
     s.preparation.pending = 1;
     expect(processing.call(s)).toBe('render');
   });

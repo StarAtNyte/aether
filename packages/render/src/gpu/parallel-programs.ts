@@ -20,17 +20,26 @@ export interface ParallelPrograms {
 export function parallelPrograms(backend: Backend, changed: () => void, failed: (error: unknown) => void): ParallelPrograms {
   const jobs = new Set<{ cancel(): void; done: Promise<void>; ready(): boolean; complete(): void }>();
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let submitted = 0;
   const poll = () => {
     timer = undefined;
+    let completing = false;
     if (disposed || gl?.isContextLost()) { for (const job of [...jobs]) job.cancel(); return; }
     // A uniform/block query for a completed program can still wait behind other
     // programs in the GL command queue. Drain a whole ready batch before querying.
     try {
       if ([...jobs].every(job => job.ready())) {
-        for (const job of [...jobs]) job.complete();
+        completing = true;
+        const start = performance.now(), batch = submitted;
+        // Reflection and binding setup are CPU work even after linking finishes.
+        // Yield between programs so a large first-use batch cannot monopolize input.
+        for (const job of jobs) {
+          job.complete();
+          if (disposed || submitted !== batch || performance.now() - start >= 4) break;
+        }
       }
     } catch (e) { for (const job of [...jobs]) job.cancel(); failed(e); }
-    if (jobs.size) timer = setTimeout(poll, 8);
+    if (!disposed && jobs.size) timer = setTimeout(poll, completing ? 0 : 8);
   };
   const original = backend.createRenderPipeline;
   const gl = backend.gl, parallel = backend.parallel;
@@ -102,6 +111,7 @@ export function parallelPrograms(backend: Backend, changed: () => void, failed: 
       complete: () => { backend._completeCompile({ getBindings: () => bindings }, pipeline); finish(); },
     };
     jobs.add(job);
+    submitted++;
     // Defer the first poll as well: the current task should submit, then yield.
     if (timer === undefined) timer = setTimeout(poll, 0);
     promises?.push(done);

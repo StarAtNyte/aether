@@ -48,10 +48,13 @@ API keys never reach the browser: all LLM calls go through `/api/llm`.
 
 The static boot screen shows a spinner before application scripts load. Renderer
 startup, scene updates and mode switches yield a paint opportunity before starting
-work. The viewport reports pending textures, shaders, lighting and captures,
+work. The viewport reports pending textures, shaders and captures,
 with additional feedback for verification, playtests and terrain loading.
 Background refinement stays quiet. Realtime rendering is the default; the Studio
 button beside Daylight explicitly enables Studio rendering.
+Background lightmap bakes use their own percentage and cancel control. Their CPU
+contention does not feed the resolution or effect governors, and an idle editor
+restores full drawing resolution after a reduced-resolution motion frame.
 The transform animation supports reduced motion and does not depend on frame stats.
 
 Run `node scripts/bench/processing-ui.mjs` from the repository root with

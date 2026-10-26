@@ -24,8 +24,33 @@ function fixture() {
   };
   return { add, ready, deleted, completed, changed, failed, controller, backend };
 }
-afterEach(() => vi.useRealTimers());
+afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 describe('parallel WebGL linking', () => {
+  it('yields between completed programs and rechecks newly submitted links before reflection', async () => {
+    vi.useFakeTimers();
+    let clock = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => clock);
+    const f = fixture();
+    const a = f.add(), b = f.add();
+    f.ready.add(a.program); f.ready.add(b.program);
+    const complete = f.backend._completeCompile;
+    f.backend._completeCompile = object => { const count = complete(object); clock += 5; return count; };
+    await vi.advanceTimersToNextTimerAsync();
+    expect(f.completed).toEqual([a.bindings]);
+    expect(f.controller.pending).toBe(1);
+    const c = f.add();
+    await vi.advanceTimersToNextTimerAsync();
+    expect(f.completed).toEqual([a.bindings]);
+    f.ready.add(c.program);
+    await vi.advanceTimersToNextTimerAsync();
+    expect(f.completed).toEqual([a.bindings, b.bindings]);
+    expect(f.changed).not.toHaveBeenCalled();
+    await vi.advanceTimersToNextTimerAsync();
+    await f.controller.idle();
+    expect(f.completed).toEqual([a.bindings, b.bindings, c.bindings]);
+    expect(f.changed).toHaveBeenCalledOnce();
+    f.controller.dispose();
+  });
   it('defers setup until every submitted program is complete and retains original bindings', async () => {
     vi.useFakeTimers();
     const f = fixture(), promises: Promise<void>[] = [];
