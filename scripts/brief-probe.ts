@@ -11,7 +11,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { performance } from 'node:perf_hooks';
 import { join, resolve } from 'node:path';
 import type { Entity, PatchResult, WorldDoc } from '@aether/core';
-import { REVIEW_ASPECT, WorldAgent, type AgentEvent, type LevelToolRunner, type Provider, type ReviewViewRequest } from '@aether/agent';
+import { REVIEW_ASPECT, WorldAgent, richnessEvidence, type AgentEvent, type LevelToolRunner, type Provider, type ReviewViewRequest } from '@aether/agent';
 import { initScripting } from '@aether/logic';
 import { initPhysics } from '@aether/physics';
 import { loadLibraryGenerator } from '@aether/procgen';
@@ -123,6 +123,8 @@ async function main(): Promise<void> {
     briefElaboration: briefEv?.type === 'brief' ? briefEv.view.brief.elaboration : null,
     briefTarget: briefEv?.type === 'brief' ? briefEv.view.brief.richness : null,
     briefElements: briefEv?.type === 'brief' ? briefEv.view.brief.elements.map((e) => `${e.name} x${e.count}`) : null,
+    evidence: briefEv?.type === 'brief' ? richnessEvidence(world, briefEv.view.brief).split('\n') : null,
+    lights: Object.values(world.entities).filter((e) => e.light).length,
     referenceDecision: briefEv?.type === 'brief' ? briefEv.view.reference : null,
     errors: events.filter((e) => e.type === 'error').map((e) => (e as { text: string }).text.slice(0, 200)),
     final: events.filter((e) => e.type === 'message').at(-1),

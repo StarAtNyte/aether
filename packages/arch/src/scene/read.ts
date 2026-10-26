@@ -87,6 +87,37 @@ function angleDiff(a: number, b: number): number {
   return Math.abs(d);
 }
 
+/** Instances of parent-less scatters and parent-less lights that stand inside each room's outline (building frame). */
+function attachFreePieces(world: WorldDoc, root: Entity, rooms: SceneRoom[]): void {
+  if (rooms.length === 0) return;
+  const yaw = root.transform.rotation[1];
+  const inPlan = (wx: number, wz: number): P2 => rotateYaw(wx - root.transform.position[0], wz - root.transform.position[2], -yaw);
+  const free = new Map<EntityId, { pieces: number; lights: number }>(rooms.map((r) => [r.id, { pieces: 0, lights: 0 }]));
+  const roomAt = (x: number, z: number): SceneRoom | undefined => rooms.find((r) => x >= r.bbox[0] && x <= r.bbox[2] && z >= r.bbox[1] && z <= r.bbox[3] && pointInPolygon(x, z, r.polygon));
+  let scanned = 0;
+  for (const e of Object.values(world.entities)) {
+    if (e.parent || e.id === root.id || ++scanned > 5000) continue;
+    const [px, , pz] = e.transform.position;
+    if (e.shape.kind === 'scatter' && e.shape.points && e.shape.points.length > 0) {
+      const a = e.transform.rotation[1];
+      for (const p of e.shape.points.slice(0, 5000)) {
+        const [dx, dz] = rotateYaw(p[0], p[2], a);
+        const [x, z] = inPlan(px + dx, pz + dz);
+        const room = roomAt(x, z);
+        if (room) (free.get(room.id) as { pieces: number }).pieces++;
+      }
+    } else if (e.light) {
+      const [x, z] = inPlan(px, pz);
+      const room = roomAt(x, z);
+      if (room) (free.get(room.id) as { lights: number }).lights++;
+    }
+  }
+  for (const r of rooms) {
+    const f = free.get(r.id);
+    if (f && (f.pieces > 0 || f.lights > 0)) r.free = f;
+  }
+}
+
 /** Read the scene of building `buildingId`; null when it is not a building. */
 export function readScene(world: WorldDoc, buildingId: EntityId): Scene | null {
   if (!hasOwn(world.entities, buildingId)) return null;
@@ -165,6 +196,7 @@ export function readScene(world: WorldDoc, buildingId: EntityId): Scene | null {
       items.push(readItem(e, g, L.id, index, levelRooms, ceiling));
     }
   }
+  attachFreePieces(world, root, rooms);
   const planStyle = (root.arch?.plan as { style?: unknown } | undefined)?.style;
   return { building: buildingId, levels, rooms, items, obstacles, ...(typeof planStyle === 'string' ? { style: planStyle } : {}) };
 }

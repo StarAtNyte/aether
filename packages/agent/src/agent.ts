@@ -767,7 +767,17 @@ export class WorldAgent {
       const richOnly = snap.buildings[0] === RICHNESS_SUBJECT;
       yield { type: 'review', round, phase: 'checking', text: round === 1 ? (isLevel ? 'Checking the level…' : 'Checking the building…') : 'Checking again…', score: snap.score, findings: snap.findings.length };
       const verdict = tracker.observe({ keys: snap.keys, score: snap.score, edited: lastEdited });
-      if (verdict.stalled) {
+      // A stall on the checker's findings does not end a review whose brief is still short: the model is asked once about that first.
+      let shortAsk: string | null = null;
+      if (verdict.stalled && this.briefState) {
+        const short = richnessShortfalls(host.getWorld(), this.briefState.brief);
+        if (short && !pushedBack.has(short.key)) {
+          pushedBack.add(short.key);
+          tracker.forgive();
+          shortAsk = short.text;
+        }
+      }
+      if (verdict.stalled && shortAsk === null) {
         yield { type: 'review', round, phase: 'stalled', text: `Stopped reviewing: ${verdict.reason}. ${snap.findings.length > 0 ? `${snap.findings.length} finding${snap.findings.length === 1 ? '' : 's'} remain.` : ''}`.trim(), score: snap.score, findings: snap.findings.length };
         return;
       }
@@ -813,6 +823,7 @@ export class WorldAgent {
       // A world built from a brief is compared with it: the model lists what is missing or sparse and fixes it. The counts are
       // evidence for its judgement; nothing here passes or fails on a number.
       if (this.briefState) content.push({ type: 'text', text: richnessReviewText(this.briefState.brief, host.getWorld(), round, this.briefState.notes) });
+      if (shortAsk) content.push({ type: 'text', text: `The checker keeps repeating itself, but your brief's counts are still well short: ${shortAsk.slice(0, 900)}. Build the rest in one call each (shape_land tier, grid, perimeter, wall or along, as the brief says), or say plainly why each stays short, then finish.` });
       if (images.length > 0) yield { type: 'step', tool: 'look', label: round === 1 ? 'Looking at the renders' : 'Looking at the renders again', ok: true, looked: images.map((im) => ({ label: im.label, dataUrl: im.dataUrl })) };
       pushUserBlocks(messages, content);
       // One round: the model works with the tools until it calls finish (or answers without a tool call).
