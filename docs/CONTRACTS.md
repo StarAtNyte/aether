@@ -494,6 +494,26 @@ particles (GPU points), bloom/tone mapping (ACES), dispose everything on removal
 world ground); the flat foothill plate is sunk to y = 0 and trimmed from the
 render mesh (the heightfield collider keeps the full grid).
 
+### three.js internals the renderer wraps (pinned to 0.186.1)
+
+`three` is pinned to an exact version (`apps/studio`, `packages/render`) because these hooks wrap private members. Every one feature-detects its
+targets, installs nothing when one is missing (the renderer then runs the stock three path, slower or with one incomplete-frame guard fewer) and
+restores the original on `dispose()`. `packages/render/test/three-internals.test.ts` fails loudly, naming the member, when the pinned version moves or a
+member disappears, and proves that an unsupported renderer shape is left untouched.
+
+| Hook | Private members touched | Guard |
+|---|---|---|
+| `gpu/presentation.ts` (complete-frame presentation) | `Renderer._renderScene`, `backend.beginRender/finishRender/draw`, `NodeManager.updateBefore/updateAfter` | `supported` check, otherwise no-op |
+| `gpu/render-preparation.ts` (deferred first-use work) | `_renderObjectDirect`, `_objects.get`, `_nodes.delete`, `compileAsync`, `_bindings`, `_geometries` | `supported` check, otherwise inert |
+| `gpu/compile-textures.ts` | `_nodes.getForRenderAsync`, `_textures.get`, `initTexture` | typeof checks, otherwise no-op |
+| `three-patches.ts` | `Material.prototype.alphaTest` accessor, `_objects.createRenderObject`, `RenderObject.getDynamicCacheKey` | descriptor and typeof checks, one `try/catch` |
+| `gpu/buffer-uploads.ts`, `gpu/uniform-binding-keys.ts`, `gpu/pixel-store-cache.ts` | WebGL backend `get/updateBinding(s)`, state `bindBufferBase`, `reset` | typeof checks, idempotent |
+| `gpu/uv-transform.ts` | `Matrix3.prototype.setUvTransform` | descriptor check, idempotent |
+| `gpu/lod-bias.ts` | `TextureNode.prototype.setup` | typeof check, idempotent |
+
+Upgrading three: bump the pin in both `package.json` files and `PINNED` in the test, run the test, re-read each listed member in
+`node_modules/three/build/three.webgpu.js`, then run `npm run e2e:backend` and `npm run e2e:parity`.
+
 ## @aether/agent
 
 LLM orchestration — provider-agnostic, runs in browser (via server proxy) and Node.
