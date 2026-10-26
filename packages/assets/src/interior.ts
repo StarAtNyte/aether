@@ -313,3 +313,21 @@ export function describeModel(h: ModelHit): string {
   const bits = [`${size} m`, `${e.category}, ${e.style}`, i ? `styles ${i.styles.join('/')}` : '', i && i.colors.length > 0 ? `colours ${i.colors.join('/')}` : '', e.placement !== 'floor' ? `goes on ${e.placement}` : '', ...h.notes.slice(0, 3)].filter(Boolean);
   return `${e.id} — ${e.name}: ${bits.join('; ')}`;
 }
+
+
+const NOT_A_NOUN: ReadonlySet<string> = new Set(['a', 'an', 'the', 'of', 'for', 'and', 'with', 'in', 'on', 'to', 'small', 'big', 'large', 'old', 'new', 'wooden', 'wood', 'modern', 'classic', 'antique', 'vintage', 'realistic', 'photographed', 'tall', 'short', 'long', 'low', 'high', 'round', 'square', 'red', 'green', 'blue', 'black', 'white', 'grey', 'gray', 'brown', 'yellow', 'gold', 'golden', 'metal', 'stone', 'marble', 'glass', 'plastic', 'ornate', 'simple', 'cheap', 'fancy']);
+const singularOf = (w: string): string => (w.length > 3 && w.endsWith('ies') ? `${w.slice(0, -3)}y` : w.length > 3 && w.endsWith('s') && !w.endsWith('ss') && !w.endsWith('us') ? w.slice(0, -1) : w);
+
+/** The noun a request is about: its last plain word ("church pew" gives "pew", "tall wooden bookcase" gives "bookcase"). */
+export function headNoun(text: string): string | null {
+  const words = text.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !NOT_A_NOUN.has(w));
+  const w = words[words.length - 1];
+  return w ? singularOf(w) : null;
+}
+
+/** True when nothing in a model's id, name, tags or interior type names the noun (a bench is found for a pew through a synonym). */
+export function lacksNoun(e: CatalogEntry, noun: string): boolean {
+  const hay = ` ${[e.id, e.name, ...e.tags, e.interior?.type ?? ''].join(' ').toLowerCase().replace(/[^a-z0-9]+/g, ' ')} `;
+  const plural = `${noun}s`;
+  return !(hay.includes(` ${noun} `) || hay.includes(` ${plural} `) || hay.includes(` ${noun}es `));
+}

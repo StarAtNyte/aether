@@ -96,6 +96,10 @@ describe('shape_land grid', () => {
     expect(pew.content).toContain('furn-pew');
     const case1 = await executeTool(ctx, 'find_model', { what: 'museum display case' });
     expect(case1.content).toContain('furn-vitrine');
+    // The small pieces a venue needs are found by their everyday names.
+    for (const [what, id] of [['marble statue on a plinth', 'furn-statue'], ['bronze bust', 'furn-statue'], ['velvet rope barrier', 'furn-rope-stanchion'], ['museum wall label', 'furn-plaque'], ['table setting', 'furn-place-setting'], ['tea light', 'furn-candle'], ['classical pillar', 'furn-column'], ['acoustic baffle', 'furn-ceiling-baffle'], ['flower planter', 'furn-planter'], ['potted plant', 'furn-plant']] as const) {
+      expect((await executeTool(ctx, 'find_model', { what })).content, what).toContain(id);
+    }
   });
 });
 

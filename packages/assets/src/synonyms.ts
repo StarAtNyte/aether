@@ -90,7 +90,7 @@ export const SYNONYM_GROUPS: readonly (readonly string[])[] = [
   ['windmill', 'mill'],
   ['market', 'stall', 'stand', 'kiosk'],
   ['cart', 'wagon', 'trolley'],
-  ['bench', 'pew'],
+  ['bench', 'seat bench'],
   ['vase', 'urn', 'jar'],
   ['speaker', 'radio', 'stereo'],
   ['mirror', 'looking glass'],

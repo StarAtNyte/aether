@@ -12,7 +12,7 @@
 export * from './schema';
 export { SYNONYM_GROUPS, synonymsOf, canonicalTags } from './synonyms';
 export { searchAssets, bestAsset, tokenize, type AssetQuery, type AssetHit } from './search';
-export { findModels, pickModel, resolveType, interiorTypes, describeModel, KIND_MODELS, AUTO_MODEL_KINDS, type ModelHit, type ModelQuery } from './interior';
+export { headNoun, lacksNoun, findModels, pickModel, resolveType, interiorTypes, describeModel, KIND_MODELS, AUTO_MODEL_KINDS, type ModelHit, type ModelQuery } from './interior';
 export { selectLod, lodDistances, screenFraction, LOD_SCREEN_FRACTIONS } from './lod';
 export { loadCatalog, getCatalog, setCatalog, catalogEntry, libraryUrl, libraryPathOf, isLibraryRemoteUrl, setLibraryRemote } from './registry';
 export {

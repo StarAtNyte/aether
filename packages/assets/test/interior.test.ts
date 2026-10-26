@@ -100,3 +100,17 @@ describe('interior model finder', () => {
     expect(findModels(catalog, { text: 'castle wall', look: 'any' }).map((h) => h.entry.id)).toContain('castle-wall');
   });
 });
+
+
+describe('stand-in detection', () => {
+  it('names the noun a request is about and notices when a model is another kind of object', async () => {
+    const { headNoun, lacksNoun } = await import('../src/interior');
+    expect(headNoun('church pews')).toBe('pew');
+    expect(headNoun('tall wooden bookcase')).toBe('bookcase');
+    expect(headNoun('marble statue')).toBe('statue');
+    expect(headNoun('red')).toBeNull();
+    const entry = { id: 'bench-park', name: 'Park bench', tags: ['bench', 'seat'], interior: { type: 'bench' } } as never;
+    expect(lacksNoun(entry, 'pew')).toBe(true);
+    expect(lacksNoun(entry, 'bench')).toBe(false);
+  });
+});

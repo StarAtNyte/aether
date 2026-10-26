@@ -4,7 +4,7 @@
  * All model arguments are untrusted: they are size-checked and zod-validated
  * here, and patches are validated again by the host's `applyPatches`.
  */
-import { describeModel, findModels, loadCatalog, searchAssets } from '@aether/assets';
+import { describeModel, findModels, headNoun, lacksNoun, loadCatalog, searchAssets } from '@aether/assets';
 import { applyArchOps, describePartLine, findCrafted, partInfo, runDesignTool, type DesignToolName } from '@aether/arch';
 import { GeneratorDef, ScriptDef, applyPatches, carryPatches, characterPatches, hasOwn, isPlainObject, type CarriedDependent, type Patch, type PatchError, type WorldDoc } from '@aether/core';
 import { summarizeWorldForModel } from './world-text';
@@ -413,7 +413,10 @@ async function findModelTool(input: z.infer<typeof ToolInputs.find_model>): Prom
   if (hits.length === 0) return { content: craftedBlock ? `${craftedBlock}No photographed library model matches "${input.what.slice(0, 80)}".` : `No library model matches "${input.what.slice(0, 80)}". Use the parametric part for this kind (see the parts list).`, isError: false, events: [], edited: false };
   const lines = hits.map(describeModel);
   const same = hits[0]!.entry.interior?.type;
-  return { content: clip(`${craftedBlock}${craftedBlock ? 'Library models:\n' : ''}${lines.join('\n')}\nPlace with place_items {"kind":"model:<id>","room":...,"fit":[w,h,d]} (the model is scaled within 0.5x to 2x); in a free world shape {"kind":"asset","id":"<id>"}. ${same ? `Other ${same} models exist: ask again with another style or colour.` : ''}`), isError: false, events: [], edited: false };
+  // Nothing named like the request: say so, so the model does not stand in a different kind of object (a bench for a pew, a tree for a statue).
+  const noun = headNoun(input.what);
+  const stand = noun && !craftedBlock && hits.every((h) => lacksNoun(h.entry, noun)) ? `No library model is named "${noun}": the models below are other kinds of object (${[...new Set(hits.slice(0, 3).map((h) => h.entry.name))].join(', ')}). Say so in your notes. Then choose the nearest sensible substitute only if it still reads as a ${noun}, or craft one from primitives (apply_patches) or write_generator. Never stand in a different kind of thing for it (a bench is not a pew, a tree is not a statue, a street lamp is not a rope stanchion).\n` : '';
+  return { content: clip(`${craftedBlock}${stand}${craftedBlock ? 'Library models:\n' : ''}${lines.join('\n')}\nPlace with place_items {"kind":"model:<id>","room":...,"fit":[w,h,d]} (the model is scaled within 0.5x to 2x); in a free world shape {"kind":"asset","id":"<id>"}. ${same ? `Other ${same} models exist: ask again with another style or colour.` : ''}`), isError: false, events: [], edited: false };
 }
 
 function inspectTool(ctx: ExecutorContext, input: z.infer<typeof ToolInputs.inspect>): ToolOutcome {
