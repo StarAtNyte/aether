@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Patch } from '@aether/core';
 import type { AgentEvent } from '@aether/agent';
-import { appendEvent, assistantText, beyondEditCard, buildAgentHistory, reviveChat, toDiagnostics, toEventView, toTestResults, trimChat, type ChatEntry, type ChatEventView } from '../src/lib/chat';
+import { appendEvent, assistantText, beyondEditCard, buildAgentHistory, reviveChat, reviveEvent, toDiagnostics, toEventView, toTestResults, trimChat, type ChatEntry, type ChatEventView } from '../src/lib/chat';
 import { summarizePatches } from '../src/lib/patchSummary';
 import { MAX_CHAT_ENTRIES, MAX_EVENTS_PER_ENTRY } from '../src/config';
 
@@ -208,5 +208,21 @@ describe('staged photo room', () => {
     expect(b.filter((e) => e.type === 'photo')).toHaveLength(1);
     expect(b.findIndex((e) => e.type === 'photo')).toBe(1);
     expect((b[1] as Extract<ChatEventView, { type: 'photo' }>).text).toBe('two');
+  });
+});
+
+describe('brief card view', () => {
+  const brief = { elaboration: 'elaborate', elaboration_reason: 'a general request', kind: 'cinema hall', summary: 's', scale: '24 m', zones: [{ name: 'lobby', purpose: 'tickets' }], elements: [{ name: 'seat rows', count: 10 }], materials: ['carpet'], lighting: 'dim', richness: { kinds: 20, pieces: 120 }, reference: { generate: false, reason: 'known' } };
+  it('keeps the plan and the image decision, and a stored plan is never waiting for an answer', () => {
+    const live = toEventView({ type: 'brief', view: { brief, editable: true, reference: { decision: 'skipped', reason: 'known well' } } } as never);
+    expect(live).toMatchObject({ type: 'brief', elaboration: 'elaborate', editable: true, reference: { decision: 'skipped' } });
+    const stored = reviveEvent(JSON.parse(JSON.stringify(live)));
+    expect(stored).toMatchObject({ type: 'brief', kind: 'cinema hall', editable: false });
+    expect(reviveEvent({ type: 'brief', elements: [] })).toBeNull();
+  });
+  it('replaces the waiting plan with the edited one', () => {
+    const a = toEventView({ type: 'brief', view: { brief, editable: true, reference: { decision: 'skipped', reason: 'x' } } } as never);
+    const b = toEventView({ type: 'brief', view: { brief, editable: false, notes: 'art deco', reference: { decision: 'skipped', reason: 'x' } } } as never);
+    expect(appendEvent(appendEvent([], a), b)).toHaveLength(1);
   });
 });

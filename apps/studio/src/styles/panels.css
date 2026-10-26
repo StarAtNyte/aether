@@ -2579,3 +2579,15 @@ button.chip:disabled {
 .composer__queue { list-style: none; margin: 0 0 var(--s-1); padding: 0; display: grid; gap: var(--s-1); }
 .composer__queued { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-1) var(--s-2); border: 1px dashed var(--border, rgba(127, 127, 127, 0.35)); border-radius: var(--r-2, 6px); font-size: var(--fs-12); color: var(--text-2); }
 .composer__queued-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.ev--brief { padding: var(--s-2) var(--s-3); border-left: 2px solid var(--border-strong); color: var(--text-2); }
+.ev--brief > summary { cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--text-1); }
+.ev--brief ul { margin: 2px 0 var(--s-2); padding-left: 1.1em; }
+.brief__line { margin: var(--s-1) 0; }
+.brief__dim { color: var(--text-3); }
+.brief__tag { font-size: var(--fs-12); padding: 0 6px; border-radius: var(--r-2); background: var(--surface-2, transparent); color: var(--text-2); border: 1px solid var(--border-strong); }
+.brief__elements li { list-style: none; margin-left: -1.1em; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.brief__elements li.is-removed { opacity: 0.5; text-decoration: line-through; }
+.brief__elements input { width: 4.5em; }
+.brief__actions { display: grid; gap: var(--s-2); margin-top: var(--s-2); }
+.brief__actions textarea { width: 100%; resize: vertical; }

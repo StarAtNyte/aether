@@ -1193,11 +1193,11 @@ export class Studio {
       // three on a subscription, one on a paid key (still stateless, with the fixed rubric and the relative comparison).
       const photo = primary && promptProfile === 'full' ? { vision: () => chain?.active()?.vision ?? resolved.vision, differences: true, crossCheck: true, harness: true, ...(subscription ? {} : { maxRounds: PHOTO_ROUNDS_METERED, judges: PHOTO_JUDGES_METERED, reads: PHOTO_READS_METERED }) } : { vision: false };
       // The level tools serve the offline planner too: an "onto" move is set down on the surface measured under it.
-      const agent = new WorldAgent({ provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: Number.isFinite(repairs) ? repairs : MAX_REPAIRS, promptProfile, photo, ...(buildAsset ? { buildAsset } : {}), ...(promptProfile === 'full' ? { levelTools: lazyLevelTools, textures: { images: primary ? this.ai.imageGenerator() : null } } : {}), ...(review ? { review, maxTurns: REVIEW_MAX_TURNS, maxToolCalls: REVIEW_MAX_TOOL_CALLS } : {}) });
+      const agent = new WorldAgent({ provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: Number.isFinite(repairs) ? repairs : MAX_REPAIRS, promptProfile, photo, ...(buildAsset ? { buildAsset } : {}), ...(promptProfile === 'full' ? { levelTools: lazyLevelTools, textures: { images: primary ? this.ai.imageGenerator() : null } } : {}), ...(promptProfile === 'full' && primary ? { brief: {} } : {}), ...(review ? { review, maxTurns: REVIEW_MAX_TURNS, maxToolCalls: REVIEW_MAX_TOOL_CALLS } : {}) });
       session = primary && (resolved.kind === 'local' || resolved.kind === 'bridge') ? (projectSessionKey(this.projectId) ?? undefined) : undefined;
       // The untouched default glade is a placeholder, not something the user made: the first prompt builds a new world.
       const intent = opts.intent ?? (before === this.history.current && st.chat.length === 0 && !this.history.canUndo() && isPristineStarter(before) ? 'new' : 'auto');
-      const runOpts = { signal: abort.signal, history, selection: st.selection, memory: this.refineMemory, heading: this.sim?.cameraHeading() ?? 0, intent, ...(images.length > 0 ? { images } : {}), ...(opts.photo || opts.continuePhoto ? { photo: opts.photo ?? ('recreate' as const) } : {}), ...(images.length > 0 ? { photoPermission: 'The user attached this photo and asked for it to be rebuilt as a room in their project; no further terms were stated.' } : {}), ...(opts.continuePhoto && this.photoResume ? { photoResume: this.photoResume } : {}), ...(session ? { session } : {}), steer: () => this.store.getState().takeQueued() } as const;
+      const runOpts = { signal: abort.signal, history, selection: st.selection, memory: this.refineMemory, heading: this.sim?.cameraHeading() ?? 0, intent, ...(images.length > 0 ? { images } : {}), ...(opts.photo || opts.continuePhoto ? { photo: opts.photo ?? ('recreate' as const) } : {}), ...(images.length > 0 ? { photoPermission: 'The user attached this photo and asked for it to be rebuilt as a room in their project; no further terms were stated.' } : {}), ...(opts.continuePhoto && this.photoResume ? { photoResume: this.photoResume } : {}), ...(session ? { session } : {}), steer: () => this.store.getState().takeQueued(), ...(primary && promptProfile === 'full' && prefs.reviewPlan ? { reviewBrief: () => new Promise<{ brief?: unknown; notes?: string } | null>((resolve) => { this.briefAnswer = resolve; }) } : {}) } as const;
       this.localEdit = null;
       status = await this.streamRun(agent.run(text, this.bridge, runOpts), entryId, abort, usage);
       // A targeted edit ("move the shrine", "make the sofa green") is not followed by scene-wide polishing: the quality
@@ -1295,6 +1295,16 @@ export class Studio {
         signal?.removeEventListener('abort', onAbort);
       }
     };
+  }
+
+  /** Resolves the plan the user is reviewing before the build (null: carry on unchanged). */
+  private briefAnswer: ((r: { brief?: unknown; notes?: string } | null) => void) | null = null;
+
+  /** The user's answer to a plan shown for review: an edited brief and/or notes, or null to build as planned. */
+  answerBrief(r: { brief?: unknown; notes?: string } | null): void {
+    const f = this.briefAnswer;
+    this.briefAnswer = null;
+    f?.(r);
   }
 
   /** Stream agent events into the chat entry; returns the turn status. The agent's own 'done' is folded into `usage`. */

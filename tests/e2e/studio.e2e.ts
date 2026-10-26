@@ -318,6 +318,8 @@ function lastTurnEvents(page: Page): Promise<string[]> {
           return `clarify(${e.text.slice(0, 100)})`;
         case 'step':
           return `step(${e.label})`;
+        case 'brief':
+          return `brief(${e.kind})`;
         default:
           return `${e.type}(${e.text.slice(0, 100)})`;
       }

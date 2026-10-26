@@ -6,6 +6,7 @@ import { compactCount } from '../../lib/format';
 import { CodeBlock } from '../CodeBlock';
 import { Icon } from '../Icon';
 import { RichText } from '../RichText';
+import { BriefCard } from './BriefCard';
 
 /** Expandable diff chip row for a patch batch. */
 const PatchesView = memo(function PatchesView({ event }: { event: Extract<ChatEventView, { type: 'patches' }> }): ReactElement {
@@ -484,6 +485,8 @@ export const ChatEvent = memo(function ChatEvent({ event, live }: { event: ChatE
       return <QualityView event={event} />;
     case 'photo':
       return <PhotoView event={event} />;
+    case 'brief':
+      return <BriefCard event={event} />;
     case 'review': {
       const tone = event.phase === 'approved' ? 'ok' : event.phase === 'stalled' || event.phase === 'limit' ? 'warn' : 'info';
       const label = event.phase === 'checking' ? 'Checking' : event.phase === 'found' ? 'Found' : event.phase === 'fixing' ? 'Fixing' : event.phase === 'approved' ? 'Checked' : event.phase === 'crosscheck' ? 'Independent check' : 'Stopped';

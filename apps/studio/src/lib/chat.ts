@@ -44,7 +44,57 @@ export type ChatEventView =
   /** One step the agent took ("Placing 4 items"); `thumbs` are small pictures of what it looked at (live only, never stored). */
   | { type: 'step'; tool: string; label: string; ok: boolean; thumbs?: Array<{ label: string; src: string }> }
   | PhotoEventView
+  | BriefEventView
   | { type: 'quality'; score: number; round: number; source: 'heuristic' | 'critic' | 'blend'; summary: string; criteria: QualityCriterionView[]; applied: string[] };
+
+/** The plan a world is built from (the generation brief), as the chat shows it. Collapsible; editable before the build when asked. */
+export interface BriefEventView {
+  type: 'brief';
+  elaboration: 'elaborate' | 'moderate' | 'minimal';
+  reason: string;
+  kind: string;
+  summary: string;
+  scale: string;
+  zones: Array<{ name: string; purpose: string; size?: string }>;
+  elements: Array<{ name: string; count: number; size?: string; note?: string }>;
+  materials: string[];
+  lighting: string;
+  richness: { kinds: number; pieces: number; note?: string };
+  reference: { decision: 'generated' | 'skipped' | 'unavailable' | 'failed'; reason: string; prompt?: string; provenance?: string; via?: string; model?: string };
+  notes?: string;
+  /** Waiting for the user to edit and confirm (live only; a stored brief is never waiting). */
+  editable: boolean;
+  /** The brief as the agent wrote it (what an edit starts from). */
+  raw?: unknown;
+}
+
+/** Bounded, validated view of a brief (live event or stored view). */
+export function briefView(v: unknown, editable: boolean): BriefEventView | null {
+  if (!isRecord(v)) return null;
+  const list = (x: unknown, n: number): Record<string, unknown>[] => (Array.isArray(x) ? x.filter(isRecord).slice(0, n) : []);
+  const opt = (x: unknown, n: number): { v: string } | Record<string, never> => (typeof x === 'string' && x.trim() ? { v: str(x, n) } : {});
+  const ref = isRecord(v['reference']) ? v['reference'] : {};
+  const rich = isRecord(v['richness']) ? v['richness'] : {};
+  const decision = (['generated', 'skipped', 'unavailable', 'failed'] as const).find((d) => d === ref['decision']) ?? 'skipped';
+  const el = (['elaborate', 'moderate', 'minimal'] as const).find((d) => d === v['elaboration']) ?? 'moderate';
+  const out: BriefEventView = {
+    type: 'brief',
+    elaboration: el,
+    reason: str(v['reason'] ?? v['elaboration_reason'], 200),
+    kind: str(v['kind'], 80),
+    summary: str(v['summary'], 400),
+    scale: str(v['scale'], 120),
+    zones: list(v['zones'], 14).map((z) => ({ name: str(z['name'], 60), purpose: str(z['purpose'], 160), ...(opt(z['size'], 60).v ? { size: opt(z['size'], 60).v } : {}) })),
+    elements: list(v['elements'], 60).map((e) => ({ name: str(e['name'], 60), count: Math.max(0, Math.min(5000, Math.round(num(e['count'])))), ...(opt(e['size'], 80).v ? { size: opt(e['size'], 80).v } : {}), ...(opt(e['note'], 160).v ? { note: opt(e['note'], 160).v } : {}) })),
+    materials: Array.isArray(v['materials']) ? v['materials'].filter((m): m is string => typeof m === 'string').slice(0, 14).map((m) => str(m, 80)) : [],
+    lighting: str(v['lighting'], 300),
+    richness: { kinds: Math.max(0, Math.min(400, Math.round(num(rich['kinds'])))), pieces: Math.max(0, Math.min(20000, Math.round(num(rich['pieces'])))), ...(opt(rich['note'], 200).v ? { note: opt(rich['note'], 200).v } : {}) },
+    reference: { decision, reason: str(ref['reason'], 300), ...(opt(ref['prompt'], 600).v ? { prompt: opt(ref['prompt'], 600).v } : {}), ...(opt(ref['provenance'], 40).v ? { provenance: opt(ref['provenance'], 40).v } : {}), ...(opt(ref['via'], 40).v ? { via: opt(ref['via'], 40).v } : {}), ...(opt(ref['model'], 64).v ? { model: opt(ref['model'], 64).v } : {}) },
+    ...(opt(v['notes'], 1000).v ? { notes: opt(v['notes'], 1000).v } : {}),
+    editable,
+  };
+  return out.elements.length > 0 ? out : null;
+}
 
 /** One difference between the reference (a photo, or the request) and the render, as the model wrote it. */
 export interface DifferenceEventView {
@@ -349,6 +399,11 @@ export function toEventView(e: AgentEvent, ctx: { head?: number } = {}): ChatEve
     }
     case 'photo':
       return photoView(e as unknown as Record<string, unknown>);
+    case 'brief': {
+      const v = briefView({ ...e.view.brief, reason: e.view.brief.elaboration_reason, reference: e.view.reference, notes: e.view.notes }, e.view.editable);
+      if (!v) return { type: 'status', text: '' };
+      return e.view.editable ? { ...v, raw: e.view.brief } : v;
+    }
     case 'done':
       return { type: 'done', inputTokens: num(e.usage.inputTokens), outputTokens: num(e.usage.outputTokens), calls: num(e.usage.calls), ...(e.usage.cachedInputTokens ? { cachedInputTokens: num(e.usage.cachedInputTokens) } : {}) };
   }
@@ -359,7 +414,8 @@ export function appendEvent(events: readonly ChatEventView[], view: ChatEventVie
   const last = events[events.length - 1];
   const base = last && last.type === 'status' && view.type === 'status' ? events.slice(0, -1) : events.slice();
   // The staged checklist of a photo room is one live card: a newer stage update replaces the older one in place.
-  const at = view.type === 'photo' && view.phase === 'stage' ? base.findLastIndex((e) => e.type === 'photo' && e.phase === 'stage') : -1;
+  // The brief card is one card too: the edited plan replaces the one that was waiting for the user.
+  const at = view.type === 'photo' && view.phase === 'stage' ? base.findLastIndex((e) => e.type === 'photo' && e.phase === 'stage') : view.type === 'brief' ? base.findLastIndex((e) => e.type === 'brief') : -1;
   if (at >= 0) base[at] = view;
   else base.push(view);
   // Steps are the bulk of a long run: only the newest ones are kept, so they never push real results out.
@@ -494,6 +550,8 @@ export function reviveEvent(v: unknown): ChatEventView | null {
     }
     case 'photo':
       return photoView(v);
+    case 'brief':
+      return briefView(v, false);
     case 'notice':
     {
       const off = v['offline'];

@@ -56,6 +56,8 @@ export const AiPrefsSchema = z.object({
   deep: z.boolean().catch(true),
   /** Iterations a deep build may spend (1–6). */
   deepTurns: z.number().int().min(1).max(6).catch(3),
+  /** Show the plan (the generation brief) and wait for the user to confirm or edit it before a new world is built. Off: it carries on at once. */
+  reviewPlan: z.boolean().catch(false),
 });
 /** AI preferences. */
 export type AiPrefs = z.infer<typeof AiPrefsSchema>;

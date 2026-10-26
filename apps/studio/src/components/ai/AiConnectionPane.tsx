@@ -443,6 +443,12 @@ export const AiConnectionPane = memo(function AiConnectionPane({ prefs, update, 
             options={Array.from({ length: MAX_REFINE + 1 }, (_, i) => [String(i), i === 0 ? 'Off' : `${i}`] as [string, string])}
           />
         </div>
+        <Toggle
+          label="Review the plan before building"
+          hint="A new world starts with a written plan: what the place needs, with counts and sizes. Turn this on to edit it before the build; off, it carries on by itself and you can still read the plan in the chat."
+          checked={prefs.reviewPlan}
+          onChange={(v) => update({ reviewPlan: v })}
+        />
         {repairs !== undefined && setRepairs && (
           <div className="setting-row">
             <span className="setting-row__text">
