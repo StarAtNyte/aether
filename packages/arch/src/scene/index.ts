@@ -93,4 +93,4 @@ export {
 } from './dispatch';
 export { roomAdvice, type PlanOverlay, type RoomAdvice } from './advice';
 export { projectOverlays, type ImageOverlay } from './views';
-export { reviewPoses, markIndex, projectMarks, legendText, customPose, entityGeometry, planDelta, projectGeometry, type EntityGeometry, type ImageBox, type ReviewPose, type MarkEntry, type ImageMark, type PoseOptions, type CustomPoseSpec } from './views';
+export { reviewPoses, exteriorPoses, markIndex, projectMarks, legendText, customPose, entityGeometry, planDelta, projectGeometry, type EntityGeometry, type ImageBox, type ReviewPose, type MarkEntry, type ImageMark, type PoseOptions, type CustomPoseSpec } from './views';

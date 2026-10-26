@@ -23,7 +23,7 @@ export interface ReviewPose {
   label: string;
   /** Plan id of the room (or "level-N" for a whole-level plan). */
   room: string;
-  kind: 'corner' | 'wall' | 'plan';
+  kind: 'corner' | 'wall' | 'plan' | 'exterior';
   position: Vec3;
   target: Vec3;
   up: Vec3;
@@ -231,6 +231,51 @@ export function reviewPoses(world: WorldDoc, building: EntityId, opts: PoseOptio
   }
   // Level plans first, then per room: corners and walls interleaved by room order (already in `out` order).
   return out.slice(0, max);
+}
+
+/**
+ * How a building looks from outside: a street-level view at eye height facing the main entrance from the distance a
+ * passer-by would stand at, and a three-quarter aerial. The entrance is the first door that leads outside on the ground
+ * floor (south when there is none). Roofs stay on: this is the picture a visitor gets before going in.
+ */
+export function exteriorPoses(world: WorldDoc, building: EntityId, opts: { aspect?: number } = {}): ReviewPose[] {
+  const scene = readScene(world, building);
+  const lvl = scene?.levels[0];
+  if (!scene || !lvl) return [];
+  const f = frameOf(world, scene);
+  const rooms = scene.rooms.filter((r) => r.levelId === lvl.id);
+  const pts = rooms.flatMap((r) => r.polygon);
+  if (pts.length === 0) return [];
+  const x0 = Math.min(...pts.map((q) => q[0]));
+  const x1 = Math.max(...pts.map((q) => q[0]));
+  const z0 = Math.min(...pts.map((q) => q[1]));
+  const z1 = Math.max(...pts.map((q) => q[1]));
+  const c: P2 = [(x0 + x1) / 2, (z0 + z1) / 2];
+  let door: { at: P2; out: P2 } | null = null;
+  for (const r of rooms) {
+    for (const w of r.walls) {
+      const o = w.openings.find((q) => q.kind === 'door' && q.leadsTo === 'outside');
+      if (o && !door) door = { at: [w.a[0] + w.dir[0] * o.centre, w.a[1] + w.dir[1] * o.centre], out: w.out };
+    }
+  }
+  const out: P2 = door?.out ?? [0, 1];
+  const at: P2 = door?.at ?? [c[0], z1];
+  const tang: P2 = [-out[1], out[0]];
+  const span = Math.max(0.1, ...pts.map((q) => Math.abs((q[0] - c[0]) * tang[0] + (q[1] - c[1]) * tang[1]))) * 2;
+  const size = Math.max(x1 - x0, z1 - z0);
+  const aspect = opts.aspect && Number.isFinite(opts.aspect) ? Math.max(0.5, Math.min(3, opts.aspect)) : 1.5;
+  const fov = 62;
+  const half = (Math.tan((fov * Math.PI) / 360) * aspect);
+  const dist = Math.max(9, Math.min(70, (span / 2 + 2) / half + 1.5));
+  const street: P2 = [at[0] + out[0] * dist, at[1] + out[1] * dist];
+  const a = Math.PI / 4;
+  const dir: P2 = [out[0] * Math.cos(a) - out[1] * Math.sin(a), out[0] * Math.sin(a) + out[1] * Math.cos(a)];
+  const R = size * 0.9 + 12;
+  const air: P2 = [c[0] + dir[0] * R, c[1] + dir[1] * R];
+  return [
+    { name: 'exterior-street', label: 'the building from the street at eye height (1.6 m), facing the entrance: the front, entrance, sign, windows, roofline and forecourt', room: 'exterior', kind: 'exterior', position: toWorld(f, street, 1.6, lvl.id), target: toWorld(f, at, 2.6, lvl.id), up: [0, 1, 0], fov, hideTops: false },
+    { name: 'exterior-aerial', label: 'the building from a three-quarter aerial: roof, massing, forecourt and surroundings', room: 'exterior', kind: 'exterior', position: toWorld(f, air, Math.max(9, R * 0.7), lvl.id), target: toWorld(f, c, 1.5, lvl.id), up: [0, 1, 0], fov: 50, hideTops: false },
+  ];
 }
 
 function compassOf(v: P2, c: P2): string {

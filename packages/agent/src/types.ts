@@ -213,7 +213,7 @@ export interface ReviewViewRequest {
   name: string;
   /** What it shows, for the model. */
   label: string;
-  kind: 'corner' | 'wall' | 'plan';
+  kind: 'corner' | 'wall' | 'plan' | 'exterior';
   /** World-space camera. */
   pose: { position: [number, number, number]; target: [number, number, number]; up: [number, number, number]; fov: number };
   /** Hide ceilings and roofs for this view (a plan from above). */

@@ -3,7 +3,7 @@
  * detection, choosing which rooms to look at, and the text of a review turn.
  */
 import { bodilessPeople, hasOwn, type EntityId, type WorldDoc } from '@aether/core';
-import { findingKey, findingsText, legendText, markIndex, projectMarks, projectOverlays, roomAdvice, readScene, reviewFindings, reviewPoses, scoreFindings, buildingIdsOf, type Finding, type ReviewPose } from '@aether/arch';
+import { exteriorPoses, findingKey, findingsText, legendText, markIndex, projectMarks, projectOverlays, roomAdvice, readScene, reviewFindings, reviewPoses, scoreFindings, buildingIdsOf, type Finding, type ReviewPose } from '@aether/arch';
 import type { ReviewViewRequest } from './types';
 
 /** Image aspect the review views are projected for. */
@@ -116,10 +116,13 @@ export function snapshotForReview(world: WorldDoc, before: WorldDoc | null, opts
   let legend = '';
   let advice = '';
   if (opts.withViews && worst) {
-    const poses = reviewPoses(world, worst, { rooms: focusRooms(world, worst, findings, before), maxViews: Math.min(MAX_REVIEW_VIEWS, opts.maxViews), aspect: REVIEW_ASPECT });
+    // A building is also seen from outside: when there is room for it, two of the images are the street view and the aerial.
+    const limit = Math.min(MAX_REVIEW_VIEWS, opts.maxViews);
+    const outside = limit >= 4 ? exteriorPoses(world, worst, { aspect: REVIEW_ASPECT }) : [];
+    const poses = [...reviewPoses(world, worst, { rooms: focusRooms(world, worst, findings, before), maxViews: Math.max(1, limit - outside.length), aspect: REVIEW_ASPECT }), ...outside];
     const shown = new Set<number>();
     for (const p of poses) {
-      const marks = projectMarks(world, worst, p, REVIEW_ASPECT);
+      const marks = p.kind === 'exterior' ? [] : projectMarks(world, worst, p, REVIEW_ASPECT);
       for (const m of marks) shown.add(m.n);
       const req = toRequest(p, marks);
       if (p.kind === 'plan') {
@@ -178,6 +181,7 @@ export function reviewTurnText(round: number, snap: ReviewSnapshot, opts: { hasI
     findingsText(snap.findings, 30),
   ];
   if (snap.advice) lines.push(snap.advice);
+  if (opts.hasImages && snap.views.some((v) => v.kind === 'exterior')) lines.push('Two of the images (exterior-street, exterior-aerial) show the building from outside. Judge them like a visitor arriving: is the entrance readable (canopy or door surround, a lit sign, paving), do the windows keep a rhythm, is there a roofline, a base, planters, lamps and a forecourt, or is it a plain box? Fix a bare front with build_architecture (set_facade, set_material target exterior, set_site) and place_items outside.');
   if (opts.hasImages) lines.push(`Numbers drawn on the images are pieces of the building. Use them to say exactly what you mean:\n${snap.legend}`);
   lines.push(
     'Fix every real error and warning with edit_items / place_items (measure first with query_scene; make the smallest change that works; never rebuild a room to move one piece). Judge what the checker cannot: scale and proportion, clutter or emptiness, furniture facing the right way, pieces floating or crossing walls, style and colour consistency, lighting and mood, whether a person could live here. If the light or colour reads wrong (too cold, too dark, flat, washed out, green foliage that does not suit the season), set the look with tune_look rather than repainting surfaces. If a finding is a false alarm, say why in your final message.',
