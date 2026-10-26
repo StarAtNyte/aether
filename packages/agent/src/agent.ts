@@ -32,7 +32,7 @@ import { guardVerificationClaim } from './honesty';
 import { DIFFERENCES_TOOL, DIFFERENCES_TOOL_NAME, DifferenceLedger, differenceViews } from './photo/differences';
 import { READ_ONLY_TOOLS, REVIEW_CROSSCHECK_SEED, REVIEW_CROSSCHECK_SYSTEM, requirementText, reviewCrossCheckText } from './review-diff';
 import { CallLedger, budgetNote, stepLabel, compactConversation, drainSteer, guardedTool, steerText, trimToAnswered } from './harness';
-import { briefChecklistText, richnessOnlyTurnText, richnessSnapshot, RICHNESS_SUBJECT, REFERENCE_TOOL, REFERENCE_TOOL_NAME, richnessReviewText } from './brief';
+import { briefChecklistText, richnessShortfalls, richnessOnlyTurnText, richnessSnapshot, RICHNESS_SUBJECT, REFERENCE_TOOL, REFERENCE_TOOL_NAME, richnessReviewText } from './brief';
 import { briefStage, lookReference, type BriefReviewer, type BriefStageResult } from './brief-stage';
 import { LEVEL_SUBJECT, levelSnapshot, levelTurnText } from './level-review';
 import type { AgentEvent, AgentHost, AgentOptions, ChatMessage, CompletionResponse, ContentBlock, ReviewOptions, ToolDef, UsageTotals } from './types';
@@ -922,6 +922,15 @@ export class WorldAgent {
         if (errors.length === 0 && big.length > 0 && !pushedBack.has(bigKey)) {
           pushedBack.add(bigKey);
           pushUserText(messages, `You approved, but these large gaps from the request are still open: ${big.slice(0, 5).map((d) => `${d.id} (${d.what.slice(0, 80)})`).join('; ')}. Fix them, or say plainly why they cannot be fixed with the tools.`);
+          continue;
+        }
+        // Approved while the brief's repeated elements are still well short: ask once per set of shortfalls to build them
+        // with the one-call layouts, or to say plainly why not. Progress changes the set, so there is no fixed number of asks.
+        const short = this.briefState ? richnessShortfalls(host.getWorld(), this.briefState.brief) : null;
+        if (errors.length === 0 && short && !pushedBack.has(short.key)) {
+          pushedBack.add(short.key);
+          tracker.forgive();
+          pushUserText(messages, `You approved, but your brief's counts are still well short: ${short.text.slice(0, 900)}. Build the rest now in one call each (shape_land tier, grid, perimeter, wall or along, as the brief says), then look again. Call finish only when the checklist is met, or say plainly for each short element why it stays short.`);
           continue;
         }
         if (errors.length === 0) {

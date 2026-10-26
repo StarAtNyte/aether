@@ -32,6 +32,12 @@ const BriefElement = z.object({
   note: z.string().trim().max(160).optional(),
   /** Words that appear in the names, ids or tags of the pieces that stand for this element (for the advisory piece count). */
   find: z.array(short(30)).max(6).optional(),
+  /**
+   * How the pieces get placed, chosen by the model: a one-call layout (`tier` raked seating, `grid` blocks, `perimeter` seats
+   * around tables, `wall` hung along a wall, `along` down a line, `row` along a polyline, `scatter` a loose spread) or `single`
+   * for one-offs. The checklist repeats it so a count of 40 never becomes 40 hand-placed pieces.
+   */
+  how: z.enum(['tier', 'grid', 'perimeter', 'wall', 'along', 'row', 'scatter', 'single']).optional(),
 });
 
 export const BriefSchema = z.object({
@@ -54,7 +60,7 @@ export type BriefElementT = z.infer<typeof BriefElement>;
 export const BRIEF_TOOL: ToolDef = {
   name: BRIEF_TOOL_NAME,
   description:
-    'Write the brief for the world before anything is built. {elaboration: "elaborate"|"moderate"|"minimal", elaboration_reason (one line, from the wording of the request), kind (what kind of space or world), summary, scale ("about 24 m by 16 m, 9 m tall"), zones:[{name, purpose, size?}], elements:[{name, count, size?, note?, find?:[words that appear in the names or tags of the pieces standing for it]}], materials:[...], lighting (mood and sources), richness:{kinds (distinct kinds of things), pieces (total pieces), note?}, reference:{generate (true only when you want a reference image), reason, prompt? (what the image shows)}}.',
+    'Write the brief for the world before anything is built. {elaboration: "elaborate"|"moderate"|"minimal", elaboration_reason (one line, from the wording of the request), kind (what kind of space or world), summary, scale ("about 24 m by 16 m, 9 m tall"), zones:[{name, purpose, size?}], elements:[{name, count, size?, note?, find?:[words that appear in the names or tags of the pieces standing for it], how?: tier|grid|perimeter|wall|along|row|scatter|single (the one-call layout that places it)}], materials:[...], lighting (mood and sources), richness:{kinds (distinct kinds of things), pieces (total pieces), note?}, reference:{generate (true only when you want a reference image), reason, prompt? (what the image shows)}}.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -68,7 +74,7 @@ export const BRIEF_TOOL: ToolDef = {
         type: 'array',
         items: {
           type: 'object',
-          properties: { name: { type: 'string' }, count: { type: 'integer' }, size: { type: 'string' }, note: { type: 'string' }, find: { type: 'array', items: { type: 'string' } } },
+          properties: { name: { type: 'string' }, count: { type: 'integer' }, size: { type: 'string' }, note: { type: 'string' }, find: { type: 'array', items: { type: 'string' } }, how: { type: 'string', enum: ['tier', 'grid', 'perimeter', 'wall', 'along', 'row', 'scatter', 'single'] } },
           required: ['name', 'count'],
         },
       },
@@ -116,7 +122,7 @@ export function briefSystem(opts: { webSearch?: boolean } = {}): string {
     'Judge this from the meaning of the request, not from single words. The richness target follows your statement.',
     '',
     'Then give: kind, summary, scale (real metres, sized as the real kind of place would be at the requested size), zones (areas and what each is for), elements (what makes this kind of space recognisable, each with a realistic COUNT and size; for repeated things give the total, e.g. seats, and say rows in note), materials, lighting mood and sources, and the richness target: roughly how many distinct kinds of things and how many pieces, scaled to the world size (an elaborate furnished room of 4 x 5 m is tens of pieces, a hall or a house hundreds, a village or harbour a few hundred more than that with scatter counted; a minimal one is a handful of kinds). Counts are your estimate, not a quota.',
-    'For each element give `find`: words that will appear in the names or tags of the pieces you will place for it, so the pieces can be counted later.',
+    'For each element give `find`: words that will appear in the names or tags of the pieces you will place for it, so the pieces can be counted later. And give `how`, the one-call layout that places it, so a large count is one call and not that many pieces by hand: tier (raked seats), grid (blocks: desks, pews, stacks, stalls), perimeter (chairs around tables), wall (paintings, posters, acoustic panels, sconces hung along a wall), along (cases, columns, lamps, stools down a line), row (trees, posts along a path), scatter (loose spread), single (one-offs: screen, stage, counter).',
     '',
     'Example of the level of detail for a cinema hall (elaborate): tiered stepped floor, 8 to 14 rows of seats with aisle steps and floor lights, a screen about 12 m wide, projection booth and beam, acoustic wall panels, curtains, exit signs, ceiling baffles, wall sconces, a lobby with a concession counter, posters, carpet. Do the same kind of thinking for a library, restaurant, church, gym, clinic, school, museum, airport lounge, and for outdoor or game worlds (village, harbour, forest camp, sci-fi corridor).',
     '',
@@ -144,7 +150,7 @@ export function briefChecklistText(b: Brief, notes?: string): string {
     `Scale: ${b.scale}.`,
     `Zones: ${b.zones.map((z) => `${z.name}${z.size ? ` (${z.size})` : ''}: ${z.purpose}`).join('; ')}.`,
     'Elements (count, size):',
-    ...b.elements.map((e) => `- ${e.name}: ${e.count}${e.size ? `, ${e.size}` : ''}${e.note ? `; ${e.note}` : ''}`),
+    ...b.elements.map((e) => `- ${e.name}: ${e.count}${e.size ? `, ${e.size}` : ''}${e.note ? `; ${e.note}` : ''}${e.how && e.how !== 'single' ? ` [place with shape_land ${e.how}]` : ''}`),
     `Materials: ${b.materials.join('; ') || 'as fits'}.`,
     `Lighting: ${b.lighting}`,
     `Richness target: about ${b.richness.kinds} distinct kinds and ${b.richness.pieces} pieces${b.richness.note ? ` (${b.richness.note})` : ''}. Estimates for the size of this world, not a quota.`,
@@ -155,7 +161,8 @@ export function briefChecklistText(b: Brief, notes?: string): string {
       ? 'The user wants it small and simple: keep it sparse and do not add extras beyond what they asked.'
       : [
           'Build the elements at their counts, and build each as the real object. Pick pieces with find_model where it has them: crafted parts with real detail exist for many venue pieces (furn-cinema-seat, furn-tier-steps, furn-cinema-screen, furn-stage, furn-speaker, furn-acoustic-panel, furn-step-light, furn-lectern, furn-pew, furn-altar, furn-library-stack, furn-vitrine, furn-reception-desk, furn-school-desk, furn-blackboard, furn-table, furn-chair, furn-cane-chair, furn-bookshelf, furn-frame ...), then photographed library models; never build a seat, shelf, desk or display case from boxes when a part exists.',
-          'Place repeated things in ONE call each, not one entity per piece: shape_land {op:"tier"} for raked seating on a stepped floor (rows, seatsPerRow, aisles; the sightline is solved and every seat stands at its row height), {op:"grid"} for blocks with aisles (pews, desks, tables, library stacks), {op:"row"} along a line (lamps, fence posts, trees), or a scatter with points. One-offs (screen, stage, counter, altar, booth window) go in with apply_patches as {"kind":"procedural","generator":"furn-..."} at measured positions. Give every zone its own character.',
+          'Place every repeated element in ONE call, never one entity per piece (place_items is for the furniture of one room, 40 a call): shape_land {op:"tier"} raked seating on a stepped floor (rows, seatsPerRow, aisles; the sightline is solved); {op:"grid"} blocks with aisles (pews, desks, library stacks, market stalls); {op:"perimeter", at:[every table centre], table:{of:"furn-table"}, long:2} the table and its seats at every position (14 tables of 4 is one call); {op:"wall", from, to, count, y, variants:[...]} paintings, posters, acoustic panels, sconces hung along a wall (32 paintings on four walls is four calls; variants give different subjects and frames); {op:"along", from, to, count, of:"furn-vitrine"} cases, columns, lamps, stools down a line; {op:"row"} trees and posts along a path. They work inside a building too: use the world coordinates of the room from query_scene or your plan. One-offs (screen, stage, counter, altar, booth window) go in with apply_patches as {"kind":"procedural","generator":"furn-..."} at measured positions. Give every zone its own character. Do not stop when a repeated element is short: send another call.',
+          'Finish the shell: panelled acoustic walls (wall op with furn-acoustic-panel), wainscot and skirting, a ceiling with coffers or baffles, a lit entrance, sign and ground outside, so it reads as a finished place from outside and inside.',
           'Light it for a visitor at eye height (1.6 m): a venue is dim but never near-black. The focus glows (screen, stage, altar, display cases), aisle and step lights mark the way, wall sconces or wall washers every 3-4 m, a soft fill so walls, seats and floor read; emissive meshes alone light nothing, so put real point or spot lights near the fixtures, then look from eye height and lift the exposure or ambient with tune_look if it still reads dark.',
         ].join('\n'),
   );
@@ -175,8 +182,14 @@ function entityText(e: Entity, id: string): string {
   return norm(`${id} ${e.name} ${e.tags.join(' ')} ${kind}`);
 }
 
-/** Advisory evidence for the richness review: piece counts against each brief element. Never a gate. */
-export function richnessEvidence(world: WorldDoc, b: Brief): string {
+interface ElementCount {
+  el: BriefElementT;
+  found: number;
+  hitIds: string[];
+}
+
+/** Pieces found for each brief element, matched by the model's own `find` words (a scatter of 120 seats is 120 pieces). */
+function countElements(world: WorldDoc, b: Brief): { ids: string[]; kinds: number; counts: ElementCount[] } {
   const ids = Object.keys(world.entities);
   const texts = ids.map((id) => ({ id, text: ` ${entityText(world.entities[id] as Entity, id)} ` }));
   const kinds = new Set<string>();
@@ -184,18 +197,40 @@ export function richnessEvidence(world: WorldDoc, b: Brief): string {
     const e = world.entities[id] as Entity;
     kinds.add(e.shape.kind === 'procedural' ? e.shape.generator : e.shape.kind === 'asset' ? e.shape.id : `${e.shape.kind}:${norm(e.name).replace(/\d+/g, '').trim()}`);
   }
-  const lines = [`Advisory piece counts (evidence for your judgement, not a pass mark): ${ids.length} entities in the world, about ${kinds.size} distinct kinds; the brief aimed at about ${b.richness.pieces} pieces and ${b.richness.kinds} kinds.`];
-  for (const el of b.elements) {
+  const counts = b.elements.map((el) => {
     const words = (el.find && el.find.length > 0 ? el.find : [el.name]).map((w) => norm(w)).filter(Boolean);
     const hitIds = texts.filter((t) => words.some((w) => w.split(' ').every((p) => t.text.includes(` ${p} `) || t.text.includes(` ${stem(p)}`)))).map((t) => t.id);
-    // A scatter of 120 seats is one entity and 120 pieces.
-    const found = hitIds.reduce((n, id) => n + instancesOf(world.entities[id] as Entity), 0);
+    return { el, hitIds, found: hitIds.reduce((n, id) => n + instancesOf(world.entities[id] as Entity), 0) };
+  });
+  return { ids, kinds: kinds.size, counts };
+}
+
+/** Advisory evidence for the richness review: piece counts against each brief element. Never a gate. */
+export function richnessEvidence(world: WorldDoc, b: Brief): string {
+  const { ids, kinds, counts } = countElements(world, b);
+  const lines = [`Advisory piece counts (evidence for your judgement, not a pass mark): ${ids.length} entities in the world, about ${kinds} distinct kinds; the brief aimed at about ${b.richness.pieces} pieces and ${b.richness.kinds} kinds.`];
+  for (const { el, found, hitIds } of counts) {
     const mark = found === 0 ? 'NONE FOUND' : found < el.count * 0.5 ? 'sparse' : 'ok';
     const grouped = found !== hitIds.length ? ` in ${hitIds.length} entit${hitIds.length === 1 ? 'y' : 'ies'}` : '';
-    lines.push(`- ${el.name}: brief ${el.count}, found ${found}${grouped} (${mark})${hitIds.length > 0 ? `, e.g. ${hitIds.slice(0, 3).join(', ')}` : ''}`);
+    lines.push(`- ${el.name}: brief ${el.count}, found ${found}${grouped} (${mark})${hitIds.length > 0 ? `, e.g. ${hitIds.slice(0, 3).join(', ')}` : ''}${mark !== 'ok' && el.how && el.how !== 'single' ? `; place the rest with shape_land ${el.how}` : ''}`);
   }
   lines.push('A count is only a hint: pieces may be named differently, or one repeated piece may stand for several. You judge.');
   return lines.join('\n');
+}
+
+/**
+ * What the advisory counts say is still short (under half the brief's count, or none found) and what changed since: the review asks
+ * the model once per distinct set to build it or to say why not, so a model that stops early is sent back, and one that gives a reason is
+ * not asked again.
+ */
+export function richnessShortfalls(world: WorldDoc, b: Brief): { key: string; text: string } | null {
+  if (b.elaboration === 'minimal') return null;
+  const short = countElements(world, b).counts.filter(({ el, found }) => found < el.count * 0.5);
+  if (short.length === 0) return null;
+  return {
+    key: `short:${short.map(({ el, found }) => `${el.name}=${found}`).join('|')}`,
+    text: short.map(({ el, found }) => `${el.name} (brief ${el.count}, found ${found}${el.how && el.how !== 'single' ? `, place with shape_land ${el.how}` : ''})`).join('; '),
+  };
 }
 
 /** The richness review turn, shown with the renders: compare the result with the brief and fix what is missing or sparse. */

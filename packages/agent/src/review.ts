@@ -40,6 +40,12 @@ export class StallTracker {
     this.limit = Math.max(2, Math.min(20, Math.floor(stallRounds)));
   }
 
+  /** A new ask went to the model (a push-back it has not seen): the rounds before it do not count as a stall. */
+  forgive(): void {
+    this.same = 0;
+    this.noGain = 0;
+  }
+
   /** Record one finished round. */
   observe(o: RoundObservation): StallVerdict {
     const k = [...o.keys].sort().join('|');

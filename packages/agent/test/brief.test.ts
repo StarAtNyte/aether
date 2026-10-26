@@ -104,8 +104,10 @@ describe('brief -> build -> richness review', () => {
       () => [call('look_closer', { regions: [{ box: [0.2, 0.2, 0.6, 0.6], note: 'sconces' }] })],
       () => [call('place_items', { items: [{ kind: 'nightstand', room: 'bedroom', id: 'sconce-1', wall: 'north', t: 0.65 }] })],
       () => [finish('added what was missing')],
-      // round 2: approves
+      // round 2: approves while the seat rows are still short: sent back once, then says why
       () => [finish('as rich as the brief said')],
+      () => [finish('the seat rows stay short: the room is small')],
+      () => [finish('the seat rows stay short: the room is small')],
     ]);
     const host = new MemoryHost();
     const events: AgentEvent[] = await collect(new WorldAgent({ provider, catalogs: TEST_CATALOGS, maxTurns: 12, brief: {}, textures: { images: gen }, review: {} }).run('make a cinema hall', host, { intent: 'new' }));
@@ -131,6 +133,9 @@ describe('brief -> build -> richness review', () => {
     expect(review).toContain('Advisory piece counts');
     expect(review).toMatch(/seat rows: brief 10, found/);
     expect(events.some((e) => e.type === 'review' && e.phase === 'approved')).toBe(true);
+    // Approving with the counts well short sends the model back once, naming them and the layout to use.
+    const pushed = provider.requests.map((r) => r.messages.map(textOf).join('\n')).find((t) => t.includes('your brief\'s counts are still well short'));
+    expect(pushed).toMatch(/seat rows \(brief 10, found/);
     expect(events.some((e) => e.type === 'step' && e.tool === 'look_closer')).toBe(true);
     expect(Object.keys(host.world.entities).some((id) => id.includes('sconce'))).toBe(true);
   });
