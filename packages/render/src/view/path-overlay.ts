@@ -18,8 +18,8 @@ export class PathOverlay {
   private readonly tickGeo = new BufferGeometry();
   private readonly linePos = new Float32Array(MAX_PATH_POINTS * 3);
   private readonly tickPos = new Float32Array(MAX_PATH_KEYS * 6 * 4);
-  private readonly lineMat = new LineBasicMaterial({ color: 0x8b8cff, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false });
-  private readonly tickMat = new LineBasicMaterial({ color: 0xffc04d, transparent: true, opacity: 0.95, depthTest: false, depthWrite: false });
+  private readonly lineMat = new LineBasicMaterial({ color: 0xe8e4dc, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false });
+  private readonly tickMat = new LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, depthTest: false, depthWrite: false });
 
   constructor() {
     this.group.name = 'camera-path';

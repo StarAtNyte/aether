@@ -49,9 +49,9 @@ export interface GhostTrace {
 const RADIUS = 0.35;
 /** Id of the ghost person inside the character system. */
 const GHOST_ID = 'aether:ghost-run';
-const FIGURE = new Color('#7fd6ff');
-const ROUTE_AHEAD = new Color('#6b72ff');
-const ROUTE_DONE = new Color('#c2ecff');
+const FIGURE = new Color('#f0ece4');
+const ROUTE_AHEAD = new Color('#bdb6a8');
+const ROUTE_DONE = new Color('#ffffff');
 const MARKER = new Color('#ffd166');
 
 /** Validate a trace's shape (lengths and finite values). Pure. */

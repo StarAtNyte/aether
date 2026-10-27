@@ -16,7 +16,7 @@ export const BLUEPRINT_FADE_SECONDS = 0.7;
 /** Seconds objects wait inside their marks before growing (the plan is seen first). */
 export const BLUEPRINT_LEAD_SECONDS = 0.3;
 const OPACITY = 0.85;
-const COLOR = new Color('#7c86ff');
+const COLOR = new Color('#d8d4cc');
 
 /** An axis-aligned box: min and max corners. */
 export interface MarkBox {

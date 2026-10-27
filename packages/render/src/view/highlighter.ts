@@ -8,7 +8,7 @@ import type { EntityId } from '@aether/core';
 
 /** Max simultaneously highlighted entities. */
 export const MAX_HIGHLIGHTS = 256;
-const COLOR = 0x4cc9ff;
+const COLOR = 0xffffff;
 
 /** Selection outline manager. */
 export class Highlighter {

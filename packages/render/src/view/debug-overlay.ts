@@ -40,7 +40,7 @@ export interface DebugOptions {
 export const MAX_DEBUG_ITEMS = 2000;
 /** Max trimesh triangles drawn as wireframe (bigger ones show their bounds). */
 const MAX_TRIMESH_TRIS = 50_000;
-const SEVERITY_COLOR: Readonly<Record<RenderDiagnostic['severity'], string>> = { error: '#ff3b4e', warning: '#ffb020', info: '#4ea8ff' };
+const SEVERITY_COLOR: Readonly<Record<RenderDiagnostic['severity'], string>> = { error: '#ff3b4e', warning: '#ffb020', info: '#d8d4cc' };
 const DEG = Math.PI / 180;
 const _p = new Vector3();
 
@@ -133,7 +133,7 @@ export class DebugOverlay {
   private readonly marker = new OctahedronGeometry(0.18, 0);
   private readonly colliderMat = new LineBasicMaterial({ color: '#3dff8a', depthTest: false, transparent: true, opacity: 0.85 });
   private readonly hullMat = new LineBasicMaterial({ color: '#ffb347', depthTest: false, transparent: true, opacity: 0.85 });
-  private readonly meshMat = new LineBasicMaterial({ color: '#3dd5ff', depthTest: false, transparent: true, opacity: 0.6 });
+  private readonly meshMat = new LineBasicMaterial({ color: '#d8d4cc', depthTest: false, transparent: true, opacity: 0.6 });
   private readonly severityLine = new Map<string, LineBasicMaterial>();
   private readonly severityFill = new Map<string, MeshBasicMaterial>();
   private options: DebugOptions = {};

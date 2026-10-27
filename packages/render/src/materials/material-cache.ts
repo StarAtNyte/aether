@@ -25,10 +25,10 @@ import type { WaterTier } from './water-params';
 import { SceneBackdrop } from './scene-backdrop';
 
 /** Ghost preview tint (cyan, translucent). */
-const GHOST_COLOR = new Color('#7fd8ff');
+const GHOST_COLOR = new Color('#ece8e0');
 const GHOST_OPACITY = 0.34;
 /** Proof-replay ghost tint (indigo-cyan, readable over any ground). */
-const PROOF_COLOR = new Color('#8c95ff');
+const PROOF_COLOR = new Color('#bdb6a8');
 const PROOF_OPACITY = 0.62;
 
 /** Marks the water materials (their look changes with the screen-space reflection mode, see {@link MaterialCache.setReflectiveWater}). */

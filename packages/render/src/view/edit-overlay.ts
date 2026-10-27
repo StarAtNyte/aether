@@ -50,8 +50,8 @@ export interface ComponentView {
 
 /** Most vertex markers drawn (beyond this only selected vertices get markers). */
 export const MAX_VERTEX_MARKERS = 20_000;
-const ACCENT = 0xff9f1c;
-const WIRE = 0x9fd8ff;
+const ACCENT = 0xf4f1ea;
+const WIRE = 0xd8d4cc;
 const SPRITE_ORDER = 20;
 
 const _m = new Matrix4();

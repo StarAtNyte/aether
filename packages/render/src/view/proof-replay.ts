@@ -49,8 +49,8 @@ export const PROOF_MAX_SECONDS = 8;
 /** Trail opacity while shown. */
 const TRAIL_OPACITY = 1;
 /** Trail colour at the start (old) and at the head (new) of the motion. */
-const TAIL = new Color('#6b72ff');
-const HEAD = new Color('#c2ecff');
+const TAIL = new Color('#bdb6a8');
+const HEAD = new Color('#ffffff');
 
 type Phase = 'idle' | 'loading' | 'play' | 'hold' | 'fade';
 
