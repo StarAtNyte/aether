@@ -94,5 +94,5 @@ export {
   type DesignToolResult,
 } from './dispatch';
 export { roomAdvice, type PlanOverlay, type RoomAdvice } from './advice';
-export { projectOverlays, renderInstanceIds, silhouetteParts, type PartBox, type ImageOverlay, type InstanceBuffer } from './views';
+export { projectOverlays, renderInstanceIds, silhouetteParts, type PartBox, type ImageOverlay, type InstanceBuffer, type UnitMesh } from './views';
 export { reviewPoses, exteriorPoses, markIndex, projectMarks, legendText, customPose, entityGeometry, planDelta, planDeltaOfWorld, projectPoint, unprojectToPlane, projectGeometry, type EntityGeometry, type ImageBox, type ReviewPose, type MarkEntry, type ImageMark, type PoseOptions, type CustomPoseSpec } from './views';

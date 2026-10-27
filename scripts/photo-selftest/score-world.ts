@@ -13,6 +13,7 @@ import { join, resolve } from 'node:path';
 import { createWorld, type WorldDoc } from '@aether/core';
 import { readScene, renderInstanceIds, type ReviewPose } from '@aether/arch';
 import { PHOTO_BUILDING_ID, deltaE2000, hexToLab } from '@aether/arch/photo';
+import { warmMeshes } from '../../packages/agent/src/photo/raster-meshes';
 import { decodeMasks, type TruthMasks } from '../../packages/agent/src/photo/selftest/fixture';
 import { familyOf, labelMask, maskIou, median, type SelftestTruth } from '../../packages/agent/src/photo/selftest/metrics';
 import { makeCamera, truthItems, truthRoom, vfovOf } from '../../packages/agent/src/photo/selftest/truth';
@@ -73,7 +74,7 @@ const dE = (a: string | null, b: string | null): number | null => { const x = a 
 
 // mask overlap of the built room from the run's camera
 const pose: ReviewPose = { name: 'built', label: 'built', room: 'x', kind: 'corner', position: p.position, target: p.target, up: [0, 1, 0], fov: p.fov, hideTops: false };
-const inst = renderInstanceIds(built, PHOTO_BUILDING_ID, pose, aspect, masks.width, masks.height);
+const inst = renderInstanceIds(built, PHOTO_BUILDING_ID, pose, aspect, masks.width, masks.height, process.argv.includes('--boxes') ? undefined : await warmMeshes(built, PHOTO_BUILDING_ID));
 const dec = decodeMasks(masks);
 const rasterOf = (id: string): Uint8Array => {
   const out = new Uint8Array(masks.width * masks.height);

@@ -16,6 +16,7 @@ import { z } from 'zod';
 import type { AgentEvent, ContentBlock, ToolDef } from '../../types';
 import type { CompleteFn, InventoryItem } from '../objects';
 import { COLOUR_PARAMS } from './tool';
+import { placementGateOn } from '../placement-gate';
 import type { PerceivedObject, PerceptionReport } from './perceive';
 
 export const BUILD_PLAN_TOOL_NAME = 'review_build_plan';
@@ -320,7 +321,7 @@ export function makeBuildPlan(inp: PlanInput): BuildPlan {
       row.entity = ent.id;
       const d = Math.hypot(ent.pos[0] - cx, ent.pos[2] - cz);
       const farWall = ent.wall !== undefined;
-      if (!farWall && d > 0.2 && row.mount === 'floor') {
+      if (!farWall && d > (placementGateOn() ? 0.2 : 0.5) && row.mount === 'floor') {
         row.action = 'adjust';
         row.at = [r2(cx), r2(cz)];
         row.notes.push(`built ${r2(d)} m from the measured spot (${r2(ent.pos[0])}, ${r2(ent.pos[2])} against ${r2(cx)}, ${r2(cz)}): move`);
@@ -650,7 +651,7 @@ export function applyDecisions(plan: BuildPlan, decisions: readonly PlanDecision
       if (d.x !== undefined && d.z !== undefined && row.at && Math.hypot(d.x - row.at[0], d.z - row.at[1]) > 0.15) away.push(`${Math.round(Math.hypot(d.x - row.at[0], d.z - row.at[1]) * 100)} cm from the measured spot`);
       if (row.fit && ((d.w !== undefined && Math.abs(d.w / Math.max(0.01, row.fit[0]) - 1) > 0.15) || (d.h !== undefined && Math.abs(d.h / Math.max(0.01, row.fit[1]) - 1) > 0.15) || (d.d !== undefined && Math.abs(d.d / Math.max(0.01, row.fit[2]) - 1) > 0.15))) away.push('more than 15 percent off the measured size');
       if (d.yaw !== undefined && row.yaw !== null && Math.abs((((d.yaw - row.yaw) % 360) + 540) % 360 - 180) > 20) away.push('more than 20 degrees off the measured facing');
-      if (away.length > 0 && (!d.reason || d.reason.trim().length < 12)) { ignored.push(`#${d.n}: ${away.join(', ')}; measured placement is the default, so give a reason that cites evidence (an occluded mask, a collision, what the photo shows) or keep the measured pose`); continue; }
+      if (placementGateOn() && away.length > 0 && (!d.reason || d.reason.trim().length < 12)) { ignored.push(`#${d.n}: ${away.join(', ')}; measured placement is the default, so give a reason that cites evidence (an occluded mask, a collision, what the photo shows) or keep the measured pose`); continue; }
       if (away.length > 0) row.notes.push(`left the measured pose (${away.join(', ')}): ${(d.reason ?? '').slice(0, 100)}`);
     }
     row.decision = 'edit';

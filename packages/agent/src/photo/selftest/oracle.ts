@@ -8,7 +8,7 @@
  *    measure wrongly): every object should read match or close.
  */
 import { measureAppearance, photoCameraSpec, type RoomDescription, type Appearance } from '@aether/arch/photo';
-import { customPose, renderInstanceIds, type ReviewPose } from '@aether/arch';
+import { customPose, renderInstanceIds, type ReviewPose, type UnitMesh } from '@aether/arch';
 import type { WorldDoc } from '@aether/core';
 import { ObjectLedger, type InventoryItem } from '../objects';
 import { compareObjects, type Measured } from '../objects-measure';
@@ -46,8 +46,8 @@ export interface ProjectionResult {
   structure: { floor: number; ceiling: number; wall: number };
 }
 
-export function projectionOracle(world: WorldDoc, pose: ReviewPose, t: SelftestTruth, m: TruthMasks): ProjectionResult | null {
-  const inst = renderInstanceIds(world, t.room.building, pose, t.camera.aspect, m.width, m.height);
+export function projectionOracle(world: WorldDoc, pose: ReviewPose, t: SelftestTruth, m: TruthMasks, meshes?: ReadonlyMap<string, UnitMesh>): ProjectionResult | null {
+  const inst = renderInstanceIds(world, t.room.building, pose, t.camera.aspect, m.width, m.height, meshes);
   if (!inst) return null;
   const dec = decodeMasks(m);
   const maskOf = (re: (id: string) => boolean): Uint8Array => {
@@ -124,9 +124,9 @@ export interface ComparisonResult {
 }
 
 /** `compareObjects` on the true world (the perfect build) against the photo with the true masks. */
-export function comparisonOracle(world: WorldDoc, pose: ReviewPose, t: SelftestTruth, m: TruthMasks, photo: Raster, base: PerceptionReport): ComparisonResult | null {
+export function comparisonOracle(world: WorldDoc, pose: ReviewPose, t: SelftestTruth, m: TruthMasks, photo: Raster, base: PerceptionReport, meshes?: ReadonlyMap<string, UnitMesh>): ComparisonResult | null {
   const { report, ledger } = oracleReport(base, t, m, photo);
-  const res = compareObjects({ world, pose, aspect: t.camera.aspect, report, ledger, render: photo, px: { w: t.photo.width, h: t.photo.height }, building: t.room.building });
+  const res = compareObjects({ world, pose, aspect: t.camera.aspect, report, ledger, render: photo, px: { w: t.photo.width, h: t.photo.height }, building: t.room.building, ...(meshes ? { meshes } : {}) });
   if (!res) return null;
   const total = res.rows.length;
   const good = res.counts.match + res.counts.close;

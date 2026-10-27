@@ -632,6 +632,12 @@ export function silhouetteParts(it: Pick<SceneItem, 'kind' | 'footprint' | 'yaw'
   return null;
 }
 
+/** A piece's mesh in a unit box (x and z in -0.5..0.5, y in 0..1), scaled by the raster to the piece's own width, height and depth. */
+export interface UnitMesh {
+  positions: Float32Array;
+  indices: Uint32Array;
+}
+
 /** What a pixel of an instance buffer shows. */
 export interface InstanceBuffer {
   width: number;
@@ -647,7 +653,7 @@ export interface InstanceBuffer {
  * It has no materials, no shadows and no glass, so it is the silhouette and occlusion of the built scene: a per-entity pixel mask for
  * comparing the build with the masks measured on the photo. Pure and deterministic; independent of the GPU renderer.
  */
-export function renderInstanceIds(world: WorldDoc, building: EntityId, pose: ReviewPose, aspect: number, width: number, height = Math.max(8, Math.round(width / aspect))): InstanceBuffer | null {
+export function renderInstanceIds(world: WorldDoc, building: EntityId, pose: ReviewPose, aspect: number, width: number, height = Math.max(8, Math.round(width / aspect)), meshes?: ReadonlyMap<string, UnitMesh>): InstanceBuffer | null {
   const scene = readScene(world, building);
   if (!scene) return null;
   const f = frameOf(world, scene);
@@ -738,6 +744,23 @@ export function renderInstanceIds(world: WorldDoc, building: EntityId, pose: Rev
     const fp = it.footprint;
     if (fp.length < 3) continue;
     const k = idx(it.id);
+    const unit = fp.length === 4 ? meshes?.get(it.id) : undefined;
+    if (unit) {
+      // the real mesh of the piece (library model or generator output), fitted to the piece's own box
+      const cx = fp.reduce((a, p) => a + p[0], 0) / 4, cz = fp.reduce((a, p) => a + p[1], 0) / 4;
+      const ex = rotateYaw(1, 0, it.yaw), ez = rotateYaw(0, 1, it.yaw);
+      const px = fp.map((p) => p[0] * ex[0] + p[1] * ex[1]), pz = fp.map((p) => p[0] * ez[0] + p[1] * ez[1]);
+      const w = Math.max(...px) - Math.min(...px), d = Math.max(...pz) - Math.min(...pz), h = it.y1 - it.y0;
+      const up = unit.positions;
+      const wp = new Array<Vec3>(up.length / 3);
+      for (let i = 0; i < wp.length; i++) {
+        const r = rotateYaw((up[i * 3] as number) * w, (up[i * 3 + 2] as number) * d, it.yaw);
+        wp[i] = toWorld(f, [cx + r[0], cz + r[1]], it.y0 + (up[i * 3 + 1] as number) * h, it.levelId);
+      }
+      const ix = unit.indices;
+      for (let i = 0; i + 2 < ix.length; i += 3) tri(wp[ix[i] as number] as Vec3, wp[ix[i + 1] as number] as Vec3, wp[ix[i + 2] as number] as Vec3, k);
+      continue;
+    }
     const parts = fp.length === 4 ? silhouetteParts(it) : null;
     if (parts) {
       // the piece as its parts (seat, back, legs, shade...), not the solid prism of its footprint: an open-work piece covers far fewer pixels than its box

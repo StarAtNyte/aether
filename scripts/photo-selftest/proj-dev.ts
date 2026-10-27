@@ -9,9 +9,11 @@ import { join, resolve } from 'node:path';
 import { createWorld } from '@aether/core';
 import { SELFTEST_WORLDS, type TruthMasks } from '../../packages/agent/src/photo/selftest/fixture';
 import { median, type SelftestTruth } from '../../packages/agent/src/photo/selftest/metrics';
+import { warmMeshes } from '../../packages/agent/src/photo/raster-meshes';
 import { pipelinePose, projectionOracle } from '../../packages/agent/src/photo/selftest/oracle';
 
 const args = process.argv.slice(2);
+const boxes = args.includes('--boxes');
 const want = args.find((a) => a.startsWith('--worlds='))?.slice(9).split(',');
 const root = join(homedir(), '.local/share/aether/qa/selftest');
 const byKind = new Map<string, number[]>();
@@ -26,7 +28,8 @@ for (const w of readdirSync(root).sort()) {
     const truth = JSON.parse(readFileSync(join(dir, 'truth.json'), 'utf8')) as SelftestTruth;
     const masks = JSON.parse(readFileSync(join(dir, 'masks.json'), 'utf8')) as TruthMasks;
     const pose = pipelinePose(world as never, truth);
-    const r = pose ? projectionOracle(world as never, pose, truth, masks) : null;
+    const meshes = boxes ? undefined : await warmMeshes(world as never, truth.room.building);
+    const r = pose ? projectionOracle(world as never, pose, truth, masks, meshes) : null;
     if (!r) continue;
     meds.push(r.median as number);
     for (const x of r.rows) byKind.set(x.kind, [...(byKind.get(x.kind) ?? []), x.iou]);

@@ -9,7 +9,7 @@
 import type { PerceptionReport } from './perception/perceive';
 import type { seedInventory as SeedFn } from './perception/seed';
 import type { Entity, WorldDoc } from '@aether/core';
-import type { ReviewPose } from '@aether/arch';
+import type { ReviewPose, UnitMesh } from '@aether/arch';
 import type { AgentEvent, AgentHost, ContentBlock, PhotoObjectView } from '../types';
 import { cropBox } from './closer';
 import { DifferenceLedger } from './differences';
@@ -69,6 +69,8 @@ export interface StageDeps {
   /** The perception layer's functions (a lazy chunk, handed in when perception is on). */
   seed?: typeof SeedFn;
   compare?: typeof CompareFn;
+  /** Real meshes of the built pieces for the instance raster (loaded once per model). */
+  meshes?: (world: WorldDoc) => Promise<Map<string, UnitMesh>>;
   /** The perception report of the run (masks, measured colours), for the measured comparison each round; null: none. */
   report?: () => PerceptionReport | null;
   /** Library models that look like the crop of a perceived or inventory object (one line), for objects whose type or presence is off; null: none. */
@@ -337,8 +339,9 @@ export class ObjectStage {
     this.measured = null;
     const report = this.deps.report?.() ?? null;
     if (report && inp.pose && inp.raster && this.deps.compare) {
+      const meshes = this.deps.meshes ? await this.deps.meshes(inp.world).catch(() => undefined) : undefined;
       try {
-        this.measured = this.deps.compare({ world: inp.world, pose: inp.pose, aspect: inp.aspect, report, ledger, render: inp.raster, px: this.deps.px });
+        this.measured = this.deps.compare({ ...(meshes ? { meshes } : {}), world: inp.world, pose: inp.pose, aspect: inp.aspect, report, ledger, render: inp.raster, px: this.deps.px });
       } catch { this.measured = null; }
     }
     if (this.measured) {

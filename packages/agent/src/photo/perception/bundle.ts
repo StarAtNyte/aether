@@ -8,5 +8,6 @@ export { APPLY_COLOUR_TOOL, COLOUR_PARAMS, PERCEIVE_TOOL, parseApplyColourInput,
 export { seedInventory } from './seed';
 export { similarModelsText } from './retrieve';
 export { compareObjects } from '../objects-measure';
+export { warmMeshes } from '../raster-meshes';
 export { normaliseHex } from '@aether/arch/photo';
 export { buildFromMeasurements, makeBuildPlan, planText, BUILD_PLAN_TOOL } from './buildplan';

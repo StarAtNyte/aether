@@ -19,6 +19,7 @@ import { DEFAULT_NOUNS, Perceiver, type PerceptionReport } from '../../packages/
 import type { TruthMasks } from '../../packages/agent/src/photo/selftest/fixture';
 import { SELFTEST_WORLDS } from '../../packages/agent/src/photo/selftest/fixture';
 import { cameraErrors, colourErrors, depthErrors, detectionErrors, median, placementErrors, roomErrors, surfaceMaskErrors, type SelftestTruth } from '../../packages/agent/src/photo/selftest/metrics';
+import { warmMeshes } from '../../packages/agent/src/photo/raster-meshes';
 import { comparisonOracle, pipelinePose, plainPose, projectionOracle } from '../../packages/agent/src/photo/selftest/oracle';
 
 const args = process.argv.slice(2);
@@ -126,6 +127,7 @@ for (const f of fixtures) {
   const world = loadWorld(f.world);
   const det = detectionErrors(rep, truth, masks);
   const specPose = pipelinePose(world, truth);
+  const meshes = process.argv.includes('--boxes') ? undefined : await warmMeshes(world, truth.room.building);
   rows.push({
     world: f.world, pose: f.pose,
     cam: cameraErrors(rep, truth),
@@ -135,9 +137,9 @@ for (const f of fixtures) {
     det,
     place: placementErrors(rep, truth, det),
     colour: colourErrors(rep, truth, det, masks, photo),
-    projSpec: specPose ? projectionOracle(world, specPose, truth, masks) : null,
-    projPlain: projectionOracle(world, plainPose(truth), truth, masks),
-    compare: specPose ? comparisonOracle(world, specPose, truth, masks, photo, rep) : null,
+    projSpec: specPose ? projectionOracle(world, specPose, truth, masks, meshes) : null,
+    projPlain: projectionOracle(world, plainPose(truth), truth, masks, meshes),
+    compare: specPose ? comparisonOracle(world, specPose, truth, masks, photo, rep, meshes) : null,
   });
 }
 

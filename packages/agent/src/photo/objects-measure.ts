@@ -8,7 +8,7 @@
  */
 import { colourName, deltaE2000, hexLuminance, hexToLab, measureAppearance, PHOTO_BUILDING_ID, scaleHexLight, type Appearance } from '@aether/arch/photo';
 import { projectBuilt, renderInstanceIds, worldShiftOnFloor } from './objects-evidence';
-import type { ReviewPose } from '@aether/arch';
+import type { ReviewPose, UnitMesh } from '@aether/arch';
 import type { WorldDoc } from '@aether/core';
 import type { InventoryItem, ObjectLedger } from './objects';
 import { decodeRle, type PerceivedObject, type PerceptionReport } from './perception/perceive';
@@ -103,11 +103,13 @@ export interface MeasureInput {
   px: { w: number; h: number };
   /** The building to draw (default: the photo room); the self-test benchmark compares other worlds. */
   building?: string;
+  /** Real meshes of the pieces (by entity id) for the instance raster; absent: the pieces are drawn as box parts. */
+  meshes?: ReadonlyMap<string, UnitMesh>;
 }
 
 export function compareObjects(inp: MeasureInput): Measured | null {
   const W = 256;
-  const inst = renderInstanceIds(inp.world, inp.building ?? PHOTO_BUILDING_ID, inp.pose, inp.aspect, W);
+  const inst = renderInstanceIds(inp.world, inp.building ?? PHOTO_BUILDING_ID, inp.pose, inp.aspect, W, undefined, inp.meshes);
   if (!inst) return null;
   const H = inst.height;
   const idMask = (match: (id: string) => boolean): Uint8Array => {

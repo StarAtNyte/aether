@@ -82,7 +82,7 @@ import { JUDGES_DEFAULT, JUDGES_MAX, ProgressTracker, consensusText, decideRound
 import { CLOSER_TOOL, CLOSER_TOOL_NAME, lookCloser } from './closer';
 import { OBJECT_REASON_TOOL, OBJECT_REASON_TOOL_NAME, ObjectLedger, applyReasons, objectsDueText, objectsProcedure, objectsSummary } from './objects';
 import { ObjectStage } from './objects-stage';
-import { gateEdits } from './placement-gate';
+import { gateEdits, placementGateOn } from './placement-gate';
 import type { DepthRaster } from './depth-model';
 import type { Perceiver, PerceptionReport } from './perception/perceive';
 import { APPLY_COLOUR_TOOL_NAME, PERCEIVE_TOOL_NAME } from './perception/names';
@@ -941,7 +941,7 @@ async function* measuredFirstBuild(run: PhotoRun, photo: Photo, desc: RoomDescri
     tool: async (name, input) => executeTool(ctx, name, input),
     ...(ctx.signal ? { signal: ctx.signal } : {}),
   });
-  const anchored = objects.setAnchors(host.getWorld());
+  const anchored = placementGateOn() ? objects.setAnchors(host.getWorld()) : 0;
   if (anchored > 0) yield { type: 'photo', phase: 'building', text: `Measured placement is the default: ${anchored} linked pieces hold the pose the measurements gave them; moving one more than 15 cm, resizing it more than 15 percent or turning it more than 20 degrees needs a reason that cites evidence (it is kept in the ledger).` };
   if (outcome.placed > 0 || outcome.dropped > 0) yield { type: 'photo', phase: 'round', text: objects.coverageLine(), objects: objects.views() };
 }
@@ -968,7 +968,7 @@ function makeObjects(run: PhotoRun, photo: Photo, saved: ObjectLedger | null): O
         : undefined,
       getWorld: () => host.getWorld(),
       applyPatches: (p, m) => host.applyPatches(p, m),
-      ...(perceiverOf(run) ? { seed: codeOf(run).seedInventory, compare: codeOf(run).compareObjects } : {}),
+      ...(perceiverOf(run) ? { seed: codeOf(run).seedInventory, compare: codeOf(run).compareObjects, meshes: (w: WorldDoc) => codeOf(run).warmMeshes(w) } : {}),
       ...(perceiverOf(run) ? { perceive: async (labels: string[]) => (await perceiverOf(run)?.run({ find: labels }).catch(() => null)) ?? null } : {}),
       ...(perceiverOf(run) ? { report: () => perceiverOf(run)?.report() ?? perceiveEvidence.get(run)?.report ?? null } : {}),
       ...(perceiverOf(run) ? {

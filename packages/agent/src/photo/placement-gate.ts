@@ -16,6 +16,9 @@ export const YAW_TOL = 20;
 /** A reason shorter than this is not a reason. */
 const MIN_REASON = 12;
 
+/** Measured placement as the default; `AETHER_PLACEMENT_GATE=off` restores the earlier behaviour (the model places freely) for before/after runs. */
+export const placementGateOn = (): boolean => (typeof process !== 'undefined' ? process.env['AETHER_PLACEMENT_GATE'] !== 'off' : true);
+
 export interface Anchor {
   itemId: string;
   label: string;
