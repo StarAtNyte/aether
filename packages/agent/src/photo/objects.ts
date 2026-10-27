@@ -123,6 +123,8 @@ export interface ObjectRec {
   editedRound?: number;
   /** Why the loop stopped with this object not perfect ("stopped: ..."); set when the loop ends by plateau or round cap. */
   stopped?: string;
+  /** Moves, resizes and turns away from the measured pose, with the reason the model gave (measured placement is the default). */
+  moves?: string[];
 }
 
 export interface RelationRec {

@@ -14,6 +14,7 @@ import type { AgentEvent, AgentHost, ContentBlock, PhotoObjectView } from '../ty
 import { cropBox } from './closer';
 import { DifferenceLedger } from './differences';
 import { padBox } from './kit';
+import { posesOf, type Anchor } from './placement-gate';
 import {
   ASPECTS,
   INVENTORY_SEED,
@@ -138,6 +139,31 @@ export class ObjectStage {
     if (this.closeStreak >= 2) return 'every object the judges still fault measures close (mask IoU above 0.6, colour deltaE under 10) for 2 rounds in a row: the judges and the measurements disagree, and the measurements are the finer instrument for a small difference';
     if (this.ledger.plateau()) return `the last ${PLATEAU_ROUNDS} rounds raised neither the pass rate nor lowered the open count`;
     return null;
+  }
+
+  /** The pose the measurements gave each linked piece (entity id -> anchor): the default the model needs a reason to leave. */
+  anchors = new Map<string, Anchor>();
+
+  /** Fix the anchors at the poses the first build from the measurements left (linked pieces only). */
+  setAnchors(world: WorldDoc): number {
+    this.anchors.clear();
+    const poses = posesOf(world);
+    for (const r of this.ledger.list()) {
+      for (const e of r.item.entities) {
+        const p = poses.get(e);
+        if (p && r.item.measured?.id) this.anchors.set(e, { itemId: r.item.id, label: r.item.label || r.item.kind, pos: p.pos, size: p.size, yaw: p.yaw });
+      }
+    }
+    return this.anchors.size;
+  }
+
+  /** Keep a reason the model gave for leaving the measured pose. */
+  recordMoves(list: ReadonlyArray<{ entity: string; reason: string }>): void {
+    for (const m of list) {
+      const a = this.anchors.get(m.entity);
+      const rec = a ? this.ledger.get(a.itemId) : undefined;
+      if (rec) rec.moves = [...(rec.moves ?? []), m.reason].slice(-6);
+    }
   }
 
   /** Record the built pieces that stand for an inventory object (the perception-driven first build; entity <-> perceived id). */

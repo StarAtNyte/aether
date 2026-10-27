@@ -82,6 +82,7 @@ import { JUDGES_DEFAULT, JUDGES_MAX, ProgressTracker, consensusText, decideRound
 import { CLOSER_TOOL, CLOSER_TOOL_NAME, lookCloser } from './closer';
 import { OBJECT_REASON_TOOL, OBJECT_REASON_TOOL_NAME, ObjectLedger, applyReasons, objectsDueText, objectsProcedure, objectsSummary } from './objects';
 import { ObjectStage } from './objects-stage';
+import { gateEdits } from './placement-gate';
 import type { DepthRaster } from './depth-model';
 import type { Perceiver, PerceptionReport } from './perception/perceive';
 import { APPLY_COLOUR_TOOL_NAME, PERCEIVE_TOOL_NAME } from './perception/names';
@@ -940,6 +941,8 @@ async function* measuredFirstBuild(run: PhotoRun, photo: Photo, desc: RoomDescri
     tool: async (name, input) => executeTool(ctx, name, input),
     ...(ctx.signal ? { signal: ctx.signal } : {}),
   });
+  const anchored = objects.setAnchors(host.getWorld());
+  if (anchored > 0) yield { type: 'photo', phase: 'building', text: `Measured placement is the default: ${anchored} linked pieces hold the pose the measurements gave them; moving one more than 15 cm, resizing it more than 15 percent or turning it more than 20 degrees needs a reason that cites evidence (it is kept in the ledger).` };
   if (outcome.placed > 0 || outcome.dropped > 0) yield { type: 'photo', phase: 'round', text: objects.coverageLine(), objects: objects.views() };
 }
 
@@ -1585,7 +1588,21 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
           continue;
         }
         const linkedBefore = objects && objects.ready ? objects.snapshotLinked(host.getWorld()) : null;
-        const out = await executeTool(ctx, call.name, call.input);
+        let toolInput: unknown = call.input;
+        let heldText = '';
+        if (call.name === 'edit_items' && objects && objects.anchors.size > 0) {
+          const gate = gateEdits(host.getWorld(), call.input, objects.anchors);
+          toolInput = gate.input;
+          heldText = gate.refusal;
+          objects.recordMoves(gate.reasons);
+          if (gate.held > 0) refusals.push(`edit_items: ${gate.refusal.slice(0, 200)}`);
+        }
+        if (toolInput === null) {
+          yield { type: 'step', tool: call.name, label: 'Edit held: measured placement needs a reason', ok: false };
+          results.push({ type: 'tool_result', toolUseId: call.id, content: heldText, isError: true });
+          continue;
+        }
+        const out = await executeTool(ctx, call.name, toolInput);
         yield { type: 'step', tool: call.name, label: stepLabel(call.name, call.input, !out.isError), ok: !out.isError };
         for (const ev of out.events) yield ev;
         if (call.name === 'design_plan' && !out.isError) shellAnswered = true;
@@ -1595,7 +1612,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
         }
         if (out.isError || /refused/i.test(out.content)) refusals.push(`${call.name}: ${out.content.split('\n').slice(0, 3).join(' ').slice(0, 300)}`);
         const feedback = linkedBefore && out.edited && objects ? objects.afterEdit(linkedBefore) : '';
-        results.push({ type: 'tool_result', toolUseId: call.id, content: feedback ? `${out.content}\n${feedback}` : out.content, ...(out.isError ? { isError: true } : {}) });
+        results.push({ type: 'tool_result', toolUseId: call.id, content: [out.content, heldText, feedback].filter(Boolean).join('\n'), ...(out.isError ? { isError: true } : {}) });
       }
       messages.push({ role: 'user', content: results });
       if (lookBlocks.length > 0) pushUser(messages, lookBlocks.splice(0));
