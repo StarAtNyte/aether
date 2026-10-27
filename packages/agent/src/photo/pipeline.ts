@@ -999,7 +999,11 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
   const settle = (cand: Judged, world: WorldDoc, shot: Shot, at: number, said: Consensus['preference'] = null): { decision: Decision; standing: Judged; rejected: Accepted | null } => {
     const ref = accepted;
     // The side-by-side verdict is the LLM's: the panel's, or the fixing model's own `closer` when it judged alone.
-    const decision = decideRound(ref ? stateOf(ref.judged) : null, stateOf(cand), cand.panel?.preference ?? said);
+    let decision = decideRound(ref ? stateOf(ref.judged) : null, stateOf(cand), cand.panel?.preference ?? said);
+    // With the object table a whole-frame preference for the old state does not throw away a round of repairs: it is a single noisy
+    // vote on about twenty items, while the objects are judged one by one and each one that got worse is put back to its best.
+    // The end of the loop still compares the last state with the best one.
+    if (!decision.accept && objects && objects.ready) decision = { ...decision, accept: true, reason: `${decision.reason}; kept, because the per-object judgement decides which objects are put back` };
     if (decision.accept) {
       accepted = { world, round: at, shot, judged: cand, camera: { ...desc.camera } };
       if (decision.gain || !best) best = accepted;
