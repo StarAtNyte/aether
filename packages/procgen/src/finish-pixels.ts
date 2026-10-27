@@ -655,6 +655,56 @@ const roofTiles: Pattern = (f, random, seed) => {
   }
 };
 
+/** Reed or straw thatch: bundles laid in overlapping courses, the strands running down the slope (V). */
+const thatch: Pattern = (f, random) => {
+  const n = f.n;
+  const strands = fbmField(random, n, 96, 8, 3);
+  const clumps = fbmField(random, n, 8, 4, 3);
+  const courses = 5;
+  for (let y = 0; y < n; y++) {
+    const t = ((y / n) * courses) % 1;
+    const ledge = smooth(clamp01(t * 2.5));
+    for (let x = 0; x < n; x++) {
+      const k = y * n + x;
+      const s = strands[k] as number;
+      const c = clumps[k] as number;
+      f.height[k] = clamp01(0.25 + 0.45 * s + 0.3 * ledge);
+      f.accent[k] = clamp01(c * 0.8 + (1 - s) * 0.3 - ledge * 0.15);
+      f.shade[k] = 0.78 + c * 0.3 + (s - 0.5) * 0.14;
+      f.rough[k] = 1;
+      f.ao[k] = 0.5 + 0.5 * ledge;
+    }
+  }
+};
+
+/** Riven slate: rectangular slates in staggered courses, each a little different in tone and standing slightly proud at its lower edge. */
+const slate: Pattern = (f, random, seed) => {
+  const n = f.n;
+  const rows = 10;
+  const cols = 6;
+  const surf = fbmField(random, n, 16, 16, 3);
+  const rowPx = n / rows;
+  const colPx = n / cols;
+  for (let y = 0; y < n; y++) {
+    const row = Math.floor(y / rowPx);
+    const t = (y - row * rowPx) / rowPx;
+    const off = row % 2 === 1 ? colPx / 2 : 0;
+    for (let x = 0; x < n; x++) {
+      const k = y * n + x;
+      const xs = (x + off) % n;
+      const col = Math.floor(xs / colPx);
+      const dx = Math.min(xs - col * colPx, (col + 1) * colPx - xs);
+      const th = cellHash(seed, col, row);
+      const gap = joint(dx, 1);
+      f.height[k] = clamp01(0.2 + 0.6 * t + (th - 0.5) * 0.12) * gap;
+      f.accent[k] = clamp01(th * 0.7 + ((surf[k] as number) - 0.5) * 0.5);
+      f.shade[k] = 0.82 + th * 0.3;
+      f.rough[k] = 0.9 + ((surf[k] as number) - 0.5) * 0.4;
+      f.ao[k] = (0.5 + 0.5 * Math.min(1, t * 3)) * (0.6 + 0.4 * gap);
+    }
+  }
+};
+
 /** Standing-seam metal roof: raised seams across U. */
 const standingSeam: Pattern = (f, random) => {
   const n = f.n;
@@ -1047,6 +1097,8 @@ const PATTERNS: Readonly<Record<FinishDef['pattern'], Pattern>> = Object.freeze(
   glaze: subtle(0.05, 4),
   'roof-tiles': roofTiles,
   'standing-seam': standingSeam,
+  thatch,
+  slate,
   turf,
   pebbles: pebbles(22),
   ripples,

@@ -92,6 +92,8 @@ export const MaterialFinish = z.enum([
   'facade',
   // Additive: ground and wall surfaces with real relief (granite setts, rough limestone masonry, dry packed earth, pine cladding).
   'cobble', 'limestone', 'dry-earth', 'cladding',
+  // Additive: roof coverings (bundled reed straw, riven slate courses).
+  'thatch', 'slate',
   // Additive: the cut face of a sectioned wall (architectural poche: dark solid with a diagonal hatch).
   'poche',
 ]);

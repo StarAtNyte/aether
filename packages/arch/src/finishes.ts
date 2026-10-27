@@ -15,7 +15,7 @@ import type { MaterialFinish, MaterialSpec } from '@aether/core';
 export type FinishPattern =
   | 'planks' | 'herringbone' | 'veined' | 'speckle' | 'plaster' | 'smooth' | 'grid-tiles' | 'subway' | 'flagstone' | 'granite' | 'bricks'
   | 'weave' | 'velvet' | 'grain-leather' | 'pile' | 'brushed' | 'mirror' | 'glass' | 'frosted' | 'glaze' | 'roof-tiles'
-  | 'standing-seam' | 'deck-boards' | 'turf' | 'pebbles' | 'ripples'
+  | 'standing-seam' | 'thatch' | 'slate' | 'deck-boards' | 'turf' | 'pebbles' | 'ripples'
   | 'leaves' | 'facade' | 'paper-plain' | 'paper-stripe' | 'paper-floral' | 'paper-damask' | 'paper-geometric' | 'panel-shaker' | 'slats' | 'hatch';
 
 /** One entry of the finish library. */
@@ -94,6 +94,8 @@ export const FINISHES: Readonly<Record<MaterialFinish, FinishDef>> = Object.free
   cobble: { color: '#8d887e', accent: '#5f5b52', roughness: 0.88, metalness: 0, tintable: false, tile: 2, pattern: 'flagstone', bump: 0.6 },
   limestone: { color: '#b9aa8c', accent: '#8b7f69', roughness: 0.9, metalness: 0, tintable: false, tile: 2, pattern: 'flagstone', bump: 0.75 },
   'dry-earth': { color: '#9a7a45', accent: '#6b5430', roughness: 1, metalness: 0, tintable: false, tile: 3, pattern: 'pebbles', bump: 0.45 },
+  thatch: { color: '#a88c55', accent: '#6e5a34', roughness: 0.96, metalness: 0, tintable: false, tile: 1.6, pattern: 'thatch', bump: 0.7 },
+  slate: { color: '#4d5560', accent: '#2f353d', roughness: 0.62, metalness: 0, tintable: true, tile: 1.4, pattern: 'slate', bump: 0.5 },
   cladding: { color: '#c9b48a', accent: '#8a7650', roughness: 0.7, metalness: 0, tintable: false, tile: 1.5, pattern: 'planks', bump: 0.5 },
   water: { color: '#3d8fb0', accent: '#2a6f8f', roughness: 0.05, metalness: 0, opacity: 0.78, tintable: false, tile: 4, pattern: 'ripples', bump: 0.4 },
 });
