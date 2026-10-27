@@ -174,6 +174,11 @@ export class ObjectStage {
     return objectViews(this.ledger);
   }
 
+  /** Measured verdict per object id of the latest round. */
+  measuredVerdicts(): Map<string, string> {
+    return new Map((this.measured?.rows ?? []).map((m) => [m.id, m.verdict]));
+  }
+
   private measuredSummary(): { measured?: NonNullable<RoundResult['measured']> } {
     return this.measured ? { measured: { ...this.measured.counts, surfaces: this.measured.surfaces.map((x) => ({ surface: x.surface, deltaE: x.deltaE })) } } : {};
   }
@@ -404,7 +409,7 @@ export class ObjectStage {
       type: 'photo',
       phase: 'round',
       round: inp.round,
-      text: `Objects: judged ${judged.length}${sel.full ? ' (all)' : ` (${sel.changed.length} changed plus neighbours)`}; ${ledger.passingObjects()} of ${ledger.size} objects have nothing off (${countsLine(ledger)}); ${ledger.openCount()} aspect${ledger.openCount() === 1 ? '' : 's'} open; ${this.budgetLine()}${reverted.length > 0 ? `; put back to their best: ${reverted.join(', ')}` : ''}${worse.length > 0 ? `; got worse with no piece to put back: ${worse.join(', ')}` : ''}.`,
+      text: `Objects: judged ${judged.length}${sel.full ? ' (all)' : ` (${sel.changed.length} changed plus neighbours)`}; ${ledger.passingObjects()} of ${ledger.size} objects have nothing off (${countsLine(ledger)}); ${ledger.openCount()} aspect${ledger.openCount() === 1 ? '' : 's'} open${ledger.waivedCount() > 0 ? `, ${ledger.waivedCount()} object${ledger.waivedCount() === 1 ? '' : 's'} waived (not passes; ${ledger.failingCount()} aspects off in all)` : ''}; ${this.budgetLine()}${reverted.length > 0 ? `; put back to their best: ${reverted.join(', ')}` : ''}${worse.length > 0 ? `; got worse with no piece to put back: ${worse.join(', ')}` : ''}.`,
       objects: this.views(),
     };
     return result;

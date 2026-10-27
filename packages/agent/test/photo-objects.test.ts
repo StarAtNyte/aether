@@ -223,6 +223,38 @@ describe('what is judged again', () => {
     expect(selectObjects(l, now, 1 + SWEEP_EVERY).full).toBe(true);
     expect(selectObjects(l, now, 2, { force: true }).full).toBe(true);
   });
+  it('refuses a waiver with no evidence, and one for an object measured off that was not worked on; a waived object is still failing for the plateau', () => {
+    const l = new ObjectLedger();
+    l.load([itemOf('tv', [0, 0, 0.2, 0.2], { kind: 'television' })]);
+    const rec = l.get('tv')!;
+    rec.aspects.position = { state: 'fail', score: 0, note: '', round: 1 };
+    l.noteRound(5);
+    // no evidence: just "it is fine"
+    const weak = applyReasons(l, { reasons: [{ id: 'tv', aspect: 'position', reason: 'looks fine to me really' }] });
+    expect(weak.text).toMatch(/refused/);
+    expect(l.waivedCount()).toBe(0);
+    // evidence, but measured off and no repair attempt in the last 2 rounds
+    const lazy = applyReasons(l, { reasons: [{ id: 'tv', aspect: 'position', reason: 'cannot be done with these tools' }] }, undefined, { measured: new Map([['tv', 'off']]) });
+    expect(lazy.text).toMatch(/no repair attempt/);
+    expect(l.waivedCount()).toBe(0);
+    // the photo hides it: allowed even though measured off
+    const hides = applyReasons(l, { reasons: [{ id: 'tv', aspect: 'position', reason: 'the tv is cut off by the frame edge in the photo' }] }, undefined, { measured: new Map([['tv', 'off']]) });
+    expect(hides.text).toMatch(/waived/);
+    expect(l.waivedCount()).toBe(1);
+    // waived is not a pass: it is no longer "open" for the chase, but it still counts as failing for the plateau and the pass rate
+    expect(l.openCount()).toBe(0);
+    expect(l.failingCount()).toBe(1);
+    expect(l.passingObjects()).toBe(0);
+    // a recent attempt lets a waiver through
+    const l2 = new ObjectLedger();
+    l2.load([itemOf('tv', [0, 0, 0.2, 0.2], { kind: 'television' })]);
+    const r2 = l2.get('tv')!;
+    r2.aspects.position = { state: 'fail', score: 0, note: '', round: 1 };
+    r2.editedRound = 4;
+    l2.noteRound(5);
+    expect(applyReasons(l2, { reasons: [{ id: 'tv', aspect: 'position', reason: 'tried moving it twice, find_model finds no better model' }] }, undefined, { measured: new Map([['tv', 'off']]) }).text).toMatch(/waived/);
+  });
+
   it('does not judge an object the model gave a reason for, and a reason ends the open count', () => {
     const l = ledger();
     const bad = aggregateObject([{ ...W('off'), evidence: 'far left', fix: 'move right' }]) as never;
@@ -235,7 +267,7 @@ describe('what is judged again', () => {
     expect(l.openCount()).toBe(0);
     expect(d.ranked()).toHaveLength(0);
     expect(d.waivedList()).toHaveLength(1);
-    expect(objectTableText(l)).toMatch(/Left as they are, with a reason/);
+    expect(objectTableText(l)).toMatch(/WAIVED \(left as they are, with a reason/);
   });
   it('keeps the best state and says an object got worse; a snapshot restores with everything', () => {
     const l = ledger();
@@ -361,7 +393,7 @@ describe('room from a photo, object by object', () => {
     expect(new Set(later.flat())).toEqual(new Set(['picture-left', 'bed']));
     const done = photoEvents(events).find((e) => e.phase === 'done');
     expect(done?.text).toMatch(/Object by object: [89] of 9 objects have nothing off \(\d+ match, \d+ close, \d+ off, \d+ unclear; pass rate \d+%/);
-    expect(done?.text).toMatch(/left as they are with a stated reason/);
+    expect(done?.text).toMatch(/WAIVED with a stated reason/);
     expect(done?.objects?.find((o) => o.id === 'picture-left')).toMatchObject({ position: 'pass' });
     expect(done?.objects?.find((o) => o.label === 'wall clock')?.waived).toMatch(/cut off/);
     expect((done?.resume as { objects?: { version: number } } | undefined)?.objects?.version).toBe(1);

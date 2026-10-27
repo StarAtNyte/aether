@@ -117,6 +117,8 @@ export interface ObjectRec {
   reverts: number;
   /** Repair attempts that did not make a failing aspect better (the object was edited and the aspect still fails). Two, and it is given up. */
   tries?: Partial<Record<Aspect, { n: number; best: number }>>;
+  /** The last round in which the object's piece (or its crop) was seen to change: a repair attempt. */
+  editedRound?: number;
   /** Why the loop stopped with this object not perfect ("stopped: ..."); set when the loop ends by plateau or round cap. */
   stopped?: string;
 }
@@ -613,6 +615,7 @@ export class ObjectLedger {
     const before = rec.best?.passes ?? -1;
     // The object was edited since its last judgement when its crop or its projected box changed (after a revert the mark is empty: not counted).
     const edited = rec.judgedRound > 0 && rec.sig !== null && mark.sig !== null && sigDistance(rec.sig, mark.sig) > SIG_TOLERANCE;
+    if (edited) rec.editedRound = round;
     const tries = (rec.tries ??= {});
     const gaveUp: Aspect[] = [];
     for (const a of ASPECTS) {
@@ -668,6 +671,11 @@ export class ObjectLedger {
     return this.list().reduce((n, r) => n + openAspects(r).length, 0) + [...this.relations.values()].filter((r) => r.state === 'fail' && !r.waived).length;
   }
 
+  /** Every failing aspect, waived or not, and every failing relation. */
+  failingCount(): number {
+    return this.list().reduce((n, r) => n + ASPECTS.filter((a) => r.aspects[a].state === 'fail').length, 0) + [...this.relations.values()].filter((r) => r.state === 'fail').length;
+  }
+
   /** Objects with no aspect off (match, close and unclear all pass). */
   passingObjects(): number {
     return this.list().filter((r) => ASPECTS.every((a) => isPassing(r.aspects[a].state))).length;
@@ -710,8 +718,13 @@ export class ObjectLedger {
   }
 
   /** Note the state after a judged round (for the plateau stop). */
+  /** The latest round noted. */
+  round = 0;
+
   noteRound(round: number): void {
-    this.history.push({ round, passRate: this.verdictTotals().passRate, open: this.openCount() });
+    this.round = round;
+    // A waived aspect is still off: the plateau counts it as open, so a loop that waives everything does not look finished.
+    this.history.push({ round, passRate: this.verdictTotals().passRate, open: this.failingCount() });
     if (this.history.length > 40) this.history.shift();
   }
 
@@ -961,27 +974,54 @@ export const OBJECT_REASON_TOOL: ToolDef = {
   },
 };
 
-export function applyReasons(ledger: ObjectLedger, input: unknown, diffs?: { waive(id: string, reason: string): void }): { text: string; ok: boolean } {
+/** What a waiver has to say: what was tried, or why the tools or models cannot do it, or why the photo cannot show it. */
+const EVIDENCE = /(tried|attempt|after \d|find_model|like_crop|no (matching |library )?model|no tool|cannot|can't|can not|not possible|unable|limit of|occlud|hidden|cut off|out of frame|out of the frame|not (visible|in the photo|shown)|wrong (inventory )?box|inventory box|does not exist|not a real)/i;
+
+export interface ReasonContext {
+  /** Measured verdict per object id (match, close, near, off, unclear), when the measured comparison ran. */
+  measured?: ReadonlyMap<string, string>;
+}
+
+/**
+ * Waivers ("left as it is, with a reason"). A waiver is not a pass: the object stays off, is counted as waived and the plateau counts it as
+ * open. It has to cite evidence (what was tried, or why it cannot be done), and it is refused for an object that the measurements say is
+ * off when no repair attempt was made on it in the last 2 rounds (unless the reason says the photo hides it).
+ */
+export function applyReasons(ledger: ObjectLedger, input: unknown, diffs?: { waive(id: string, reason: string): void }, ctx: ReasonContext = {}): { text: string; ok: boolean } {
   const p = z.object({ reasons: z.array(z.object({ id: z.string(), aspect: z.string().optional(), reason: z.string().trim().min(8).max(300) })).min(1).max(30) }).safeParse(input);
-  if (!p.success) return { ok: false, text: 'state_object_reason needs {"reasons":[{"id": an object id, "aspect"?: present|type|position|size|material|all, "reason": at least a sentence}]}.' };
+  if (!p.success) return { ok: false, text: 'state_object_reason needs {"reasons":[{"id": an object id, "aspect"?: present|type|position|size|material|all, "reason": what was tried, or why it cannot be done}]}.' };
   const lines: string[] = [];
+  let recorded = 0;
   for (const r of p.data.reasons) {
     const rel = ledger.relations.get(r.id);
     if (rel) {
       rel.waived = r.reason;
       diffs?.waive(rel.id, r.reason);
       lines.push(`${r.id}: kept as it is (${r.reason.slice(0, 80)})`);
+      recorded++;
+      continue;
+    }
+    const rec = ledger.get(r.id);
+    if (!rec) { lines.push(`${r.id}: unknown object id`); continue; }
+    if (r.reason.length < 20 || !EVIDENCE.test(r.reason)) {
+      lines.push(`${r.id}: refused. A waiver must cite evidence: what you tried (a move, a resize, find_model, find_model like_crop, apply_measured_colour) and what happened, or why it cannot be done with the tools and models you have, or why the photo cannot show it (hidden, cut off, out of frame). Fix it, or say that.`);
       continue;
     }
     const aspect = r.aspect ?? 'all';
-    if (!ledger.waive(r.id, aspect, r.reason)) {
-      lines.push(`${r.id}: unknown object id`);
+    const failing = ASPECTS.some((a) => rec.aspects[a].state === 'fail' && (aspect === 'all' || aspect === a));
+    const measuredOff = ctx.measured?.get(r.id) === 'off';
+    const recentTry = rec.editedRound !== undefined && ledger.round - rec.editedRound <= 2;
+    const photoHides = /(occlud|hidden|cut off|out of (the )?frame|not (visible|in the photo|shown)|does not exist|not a real)/i.test(r.reason);
+    if (failing && measuredOff && !recentTry && !photoHides) {
+      lines.push(`${r.id}: refused. The measurements say this object is off (mask IoU, offset, colour) and no repair attempt was made on it in the last 2 rounds. Try a fix first (the table says which: move, scale, apply_measured_colour, find_model like_crop), then give the reason if it did not help.`);
       continue;
     }
+    ledger.waive(r.id, aspect, r.reason);
     for (const a of aspect === 'all' ? ASPECTS : [aspect]) diffs?.waive(`obj-${r.id}-${a}`, r.reason);
-    lines.push(`${r.id}${aspect === 'all' ? '' : ` (${aspect})`}: reason recorded`);
+    lines.push(`${r.id}${aspect === 'all' ? '' : ` (${aspect})`}: waived, reason recorded`);
+    recorded++;
   }
-  return { ok: true, text: `${lines.join('\n')}\nThese objects no longer count as open; the reasons are shown to the user.` };
+  return { ok: recorded > 0 || lines.every((l) => !/refused/.test(l)), text: `${lines.join('\n')}\nA waived object is shown as "waived: <reason>", is never counted as a pass, and still counts as open for the plateau.` };
 }
 
 // ---------------------------------------------------------------------------------------------------------------- text
@@ -1014,7 +1054,7 @@ export function objectTableText(ledger: ObjectLedger, opts: { limit?: number; ev
   if (lines.length > 0) out.push(`Still off, worst first (fix the worst first; position and size are geometry, type is another model, material is materials; one change per object, then the next render is judged again for the changed objects and their neighbours; an aspect that does not get better after ${GIVE_UP_AFTER} attempts is given up on):`, ...lines);
   if (bad.length > lines.length) out.push(`...and ${bad.length - lines.length} more objects are off; they come after these.`);
   if (relLines.length > 0) out.push('Layout relations that do not hold in the render:', ...relLines);
-  if (waived.length > 0) out.push('Left as they are, with a reason:', ...waived);
+  if (waived.length > 0) out.push('WAIVED (left as they are, with a reason; not passes, still counted as open for the plateau):', ...waived);
   if (lines.length === 0 && relLines.length === 0) out.push('No object is off.');
   return out.join('\n');
 }
@@ -1058,7 +1098,7 @@ export function objectViews(ledger: ObjectLedger, limit = 80): ObjectView[] {
 export function objectsSummary(ledger: ObjectLedger): string {
   if (ledger.size === 0) return '';
   const open = ledger.list().filter((r) => openAspects(r).length > 0);
-  return `Object by object: ${ledger.passingObjects()} of ${ledger.size} objects have nothing off (${countsLine(ledger)})${ledger.waivedCount() > 0 ? `; ${ledger.waivedCount()} left as they are with a stated reason` : ''}${open.length > 0 ? `; still off${ledger.stopReason ? ` (stopped: ${ledger.stopReason})` : ''}: ${open.slice(0, 6).map((r) => `${r.item.label} (${openAspects(r).join(', ')})`).join('; ')}${open.length > 6 ? `; and ${open.length - 6} more` : ''}` : ''}.`;
+  return `Object by object: ${ledger.passingObjects()} of ${ledger.size} objects have nothing off (${countsLine(ledger)})${ledger.waivedCount() > 0 ? `; ${ledger.waivedCount()} of ${ledger.size} objects WAIVED with a stated reason (${Math.round((ledger.waivedCount() / Math.max(1, ledger.size)) * 100)} percent; waived objects are not passes and are not in the pass rate)` : ''}${open.length > 0 ? `; still off${ledger.stopReason ? ` (stopped: ${ledger.stopReason})` : ''}: ${open.slice(0, 6).map((r) => `${r.item.label} (${openAspects(r).join(', ')})`).join('; ')}${open.length > 6 ? `; and ${open.length - 6} more` : ''}` : ''}.`;
 }
 
 // ---------------------------------------------------------------------------------------------------------------- instructions

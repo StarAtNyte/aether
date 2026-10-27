@@ -830,7 +830,7 @@ async function* repairAndDeliver(run: PhotoRun, photo: Photo, desc: RoomDescript
       const big = ledger?.ranked().filter((d) => d.size >= BLOCKING_SIZE) ?? [];
       if (!final) hs.stages.skip('repair', 'No render of the room could be made, so it was not compared.');
       else if (final.score.failing.length === 0 && (objects?.open() ?? 0) > 0) hs.stages.fail('repair', `The checklist passes but ${objects!.open()} object aspect${objects!.open() === 1 ? '' : 's'} still fail without a stated reason.`);
-      else if (final.score.failing.length === 0) hs.stages.pass('repair', `Every checklist item matches the photo${objects && objects.ready ? ' and every inventoried object passes or has a stated reason' : ''}.`);
+      else if (final.score.failing.length === 0) hs.stages.pass('repair', `Every checklist item matches the photo${objects && objects.ready ? (objects.ledger.waivedCount() > 0 ? ` and every inventoried object passes or is waived (${objects.ledger.waivedCount()} waived: not passes)` : ' and every inventoried object passes') : ''}.`);
       else if (big.length === 0) hs.stages.pass('repair', `No open difference of size ${BLOCKING_SIZE} or more; ${final.score.failing.length} smaller item${final.score.failing.length === 1 ? '' : 's'} left.`);
       else hs.stages.fail('repair', `${big.length} difference${big.length === 1 ? '' : 's'} of size ${BLOCKING_SIZE} or more still open: ${big.slice(0, 3).map((d) => d.id).join(', ')}.`);
       yield stageEv(`Repair stage: ${hs.stages.status('repair')}.`);
@@ -1370,9 +1370,9 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
             results.push({ type: 'tool_result', toolUseId: call.id, content: 'Unknown tool here.', isError: true });
             continue;
           }
-          const r = applyReasons(objects.ledger, call.input, ledger ?? undefined);
+          const r = applyReasons(objects.ledger, call.input, ledger ?? undefined, { measured: objects.measuredVerdicts() });
           yield { type: 'step', tool: OBJECT_REASON_TOOL_NAME, label: r.ok ? 'Gave reasons for objects left as they are' : 'Object reasons not recorded', ok: r.ok };
-          if (r.ok) yield { type: 'photo', phase: 'round', round, text: `Objects left as they are, with the model's stated reasons: ${objects.ledger.waivedCount()}.`, objects: objects.views() };
+          if (r.ok) yield { type: 'photo', phase: 'round', round, text: `Objects waived with a stated reason (not passes): ${objects.ledger.waivedCount()} of ${objects.ledger.size}.`, objects: objects.views() };
           results.push({ type: 'tool_result', toolUseId: call.id, content: r.text, ...(r.ok ? {} : { isError: true }) });
           continue;
         }
@@ -1567,7 +1567,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
     const verdict = tracker.observe({ gain: (decision?.gain ?? false) || objGain, keys: new Set([...j.score.failing.map((f) => f.id), ...(objects?.openKeys() ?? [])]) });
     changed = (edited && !rolledBack) || objReverted;
     if (j.score.failing.length === 0 && (!objects || !objects.ready || objects.open() === 0)) {
-      yield { type: 'photo', phase: 'round', round, text: `Every checklist item matches the photo${objects && objects.ready ? ' and every inventoried object passes or has a stated reason' : ''}.`, score: scoreView(j) };
+      yield { type: 'photo', phase: 'round', round, text: `Every checklist item matches the photo${objects && objects.ready ? (objects.ledger.waivedCount() > 0 ? ` and every inventoried object passes or is waived (${objects.ledger.waivedCount()} waived: not passes)` : ' and every inventoried object passes') : ''}.`, score: scoreView(j) };
       return yield* conclude(j, changed);
     }
     // The object loop does not run to perfection: it ends on a plateau or at its round cap, keeps the best state of each object and says what is still off.
