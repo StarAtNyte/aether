@@ -26,6 +26,17 @@ npm run budget                       # first-visit download size
 npm run licences                     # production dependency licences vs docs/THIRD_PARTY.md
 ```
 
+### When to rebake the bundled worlds
+
+The featured worlds in `apps/studio/public/templates/worlds/` are what the offline planner builds from each prompt, saved
+to disk. CI runs `npm run showcase:bake -- --check` and fails when one differs. Rebake (`npm run showcase:bake`, or with a
+slug to limit it) after any change to: a furniture, dwelling, facade or garden generator or its defaults and sizes
+(`packages/arch`), a procgen generator or finish, the planner, catalogs or aliases, the World IR defaults, or a featured
+prompt in `apps/studio/src/showcase/manifest.ts`. Read the diff before committing it: the change must be one you meant.
+If a world with a bundled lightmap changed (`apps/studio/public/templates/lightmaps/`), run `npm run build` then
+`npm run showcase:lightmaps` and commit the new `.lmap` and `index.json`; check with `showcase:lightmaps -- --verify`.
+Game worlds keep their sealed proofs: a rebake must not change them.
+
 Then the browser suite closest to your change, for example `npm run e2e`, `npm run e2e:arch`, `npm run e2e:refine` or
 `npm run e2e:gameplay`. If you change rendering, also run `npm run e2e:render`.
 

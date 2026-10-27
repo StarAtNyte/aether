@@ -1971,6 +1971,16 @@ Everything here is additive; the World IR is unchanged.
 
 ## Default projects and flagship worlds (+ additions to core, procgen, render, physics, agent, studio)
 
+### Rebake rule for the bundled worlds
+
+`apps/studio/public/templates/worlds/<slug>.json` is the compiled output of each manifest prompt (offline planner, real agent
+loop, re-verified with Rapier and logic). CI runs `npm run showcase:bake -- --check` and fails on any byte difference. A change
+needs a rebake (`npm run showcase:bake`) when it alters what the planner compiles: furniture, dwelling, facade and garden
+generators, their defaults and sizes, procgen generators and finishes, catalogs and aliases, planner behaviour, World IR defaults,
+or a manifest prompt. A world with a bundled lightmap also needs `npm run showcase:lightmaps` when the content hash of its
+building or light changes (`--verify` finds it). Photo rooms are stored, not planned: they change only through
+`npm run showcase:photo-rooms`. Game worlds and their sealed proofs/replays must not change in a rebake.
+
 ### World IR (additive, backward compatible)
 
 - `WorldDoc.intro?: WorldIntro` — the title card shown when play starts:

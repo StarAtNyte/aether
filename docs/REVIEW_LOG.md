@@ -6615,3 +6615,9 @@ tsc clean; vitest packages/agent assets arch procgen render apps/studio 400 file
 ### Honest limits
 
 One run per prompt: the model chose its own numbers and the improvement depends on it following the brief text; a model that still states moderate for a cinema gets the over-lit flag only if its key is dim. There is no code cap on lamp or ambient intensity (the model judges). The floor extension only matters when the author boosted exposure.
+
+## Showcase rebake drift (casa-patio, dusk-lake-house, cafe-interior)
+
+`showcase:bake --check` reported these three stale. Structural diff of the saved vs freshly compiled world: same entity count and ids, only the Fridge door and Freezer door differ (door height 1.2 to 1.245 m, centre 7 mm lower), from the default 1.9 m tall fridge layout added in b113de5d. Not the dwelling or facade commits, which add pieces only when asked for. Intended; no circulation, door swing or position elsewhere changed, so no stills were regenerated (the delta is 7 mm on a fridge door). Rebaked; the casa-patio lightmap key did not change, so its bundled `.lmap` still applies. CI now runs `showcase:bake -- --check` in the check job; rebake rules are in CONTRIBUTING.md and docs/CONTRACTS.md.
+
+Limit: the diff was read as data, not viewed; a visual regression of 7 mm is not expected.
