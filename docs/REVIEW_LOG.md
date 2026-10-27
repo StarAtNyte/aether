@@ -6720,7 +6720,7 @@ Looked at, measured, not worth doing
 - Frame loop, DPR cap, culling, BatchedMesh, CSG, SSGI settings, shadow handling, material and texture sharing, disposal, pointer-event raycast cache: ours match or go beyond (adaptive scene-pass scale, worker merges, analytic openings, BVH picking, reference-counted disposal); nothing to port. See the table.
 - A first cpu-perf run on skyline-penthouse on this machine showed `render()` n=0 in the orbit and idle frames drawn 46 of 46 (residents animate), so the per-frame JS numbers were not used.
 
-Gates: see the commit that closes this entry.
+Gates: `tsc --noEmit` clean; vitest `packages/render packages/arch apps/studio` 2540 pass (297 files); smoke 39 of 39; `e2e:weak` ok; `showcase:bake --check` and `showcase:lightmaps --verify` ok (lightmap keys unchanged).
 
 ## Neutral interface colours (no blue in the chrome)
 
