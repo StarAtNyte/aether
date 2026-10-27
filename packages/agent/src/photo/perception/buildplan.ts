@@ -653,6 +653,7 @@ export function applyDecisions(plan: BuildPlan, decisions: readonly PlanDecision
       else ignored.push(`#${d.n}: unknown kind "${d.kind}"`);
     }
     if (d.model) row.model = d.model.replace(/^model:/, '');
+    if (row.kind === null && row.model === 'auto') { ignored.push(`#${d.n}: "auto" needs a kind; name a kind or a library model id`); row.model = row.candidates[0] ?? null; }
     if (d.x !== undefined && d.z !== undefined) { row.at = [r2(d.x), r2(d.z)]; row.wall = row.mount === 'wall' ? row.wall : null; }
     if (d.wall) {
       const c = d.wall.toLowerCase() as Compass;
@@ -679,7 +680,7 @@ export function applyDecisions(plan: BuildPlan, decisions: readonly PlanDecision
 export function placeItemsOf(plan: BuildPlan): Array<{ row: PlanRow; item: Record<string, unknown> }> {
   const phase = (r: PlanRow): number => (r.kind === 'rug' ? 0 : r.mount === 'floor' ? 1 : r.mount === 'surface' ? 2 : r.mount === 'wall' ? 3 : 4);
   const area = (r: PlanRow): number => (r.fit ? r.fit[0] * r.fit[2] : 0);
-  const rows = plan.rows.filter((r) => r.action === 'place' && r.kind !== 'window' && r.kind !== 'door' && !(r.kind === null && r.model === null)).sort((a, b) => phase(a) - phase(b) || (phase(a) === 1 ? area(b) - area(a) : a.n - b.n));
+  const rows = plan.rows.filter((r) => r.action === 'place' && r.kind !== 'window' && r.kind !== 'door' && !(r.kind === null && (r.model === null || r.model === 'auto'))).sort((a, b) => phase(a) - phase(b) || (phase(a) === 1 ? area(b) - area(a) : a.n - b.n));
   return rows.map((row) => {
     const def = row.kind ? furnitureByKind(row.kind) ?? null : null;
     const item: Record<string, unknown> = { room: PHOTO_ROOM_ID, id: row.handle, name: row.label.slice(0, 60) };
@@ -741,6 +742,8 @@ export interface BuildDeps {
   items: () => InventoryItem[];
   /** Record the entities that stand for an inventory object in the ledger. */
   link: (itemId: string, entities: string[]) => void;
+  /** Record that an object was not built, with the reason. */
+  rejected?: (itemId: string, reason: string) => void;
   world: () => WorldDoc;
   shell: { width: number; depth: number; ceiling: number };
   camera: { x: number; z: number; heading: number };
@@ -895,6 +898,7 @@ export async function* buildFromMeasurements(deps: BuildDeps): AsyncGenerator<Ag
       if (deps.signal?.aborted) throw e;
     }
   }
+  for (const r of plan.rows) if (r.action === 'drop' && !r.entity) deps.rejected?.(r.itemId, r.reason || 'not built');
   const dropped = plan.rows.filter((r) => r.action === 'drop').length;
   const stillRefused = plan.rows.filter((r) => r.action === 'place' && r.refused).length;
   const why = plan.rows.filter((r) => r.refused).slice(0, 4).map((r) => `${r.label} [${r.perceivedId}]: ${r.refused.slice(0, 160)}`).join(' | ');

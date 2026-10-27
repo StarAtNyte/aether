@@ -152,15 +152,22 @@ export class ObjectStage {
     return autoLink(this.ledger, projectBuilt(world, pose, aspect));
   }
 
-  /** Perceived objects (inventory entries with a measured id, not structure) and how many have a linked built piece. */
-  coverage(): { linked: number; perceived: number } {
-    const ps = this.ledger.list().filter((r) => r.item.measured?.id && r.item.category !== 'structure' && r.item.category !== 'view');
-    return { linked: ps.filter((r) => r.item.entities.length > 0).length, perceived: ps.length };
+  /** Record that the build from the measurements chose not to build an object (with the reason). */
+  markNotBuilt(itemId: string, reason: string): void {
+    const rec = this.ledger.get(itemId);
+    if (rec && rec.item.entities.length === 0) rec.item = { ...rec.item, notBuilt: reason };
+  }
+
+  /** Perceived objects (inventory entries with a measured id, not structure) and how many have a linked built piece; objects the build rejected with a reason are counted apart. */
+  coverage(): { linked: number; perceived: number; rejected: number } {
+    const all = this.ledger.list().filter((r) => r.item.measured?.id && r.item.category !== 'structure' && r.item.category !== 'view');
+    const rejected = all.filter((r) => r.item.notBuilt !== undefined && r.item.entities.length === 0).length;
+    return { linked: all.filter((r) => r.item.entities.length > 0).length, perceived: all.length - rejected, rejected };
   }
 
   coverageLine(): string {
     const c = this.coverage();
-    return `Coverage: ${c.linked} of ${c.perceived} perceived objects have a linked built piece.`;
+    return `Coverage: ${c.linked} of ${c.perceived} perceived objects have a linked built piece (${c.rejected} more were rejected as false detections or duplicates, with reasons).`;
   }
 
   /** Mark every object still off with the reason; the best state of each stays in the room. */

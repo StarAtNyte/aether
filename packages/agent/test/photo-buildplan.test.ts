@@ -167,7 +167,9 @@ describe('the first build from the measurements', () => {
       } as unknown as CompletionResponse;
     };
     let placeCalls = 0;
+    const rejected = new Map<string, string>();
     const gen = buildFromMeasurements({
+      rejected: (id, why) => { rejected.set(id, why); },
       report: report(objs),
       items: () => ledger.list().map((r) => r.item),
       link: (id, ents) => { const r = ledger.get(id)!; r.item = { ...r.item, entities: [...new Set([...r.item.entities, ...ents])], linkedBy: 'model' }; },
@@ -215,6 +217,8 @@ describe('the first build from the measurements', () => {
     expect(linkedIds).not.toContain('p6');
     expect(placeItemsOf(out.plan).map((p) => p.row.perceivedId)).not.toContain('p6');
     expect(out.linked).toBeGreaterThanOrEqual(4);
+    expect(rejected.get('inv-p6')).toMatch(/false detection/);
+    expect(rejected.get('inv-p5')).toMatch(/same bed/);
   });
 
   it('builds the plan as made when the assistant gives no usable decisions', async () => {

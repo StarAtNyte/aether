@@ -161,6 +161,7 @@ export function compareObjects(inp: MeasureInput): Measured | null {
     const it: InventoryItem = overlapLink.has(rec.item.id) ? { ...rec.item, entities: [overlapLink.get(rec.item.id) as string] } : rec.item;
     const pid = it.measured?.id;
     if (!pid || it.category === 'structure' || it.category === 'view') continue;
+    if (it.notBuilt !== undefined && it.entities.length === 0) continue;
     const po = byPerceived.get(pid);
     const base: ObjectMeasure = { linked: overlapLink.has(it.id) ? 'overlap' : 'ledger', id: it.id, label: it.label, perceivedId: pid, verdict: 'unclear', iou: null, centroidPx: null, centroidPct: null, offsetM: null, sizeRatio: null, deltaE: null, photoHex: po?.appearance?.colour.hex ?? null, renderHex: null, hint: '' };
     if (!po?.mask || it.entities.length === 0) { rows.push({ ...base, hint: it.entities.length === 0 ? 'no built piece is linked, so nothing to compare' : 'no photo mask for this object' }); continue; }

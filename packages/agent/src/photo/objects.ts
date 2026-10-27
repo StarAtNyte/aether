@@ -74,6 +74,8 @@ export interface InventoryItem {
   seen: 'both' | 'primary' | 'blind' | 'measured';
   /** What the perception layer measured for it (advisory; absent when it was not run or found no match). */
   measured?: { id: string; colour: string; hex: string; text: string };
+  /** The first build from the measurements decided not to build it (false detection, duplicate, wrong label), with the reason; the judges still look. */
+  notBuilt?: string;
 }
 
 /**

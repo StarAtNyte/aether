@@ -924,6 +924,7 @@ async function* measuredFirstBuild(run: PhotoRun, photo: Photo, desc: RoomDescri
     report,
     items: () => objects.ledger.list().map((r) => r.item),
     link: (id, ents) => objects.linkEntities(id, ents),
+    rejected: (id, why) => objects.markNotBuilt(id, why),
     world: () => host.getWorld(),
     shell: { width: desc.footprint.width, depth: desc.footprint.depth, ceiling: desc.footprint.ceiling },
     camera: { x: cam.x, z: cam.z, heading: cam.heading },
