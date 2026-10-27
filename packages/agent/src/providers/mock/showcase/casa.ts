@@ -7,8 +7,8 @@
  * same `build_architecture` plan as any building, then staged on a dry hill
  * plot with an olive grove, cypresses, a gravel drive and the serra behind.
  *
- * The plan reveal (Architecture bar → Reveal) draws this plan in ink and
- * raises the walls out of it.
+ * Seven rooms around a stone patio; the plan below
+ * is the same one the saved world uses.
  */
 import { r2 } from '../builder';
 import type { MockPlan } from '../planner';
@@ -172,7 +172,7 @@ export function casaPatio(): MockPlan {
       accent: '#d98a5f',
     },
     plan: 'Plan: mediterranean courtyard house (7 rooms ringing a stone patio with a lap pool, sliding glass to the patio, flat roof with parapet) compiled with build_architecture, papered library, panelled living room, pergola, olive grove, cypress drive and the serra behind.',
-    message: 'Built Casa del Patio: a courtyard house in the hills above Sintra, seven rooms around a stone patio with a lap pool. Press Play to walk it: E opens doors, drawers and cabinets, turns on the tap and picks up the mugs (click throws). The Architecture bar has Reveal (the plan drawn in ink, the walls rising out of it), the cutaway and the section.',
+    message: 'Built Casa del Patio: a courtyard house in the hills above Sintra, seven rooms around a stone patio with a lap pool. Press Play to walk it: E opens doors, drawers and cabinets, turns on the tap and picks up the mugs (click throws). The Architecture bar has the cutaway, the exploded storeys and the section.',
     arch: { ops: [{ op: 'create_building', plan: casaPlan() }], message: 'Casa del Patio' },
   });
 }

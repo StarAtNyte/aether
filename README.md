@@ -14,6 +14,28 @@ something is broken, the agent repairs it.
   [Connect an AI](#connect-an-ai).
 - **On your computer:** one command, and your own Codex or Claude Code login
   (below).
+- **Demo video (2 minutes):** attached to the [v0.1.0 release](https://github.com/StarAtNyte/aether/releases/tag/v0.1.0).
+  The repository is private for now, so the video lives on the Releases page, not in the tree.
+
+[![Aether demo: watch the video on the Releases page](docs/demo-poster.jpg)](https://github.com/StarAtNyte/aether/releases/tag/v0.1.0)
+
+## Highlights
+
+- **Prompt to world.** Outdoor worlds, games, physics machines and buildings from a sentence, built by an agent that plans first, then places things through measuring tools and edits the world with small validated patches.
+- **Photo to room.** Rebuilds a room from a photograph: shell, furniture and decor, with an advisory room-size estimate from a depth network (`measure_room`) and an AI judge loop that compares render and photo.
+- **Generation brief and richness review.** The model plans what a space needs and how elaborate it should be; after the build, a review compares the result with the plan and sends shortfalls back.
+- **Baked light, 60 fps on integrated GPUs.** Bundled lightmaps for interiors, a studio render that is the default view, adaptive resolution and a light chain while the view moves.
+- **A real model library.** CC0 models and textures (Kenney, Poly Haven, ambientCG) plus first-party crafted parts: venues, streets, harbours, seven regional house types, gyms, clinics, furniture.
+- **Verified playable games.** Physics tests, a playtest bot that plays to the win and repairs defects, and sealed replay proofs that `aether-verify` re-runs.
+- **Publish and share.** Standalone web builds, share links that carry the whole world, videos, stills, GLB and floor plans.
+- **Agent-ready.** An MCP server (`aether mcp`) and the `aether` command line.
+
+| | | |
+| --- | --- | --- |
+| ![A courtyard house from the air](docs/screenshots/current/casa-patio-aerial.webp) | ![A lake house at dusk](docs/screenshots/current/dusk-lake-house-aerial.webp) | ![A penthouse street front](docs/screenshots/current/skyline-penthouse-street.webp) |
+| ![A lake house living room](docs/screenshots/current/dusk-lake-house-living.webp) | ![A penthouse living room](docs/screenshots/current/skyline-penthouse-living.webp) | ![A courtyard house kitchen](docs/screenshots/current/casa-patio-kitchen.webp) |
+
+Stills from the real-time renderer on an Intel integrated GPU (`scripts/world-stills.ts`).
 
 ![The Aether editor: agent panel, viewport, scene inspector](docs/screenshots/studio-overview.png)
 
@@ -61,7 +83,7 @@ general bot does not drive.
 | ![Chain Reaction](docs/screenshots/showcase/chain-reaction.webp)<br>**Chain Reaction**: five Rube Goldberg machines, every bounce checked | ![Kart Canyon](docs/screenshots/showcase/kart-canyon.webp)<br>**Kart Canyon**: three laps, checkpoints, boost pads, two rivals | ![Blockfall](docs/screenshots/showcase/blockfall.webp)<br>**Blockfall**: mine, craft and survive the night in a block world |
 | ![Neon Rain City](docs/screenshots/showcase/neon-rain-city.webp)<br>**Neon Rain City**: a wet downtown at night, find five neon cats | ![Kyoto Temple Lanterns](docs/screenshots/showcase/kyoto-temple.webp)<br>**Kyoto Temple Lanterns**: a story in four chapters | ![Painterly Meadow](docs/screenshots/showcase/painterly-meadow.webp)<br>**Painterly Meadow**: a steam train in a wildflower valley |
 | ![Four-Seasons Garden](docs/screenshots/showcase/four-seasons-garden.webp)<br>**Four-Seasons Garden**: switch seasons with the 1 to 5 keys | ![Orbital Lab](docs/screenshots/showcase/orbital-lab.webp)<br>**Orbital Lab**: low gravity, five power cells, restart the reactor | ![Sakura River Journey](docs/screenshots/showcase/sakura-river.webp)<br>**Sakura River Journey**: paddle a canoe through four seasons |
-| ![Casa del Patio](docs/screenshots/showcase/casa-patio.webp)<br>**Casa del Patio**: the plan drawn in ink, the walls rising, every drawer opens | ![Skyline Penthouse](docs/screenshots/showcase/skyline-penthouse.webp)<br>**Skyline Penthouse**: walk it, switch the lights, change the hour | ![Dusk House by the Lake](docs/screenshots/showcase/dusk-lake-house.webp)<br>**Dusk House by the Lake**: explode it, cut it, walk to the jetty |
+| ![Casa del Patio](docs/screenshots/showcase/casa-patio.webp)<br>**Casa del Patio**: a courtyard house above Sintra, every drawer opens | ![Skyline Penthouse](docs/screenshots/showcase/skyline-penthouse.webp)<br>**Skyline Penthouse**: walk it, switch the lights, change the hour | ![Dusk House by the Lake](docs/screenshots/showcase/dusk-lake-house.webp)<br>**Dusk House by the Lake**: explode it, cut it, walk to the jetty |
 
 Four more example rooms, rebuilt from CC0 or public-domain photographs, are
 listed under **More worlds**: a hotel bedroom, a twin room, a four-poster
@@ -160,8 +182,7 @@ it (`attachedTo`).
   fitted stairs, a roof and a site compiles into mitred walls with real
   openings, furnished rooms and gardens. A building check confirms every room
   is reachable on foot and every door swing is clear. Views: cutaway, exploded
-  storeys, section cut, x-ray, a floor plan with areas, and an ink-on-paper
-  reveal. In walk mode doors, drawers, taps and light switches work, and a mug
+  storeys, section cut, x-ray, a floor plan with areas, and a floor plan with areas. In walk mode doors, drawers, taps and light switches work, and a mug
   can be picked up and thrown.
 - **A room from a photo.** With a vision model connected, Aether reads the
   photo several times and merges the readings into one description. It builds
@@ -200,7 +221,7 @@ it (`attachedTo`).
 | **Codex / Claude Code for the hosted studio** | `npx aether start --origin https://aether-studio-lyart.vercel.app`, then enter the pairing code in the hosted studio | your subscription |
 | **Your own API key** (Anthropic, OpenAI, OpenRouter, Google Gemini) | **Settings → AI connection**. The browser calls the provider directly, and the key stays in the tab unless you choose to remember it | the provider's prices |
 | **On-device model** (WebLLM, experimental) | Settings, WebGPU only, opt-in download | none |
-| **Offline planner** | always available | none |
+| **Offline planner** (fallback, not the main path) | always available; reads English only and builds from a fixed vocabulary. The studio says when it is in use | none |
 
 When you use Codex or Claude Code locally, Aether runs your own login in a
 worker process. Plain model calls run with every tool, shell, file and network
@@ -305,8 +326,20 @@ prompt caching, photo-to-room, the bot, and rendering.
   verdict). Vaulted ceilings, cornices,
   sash windows and some door styles cannot be built yet. The final item pass
   rate still varies from run to run (83 to 100% in the latest three runs).
+- **WebGPU and hardware.** The WebGPU path is tested on a few machines (an Intel integrated GPU and an NVIDIA card on Linux, plus software WebGPU in CI). Other GPUs, drivers and browsers may differ; the WebGL2 path is the fallback and the studio chooses it silently where WebGPU fails.
+- **Live model checks.** The Codex and Claude Code paths were run live by hand on recorded prompts and photos; CI runs everything on the offline planner and never calls a paid model, so a provider-side change can break them without a red build.
 - **Hosted studio:** a browser tab cannot run Codex. Use the bridge, your own
   key, or the offline planner.
+
+## Project status
+
+Aether is at **0.1.0, a pre-release**: the framework, studio, CLI, MCP server and bridge work end to end and are covered by
+over 500 test files, a headless smoke run on every featured prompt and Playwright suites. The API surface (World IR,
+package exports, MCP tools) can still change before a stable release. The change history is in [CHANGELOG.md](CHANGELOG.md)
+and the measured detail in [docs/REVIEW_LOG.md](docs/REVIEW_LOG.md). The repository is private for now.
+
+Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) and the
+[code of conduct](CODE_OF_CONDUCT.md). What the non-`main` branches are: [docs/BRANCHES.md](docs/BRANCHES.md).
 
 ## Documentation
 
@@ -319,6 +352,7 @@ prompt caching, photo-to-room, the bot, and rendering.
 | [PROOFS.md](docs/PROOFS.md) | Replay proof format, verifier, threat model |
 | [BENCHMARK.md](docs/BENCHMARK.md) | Reproducible benchmark: winnability, edits vs regeneration, proof speed |
 | [MCP.md](docs/MCP.md) | Aether as an MCP server |
+| [GENERATION_BRIEF.md](docs/GENERATION_BRIEF.md) | The plan before a build and the richness review after it |
 | [WRITEUP.md](docs/WRITEUP.md) | Product write-up: problem, approach, evidence, limits |
 | [SECURITY.md](docs/SECURITY.md) | Threat model, sandboxes, local hardening |
 | [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Vercel, local app, Docker, Fly.io, Render |
@@ -347,7 +381,7 @@ on Windows). See [docs/SECURITY.md](docs/SECURITY.md).
 | Command | What it does |
 | --- | --- |
 | `npm run typecheck` | `tsc --noEmit` across every package, app, script and test |
-| `npm test` | All Vitest unit and integration tests (about 440 test files; no network) |
+| `npm test` | All Vitest unit and integration tests (over 500 test files; no network) |
 | `npm run smoke` | The real agent loop with the offline planner on every featured prompt plus block-world, architecture and asset prompts; every world is re-verified headless |
 | `npm run bench` / `bench:quick` | The public benchmark ([docs/BENCHMARK.md](docs/BENCHMARK.md)); `bench:quick` fails when a documented claim stops holding |
 | `npm run eval:edits` | Small-edit evaluation: 199 prompts over the default projects |
@@ -403,7 +437,7 @@ were copied from them.
   used. In-app credits appear in the credits panel, on end-of-game screens and
   in exported `CREDITS.txt` files.
 - **AI disclosure:** this codebase was written with AI coding assistants
-  (Claude Code and Codex) under human direction and review. At runtime, the
+  under human direction and review. At runtime, the
   model you connect writes patches, generator code and scripts. All of it is
   validated, and code runs sandboxed (a locked-down worker pool for
   generators, QuickJS in WebAssembly for scripts). A few library assets were
