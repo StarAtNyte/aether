@@ -89,7 +89,7 @@ function score(p: Prepared, ax: { up: V3; depth: V3; across: V3 }, sigma: number
   return { total: per[0] + per[1] + per[2], per };
 }
 
-export function solveManhattan(segs: readonly Segment[], width: number, height: number, opt: { fovPriorDeg?: number } = {}): ManhattanCamera | null {
+export function solveManhattan(segs: readonly Segment[], width: number, height: number, opt: { fovPriorDeg?: number; fovPriorWeight?: number } = {}): ManhattanCamera | null {
   if (segs.length < 8) return null;
   const sigma = Math.sin(rad(1.6));
   const totalW = segs.reduce((s, x) => s + x.length * Math.min(2, 0.5 + x.contrast / 40), 0);
@@ -101,7 +101,7 @@ export function solveManhattan(segs: readonly Segment[], width: number, height: 
     if (!p) { p = prepare(segs, width, height, fov); prepared.set(key, p); }
     return p;
   };
-  const penalty = (fov: number): number => totalW * 0.04 * ((fov - prior) / 30) ** 2;
+  const penalty = (fov: number): number => totalW * 0.04 * (opt.fovPriorWeight ?? 1) * ((fov - prior) / 30) ** 2;
   const evalAt = (fov: number, yaw: number, pitch: number, roll: number): { total: number; per: [number, number, number] } => {
     const s = score(prep(fov), axesOf(rad(yaw), rad(pitch), rad(roll)), sigma);
     return { total: s.total - penalty(fov), per: s.per };
@@ -109,7 +109,7 @@ export function solveManhattan(segs: readonly Segment[], width: number, height: 
   type St = { fov: number; yaw: number; pitch: number; roll: number; total: number; per: [number, number, number] };
   const all: St[] = [];
   let best: St | null = null;
-  for (let fov = 40; fov <= 100; fov += 5) for (let pitch = -40; pitch <= 40; pitch += 4) for (let yaw = -45; yaw <= 45; yaw += 5) for (let roll = -6; roll <= 6; roll += 3) {
+  for (let fov = 50; fov <= 105; fov += 5) for (let pitch = -40; pitch <= 40; pitch += 4) for (let yaw = -45; yaw <= 45; yaw += 5) for (let roll = -6; roll <= 6; roll += 3) {
     const s = evalAt(fov, yaw, pitch, roll);
     const st = { fov, yaw, pitch, roll, ...s };
     all.push(st);
@@ -125,7 +125,7 @@ export function solveManhattan(segs: readonly Segment[], width: number, height: 
       for (let it = 0; it < 6; it++) {
         let improved = false;
         for (const [a, b, d, e] of [[df, 0, 0, 0], [-df, 0, 0, 0], [0, dy, 0, 0], [0, -dy, 0, 0], [0, 0, dp, 0], [0, 0, -dp, 0], [0, 0, 0, dr], [0, 0, 0, -dr]] as const) {
-          const fov = Math.max(35, Math.min(110, c.fov + a));
+          const fov = Math.max(48, Math.min(110, c.fov + a));
           const s = evalAt(fov, c.yaw + b, c.pitch + d, c.roll + e);
           if (s.total > c.total + 1e-6) { c = { fov, yaw: c.yaw + b, pitch: c.pitch + d, roll: c.roll + e, ...s }; improved = true; }
         }
@@ -138,7 +138,7 @@ export function solveManhattan(segs: readonly Segment[], width: number, height: 
   cur = refined[0] as St;
   // Field-of-view range: fovs whose best score (over orientation, from the refined start) is within 4 percent of the best.
   const fovScores: { fov: number; total: number }[] = [];
-  for (let fov = 40; fov <= 100; fov += 5) {
+  for (let fov = 50; fov <= 105; fov += 5) {
     let bt = -Infinity;
     for (const dy of [-6, -3, 0, 3, 6]) for (const dp of [-3, 0, 3]) bt = Math.max(bt, evalAt(fov, cur.yaw + dy, cur.pitch + dp, cur.roll).total);
     fovScores.push({ fov, total: bt });

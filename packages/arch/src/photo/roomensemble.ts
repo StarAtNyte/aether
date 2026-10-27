@@ -73,19 +73,32 @@ function floorOffset(cloud: Cloud, up: [number, number, number], vMin: number, n
   const sm = h.map((_, i) => (h[i - 1] ?? 0) + (h[i] as number) + (h[i + 1] ?? 0));
   // the floor is the lowest strong peak (a bed top is a peak above it)
   const mx = Math.max(...sm);
-  const i = sm.findIndex((v, k) => v >= mx * 0.6 && v >= (sm[k - 1] ?? 0) && v >= (sm[k + 1] ?? 0));
+  const i = sm.findIndex((v, k) => v >= mx * 0.2 && v >= (sm[k - 1] ?? 0) && v >= (sm[k + 1] ?? 0));
   return lo + (i + 0.5) * bin;
 }
 
+/** How far a typical hand-held eye height pulls the metric scale: `heightM` is the usual eye height, `weight` the share of the log correction applied (0 off, 1 full). */
+export interface EyePrior { heightM: number; weight: number; maxScale: number }
+export const EYE_PRIOR: EyePrior = { heightM: 1.5, weight: 0.6, maxScale: 1.4 };
+
 /** One metric box from a vanishing-point camera: axes fixed, floor offset and walls read from the cloud. */
-export function boxFromVP(grid: DepthGrid, vp: ManhattanCamera, opt: { notWall?: ArrayLike<number>; trainedFovDeg?: number | null; standoff?: number } = {}): { box: RoomBox; frame: RoomFrame; cloud: Cloud; grid: DepthGrid; cam: ReturnType<typeof makeCam> } | null {
+export function boxFromVP(grid: DepthGrid, vp: ManhattanCamera, opt: { notWall?: ArrayLike<number>; trainedFovDeg?: number | null; standoff?: number; eyePrior?: EyePrior | null } = {}): { box: RoomBox; frame: RoomFrame; cloud: Cloud; grid: DepthGrid; cam: ReturnType<typeof makeCam> } | null {
   const cam = makeCam(grid, vp.fovDeg, 'z');
-  const g = opt.trainedFovDeg ? scaleDepth(grid, Math.tan((opt.trainedFovDeg * Math.PI) / 360) / Math.tan((vp.fovDeg * Math.PI) / 360)) : grid;
-  const cloud = cloudOf(g, cam);
+  let g = opt.trainedFovDeg ? scaleDepth(grid, Math.tan((opt.trainedFovDeg * Math.PI) / 360) / Math.tan((vp.fovDeg * Math.PI) / 360)) : grid;
+  let cloud = cloudOf(g, cam);
   const notWall = opt.notWall ? cloud.p.map((_, i) => !!opt.notWall![(cloud.v[i] as number) * grid.width + (cloud.u[i] as number)]) : undefined;
   const up = vp.axes.up;
-  const off = floorOffset(cloud, up, grid.height * 0.45, notWall);
+  let off = floorOffset(cloud, up, grid.height * 0.45, notWall);
   if (off === null) return null;
+  // Metric depth reads 10 to 20 percent short on many photos while a hand-held eye is 1.4 to 1.7 m up: pull the scale toward
+  // that (a geometric blend, weight `eyePrior.weight`, bounded) so every length follows the same correction.
+  const prior = opt.eyePrior === undefined ? EYE_PRIOR : opt.eyePrior;
+  if (prior && Math.abs(off) > 0.3) {
+    const k = Math.min(prior.maxScale, Math.max(1 / prior.maxScale, (prior.heightM / Math.abs(off)) ** prior.weight));
+    g = scaleDepth(g, k);
+    cloud = cloudOf(g, cam);
+    off *= k;
+  }
   const frame: RoomFrame = {
     up,
     right: vp.axes.across,
@@ -164,6 +177,11 @@ export function estimateRoomEnsemble(inp: EnsembleInput): EnsembleRoom | null {
   // vanishing-point camera and the relative network with swept cameras disagree when something is wrong, and the spread shows it.
   const families = [...new Set(ok.map((e) => e.family))];
   const vote = (key: 'width' | 'depth' | 'height'): number[] => families.map((f) => pct(ok.filter((e) => e.family === f).map((e) => e[key]), 0.5));
+  // The metric estimator with the vanishing-point camera is the one the self-test benchmark found far the best (median relative error
+  // 0.085 against 0.124 for the median of the families, 0.08 against 0.13 on two held-out worlds): the relative-depth families read
+  // through windows and doors (12 m for a 7 m room), so a median that counts them as equal votes is pulled long. It leads when it is
+  // accepted; the others only set the range and the confidence, and the median is the fallback when it was dropped.
+  const lead = ok.find((e) => e.name === 'vp-metric');
   const dim = (key: 'width' | 'depth' | 'height'): Dim => {
     const vals = vote(key);
     const f = fuse(vals) as { value: number; spread: number; n: number };
@@ -171,10 +189,12 @@ export function estimateRoomEnsemble(inp: EnsembleInput): EnsembleRoom | null {
     // Agreement on a ceiling PRIOR is not evidence: three reads scaled by the same 2.6 m agree by construction.
     const anchored = ok.some((e) => /door/.test(e.name));
     if (key === 'height' && !anchored && confidence === 'high') confidence = 'medium';
-    return { value: r2(f.value), low: r2(Math.min(...vals)), high: r2(Math.max(...vals)), confidence, basis: `median of ${families.length} independent reads (${families.map((x, i) => `${x} ${r2(vals[i] as number)}`).join(', ')}), spread ${Math.round(f.spread * 100)}%` };
+    const value = lead ? lead[key] : f.value;
+    if (lead && confidence === 'high') confidence = 'medium';
+    return { value: r2(value), low: r2(Math.min(...vals, value)), high: r2(Math.max(...vals, value)), confidence, basis: `${lead ? `metric depth with the vanishing-point camera ${r2(lead[key])}; the other families ` : 'median of '}${families.length} independent reads (${families.map((x, i) => `${x} ${r2(vals[i] as number)}`).join(', ')}), spread ${Math.round(f.spread * 100)}%` };
   };
   const width = dim('width');
-  const lbShare = ok.filter((e) => e.widthLowerBound).length / ok.length;
+  const lbShare = lead ? (lead.widthLowerBound ? 1 : 0) : ok.filter((e) => e.widthLowerBound).length / ok.length;
   const spreadW = width.high / Math.max(0.1, width.low);
   if (lbShare > 0.5) {
     width.basis += '; a side wall is out of frame, so this is a lower bound';

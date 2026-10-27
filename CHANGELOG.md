@@ -9,6 +9,8 @@ First tagged state of the framework: natural language to verified, interactive 3
 
 ### Photo to room accuracy
 
+- Benchmark-driven geometry pass (ground-truth self-test, no model): floor position error of floor pieces 0.66 to 0.31 m, room box 0.12 to 0.09 relative error, size error 14 to 9 percent, metric depth error 11 to 5 percent, median field of view error 1.75 to 1.0 degree. Floor height now the lowest strong peak, metric scale blended toward a 1.5 m eye, the room box led by the metric vanishing-point estimator, the vanishing-point search starting at 50 degrees, EXIF field of view when a JPEG carries it, and a stated confidence on a field of view the lines cannot fix. Dev loops `scripts/photo-selftest/geo-dev.ts` and `proj-dev.ts`.
+
 - Room box by agreement of independent reads (vanishing-point camera from image lines, metric and relative depth, door or ceiling scale), spread reported as confidence; the twin reads within 11 percent of the known size, the hotel width is flagged a lower bound.
 - Colour: the black twin floor was a depth-grid mismatch; masks are eroded, shadows and glare dropped, a white reference gives "lit like white" colours.
 - Labels: CLIP second pass with probabilities and alternatives, duplicates merged.

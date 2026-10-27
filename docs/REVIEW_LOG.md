@@ -7004,3 +7004,31 @@ Reading it
 - Field of view 8.5 degrees off on the living room (the end pose is square on to the wall, the case the benchmark flags) moved the shell 15 percent wider than the truth; the twin, with side walls in view, is within 2.2 degrees.
 
 Limits of this number: two photos, one run each; the truth colour is the generator's main colour parameter, not what the photo shows; position is scored in the room frame the run itself chose (back wall by heading), so a run whose back wall is a different one of the room's four walls would score badly; the judge numbers are the run's own and vary between runs.
+
+## 2026-10-28 Photo self-test: driving the measured errors down, one cause at a time
+
+Task: use the ground-truth benchmark as a no-model inner loop and fix the errors in the order of their weight. Each row is one change, kept only when the benchmark improved and nothing regressed (dev loop `scripts/photo-selftest/geo-dev.ts`, 5 s, then a full `bench:photo-selftest` run to confirm).
+
+| # | change | metric before | after |
+| --- | --- | --- | --- |
+| 0 | baseline (this tree, reproduced) | floor pos 0.66 m, room 0.12, size 0.14, depth rel 0.11, fov err 1.75 | |
+| 1 | floor height = lowest strong peak (20 percent of the tallest, was 60) | eye height on the living room 0.67-0.77 m (true 1.5) | 1.14-1.23; floor pos median unchanged (0.62 to 0.64) |
+| 2 | metric scale blended toward a 1.5 m eye (weight 0.6, bounds 0.7-1.4) | floor pos 0.64 | 0.30 in the loop; hold-out worlds (hotel, scandi) 0.73 to 0.30 |
+| 3 | vanishing-point field of view search from 50 degrees (was 40) | pool house fov err -32.5 | -1.0 (median fov err 1.75 to 1.0) |
+| 4 | room box led by `vp-metric` (relative families set range and confidence only) | room rel 0.124 | 0.085 (train 5 worlds 0.109 to 0.093; hold-out hotel and scandi 0.129 to 0.080) |
+| 5 | EXIF 35 mm focal length pins the camera when present; `fovSource` on the report | n/a (the fixtures carry no EXIF; unit-tested with synthetic EXIF) | |
+| rejected | floor-contact back-projection (lowest mask pixel of each column through the floor plane, half the depth extent behind it) | 0.33 | 0.81 (a 1 px row near the horizon is 4 percent of the distance at a 128 px grid; worse also with the mask at 256 px, true field of view or true eye height) |
+| rejected | eye prior weight 1.0 or 0.75 | 0.30 | 0.32 / 0.27 on all, hold-out 0.45 (weight 0.5 to 0.6 best on both train and hold-out) |
+| rejected | tuning part boxes of the instance raster (thin table legs, smaller plant) | projection IoU 0.665 | 0.65 / 0.635 |
+
+Full run after the changes (14 photos, `bench:photo-selftest`): floor position 0.66 to 0.31 m (target 0.15, missed), eye-relative 0.49 to 0.36, room box 0.12 to 0.09 (target 0.08, missed), size 0.14 to 0.09, depth relative 0.11 to 0.05, field of view 1.75 to 1.0 deg (target 5, met), projection IoU 0.67 and comparison good share 0.56 unchanged (missed), colour 0.7 unchanged, 0 regressions.
+
+Findings against the brief
+1. Wall frame. The claim that a wrong wall frame is the main cause of the floor error is not what the numbers say. Yaw error is 0 to 2 degrees on 14 photos, pitch within 0.6, the back wall is the right wall in all 14 and the side-wall lines sit where the depth puts them. The estimated eye position is off by the same factor as the depth scale (cafe 0.77, hotel 0.86, twin 1.1). With the true field of view and the best possible scale per photo the floor error is still 0.28 m median, so about half of what remains is not scale. The eye-relative error (0.36) is not below the absolute (0.31) any more: the frame is not the limit. The earlier gap came from the metric scale and a floor height read from a table top.
+2. Back-projection from the footprint was worse than the depth centroid (above); the median of trimmed depth points stays.
+3. Wide-lens field of view cannot be read from a square-on view: with the network's field-of-view normalisation the eye height, lateral and vertical lengths and the planes are identical for any assumed field of view, only the distance along the room scales (see PHOTO_TO_ROOM_HARNESS.md). The 92 degree lenses still read 75 and 80.5 degrees (error -17 and -11.5). With the true field of view the wide twin's floor error drops 1.02 to 0.09 m and the wide living room's 0.96 to 0.56, so this is the largest single remaining item and needs the EXIF (real photos) or a second cue. Reported now as `weak estimate` in the text the model reads.
+4. Room box: 0.09 against 0.08. The remaining error is the corner views, whose width is a lower bound (-0.28 to -0.32 on four of them: one side wall is behind the camera) and the wide pair's depth (+0.30, +0.17).
+5. Projection IoU: the perfect build still reads 0.67. The gap is the silhouettes: the true pieces are library models (a pedestal table where the raster draws four legs, a sparse plant against a solid box, splayed chair legs and a tall back) and the comparison runs on a 256 px grid where thin parts dominate the union; kinds with the lowest IoU are plant 0.27, dining table 0.33, floor lamp 0.40, chair 0.41 (30 of the pieces). Tuning the part boxes did not move the median. The fix is to rasterise the real mesh of each piece (glTF of the library models, generator output otherwise); a `meshOf` hook in `renderInstanceIds` was tried with the generator fallback meshes and did not help because the photographed pieces are the library assets, so it was not kept.
+6. Honest limit: every fixture has the eye at exactly 1.5 m, so the eye-height prior's measured benefit (about half of the floor error) is optimistic for real photos with other eye heights; the weight 0.6 was picked on five worlds and checked on two held out (0.30 and 0.30), but all seven share the 1.5 m. The EXIF path is only unit-tested.
+
+Gates: `tsc`, `vitest` over `packages/agent`, `packages/arch`, `apps/studio` (2495 tests), `smoke` (39 of 39), `showcase:bake --check`, `showcase:lightmaps --verify`, `budget` (index 922 kB), `licences` pass.

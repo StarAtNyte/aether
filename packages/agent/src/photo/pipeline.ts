@@ -74,7 +74,7 @@ import { errorMessage } from '../providers/errors';
 import type { AgentEvent, PhotoPhase, PhotoResumeState, ChatMessage, CompletionRequest, CompletionResponse, ContentBlock, PhotoAssumptionView, PhotoOptions, PhotoReadsView, PhotoScoreView, ReviewViewRequest, ToolDef } from '../types';
 import { DIFFERENCES_TOOL, DIFFERENCES_TOOL_NAME, DifferenceLedger, differenceViews, type Cause, type Difference } from './differences';
 import { cropRegions, regionReadout, type CropRegion } from './kit';
-import { imageSize } from './image-size';
+import { exifFovDeg, imageSize } from './image-size';
 import { harnessProcedure, ANALYSIS_SYSTEM, CROSSCHECK_SEED, CROSSCHECK_SYSTEM, crossCheckText, differencesProcedure, DESCRIBE_TOOL, DESCRIBE_TOOL_NAME, SAMPLE_TOOL, SAMPLE_TOOL_NAME, VERDICT_TOOL, VERDICT_TOOL_NAME, analysisUserText, compareIntroText, compareRoundText, refusalText } from './prompt';
 import { restorePatches } from './revert';
 import { applyGrade, estimatePhotoGrade, lookEvidenceText, matchGrade, type PhotoGrade } from './grade';
@@ -129,7 +129,7 @@ async function loadPerception(run: PhotoRun): Promise<void> {
   try {
     const code = await import('./perception/bundle');
     perceptionCode.set(run, code);
-    perceivers.set(run, new code.Perceiver({ raster: () => host.decodeImage!(run.image, 1024) }));
+    perceivers.set(run, new code.Perceiver({ raster: () => host.decodeImage!(run.image, 1024), ...(exifFovDeg(run.image) !== null ? { fovHintDeg: exifFovDeg(run.image) as number } : {}) }));
   } catch { /* offline with the chunk not cached: the room is built from the picture alone */ }
 }
 function perceiverOf(run: PhotoRun): Perceiver | null {

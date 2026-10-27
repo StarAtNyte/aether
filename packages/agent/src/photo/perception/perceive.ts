@@ -99,7 +99,7 @@ export interface PerceptionReport {
   models: { detector: string | null; segmenter: string | null; depth: string | null; labeller?: string | null };
   /** Models that could not run, with the reason. */
   unavailable: string[];
-  camera: { fovDeg: number; fovRange: [number, number]; kind: 'z' | 'ray'; cameraHeight: number; yawDeg: number } | null;
+  camera: { fovDeg: number; fovRange: [number, number]; kind: 'z' | 'ray'; cameraHeight: number; yawDeg: number; /** Where the field of view comes from: the photo's EXIF, vanishing-point lines that fix it, or a weak read (a view square on to a wall has no line evidence for the focal length). */ fovSource?: 'exif' | 'lines' | 'weak' } | null;
   room: RoomBox | null;
   /** The relative-depth estimate (Depth Anything V2 small + door or ceiling anchor): a second opinion on the same photo. */
   crossCheck: { width: number; depth: number; height: number; basis: string } | null;
@@ -130,6 +130,8 @@ export interface PerceiveDeps {
   clip?: (() => Promise<{ ok: true; model: Clip } | { ok: false; reason: string }>) | null;
   /** Field of view of the camera the metric network was trained on (Hypersim: 60 degrees); null: the depth is taken as exact. */
   trainedFovDeg?: number | null;
+  /** Horizontal field of view the photo's own EXIF states (degrees): pins the vanishing-point camera, which cannot see the focal length of a square-on view. */
+  fovHintDeg?: number;
   /**
    * Scale placements from the geometry's own metric to the fused room box (default false). The self-test benchmark measured it: the fused depth reads
    * through windows and over-reads, and scaling the placements by it moved floor pieces from 0.7 m to 1.1 m median error and size errors from 14 to 21 percent.
@@ -446,7 +448,7 @@ export class Perceiver {
       for (let i = 0; i < sm.length; i++) if (sm[i]) segMask[i] = 1;
     }
     const lines = await this.time('lines', async () => detectSegments(r, { width: 640, maskOut: segMask }));
-    const vp = await this.time('vanishing', async () => solveManhattan(lines.segments, lines.width, lines.height));
+    const vp = await this.time('vanishing', async () => solveManhattan(lines.segments, lines.width, lines.height, this.deps.fovHintDeg !== undefined ? { fovPriorDeg: this.deps.fovHintDeg, fovPriorWeight: 25 } : {}));
     const door = this.objects.filter((o) => /door/.test(o.label) && !/glass|patio|sliding/.test(o.label) && o.box[1] > 0.03 && o.box[3] < 0.97 && o.box[3] - o.box[1] > 0.25).sort((a, b) => b.confidence - a.confidence)[0];
     const ens = await this.time('room-ensemble', async () => estimateRoomEnsemble({ metric: grid, relative: rel.ok ? rel.map : null, vp, notWall, ...(door ? { anchor: { name: 'door', sizeM: 2.05, axis: 'height' as const, box: door.box, tolerance: 0.04 } } : {}), legacyMetric: legacy ? { box: legacy.box } : null, trainedFovDeg: trained }));
     const own = ens?.vpBox ?? (legacy ? { box: legacy.box, frame: legacy.fr, cloud: legacy.cloud, grid: legacy.grid, cam: legacy.cam } : null);
@@ -565,7 +567,7 @@ export class Perceiver {
       photo: { width: this.raster?.width ?? 0, height: this.raster?.height ?? 0 },
       models: { labeller: this.clipReady ? 'CLIP ViT-B/32 (MIT)' : null, detector: this.florenceReady ? 'Florence-2 base (MIT)' : null, segmenter: this.samReady ? 'SAM 2.1 Hiera tiny (Apache-2.0)' : null, depth: this.metricName ? `${this.metricName} (Apache-2.0)` : null },
       unavailable: [...this.unavailable],
-      camera: g ? { fovDeg: g.vp?.fovDeg ?? g.cam.fovDeg, fovRange: g.vp ? g.vp.fovRange : [Math.min(...fovs, g.cam.fovDeg), Math.max(...fovs, g.cam.fovDeg)], kind: g.cam.kind, cameraHeight: Math.round(g.box.cameraHeight * (g.fused.height.value / Math.max(0.5, g.box.height.value)) * 100) / 100, yawDeg: g.vp?.yawDeg ?? g.box.yawDeg } : null,
+      camera: g ? { fovDeg: g.vp?.fovDeg ?? g.cam.fovDeg, fovRange: g.vp ? g.vp.fovRange : [Math.min(...fovs, g.cam.fovDeg), Math.max(...fovs, g.cam.fovDeg)], kind: g.cam.kind, cameraHeight: Math.round(g.box.cameraHeight * (g.fused.height.value / Math.max(0.5, g.box.height.value)) * 100) / 100, yawDeg: g.vp?.yawDeg ?? g.box.yawDeg , fovSource: this.deps.fovHintDeg !== undefined ? 'exif' as const : g.vp && g.vp.fovRange[1] - g.vp.fovRange[0] < 25 ? 'lines' as const : 'weak' as const } : null,
       room: g?.fused ?? null,
       estimators: g?.estimators ?? [],
       vanishing: g?.vp ? { fovDeg: g.vp.fovDeg, fovRange: g.vp.fovRange, pitchDeg: g.vp.pitchDeg, yawDeg: g.vp.yawDeg, rollDeg: g.vp.rollDeg, explained: g.vp.explained, segments: g.vp.segmentsUsed } : null,
@@ -616,7 +618,7 @@ export function perceptionText(rep: PerceptionReport, maxObjects = 30): string {
   if (rep.room && rep.camera) {
     const r = rep.room;
     const d = (x: RoomBox['width']): string => `${x.value} m (${x.low}-${x.high}, ${x.confidence}: ${x.basis})`;
-    L.push(`Room (metric depth, planes fitted): width ${d(r.width)}; depth ${d(r.depth)}; height ${d(r.height)}. Camera ${r.cameraHeight} m above the floor, horizontal field of view about ${rep.camera.fovDeg} degrees (plausible ${rep.camera.fovRange[0]}-${rep.camera.fovRange[1]}), ${Math.abs(rep.camera.yawDeg) <= 6 ? 'facing the back wall' : `turned ${Math.abs(rep.camera.yawDeg)} degrees ${rep.camera.yawDeg > 0 ? 'left' : 'right'} of the back wall (the back wall lies ${rep.camera.yawDeg > 0 ? 'to the right' : 'to the left'} of the picture's centre line)`}. Walls found: ${(['back', 'left', 'right', 'ceiling'] as const).filter((k) => r.walls[k]).join(', ') || 'none'}.${r.notes.length > 0 ? ` ${r.notes.join('; ')}.` : ''}`);
+    L.push(`Room (metric depth, planes fitted): width ${d(r.width)}; depth ${d(r.depth)}; height ${d(r.height)}. Camera ${r.cameraHeight} m above the floor, horizontal field of view about ${rep.camera.fovDeg} degrees (plausible ${rep.camera.fovRange[0]}-${rep.camera.fovRange[1]}${rep.camera.fovSource === 'exif' ? "; from the photo's EXIF" : rep.camera.fovSource === 'weak' ? '; a weak estimate: a view square on to a wall has no line evidence for it, a wide lens reads narrower, and the distances along the room scale with it' : ''}), ${Math.abs(rep.camera.yawDeg) <= 6 ? 'facing the back wall' : `turned ${Math.abs(rep.camera.yawDeg)} degrees ${rep.camera.yawDeg > 0 ? 'left' : 'right'} of the back wall (the back wall lies ${rep.camera.yawDeg > 0 ? 'to the right' : 'to the left'} of the picture's centre line)`}. Walls found: ${(['back', 'left', 'right', 'ceiling'] as const).filter((k) => r.walls[k]).join(', ') || 'none'}.${r.notes.length > 0 ? ` ${r.notes.join('; ')}.` : ''}`);
   }
   if (rep.crossCheck) L.push(`Cross-check (relative depth, ${rep.crossCheck.basis}): ${rep.crossCheck.width} x ${rep.crossCheck.depth} x ${rep.crossCheck.height} m. Where the two disagree, say which you trust and why.`);
   const s = rep.surfaces;

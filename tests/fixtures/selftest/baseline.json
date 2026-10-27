@@ -27,17 +27,17 @@
     "comparisonGood": 0.9
   },
   "measured": {
-    "fovErrDeg": 1.75,
-    "roomRelErr": 0.12,
-    "floorPosM": 0.66,
-    "floorPosRelEyeM": 0.49,
-    "sizeRelErr": 0.14,
+    "fovErrDeg": 1,
+    "roomRelErr": 0.09,
+    "floorPosM": 0.31,
+    "floorPosRelEyeM": 0.36,
+    "sizeRelErr": 0.09,
     "projectionIou": 0.67,
     "colourDeltaE": 0.7,
     "comparisonGood": 0.56,
     "detectionRecall": 0.87,
     "detectionMedianIou": 0.84,
-    "depthRel": 0.11,
-    "depthScale": 0.99
+    "depthRel": 0.05,
+    "depthScale": 1.02
   }
 }

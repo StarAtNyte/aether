@@ -84,3 +84,52 @@ export function imageSize(dataUrl: string): { width: number; height: number } | 
   }
   return null;
 }
+
+/**
+ * Horizontal field of view in degrees from the EXIF "focal length in 35 mm film" tag of a JPEG data URL, or null (no EXIF, no
+ * such tag, not a JPEG). A square-on view of a room carries no vanishing-point evidence for the focal length, so a phone photo's
+ * own EXIF is the only exact source there is. 35 mm equivalent focal length is defined on the 43.27 mm film diagonal.
+ */
+export function exifFovDeg(dataUrl: string): number | null {
+  if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/jpeg')) return null;
+  const size = imageSize(dataUrl);
+  const comma = dataUrl.indexOf(',');
+  if (!size || comma < 0) return null;
+  let bin: string;
+  try {
+    // the EXIF block sits in the first APP1 segment, within the first 64 kB
+    const b64 = dataUrl.slice(comma + 1, comma + 1 + 90000);
+    bin = atob(b64.slice(0, b64.length - (b64.length % 4)));
+  } catch { return null; }
+  const b = (i: number): number => bin.charCodeAt(i);
+  let i = 2;
+  while (i + 4 < bin.length && b(i) === 0xff) {
+    const marker = b(i + 1);
+    const len = (b(i + 2) << 8) | b(i + 3);
+    if (marker === 0xe1 && bin.slice(i + 4, i + 10) === 'Exif\0\0') {
+      const t = i + 10;
+      const le = bin.slice(t, t + 2) === 'II';
+      const u16 = (o: number): number => (le ? b(t + o) | (b(t + o + 1) << 8) : (b(t + o) << 8) | b(t + o + 1));
+      const u32 = (o: number): number => (le ? (b(t + o) | (b(t + o + 1) << 8) | (b(t + o + 2) << 16) | (b(t + o + 3) << 24)) >>> 0 : ((b(t + o) << 24) | (b(t + o + 1) << 16) | (b(t + o + 2) << 8) | b(t + o + 3)) >>> 0);
+      const find = (ifd: number, tag: number): number | null => {
+        if (ifd <= 0 || ifd + 2 > len) return null;
+        const n = u16(ifd);
+        for (let k = 0; k < n && k < 200; k++) {
+          const e = ifd + 2 + k * 12;
+          if (u16(e) === tag) return u16(e + 2) === 3 ? u16(e + 8) : u32(e + 8);
+        }
+        return null;
+      };
+      const exifIfd = find(u32(4), 0x8769);
+      const f35 = exifIfd === null ? null : find(exifIfd, 0xa405);
+      if (f35 === null || f35 < 8 || f35 > 400) return null;
+      const diag = 2 * Math.atan(21.635 / f35);
+      const hyp = Math.hypot(size.width, size.height);
+      const hfov = 2 * Math.atan(Math.tan(diag / 2) * (size.width / hyp));
+      return Math.round(((hfov * 180) / Math.PI) * 10) / 10;
+    }
+    if (marker === 0xda || len < 2) break;
+    i += 2 + len;
+  }
+  return null;
+}
