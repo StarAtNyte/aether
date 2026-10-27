@@ -6629,3 +6629,21 @@ Not a product regression. The offline café plan gives the washroom a 0.8 m door
 Fix in the harness, assertion unchanged: after the café run settles, the test narrows the washroom door to 0.65 m (opening, frame and leaf, one history commit), runs the check again and still requires the "Widened the washroom door" repair. Changing the planner door to 0.7 m was tried and rejected: it makes the saved cafe-interior world stale.
 
 Limit: the unit test still depends on the 6 mm margin for the default café; the e2e no longer does. Full `e2e:verified` (both browsers) takes about 2 to 3 minutes on the iGPU, so it is not a CI step.
+
+## Live Codex checks (2026-10-27)
+
+Codex 0.163.0 (ChatGPT login) answered again. One heavy job at a time under the heavy2 lock. The usage limit came back during the second job ("usage limit is reached. It resets at 7:30 PM"), so Codex runs were stopped there and nothing was retried.
+
+| Check | Result |
+| --- | --- |
+| 1. Brief, "make a cinema hall", Codex, medium effort | Ran to the end, 1209 s, 30 model calls, brief step 188 s. Elaboration "elaborate" (no size words in the prompt). Brief target 37 kinds / 484 pieces (288 seats from 12 rows x 3 blocks x 8, 24 treads, 24 panels, 12 baffles, lobby, toilets); result 177 entities, 60 kinds, 594 instances, 23 crafted parts, 38 lights. Reference image: "skipped", reason "a contemporary single-screen cinema is familiar". Richness review ran all 4 rounds and ended on the limit. |
+| 1. Stills viewed (overview, eye height, exterior) | Raked red seating in rows with aisle lighting, wood-slat acoustic walls with sconce pools, ceiling baffles, brick facade with canopy and sign, trees. Reads as a cinema, not a box. The eye-far still stands behind a riser and shows a wall of brown. |
+| 1. Museum, "a small room" briefs | Not run: Codex limit reached on the first call of the museum run (3 calls, 0 entities). |
+| 2. Generated reference image through `codex exec` | Not run (limit). The cinema brief chose no image, so the path was not exercised. Untested live. |
+| 3. tune_look with intent key, closed-loop trim histograms | Not run (limit). Untested with Codex. |
+| 4. Photo-to-room harness, twin and hotel, Codex | Twin: "Could not read the photo: usage limit is reached", no score. Hotel not started. measure_room, shell reconciliation and scoreboard comparisons against the earlier Claude Code and Codex numbers remain unchecked. |
+| 5. make_texture through Codex's image model | Not run (limit). Untested live. |
+
+Found, not fixed: the cinema review reported the same two findings in all 4 rounds (`plan_missing`: planned cinema-screen "screen" and the stage were "never placed in auditorium"). The screen and apron do exist in the world, but as crafted parts placed by a different route (named "Widescreen with black velvet masking", "Screen apron platform"), so conformance, which matches by the planned handle, could not see them. The model neither re-placed them with place_items nor resent design_plan without them, and spent about 8 minutes of the run on it; its closing message says "despite registration warnings". A fix would let the review tell the model to resend the plan when a named piece exists under another handle, or let conformance match by crafted kind. Not done: one sample, and the user wants the pieces judged, not gated.
+
+Remaining to run after the limit resets: museum and small-room briefs, the reference-image step, tune_look intent, twin and hotel harness, make_texture. Scripts: `scripts/brief-probe.ts --backend=codex`, `scripts/eval-photo.ts --mode=live --backend=codex`, runner scripts and logs under `~/.local/share/aether/live-codex/`.
