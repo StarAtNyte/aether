@@ -29,7 +29,7 @@
   "measured": {
     "fovErrDeg": 1,
     "roomRelErr": 0.09,
-    "floorPosM": 0.31,
+    "floorPosM": 0.29,
     "floorPosRelEyeM": 0.36,
     "sizeRelErr": 0.09,
     "projectionIou": 0.67,

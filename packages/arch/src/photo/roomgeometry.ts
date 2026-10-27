@@ -254,6 +254,7 @@ function topDown(cloud: Cloud, fr: RoomFrame): TopDown {
   return t;
 }
 
+export const SIDE_SHARE = 0.3;
 /** Histogram of offsets along a direction (5 cm bins) smoothed over three bins. */
 function peaks(values: number[], bin = 0.05): { s: number; n: number }[] {
   if (values.length === 0) return [];
@@ -315,8 +316,14 @@ export function roomBoxOf(cloud: Cloud, fr: RoomFrame, opt: { notWall?: boolean[
   const far1 = p1.filter((p) => p.s > 0.8).sort((x, y) => y.s - x.s);
   // Back wall: the farthest strong peak (a weak far peak is a doorway or window, so take it only with a big share).
   const back = far1.find((p) => p.n >= (p1[0]?.n ?? 0) * 0.4) ?? far1[0];
-  const right = p2.filter((p) => p.s > 0.4).sort((x, y) => y.n - x.n)[0];
-  const left = p2.filter((p) => p.s < -0.4).sort((x, y) => y.n - x.n)[0];
+  // A side wall: the farthest peak that holds a fair share of the strongest one on its side (a fireplace or a wardrobe proud of the wall
+  // is a stronger peak than the wall behind it but not the wall); the share is SIDE_SHARE.
+  const side = (cand: { s: number; n: number }[]): { s: number; n: number } | undefined => {
+    const top = Math.max(0, ...cand.map((c) => c.n));
+    return cand.filter((c) => c.n >= top * SIDE_SHARE).sort((x, y) => Math.abs(y.s) - Math.abs(x.s))[0];
+  };
+  const right = side(p2.filter((p) => p.s > 0.4));
+  const left = side(p2.filter((p) => p.s < -0.4));
   const lines: RoomBox['lines'] = {};
   if (back) lines.back = mk(n1, back.s, back.n);
   if (right) lines.right = mk(n2, right.s, right.n);

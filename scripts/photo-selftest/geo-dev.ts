@@ -107,6 +107,20 @@ for (const w of readdirSync(root).sort()) {
       console.log(`${w}/${p} vp fov ${vp.fovDeg} (true ${truth.camera.hfov}) yaw ${vp.yawDeg} (true ${-truth.room.yawRel}) pitch ${vp.pitchDeg} (true ${-truth.camera.pitch}) | est eye x ${b.box.camera.x} z ${b.box.camera.z} walls L${b.box.lines.left?.s.toFixed(2)} R${b.box.lines.right?.s.toFixed(2)} B${b.box.lines.back?.s.toFixed(2)} | true eye u ${eye[0].toFixed(2)} v ${eye[1].toFixed(2)} room W ${truth.room.width.toFixed(2)} D ${truth.room.depth.toFixed(2)}`);
       for (const r of pe.rows) if (r.floor) { const o = rep.objects.find((q) => false); void o; }
     }
+    if (args.includes('--xz')) {
+      const [bx0, bz0, bx1, bz1] = truth.room.bbox;
+      const [cu, cv] = planToRoom(truth.room.back, truth.camera.plan.at[0] - bx0, truth.camera.plan.at[1] - bz0, bx1 - bx0, bz1 - bz0);
+      for (const r of det.rows) {
+        if (!r.perceivedId || r.iou < 0.3) continue;
+        const ti = truth.items.find((x) => x.id === r.truthId)!;
+        const po = rep.objects.find((o) => o.id === r.perceivedId)!;
+        if (!po.placement || !ti.visible || !(ti.mount === 'floor' || ti.y0 < 0.1)) continue;
+        const inRoom = po.placement.centre.frame === 'room';
+        const t = inRoom ? [ti.visible.centre.u, ti.visible.centre.v] : [ti.visible.centre.u - cu, ti.visible.centre.v];
+        const dx = po.placement.centre.x - t[0]!, dz = po.placement.centre.z - t[1]!;
+        console.log(`${w}/${p} ${ti.kind.padEnd(12)} dx ${dx.toFixed(2)} dz ${dz.toFixed(2)}  truth z ${t[1]!.toFixed(2)} x ${t[0]!.toFixed(2)} visSamples ${ti.visible.samples} room-frame ${inRoom}`);
+      }
+    }
     if (args.includes('--verbose')) for (const r of pe.rows) console.log(`  ${w}/${p} ${r.kind.padEnd(12)} pos ${r.posVisM} rel ${r.posRelEyeM} frame ${r.frame} w ${r.wRatio} h ${r.hRatio}`);
   }
 }
