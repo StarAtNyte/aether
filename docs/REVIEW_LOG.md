@@ -6648,6 +6648,35 @@ Found, not fixed: the cinema review reported the same two findings in all 4 roun
 
 Remaining to run after the limit resets: museum and small-room briefs, the reference-image step, tune_look intent, twin and hotel harness, make_texture. Scripts: `scripts/brief-probe.ts --backend=codex`, `scripts/eval-photo.ts --mode=live --backend=codex`, runner scripts and logs under `~/.local/share/aether/live-codex/`.
 
+### Live Codex checks, second pass (2026-10-27, evening)
+
+Codex answered at 19:35 and hit its usage limit again after 48 min of the first job (reset 00:35 next day). Codex runs stopped there, nothing retried.
+
+| Check | Status |
+| --- | --- |
+| 1. Photo-to-room, twin, objects stage, main at ec98b629, `--render=gpu` (SwiftShader), Codex medium | Verified for 3 object rounds; round 4 object judge died on the limit. 2866 s, 168 model calls, 63 objects inventoried, built 4.23 x 6.32 m (shell, was 3.88 x 6.28 in Claude Code runs). Output `qa/live6/twin/` (montage, run.json, log). |
+| 1. Hotel photo | Not run (limit). |
+| 2. Museum, small room, cinema re-run (plan matching fix e38b508c) | Not run (limit). Untested live. |
+| 3. tune_look intent | Not run. Untested with Codex. |
+| 4. Reference image via codex exec | Not run. Untested. |
+| 5. make_texture via Codex | Not run. Untested. |
+| 6. Demo video live re-record | Not run. |
+
+Twin, per object round (match / close / off / unclear, pass rate = match+close of judged, objects with nothing off):
+
+| round | match | close | off | unclear | pass rate | objects clean | open aspects |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 59 | 72 | 29 | 75 | 82 % | 36 of 63 | 33 |
+| 2 | 62 | 69 | 32 | 68 | 80 % | 32 of 63 | 36 |
+| 3 | 73 | 74 | 23 | 89 | 86 % | 41 of 63 | 7 |
+| final (kept state) | 72 | 76 | 30 | 93 | 83 % | 37 of 63 | n/a |
+
+Stop reason: usage limit, not the plateau or cap (3 rounds done, plateau needs 3 without gain; round 3 gained). Whole-frame checklist stayed at 2/19 judges-pass through round 4 (score 34, 33, ?, 47 %): shell-size, panelling, door, art, beds, sconce, chair still failing there.
+
+Honest reading. Versus the strict baseline (twin3: 4 of 34 objects clean, open 64 to 65) the lenient verdicts give 36 to 41 of 63 clean and 7 to 33 open, but that is mostly the wording, not a better room: "close" now passes and "unclear" (about 30 to 40 % of verdicts) is not chased, and the inventory is bigger (63 vs 34), so the numbers are not comparable. What the run does show: open aspects fell from 33 to 7 in round 3 with repairs landing (measured fit moved mirror-1 0.45 m along its wall), then round 2 got worse before better, so the best-state keep matters. The montage shows the layout right (bed, divider headboard, window wall with curtains, chair) but the whole-frame still disagrees: carpet teal vs dark blue, no desk or luggage, door added, timber wainscot replaced by white panelling. The built width is nearer the photo than before but the judge cannot confirm. Not yet shown: that measured feedback improves position (needs the round-4 and later data, plateau and cap behaviour, hotel).
+
+Remaining after the reset: hotel photo, museum, small room, cinema re-run, tune_look intent, reference image, make_texture, demo re-record. Runner: `~/.local/share/aether/qa/live6/run.sh`; `apps/studio/dist` must exist (`npm run build`) for `--render=gpu`.
+
 ## Plan conformance: match by kind, declared mappings, repeated findings folded
 
 Cause of the cinema review loop: conformance matched a planned piece only by its handle, and two different `plan_missing` findings shared one finding key (code, no entities, room), so the stall tracker saw "the same finding" while the model had nothing it could do.
