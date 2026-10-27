@@ -4,7 +4,8 @@
  */
 import { z } from 'zod';
 import type { ContentBlock, ToolDef } from '../../types';
-import { DEFAULT_NOUNS, PERCEIVE_TOOL_NAME, perceptionText, type Perceiver, type PerceptionReport } from './perceive';
+import { APPLY_COLOUR_TOOL_NAME, PERCEIVE_TOOL_NAME } from './names';
+import { DEFAULT_NOUNS, perceptionText, type Perceiver, type PerceptionReport } from './perceive';
 
 export { PERCEIVE_TOOL_NAME };
 
@@ -52,7 +53,7 @@ export async function perceivePhoto(p: Perceiver, input: { find: string[]; gener
   return { text: `${perceptionText(rep)}${overlay ? '\nThe annotated picture follows this reply.' : ''}`, blocks, isError: false, report: rep };
 }
 
-export const APPLY_COLOUR_TOOL_NAME = 'apply_measured_colour';
+export { APPLY_COLOUR_TOOL_NAME };
 export const APPLY_COLOUR_TOOL: ToolDef = {
   name: APPLY_COLOUR_TOOL_NAME,
   description:

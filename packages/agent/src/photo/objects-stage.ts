@@ -7,7 +7,7 @@
  * crops and writes the books. Nothing here passes or fails an object by a number.
  */
 import type { PerceptionReport } from './perception/perceive';
-import { seedInventory } from './perception/seed';
+import type { seedInventory as SeedFn } from './perception/seed';
 import type { Entity, WorldDoc } from '@aether/core';
 import type { ReviewPose } from '@aether/arch';
 import type { AgentEvent, AgentHost, ContentBlock, PhotoObjectView } from '../types';
@@ -45,7 +45,7 @@ import {
 } from './objects';
 import { autoLink, boxSignature, builtPiecesText, evidenceMap, knownEntityIds, projectBuilt, projectedBox, repairEvidence, residualLine, residualOf, suggestCorrection, type Projection } from './objects-evidence';
 import { restorePatches } from './revert';
-import { compareObjects, type Measured } from './objects-measure';
+import type { compareObjects as CompareFn, Measured } from './objects-measure';
 import type { Raster } from './score';
 
 export interface StageDeps {
@@ -65,6 +65,9 @@ export interface StageDeps {
   maxRounds?: number;
   /** Measure the nouns of the inventory (perception layer); null when it is unavailable. */
   perceive?: (labels: string[]) => Promise<PerceptionReport | null>;
+  /** The perception layer's functions (a lazy chunk, handed in when perception is on). */
+  seed?: typeof SeedFn;
+  compare?: typeof CompareFn;
   /** The perception report of the run (masks, measured colours), for the measured comparison each round; null: none. */
   report?: () => PerceptionReport | null;
   /** Library models that look like the crop of a perceived or inventory object (one line), for objects whose type or presence is off; null: none. */
@@ -240,11 +243,11 @@ export class ObjectStage {
       items = lead.items.map((i) => ({ ...i, seen: first ? ('primary' as const) : ('blind' as const) }));
       line = `Inventory of the photo: ${items.length} objects (${first ? 'the second, blind list failed' : 'only the blind list answered'}).`;
     }
-    if (this.deps.perceive) {
+    if (this.deps.perceive && this.deps.seed) {
       const rep = await this.deps.perceive([...new Set(items.map((i) => i.kind))].slice(0, 30)).catch(() => null);
       aborted(this.deps.signal);
       if (rep && rep.objects.length > 0) {
-        const seeded = seedInventory(items, rep);
+        const seeded = this.deps.seed(items, rep);
         items = seeded.items;
         line = `${line} ${seeded.line}`;
         if (seeded.added.length > 0) notes = [...notes, `Found by measurement only (check that they exist in the room): ${seeded.added.join(', ')}.`];
@@ -272,9 +275,9 @@ export class ObjectStage {
     if (proj) for (const r of ledger.list()) { const x = residualOf(r.item, proj, this.deps.px); if (x) this.resid.set(r.item.id, x.errPx); }
     this.measured = null;
     const report = this.deps.report?.() ?? null;
-    if (report && inp.pose && inp.raster) {
+    if (report && inp.pose && inp.raster && this.deps.compare) {
       try {
-        this.measured = compareObjects({ world: inp.world, pose: inp.pose, aspect: inp.aspect, report, ledger, render: inp.raster, px: this.deps.px });
+        this.measured = this.deps.compare({ world: inp.world, pose: inp.pose, aspect: inp.aspect, report, ledger, render: inp.raster, px: this.deps.px });
       } catch { this.measured = null; }
     }
     if (this.measured) {

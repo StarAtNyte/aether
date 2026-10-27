@@ -15,6 +15,7 @@ import {
 } from '@aether/arch/photo';
 import type { DepthRaster } from '../depth-model';
 import { estimateDepthMap } from '../depth-model';
+import { PERCEIVE_TOOL_NAME } from './names';
 import { CLIP_SET, classifyEmbedding, clipVocabulary, loadClip, type Clip, type LabelGuess } from './clip';
 import { FLORENCE_SET, METRIC_SET, SAM_SET, missingBytes } from './weights';
 import { loadFlorence, type Florence, type RawBox } from './florence';
@@ -28,7 +29,7 @@ export const PERCEPTION_VERSION = 2;
 export async function perceptionDownloadMb(): Promise<number> {
   return Math.round((await missingBytes([FLORENCE_SET, SAM_SET, METRIC_SET, CLIP_SET])) / 1e6);
 }
-export const PERCEIVE_TOOL_NAME = 'perceive_photo';
+export { PERCEIVE_TOOL_NAME };
 
 export interface Rle {
   width: number;

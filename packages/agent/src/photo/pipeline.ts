@@ -83,11 +83,8 @@ import { CLOSER_TOOL, CLOSER_TOOL_NAME, lookCloser } from './closer';
 import { OBJECT_REASON_TOOL, OBJECT_REASON_TOOL_NAME, ObjectLedger, applyReasons, objectsDueText, objectsProcedure, objectsSummary } from './objects';
 import { ObjectStage } from './objects-stage';
 import type { DepthRaster } from './depth-model';
-import { Perceiver, perceptionDownloadMb, perceptionText, type PerceptionReport } from './perception/perceive';
-import { APPLY_COLOUR_TOOL, APPLY_COLOUR_TOOL_NAME, COLOUR_PARAMS, PERCEIVE_TOOL, PERCEIVE_TOOL_NAME, parseApplyColourInput, parsePerceiveInput, perceivePhoto } from './perception/tool';
-import { seedInventory } from './perception/seed';
-import { similarModelsText } from './perception/retrieve';
-import { normaliseHex } from '@aether/arch/photo';
+import type { Perceiver, PerceptionReport } from './perception/perceive';
+import { APPLY_COLOUR_TOOL_NAME, PERCEIVE_TOOL_NAME } from './perception/names';
 import { MEASURE_TOOL, MEASURE_TOOL_NAME, analysisDepthText, autoAnchor, measureRoom, parseMeasureInput, type Measured } from './measure';
 import { compareImages, extractPalette, regionColourScore, type Raster } from './score';
 import { runReconcile } from './reconcile';
@@ -122,16 +119,23 @@ const depthEvidence = new WeakMap<PhotoRun, Measured>();
 const perceivers = new WeakMap<PhotoRun, Perceiver>();
 /** What the first perception pass found, for the first message of every reading. */
 const perceiveEvidence = new WeakMap<PhotoRun, { text: string; blocks: ContentBlock[]; report: PerceptionReport }>();
-function perceiverOf(run: PhotoRun): Perceiver | null {
+/** The perception layer's code: a separate chunk, loaded when a photo run starts (never on the first visit). */
+type PerceptionCode = typeof import('./perception/bundle');
+const perceptionCode = new WeakMap<PhotoRun, PerceptionCode>();
+/** Load the perception chunk and make the run's perceiver (null: off, or the host cannot decode, or the chunk could not load). */
+async function loadPerception(run: PhotoRun): Promise<void> {
   const host = run.ctx.host;
-  if (run.options.perception === false || typeof host.decodeImage !== 'function' || process.env['AETHER_PERCEPTION'] === 'off') return null;
-  let p = perceivers.get(run);
-  if (!p) {
-    p = new Perceiver({ raster: () => host.decodeImage!(run.image, 1024) });
-    perceivers.set(run, p);
-  }
-  return p;
+  if (run.options.perception === false || typeof host.decodeImage !== 'function' || process.env['AETHER_PERCEPTION'] === 'off' || perceivers.has(run)) return;
+  try {
+    const code = await import('./perception/bundle');
+    perceptionCode.set(run, code);
+    perceivers.set(run, new code.Perceiver({ raster: () => host.decodeImage!(run.image, 1024) }));
+  } catch { /* offline with the chunk not cached: the room is built from the picture alone */ }
 }
+function perceiverOf(run: PhotoRun): Perceiver | null {
+  return perceivers.get(run) ?? null;
+}
+const codeOf = (run: PhotoRun): PerceptionCode => perceptionCode.get(run) as PerceptionCode;
 /** The photo as the depth network takes it, or null when depth is off or the host cannot decode. */
 function depthSource(run: PhotoRun): (() => Promise<DepthRaster | null>) | null {
   const host = run.ctx.host;
@@ -599,6 +603,7 @@ async function* offline(run: PhotoRun, why: string): AsyncGenerator<AgentEvent> 
 
 /** Run the whole photo flow. Never throws except on abort; failures are events. */
 export async function* reconstructRoom(run: PhotoRun): AsyncGenerator<AgentEvent> {
+  await loadPerception(run);
   const { ctx } = run;
   const host = ctx.host;
   const hs: HarnessState | null = run.options.harness === true ? { stages: new StageMachine(), guard: new RepairGuard(), assume: new AssumptionsLedger(), rounds: 0, resumed: false } : null;
@@ -643,9 +648,9 @@ export async function* reconstructRoom(run: PhotoRun): AsyncGenerator<AgentEvent
   }
   const perceiver = perceiverOf(run);
   if (perceiver) {
-    const mb = await perceptionDownloadMb().catch(() => 0);
+    const mb = await codeOf(run).perceptionDownloadMb().catch(() => 0);
     yield { type: 'status', text: mb > 0 ? `Measuring the photo. First use: fetching the measuring models (about ${mb} MB, checked and kept on this machine; offline they are skipped). To skip them: set aether.perception to off in the browser local storage (AETHER_PERCEPTION=off from the command line); the room is then built from the picture alone.` : 'Measuring the photo (detection, labels, masks, depth, room box)…' };
-    const got = await perceivePhoto(perceiver, { find: [] }, true).catch(() => null);
+    const got = await codeOf(run).perceivePhoto(perceiver, { find: [] }, true).catch(() => null);
     if (got && !got.isError && got.report) {
       perceiveEvidence.set(run, { text: got.text, blocks: got.blocks, report: got.report });
       yield { type: 'step', tool: PERCEIVE_TOOL_NAME, label: `Measured the photo: ${got.report.objects.length} objects${got.report.room ? `, room about ${got.report.room.width.value} x ${got.report.room.depth.value} x ${got.report.room.height.value} m` : ''}`, ok: true };
@@ -923,6 +928,7 @@ function makeObjects(run: PhotoRun, photo: Photo, saved: ObjectLedger | null): O
         : undefined,
       getWorld: () => host.getWorld(),
       applyPatches: (p, m) => host.applyPatches(p, m),
+      ...(perceiverOf(run) ? { seed: codeOf(run).seedInventory, compare: codeOf(run).compareObjects } : {}),
       ...(perceiverOf(run) ? { perceive: async (labels: string[]) => (await perceiverOf(run)?.run({ find: labels }).catch(() => null)) ?? null } : {}),
       ...(perceiverOf(run) ? { report: () => perceiverOf(run)?.report() ?? perceiveEvidence.get(run)?.report ?? null } : {}),
       ...(perceiverOf(run) ? {
@@ -930,7 +936,7 @@ function makeObjects(run: PhotoRun, photo: Photo, saved: ObjectLedger | null): O
           const pc = perceiverOf(run) as Perceiver;
           const emb = pc.embeddingOf(object);
           if (!emb) return null;
-          const sim = await similarModelsText(emb, 3, '');
+          const sim = await codeOf(run).similarModelsText(emb, 3, '');
           return sim.ids.length > 0 ? `Library models that look like this crop (find_model like_crop:"${object}" for the facts): ${sim.ids.join(', ')}.` : null;
         },
       } : {}),
@@ -999,7 +1005,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
   /** The photo for the depth network (null without a host decoder: the measure tool is then not offered). */
   const depthRaster = depthSource(run);
   let depthFirst: Promise<Measured> | null = null;
-  const tools: ToolDef[] = [VERDICT_TOOL, ...(ledger ? [DIFFERENCES_TOOL] : []), ...(hs ? [GATE_TOOL, ...(ledger ? [REPAIR_TOOL] : []), CAMERA_TOOL] : []), ...(photo.raster ? [SAMPLE_TOOL] : []), ...(objects ? [OBJECT_REASON_TOOL] : []), CLOSER_TOOL, ...(depthRaster ? [MEASURE_TOOL] : []), ...(perceiverOf(run) ? [PERCEIVE_TOOL, ...(objects ? [APPLY_COLOUR_TOOL] : [])] : []), ...designTools, ...(run.ctx.textures?.photo ? [MAKE_TEXTURE_TOOL] : []), ...run.tools.filter((t) => t.name === 'tune_look' || t.name === 'finish' || t.name === 'find_model')];
+  const tools: ToolDef[] = [VERDICT_TOOL, ...(ledger ? [DIFFERENCES_TOOL] : []), ...(hs ? [GATE_TOOL, ...(ledger ? [REPAIR_TOOL] : []), CAMERA_TOOL] : []), ...(photo.raster ? [SAMPLE_TOOL] : []), ...(objects ? [OBJECT_REASON_TOOL] : []), CLOSER_TOOL, ...(depthRaster ? [MEASURE_TOOL] : []), ...(perceiverOf(run) ? [codeOf(run).PERCEIVE_TOOL, ...(objects ? [codeOf(run).APPLY_COLOUR_TOOL] : [])] : []), ...designTools, ...(run.ctx.textures?.photo ? [MAKE_TEXTURE_TOOL] : []), ...run.tools.filter((t) => t.name === 'tune_look' || t.name === 'finish' || t.name === 'find_model')];
   const messages: ChatMessage[] = [];
   /** Where progress is measured from: with a panel, the last state the judges preferred; without, the best state. */
   // (Written through `settle`, so the declared type is spelled out: control flow would otherwise narrow it to null.)
@@ -1391,7 +1397,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
             results.push({ type: 'tool_result', toolUseId: call.id, content: `find_model like_crop: no crop for "${like.slice(0, 40)}" (use a perceived id such as p3 or an inventory id), or the image labeller is unavailable; use the name search.`, isError: true });
             continue;
           }
-          const sim = await similarModelsText(emb, 3, `object ${like}`);
+          const sim = await codeOf(run).similarModelsText(emb, 3, `object ${like}`);
           let text = sim.text;
           const what = (call.input as { what?: unknown }).what;
           if (typeof what === 'string' && what.length > 0) {
@@ -1402,7 +1408,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
           continue;
         }
         if (call.name === APPLY_COLOUR_TOOL_NAME && perceiverOf(run)) {
-          const input = parseApplyColourInput(call.input);
+          const input = codeOf(run).parseApplyColourInput(call.input);
           const fail = (t: string): void => { results.push({ type: 'tool_result', toolUseId: call.id, content: `apply_measured_colour: ${t}`, isError: true }); };
           if (!input) { fail('expected {object, ref?, source?: "seen"|"lit-like-white", param?}.'); continue; }
           const rep = (perceiverOf(run) as Perceiver).report();
@@ -1411,11 +1417,11 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
           const po = rep.objects.find((o) => o.id === pid);
           const seen = po?.appearance?.colour.hex;
           if (!seen) { fail(`no colour was measured for "${input.object.slice(0, 40)}" (use an inventory id or a perceived id such as p3).`); continue; }
-          const hex = input.source === 'lit-like-white' && rep.illuminant ? normaliseHex(seen, rep.illuminant) : seen;
+          const hex = input.source === 'lit-like-white' && rep.illuminant ? codeOf(run).normaliseHex(seen, rep.illuminant) : seen;
           const ref = input.ref ?? rec?.item.entities[0];
           const ent = ref ? run.ctx.host.getWorld().entities[ref] : undefined;
           const params = (ent && ent.shape.kind === 'procedural' ? (ent.shape.params as Record<string, unknown>) : null) ?? {};
-          const key = input.param ?? COLOUR_PARAMS.find((k) => typeof params[k] === 'string' && /^#[0-9a-f]{6}$/i.test(params[k] as string));
+          const key = input.param ?? codeOf(run).COLOUR_PARAMS.find((k) => typeof params[k] === 'string' && /^#[0-9a-f]{6}$/i.test(params[k] as string));
           if (!ref || !ent) { fail('give `ref`, the built entity to colour (the object has no linked piece).'); continue; }
           if (!key) { fail(`${ref} has no hex colour parameter (its colour is a named finish or a texture); use edit_items resize with params, or choose another piece.`); continue; }
           const order = hs ? hs.guard.allow(APPLY_COLOUR_TOOL_NAME, call.input) : null;
@@ -1432,12 +1438,12 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
           continue;
         }
         if (call.name === PERCEIVE_TOOL_NAME && perceiverOf(run)) {
-          const input = parsePerceiveInput(call.input);
+          const input = codeOf(run).parsePerceiveInput(call.input);
           if (!input) {
             results.push({ type: 'tool_result', toolUseId: call.id, content: 'perceive_photo: expected {find?: string[] of object nouns, generic?: boolean}.', isError: true });
             continue;
           }
-          const got = await perceivePhoto(perceiverOf(run) as Perceiver, input);
+          const got = await codeOf(run).perceivePhoto(perceiverOf(run) as Perceiver, input);
           results.push({ type: 'tool_result', toolUseId: call.id, content: got.text, ...(got.isError ? { isError: true } : {}) });
           lookBlocks.push(...got.blocks);
           if (got.report) perceiveEvidence.set(run, { text: got.text, blocks: got.blocks, report: got.report });
