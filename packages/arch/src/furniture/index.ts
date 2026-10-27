@@ -22,13 +22,16 @@ import { CIVIC } from './civic';
 import { WORLD_PIECES } from './world';
 import { DISPLAY } from './display';
 import { HARBOUR } from './harbour';
+import { DWELLING, DWELLINGS, dwellingDoor } from './dwelling';
+import { GARDEN_PIECES } from './garden';
 
 export type { FurnitureDef, Mount, MovableMotion, MovableSpec, ParamReader } from './kit';
 export { glowMaterial } from './lighting';
+export { DWELLING_TYPES } from './dwelling';
 export { tierHeights, TIER_BASE } from './venue';
 
 /** Every furniture generator, in a stable order. */
-export const FURNITURE: readonly FurnitureDef[] = Object.freeze([...SEATING, ...CANE, ...TABLES, ...BEDROOM, ...KITCHEN_SET, ...BATH, ...SINKS, ...DECOR, ...LIGHTING, ...TREES, ...VENUE, ...CIVIC, ...WORLD_PIECES, ...DISPLAY, ...HARBOUR]);
+export const FURNITURE: readonly FurnitureDef[] = Object.freeze([...SEATING, ...CANE, ...TABLES, ...BEDROOM, ...KITCHEN_SET, ...BATH, ...SINKS, ...DECOR, ...LIGHTING, ...TREES, ...VENUE, ...CIVIC, ...WORLD_PIECES, ...DISPLAY, ...HARBOUR, ...DWELLINGS, ...GARDEN_PIECES]);
 
 const BY_ID: ReadonlyMap<string, FurnitureDef> = new Map(FURNITURE.map((f) => [f.id, f]));
 const BY_KIND: ReadonlyMap<string, FurnitureDef> = new Map(FURNITURE.map((f) => [f.kind, f]));
@@ -165,6 +168,11 @@ export function furnitureReader(def: FurnitureDef, params: Record<string, Json> 
 /** Footprint (width X, height, depth Z) of a piece with the given params. */
 export function furnitureSize(def: FurnitureDef, params?: Record<string, Json>): [number, number, number] {
   return def.size(furnitureReader(def, params));
+}
+
+/** Where the front door of a dwelling with these params is: x across its front and the z of its front wall (its frame). */
+export function dwellingDoorAt(params?: Record<string, Json>): [number, number] {
+  return dwellingDoor(furnitureReader(DWELLING, params));
 }
 
 /** Build a piece of furniture (with `interactive: true`, without the parts that open: see {@link buildFurniturePart}). */

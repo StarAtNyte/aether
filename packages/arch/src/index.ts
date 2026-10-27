@@ -26,7 +26,7 @@ export { buildRoof, roofRise } from './roof';
 export { buildStair, stairFootprint, stairGuardOutlines, stairGuardPieces, stairLayout, stairRisers, stairWalkLine, GUARD_HALF, GUARD_HEIGHT, GUARD_OFFSET, GUARD_START, STAIR_WALK_LINE_RUN_OUT, DEFAULT_RISER, type StairGuardPiece } from './stair';
 export { buildDoor, buildFrame, buildWindow, DOOR_CLEARANCE, LINING } from './openings';
 export { STRUCTURE_IDS, STRUCTURE_DESCRIPTIONS, isStructureId, parseStructureParams, buildStructure, ArchParamsError } from './structure';
-export { FURNITURE, furnitureById, furnitureByKind, resolveFurnitureKind, findCrafted, tierHeights, TIER_BASE, furnitureSize, furnitureReader, buildFurniture, resolveSpec, glowMaterial, type FurnitureDef, type Mount, type ParamReader } from './furniture/index';
+export { FURNITURE, furnitureById, furnitureByKind, resolveFurnitureKind, findCrafted, tierHeights, TIER_BASE, furnitureSize, dwellingDoorAt, DWELLING_TYPES, furnitureReader, buildFurniture, resolveSpec, glowMaterial, type FurnitureDef, type Mount, type ParamReader } from './furniture/index';
 export { buildPart, parsePartParams, type PartParams } from './furniture/part';
 export { furnitureMovables, buildFurniturePart, type MovableSpec, type MovableMotion } from './furniture/index';
 export { FURNITURE_SLOTS, findSlot, slotNames, slotPatch, type SlotDef } from './furniture/slots';
