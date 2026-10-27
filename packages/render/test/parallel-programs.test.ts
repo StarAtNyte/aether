@@ -129,3 +129,31 @@ describe('parallel WebGL linking', () => {
     c.dispose();
   });
 });
+describe('drawing while a program links', () => {
+  it('skips draws of an object whose program is still linking and draws it once complete', async () => {
+    vi.useFakeTimers();
+    let next = 0;
+    const ready = new Set<object>();
+    const data = new Map<object, { programGPU?: object; shaderGPU?: object }>();
+    const draw = vi.fn();
+    const backend = {
+      gl: { createProgram: () => ({ id: ++next }), attachShader() {}, linkProgram() {}, isContextLost: () => false, deleteProgram() {}, getProgramParameter: (p: object) => ready.has(p) },
+      parallel: { COMPLETION_STATUS_KHR: 42 },
+      get: (p: object) => data.get(p) ?? { shaderGPU: {} }, set: (p: object, v: object) => data.set(p, v),
+      createRenderPipeline: vi.fn(), _completeCompile: vi.fn(), draw,
+    };
+    const controller = parallelPrograms(backend as unknown as Parameters<typeof parallelPrograms>[0], vi.fn(), vi.fn());
+    const pipeline = { fragmentProgram: {}, vertexProgram: {} };
+    const object = { pipeline, getBindings: () => ({}) };
+    (backend.createRenderPipeline as unknown as (o: typeof object, p: null) => void)(object, null);
+    backend.draw(object, {});
+    expect(draw).not.toHaveBeenCalled();
+    ready.add(data.get(pipeline)!.programGPU!);
+    await vi.advanceTimersToNextTimerAsync();
+    expect(controller.pending).toBe(0);
+    backend.draw(object, {});
+    expect(draw).toHaveBeenCalledTimes(1);
+    controller.dispose();
+    expect(backend.draw).toBe(draw);
+  });
+});

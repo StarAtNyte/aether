@@ -77,7 +77,7 @@ import { BATCHED_LAYER } from './static-batches';
 import { DEFAULT_FIELD_BUDGET, LodChainCache, lodOutputKey, lodPart, outputRadius, shareDemand, type FieldBudget } from './field-mount';
 import { buildMeshGeometry, previewMeshGeometry, type MeshGeometryBundle } from '../geometry/mesh-asset';
 import { meshColliders } from '@aether/procgen';
-import { areaLightsReady, createEntityLight, disposeEntityLight, enforceShadowCap, LAMP_CUTOFF, loadAreaLights, updateLightParams } from './lights';
+import { areaLightsReady, chooseForwardLights, createEntityLight, disposeEntityLight, enforceShadowCap, LAMP_CUTOFF, loadAreaLights, updateLightParams, type BudgetLight } from './lights';
 import { createEntityNode, ENTITY_ID_KEY, type EntityNode, type MeshBinding } from './entity-node';
 import { renderableIds } from './renderable';
 import { TERRAIN_RENDER_ORDER } from '../gpu/render-order';
@@ -270,6 +270,8 @@ export class SceneSync {
   private archLampScale = 1;
   private totalInstances = 0;
   private lightsDirty = false;
+  /** Most local lights drawn live (the rest stay in the baked volume); see {@link FORWARD_LIGHTS}. */
+  private lightBudget = Number.POSITIVE_INFINITY;
   /** True while setWorld rebuilds: dependent scatter relayout is deferred to one pass. */
   private batching = false;
   private disposed = false;
@@ -712,6 +714,7 @@ export class SceneSync {
     for (const node of this.nodes.values()) {
       if (node.light && node.entity.light && node.entity.arch?.role === 'light') this.applyLampScale(node.light.light, node.entity.light);
     }
+    if (Number.isFinite(this.lightBudget)) this.applyLightBudget();
   }
 
   /**
@@ -722,7 +725,7 @@ export class SceneSync {
    */
   private applyLampScale(light: Light, spec: LightSpec): void {
     updateLightParams(light, spec, this.archLampScale);
-    light.visible = this.archLampScale >= LAMP_CUTOFF && spec.intensity > 0;
+    light.visible = this.archLampScale >= LAMP_CUTOFF && spec.intensity > 0 && light.userData['cut'] !== true;
   }
 
   private lightScale(node: Readonly<EntityNode>): number {
@@ -1989,6 +1992,38 @@ export class SceneSync {
     const candidates: Array<{ id: string; light: Light; wants: boolean }> = [];
     for (const n of this.nodes.values()) if (n.light) candidates.push({ id: n.id, light: n.light.light, wants: n.entity.light?.castShadow === true });
     enforceShadowCap(candidates);
+    this.applyLightBudget();
+  }
+
+  /** Limit the live local lights to {@link lightBudget}; the lights cut stay marked (`userData.cut`) for the bake. */
+  setLightBudget(budget: number): void {
+    const b = Number.isFinite(budget) ? Math.max(0, Math.floor(budget)) : Number.POSITIVE_INFINITY;
+    if (b === this.lightBudget) return;
+    this.lightBudget = b;
+    this.applyLightBudget();
+  }
+
+  private applyLightBudget(): void {
+    const lit: Array<{ node: EntityNode; light: Light; spec: LightSpec }> = [];
+    for (const n of this.nodes.values()) {
+      const light = n.light?.light, spec = n.entity.light;
+      if (!light || !spec || spec.type === 'directional' || n.entity.template || n.entity.visible === false) continue;
+      const lamp = n.entity.arch?.role === 'light';
+      if (spec.intensity > 0 && (!lamp || this.archLampScale >= LAMP_CUTOFF)) lit.push({ node: n, light, spec });
+      else light.userData['cut'] = false;
+    }
+    const pool: BudgetLight[] = lit.map(({ node, light }) => {
+      node.object.updateWorldMatrix(true, false);
+      const e = node.object.matrixWorld.elements;
+      const pos: [number, number, number] = [e[12] as number, e[13] as number, e[14] as number];
+      return { id: node.id, group: node.entity.arch?.room ?? `cell:${Math.floor(pos[0] / 8)},${Math.floor(pos[2] / 8)}`, position: pos, intensity: light.intensity };
+    });
+    const kept = chooseForwardLights(pool, this.lightBudget);
+    for (const { node, light } of lit) {
+      const cut = !kept.has(node.id);
+      light.userData['cut'] = cut;
+      light.visible = !cut;
+    }
   }
 
   // -------------------------------------------------------------------------

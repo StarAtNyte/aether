@@ -261,3 +261,70 @@ export function enforceShadowCap(candidates: ReadonlyArray<{ id: string; light: 
   for (const c of candidates) c.light.castShadow = enabled.has(c.id);
   return [...enabled];
 }
+
+/** One local light the forward budget chooses among. */
+export interface BudgetLight {
+  id: string;
+  /** Room (or other group) the light hangs in; lights without one are grouped by an 8 m cell. */
+  group: string;
+  position: readonly [number, number, number];
+  intensity: number;
+}
+
+/**
+ * Local lights that stay in the forward shader. Every point and spot light adds its own unrolled block to every lit
+ * material's program (about 9 KB of source each), so a generated hall with 50 lamps links programs of 600 KB, which
+ * takes an integrated GPU tens of seconds and blocks everything behind it. The lights beyond the budget are not
+ * dropped: they stay in the baked light volume (see the gather in the renderer), only their live term goes.
+ */
+export const FORWARD_LIGHTS: Readonly<Record<'discrete' | 'integrated' | 'software' | 'unknown', number>> = Object.freeze({
+  discrete: 64,
+  integrated: 8,
+  software: 6,
+  unknown: 12,
+});
+
+/**
+ * Pick at most `budget` lights, keeping every group lit before any group gets a second light, and inside a group
+ * spreading the picks (farthest point first, the strongest light to start). Deterministic: ties break by id.
+ * Returns the ids kept (all of them when they fit).
+ */
+export function chooseForwardLights(lights: readonly BudgetLight[], budget: number): Set<string> {
+  const cap = Math.max(0, Math.floor(budget));
+  if (!(lights.length > cap)) return new Set(lights.map((l) => l.id));
+  const groups = new Map<string, BudgetLight[]>();
+  for (const l of lights) {
+    const g = groups.get(l.group);
+    if (g) g.push(l);
+    else groups.set(l.group, [l]);
+  }
+  const order = [...groups.entries()]
+    .map(([key, ls]) => ({ key, ls: ls.sort((a, b) => b.intensity - a.intensity || (a.id < b.id ? -1 : 1)), power: ls.reduce((s, l) => s + l.intensity, 0) }))
+    .sort((a, b) => b.power - a.power || (a.key < b.key ? -1 : 1));
+  const kept = new Set<string>();
+  const picked = new Map<string, BudgetLight[]>();
+  while (kept.size < cap) {
+    let progressed = false;
+    for (const g of order) {
+      if (kept.size >= cap) break;
+      const mine = picked.get(g.key) ?? [];
+      const left = g.ls.filter((l) => !kept.has(l.id));
+      if (left.length === 0) continue;
+      let best = left[0]!;
+      if (mine.length > 0) {
+        let far = -1;
+        for (const l of left) {
+          let d = Infinity;
+          for (const p of mine) d = Math.min(d, Math.hypot(l.position[0] - p.position[0], l.position[1] - p.position[1], l.position[2] - p.position[2]));
+          if (d > far + 1e-9) { far = d; best = l; }
+        }
+      }
+      kept.add(best.id);
+      mine.push(best);
+      picked.set(g.key, mine);
+      progressed = true;
+    }
+    if (!progressed) break;
+  }
+  return kept;
+}

@@ -86,7 +86,7 @@ import { ContactShadows, planContactShadows } from './view/contact-shadows';
 import { contentFraming, DEFAULT_FRAMING_AZIMUTH, framingPose, frontAzimuthDeg, pickClearView, viewCandidates, type Framing, type FramingPoseOptions } from './view/framing';
 import { isOpaqueVisible, sceneSightTest } from './view/sightline';
 import { ArchView, type ArchViewState } from './view/arch-view';
-import { daylightLampFactor } from './sync/lights';
+import { daylightLampFactor, FORWARD_LIGHTS } from './sync/lights';
 import { collectFramingItems, FOCUS_TAG } from './view/content-items';
 import { GROW_OVERSHOOT_MAX_RADIUS, GrowIn, growDelay } from './view/grow-in';
 import { installRenderPatches } from './three-patches';
@@ -616,6 +616,11 @@ const FOLIAGE_WAIT_MS = 3_000;
 /** A replacement adding at least this many entities holds the first frame like a first world does. */
 const BULK_HOLD_ENTITIES = 8;
 /** Frames are held for the warm-up at most this long (ms), whatever the driver does. */
+/** Wait for pending programs / preparation this long before showing a first (progressive) image, and between later bounds. */
+const PROGRESSIVE_FIRST_MS = 2500;
+const PROGRESSIVE_MS = 6000;
+/** Spacing of progressive frames while programs still link. */
+const PROGRESSIVE_EVERY_MS = 400;
 const WARMING_MAX_MS = 20_000;
 const MAX_BLANK_RETRIES = 3;
 
@@ -901,7 +906,7 @@ export class WorldRenderer {
       blocked: () => this.programs.pending > 0,
       atomic: draw => this.programs.synchronous(draw),
     });
-    this.presentation = preparePresentation(renderer, () => this.preparation.pending > 0 || this.programs.pending > 0);
+    this.presentation = preparePresentation(renderer, () => !this.progressive && (this.preparation.pending > 0 || this.programs.pending > 0));
     this.backend = backend;
     this.domElement = canvas;
     this.perspective = camera;
@@ -1027,6 +1032,7 @@ export class WorldRenderer {
       }
       return this.proofSync;
     }, (id) => this.sync.object(id));
+    this.sync.setLightBudget(FORWARD_LIGHTS[this.gpu.tier]);
     this.env = new EnvironmentRig(this.materials, opts.shadows !== false, opts.hdriSource);
     this.env.onAsyncChange = () => {
       this.needsDraw = true;
@@ -1486,7 +1492,7 @@ export class WorldRenderer {
         if (e.template || e.visible === false) return;
         const l = node.light?.light;
         const kind = l as (Light & { isPointLight?: boolean; isSpotLight?: boolean; distance?: number }) | undefined;
-        if (l && kind && l.visible && l.intensity > 0 && (kind.isPointLight || kind.isSpotLight)) {
+        if (l && kind && (l.visible || l.userData['cut'] === true) && l.intensity > 0 && (kind.isPointLight || kind.isSpotLight)) {
           l.getWorldPosition(_pos);
           // A spot (downlight) lights about half of what the same point light would, all of it below.
           const k = (kind.isSpotLight ? SPOT_SHARE * l.intensity : l.intensity) * (this.docLook?.lampStrength ?? 1);
@@ -3278,15 +3284,20 @@ export class WorldRenderer {
     this.sinceRefit += step;
     if (this.sinceRefit >= REFIT_INTERVAL && (this.boundsDirty || this.debugDirty)) this.refresh();
     // Studio stills keep refining (temporal AA / AO converge) for a while after the view rests.
-    const changed = cameraMoved || this.needsDraw || (animate && this.env.animating);
+    // Programs still linking or objects still preparing: show what is ready every so often (bounded wait).
+    this.progressive = (this.programs.pending > 0 || this.preparation.pending > 0) && this.progressiveDue();
+    const changed = cameraMoved || this.needsDraw || this.progressive || (animate && this.env.animating);
     if (changed) this.refinement.restart();
     this.syncRest(motion, !motion && (this.frameInvalidation.motion || this.frameInvalidation.animating || (animate && this.env.animating)));
     const refine = !changed && this.refinement.next();
-    // First-use graph/binding setup and program links finish before another viewport draw.
+    // First-use graph/binding setup and program links finish before another viewport draw, up to a bound: a heavy
+    // world whose programs take many seconds to link must still show what is ready, then fill in.
     if (this.programs.pending > 0 || this.preparation.pending > 0) {
-      this.drewLastFrame = false;
-      return false;
-    }
+      if (!this.progressive) {
+        this.drewLastFrame = false;
+        return false;
+      }
+    } else this.busySince = 0;
     if (this.warming) {
       if (now() - this.warmingSince < WARMING_MAX_MS) {
         this.drewLastFrame = false;
@@ -3327,12 +3338,16 @@ export class WorldRenderer {
     }
     // A discovery frame may submit new async programs. It is not a completed
     // image and must not feed the quality governor or the blank-frame watchdog.
-    if (this.programs.pending > 0 || this.preparation.pending > 0 || this.presentation.skipped) {
+    if (this.presentation.skipped || (!this.progressive && (this.programs.pending > 0 || this.preparation.pending > 0))) {
       this.requestPreparedFrame();
       this.drewLastFrame = false;
       return false;
     }
     this.framesDrawn++;
+    if (this.progressive) {
+      this.progressiveFrames++;
+      this.requestPreparedFrame();
+    }
     if (!this.atRest) this.motionFrameReady = true;
     if (this.watchdogOn) this.watch(true);
     this.trimWatch();
@@ -3366,6 +3381,34 @@ export class WorldRenderer {
       }
     }
     this.drewLastFrame = true;
+    return true;
+  }
+
+  /** First time this wait for programs / render preparation began (0: nothing is pending). */
+  private busySince = 0;
+  private progressiveAt = 0;
+  /** True while the frame being drawn is a progressive one (shown although programs or preparation are still pending). */
+  private progressive = false;
+  /** Progressive frames shown so far, and why (diagnostics). */
+  private progressiveFrames = 0;
+  private progressiveNote = '';
+
+  /**
+   * Whether a frame may be shown although programs still link or objects still prepare. Preparation of a big generated
+   * world can take tens of seconds on an integrated GPU (one program per material and light set); the view must never
+   * wait for all of it. After {@link PROGRESSIVE_FIRST_MS} without any image (or {@link PROGRESSIVE_MS} with one) a frame
+   * is shown every {@link PROGRESSIVE_EVERY_MS}: objects whose programs are ready draw, the others join as they finish.
+   */
+  private progressiveDue(): boolean {
+    const t = now();
+    if (this.busySince === 0) this.busySince = t;
+    const waited = t - this.busySince;
+    if (waited < (this.framesDrawn === 0 ? PROGRESSIVE_FIRST_MS : PROGRESSIVE_MS)) return false;
+    if (t - this.progressiveAt < PROGRESSIVE_EVERY_MS) return false;
+    this.progressiveAt = t;
+    const note = `programs ${this.programs.pending}, preparation ${this.preparation.pending}, waited ${(waited / 1000).toFixed(1)} s`;
+    if (this.progressiveFrames === 0) log.info(`progressive presentation: ${note}`);
+    this.progressiveNote = note;
     return true;
   }
 
@@ -3594,7 +3637,7 @@ export class WorldRenderer {
     if (this.watchdog.finished) return;
     const t = now();
     // Content that is still growing in or waiting for its programs is not a failure to draw.
-    const preparing = this.sync.batchPreparationPending > 0;
+    const preparing = this.sync.batchPreparationPending > 0 || this.programs.pending > 0 || this.preparation.pending > 0;
     const settled = !this.warming && !this.grow.active && !preparing;
     let sample: FrameSample | null = null;
     // An idle editor draws nothing, and a watch that has not yet seen an image needs one: ask for a frame now and then.
@@ -3954,6 +3997,7 @@ export class WorldRenderer {
     add('canvas', { width: this.domElement.width, height: this.domElement.height, pixelRatio: this.renderer.getPixelRatio(), adaptiveScale: this.adaptive.scale });
     const st = this.stats();
     add('frames', { drawn: this.framesDrawn, fps: st.fps, frameMs: st.frameMs, drawCalls: st.drawCalls, triangles: st.triangles, textures: st.textures, geometries: st.geometries });
+    add('presentation', this.progressiveFrames > 0 ? `progressive: ${this.progressiveFrames} frames shown while shaders were still preparing (last: ${this.progressiveNote})` : `complete frames only (programs ${this.programs.pending}, preparation ${this.preparation.pending})`);
     add('load', { shaderWarmupMs: Math.round(this.shaderWarmupMs), warming: this.warming, lost: this.lost });
     add('viewSample', this.watchdog.last ?? 'none taken');
     add('watchdog', { healthy: this.watchdog.healthy, stepsTaken: this.watchdog.stepsTaken });

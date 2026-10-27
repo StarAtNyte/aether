@@ -8,6 +8,7 @@ interface Backend {
   get(key: object): { shaderGPU?: WebGLShader };
   set(key: object, value: object): void;
   createRenderPipeline(object: RenderObject, promises: Promise<void>[] | null): void;
+  draw?(object: RenderObject, info: unknown): void;
   _completeCompile(object: { getBindings(): unknown }, pipeline: Pipeline): void;
 }
 export interface ParallelPrograms {
@@ -18,7 +19,19 @@ export interface ParallelPrograms {
 }
 /** Retain the bindings, not a mutable/disposable RenderObject, while a program links. */
 export function parallelPrograms(backend: Backend, changed: () => void, failed: (error: unknown) => void): ParallelPrograms {
-  const jobs = new Set<{ cancel(): void; done: Promise<void>; ready(): boolean; complete(): void }>();
+  const jobs = new Set<{ cancel(): void; done: Promise<void>; ready(): boolean; complete(): void; pipeline: object }>();
+  /** Pipelines whose program is still linking or compiling: drawing one would use a program with no bindings yet. */
+  const linking = new Map<object, number>();
+  const hold = (pipeline: object): void => void linking.set(pipeline, (linking.get(pipeline) ?? 0) + 1);
+  const release = (pipeline: object): void => {
+    const n = (linking.get(pipeline) ?? 0) - 1;
+    if (n > 0) linking.set(pipeline, n); else linking.delete(pipeline);
+  };
+  const draw = backend.draw;
+  const skipLinking = function (this: unknown, object: RenderObject, info: unknown): void {
+    if (!synchronous && linking.has(object.pipeline)) return;
+    return draw!.call(backend, object, info);
+  };
   let timer: ReturnType<typeof setTimeout> | undefined;
   let submitted = 0;
   const poll = () => {
@@ -58,8 +71,10 @@ export function parallelPrograms(backend: Backend, changed: () => void, failed: 
       clearTimeout(timer);
       for (const job of [...jobs]) job.cancel();
       if (backend.createRenderPipeline === create) backend.createRenderPipeline = original;
+      if (backend.draw === skipLinking) backend.draw = draw;
     },
   };
+  if (typeof draw === 'function') backend.draw = skipLinking as typeof draw;
   if (backend.isWebGPUBackend === true && typeof original === 'function') {
     const createGPU = (object: RenderObject, promises: Promise<void>[] | null): void => {
       if (disposed || synchronous || (!promises && object.context?.textures?.some(texture => texture.isPMREMTexture || texture.isCubeTexture))) return original.call(backend, object, promises);
@@ -70,11 +85,12 @@ export function parallelPrograms(backend: Backend, changed: () => void, failed: 
         const done = new Promise<void>(r => { resolve = r; });
         const finish = () => {
           if (!jobs.delete(job)) return;
+          release(job.pipeline);
           resolve();
           if (!disposed && !jobs.size) changed();
         };
-        const job = { done, cancel: finish, ready: () => false, complete: finish };
-        jobs.add(job);
+        const job = { done, cancel: finish, ready: () => false, complete: finish, pipeline: object.pipeline };
+        jobs.add(job); hold(object.pipeline);
         pending.then(finish, error => { finish(); if (!disposed) failed(error); });
         promises?.push(done);
       }
@@ -101,16 +117,18 @@ export function parallelPrograms(backend: Backend, changed: () => void, failed: 
     const done = new Promise<void>(r => { resolve = r; });
     const finish = () => {
       if (!jobs.delete(job)) return;
+      release(job.pipeline);
       resolve();
       if (!disposed && !jobs.size) changed();
     };
     const job = {
+      pipeline,
       done,
       cancel: () => { if (!gl.isContextLost()) gl.deleteProgram(programGPU); finish(); },
       ready: () => gl.getProgramParameter(programGPU, parallel.COMPLETION_STATUS_KHR) === true,
       complete: () => { backend._completeCompile({ getBindings: () => bindings }, pipeline); finish(); },
     };
-    jobs.add(job);
+    jobs.add(job); hold(pipeline);
     submitted++;
     // Defer the first poll as well: the current task should submit, then yield.
     if (timer === undefined) timer = setTimeout(poll, 0);
