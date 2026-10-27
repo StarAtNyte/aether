@@ -37,7 +37,7 @@ something is broken, the agent repairs it.
 
 Stills from the real-time renderer on an Intel integrated GPU (`scripts/world-stills.ts`).
 
-![The Aether editor: agent panel, viewport, scene inspector](docs/screenshots/studio-overview.png)
+![The Aether editor: agent panel, viewport, scene inspector](docs/screenshots/studio-overview.webp)
 
 ## Quick start
 

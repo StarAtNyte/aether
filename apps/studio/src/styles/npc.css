@@ -58,7 +58,7 @@
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #f2c46d;
+  color: #f3f1ec;
 }
 
 .npc-prompt {
@@ -127,17 +127,17 @@
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: #f2c46d;
+  color: #f3f1ec;
 }
 
 .npc-card__tag {
   padding: 1px 7px;
-  border: 1px solid rgb(242 196 109 / 0.5);
+  border: 1px solid rgb(243 241 236 / 0.5);
   border-radius: 999px;
   font-size: 10px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #f2c46d;
+  color: #f3f1ec;
 }
 
 .npc-card__close {
@@ -204,13 +204,13 @@
 .npc-card__more:hover,
 .npc-choice:focus-visible,
 .npc-card__more:focus-visible {
-  border-color: rgb(242 196 109 / 0.7);
-  background: rgb(242 196 109 / 0.14);
+  border-color: rgb(243 241 236 / 0.7);
+  background: rgb(243 241 236 / 0.14);
   outline: none;
 }
 
 .npc-card.is-trade {
-  border-color: rgb(242 196 109 / 0.45);
+  border-color: rgb(243 241 236 / 0.45);
 }
 
 /* Free conversation: a line to type, only when a model is connected. */
@@ -244,15 +244,15 @@
 }
 
 .npc-say__input:focus-visible {
-  border-color: rgb(242 196 109 / 0.8);
+  border-color: rgb(243 241 236 / 0.8);
   outline: none;
 }
 
 .npc-say__send {
   padding: 8px 14px;
-  border: 1px solid rgb(242 196 109 / 0.6);
+  border: 1px solid rgb(243 241 236 / 0.6);
   border-radius: 9px;
-  background: rgb(242 196 109 / 0.16);
+  background: rgb(243 241 236 / 0.16);
   color: #f5f3ee;
   font: inherit;
   font-size: 13px;

@@ -6721,3 +6721,22 @@ Looked at, measured, not worth doing
 - A first cpu-perf run on skyline-penthouse on this machine showed `render()` n=0 in the orbit and idle frames drawn 46 of 46 (residents animate), so the per-frame JS numbers were not used.
 
 Gates: see the commit that closes this entry.
+
+## Neutral interface colours (no blue in the chrome)
+
+**Problem.** The studio used one indigo accent (OKLCH hue 268) for the primary action, sliders, switches, selection, focus and links, over cool blue-grey surfaces. It read as loud and blue everywhere.
+
+**What changed**
+- Tokens first (`styles/tokens.css`): surfaces and text moved to a warm grey ramp (hue 85, chroma under 0.01); `--accent` is now ink on light and paper on dark, so every primary button, slider fill and checked switch follows without per-component colour. `--accent-soft` is a 6% ink wash (8% paper on dark) for selection, `--focus-ring` is a solid 2 px ink or paper ring, `--presence` is the single warm dot (agent chip), `--axis-z` lost its blue.
+- Controls: 2 px slider track with a 12 px ink thumb, ink switches with an on-accent thumb, underlined links, a neutral text selection, gradients removed (home stage wash, verify lanes now pulse, voxel loading bar).
+- Title card, touch primary button and NPC panels sit on dark scrims: they scope a paper primary; the gold highlights became paper. The world's own authored title accent is content and stays.
+- Chrome outside the stylesheets: theme-colour meta (light and dark), favicon, manifest, loading and 404 pages, `play.html` and `player.css` (paper primary, warm greys, no violet glow), floor-plan window stroke.
+- Editor overlays in `packages/render` (colours only): selection outline white, edit overlay, blueprint, path, ghost run, proof replay, ghost and proof materials in white and warm grey. The model-facing review marks (`ai/marks.ts`) and world content colours (water, glass, materials, sky) are unchanged.
+- Guards: `npm run check:ui-colour` (token pairs from `tokens.css`; fails on contrast below AA or any blue or purple hue in the stylesheets), `scripts/ui-audit.ts` (Chromium shots at 1280 and 390, light and dark, home, editor, panels, dialogs, menus, palette, tooltip, focus, play, arch), `scripts/ui-hue-scan.py` (blue pixels outside canvas and image boxes).
+
+**Measured.** Text pairs 4.97 to 17.5:1 light and 5.9 to 16.2:1 dark (tertiary text on page is the lowest); primary label on ink 16.6:1, on paper 15.0:1; focus ring against surfaces 13.9 to 17.3:1. Pixel scan of 80 screenshots (light and dark, 1280 and 390, LCD text smoothing off): no blue outside the 3D and image boxes except 140 px of template thumbnail sky on the phone home. Before: indigo primary, sliders and switches on every screen.
+
+Limits: the white selection box has little contrast over a white sky; it is the neutral highlight the brief asks for. `docs/screenshots` other than `studio-overview.webp` (README) are older stills and still show the previous accent.
+
+Gates: `tsc`, `vitest` over `apps/studio` and `packages/render` (1811 tests), `smoke` (39 of 39), `e2e:projects`, `e2e:showcase` pass. Screenshots: `~/.local/share/aether/qa/ui-neutral/{before,after3}`.
+

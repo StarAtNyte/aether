@@ -8,7 +8,7 @@ const log = (s: string) => process.stdout.write(s + '\n');
 
 async function main() {
   const server = await startServer(log);
-  const browser = await chromium.launch({ executablePath: findChrome(), args: [...CHROME_ARGS], headless: true });
+  const browser = await chromium.launch({ executablePath: findChrome(), args: [...CHROME_ARGS, '--disable-lcd-text', '--font-render-hinting=none'], headless: true });
   try {
     for (const dark of [false, true]) for (const [w, h] of [[1280, 800], [390, 844]] as const) {
       const tag = `${dark ? 'dark' : 'light'}-${w}`;

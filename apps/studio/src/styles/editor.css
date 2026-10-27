@@ -1422,7 +1422,8 @@
   width: 64px;
   height: 64px;
   background: var(--accent);
-  border-color: transparent;
+  border-color: var(--surface);
+  box-shadow: 0 0 0 1px var(--accent);
   color: var(--on-accent);
 }
 
@@ -1787,7 +1788,13 @@
 
 /* Title card: the world's title screen over the live scene (play mode, held until Start). */
 .title-card {
-  --title-accent: #f2c46d;
+  /* Always over a dark scrim: paper primary in both themes. */
+  --title-accent: oklch(95% 0.004 85);
+  --accent: oklch(95% 0.004 85);
+  --accent-hover: oklch(100% 0 0);
+  --accent-press: oklch(88% 0.005 85);
+  --on-accent: oklch(19% 0.004 85);
+  --focus-ring: oklch(95% 0.004 85);
   position: absolute;
   inset: 0;
   z-index: calc(var(--z-overlay) + 1);
