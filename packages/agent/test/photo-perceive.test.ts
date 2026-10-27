@@ -9,6 +9,7 @@ import { decodeRle, encodeRle, normLabel, Perceiver, perceptionText, type Percei
 import { parseBoxes, BpeTokenizer } from '../src/photo/perception/florence';
 import { PERCEIVE_TOOL, parsePerceiveInput, perceivePhoto } from '../src/photo/perception/tool';
 import { seedInventory } from '../src/photo/perception/seed';
+import { classifyEmbedding, clipInput, clipVocabulary } from '../src/photo/perception/clip';
 import { FLORENCE_SET, METRIC_SET, SAM_SET, loadWeights } from '../src/photo/perception/weights';
 import type { InventoryItem } from '../src/photo/objects';
 import type { Raster } from '../src/photo/score';
@@ -376,5 +377,43 @@ describe('the perception layer in the photo flow', () => {
     } finally {
       spyRun.mockRestore();
     }
+  });
+});
+
+describe('second-pass labels (CLIP) and duplicate merging', () => {
+  const vocabEmb = (variant: string): Float32Array => clipVocabulary().find((x) => x.variant === variant)?.emb as Float32Array;
+  it('classifies a vocabulary embedding as its own label, with synonyms summed', () => {
+    const g = classifyEmbedding(vocabEmb('bunk bed'));
+    expect(g[0]?.label).toBe('bed');
+    expect(g[0]?.p).toBeGreaterThan(0.5);
+    expect(g.reduce((a, b) => a + b.p, 0)).toBeCloseTo(1, 5);
+  });
+  it('builds a 224 x 224 input, padded to a square', () => {
+    const s = synth();
+    const x = clipInput(s.raster, { box: [0.2, 0.3, 0.6, 0.7] });
+    expect(x.length).toBe(3 * 224 * 224);
+    expect(Number.isFinite(x[100])).toBe(true);
+  });
+  it('changes a label only when CLIP is sure of another object and gives the detector noun almost nothing; keeps a plausible one', async () => {
+    const { deps: d } = deps({ clip: async () => ({ ok: true, model: { async embed(_r, crops) { return crops.map(() => vocabEmbOf('bed')); }, async dispose() {} } }) });
+    function vocabEmbOf(v: string): Float32Array { return vocabEmb(v); }
+    const p = new Perceiver(d);
+    const rep = (await p.run({ find: [] })) as PerceptionReport;
+    const o = rep.objects.find((x) => x.detectorLabel);
+    // the mocked detector says "chair"; CLIP (mock) says bed with high probability and almost none for chair
+    expect(o?.label).toBe('bed');
+    expect(o?.detectorLabel).toBe('chair');
+    expect(o?.labelConfidence).toBeGreaterThan(0.45);
+    expect(rep.models.labeller).toMatch(/CLIP/);
+    const q = new Perceiver(deps({ clip: async () => ({ ok: true, model: { async embed(_r, crops) { return crops.map(() => vocabEmb('chair')); }, async dispose() {} } }) }).deps);
+    const rep2 = (await q.run({ find: [] })) as PerceptionReport;
+    expect(rep2.objects.find((x) => x.label === 'chair')?.detectorLabel).toBeUndefined();
+  });
+  it('merges the same object found by two prompts', async () => {
+    const s = deps({});
+    const d = s.deps;
+    d.detector = async () => ({ ok: true, model: { async setImage() {}, async detect(task) { return task === '<OD>' ? [{ label: 'chair', box: s.obstacleBox, confidence: 0.8 }, { label: 'chair', box: s.obstacleBox, confidence: 0.6 }] : []; }, async caption() { return ''; }, async dispose() {} } });
+    const rep = (await new Perceiver(d).run({ find: [] })) as PerceptionReport;
+    expect(rep.objects.filter((o) => o.label === 'chair').length).toBe(1);
   });
 });

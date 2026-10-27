@@ -15,6 +15,7 @@ import {
 } from '@aether/arch/photo';
 import type { DepthRaster } from '../depth-model';
 import { estimateDepthMap } from '../depth-model';
+import { classifyEmbedding, loadClip, type Clip, type LabelGuess } from './clip';
 import { loadFlorence, type Florence, type RawBox } from './florence';
 import { estimateMetricDepth, type MetricDepth } from './metric-depth';
 import { drawOverlay, overlayDataUrl, type OverlayItem } from './overlay';
@@ -62,6 +63,11 @@ export interface PerceivedObject {
   source: 'measured';
   /** How it was found: the generic detection pass, phrase grounding of the asked nouns, or a one-noun query. */
   pass: 'generic' | 'grounding' | 'single';
+  /** The detector's own noun, when the second pass changed the label (otherwise equal to `label`). */
+  detectorLabel?: string;
+  /** Second-pass label (CLIP over the vocabulary): its probability for `label`, and the best three. Absent when CLIP did not run. */
+  labelConfidence?: number;
+  labelAlternatives?: LabelGuess[];
   /** Mean probability of the model's box tokens (a weak confidence: it ranks, it does not certify). */
   confidence: number;
   /** [x0, y0, x1, y1] in 0..1, origin top-left. */
@@ -83,7 +89,7 @@ export interface SurfaceColours {
 export interface PerceptionReport {
   version: typeof PERCEPTION_VERSION;
   photo: { width: number; height: number };
-  models: { detector: string | null; segmenter: string | null; depth: string | null };
+  models: { detector: string | null; segmenter: string | null; depth: string | null; labeller?: string | null };
   /** Models that could not run, with the reason. */
   unavailable: string[];
   camera: { fovDeg: number; fovRange: [number, number]; kind: 'z' | 'ray'; cameraHeight: number; yawDeg: number } | null;
@@ -113,6 +119,8 @@ export interface PerceiveDeps {
   segmenter?: () => Promise<{ ok: true; model: Segmenter } | { ok: false; reason: string }>;
   metric?: (r: DepthRaster) => Promise<{ ok: true; depth: MetricDepth } | { ok: false; reason: string }>;
   relative?: typeof estimateDepthMap;
+  /** Second-pass labeller and crop embeddings (CLIP). Default: loaded when the real detector is used; null: off. */
+  clip?: (() => Promise<{ ok: true; model: Clip } | { ok: false; reason: string }>) | null;
   /** Field of view of the camera the metric network was trained on (Hypersim: 60 degrees); null: the depth is taken as exact. */
   trainedFovDeg?: number | null;
 }
@@ -183,6 +191,9 @@ export class Perceiver {
   private raster: DepthRaster | null = null;
   private florence: Promise<{ ok: true; model: Florence } | { ok: false; reason: string }> | null = null;
   private sam: Promise<{ ok: true; model: Segmenter } | { ok: false; reason: string }> | null = null;
+  private clipP: Promise<{ ok: true; model: Clip } | { ok: false; reason: string }> | null = null;
+  private clipReady = false;
+  private embeds = new Map<string, Float32Array>();
   private florenceReady = false;
   private samReady = false;
   private objects: PerceivedObject[] = [];
@@ -216,6 +227,9 @@ export class Perceiver {
     if (f?.ok) await f.model.dispose().catch(() => undefined);
     const s = this.sam ? await this.sam : null;
     if (s?.ok) await s.model.dispose().catch(() => undefined);
+    const cl = this.clipP ? await this.clipP : null;
+    if (cl?.ok) await cl.model.dispose().catch(() => undefined);
+    this.clipP = null;
     this.florence = null;
     this.sam = null;
   }
@@ -303,14 +317,80 @@ export class Perceiver {
       }
     }
     this.objects.push(...toMask);
-    // 4. appearance (pixels of the mask), placement (metric depth)
+    // 4. appearance (pixels of the mask), second-pass labels, duplicates merged, placement (metric depth)
     for (const o of toMask) {
       const m = this.masks.get(o.id);
       if (m) o.appearance = measureAppearance(r, m, o.box);
     }
+    await this.relabel(toMask);
+    this.mergeDuplicates();
     await this.geometryOnce();
     this.placeAll(toMask.length > 0 || this.objects.some((o) => !o.placement));
     return this.report();
+  }
+
+  /**
+   * Second pass over each box: CLIP (box crop with its surroundings, and the masked crop) against the vocabulary. The label changes only
+   * when CLIP is fairly sure of another object (probability 0.45 or more) AND gives the detector's own noun almost nothing (under 0.06):
+   * a pillow on a bed keeps "pillow" (CLIP calls the crop a bed too, but the pillow keeps some of its probability).
+   */
+  private async relabel(objs: PerceivedObject[]): Promise<void> {
+    if (objs.length === 0 || !this.raster) return;
+    const loader = this.deps.clip === undefined ? (this.deps.detector === undefined ? loadClip : null) : this.deps.clip;
+    if (!loader) return;
+    this.clipP ??= loader();
+    const c = await this.time('load-labeller', () => this.clipP as Promise<{ ok: true; model: Clip } | { ok: false; reason: string }>);
+    if (!c.ok) { this.note(c.reason); return; }
+    this.clipReady = true;
+    const r = this.raster;
+    for (const o of objs) {
+      const m = this.masks.get(o.id);
+      const [eb, em] = await this.time('label', () => c.model.embed(r, [{ box: o.box }, { box: o.box, mask: m }]));
+      if (!eb || !em) continue;
+      this.embeds.set(o.id, em);
+      const g = classifyEmbedding([eb, em]);
+      const top = g[0] as LabelGuess;
+      const own = g.find((x) => x.label === o.label)?.p ?? 0.02;
+      const detector = o.label;
+      if (top.label !== detector && top.p >= 0.45 && own < 0.06) {
+        o.detectorLabel = detector;
+        o.label = top.label;
+        o.labelConfidence = Math.round(top.p * 100) / 100;
+      } else o.labelConfidence = Math.round(own * 100) / 100;
+      o.labelAlternatives = g.slice(0, 3).map((x) => ({ label: x.label, p: Math.round(x.p * 100) / 100 }));
+    }
+  }
+
+  /** Embedding of an object's masked crop (CLIP), for appearance retrieval; null when the labeller did not run. */
+  embeddingOf(id: string): Float32Array | null {
+    return this.embeds.get(id) ?? null;
+  }
+
+  /**
+   * Duplicates across prompts: the generic pass and the grounding pass find the same thing under different names. Two objects with the
+   * same label whose masks overlap (IoU 0.6) or one inside the other (85 percent), or whose boxes nearly coincide (IoU 0.8), are one;
+   * the more confident stays.
+   */
+  private mergeDuplicates(): void {
+    const dec = (o: PerceivedObject): Uint8Array | null => (o.mask ? decodeRle(o.mask.rle) : null);
+    const keep: PerceivedObject[] = [];
+    for (const o of [...this.objects].sort((a, b) => b.confidence - a.confidence)) {
+      const mo = dec(o);
+      const dup = keep.find((k) => {
+        if (k.label !== o.label && !(k.label.includes(o.label) || o.label.includes(k.label))) return false;
+        const mk = dec(k);
+        if (mo && mk && mo.length === mk.length) {
+          let i = 0, a = 0, b = 0;
+          for (let q = 0; q < mo.length; q++) { const x = mo[q] as number, y = mk[q] as number; a += x; b += y; if (x && y) i++; }
+          const u = a + b - i;
+          if (u > 0 && (i / u > 0.6 || i / Math.max(1, Math.min(a, b)) > 0.85)) return true;
+        }
+        return iou(k.box, o.box) > 0.8;
+      });
+      if (dup) { this.masks.delete(o.id); this.embeds.delete(o.id); continue; }
+      keep.push(o);
+    }
+    if (keep.length !== this.objects.length) this.objects = this.objects.filter((o) => keep.includes(o));
   }
 
   private async geometryOnce(): Promise<void> {
@@ -458,7 +538,7 @@ export class Perceiver {
     return {
       version: PERCEPTION_VERSION,
       photo: { width: this.raster?.width ?? 0, height: this.raster?.height ?? 0 },
-      models: { detector: this.florenceReady ? 'Florence-2 base (MIT)' : null, segmenter: this.samReady ? 'SAM 2.1 Hiera tiny (Apache-2.0)' : null, depth: this.metricName ? `${this.metricName} (Apache-2.0)` : null },
+      models: { labeller: this.clipReady ? 'CLIP ViT-B/32 (MIT)' : null, detector: this.florenceReady ? 'Florence-2 base (MIT)' : null, segmenter: this.samReady ? 'SAM 2.1 Hiera tiny (Apache-2.0)' : null, depth: this.metricName ? `${this.metricName} (Apache-2.0)` : null },
       unavailable: [...this.unavailable],
       camera: g ? { fovDeg: g.vp?.fovDeg ?? g.cam.fovDeg, fovRange: g.vp ? g.vp.fovRange : [Math.min(...fovs, g.cam.fovDeg), Math.max(...fovs, g.cam.fovDeg)], kind: g.cam.kind, cameraHeight: Math.round(g.box.cameraHeight * (g.fused.height.value / Math.max(0.5, g.box.height.value)) * 100) / 100, yawDeg: g.vp?.yawDeg ?? g.box.yawDeg } : null,
       room: g?.fused ?? null,
@@ -501,7 +581,7 @@ const sw = (a: Appearance | null, ill?: Illuminant | null): string => (a ? `${a.
 export function perceptionText(rep: PerceptionReport, maxObjects = 30): string {
   const L: string[] = [];
   L.push('Perception report (MEASURED from the photo by vision models; advisory evidence, you decide, and each number can be wrong: check it against the image).');
-  L.push(`Models: ${[rep.models.detector, rep.models.segmenter, rep.models.depth].filter(Boolean).join('; ') || 'none ran'}.${rep.unavailable.length > 0 ? ` Unavailable: ${rep.unavailable.join(' | ')}.` : ''}`);
+  L.push(`Models: ${[rep.models.detector, rep.models.labeller, rep.models.segmenter, rep.models.depth].filter(Boolean).join('; ') || 'none ran'}.${rep.unavailable.length > 0 ? ` Unavailable: ${rep.unavailable.join(' | ')}.` : ''}`);
   if (rep.room && rep.camera) {
     const r = rep.room;
     const d = (x: RoomBox['width']): string => `${x.value} m (${x.low}-${x.high}, ${x.confidence}: ${x.basis})`;
@@ -519,7 +599,7 @@ export function perceptionText(rep: PerceptionReport, maxObjects = 30): string {
       const a = o.appearance;
       const p = o.placement;
       const bits = [
-        `${i + 1}. ${o.label} [${o.id}] conf ${o.confidence}, box [${o.box.join(',')}], ${(o.areaFraction * 100).toFixed(1)}% of frame${o.mask ? `, mask ${o.mask.score}` : ', no mask'}`,
+        `${i + 1}. ${o.label}${o.detectorLabel ? ` (detector said "${o.detectorLabel}")` : ''} [${o.id}] conf ${o.confidence}${o.labelAlternatives ? `, label ${o.labelConfidence} (also ${o.labelAlternatives.filter((x) => x.label !== o.label).slice(0, 2).map((x) => `${x.label} ${x.p}`).join(', ')})` : ''}, box [${o.box.join(',')}], ${(o.areaFraction * 100).toFixed(1)}% of frame${o.mask ? `, mask ${o.mask.score}` : ', no mask'}`,
         a ? `colour ${a.colour.name} ${a.colour.hex}${rep.illuminant ? ` (lit like white ${normaliseHex(a.colour.hex, rep.illuminant)})` : ''} (Lab ${a.colour.lab.join(',')}), palette ${a.palette.map((c) => `${c.name} ${Math.round(c.share * 100)}%`).join(' / ')}, luminance ${a.luminance}, ${a.pattern.kind}${a.pattern.kind === 'plain' ? '' : ` (period ~${a.pattern.periodPx}px)`}, ${a.finish}` : '',
         p ? `${p.kind}, at x ${p.centre.x} z ${p.centre.z} m${p.centre.frame === 'camera' ? ' (camera frame: side walls not both found)' : ''}, visible size ${p.size.w} wide x ${p.size.h} high x ${p.size.d} deep m, ${p.y.low}-${p.y.high} m above the floor` : '',
         o.relations.length > 0 ? o.relations.join('; ') : '',
