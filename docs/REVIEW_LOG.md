@@ -7033,3 +7033,26 @@ Findings against the brief
 6. Honest limit: every fixture has the eye at exactly 1.5 m, so the eye-height prior's measured benefit (about half of the floor error) is optimistic for real photos with other eye heights; the weight 0.6 was picked on five worlds and checked on two held out (0.30 and 0.30), but all seven share the 1.5 m. The EXIF path is only unit-tested.
 
 Gates: `tsc`, `vitest` over `packages/agent`, `packages/arch`, `apps/studio` (2495 tests), `smoke` (39 of 39), `showcase:bake --check`, `showcase:lightmaps --verify`, `budget` (index 922 kB), `licences` pass.
+
+### Full pipeline after the geometry pass (Claude Code, `--render=gpu`; Codex not used; one run each)
+
+Self-test photos scored against truth (`~/.local/share/aether/qa/selftest-live2/`), against the earlier run in brackets:
+
+| | twin end | living room end |
+| --- | --- | --- |
+| true pieces matched | 7 of 8 (7 of 8) | 11 of 11 (11 of 11) |
+| position median, m | 0.80 (0.39) | 0.52 (0.88) |
+| mask IoU median | 0.39 (0.42) | 0.29 (0.36) |
+| width / height error | 0.07 / 0.00 | 0.03 / 0.04 |
+| camera fov error, deg | -0.4 (2.2) | 5.5 (8.5) |
+| judge panel | 7 of 13 (11 of 13) | 8 of 20 (9 of 21) |
+
+Real photos (`~/.local/share/aether/qa/live9/`), last measured round, against live8:
+
+| | live8 twin | live9 twin | live8 hotel | live9 hotel |
+| --- | --- | --- | --- | --- |
+| match / close / near / off / unclear | 0/0/1/6/7 | 0/1/1/5/1 | 0/0/2/10/0 | 0/0/3/8/0 |
+| median mask IoU of linked objects | 0.34 | about 0.13 (7 objects) | 0.12 | about 0.27 (11 objects, read from run.json) |
+| judge pass rate | 84% | 65% (4 rounds, stopped as good enough) | 97% | 63% (12 rounds) |
+
+Reading: the better perception geometry did not carry through to the build in these runs. The model places pieces by eye and its edits move them more than the measured positions improve them (twin position got worse, 0.39 to 0.80 m; living room better, 0.88 to 0.52 m). One run each of a stochastic pipeline: the differences are within what a repeat could move, so no trend is claimed. The IoU of a perfect build is itself 0.67 (raster limit above), which caps what these counts can show. Next weakest link: the instance raster silhouettes (real library meshes), then the model's placement edits against the measured positions.
