@@ -3,11 +3,12 @@
  * brief step, then renders an overview and eye-height stills with the software renderer and writes the counts.
  *
  *   npx tsx scripts/brief-probe.ts --id=cinema --prompt="make a cinema hall" --brief=on --out=probe-out/brief
- *   options: --backend=claude-code|codex --effort=low|medium|high --rounds=N
+ *   options: --backend=claude-code|codex --effort=low|medium|high --rounds=N --keep=<dir> (default ~/.local/share/aether/gen-worlds; the run is copied to <dir>/<id>/)
  *
  * Single runs are noisy: read the counts as one sample, not a measurement.
  */
-import { mkdir, writeFile } from 'node:fs/promises';
+import { cp, mkdir, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { performance } from 'node:perf_hooks';
 import { join, resolve } from 'node:path';
 import type { Entity, PatchResult, WorldDoc } from '@aether/core';
@@ -140,6 +141,10 @@ async function main(): Promise<void> {
   };
   await writeFile(join(out, 'summary.json'), JSON.stringify(summary, null, 2));
   await writeFile(join(out, 'world.json'), JSON.stringify(world));
+  // Stable copy of the final world (and stills and counts) per id, so a later step can pick the best of several runs.
+  const stable = join(arg('keep', join(homedir(), '.local/share/aether/gen-worlds')) as string, id);
+  await mkdir(stable, { recursive: true });
+  await cp(out, stable, { recursive: true });
   console.log(JSON.stringify(summary, null, 2));
   await gpuRoom?.close();
   sandbox.dispose();

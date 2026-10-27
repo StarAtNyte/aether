@@ -52,7 +52,10 @@ describe('showcase manifest', () => {
     expect(agent.length).toBeGreaterThanOrEqual(1);
     expect(AGENT_TEMPLATES.map((t) => t.slug)).toEqual(agent.map((t) => t.slug));
     expect(MORE_TEMPLATES.some((t) => t.origin === 'agent')).toBe(false);
-    for (const e of agent) expect(e.prompt.length, e.slug).toBeGreaterThan(10);
+    for (const e of agent) {
+      expect(e.prompt.length, e.slug).toBeGreaterThan(10);
+      expect(['offline-planner', 'claude-code', 'codex'], e.slug).toContain(e.provenance);
+    }
   });
 
   it('ships a thumbnail (WebP ≤ 30 KB) and a valid saved world for every entry', () => {
