@@ -106,13 +106,13 @@ export interface DifferenceEventView {
   size: number;
   status: string;
   rounds: number;
-  source: 'model' | 'independent';
+  source: 'model' | 'independent' | 'object';
 }
 
 /** Bounded, validated list of differences (live or stored). */
 export function toDifferences(v: unknown): DifferenceEventView[] | undefined {
   if (!Array.isArray(v)) return undefined;
-  const out = v.filter(isRecord).slice(0, 20).map((d): DifferenceEventView => ({ id: str(d['id'], 40), kind: str(d['kind'], 20), where: str(d['where'], 80), what: str(d['what'], 200), size: Math.max(0, Math.min(5, Math.round(num(d['size'])))), status: str(d['status'], 12), rounds: Math.max(1, Math.min(99, Math.round(num(d['rounds'])))), source: d['source'] === 'independent' ? 'independent' : 'model' }));
+  const out = v.filter(isRecord).slice(0, 20).map((d): DifferenceEventView => ({ id: str(d['id'], 40), kind: str(d['kind'], 20), where: str(d['where'], 80), what: str(d['what'], 200), size: Math.max(0, Math.min(5, Math.round(num(d['size'])))), status: str(d['status'], 12), rounds: Math.max(1, Math.min(99, Math.round(num(d['rounds'])))), source: d['source'] === 'independent' ? 'independent' : d['source'] === 'object' ? 'object' : 'model' }));
   return out.length > 0 ? out : undefined;
 }
 
@@ -132,6 +132,45 @@ export interface PhotoEventView {
   score?: PhotoScoreEventView;
   palette?: string[];
   differences?: DifferenceEventView[];
+  /** The per-object table of the inventory: one verdict per aspect for each object the photo shows. */
+  objects?: ObjectEventView[];
+}
+
+export const ASPECT_STATES = ['pass', 'fail', 'na', 'unjudged'] as const;
+export type AspectEventState = (typeof ASPECT_STATES)[number];
+export const OBJECT_ASPECTS = ['present', 'type', 'position', 'size', 'material'] as const;
+export interface ObjectEventView {
+  id: string;
+  label: string;
+  kind: string;
+  present: AspectEventState;
+  type: AspectEventState;
+  position: AspectEventState;
+  size: AspectEventState;
+  material: AspectEventState;
+  note: string;
+  seen: 'both' | 'primary' | 'blind';
+  waived?: string;
+}
+
+/** Bounded, validated per-object table (live or stored). */
+export function toObjects(v: unknown): ObjectEventView[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const st = (x: unknown): AspectEventState => ASPECT_STATES.find((a) => a === x) ?? 'unjudged';
+  const out = v.filter(isRecord).slice(0, 80).map((o): ObjectEventView => ({
+    id: str(o['id'], 60),
+    label: str(o['label'], 80),
+    kind: str(o['kind'], 40),
+    present: st(o['present']),
+    type: st(o['type']),
+    position: st(o['position']),
+    size: st(o['size']),
+    material: st(o['material']),
+    note: str(o['note'], 160),
+    seen: o['seen'] === 'blind' ? 'blind' : o['seen'] === 'primary' ? 'primary' : 'both',
+    ...(typeof o['waived'] === 'string' && o['waived'] ? { waived: str(o['waived'], 160) } : {}),
+  }));
+  return out.length > 0 ? out : undefined;
 }
 
 export const STAGE_STATUSES = ['pending', 'active', 'passed', 'failed', 'blocked', 'skipped'] as const;
@@ -259,6 +298,8 @@ function photoView(v: Record<string, unknown>): PhotoEventView {
   }
   const diffs = toDifferences(v['differences']);
   if (diffs) out.differences = diffs;
+  const objs = toObjects(v['objects']);
+  if (objs) out.objects = objs;
   const stages = toStages(v['stages']);
   if (stages) out.stages = stages;
   const prov = toProvenance(v['provenance']);

@@ -1,6 +1,6 @@
 import { memo, useState, type ReactElement } from 'react';
 import { useStudio, useUI, useWorld } from '../../app/context';
-import { FIDELITY_KEYS, type ChatEventView, type DifferenceEventView, type FidelityKey, type PhotoProvenanceEventView, type PhotoStageEventView } from '../../lib/chat';
+import { FIDELITY_KEYS, OBJECT_ASPECTS, type ChatEventView, type DifferenceEventView, type ObjectEventView, type FidelityKey, type PhotoProvenanceEventView, type PhotoStageEventView } from '../../lib/chat';
 import { patchChips } from '../../lib/patchSummary';
 import { compactCount } from '../../lib/format';
 import { CodeBlock } from '../CodeBlock';
@@ -174,6 +174,50 @@ const ClarifyView = memo(function ClarifyView({ event }: { event: Extract<ChatEv
  * The ranked differences between the reference (the photo, or what was asked for) and the render, as the AI listed them:
  * largest first, each with its kind, where, the amount and whether the next render showed it smaller.
  */
+const ASPECT_MARK: Record<string, string> = { pass: '✓', fail: '✗', na: '–', unjudged: '·' };
+
+/** The per-object table: one row per object of the photo's inventory, one cell per aspect the judges rate. */
+function ObjectsTable({ items }: { items: readonly ObjectEventView[] }): ReactElement {
+  const [open, setOpen] = useState(false);
+  const failing = items.filter((o) => OBJECT_ASPECTS.some((a) => o[a] === 'fail' && !o.waived)).length;
+  const sorted = [...items].sort((a, b) => OBJECT_ASPECTS.filter((x) => b[x] === 'fail').length - OBJECT_ASPECTS.filter((x) => a[x] === 'fail').length);
+  return (
+    <>
+      <button type="button" className="diff-chips" onClick={() => setOpen((o) => !o)} aria-expanded={open} data-testid="objects-toggle">
+        <span className="diff-chips__msg">{items.length} objects, {failing === 0 ? 'all pass' : `${failing} still differ`}</span>
+        <Icon name={open ? 'chevronUp' : 'chevronDown'} className="diff-chips__chev" />
+      </button>
+      {open && (
+        <table className="objects" data-testid="objects-table">
+          <thead>
+            <tr>
+              <th scope="col">Object</th>
+              {OBJECT_ASPECTS.map((a) => (
+                <th key={a} scope="col" title={a}>{a.slice(0, 4)}</th>
+              ))}
+              <th scope="col">Fix or reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((o) => (
+              <tr key={o.id}>
+                <th scope="row" title={o.kind}>
+                  {o.label}
+                  {o.seen === 'blind' ? <i> · only in the blind list</i> : null}
+                </th>
+                {OBJECT_ASPECTS.map((a) => (
+                  <td key={a} className={`objects__cell is-${o[a]}`} aria-label={`${a} ${o[a]}`}>{ASPECT_MARK[o[a]]}</td>
+                ))}
+                <td className="objects__note">{o.waived ? `left: ${o.waived}` : o.note}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </>
+  );
+}
+
 function DifferencesList({ items, label }: { items: readonly DifferenceEventView[]; label: string }): ReactElement {
   const [open, setOpen] = useState(false);
   const ranked = [...items].sort((a, b) => b.size - a.size);
@@ -324,6 +368,7 @@ const PhotoView = memo(function PhotoView({ event }: { event: Extract<ChatEventV
         </div>
       )}
       {event.differences && event.differences.length > 0 && <DifferencesList items={event.differences} label="difference" />}
+      {event.objects && event.objects.length > 0 && <ObjectsTable items={event.objects} />}
       {event.provenance && <ProvenancePanel prov={event.provenance} resumable={event.resumable === true} />}
       {event.score && event.score.failing.length > 0 && (
         <>

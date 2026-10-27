@@ -226,3 +226,13 @@ describe('brief card view', () => {
     expect(appendEvent(appendEvent([], a), b)).toHaveLength(1);
   });
 });
+
+describe('the per-object table of a photo event', () => {
+  it('keeps a bounded, validated row per object and one state per aspect', async () => {
+    const { toObjects } = await import('../src/lib/chat');
+    const rows = toObjects([{ id: 'bed', label: 'double bed', kind: 'bed', present: 'pass', type: 'pass', position: 'fail', size: 'bogus', material: 'na', note: 'move 0.3 m right', seen: 'blind' }, 'junk']);
+    expect(rows).toHaveLength(1);
+    expect(rows?.[0]).toMatchObject({ position: 'fail', size: 'unjudged', material: 'na', seen: 'blind', note: 'move 0.3 m right' });
+    expect(toObjects([])).toBeUndefined();
+  });
+});
