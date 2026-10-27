@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { applyPatches, createWorld, type Patch, type WorldDoc } from '@aether/core';
-import { PHOTO_BUILDING_ID, deriveBuild, memoryCaller, parseRoomDescription, photoCameraSpec, runBuild } from '@aether/arch/photo';
+import { PHOTO_BUILDING_ID, deriveBuild, memoryCaller, parseRoomDescription, photoCameraSpec, runBuild, scaleHexLight } from '@aether/arch/photo';
 import { customPose, partKinds, renderInstanceIds } from '@aether/arch';
 import { compareObjects } from '../src/photo/objects-measure';
 import { ObjectLedger, type InventoryItem } from '../src/photo/objects';
@@ -49,7 +49,7 @@ describe('instance-id render of a built room', () => {
 });
 
 describe('measured comparison of a built object with the photo', () => {
-  async function setup(photoWorld: WorldDoc, buildWorld: WorldDoc, photoHex: string, renderRgb: [number, number, number]) {
+  async function setup(photoWorld: WorldDoc, buildWorld: WorldDoc, photoHex: string, renderRgb: [number, number, number], bg: [number, number, number] = [150, 150, 150], wallsHex?: string, link = true) {
     const W = 256;
     const pi = renderInstanceIds(photoWorld, PHOTO_BUILDING_ID, pose(photoWorld), ASPECT, W)!;
     const bi = renderInstanceIds(buildWorld, PHOTO_BUILDING_ID, pose(buildWorld), ASPECT, W)!;
@@ -57,15 +57,15 @@ describe('measured comparison of a built object with the photo', () => {
     const photoMask = maskOf(pi, BED);
     const render = { width: W, height: H, data: new Uint8ClampedArray(W * H * 4) };
     const bm = maskOf(bi, BED);
-    for (let i = 0; i < W * H; i++) render.data.set(bm[i] ? [...renderRgb, 255] : [150, 150, 150, 255], i * 4);
+    for (let i = 0; i < W * H; i++) render.data.set(bm[i] ? [...renderRgb, 255] : [...bg, 255], i * 4);
     const hx = photoHex;
     const rep = {
       version: 2, photo: { width: W, height: H }, models: { detector: null, segmenter: null, depth: null }, unavailable: [], camera: null, room: null, crossCheck: null, estimators: [], vanishing: null,
-      surfaces: { floor: null, ceiling: null, walls: null }, illuminant: null, notFound: [], caption: null, timingsMs: {}, notes: [],
+      surfaces: { floor: null, ceiling: null, walls: wallsHex ? { colour: { hex: wallsHex, lab: [60, 0, 0], share: 1, name: 'grey' }, palette: [], luminance: 0.3, pattern: { kind: 'plain', strength: 0 }, glareShare: 0, finish: 'matte', pixels: 100 } : null }, illuminant: null, notFound: [], caption: null, timingsMs: {}, notes: [],
       objects: [{ id: 'p1', label: 'bed', asked: null, source: 'measured', pass: 'generic', confidence: 0.9, box: [0, 0, 1, 1], areaFraction: area(photoMask) / (W * H), mask: { rle: encodeRle({ width: W, height: H, data: photoMask }), score: 0.9, areaFraction: 0.1 }, placement: null, appearance: { colour: { hex: hx, lab: [50, 0, 0], share: 1, name: 'x' }, palette: [], luminance: 0.3, pattern: { kind: 'plain', strength: 0 }, glareShare: 0, finish: 'matte', pixels: 100 }, relations: [] }],
     } as unknown as PerceptionReport;
     const ledger = new ObjectLedger();
-    const item: InventoryItem = { id: 'bed-1', kind: 'bed', category: 'furniture', label: 'bed', box: [0, 0, 1, 1], relations: [], size: '', look: '', confidence: 0.9, occlusion: '', entities: [BED], linkedBy: 'model', seen: 'both', measured: { id: 'p1', colour: '', hex: hx, text: '' } };
+    const item: InventoryItem = { id: 'bed-1', kind: 'bed', category: 'furniture', label: 'bed', box: [0, 0, 1, 1], relations: [], size: '', look: '', confidence: 0.9, occlusion: '', entities: link ? [BED] : [], linkedBy: 'model', seen: 'both', measured: { id: 'p1', colour: '', hex: hx, text: '' } };
     ledger.load([item]);
     return compareObjects({ world: buildWorld, pose: pose(buildWorld), aspect: ASPECT, report: rep, ledger, render, px: { w: 1000, h: Math.round(1000 / ASPECT) } })!;
   }
@@ -90,5 +90,34 @@ describe('measured comparison of a built object with the photo', () => {
     expect(r.deltaE).toBeGreaterThan(20);
     expect(r.hint).toContain('apply_measured_colour');
     expect(m.text).toContain('Measured comparison');
+  });
+
+  it('is recomputed from the world and the render it is given: a changed colour and a moved piece change the numbers', async () => {
+    const world = await room();
+    const same = (await setup(world, world, '#8c8c8c', [140, 140, 140])).rows[0]!;
+    const recoloured = (await setup(world, world, '#8c8c8c', [60, 90, 200])).rows[0]!;
+    expect(recoloured.deltaE).toBeGreaterThan((same.deltaE ?? 0) + 15);
+    const moved = (await setup(world, shifted(world, BED), '#8c8c8c', [140, 140, 140])).rows[0]!;
+    expect(moved.iou).toBeLessThan((same.iou ?? 1) - 0.3);
+  });
+
+  it('matches the render exposure to the photo before comparing colours: a uniformly darker render is not a colour error', async () => {
+    const world = await room();
+    // the photo: wall #969696, bed #8c8c8c. The render is the same scene tone-mapped at 0.45x light.
+    const dark = (hex: string): [number, number, number] => { const h = scaleHexLight(hex, 0.45); return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)]; };
+    const m = await setup(world, world, '#8c8c8c', dark('#8c8c8c'), dark('#969696'), '#969696');
+    expect(m.exposureGain).toBeGreaterThan(1.8);
+    expect(m.rows[0]!.deltaE).toBeLessThan(4);
+    // without the white reference the same render reads as a large error
+    const raw = await setup(world, world, '#8c8c8c', dark('#8c8c8c'), dark('#969696'));
+    expect(raw.exposureGain).toBe(1);
+    expect(raw.rows[0]!.deltaE).toBeGreaterThan(15);
+  });
+
+  it('links an unlinked object to the built piece whose visible mask overlaps its photo mask', async () => {
+    const world = await room();
+    const m = await setup(world, world, '#8c8c8c', [140, 140, 140], [150, 150, 150], undefined, false);
+    expect(m.rows[0]!.linked).toBe('overlap');
+    expect(m.rows[0]!.iou).toBeGreaterThan(0.9);
   });
 });

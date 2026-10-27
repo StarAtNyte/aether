@@ -6,7 +6,7 @@
  * render crop and the photo crop (deltaE 2000, glare and shadow tails removed on both) and a plain-language fix hint. Floor, wall
  * and ceiling colours are compared the same way. An object with IoU above 0.6 and deltaE under 10 counts as CLOSE evidence.
  */
-import { colourName, deltaE2000, hexToLab, measureAppearance, PHOTO_BUILDING_ID, type Appearance } from '@aether/arch/photo';
+import { colourName, deltaE2000, hexLuminance, hexToLab, measureAppearance, PHOTO_BUILDING_ID, scaleHexLight, type Appearance } from '@aether/arch/photo';
 import { projectBuilt, renderInstanceIds, worldShiftOnFloor } from './objects-evidence';
 import type { ReviewPose } from '@aether/arch';
 import type { WorldDoc } from '@aether/core';
@@ -34,11 +34,16 @@ export interface ObjectMeasure {
   photoHex: string | null;
   renderHex: string | null;
   hint: string;
+  /** Where the render side came from: the ledger's link, or the built piece whose visible mask overlaps the photo mask (comparison only). */
+  linked?: 'ledger' | 'overlap';
 }
 
 export interface SurfaceMeasure {
   surface: 'floor' | 'walls' | 'ceiling';
+  /** deltaE after the render's exposure is matched to the photo's (see `Measured.exposureGain`). */
   deltaE: number | null;
+  /** deltaE of the colours as they are, exposure included. */
+  rawDeltaE?: number | null;
   photoHex: string | null;
   renderHex: string | null;
   hint: string;
@@ -48,6 +53,8 @@ export interface Measured {
   rows: ObjectMeasure[];
   surfaces: SurfaceMeasure[];
   counts: Record<MeasuredVerdict, number>;
+  /** Linear gain applied to render colours so that its ceiling (else wall) is as bright as the photo's: the render is tone-mapped with the room's exposure, the photo has its own. 1: no reference. */
+  exposureGain: number;
   text: string;
   line: string;
 }
@@ -106,15 +113,54 @@ export function compareObjects(inp: MeasureInput): Measured | null {
     for (let i = 0; i < m.length; i++) if (keep[inst.buffer[i] as number]) m[i] = 1;
     return m;
   };
+  // Surfaces first: the render's own white reference gives the exposure gain that puts its colours in the photo's space.
+  const planes = [['floor', /^floor:/, inp.report.surfaces.floor], ['walls', /^wall:/, inp.report.surfaces.walls], ['ceiling', /^ceiling:/, inp.report.surfaces.ceiling]] as const;
+  const renderPlane = new Map<string, Appearance | null>();
+  for (const [surface, re] of planes) {
+    const m = idMask((id) => re.test(id));
+    const s0 = stats(m, W, H);
+    renderPlane.set(surface, s0.n > W * H * 0.01 ? measureAppearance(inp.render, { width: W, height: H, data: m }, bboxOf(s0, W, H), { dominant: true }) : null);
+  }
+  const photoPlane = (n: string): Appearance | null => (n === 'floor' ? inp.report.surfaces.floor : n === 'walls' ? inp.report.surfaces.walls : inp.report.surfaces.ceiling);
+  const anchor = (['ceiling', 'walls'] as const).find((n) => renderPlane.get(n) && photoPlane(n));
+  let gain = 1;
+  if (anchor) {
+    const lr = hexLuminance((renderPlane.get(anchor) as Appearance).colour.hex);
+    const lp = hexLuminance((photoPlane(anchor) as Appearance).colour.hex);
+    if (lr > 0.004 && lp > 0.004) gain = Math.max(0.35, Math.min(3, lp / lr));
+  }
+  gain = Math.round(gain * 100) / 100;
+  const align = (hex: string): string => (gain === 1 ? hex : scaleHexLight(hex, gain));
   const proj = projectBuilt(inp.world, inp.pose, inp.aspect);
   const byPerceived = new Map<string, PerceivedObject>(inp.report.objects.map((o) => [o.id, o]));
   const rows: ObjectMeasure[] = [];
+  // Objects with no link are matched to the built piece whose visible mask overlaps the photo mask most (at least 0.25), one piece to one object.
+  const takenEnt = new Set(inp.ledger.list().flatMap((r) => r.item.entities));
+  const overlapLink = new Map<string, string>();
+  const pieceMasks = new Map<string, Uint8Array>();
+  inst.ids.forEach((id) => { if (!/^(floor|wall|ceiling):/.test(id) && !takenEnt.has(id)) pieceMasks.set(id, idMask((x) => x === id)); });
   for (const rec of inp.ledger.list()) {
-    const it: InventoryItem = rec.item;
+    const it0 = rec.item;
+    const po0 = it0.measured?.id ? byPerceived.get(it0.measured.id) : undefined;
+    if (it0.entities.length > 0 || !po0?.mask || it0.category === 'structure' || it0.category === 'view') continue;
+    const pm = resample(decodeRle(po0.mask.rle), po0.mask.rle.width, po0.mask.rle.height, W, H);
+    let best: string | null = null;
+    let bi = 0.25;
+    for (const [id, m] of pieceMasks) {
+      if (overlapLink.has(`e:${id}`)) continue;
+      let i = 0, a = 0, b = 0;
+      for (let q = 0; q < pm.length; q++) { const x = pm[q] as number, y = m[q] as number; a += x; b += y; if (x && y) i++; }
+      const u = a + b - i;
+      if (u > 0 && i / u > bi) { bi = i / u; best = id; }
+    }
+    if (best) { overlapLink.set(it0.id, best); overlapLink.set(`e:${best}`, it0.id); }
+  }
+  for (const rec of inp.ledger.list()) {
+    const it: InventoryItem = overlapLink.has(rec.item.id) ? { ...rec.item, entities: [overlapLink.get(rec.item.id) as string] } : rec.item;
     const pid = it.measured?.id;
     if (!pid || it.category === 'structure' || it.category === 'view') continue;
     const po = byPerceived.get(pid);
-    const base: ObjectMeasure = { id: it.id, label: it.label, perceivedId: pid, verdict: 'unclear', iou: null, centroidPx: null, centroidPct: null, offsetM: null, sizeRatio: null, deltaE: null, photoHex: po?.appearance?.colour.hex ?? null, renderHex: null, hint: '' };
+    const base: ObjectMeasure = { linked: overlapLink.has(it.id) ? 'overlap' : 'ledger', id: it.id, label: it.label, perceivedId: pid, verdict: 'unclear', iou: null, centroidPx: null, centroidPct: null, offsetM: null, sizeRatio: null, deltaE: null, photoHex: po?.appearance?.colour.hex ?? null, renderHex: null, hint: '' };
     if (!po?.mask || it.entities.length === 0) { rows.push({ ...base, hint: it.entities.length === 0 ? 'no built piece is linked, so nothing to compare' : 'no photo mask for this object' }); continue; }
     const photo = resample(decodeRle(po.mask.rle), po.mask.rle.width, po.mask.rle.height, W, H);
     const rend = idMask((id) => it.entities.includes(id));
@@ -133,7 +179,7 @@ export function compareObjects(inp: MeasureInput): Measured | null {
     const photoCol = po.appearance?.colour ?? null;
     let dE: number | null = null;
     if (ra && photoCol) {
-      const a = hexToLab(ra.colour.hex);
+      const a = hexToLab(align(ra.colour.hex));
       const b = hexToLab(photoCol.hex);
       if (a && b) dE = r1(deltaE2000(a, b));
     }
@@ -158,28 +204,34 @@ export function compareObjects(inp: MeasureInput): Measured | null {
       if (sizeRatio.h > 1.2 || sizeRatio.h < 0.83) sc.push(`height x${sizeRatio.h}`);
       if (sc.length > 0) hints.push(`scale ${sc.join(', ')}`);
     }
-    if (dE !== null && dE >= 8 && ra && photoCol) hints.push(colourHint(ra.colour, photoCol, it.id, 'the').replace(/^the render/, 'render'));
-    rows.push({ ...base, verdict, iou: r2(iou), centroidPx: Math.round(Math.hypot(dx, dy)), centroidPct: [Math.round((rs.cx - ps.cx) * 100), Math.round((rs.cy - ps.cy) * 100)], offsetM, sizeRatio, deltaE: dE, renderHex: ra?.colour.hex ?? null, hint: hints.join('; ') });
+    if (dE !== null && dE >= 8 && ra && photoCol) { const al = hexToLab(align(ra.colour.hex)); if (al) hints.push(colourHint({ hex: align(ra.colour.hex), lab: [al.L, al.a, al.b], name: colourName(al) }, photoCol, it.id, 'the').replace(/^the render/, 'render')); }
+    rows.push({ ...base, verdict, iou: r2(iou), centroidPx: Math.round(Math.hypot(dx, dy)), centroidPct: [Math.round((rs.cx - ps.cx) * 100), Math.round((rs.cy - ps.cy) * 100)], offsetM, sizeRatio, deltaE: dE, renderHex: ra ? align(ra.colour.hex) : null, hint: hints.join('; ') });
   }
-  // floor, walls and ceiling: colour of the render's plane pixels against the photo's plane pixels
+  // floor, walls and ceiling: render plane colour (exposure matched at the anchor) against the photo's plane colour
   const surfaces: SurfaceMeasure[] = [];
-  for (const [surface, re, photo] of [['floor', /^floor:/, inp.report.surfaces.floor], ['walls', /^wall:/, inp.report.surfaces.walls], ['ceiling', /^ceiling:/, inp.report.surfaces.ceiling]] as const) {
+  for (const [surface] of planes) {
+    const photo = photoPlane(surface);
     if (!photo) continue;
-    const m = idMask((id) => re.test(id));
-    const s = stats(m, W, H);
-    const ra = s.n > W * H * 0.01 ? measureAppearance(inp.render, { width: W, height: H, data: m }, bboxOf(s, W, H), { dominant: true }) : null;
-    const a = ra ? hexToLab(ra.colour.hex) : null;
+    const ra = renderPlane.get(surface) ?? null;
     const b = hexToLab(photo.colour.hex);
-    const dE = a && b ? r1(deltaE2000(a, b)) : null;
-    surfaces.push({ surface, deltaE: dE, photoHex: photo.colour.hex, renderHex: ra?.colour.hex ?? null, hint: ra && dE !== null && dE >= 8 ? colourHint(ra.colour, photo.colour, surface, surface) : '' });
+    const rawA = ra ? hexToLab(ra.colour.hex) : null;
+    let al = ra ? hexToLab(align(ra.colour.hex)) : null;
+    // the anchor itself matches in lightness by construction: its deltaE is then the hue and chroma difference alone
+    const rawDE = rawA && b ? r1(deltaE2000(rawA, b)) : null;
+    const dE = al && b ? r1(deltaE2000(al, b)) : null;
+    const hintCol = ra && al && dE !== null && dE >= 8 ? { hex: align(ra.colour.hex), lab: [al.L, al.a, al.b] as [number, number, number], name: colourName(al) } : null;
+    const how = surface === 'floor' ? 'the floor finish colour (design_plan room floor)' : surface === 'walls' ? 'the wall finish colours (design_plan walls)' : 'the ceiling finish colour';
+    surfaces.push({ surface, deltaE: dE, rawDeltaE: rawDE, photoHex: photo.colour.hex, renderHex: ra ? align(ra.colour.hex) : null, hint: hintCol ? `${colourHint(hintCol, photo.colour, surface, surface).replace(/: apply_measured_colour .*$/, '')}: set ${how} to ${photo.colour.hex}` : '' });
+    void al;
+    al = null;
   }
   const counts: Record<MeasuredVerdict, number> = { match: 0, close: 0, near: 0, off: 0, unclear: 0 };
   for (const r of rows) counts[r.verdict]++;
-  const surfLine = surfaces.filter((s) => s.deltaE !== null).map((s) => `${s.surface} dE ${s.deltaE}`).join(', ');
-  const line = `Measured comparison (mask IoU and colour deltaE against the photo): ${counts.match} match, ${counts.close} close, ${counts.near} near, ${counts.off} off, ${counts.unclear} unclear of ${rows.length} objects${surfLine ? `; ${surfLine}` : ''}.`;
+  const surfLine = surfaces.filter((s) => s.deltaE !== null).map((s) => `${s.surface} dE ${s.deltaE} (raw ${s.rawDeltaE})`).join(', ');
+  const line = `Measured comparison (mask IoU and colour deltaE against the photo, render exposure matched to the photo's ${anchor ?? 'none'}${anchor ? ` x${gain}` : ''}): ${counts.match} match, ${counts.close} close, ${counts.near} near, ${counts.off} off, ${counts.unclear} unclear of ${rows.length} objects${surfLine ? `; ${surfLine}` : ''}.`;
   const worst = rows.filter((r) => r.verdict === 'off' || r.verdict === 'near').sort((a, b) => (a.iou ?? 0) - (b.iou ?? 0)).slice(0, 16);
   const tl: string[] = [`${line} (advisory: close = mask IoU above 0.6 and deltaE under 10; the judges decide)`];
   for (const r of worst) tl.push(`- ${r.label} [${r.id}] ${r.verdict}: IoU ${r.iou}, centre ${r.centroidPx} px off${r.offsetM !== null ? ` (${r.offsetM} m)` : ''}${r.sizeRatio ? `, photo/render size ${r.sizeRatio.w}x wide ${r.sizeRatio.h}x high` : ''}${r.deltaE !== null ? `, deltaE ${r.deltaE} (render ${r.renderHex}, photo ${r.photoHex}; ${colourName(hexToLab(r.photoHex ?? '#000000') ?? { L: 0, a: 0, b: 0 })})` : ''}${r.hint ? `. Fix: ${r.hint}` : ''}`);
   for (const s of surfaces) if (s.hint) tl.push(`- ${s.hint}`);
-  return { rows, surfaces, counts, text: tl.join('\n'), line };
+  return { rows, surfaces, counts, exposureGain: gain, text: tl.join('\n'), line };
 }

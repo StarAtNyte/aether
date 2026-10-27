@@ -353,3 +353,14 @@ export function normaliseHex(hex: string, ill: Illuminant): string {
   const rgb = hexRgb(hex).map((v, i) => linToSrgb(srgbToLin(v) * (ill.gains[i] as number) * ill.exposure));
   return `#${rgb.map((v) => v.toString(16).padStart(2, '0')).join('')}`;
 }
+
+/** A colour with its linear light multiplied by `k` (exposure), as hex. */
+export function scaleHexLight(hex: string, k: number): string {
+  const rgb = hexRgb(hex).map((v) => linToSrgb(srgbToLin(v) * k));
+  return `#${rgb.map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+}
+/** Relative luminance (linear light, 0..1) of a hex colour. */
+export function hexLuminance(hex: string): number {
+  const [r, g, b] = hexRgb(hex).map(srgbToLin) as [number, number, number];
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
