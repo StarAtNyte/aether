@@ -7,11 +7,11 @@ body { margin: 0; }
   place-content: center;
   justify-items: center;
   gap: 14px;
-  color: #52606d;
-  background: #ffffff;
+  color: #5f5d58;
+  background: #f6f5f2;
   font: 500 13px system-ui, sans-serif;
 }
-html[data-theme='dark'] #boot-status { color: #c3ccd5; background: #101418; }
+html[data-theme='dark'] #boot-status { color: #a8a59e; background: #1b1a18; }
 .boot-spinner {
   width: 24px;
   height: 24px;

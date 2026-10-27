@@ -34,7 +34,7 @@ export interface PlanDrawingOptions {
 const INK = '#1f2328';
 const WALL = '#2b2f36';
 const MUTED = '#6b7079';
-const ACCENT = '#4f56d6';
+const ACCENT = '#8a857b';
 
 /** Clean a label for drawing (control and bidi characters removed, length capped). */
 export function planText(text: string, max = 80): string {

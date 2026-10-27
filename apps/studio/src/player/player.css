@@ -7,16 +7,16 @@
 :root {
   --font: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --font-display: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --bg: #07080b;
-  --text: #f4f5f8;
-  --text-2: #c3c7d0;
-  --muted: #9aa0ab;
-  --glass: rgb(14 16 22 / 0.62);
-  --glass-strong: rgb(12 14 19 / 0.86);
+  --bg: #0e0d0c;
+  --text: #f3f1ec;
+  --text-2: #c8c5be;
+  --muted: #a19e97;
+  --glass: rgb(16 15 13 / 0.62);
+  --glass-strong: rgb(14 13 11 / 0.86);
   --edge: rgb(255 255 255 / 0.12);
-  --accent: #6d72ff;
-  --accent-press: #5a5fe8;
-  --on-accent: #ffffff;
+  --accent: #f3f1ec;
+  --accent-press: #d8d5ce;
+  --on-accent: #151412;
   --win: #7fe0a8;
   --lose: #ff9a8a;
   /* Tokens the shared HUD components use. */
@@ -26,9 +26,9 @@
   --s-4: 16px;
   --s-5: 24px;
   --z-overlay: 20;
-  --overlay: rgb(14 16 22 / 0.55);
+  --overlay: rgb(16 15 13 / 0.55);
   --overlay-border: rgb(255 255 255 / 0.14);
-  --surface: #f4f5f8;
+  --surface: #f3f1ec;
   --surface-3: rgb(255 255 255 / 0.18);
   --shadow-2: 0 8px 24px rgb(0 0 0 / 0.35);
   color-scheme: dark;
@@ -59,7 +59,7 @@ body.pl-body {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  background: radial-gradient(120% 90% at 50% 10%, #141826 0%, #07080b 60%);
+  background: var(--bg);
 }
 
 .pl-canvas {
@@ -118,12 +118,12 @@ body.pl-body {
   background: var(--accent);
   border-color: transparent;
   color: var(--on-accent);
-  box-shadow: 0 8px 28px rgb(109 114 255 / 0.35);
+  box-shadow: none;
 }
 
 .pl-btn--primary:hover,
 .btn--primary:hover {
-  background: #7d82ff;
+  background: #ffffff;
 }
 
 .btn--sm {
@@ -202,8 +202,8 @@ kbd {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(to top, rgb(5 6 9 / 0.86) 0%, rgb(5 6 9 / 0.35) 38%, rgb(5 6 9 / 0) 62%),
-    linear-gradient(to right, rgb(5 6 9 / 0.55) 0%, rgb(5 6 9 / 0) 55%);
+    linear-gradient(to top, rgb(8 7 6 / 0.86) 0%, rgb(8 7 6 / 0.35) 38%, rgb(8 7 6 / 0) 62%),
+    linear-gradient(to right, rgb(8 7 6 / 0.55) 0%, rgb(8 7 6 / 0) 55%);
 }
 
 .pl-title__body {
@@ -397,7 +397,7 @@ kbd {
 }
 
 .pl-dim {
-  background: rgb(4 5 8 / 0.45);
+  background: rgb(6 5 4 / 0.45);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
 }
@@ -774,7 +774,7 @@ kbd {
 .pl-bot__replay input[type='range'] {
   flex: 1 1 120px;
   min-width: 80px;
-  accent-color: #7fd6ff;
+  accent-color: var(--accent);
 }
 
 .pl-bot__time {
