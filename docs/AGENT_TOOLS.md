@@ -62,6 +62,16 @@ These rules come from `executor.ts`, `tools.ts` and `@aether/arch` `scene/dispat
   changed entity that stands for a person but has no `character` gets a rigged character. This is one extra undo
   step, and the result carries a note saying so (`attachPeople`, using core `characterPatches`).
 - **Text limits.** Commit messages are cut to 200 characters. `TOOL_LIMITS.MAX_MESSAGE` is 2,000 characters.
+- **Claims and refusals.** The shared wording is in `packages/agent/src/claims.ts`. A report claims only what the
+  evidence shows (what was measured or seen, at which view, against which limit) and ends with a `Not checked:`
+  list (`NARROW_CLAIM`, used by the building and level review turns, the stall ask, the critic and `finish`). A
+  refusal from `place_items` or `edit_items` is a constraint of the room (a door the piece would block, a room too
+  small for it), to be solved with another size, wall or room, never resent unchanged or worked round with
+  `apply_patches` (`REFUSAL_IS_A_CONSTRAINT`).
+- **Empty-world guard.** An edit that would leave a world that had entities with none is refused, whole, with
+  the count and the two ways forward (`emptyWorldRefusal`). `apply_patches` applies the batch to a copy first; a
+  `startOver: true` flag (set only when the user asked to start over) skips the check. A `clear` followed by new
+  content in the same batch ends non-empty and passes. `edit_items` `remove` carries the same check.
 
 ## World editing
 
@@ -71,10 +81,12 @@ These rules come from `executor.ts`, `tools.ts` and `@aether/arch` `scene/dispat
   `rename`, `addRule`, `updateRule`, `removeRule`, `setEnvironment`, `setPlayer`, `setState`, `setHud`,
   `defineGenerator`, `defineScript`, `addTest`, `removeTest`, `setMeta`, `clear`, `removeGenerator` and
   `removeScript` (`PATCH_OPS`). The voxel ops `setVoxel` and `voxelEdit` are described in the system prompt.
-- **Input.** `{patches: object[1..400], message: string}`. 400 is `TOOL_LIMITS.MAX_PATCHES_PER_CALL`.
+- **Input.** `{patches: object[1..400], message: string, startOver?: boolean}`. 400 is `TOOL_LIMITS.MAX_PATCHES_PER_CALL`. `startOver` is set only when the user asked to start over; without it a batch that leaves the world with no entities is refused (see the common rules).
 - **Returns.** `Applied N/M patches. The world now has K entities.`, then each rejected patch as
   `[index] op: reason`. Valid patches still apply. The call counts as an error only when nothing applied.
 - **Extra handling.** These are in `applyPatchesTool`, in this order:
+  0. **Empty-world guard.** The batch is applied to a copy; if the world had entities and would have none, the
+     whole call is refused unless `startOver` is true.
   1. **Realistic swap.** When the request wants a realistic look, the low-poly nature generators are swapped for
      the realistic set, and the result says so (`makeRealistic`).
   2. **Dependents move with their owner.** When a patch moves an entity, the entities that belong to it (a light,
@@ -394,6 +406,15 @@ See [Eyes](#query_level-1).
 - **When to use it.** Before placing seating, tables, beds, lamps, plants and decor, before dressing a landscape,
   street, harbour, factory or fantasy set with props, and in the photo compare loop when a piece differs in shape,
   style or colour.
+- **Architecture pieces.** Four crafted pieces name structural elements: `furn-spiral-stair` (spiral staircase,
+  winding stair, loft stair), `furn-dormer` (dormer window, gable, shed or hip dormer), `furn-turret-roof` (conical
+  roof, witch hat roof, tower roof, dome roof) and the `classical` and `ionic` variants of `furn-column` (the
+  tapering fluted shaft with base and capital). The same geometry is the structural generators `arch-spiral-stair`,
+  `arch-dormer`, `arch-turret-roof` and `arch-column` with `style`
+  (`fluted`, `classical`, `pilaster`); a world uses either. A spiral stair needs a stairwell in the floor above:
+  `spiralFootprint` gives the outline (a disc without the landing sector); a dormer stands on the roof surface, with
+  `dormerPlacement` giving the position and yaw on a roof's side; the wall of a turret stands below its roof's origin.
+
 
 ### `write_generator`
 

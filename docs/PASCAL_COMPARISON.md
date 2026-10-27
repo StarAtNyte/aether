@@ -36,15 +36,15 @@ cannot fill in.
 | IFC4 export | `ifc-converter` (STEP writer, IfcWall + voids + fills, slabs, spaces, stairs) | None before this change | **Borrowed (done).** STEP writer, GUIDs and entity builders adapted; the World IR mapper is ours. Risk: tessellated stairs and roofs are not parametric in BIM tools |
 | Wall joins at corners and T | `wall-mitering.ts`: line-line mitres, junction grid, `MITER_LIMIT` 10 then butt | `wall-joins.ts`: angular-neighbour corner solver, extension cap 4 x thickness; `wall-network.ts` splits T-junctions at room vertices | Skip: equivalent result; theirs falls back to a butt joint on very acute angles, ours clamps the spike. Revisit only if a visible acute corner appears |
 | Openings | CSG (three-bvh-csg) on a mesh | CSG-free wall builder cutting spans analytically (`openingSpans`) | Skip: ours is cheaper, exact, and needs no extra dependency |
-| Roofs | Segments, hip/gable/shed/dormer/conical/glazed, auto elevation | flat, gable, hip, shed over a rectangle | Adapt idea (follow-up): dormers and conical roofs. Their code is bound to React node renderers and a different schema; port needs a new `PlanRoof` shape and fit/nav rules |
-| Stairs | straight, curved, spiral, winders, guards, rise/going sizing, clearance | straight, L, U, guards, fit and checks (`stair-fit.ts`) | Adapt idea (follow-up): spiral. The curved step is an annular prism (`buildCurvedStepGeometry`), trivial to write fresh; the cost is in fit, walking line, guards and nav, not geometry. Not done in this pass |
+| Roofs | Segments, hip/gable/shed/dormer/conical/glazed, auto elevation | flat, gable, hip, shed over a rectangle | **Adapted idea, own code (done):** `arch-dormer` (gable, shed, hip, flashed where it meets the slope) and `arch-turret-roof` (cone, bell, dome, ogee, polygonal). Neither is a roof `shape`: they are separate elements placed on a roof (`dormerPlacement`) or on a turret, so the existing roof output and every stored world are untouched |
+| Stairs | straight, curved, spiral, winders, guards, rise/going sizing, clearance | straight, L, U, guards, fit and checks (`stair-fit.ts`) | **Adapted idea, own code (done):** `arch-spiral-stair` with radius, turns, handedness, post or open core, balustrade, a stairwell outline, a walking line and a wedge collider per tread (the bot climbs it). Not wired into the plan's `add_stairs` / `stair-fit` (stand-alone element) |
 | Windows, doors | many types (casement, awning, bay, bow, louvered, curtain wall) | 8 window and 8 door styles, bay, arched, muntins, surrounds | Skip: comparable; curtain wall is an idea for later |
-| Columns, railings, fences | styled columns (bases, capitals), fence features, gutters | `arch-column` (round/square), `arch-railing`, gutters on roofs | Adapt idea: column base and capital styles |
+| Columns, railings, fences | styled columns (bases, capitals), fence features, gutters | `arch-column` (round/square), `arch-railing`, gutters on roofs | **Adapted idea, own code (done):** `arch-column` gained optional `style` (fluted, classical with base, entasis and tuscan/doric/ionic capitals, pilaster); `furn-column` gained the `classical` and `ionic` variants |
 | Slabs, ceilings | slab polygon ops, ceiling surfaces | slabs with holes, ceiling styles (vault, coffer, beams, cove) | Skip: ours richer in styles |
 | Level modes, cut and X-ray | stacked, exploded, solo; cutaway and X-ray | levels explode, solo, walls-down, `cut` section param, X-ray | Skip: present |
 | Item placement rules | furniture-fit skill, `check_collisions`, door keep-outs 65 cm | `placement.ts`, wall-space, front-clearance, clear-start, checks | Skip code; **adapt idea:** claim boundaries below |
-| MCP tools | semantic builders, `verify_scene`, `measure_stair`/`fit_stair`, `scene_wipe_blocked`, `view_scene` | `export`, `edit`, `check`, `render`, stair fit, undo/redo | Adapt idea: refuse an edit that would empty a world |
-| Agent skills text | `pascal-3d`, `furniture-fit` | prompt in `packages/agent` | Adapt idea (wording only, below) |
+| MCP tools | semantic builders, `verify_scene`, `measure_stair`/`fit_stair`, `scene_wipe_blocked`, `view_scene` | `export`, `edit`, `check`, `render`, stair fit, undo/redo | **Adapted idea (done):** an edit that would empty a world is refused (`apply_patches` unless `startOver`, `edit_items` remove) |
+| Agent skills text | `pascal-3d`, `furniture-fit` | prompt in `packages/agent` | **Adapted idea (done), wording in our own words:** `packages/agent/src/claims.ts` |
 | Undo/redo | Zundo (zustand temporal) | patch history in core (`history.ts`) | Skip: ours is patch based and already feeds MCP undo |
 | Plugins | plugin system with packs | none | Skip: out of scope |
 | CLI | downloads a runtime, projects, MCP service | `aether start`, `doctor`, `mcp` | Skip |
@@ -69,13 +69,28 @@ are not copied):
 - IFC4 export: `packages/arch/src/ifc/` (three adapted files with the MIT text
   in their headers, one own mapper) and MCP `export` `format: ifc`.
 
+## Written from scratch after the comparison (ideas only, no upstream code)
+
+- `arch-spiral-stair` (`spiral.ts`), `arch-dormer` (`dormer.ts`), `arch-turret-roof`
+  (`turret.ts`), column styles (`column-styles.ts`): our own geometry on our own
+  schemas, as new structural kinds appended after the existing ones, with
+  optional fields only on `arch-column`. A world that does not use them compiles
+  to the same meshes and keys as before.
+- Crafted pieces `furn-spiral-stair`, `furn-dormer`, `furn-turret-roof` (aliases for
+  `find_model`: spiral staircase, dormer window, conical roof, witch hat roof) and the
+  `classical` / `ionic` variants of `furn-column`.
+- Tool wording and the empty-world guard (`packages/agent/src/claims.ts`, `emptiesWorld`
+  in `packages/arch/src/scene/edit.ts`): the narrowest supported claim with a
+  `Not checked:` list, a refusal read as a constraint to solve, and a refused
+  edit that would leave the world empty.
+
 ## Not ported, and why
 
 - Assets: no provenance; see the audit.
-- Spiral stairs, dormers, conical roofs, column styles: ideas only here; each
-  needs a new schema branch plus fit, nav and agent-doc work, and the upstream
-  code is React and node-schema bound.
 - CSG openings, mitre solver, undo store: ours already cover the use.
+- Plan-level spiral stairs (`add_stairs shape: "spiral"`, `stair-fit` for a disc, the
+  navigation check's stair link): the stand-alone element is placed by the author; the
+  plan checks do not model it yet.
 
 ## Rendering and performance
 

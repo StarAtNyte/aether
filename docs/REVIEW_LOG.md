@@ -6777,3 +6777,35 @@ Sharp matches explicit Studio's sharpness and flicker figure within noise (hotel
 old default, also stopped at 36-46 fps while giving up 35-50 percent of the sharpness. The SSIM against converged stills
 is only meaningful for the three photo rooms (0.98 for Sharp and Studio, 0.97 for Smooth); the other rooms' references
 differ by shadow and foliage noise. The skyline Smooth run returned blank frames and is not counted.
+## Spiral stairs, dormers, turret roofs, column styles; tool wording and the empty-world guard
+
+What changed
+- Four new parametric kinds in `packages/arch`, written from scratch (the comparison in `docs/PASCAL_COMPARISON.md` gave ideas only): `arch-spiral-stair` (`spiral.ts`), `arch-dormer` (`dormer.ts`), `arch-turret-roof` (`turret.ts`) and column styles on `arch-column` (`column-styles.ts`). Each has a zod schema with bounds, PBR finishes from the existing finish set, colliders (a convex wedge per spiral tread, a hull for a dormer and a turret, boxes along balustrades) and tests.
+- Spiral stair: radius, rise, turns (0.25 to 4), handedness, solid post or open core, steel, timber or glass balustrade, a guard round the stairwell above. It also gives the stairwell outline (`spiralFootprint`: the disc without the landing sector), the walking line (`spiralWalkLine`), headroom (`spiralHeadroom`, under the landing sector too) and `spiralProblems` (treads too shallow, a body of the player's 0.35 m radius catching on the inner treads, too little headroom).
+- Dormer: gable, shed or hip, window with glazing bars, cheeks and roof that run back until they meet the roof plane `y = -tan(roofPitch) z` (their depth follows from the two pitches; nothing sinks below the plane, tested), flashing strips on the roof along the cheeks and the front, `dormerPlacement` for a side of a gable or hip roof.
+- Turret roof: cone, bell, dome, ogee, round or 3 to 16 sided, finial, optional turret wall with slits.
+- Column styles: optional `style` (fluted, classical, pilaster), `capital` (tuscan, doric, ionic), `flutes`, `projection` on `arch-column`; `classical` and `ionic` variants of `furn-column`.
+- Crafted pieces `furn-spiral-stair`, `furn-dormer`, `furn-turret-roof` with aliases for `find_model`, slots for material edits, and `AGENT_TOOLS.md` text.
+- Playtest and NPC stair links (`playtest/src/stairs.ts`, `logic/src/npc/stairs.ts`) take `arch-spiral-stair` alongside `arch-stair`.
+- Wording and guard (`packages/agent/src/claims.ts`, `emptiesWorld` in `packages/arch/src/scene/edit.ts`): reports state the narrowest claim the evidence supports and a `Not checked:` list (building and level review turns, stall ask, critic, `finish`), placement refusals are described as constraints to solve, and an edit that would leave the world with no entities is refused (`apply_patches` unless `startOver`; `edit_items` remove).
+
+Why existing worlds are unchanged
+- The three new generator ids are appended after the older ones (a test pins the order); `arch-column` gained only optional fields with no defaults, so the resolved params of every stored column have the same keys; the new furniture pieces are appended to the catalogue. `showcase:bake --check` reports all 47 worlds up to date and `showcase:lightmaps --verify` reports the six lightmap keys unchanged.
+
+Things found while testing (and fixed)
+- A 1.1 m radius spiral with the player's 0.35 m capsule is not climbable (the inner side catches on the next riser), with or without rails; 1.4 m is, with the follower or the bot. The default radius is 1.4 and `spiralProblems` says why a tighter stair fails (tested both ways: a 1.1 m stair is not climbed, the 1.4 m one is, with the jump key never pressed).
+- More than about one turn fails for headroom under the landing sector of the floor above (the floor hangs 0.2 m lower than a tread): `spiralHeadroom` now includes it.
+- The landing opening in the guard round the stairwell was one tread wide (0.38 m); it is now a metre wide at the walking radius.
+- A search-and-replace turned the groove depth of the first fluted shaft into a factor of one (a smooth shaft collapsed to the axis, a fluted one was too deep); found from a still, now covered by a ring-radius test.
+
+Verification
+- `tsc`: clean. `vitest` over `packages/arch packages/agent packages/playtest packages/core packages/procgen packages/logic apps/studio`: see the final line of the commit that adds this entry. New tests: `packages/arch/test/elements-kinds.test.ts` (schemas, winding against normals, bounds, walking line, stairwell, roof intersection, placement, column ring radii, aliases, unchanged ids and params), `packages/playtest/test/spiral-stair.test.ts` (a person walking the line of a right- and left-handed stair climbs it; a 1.1 m stair does not; the walkthrough bot reaches every room of a two-storey house whose only link is a spiral stair, solid post and open core, 1 and 0.75 turns), `packages/agent/test/guard-wording.test.ts` (scripted agent: the refused batch leaves the world untouched and the model is told why, `clear` plus new content passes, `startOver` allows an empty world, the tool and review text carry the wording).
+- `smoke` 39 of 39. `showcase:bake --check` 47 up to date. `showcase:lightmaps --verify` six keys unchanged.
+- Stills (Intel iGPU, `scripts/element-sheet.ts`, `docs/screenshots/elements/`): `spiral` and `spiral-before` (the straight stair that was the only option), `dormer` and `dormer-before`, `turret` and `turret-before`, `columns` and `columns-before`.
+- Frame cost: `default-perf.e2e.ts --rows=default` on the Intel iGPU, hotel bedroom 2.0 ms median, skyline penthouse 27.3 ms median with other jobs on the GPU. Not compared side by side against a build of the previous commit; the compiled output of those worlds is unchanged (bake keys), and no code on their path changed.
+
+Not checked
+- A plan-level spiral (`add_stairs shape: "spiral"`, `stair-fit`, the building check's stair link): the stand-alone element is placed by hand with its stairwell cut by the author; `checkBuilding` does not model it.
+- Dormers cut no hole in the roof entity (a flashing strip and the dormer's own volume meet the slope; the roof underneath stays closed), so the inside of a dormer is not a room.
+- Turn counts above about one turn on a 3 m rise (headroom), walking by the bot up a spiral heavier than 1.4 m radius cases listed above, and descending.
+- The wording change was checked with scripted models only, not with a live model.

@@ -1530,7 +1530,9 @@ RailingParams.style += 'timber'
 
 `@aether/procgen` wraps every structural element (`arch-wall`, `arch-slab`,
 `arch-ceiling`, `arch-roof`, `arch-stair`, `arch-door`, `arch-frame`,
-`arch-window`, `arch-railing`, `arch-column`, `arch-basin`) and every
+`arch-window`, `arch-railing`, `arch-column`, `arch-basin`, and the stand-alone
+`arch-spiral-stair`, `arch-dormer`, `arch-turret-roof`; `arch-column` takes an optional `style`
+fluted | classical | pilaster, absent for every older world) and every
 furniture piece (`furn-*`, light fittings with a `lit` switch) as built-in
 generators; their params are zod-validated by `@aether/arch`. Finish
 textures (albedo / roughness / normal per `MaterialFinish`) are synthesised
