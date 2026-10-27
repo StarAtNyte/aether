@@ -729,6 +729,21 @@ export function resizeItem(world: WorldDoc, buildingRef: string | undefined, ref
   return commit(`Resize ${items.map((i) => i.id).join(', ')}`, patches, world, b.id, items.map((i) => i.id), notes);
 }
 
+/** Whether an edit left a world that had entities with none. */
+export function emptiesWorld(before: WorldDoc, after: WorldDoc): boolean {
+  return Object.keys(before.entities).length > 0 && Object.keys(after.entities).length === 0;
+}
+
+/**
+ * The refusal for an edit that would leave the world empty. It says what was refused, that nothing changed, and the two
+ * ways forward (remove fewer pieces, or say outright that the user asked to start over), so the model treats it as a
+ * constraint to solve rather than a failure of the tool.
+ */
+export function emptyWorldRefusal(entities: number, tool: 'edit_items' | 'apply_patches'): string {
+  const way = tool === 'apply_patches' ? 'resend with startOver:true only if the user asked to start over or to replace everything' : 'if the user asked to start over, use apply_patches with startOver:true instead';
+  return `refused: this would remove all ${entities} entit${entities === 1 ? 'y' : 'ies'} and leave an empty world. Nothing was changed. Remove only the pieces you mean (read their ids with query_scene or inspect), or ${way}.`;
+}
+
 /** Remove a piece (a curtain handle removes both panels). */
 export function removeItem(world: WorldDoc, buildingRef: string | undefined, ref: string): EditResult {
   const b = resolveBuilding(world, buildingRef);
@@ -740,6 +755,7 @@ export function removeItem(world: WorldDoc, buildingRef: string | undefined, ref
   const patches: Patch[] = items.map((i) => ({ op: 'remove', id: i.id }) as Patch);
   const res = applyPatches(world, patches);
   if (res.errors.length > 0) return fail(`could not remove: ${res.errors[0]?.message ?? 'rejected'}`);
+  if (emptiesWorld(world, res.world)) return fail(emptyWorldRefusal(Object.keys(world.entities).length, 'edit_items'));
   return { ok: true, patches, message: `Remove ${items.map((i) => i.id).join(', ')}`.slice(0, 120), text: `removed ${items.map((i) => `${i.kind} ${i.id}`).join(', ')}`, ids: items.map((i) => i.id), warnings: [] };
 }
 

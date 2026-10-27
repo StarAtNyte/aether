@@ -70,7 +70,7 @@ export const AGENT_TOOLS: ToolDef[] = [
   {
     name: 'apply_patches',
     description:
-      'Edit the world with a batch of patch operations (see "Patch operations" in the system prompt). Valid patches are applied in order and committed as one undo step; invalid ones are skipped and reported back with their index and reason, so fix and resend only those. Batch related edits (up to 400 patches per call).',
+      'Edit the world with a batch of patch operations (see "Patch operations" in the system prompt). Valid patches are applied in order and committed as one undo step; invalid ones are skipped and reported back with their index and reason, so fix and resend only those. Batch related edits (up to 400 patches per call). A batch that would leave the world with no entities at all is refused and nothing changes, unless startOver is true; set that only when the user asked to start over.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -82,6 +82,7 @@ export const AGENT_TOOLS: ToolDef[] = [
           description: 'Patch objects, e.g. {"op":"add","entity":{...}} or {"op":"setEnvironment","set":{"sky":"sunset"}}.',
         },
         message: { type: 'string', description: 'Short commit message for the history timeline, e.g. "Add pine forest".' },
+        startOver: { type: 'boolean', description: 'True only when the user asked to start over: allows a batch that leaves the world empty.' },
       },
       required: ['patches', 'message'],
       additionalProperties: false,
@@ -127,7 +128,7 @@ export const AGENT_TOOLS: ToolDef[] = [
   {
     name: 'place_items',
     description:
-      'Place pieces from the parts library (see query_scene parts) into rooms of the building: furniture, appliances, rugs, plants, curtains, art, mirrors, lights. Each item: {kind, room, id (your handle from the plan), and WHERE: wall + t (metres along that wall, left to right as seen from inside) or wall + align centre|start|end, or at [x,z], or on (a host piece) + offset, y (bottom height of wall pieces), yaw, faces, params (size, colour, materials), opening (curtains and blinds: the window; a curtain makes both panels, plus one pelmet across them when params.pelmet is box|valance|swag; a blind hangs centred over it)}. Items apply in order against the evolving room; each one is measured and REFUSED with the exact reason and a fix when it would overlap, cross a wall, cover a door or window, block a doorway or its swing, or wall a room in. Refusals do not stop the others. Up to 40 per call, one undo step. This is for the furniture of a room, not for bulk: dozens of chairs round tables, a gallery of pictures, rows of seats or cases are ONE shape_land call each (perimeter, wall, tier, grid, along), which also works inside a building by world coordinates.',
+      'Place pieces from the parts library (see query_scene parts) into rooms of the building: furniture, appliances, rugs, plants, curtains, art, mirrors, lights. Each item: {kind, room, id (your handle from the plan), and WHERE: wall + t (metres along that wall, left to right as seen from inside) or wall + align centre|start|end, or at [x,z], or on (a host piece) + offset, y (bottom height of wall pieces), yaw, faces, params (size, colour, materials), opening (curtains and blinds: the window; a curtain makes both panels, plus one pelmet across them when params.pelmet is box|valance|swag; a blind hangs centred over it)}. Items apply in order against the evolving room; each one is measured and REFUSED with the exact reason and a fix when it would overlap, cross a wall, cover a door or window, block a doorway or its swing, or wall a room in. Refusals do not stop the others. Up to 40 per call, one undo step. A refusal is a constraint of the room (a door it would block, a room too small for it), not a failure of the tool: solve it with another size, wall or room; do not resend it unchanged or work round it with apply_patches. This is for the furniture of a room, not for bulk: dozens of chairs round tables, a gallery of pictures, rows of seats or cases are ONE shape_land call each (perimeter, wall, tier, grid, along), which also works inside a building by world coordinates.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -142,7 +143,7 @@ export const AGENT_TOOLS: ToolDef[] = [
   {
     name: 'edit_items',
     description:
-      'Change placed pieces with measured, validated edits. Each edit: {op:"move", ref, wall|edge, t|align, at, on, offset, y, yaw, faces} | {op:"rotate", ref, yaw|delta|faces} | {op:"resize", ref, params} | {op:"remove", ref} | {op:"snap_to_wall", ref, wall, align|t, gap} | {op:"anchor_to_opening", ref, opening, mode:"centre|left|right"} | {op:"center_over", ref, target, gap} | {op:"declare_plan", ref:<planned id>, entities:[entity ids], reason} (say which world entities stand for a planned piece that the review reports missing because it was made another way, e.g. a crafted part; or with a reason and no entities that it is not built: the plan check honours it from then on). `ref` is an entity id from query_scene or the summary (or your handle). Refused with the reason when the result would be wrong; the others still apply. Use it to fix what the review reports: never rebuild a room to move one piece.',
+      'Change placed pieces with measured, validated edits. Each edit: {op:"move", ref, wall|edge, t|align, at, on, offset, y, yaw, faces} | {op:"rotate", ref, yaw|delta|faces} | {op:"resize", ref, params} | {op:"remove", ref} | {op:"snap_to_wall", ref, wall, align|t, gap} | {op:"anchor_to_opening", ref, opening, mode:"centre|left|right"} | {op:"center_over", ref, target, gap} | {op:"declare_plan", ref:<planned id>, entities:[entity ids], reason} (say which world entities stand for a planned piece that the review reports missing because it was made another way, e.g. a crafted part; or with a reason and no entities that it is not built: the plan check honours it from then on). `ref` is an entity id from query_scene or the summary (or your handle). Refused with the reason when the result would be wrong (treat that as a constraint to solve, not a tool failure); the others still apply. A remove that would leave the world with no entities is refused. Use it to fix what the review reports: never rebuild a room to move one piece.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -399,7 +400,7 @@ export const AGENT_TOOLS: ToolDef[] = [
   },
   {
     name: 'finish',
-    description: 'Call when the world fulfils the request. `message` is shown to the user: one or two sentences on what was built and how to play it. Verification runs automatically afterwards.',
+    description: 'Call when the world fulfils the request. `message` is shown to the user: one or two sentences on what was built and how to play it. Claim only what you measured or saw (at which view, against which limit), and name what you did not check ("Not checked: ..."). Verification runs automatically afterwards.',
     inputSchema: {
       type: 'object',
       properties: { message: { type: 'string' } },
@@ -473,6 +474,7 @@ export const ToolInputs = {
   apply_patches: z.object({
     patches: z.array(z.unknown()).min(1).max(TOOL_LIMITS.MAX_PATCHES_PER_CALL),
     message: z.string().max(TOOL_LIMITS.MAX_MESSAGE).default('Agent edit'),
+    startOver: z.boolean().optional(),
   }),
   build_architecture: z.object({
     ops: z.array(z.unknown()).min(1).max(MAX_ARCH_OPS_PER_CALL),

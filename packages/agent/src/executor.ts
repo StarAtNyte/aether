@@ -5,7 +5,7 @@
  * here, and patches are validated again by the host's `applyPatches`.
  */
 import { describeModel, findModels, headNoun, lacksNoun, loadCatalog, searchAssets } from '@aether/assets';
-import { applyArchOps, describePartLine, findCrafted, partInfo, runDesignTool, type DesignToolName } from '@aether/arch';
+import { applyArchOps, describePartLine, emptiesWorld, emptyWorldRefusal, findCrafted, partInfo, runDesignTool, type DesignToolName } from '@aether/arch';
 import { GeneratorDef, ScriptDef, applyPatches, carryPatches, characterPatches, hasOwn, isPlainObject, type CarriedDependent, type Patch, type PatchError, type WorldDoc } from '@aether/core';
 import { summarizeWorldForModel } from './world-text';
 import type { z } from 'zod';
@@ -187,6 +187,13 @@ async function applyPatchesTool(ctx: ExecutorContext, input: z.infer<typeof Tool
   if (ctx.audit) {
     const audit = ctx.audit(patches);
     if (!audit.ok) return { content: audit.message, isError: true, events: [{ type: 'status', text: 'Held back a patch that touched unrelated objects; asking for a more precise one…' }], edited: false };
+  }
+  // A batch that would leave nothing in the world is refused unless the user asked to start over.
+  if (input.startOver !== true) {
+    const before = ctx.host.getWorld();
+    if (Object.keys(before.entities).length > 0 && emptiesWorld(before, applyPatches(before, patches).world)) {
+      return { content: `apply_patches ${emptyWorldRefusal(Object.keys(before.entities).length, 'apply_patches')}`, isError: true, events: [], edited: false };
+    }
   }
   const defs = ctx.resolveGenerator ? await raceAbort(libraryDefinitions(input.patches, ctx.host.getWorld(), ctx.builtinGenerators, ctx.resolveGenerator), ctx.signal) : [];
   const events: AgentEvent[] = [];

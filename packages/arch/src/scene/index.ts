@@ -53,6 +53,8 @@ export {
   rotateItem,
   resizeItem,
   removeItem,
+  emptiesWorld,
+  emptyWorldRefusal,
   snapToWall,
   anchorToOpening,
   centerOver,

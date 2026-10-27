@@ -115,6 +115,6 @@ export function refineInstruction(report: QualityReport): string {
     lines.push('Concrete issues:');
     for (const i of issues) lines.push(`- [${i.criterion}] ${i.message}${i.entities?.length ? ` (${i.entities.slice(0, 6).join(', ')})` : ''}`);
   }
-  lines.push('Apply the improvements with apply_patches (light and colour problems: tune_look; an interior lit evenly and flat: bake_light), then call finish with one sentence on what you improved.');
+  lines.push('Apply the improvements with apply_patches (light and colour problems: tune_look; an interior lit evenly and flat: bake_light), then call finish with a short statement of what you improved, claiming only what you checked, and a "Not checked:" line for what you did not.');
   return lines.join('\n');
 }

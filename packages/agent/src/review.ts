@@ -2,6 +2,7 @@
  * Pieces of the review-and-fix loop that do not need a model: stall
  * detection, choosing which rooms to look at, and the text of a review turn.
  */
+import { NARROW_CLAIM, REFUSAL_IS_A_CONSTRAINT } from './claims';
 import { bodilessPeople, hasOwn, type EntityId, type WorldDoc } from '@aether/core';
 import { exteriorPoses, findingKey, findingsText, legendText, markIndex, projectMarks, projectOverlays, roomAdvice, readScene, reviewFindings, reviewPoses, scoreFindings, buildingIdsOf, type Finding, type ReviewPose } from '@aether/arch';
 import type { ReviewViewRequest } from './types';
@@ -101,7 +102,7 @@ export class RepeatLedger {
 
 /** Ask put to the model when the same findings keep coming back: settle each one, then finish on that statement. */
 export function stallAskText(findings: readonly Finding[]): string {
-  return `The same ${findings.length} finding${findings.length === 1 ? '' : 's'} came back unchanged for several rounds: ${findings.slice(0, 6).map((f) => f.message.slice(0, 160)).join(' | ')}. Settle each one now: fix it with a tool, declare what stands for it (edit_items declare_plan, for a planned piece that exists under another name), or state in plain words why it stays. Then call finish with that statement. The review ends on your statement that the checklist is met, with a reason per item still open.`;
+  return `The same ${findings.length} finding${findings.length === 1 ? '' : 's'} came back unchanged for several rounds: ${findings.slice(0, 6).map((f) => f.message.slice(0, 160)).join(' | ')}. Settle each one now: fix it with a tool, declare what stands for it (edit_items declare_plan, for a planned piece that exists under another name), or state in plain words why it stays. Then call finish with that statement (the narrowest claim the evidence supports, with a "Not checked:" line). The review ends on your statement that the checklist is met, with a reason per item still open.`;
 }
 
 /** Plan ids of the rooms worth looking at: those with findings, those the run touched, else the first few. */
@@ -227,7 +228,9 @@ export function reviewTurnText(round: number, snap: ReviewSnapshot, opts: { hasI
   lines.push(
     'Fix every real error and warning with edit_items / place_items (measure first with query_scene; make the smallest change that works; never rebuild a room to move one piece). Judge what the checker cannot: scale and proportion, clutter or emptiness, furniture facing the right way, pieces floating or crossing walls, style and colour consistency, lighting and mood, whether a person could live here. If the light or colour reads wrong (too cold, too dark, flat, washed out, green foliage that does not suit the season), set the look with tune_look rather than repainting surfaces. If a finding is a false alarm, say why in your final message.',
     EYE_HEIGHT_LIGHT_CHECK,
-    'When YOU judge the building right from the images, call finish with one sentence on what you checked and fixed. Do not call finish while a measured error (impossible geometry) remains.',
+    'When YOU judge the building right from the images, call finish with a short statement of what you checked and fixed. Do not call finish while a measured error (impossible geometry) remains.',
+    NARROW_CLAIM,
+    REFUSAL_IS_A_CONSTRAINT,
   );
   return lines.join('\n');
 }

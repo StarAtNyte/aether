@@ -5,6 +5,7 @@
  * This module turns that answer into the same snapshot the building review uses, so the loop, the stall
  * detector and the events stay one thing.
  */
+import { NARROW_CLAIM } from './claims';
 import { z } from 'zod';
 import type { WorldDoc } from '@aether/core';
 import { findingKey, scoreFindings, type Finding } from '@aether/arch';
@@ -71,7 +72,8 @@ export function levelTurnText(round: number, snap: ReviewSnapshot, opts: { hasIm
   if (opts.hasImages) lines.push('The images are the level from above, the first view the player gets and, when there is a problem, a close look at it.');
   lines.push(
     'Fix every real error and warning with place_level_items (move an item with {id,x,z}: it is snapped to the ground and re-measured) or apply_patches for terrain, platforms, ramps and lifts; check with query_level objectives. Assess what the measurements cannot from the images: pacing, a landmark the player can see from the spawn, long empty stretches, whether the terrain, vegetation, water and light look believable and consistent. Make the smallest change that works.',
-    'If the light, colour, fog or mood in the images reads wrong for the setting, set the look with tune_look (exposure, white balance, fog, light and foliage tints). When YOU judge the level right, call finish with one sentence on what you checked and fixed. Do not call finish while a measured error remains.',
+    'If the light, colour, fog or mood in the images reads wrong for the setting, set the look with tune_look (exposure, white balance, fog, light and foliage tints). When YOU judge the level right, call finish with a short statement of what you checked and fixed. Do not call finish while a measured error remains.',
+    NARROW_CLAIM,
   );
   return lines.join('\n');
 }
