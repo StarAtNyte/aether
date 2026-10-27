@@ -19,13 +19,13 @@ const COPY: Readonly<Record<ErrorPageStatus, { title: string; message: string }>
 });
 
 /** Shared page styles (kept in sync with `apps/studio/public/404.html`). */
-const STYLE = `:root{color-scheme:light dark;--bg:#f7f7f8;--fg:#18191d;--muted:#5d6068;--card:#fff;--line:#e3e4e8;--accent:#4f46e5}
-@media (prefers-color-scheme:dark){:root{--bg:#0f1013;--fg:#ececf0;--muted:#a1a4ad;--card:#17181c;--line:#2a2c33}}
+const STYLE = `:root{color-scheme:light dark;--bg:#f6f5f2;--fg:#1b1a18;--muted:#5f5d58;--card:#fff;--line:#e4e2dd;--accent:#1b1a18}
+@media (prefers-color-scheme:dark){:root{--bg:#1b1a18;--fg:#efede8;--muted:#a8a59e;--card:#232220;--line:#33312e;--accent:#efede8}}
 *{box-sizing:border-box}html,body{height:100%}body{margin:0;display:grid;place-items:center;padding:24px;background:var(--bg);color:var(--fg);font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 main{max-width:420px;width:100%;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:32px 28px;text-align:left}
 .code{font:600 12px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.04em;color:var(--muted);margin:0 0 14px}
 h1{font-size:20px;line-height:1.3;margin:0 0 8px;font-weight:600}p{margin:0 0 22px;color:var(--muted)}
-a{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;font-weight:500;padding:9px 16px;border-radius:8px}
+a{display:inline-block;background:var(--accent);color:var(--bg);text-decoration:none;font-weight:500;padding:9px 16px;border-radius:8px}
 a:focus-visible{outline:2px solid var(--accent);outline-offset:3px}svg{display:block;margin:0 0 20px}`;
 
 const LOGO =
