@@ -271,7 +271,7 @@ function peaks(values: number[], bin = 0.05): { s: number; n: number }[] {
  * The wall lines and the room box from a cloud and its floor frame. `skip` marks cloud points that are not wall
  * (furniture) so they do not make false walls; wall candidates are the points between 0.3 m and `wallTop` above the floor.
  */
-export function roomBoxOf(cloud: Cloud, fr: RoomFrame, opt: { notWall?: boolean[]; standoff?: number } = {}): RoomBox {
+export function roomBoxOf(cloud: Cloud, fr: RoomFrame, opt: { notWall?: boolean[]; standoff?: number; fixedPhi?: number } = {}): RoomBox {
   const standoff = opt.standoff ?? 0.4;
   const notes: string[] = [];
   const t = topDown(cloud, fr);
@@ -292,8 +292,8 @@ export function roomBoxOf(cloud: Cloud, fr: RoomFrame, opt: { notWall?: boolean[
   let bestScore = -1;
   const A = cand.map((i) => t.a[i] as number);
   const B = cand.map((i) => t.b[i] as number);
-  for (let deg = -60; deg <= 60; deg += 2) {
-    const phi = (deg * Math.PI) / 180;
+  for (let deg = opt.fixedPhi === undefined ? -60 : 0; deg <= (opt.fixedPhi === undefined ? 60 : 0); deg += 2) {
+    const phi = opt.fixedPhi === undefined ? (deg * Math.PI) / 180 : opt.fixedPhi;
     const c = Math.cos(phi);
     const s = Math.sin(phi);
     // normal 1 near the forward axis (sinφ-heavy): n1 = (sin φ, cos φ) in (a, b); n2 = (cos φ, -sin φ)

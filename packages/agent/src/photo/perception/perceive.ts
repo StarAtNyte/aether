@@ -10,8 +10,8 @@
  * rest still work; with none the tool says so and nothing else changes.
  */
 import {
-  estimateRoomFromDepth, measureAppearance, placeObject, solveCamera,
-  type Appearance, type Cam, type DepthGrid, type Placement, type RoomBox, type RoomFrame,
+  detectSegments, estimateRoomEnsemble, estimateRoomFromDepth, measureAppearance, placeObject, solveCamera, solveManhattan,
+  type Appearance, type Cam, type DepthGrid, type DisparityMap, type EstimatorResult, type ManhattanCamera, type Placement, type RoomBox, type RoomFrame,
 } from '@aether/arch/photo';
 import type { DepthRaster } from '../depth-model';
 import { estimateDepthMap } from '../depth-model';
@@ -20,7 +20,7 @@ import { estimateMetricDepth, type MetricDepth } from './metric-depth';
 import { drawOverlay, overlayDataUrl, type OverlayItem } from './overlay';
 import { loadSam, type Mask, type Segmenter } from './sam2';
 
-export const PERCEPTION_VERSION = 1;
+export const PERCEPTION_VERSION = 2;
 export const PERCEIVE_TOOL_NAME = 'perceive_photo';
 
 export interface Rle {
@@ -90,6 +90,10 @@ export interface PerceptionReport {
   room: RoomBox | null;
   /** The relative-depth estimate (Depth Anything V2 small + door or ceiling anchor): a second opinion on the same photo. */
   crossCheck: { width: number; depth: number; height: number; basis: string } | null;
+  /** The independent room-box estimators behind `room` (median of their families; spread is the confidence). */
+  estimators: EstimatorResult[];
+  /** Camera from vanishing points (image lines): field of view range, tilt (positive looks down), yaw, how much of the line length is explained. */
+  vanishing: { fovDeg: number; fovRange: [number, number]; pitchDeg: number; yawDeg: number; rollDeg: number; explained: number; segments: number } | null;
   surfaces: SurfaceColours;
   objects: PerceivedObject[];
   /** Nouns asked for that no box was found for. */
@@ -163,8 +167,13 @@ interface Geometry {
   grid: DepthGrid;
   cam: Cam;
   fr: RoomFrame;
+  /** The box in the geometry's own metric (its wall lines place the objects). */
   box: RoomBox;
+  /** The fused room box: the report's room; placements are rescaled from `box` to it. */
+  fused: RoomBox;
   sweep: { fov: number; kind: string; score: number }[];
+  vp: ManhattanCamera | null;
+  estimators: EstimatorResult[];
 }
 
 /** One photo, many calls: models load once, the vision towers and the depth run once, objects accumulate. */
@@ -297,7 +306,6 @@ export class Perceiver {
     }
     await this.geometryOnce();
     this.placeAll(toMask.length > 0 || this.objects.some((o) => !o.placement));
-    await this.crossCheckOnce();
     return this.report();
   }
 
@@ -318,9 +326,26 @@ export class Perceiver {
       for (let i = 0; i < s.length; i++) if (s[i]) notWall[i] = 1;
     }
     const trained = this.deps.trainedFovDeg === undefined ? 60 : this.deps.trainedFovDeg;
-    const sol = await this.time('geometry', async () => solveCamera(grid, { notWall, ...(trained ? { trainedFovDeg: trained } : {}) }));
-    if (!sol) { this.note('no floor plane could be fitted to the depth map, so no room geometry'); this.geometry = null; return; }
-    this.geometry = { grid: sol.grid, cam: sol.cam, fr: sol.fr, box: sol.box, sweep: sol.sweep };
+    const legacy = await this.time('geometry', async () => solveCamera(grid, { notWall, ...(trained ? { trainedFovDeg: trained } : {}) }));
+    // Independent reads of the room box: image lines (vanishing points) give the camera, depth gives the scale, and the families vote.
+    const rel = await this.time('relative-depth', () => (this.deps.relative ?? estimateDepthMap)(r).catch(() => ({ ok: false as const, reason: 'failed' })));
+    if (!rel.ok) this.note(`relative depth: ${rel.reason}`);
+    const segMask = new Uint8Array(640 * Math.max(16, Math.round((r.height * 640) / r.width)));
+    for (const o of this.objects) {
+      const m = this.masks.get(o.id);
+      if (!m || WALLISH.test(o.label)) continue;
+      const sm = shrinkMask(m, 640, Math.max(16, Math.round((r.height * 640) / r.width)));
+      for (let i = 0; i < sm.length; i++) if (sm[i]) segMask[i] = 1;
+    }
+    const lines = await this.time('lines', async () => detectSegments(r, { width: 640, maskOut: segMask }));
+    const vp = await this.time('vanishing', async () => solveManhattan(lines.segments, lines.width, lines.height));
+    const door = this.objects.filter((o) => /door/.test(o.label) && !/glass|patio|sliding/.test(o.label) && o.box[1] > 0.03 && o.box[3] < 0.97 && o.box[3] - o.box[1] > 0.25).sort((a, b) => b.confidence - a.confidence)[0];
+    const ens = await this.time('room-ensemble', async () => estimateRoomEnsemble({ metric: grid, relative: rel.ok ? rel.map : null, vp, notWall, ...(door ? { anchor: { name: 'door', sizeM: 2.05, axis: 'height' as const, box: door.box, tolerance: 0.04 } } : {}), legacyMetric: legacy ? { box: legacy.box } : null, trainedFovDeg: trained }));
+    const own = ens?.vpBox ?? (legacy ? { box: legacy.box, frame: legacy.fr, cloud: legacy.cloud, grid: legacy.grid, cam: legacy.cam } : null);
+    if (!own) { this.note('no floor plane could be fitted to the depth map, so no room geometry'); this.geometry = null; return; }
+    const fusedBox: RoomBox = ens ? { ...own.box, width: ens.width, depth: ens.depth, height: ens.height, notes: [...own.box.notes, ...ens.notes] } : own.box;
+    this.geometry = { grid: own.grid, cam: own.cam, fr: own.frame, box: own.box, fused: fusedBox, sweep: legacy?.sweep ?? [], vp, estimators: ens?.estimators ?? [] };
+    if (rel.ok) this.crossCheckFrom(rel.map);
     // surface colours from the plane masks
     const { fr, cam, box } = this.geometry;
     const floor = new Uint8Array(w * h);
@@ -363,6 +388,17 @@ export class Perceiver {
     this.surfaces = { floor: app(floor), ceiling: app(ceil), walls: app(wall) };
   }
 
+  /** Positions and sizes are measured in the geometry's own metric; the reported room is the fused one, so scale each axis to it. */
+  private rescale(p: Placement, g: Geometry): Placement {
+    const k = (a: number, b: number): number => (a > 0.5 && b > 0.5 ? b / a : 1);
+    const sx = k(g.box.width.value, g.fused.width.value);
+    const sz = k(g.box.depth.value, g.fused.depth.value);
+    const sy = k(g.box.height.value, g.fused.height.value);
+    if (sx === 1 && sz === 1 && sy === 1) return p;
+    const r = (v: number): number => Math.round(v * 100) / 100;
+    return { ...p, centre: { ...p.centre, x: r(p.centre.x * sx), z: r(p.centre.z * sz) }, size: { w: r(p.size.w * sx), d: r(p.size.d * sz), h: r(p.size.h * sy) }, y: { low: r(p.y.low * sy), high: r(p.y.high * sy) }, range: r(p.range * Math.sqrt(sx * sz)), against: p.against.map((a) => ({ ...a, gap: r(a.gap * (a.wall === 'back' ? sz : sx)) })) };
+  }
+
   private placeAll(_redo: boolean): void {
     const g = this.geometry;
     if (!g) return;
@@ -370,7 +406,8 @@ export class Perceiver {
       if (o.placement) continue;
       const m = this.masks.get(o.id);
       if (!m) continue;
-      o.placement = placeObject(shrinkMask(m, g.grid.width, g.grid.height), g.grid, g.cam, g.fr, g.box, o.label);
+      const pl = placeObject(shrinkMask(m, g.grid.width, g.grid.height), g.grid, g.cam, g.fr, g.box, o.label);
+      o.placement = pl ? this.rescale(pl, g) : null;
     }
     // relations
     for (const o of this.objects) {
@@ -393,14 +430,11 @@ export class Perceiver {
     }
   }
 
-  private async crossCheckOnce(): Promise<void> {
-    if (this.crossCheck || !this.raster) return;
-    const rel = this.deps.relative ?? estimateDepthMap;
-    const d = await this.time('relative-depth', () => rel(this.raster as DepthRaster).catch(() => ({ ok: false as const, reason: 'failed' })));
-    if (!d.ok) { this.note(`cross-check depth: ${d.reason}`); return; }
+  private crossCheckFrom(map: DisparityMap): void {
+    if (this.crossCheck) return;
     // The door anchor: a detected door that is whole in the frame.
     const door = this.objects.filter((o) => /door/.test(o.label) && !/glass|patio|sliding/.test(o.label) && o.box[1] > 0.03 && o.box[3] < 0.97 && o.box[3] - o.box[1] > 0.25).sort((a, b) => b.confidence - a.confidence)[0];
-    const est = estimateRoomFromDepth(d.map, door ? { anchor: { name: 'door', sizeM: 2.05, axis: 'height', box: door.box, tolerance: 0.04 } } : {});
+    const est = estimateRoomFromDepth(map, door ? { anchor: { name: 'door', sizeM: 2.05, axis: 'height', box: door.box, tolerance: 0.04 } } : {});
     if (est) this.crossCheck = { width: est.width.value, depth: est.depth.value, height: est.height.value, basis: `relative depth, scale from ${door ? `the detected door ${door.id}` : 'a standard ceiling'}; width a lower bound` };
   }
 
@@ -412,8 +446,10 @@ export class Perceiver {
       photo: { width: this.raster?.width ?? 0, height: this.raster?.height ?? 0 },
       models: { detector: this.florenceReady ? 'Florence-2 base (MIT)' : null, segmenter: this.samReady ? 'SAM 2.1 Hiera tiny (Apache-2.0)' : null, depth: this.metricName ? `${this.metricName} (Apache-2.0)` : null },
       unavailable: [...this.unavailable],
-      camera: g ? { fovDeg: g.cam.fovDeg, fovRange: [Math.min(...fovs, g.cam.fovDeg), Math.max(...fovs, g.cam.fovDeg)], kind: g.cam.kind, cameraHeight: g.box.cameraHeight, yawDeg: g.box.yawDeg } : null,
-      room: g?.box ?? null,
+      camera: g ? { fovDeg: g.vp?.fovDeg ?? g.cam.fovDeg, fovRange: g.vp ? g.vp.fovRange : [Math.min(...fovs, g.cam.fovDeg), Math.max(...fovs, g.cam.fovDeg)], kind: g.cam.kind, cameraHeight: Math.round(g.box.cameraHeight * (g.fused.height.value / Math.max(0.5, g.box.height.value)) * 100) / 100, yawDeg: g.vp?.yawDeg ?? g.box.yawDeg } : null,
+      room: g?.fused ?? null,
+      estimators: g?.estimators ?? [],
+      vanishing: g?.vp ? { fovDeg: g.vp.fovDeg, fovRange: g.vp.fovRange, pitchDeg: g.vp.pitchDeg, yawDeg: g.vp.yawDeg, rollDeg: g.vp.rollDeg, explained: g.vp.explained, segments: g.vp.segmentsUsed } : null,
       crossCheck: this.crossCheck,
       surfaces: this.surfaces,
       objects: this.objects.map((o) => ({ ...o })),

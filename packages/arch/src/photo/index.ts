@@ -14,3 +14,6 @@ export * from './scale';
 export * from './depth';
 export * from './appearance';
 export * from './roomgeometry';
+export * from './lines';
+export * from './manhattan';
+export * from './roomensemble';
