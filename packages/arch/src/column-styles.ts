@@ -39,7 +39,7 @@ function shaft(r0: number, r1: number, y0: number, h: number, flutes: number, en
       const a = (j / cols) * 2 * Math.PI;
       const q = flutes > 0 ? Math.abs(Math.sin((flutes * a) / 2)) : 0;
       // Arrises are sharp, the flute between them a shallow arc.
-      const rr = r * (1 * Math.pow(q, 3));
+      const rr = r * (1 - depth * Math.pow(q, 3));
       row.push([rr * Math.cos(a), y0 + h * t, rr * Math.sin(a)]);
     }
     pos.push(row);

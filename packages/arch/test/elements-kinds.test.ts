@@ -303,6 +303,30 @@ describe('column styles', () => {
     expect(b.max[1]).toBeCloseTo(3, 4);
   });
 
+  it('the shaft is really there: smooth, its middle is a full-radius ring; fluted, the grooves cut a few percent in', () => {
+    const ring = (out: ArchOutput): { min: number; max: number } => {
+      let min = Infinity;
+      let max = 0;
+      for (const part of out.parts) for (let k = 0; k < part.positions.length; k += 3) {
+        const y = part.positions[k + 1] as number;
+        if (y < 1.2 || y > 1.4) continue;
+        const r = Math.hypot(part.positions[k] as number, part.positions[k + 2] as number);
+        if (r < 0.05) continue;
+        min = Math.min(min, r);
+        max = Math.max(max, r);
+      }
+      return { min, max };
+    };
+    const R = 0.23;
+    const smooth = ring(buildStructure('arch-column', { shape: 'round', size: 0.46, height: 3.2, style: 'classical', flutes: 0 }));
+    expect(smooth.max).toBeGreaterThan(R * 0.8);
+    expect(smooth.max - smooth.min).toBeLessThan(0.003);
+    const fluted = ring(buildStructure('arch-column', { shape: 'round', size: 0.46, height: 3.2, style: 'fluted' }));
+    expect(fluted.max).toBeGreaterThan(R * 0.9);
+    expect(fluted.max - fluted.min).toBeGreaterThan(0.01);
+    expect(fluted.min).toBeGreaterThan(R * 0.85);
+  });
+
   it('a fluted shaft has far more triangles than the plain one and the same height', () => {
     const plain = buildStructure('arch-column', { shape: 'round', size: 0.4, height: 3 });
     const fluted = buildStructure('arch-column', { shape: 'round', size: 0.4, height: 3, style: 'fluted' });
