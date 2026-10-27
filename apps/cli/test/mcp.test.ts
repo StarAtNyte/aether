@@ -361,6 +361,24 @@ describe('MCP server: exports', () => {
     }
   }, 120_000);
 
+  it('exports a building as IFC4 and refuses a world without one', async () => {
+    const rig = await connect();
+    try {
+      const none = await call(rig, 'export', { format: 'ifc' });
+      expect(none.isError).toBe(true);
+      data(await call(rig, 'create_world', { prompt: 'a two-storey villa with a pool' }));
+      const r = data(await call(rig, 'export', { format: 'ifc', name: 'villa' }));
+      const files = r['files'] as Array<{ path: string }>;
+      expect(files[0]?.path).toMatch(/villa\.ifc$/);
+      const ifc = readFileSync(join(rig.dir, files[0]?.path ?? ''), 'utf8');
+      expect(ifc.startsWith('ISO-10303-21;')).toBe(true);
+      expect(ifc).toContain('IFCWALL(');
+      expect(ifc).toContain('IFCBUILDINGSTOREY(');
+    } finally {
+      await rig.close();
+    }
+  }, 120_000);
+
   it('explains how to get the web player when it is not built', async () => {
     const rig = await connect();
     try {

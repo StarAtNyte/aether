@@ -514,10 +514,10 @@ export class AetherSession {
   }
 
   /** Export the world as glTF (GLB), a standalone web game build, a floor-plan SVG set, or the project file. */
-  async export(format: 'gltf' | 'build' | 'plan' | 'project', name: string | undefined, signal?: AbortSignal): Promise<{ format: string; files: Array<{ path: string; bytes: number }>; notes: string[] }> {
+  async export(format: 'gltf' | 'build' | 'plan' | 'project' | 'ifc', name: string | undefined, signal?: AbortSignal): Promise<{ format: string; files: Array<{ path: string; bytes: number }>; notes: string[] }> {
     const sig = this.deadline(signal, MCP_LIMITS.RENDER_TIMEOUT_MS);
     const world = this.world;
-    const base = safeFileName(name ?? '', safeFileName(world.name, 'world')).replace(/\.(glb|zip|svg|json)$/, '');
+    const base = safeFileName(name ?? '', safeFileName(world.name, 'world')).replace(/\.(glb|zip|svg|json|ifc)$/, '');
     const files: Array<{ path: string; bytes: number }> = [];
     const notes: string[] = [];
     const put = (file: string, data: Uint8Array | string): void => {
@@ -551,6 +551,15 @@ export class AetherSession {
           }
         }
         if (files.length === 0) throw new ToolError('not_found', 'The buildings have no floors to draw.');
+        break;
+      }
+      case 'ifc': {
+        const { exportWorldToIfc, listBuildings } = await import('@aether/arch');
+        if (listBuildings(world).length === 0) throw new ToolError('not_found', 'The world has no building to export as IFC. Ask for a house, an office or another building first.');
+        const out = exportWorldToIfc(world, { projectName: world.name });
+        put(`${base}.ifc`, out.ifc);
+        notes.push(`IFC4: ${Object.entries(out.elements).map(([k, n]) => `${n} ${k.slice(3).toLowerCase()}`).join(', ')}.`);
+        for (const sk of out.skipped.slice(0, 8)) notes.push(`Skipped ${sk.id}: ${sk.reason}.`);
         break;
       }
       case 'build': {

@@ -881,7 +881,7 @@ resources and the safety model.
 | `playtest` | `{seconds 1..120 (60), goal? ≤200}` | The bot plays the world and reports win, lose or incomplete, with the objectives, state and path | The playtest bot (not a planner tool) |
 | `replay` | `{}` | Fast-forwards the physics and summarises each moving body; writes `replays/replay.json` | No planner equivalent |
 | `render_still` | `{width, height 64..1920 (960×540), yawDeg? -360..360, pitchDeg? -10..89, fovDeg? 15..110, from?, lookAt?, at? 0..60, name?}` | A PNG from the software renderer, returned inline up to 1.5 MB | Same renderer family as `captureReviewHeadless` |
-| `export` | `{format: gltf\|build\|plan\|project, name?}` | Writes the world under `exports/` | No planner equivalent |
+| `export` | `{format: gltf\|build\|plan\|project\|ifc, name?}` | Writes the world under `exports/` | No planner equivalent |
 | `undo`, `redo` | `{}` | One tool action per step, up to 200 undo steps | The history |
 
 Wall-clock caps (`MCP_LIMITS`): agent runs 5 minutes, and `verify`, `playtest`, renders and exports 60 seconds

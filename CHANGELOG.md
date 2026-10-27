@@ -36,6 +36,7 @@ First tagged state of the framework: natural language to verified, interactive 3
 - The shell size answer is explicit and accountable; curtains hang at wide glazed doors; golden-hour skies keep to the side of noon their hour is on; real furniture models are placed where they fit.
 
 ### Studio
+- IFC4 export of buildings (`export` with `format: ifc` in the MCP server): storeys, mitred walls with door and window openings filled by doors and windows, floor slabs, room spaces, ceilings, roofs, stairs, railings, columns, furniture boxes. The STEP writer is adapted from Pascal Editor (MIT, credited in `docs/THIRD_PARTY.md`).
 - Removed the Plan Reveal (the arch bar's Reveal button, the ink-on-paper plan overlay and the rising-walls animation). The Reveal video camera move in Publish stays.
 - Project cards and rows show the actions button (…) at all times as a frosted 32 px button with a visible focus ring, plus a trash button. A Select mode deletes several projects with one confirmation and one Undo, with a message when some could not be deleted or restored. Delete or Backspace on a focused card opens the confirmation, Escape leaves Select, and the editor's Aether menu has Delete project….
 - No text over the picture for mode switches, scene or texture preparation, lighting, checks or play tests. Stop puts the editor camera back where Play found it.

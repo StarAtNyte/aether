@@ -228,9 +228,9 @@ export function registerTools(server: McpServer, session: AetherSession): void {
     {
       title: 'Export',
       description:
-        'Write the world to the project folder under exports/. "gltf": a binary glTF (.glb) of what the world looks like (one node per entity). "build": a standalone static web game (.zip: the player, the world, icons; needs the studio build that `aether start` makes). "plan": SVG floor plans of every storey of every building. "project": the Aether project file (.aether.json) that the studio opens. Returns the project-relative paths.',
+        'Write the world to the project folder under exports/. "gltf": a binary glTF (.glb) of what the world looks like (one node per entity). "build": a standalone static web game (.zip: the player, the world, icons; needs the studio build that `aether start` makes). "plan": SVG floor plans of every storey of every building. "ifc": an IFC4 model (.ifc) of every building (storeys, walls with door and window openings, slabs, rooms, roofs, stairs) for BIM tools. "project": the Aether project file (.aether.json) that the studio opens. Returns the project-relative paths.',
       inputSchema: {
-        format: z.enum(['gltf', 'build', 'plan', 'project']),
+        format: z.enum(['gltf', 'build', 'plan', 'project', 'ifc']),
         name: z.string().max(64).optional().describe('Base file name (sanitized).'),
       },
       annotations: WRITE_FILES,

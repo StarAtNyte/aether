@@ -440,7 +440,7 @@ were copied from them.
   characters under MIT; Quaternius farm animals under CC0; the Khronos glTF
   sample Fox, partly CC-BY 4.0 with its credit kept; fonts under OFL 1.1) is listed with its licence, source and credit line in
   [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md). Only permissive licences are
-  used. In-app credits appear in the credits panel, on end-of-game screens and
+  used. The IFC export's STEP writer is adapted from [Pascal Editor](https://github.com/pascalorg/editor) (MIT, © 2026 Pascal Group Inc.). In-app credits appear in the credits panel, on end-of-game screens and
   in exported `CREDITS.txt` files.
 - **AI disclosure:** this codebase was written with AI coding assistants
   under human direction and review. At runtime, the

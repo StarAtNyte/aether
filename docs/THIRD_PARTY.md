@@ -981,6 +981,62 @@ calls no external service. The hosted server has no owner-paid key by default.
 - **Offline mock.** The built-in mock provider is ordinary deterministic code
   (keyword matching plus world templates). It is not a model.
 
+## Code adapted from MIT-licensed projects
+
+Source files below were copied or closely adapted. Each carries the upstream
+copyright notice and the full MIT text in its file header, and the same text is
+kept here.
+
+### Pascal Editor
+
+- Repository: https://github.com/pascalorg/editor
+- Commit read: `c0284b68e952196a944e9b5ea958227499ddc3c0` (shallow clone, read only; no script, installer or build was run)
+- Licence: MIT, Copyright (c) 2026 Pascal Group Inc.
+- Package licences: every `package.json` under `packages/` declares MIT.
+
+| Upstream path | Aether path | What was taken |
+| --- | --- | --- |
+| `packages/ifc-converter/src/export/step.ts` | `packages/arch/src/ifc/step.ts` | ISO-10303-21 (STEP) writer for IFC4: value formatting, string escapes, shared entities. Verbatim apart from the header. |
+| `packages/ifc-converter/src/export/guid.ts` | `packages/arch/src/ifc/guid.ts` | Deterministic 22-character IFC GlobalIds from a seed. Seed prefix changed to `aether:`. |
+| `packages/ifc-converter/src/export/ifc-model.ts` | `packages/arch/src/ifc/ifc-model.ts` | IFC4 entity builders (placements, profiles, extrusions, triangulated face sets, styles, property sets). Verbatim apart from the header. |
+
+`packages/arch/src/ifc/world-to-ifc.ts` is Aether's own mapping from the World
+IR (it follows the spatial structure and opening / filling relations of IFC4,
+which the upstream exporter also uses, but shares no upstream code).
+
+**Not taken, on purpose.** No model, texture, HDRI, audio, icon, font, image or
+other binary from Pascal's `apps/editor/public` (`items`, `material`, `audios`,
+`icons`, `hdri`, `fonts`) or `assets/` was used: the repository ships roughly
+1,100 non-code files whose provenance and licence are not stated per file, and
+the MIT licence covers the code only. The `docs/media` clips are CC BY 4.0 and
+were not used. No dependency was added.
+
+MIT licence text (applies to the files listed above):
+
+```
+MIT License
+
+Copyright (c) 2026 Pascal Group Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ## Reference and inspiration only (no code copied)
 
 The following works informed ideas or algorithms. No source code, models,
@@ -998,8 +1054,10 @@ PWM, CoDeR, SceneMosaic, PAT3D, SceneSmith, Articraft, ESG, WorldBench,
   model: the site / building / level / wall / slab / opening / roof / zone /
   item vocabulary, wall drafting with mitred joins, room labels with a
   coloured dot and the area, level selectors, cutaway / exploded /
-  single-level / x-ray views, and agent tools that edit a building. Aether
-  shares no code, assets or materials with Pascal.
+  single-level / x-ray views, and agent tools that edit a building. Code that
+  was adapted from it is listed under
+  [Code adapted from MIT-licensed projects](#code-adapted-from-mit-licensed-projects);
+  Aether takes no assets or materials from Pascal (see that section).
 - A courtyard-house walkthrough with no published licence was studied for
   ideas only (plan-to-3D reveal, ink-on-paper drawing, golden-hour staging).
   None of its code, shaders or files were used.

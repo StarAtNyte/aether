@@ -83,7 +83,7 @@ capped). Results are JSON text plus `structuredContent`.
 | `playtest {seconds?, goal?}` | A bot plays: walks, jumps, rides lifts, drives, toward pickups, rule zones, goals and checkpoints with real physics and logic. Reports win / lose / incomplete, objectives reached and collected, the game state, messages and the path |
 | `replay {}` | Fast-forward the physics and summarise every body that moves (start, end, path, peak, keyframes); the full motion goes to `replays/replay.json` |
 | `render_still {width?, height?, yawDeg?, pitchDeg?, fovDeg?, from?, lookAt?, at?, name?}` | PNG still (inline image plus `renders/<name>.png`). `at` shows a moment of the last `replay` |
-| `export {format, name?}` | `gltf`: binary glTF (`exports/<name>.glb`). `build`: standalone static web game (`exports/<name>-web.zip`). `plan`: SVG floor plans per storey. `project`: the `.aether.json` the studio opens |
+| `export {format, name?}` | `gltf`: binary glTF (`exports/<name>.glb`). `build`: standalone static web game (`exports/<name>-web.zip`). `plan`: SVG floor plans per storey. `ifc`: IFC4 model of every building (storeys, walls with openings, slabs, rooms, roofs, stairs; `exports/<name>.ifc`). `project`: the `.aether.json` the studio opens |
 | `undo {}` / `redo {}` | One tool action per step |
 
 ### Resources
