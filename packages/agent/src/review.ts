@@ -63,6 +63,47 @@ export class StallTracker {
   }
 }
 
+/**
+ * Findings that come back unchanged round after round. From the third round on, the ones that have been shown twice are
+ * folded into ONE `unresolved_repeated` line that still names each of them and the checker's best candidates, so the
+ * model sees them as a block to settle (fix, declare, or give a reason) instead of the same list again. Nothing is dropped.
+ */
+export class RepeatLedger {
+  private readonly seen = new Map<string, number>();
+
+  /** Record the findings of a round and return them with the repeated ones folded. */
+  apply(findings: readonly Finding[], after = 2): Finding[] {
+    const now = new Set(findings.map(findingKey));
+    for (const k of [...this.seen.keys()]) if (!now.has(k)) this.seen.delete(k);
+    const repeated: Finding[] = [];
+    const fresh: Finding[] = [];
+    for (const f of findings) {
+      const k = findingKey(f);
+      const n = this.seen.get(k) ?? 0;
+      (n >= after ? repeated : fresh).push(f);
+      this.seen.set(k, n + 1);
+    }
+    if (repeated.length === 0) return fresh;
+    const lines = repeated.map((f) => `${f.code}${f.subject ? ` ${f.subject}` : ''}${f.room ? ` (${f.room})` : ''}: ${f.message.slice(0, 140)}${f.candidates && f.candidates.length > 0 ? ` Best candidates: ${f.candidates.slice(0, 3).join('; ')}.` : ''}`);
+    return [
+      ...fresh,
+      {
+        code: 'unresolved_repeated',
+        severity: repeated.some((f) => f.severity === 'error') ? 'error' : 'warning',
+        message: `${repeated.length} finding${repeated.length === 1 ? '' : 's'} came back unchanged for ${after} rounds and ${repeated.length === 1 ? 'is' : 'are'} still unresolved: ${lines.join(' | ')}`.slice(0, 1800),
+        entities: [...new Set(repeated.flatMap((f) => f.entities))].slice(0, 12),
+        subject: 'repeated',
+        fix: 'For each: fix it with a tool, or (for a planned piece that exists under another name) declare it with edit_items {op:"declare_plan", ref, entities}, or say in plain words why it stays and call finish with that statement.',
+      },
+    ];
+  }
+}
+
+/** Ask put to the model when the same findings keep coming back: settle each one, then finish on that statement. */
+export function stallAskText(findings: readonly Finding[]): string {
+  return `The same ${findings.length} finding${findings.length === 1 ? '' : 's'} came back unchanged for several rounds: ${findings.slice(0, 6).map((f) => f.message.slice(0, 160)).join(' | ')}. Settle each one now: fix it with a tool, declare what stands for it (edit_items declare_plan, for a planned piece that exists under another name), or state in plain words why it stays. Then call finish with that statement. The review ends on your statement that the checklist is met, with a reason per item still open.`;
+}
+
 /** Plan ids of the rooms worth looking at: those with findings, those the run touched, else the first few. */
 export function focusRooms(world: WorldDoc, building: EntityId, findings: readonly Finding[], before: WorldDoc | null): string[] {
   const scene = readScene(world, building);

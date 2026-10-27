@@ -142,11 +142,11 @@ export const AGENT_TOOLS: ToolDef[] = [
   {
     name: 'edit_items',
     description:
-      'Change placed pieces with measured, validated edits. Each edit: {op:"move", ref, wall|edge, t|align, at, on, offset, y, yaw, faces} | {op:"rotate", ref, yaw|delta|faces} | {op:"resize", ref, params} | {op:"remove", ref} | {op:"snap_to_wall", ref, wall, align|t, gap} | {op:"anchor_to_opening", ref, opening, mode:"centre|left|right"} | {op:"center_over", ref, target, gap}. `ref` is an entity id from query_scene or the summary (or your handle). Refused with the reason when the result would be wrong; the others still apply. Use it to fix what the review reports: never rebuild a room to move one piece.',
+      'Change placed pieces with measured, validated edits. Each edit: {op:"move", ref, wall|edge, t|align, at, on, offset, y, yaw, faces} | {op:"rotate", ref, yaw|delta|faces} | {op:"resize", ref, params} | {op:"remove", ref} | {op:"snap_to_wall", ref, wall, align|t, gap} | {op:"anchor_to_opening", ref, opening, mode:"centre|left|right"} | {op:"center_over", ref, target, gap} | {op:"declare_plan", ref:<planned id>, entities:[entity ids], reason} (say which world entities stand for a planned piece that the review reports missing because it was made another way, e.g. a crafted part; or with a reason and no entities that it is not built: the plan check honours it from then on). `ref` is an entity id from query_scene or the summary (or your handle). Refused with the reason when the result would be wrong; the others still apply. Use it to fix what the review reports: never rebuild a room to move one piece.',
     inputSchema: {
       type: 'object',
       properties: {
-        edits: { type: 'array', minItems: 1, maxItems: DESIGN_LIMITS.MAX_EDITS, items: { type: 'object', properties: { op: { type: 'string', enum: ['move', 'rotate', 'resize', 'remove', 'snap_to_wall', 'anchor_to_opening', 'center_over'] }, ref: { type: 'string' } }, required: ['op', 'ref'] } },
+        edits: { type: 'array', minItems: 1, maxItems: DESIGN_LIMITS.MAX_EDITS, items: { type: 'object', properties: { op: { type: 'string', enum: ['move', 'rotate', 'resize', 'remove', 'snap_to_wall', 'anchor_to_opening', 'center_over', 'declare_plan'] }, ref: { type: 'string' } }, required: ['op', 'ref'] } },
         building: { type: 'string' },
         message: { type: 'string' },
       },

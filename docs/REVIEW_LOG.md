@@ -6647,3 +6647,18 @@ Codex 0.163.0 (ChatGPT login) answered again. One heavy job at a time under the 
 Found, not fixed: the cinema review reported the same two findings in all 4 rounds (`plan_missing`: planned cinema-screen "screen" and the stage were "never placed in auditorium"). The screen and apron do exist in the world, but as crafted parts placed by a different route (named "Widescreen with black velvet masking", "Screen apron platform"), so conformance, which matches by the planned handle, could not see them. The model neither re-placed them with place_items nor resent design_plan without them, and spent about 8 minutes of the run on it; its closing message says "despite registration warnings". A fix would let the review tell the model to resend the plan when a named piece exists under another handle, or let conformance match by crafted kind. Not done: one sample, and the user wants the pieces judged, not gated.
 
 Remaining to run after the limit resets: museum and small-room briefs, the reference-image step, tune_look intent, twin and hotel harness, make_texture. Scripts: `scripts/brief-probe.ts --backend=codex`, `scripts/eval-photo.ts --mode=live --backend=codex`, runner scripts and logs under `~/.local/share/aether/live-codex/`.
+
+## Plan conformance: match by kind, declared mappings, repeated findings folded
+
+Cause of the cinema review loop: conformance matched a planned piece only by its handle, and two different `plan_missing` findings shared one finding key (code, no entities, room), so the stall tracker saw "the same finding" while the model had nothing it could do.
+
+Changes:
+- `packages/arch/src/scene/plan-match.ts`: a planned piece is found by handle, by what the model declared, or by what it is (same part kind or alias, a crafted `furn-*` free shape or scatter of that kind, inside the planned room first, 1.5 m margin). An exact handle claims its entity first, so kind matches never steal. Non-exact matches are reported in one info finding (`plan_matched`: "planned screen (cinema-screen) = widescreen-1 ..."). A piece still unmatched lists its nearest candidates (same kind outside the room, nearby kinds).
+- New `edit_items` op `declare_plan {ref: planned id, entities?, reason?}`: the model says which entities stand for a planned piece, or why it is not built. Stored in the design record, honoured by every later check, kept when design_plan is resent; a declared entity that no longer exists brings the finding back, saying so.
+- Findings have a `subject`, part of the key, so two findings of one code stay apart.
+- `RepeatLedger`: a finding shown unchanged twice is folded from the third round into one `unresolved_repeated` line that still names each finding and its candidates (never dropped).
+- The review has no round limit on this path (`REVIEW_ROUND_CEILING` 200 only when no `maxRounds` is configured). What ended the cinema loop was the stall detector. It now first asks the model once per finding set to fix, declare or state a reason for each and finish on that statement, and only then stops.
+
+Tests: arch `plan-match.test.ts` (screen vs crafted cinema-screen under another name, outside-room candidate, declared mapping survives a resent plan, vanished entity, refusals); agent `review-repeat.test.ts` (fold after two rounds, nothing dropped); `plan-declare.test.ts` (scripted agent: matched screen not reported; declared mapping not repeated in later rounds).
+
+Limits: kind matching trusts the part kind, so a planned "screen" matched to any cinema-screen in the room; the evidence line is there for the model to correct it. Free shapes made by library models (not crafted parts) are not matched by kind, only by declaration. No live check: Codex is rate-limited and a Claude Code probe was not run here.

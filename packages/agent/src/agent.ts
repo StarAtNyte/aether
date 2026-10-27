@@ -28,7 +28,7 @@ import { AGENT_TOOLS, COMPACT_TOOLS, LEVEL_TOOLS } from './tools';
 import { MAKE_TEXTURE_TOOL } from './textures';
 import { findingKey, findingsText } from '@aether/arch';
 import { lightEvidenceText, pictureStats, type PictureStats } from './picture-stats';
-import { MAX_REVIEW_VIEWS, reviewTurnText, snapshotForReview, StallTracker, type ReviewSnapshot } from './review';
+import { MAX_REVIEW_VIEWS, RepeatLedger, reviewTurnText, snapshotForReview, StallTracker, stallAskText, type ReviewSnapshot } from './review';
 import { guardVerificationClaim } from './honesty';
 import { DIFFERENCES_TOOL, DIFFERENCES_TOOL_NAME, DifferenceLedger, differenceViews } from './photo/differences';
 import { READ_ONLY_TOOLS, REVIEW_CROSSCHECK_SEED, REVIEW_CROSSCHECK_SYSTEM, requirementText, reviewCrossCheckText } from './review-diff';
@@ -748,6 +748,7 @@ export class WorldAgent {
     const roundTools = diffs ? [...this.runTools, DIFFERENCES_TOOL] : this.runTools;
     const imageCap = diffs ? 10 : undefined;
     const pushedBack = new Set<string>();
+    const repeats = new RepeatLedger();
     let before: WorldDoc | null = startWorld;
     for (let round = 1; round <= rounds; round++) {
       if (signal?.aborted) throw new Error('aborted');
@@ -764,6 +765,8 @@ export class WorldAgent {
         if (!snapped) return;
         snap = snapped;
       }
+      // Findings seen unchanged twice are folded into one unresolved line (the tracker keeps the original keys).
+      snap = { ...snap, findings: repeats.apply(snap.findings) };
       const isLevel = snap.buildings[0] === LEVEL_SUBJECT;
       const richOnly = snap.buildings[0] === RICHNESS_SUBJECT;
       yield { type: 'review', round, phase: 'checking', text: round === 1 ? (isLevel ? 'Checking the level…' : 'Checking the building…') : 'Checking again…', score: snap.score, findings: snap.findings.length };
@@ -778,7 +781,17 @@ export class WorldAgent {
           shortAsk = short.text;
         }
       }
-      if (verdict.stalled && shortAsk === null) {
+      // The same findings again: ask once for a statement per item (fix, declare or reason) before the loop gives up on them.
+      let stallAsk: string | null = null;
+      if (verdict.stalled && shortAsk === null && snap.findings.length > 0) {
+        const sk = `stall:${[...snap.keys].sort().join('|')}`;
+        if (!pushedBack.has(sk)) {
+          pushedBack.add(sk);
+          tracker.forgive();
+          stallAsk = stallAskText(snap.findings);
+        }
+      }
+      if (verdict.stalled && shortAsk === null && stallAsk === null) {
         yield { type: 'review', round, phase: 'stalled', text: `Stopped reviewing: ${verdict.reason}. ${snap.findings.length > 0 ? `${snap.findings.length} finding${snap.findings.length === 1 ? '' : 's'} remain.` : ''}`.trim(), score: snap.score, findings: snap.findings.length };
         return;
       }
@@ -835,6 +848,7 @@ export class WorldAgent {
         if (text) content.push({ type: 'text', text });
       }
       if (this.briefState) content.push({ type: 'text', text: richnessReviewText(this.briefState.brief, host.getWorld(), round, this.briefState.notes) });
+      if (stallAsk) content.push({ type: 'text', text: stallAsk });
       if (shortAsk) content.push({ type: 'text', text: `The checker keeps repeating itself, but your brief's counts are still well short: ${shortAsk.slice(0, 900)}. Build the rest in one call each (shape_land tier, grid, perimeter, wall or along, as the brief says), or say plainly why each stays short, then finish.` });
       if (images.length > 0) yield { type: 'step', tool: 'look', label: round === 1 ? 'Looking at the renders' : 'Looking at the renders again', ok: true, looked: images.map((im) => ({ label: im.label, dataUrl: im.dataUrl })) };
       pushUserBlocks(messages, content);

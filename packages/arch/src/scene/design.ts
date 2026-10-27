@@ -11,11 +11,11 @@
  * `checkConformance` later compares the finished room with what was planned.
  */
 import { z } from 'zod';
-import { MaterialSpec, Color, type EntityId } from '@aether/core';
+import { MaterialSpec, Color, type EntityId, type WorldDoc } from '@aether/core';
 import { ArchStyle, Compass, PlanDoor, PlanFacade, PlanRoof, PlanSite, PlanStair, RoomType, type BuildingPlanInput } from '../plan';
 import { PlanPoint, PlanPolygon, WallDado } from '../params';
 import { CeilingDetail, Cornice, DOOR_STYLES, Muntins, Niche, PictureRail, Skirting, WINDOW_STYLES } from '../shell';
-import { DesignItem, DesignRecord, DesignProgramme, DesignCirculation } from '../design-record';
+import { DesignItem, DesignRecord, DesignProgramme, DesignCirculation, DesignDeclared, ItemHandle } from '../design-record';
 import { area, isSimplePolygon, positive, type P2 } from '../math2';
 import { roomPolygon, roomEdges, sharedSpans, exteriorSpans } from '../rooms';
 import { overlapArea } from '../rooms';
@@ -26,6 +26,7 @@ import { cmr, polygonGap } from './geom';
 import type { Scene, SceneItem, SceneOpening, SceneRoom, SceneWall } from './types';
 import type { Finding } from './checks';
 import { parsePlan } from '../compile';
+import { matchEvidence, matchPlan } from './plan-match';
 import { checkStair, fitStair, levelDoors, stairJson } from '../stair-fit';
 
 const Slug = z.string().regex(/^[a-z][a-z0-9-]{0,23}$/, 'ids are short lowercase slugs (letters, digits, dashes; at most 24 characters)');
@@ -125,6 +126,8 @@ export const DesignPlan = z.object({
   levels: z.array(DesignLevel).min(1).max(6),
   /** Every piece of furniture, decor and lighting with the relations it should end up in. */
   furniture: z.array(DesignItem).max(160).default([]),
+  /** Mappings the model declared earlier (planned handle to world entities, or a reason it is not built); carried over when the plan is resent. */
+  declared: z.record(ItemHandle, DesignDeclared).optional(),
   roof: PlanRoof.optional(),
   site: PlanSite.optional(),
   /** The outer walls: a light brick, plaster or cladding, never near-black (the default is the style's own). */
@@ -331,7 +334,7 @@ export function validateDesign(plan: DesignPlan): DesignValidation {
  * windows. The design record travels with it.
  */
 export function designToBuildingPlan(plan: DesignPlan, aliases: Readonly<Record<string, string>> = {}): BuildingPlanInput {
-  const record: DesignRecord = DesignRecord.parse({ brief: plan.brief, programme: plan.programme, ...(plan.circulation ? { circulation: plan.circulation } : {}), furniture: plan.furniture, openingAliases: aliases });
+  const record: DesignRecord = DesignRecord.parse({ brief: plan.brief, programme: plan.programme, ...(plan.circulation ? { circulation: plan.circulation } : {}), furniture: plan.furniture, openingAliases: aliases, declared: plan.declared ?? {} });
   let mainDone = false;
   const levels = plan.levels.map((lvl) => {
     const doors: Array<z.input<typeof PlanDoor>> = [];
@@ -459,22 +462,31 @@ function itemsOfHandle(scene: Scene, building: EntityId, handle: string): SceneI
   return scene.items.filter((i) => i.id === `${id}-l` || i.id === `${id}-r`);
 }
 
-/** Compare the finished building with the design record: every planned piece exists and keeps its relations. */
-export function checkConformance(scene: Scene, design: DesignRecord | undefined): Finding[] {
+/**
+ * Compare the finished building with the design record: every planned piece exists and keeps its relations. A piece is
+ * found by its handle, by what the model declared for it, or by what it is (same part kind, a crafted part of that kind,
+ * inside its room first); the matches that were not by handle are reported so the model can see what was matched to what.
+ */
+export function checkConformance(scene: Scene, design: DesignRecord | undefined, world?: WorldDoc): Finding[] {
   if (!design) return [];
   const out: Finding[] = [];
-  for (const item of design.furniture) {
-    const mine = itemsOfHandle(scene, scene.building, item.id);
+  const matches = matchPlan(world, scene, design);
+  for (const m of matches) {
+    const item = m.item;
     const roomKey = item.room;
-    if (mine.length === 0) {
-      out.push({ code: 'plan_missing', severity: 'warning', message: `planned ${item.kind} "${item.id}" (${item.intent || 'no note'}) was never placed in ${roomKey}`, entities: [], room: roomKey, fix: `Place it with place_items (id "${item.id}"), or resend design_plan without it if the design changed.` });
+    if (m.via === 'not-built' && m.entities.length === 0 && !m.note.startsWith('planned')) {
+      const near = m.candidates.length > 0 ? ` Nearest in the world: ${m.candidates.join('; ')}.` : ' Nothing in the world matches it by handle, declaration or kind.';
+      out.push({ code: 'plan_missing', severity: 'warning', message: `planned ${item.kind} "${item.id}" (${item.intent || 'no note'}) was never placed in ${roomKey}.${near}${m.note ? ` (${m.note})` : ''}`, entities: [], room: roomKey, subject: item.id, ...(m.candidates.length > 0 ? { candidates: m.candidates } : {}), fix: `If one of the nearest is it, declare it: edit_items {op:"declare_plan", ref:"${item.id}", entities:["<id>"]}. Otherwise place it with place_items (id "${item.id}"), or resend design_plan without it, or declare why it is not built: {op:"declare_plan", ref:"${item.id}", reason:"..."}.` });
       continue;
     }
+    if (m.sceneItems.length === 0) continue;
     for (const rel of item.relations) {
-      const problem = checkRelation(scene, scene.building, item, mine, rel);
-      if (problem) out.push({ code: 'plan_mismatch', severity: 'warning', message: `${item.kind} "${item.id}" was planned to ${describeRelation(rel)}, but ${problem}`, entities: mine.map((m) => m.id), room: roomKey, fix: `Use edit_items (move, snap_to_wall, center_over or anchor_to_opening) to restore: ${item.intent || describeRelation(rel)}.` });
+      const problem = checkRelation(scene, scene.building, item, m.sceneItems, rel);
+      if (problem) out.push({ code: 'plan_mismatch', severity: 'warning', message: `${item.kind} "${item.id}" was planned to ${describeRelation(rel)}, but ${problem}`, entities: m.sceneItems.map((x) => x.id), room: roomKey, fix: `Use edit_items (move, snap_to_wall, center_over or anchor_to_opening) to restore: ${item.intent || describeRelation(rel)}.` });
     }
   }
+  const seen = matchEvidence(matches);
+  if (seen.length > 0) out.push({ code: 'plan_matched', severity: 'info', message: `plan pieces matched to world entities not made with their own handle: ${seen.join('; ').slice(0, 900)}`, entities: [], subject: 'matched', fix: 'Nothing to do if these are right; if one is wrong, declare the right one: edit_items {op:"declare_plan", ref:"<planned id>", entities:["<id>"]}.' });
   return out;
 }
 

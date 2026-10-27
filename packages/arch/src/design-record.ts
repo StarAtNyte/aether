@@ -54,6 +54,18 @@ export const DesignCirculation = z.object({
   routes: z.array(z.array(RoomId).min(2).max(12)).max(12).default([]),
 });
 
+/**
+ * A mapping the model declared between a planned piece and what is in the world ("planned screen = entity widescreen-1"),
+ * or the reason a planned piece is not built. Kept with the plan and honoured by every later check.
+ */
+export const DesignDeclared = z.object({
+  /** World entities that stand for the planned piece. */
+  entities: z.array(z.string().max(80)).max(40).default([]),
+  /** Why it is mapped, or why the piece is not built when `entities` is empty. */
+  reason: z.string().max(240).default(''),
+});
+export type DesignDeclared = z.infer<typeof DesignDeclared>;
+
 /** The record kept on the building plan. */
 export const DesignRecord = z.object({
   brief: z.string().max(500).default(''),
@@ -62,5 +74,7 @@ export const DesignRecord = z.object({
   furniture: z.array(DesignItem).max(160).default([]),
   /** The ids the designer gave openings in the plan, mapped to the entity ids the builder assigned. */
   openingAliases: z.record(z.string().max(40), z.string().max(80)).default({}),
+  /** Planned handle to what the model declared for it (see {@link DesignDeclared}). */
+  declared: z.record(ItemHandle, DesignDeclared).default({}),
 });
 export type DesignRecord = z.infer<typeof DesignRecord>;

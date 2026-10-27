@@ -18,6 +18,7 @@ import { applyArchOps, planOf } from '../ops';
 import { fitStair, stairSizes } from '../stair-fit';
 import { RELATION_TYPES } from '../design-record';
 import { reviewScene, scoreFindings, findingsText, type Finding } from './checks';
+import { declarePlanned } from './plan-match';
 import { checkConformance, describeShell, DesignPlan, designToBuildingPlan, resolveDesignStairs, validateDesign } from './design';
 import { anchorToOpening, centerOver, moveItem, placeItem, removeItem, resizeItem, resolveBuilding, rotateItem, snapToWall, type EditResult } from './edit';
 import { findRoom, findWall, isLookupError, listEntities, measure, queryWall, wallQueryText } from './facts';
@@ -86,6 +87,8 @@ export const EditItemInput = z.discriminatedUnion('op', [
   z.object({ op: z.literal('snap_to_wall'), ref: Ref, wall: WallName.optional(), edge: z.number().int().min(0).max(200).optional(), t: Num.optional(), align: z.enum(['centre', 'start', 'end']).optional(), gap: z.number().finite().min(-5).max(5).optional() }).strict(),
   z.object({ op: z.literal('anchor_to_opening'), ref: Ref, opening: Ref, mode: z.enum(['centre', 'left', 'right']).optional(), gap: z.number().finite().min(-5).max(5).optional(), y: Num.optional() }).strict(),
   z.object({ op: z.literal('center_over'), ref: Ref, target: Ref, gap: z.number().finite().min(-5).max(5).optional() }).strict(),
+  /** The model says what a planned piece is in the world (entities) or why it is not built (reason); `ref` is the planned handle. */
+  z.object({ op: z.literal('declare_plan'), ref: Ref, entities: z.array(Ref).max(40).optional(), reason: z.string().max(240).optional() }).strict(),
 ]);
 
 /** One question about the scene. */
@@ -177,7 +180,16 @@ function runDesignPlan(world: WorldDoc, rawInput: unknown): DesignToolResult {
   const check = validateDesign(parsed.data);
   // Stairs given by room are fitted; exact ones are measured (refused with numbers and a stair that fits).
   const stairs = check.errors.length > 0 ? { plan: parsed.data, errors: [], lines: [] } : resolveDesignStairs(parsed.data);
-  const plan = stairs.plan;
+  // What the model declared about planned pieces earlier survives a resent plan (for the pieces it still plans).
+  const prior = (() => {
+    try {
+      return planOf(world, stairs.plan.id).design?.declared ?? {};
+    } catch {
+      return {};
+    }
+  })();
+  const keep = Object.fromEntries(Object.entries({ ...prior, ...(stairs.plan.declared ?? {}) }).filter(([h]) => stairs.plan.furniture.some((f) => f.id === h)));
+  const plan = Object.keys(keep).length > 0 ? { ...stairs.plan, declared: keep } : stairs.plan;
   check.errors.push(...stairs.errors);
   if (check.errors.length > 0) {
     return refuse(world, `The design plan was refused, nothing was built:\n${check.errors.slice(0, 20).map((e) => `- ${e}`).join('\n')}${check.warnings.length > 0 ? `\nAdvice:\n${check.warnings.slice(0, 8).map((e) => `- ${e}`).join('\n')}` : ''}\nFix these and resend design_plan.`, `Design ${plan.name}`);
@@ -379,6 +391,8 @@ function applyEdit(world: WorldDoc, building: string | undefined, e: z.infer<typ
       return snapToWall(world, building, e.ref, stripUndefined({ wall: e.wall, edge: e.edge, t: e.t, align: e.align, gap: e.gap }));
     case 'anchor_to_opening':
       return anchorToOpening(world, building, e.ref, stripUndefined({ opening: e.opening, mode: e.mode, gap: e.gap, y: e.y }));
+    case 'declare_plan':
+      return declarePlanned(world, building, e.ref, e.entities, e.reason);
     case 'center_over':
       return centerOver(world, building, e.ref, e.target, e.gap !== undefined ? { gap: e.gap } : {});
   }
@@ -399,7 +413,7 @@ export function reviewFindings(world: WorldDoc, building: EntityId, opts: { fast
   } catch {
     design = undefined;
   }
-  out.push(...checkConformance(scene, design));
+  out.push(...checkConformance(scene, design, world));
   const rank = { error: 0, warning: 1, info: 2 } as const;
   return out.sort((a, b) => rank[a.severity] - rank[b.severity] || a.code.localeCompare(b.code));
 }

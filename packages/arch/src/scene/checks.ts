@@ -31,6 +31,10 @@ export interface Finding {
   fix: string;
   /** A ready position for the first entity (plan x, z), when the fix is a move. */
   moveTo?: [number, number];
+  /** What the finding is about when no entity is (a planned handle), so two findings of one code stay apart. */
+  subject?: string;
+  /** The matcher's best guesses at an answer (entity ids with the reason), shown when a finding repeats. */
+  candidates?: string[];
 }
 
 const LIGHT_KINDS: ReadonlySet<string> = new Set(['ceiling-light', 'pendant', 'floor-lamp', 'table-lamp', 'sconce']);
@@ -440,7 +444,7 @@ export function scoreFindings(findings: readonly Finding[]): number {
 
 /** Stable identity of a finding (code + sorted entities), for stall detection. */
 export function findingKey(f: Finding): string {
-  return `${f.code}:${[...f.entities].sort().join(',')}:${f.room ?? ''}`;
+  return `${f.code}:${[...f.entities].sort().join(',')}:${f.room ?? ''}${f.subject ? `:${f.subject}` : ''}`;
 }
 
 /** Text of findings for a model: one numbered line each with the fix. */
