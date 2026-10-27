@@ -12,6 +12,7 @@ First tagged state of the framework: natural language to verified, interactive 3
 - Room box by agreement of independent reads (vanishing-point camera from image lines, metric and relative depth, door or ceiling scale), spread reported as confidence; the twin reads within 11 percent of the known size, the hotel width is flagged a lower bound.
 - Colour: the black twin floor was a depth-grid mismatch; masks are eroded, shadows and glare dropped, a white reference gives "lit like white" colours.
 - Labels: CLIP second pass with probabilities and alternatives, duplicates merged.
+- Build from the measurements: a plan of every perceived object (kind or look-alike model, position and size from the mask extents in room metres, facing, measured colour), settled by the model with reasons (`review_build_plan`) and placed in one batch with the surfaces coloured first, so every object has a linked piece from round 0 (the measured loop could only critique a build before: most objects were `unclear`). Coverage line, honest `unclear` split, falls back to the earlier flow offline.
 - Repair loop: measured comparison (instance-id render of the build against the perception masks: IoU, offset, size, deltaE, fix hints), `apply_measured_colour`, `find_model like_crop` (appearance retrieval over a 0.5 MB CLIP index of the library thumbnails). Perception is on by default with a first-use download message and a skip.
 
 ### Rendering and performance
