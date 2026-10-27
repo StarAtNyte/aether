@@ -100,7 +100,8 @@ export const DORMER: FurnitureDef = {
     trim: color('#ece9e3', 'trim and frame colour'),
     roof: choice(['roof-tile', 'slate', 'metal-roof', 'thatch'], 'roof-tile', 'dormer roof covering'),
   },
-  mount: 'floor',
+  // Stands on a roof, not on a floor: the foot of its front wall is on the slope, so flashing runs below the origin.
+  mount: 'surface',
   againstWall: false,
   frontClearance: 0,
   size: (p) => {
@@ -142,7 +143,8 @@ export const TURRET_ROOF: FurnitureDef = {
     wall: color('#e4dccd', 'wall colour'),
     finial: flag(true, 'a finial on the tip'),
   },
-  mount: 'floor',
+  // Caps a turret: the eave line is the origin and the fascia hangs below it.
+  mount: 'surface',
   againstWall: false,
   frontClearance: 0,
   size: (p) => [(p.num('radius') + 0.3) * 2, p.num('height') + p.num('wallHeight'), (p.num('radius') + 0.3) * 2],

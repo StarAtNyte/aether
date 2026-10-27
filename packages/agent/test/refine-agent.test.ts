@@ -182,7 +182,8 @@ describe('requests the fast path declines go to the model, guarded', () => {
 
   it('without the guard the same patch destroys the world (why it exists)', async () => {
     const w = loadFixture('camp');
-    const { provider } = scripted([() => patchCall([{ op: 'clear', keepEnvironment: true }]), () => finishCall()]);
+    // startOver is what a user who asked to start over would set: the empty-world guard has its own tests.
+    const { provider } = scripted([() => ({ content: [{ type: 'tool_use', id: 'c1', name: 'apply_patches', input: { patches: [{ op: 'clear', keepEnvironment: true }], message: 'edit', startOver: true } }], stopReason: 'tool_use' }), () => finishCall()]);
     const host = new MemoryHost(w);
     await collect(new WorldAgent({ provider, catalogs: TEST_CATALOGS, maxRepairs: 0, fineEdit: false }).run('give the second tent a warmer vibe', host));
     expect(Object.keys(host.world.entities).length).toBeLessThan(5);
