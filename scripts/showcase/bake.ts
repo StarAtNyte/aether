@@ -43,7 +43,8 @@ export function worldFileText(world: WorldDoc): string {
 /**
  * A room rebuilt from a photo is not planned from its prompt: its world comes from the recorded photo run
  * (`npm run showcase:photo-rooms`) and is only re-validated and re-verified here, so the photo pipeline stays
- * reconstruct-only and nothing maps an uploaded photo to a stored room.
+ * reconstruct-only and nothing maps an uploaded photo to a stored room. A world the agent generated in a recorded run
+ * (`origin: 'agent'`) is stored the same way: its file is the source, only re-validated and re-verified.
  */
 async function bakePhoto(entry: ShowcaseEntry): Promise<{ text: string; entities: number; ms: number; stored: true }> {
   const t0 = performance.now();
@@ -52,7 +53,7 @@ async function bakePhoto(entry: ShowcaseEntry): Promise<{ text: string; entities
   if (raw.format !== 'aether-world') throw new Error(`${entry.slug}: not an aether-world file`);
   const valid = validateWorld(raw.world);
   if (!valid.ok) throw new Error(`${entry.slug}: invalid world: ${valid.issues.slice(0, 3).map((i) => `${i.path}: ${i.message}`).join('; ')}`);
-  if (worldFileText(valid.world) !== text) throw new Error(`${entry.slug}: world file is not in canonical form (run npm run showcase:photo-rooms)`);
+  if (worldFileText(valid.world) !== text) throw new Error(`${entry.slug}: world file is not in canonical form (run npm run showcase:photo-rooms for a photo room, or re-save the agent world)`);
   const verdict = await runVerify(valid.world);
   if (REPORT) console.log(verdict.summary);
   if (!verdict.passed) throw new Error(`${entry.slug}: verify failed: ${verdict.summary}`);
@@ -60,7 +61,7 @@ async function bakePhoto(entry: ShowcaseEntry): Promise<{ text: string; entities
 }
 
 async function bake(entry: ShowcaseEntry, sandbox: ReturnType<typeof createNodeSandbox>): Promise<{ text: string; entities: number; ms: number; stored?: true }> {
-  if (entry.origin === 'photo') return bakePhoto(entry);
+  if (entry.origin === 'photo' || entry.origin === 'agent') return bakePhoto(entry);
   const t0 = performance.now();
   const host = new NodeAgentHost(sandbox);
   const agent = new WorldAgent({ provider: createMockProvider({ library: GENERATOR_LIBRARY }), catalogs: CATALOGS, resolveGenerator: loadLibraryGenerator, maxRepairs: 2 });
@@ -103,7 +104,7 @@ async function main(): Promise<void> {
           if (current !== r.text) throw new Error(`${entry.slug}: ${current ? 'stale' : 'missing'} world file (run npm run showcase:bake)`);
           console.log(`ok    ${entry.slug.padEnd(22)} ${r.entities} entities, up to date`);
         } else if (r.stored) {
-          console.log(`ok    ${entry.slug.padEnd(22)} ${r.entities} entities, stored photo room verified`);
+          console.log(`ok    ${entry.slug.padEnd(22)} ${r.entities} entities, stored world verified`);
         } else {
           writeFileSync(file, r.text);
           console.log(`baked ${entry.slug.padEnd(22)} ${r.entities} entities, ${(Buffer.byteLength(r.text) / 1024).toFixed(0)} KB, ${r.ms} ms`);

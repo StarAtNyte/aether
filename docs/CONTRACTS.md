@@ -2036,11 +2036,14 @@ building or light changes (`--verify` finds it). Photo rooms are stored, not pla
 - `src/showcase/manifest.ts` — `SHOWCASE: ShowcaseEntry[]`, the single place
   to curate default projects: `{ slug, title, description, prompt, kind,
   curation: 'featured' | 'candidate' | 'hidden', origin: 'flagship' |
-  'gallery' | 'photo', shot?, photo?: PhotoCredit }`; `photo` ({ file, author,
+  'gallery' | 'photo' | 'agent', shot?, photo?: PhotoCredit }`; `photo` ({ file, author,
   licence, url }) credits the photograph an `origin: 'photo'` example room was
   rebuilt from (four of them; `npm run showcase:photo-rooms` regenerates the
-  worlds from recorded runs); array order is display order. `src/lib/examples.ts`
-  derives `FEATURED_TEMPLATES`, `MORE_TEMPLATES` (without photo rooms), `PHOTO_TEMPLATES`,
+  worlds from recorded runs). An `origin: 'agent'` entry is a world the agent
+  generated in a recorded run, stored as generated: its file is the source and
+  `showcase:bake` only re-validates and re-verifies it (like a photo room);
+  array order is display order. `src/lib/examples.ts`
+  derives `FEATURED_TEMPLATES`, `MORE_TEMPLATES` (without photo rooms and agent worlds), `AGENT_TEMPLATES`, `PHOTO_TEMPLATES`,
   `TEMPLATES` (shown ones; `EXAMPLE_PROMPTS` leaves the photo rooms out),
   `templateBySlug` (hidden included), `templateThumbnail(slug)`
   (`/templates/<slug>.webp`) and `templateWorldUrl(slug)`

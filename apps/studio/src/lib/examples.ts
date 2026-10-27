@@ -20,13 +20,16 @@ export const TEMPLATE_KIND_LABEL: Readonly<Record<TemplateKind, string>> = Objec
 export const FEATURED_TEMPLATES: readonly WorldTemplate[] = Object.freeze(SHOWCASE.filter((t) => t.curation === 'featured'));
 
 /** The other shown templates ("More worlds"), in manifest order. */
-export const MORE_TEMPLATES: readonly WorldTemplate[] = Object.freeze(SHOWCASE.filter((t) => t.curation === 'candidate' && t.origin !== 'photo'));
+export const MORE_TEMPLATES: readonly WorldTemplate[] = Object.freeze(SHOWCASE.filter((t) => t.curation === 'candidate' && t.origin !== 'photo' && t.origin !== 'agent'));
 
 /** Example rooms rebuilt from a photograph (credited), in manifest order. */
 export const PHOTO_TEMPLATES: readonly WorldTemplate[] = Object.freeze(SHOWCASE.filter((t) => t.curation === 'candidate' && t.origin === 'photo'));
 
+/** Worlds the agent generated from a prompt in recorded runs, saved as they came out, in manifest order. */
+export const AGENT_TEMPLATES: readonly WorldTemplate[] = Object.freeze(SHOWCASE.filter((t) => t.curation === 'candidate' && t.origin === 'agent'));
+
 /** Every template that is shown somewhere: featured first, then the others. */
-export const TEMPLATES: readonly WorldTemplate[] = Object.freeze([...FEATURED_TEMPLATES, ...MORE_TEMPLATES, ...PHOTO_TEMPLATES]);
+export const TEMPLATES: readonly WorldTemplate[] = Object.freeze([...FEATURED_TEMPLATES, ...MORE_TEMPLATES, ...AGENT_TEMPLATES, ...PHOTO_TEMPLATES]);
 
 /** Template by slug, including hidden ones (old links keep working); undefined when unknown. */
 export function templateBySlug(slug: string): WorldTemplate | undefined {

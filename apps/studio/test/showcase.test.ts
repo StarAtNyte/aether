@@ -7,7 +7,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { validateWorld } from '@aether/core';
 import { describe, expect, it, vi } from 'vitest';
-import { FEATURED_TEMPLATES, MORE_TEMPLATES, PHOTO_TEMPLATES, TEMPLATES, templateBySlug } from '../src/lib/examples';
+import { AGENT_TEMPLATES, FEATURED_TEMPLATES, MORE_TEMPLATES, PHOTO_TEMPLATES, TEMPLATES, templateBySlug } from '../src/lib/examples';
 import { SHOWCASE } from '../src/showcase/manifest';
 import { loadTemplateThumbnail, loadTemplateWorld, readCapped, type FetchLike } from '../src/showcase/load';
 import { FLAGSHIPS } from '../../../packages/agent/src/providers/mock/showcase/index';
@@ -47,6 +47,14 @@ describe('showcase manifest', () => {
     }
   });
 
+  it('lists the generated worlds as agent templates, each with a prompt and a stored world', () => {
+    const agent = SHOWCASE.filter((e) => e.origin === 'agent');
+    expect(agent.length).toBeGreaterThanOrEqual(1);
+    expect(AGENT_TEMPLATES.map((t) => t.slug)).toEqual(agent.map((t) => t.slug));
+    expect(MORE_TEMPLATES.some((t) => t.origin === 'agent')).toBe(false);
+    for (const e of agent) expect(e.prompt.length, e.slug).toBeGreaterThan(10);
+  });
+
   it('ships a thumbnail (WebP ≤ 30 KB) and a valid saved world for every entry', () => {
     for (const e of SHOWCASE) {
       const thumb = pub(`templates/${e.slug}.webp`);
@@ -64,7 +72,7 @@ describe('showcase manifest', () => {
   it('derives the shown lists from curation (featured first, hidden nowhere)', () => {
     expect(FEATURED_TEMPLATES.every((t) => t.curation === 'featured')).toBe(true);
     expect(MORE_TEMPLATES.every((t) => t.curation === 'candidate')).toBe(true);
-    expect(TEMPLATES).toEqual([...FEATURED_TEMPLATES, ...MORE_TEMPLATES, ...PHOTO_TEMPLATES]);
+    expect(TEMPLATES).toEqual([...FEATURED_TEMPLATES, ...MORE_TEMPLATES, ...AGENT_TEMPLATES, ...PHOTO_TEMPLATES]);
     expect(TEMPLATES.some((t) => t.curation === 'hidden')).toBe(false);
     expect(templateBySlug('lantern-isles')?.title).toBe('Lantern Isles');
   });
