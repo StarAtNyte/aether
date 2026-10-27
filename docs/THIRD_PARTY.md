@@ -652,6 +652,8 @@ Khronos repository with that licence; no other Sketchfab asset is used.
 | `aether-creatures` | 13: deer, doe, cat, bird, crow, seagull, hawk, duck, parrot, fish, koi, butterfly, grey-wolf | MIT (this project) | `scripts/assets/living.ts` and its helpers: signed-distance sculpts skinned to a skeleton, with their own animation clips. No third-party source. Recorded in `assets/living.json` |
 | `aether-forge` | 8 generators: hero-fountain, hero-statue, hero-lantern, hero-ship, hero-car, hero-explorer, hero-cherry-tree, hero-gazebo | MIT (this project) | Procedural generators written by Claude Code, see [AI disclosure](#ai-disclosure) |
 
+Crafted parts (venue and public-space pieces, dwellings, fences, street lamps, harbour boats and bollards, gym and clinic pieces, sinks, chairs, fridges, statues, roof finishes) are first-party procedural code in `packages/arch` and `packages/procgen`, MIT (this project), with no third-party mesh. Their surface textures come from the CC0 sets listed under Textures and materials.
+
 Everything else in a world (terrain, buildings, furniture made by the
 architecture kernel, vegetation, block-world mobs and items) is generated at
 run time by Aether's own procedural code or by sandboxed generators written by
