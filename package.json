@@ -85,6 +85,7 @@
     "eval": "tsx scripts/eval-agent.ts",
     "bench": "tsx scripts/bench/run.ts",
     "bench:quick": "tsx scripts/bench/run.ts --quick",
+    "bench:photo-selftest": "tsx scripts/photo-selftest/run.ts",
     "eval:edits": "tsx scripts/eval-edits.ts",
     "e2e:refine": "tsx tests/e2e/refine.e2e.ts",
     "library": "tsx scripts/build-generator-library.ts",

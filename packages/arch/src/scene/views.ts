@@ -585,6 +585,53 @@ export function projectOverlays(world: WorldDoc, building: EntityId, pose: Revie
   return out;
 }
 
+
+/** A box of a piece in its own frame: x0, x1 (width), y0, y1 (height above the piece's bottom), z0, z1 (depth, the back at the smaller z). */
+export type PartBox = [number, number, number, number, number, number];
+
+/**
+ * The silhouette of a piece as a few boxes, for the instance raster: a chair is a seat, a back and four legs, a table a top and legs, a lamp a
+ * pole and a shade, a plant a pot and foliage. Pieces that are solid (cabinets, beds' mattresses, wall pieces) stay one box. The sizes come from
+ * the footprint and height of the piece (its own frame: x along the width, z along the depth, the front facing +z); null for a plain prism.
+ */
+export function silhouetteParts(it: Pick<SceneItem, 'kind' | 'footprint' | 'yaw' | 'y0' | 'y1' | 'mount'>): PartBox[] | null {
+  if (it.mount !== 'floor' && it.mount !== 'ceiling' && it.mount !== 'surface') return null;
+  const fp = it.footprint;
+  const ex = rotateYaw(1, 0, it.yaw);
+  const ez = rotateYaw(0, 1, it.yaw);
+  const px = fp.map((p) => p[0] * ex[0] + p[1] * ex[1]);
+  const pz = fp.map((p) => p[0] * ez[0] + p[1] * ez[1]);
+  const w = Math.max(...px) - Math.min(...px);
+  const d = Math.max(...pz) - Math.min(...pz);
+  const h = it.y1 - it.y0;
+  if (w < 0.05 || d < 0.05 || h < 0.05) return null;
+  const hw = w / 2, hd = d / 2;
+  const kind = it.kind;
+  const post = (x: number, z: number, t: number, y0: number, y1: number): PartBox => [x - t / 2, x + t / 2, y0, y1, z - t / 2, z + t / 2];
+  const corners = (t: number, y0: number, y1: number, inset = 0.03): PartBox[] => [post(-hw + inset + t / 2, -hd + inset + t / 2, t, y0, y1), post(hw - inset - t / 2, -hd + inset + t / 2, t, y0, y1), post(hw - inset - t / 2, hd - inset - t / 2, t, y0, y1), post(-hw + inset + t / 2, hd - inset - t / 2, t, y0, y1)];
+  if (/^(chair|office-chair|dining-chair)$/.test(kind)) {
+    const seat = Math.min(0.48, h * 0.58);
+    return [...corners(0.04, 0, seat - 0.05), [-hw, hw, seat - 0.07, seat, -hd, hd], [-hw, hw, seat, h, -hd, -hd + Math.max(0.05, d * 0.12)]];
+  }
+  if (/^(bar-stool|stool)$/.test(kind)) return [...corners(0.04, 0, h - 0.05), [-hw, hw, h - 0.06, h, -hd, hd]];
+  if (/^(armchair|sofa|couch)$/.test(kind)) {
+    const seat = Math.min(0.46, h * 0.55);
+    const arm = Math.min(0.18, w * 0.2);
+    return [[-hw, hw, 0.08, seat, -hd, hd], [-hw, hw, seat, h, -hd, -hd + d * 0.28], [-hw, -hw + arm, seat, Math.min(h, seat + 0.2), -hd, hd], [hw - arm, hw, seat, Math.min(h, seat + 0.2), -hd, hd]];
+  }
+  if (/^(dining-table|coffee-table|table|desk|console|side-table)$/.test(kind)) return [...corners(Math.min(0.07, w * 0.1, d * 0.1), 0, h - 0.04, 0.02), [-hw, hw, h - 0.05, h, -hd, hd]];
+  if (kind === 'bed') {
+    const base = Math.min(0.5, h * 0.65);
+    if (h > 1.3) return [[-hw, hw, 0.1, base, -hd, hd], ...corners(0.07, 0, h, 0)];
+    return [[-hw, hw, 0.08, base, -hd, hd], [-hw, hw, 0, h, -hd, -hd + 0.1]];
+  }
+  if (kind === 'floor-lamp') return [post(0, 0, 0.05, 0, h * 0.8), [-hw, hw, h * 0.78, h, -hd, hd]];
+  if (kind === 'table-lamp') return [[-hw * 0.4, hw * 0.4, 0, h * 0.45, -hd * 0.4, hd * 0.4], [-hw, hw, h * 0.4, h, -hd, hd]];
+  if (kind === 'pendant') return [[-hw, hw, 0, Math.min(h, Math.max(0.15, h * 0.35)), -hd, hd], post(0, 0, 0.02, h * 0.35, h)];
+  if (kind === 'plant') return [[-hw * 0.6, hw * 0.6, 0, h * 0.28, -hd * 0.6, hd * 0.6], [-hw * 0.9, hw * 0.9, h * 0.28, h, -hd * 0.9, hd * 0.9]];
+  return null;
+}
+
 /** What a pixel of an instance buffer shows. */
 export interface InstanceBuffer {
   width: number;
@@ -619,7 +666,23 @@ export function renderInstanceIds(world: WorldDoc, building: EntityId, pose: Rev
     const p = project(cam, w);
     return p ? { x: p.x * width, y: p.y * height, iz: 1 / p.z, z: p.z } : null;
   };
+  const NEAR = 0.151;
+  const zOf = (w: Vec3): number => dot(sub(w, cam.p), cam.fwd);
+  // A triangle with a corner behind the near plane is clipped to it (dropping it whole made a piece next to the eye vanish or fill the frame).
   const tri = (a: Vec3, b: Vec3, c: Vec3, k: number): void => {
+    const pts = [a, b, c];
+    const zs = pts.map(zOf);
+    if (zs[0]! >= NEAR && zs[1]! >= NEAR && zs[2]! >= NEAR) { rasterTri(a, b, c, k); return; }
+    if (zs[0]! < NEAR && zs[1]! < NEAR && zs[2]! < NEAR) return;
+    const poly: Vec3[] = [];
+    for (let i = 0; i < 3; i++) {
+      const p = pts[i]!, q = pts[(i + 1) % 3]!, zp = zs[i]!, zq = zs[(i + 1) % 3]!;
+      if (zp >= NEAR) poly.push(p);
+      if (zp >= NEAR !== zq >= NEAR) { const t = (NEAR - zp) / (zq - zp); poly.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t, p[2] + (q[2] - p[2]) * t]); }
+    }
+    for (let i = 1; i + 1 < poly.length; i++) rasterTri(poly[0]!, poly[i]!, poly[i + 1]!, k);
+  };
+  const rasterTri = (a: Vec3, b: Vec3, c: Vec3, k: number): void => {
     const A = toPix(a), B = toPix(b), C = toPix(c);
     if (!A || !B || !C) return;
     const minX = Math.max(0, Math.floor(Math.min(A.x, B.x, C.x))), maxX = Math.min(width - 1, Math.ceil(Math.max(A.x, B.x, C.x)));
@@ -675,6 +738,19 @@ export function renderInstanceIds(world: WorldDoc, building: EntityId, pose: Rev
     const fp = it.footprint;
     if (fp.length < 3) continue;
     const k = idx(it.id);
+    const parts = fp.length === 4 ? silhouetteParts(it) : null;
+    if (parts) {
+      // the piece as its parts (seat, back, legs, shade...), not the solid prism of its footprint: an open-work piece covers far fewer pixels than its box
+      const [cx, cz] = it.pos[0] === undefined ? [0, 0] : [fp.reduce((a, p) => a + p[0], 0) / 4, fp.reduce((a, p) => a + p[1], 0) / 4];
+      for (const b of parts) {
+        const at = (lx: number, lz: number, y: number): Vec3 => { const r = rotateYaw(lx, lz, it.yaw); return toWorld(f, [cx + r[0], cz + r[1]], it.y0 + y, it.levelId); };
+        const [x0, x1, y0, y1, z0, z1] = b;
+        const c = [at(x0, z0, y0), at(x1, z0, y0), at(x1, z1, y0), at(x0, z1, y0), at(x0, z0, y1), at(x1, z0, y1), at(x1, z1, y1), at(x0, z1, y1)] as [Vec3, Vec3, Vec3, Vec3, Vec3, Vec3, Vec3, Vec3];
+        quad(c[0], c[1], c[5], c[4], k, 1); quad(c[1], c[2], c[6], c[5], k, 1); quad(c[2], c[3], c[7], c[6], k, 1); quad(c[3], c[0], c[4], c[7], k, 1);
+        quad(c[4], c[5], c[6], c[7], k, 1); quad(c[0], c[1], c[2], c[3], k, 1);
+      }
+      continue;
+    }
     for (let i = 0; i < fp.length; i++) {
       const p = fp[i] as P2, q = fp[(i + 1) % fp.length] as P2;
       quad(toWorld(f, p, it.y0, it.levelId), toWorld(f, q, it.y0, it.levelId), toWorld(f, q, it.y1, it.levelId), toWorld(f, p, it.y1, it.levelId), k, 2);

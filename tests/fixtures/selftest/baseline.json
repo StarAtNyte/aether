@@ -1,0 +1,43 @@
+{
+  "updated": "2026-10-27",
+  "variant": "png",
+  "photos": [
+    "cafe-interior/corner",
+    "cafe-interior/end",
+    "photo-four-poster/corner",
+    "photo-four-poster/end",
+    "photo-hotel-bedroom/corner",
+    "photo-hotel-bedroom/end",
+    "photo-twin-room/corner",
+    "photo-twin-room/end",
+    "photo-twin-room/end-wide",
+    "photo-vaulted-bedroom/corner",
+    "pool-house/end",
+    "scandi-living-room/corner",
+    "scandi-living-room/end",
+    "scandi-living-room/end-wide"
+  ],
+  "targets": {
+    "fovErrDeg": 5,
+    "roomRelErr": 0.08,
+    "floorPosM": 0.15,
+    "sizeRelErr": 0.15,
+    "projectionIou": 0.9,
+    "colourDeltaE": 8,
+    "comparisonGood": 0.9
+  },
+  "measured": {
+    "fovErrDeg": 1.75,
+    "roomRelErr": 0.12,
+    "floorPosM": 0.66,
+    "floorPosRelEyeM": 0.49,
+    "sizeRelErr": 0.14,
+    "projectionIou": 0.67,
+    "colourDeltaE": 0.7,
+    "comparisonGood": 0.56,
+    "detectionRecall": 0.87,
+    "detectionMedianIou": 0.84,
+    "depthRel": 0.11,
+    "depthScale": 0.99
+  }
+}

@@ -130,6 +130,11 @@ export interface PerceiveDeps {
   clip?: (() => Promise<{ ok: true; model: Clip } | { ok: false; reason: string }>) | null;
   /** Field of view of the camera the metric network was trained on (Hypersim: 60 degrees); null: the depth is taken as exact. */
   trainedFovDeg?: number | null;
+  /**
+   * Scale placements from the geometry's own metric to the fused room box (default false). The self-test benchmark measured it: the fused depth reads
+   * through windows and over-reads, and scaling the placements by it moved floor pieces from 0.7 m to 1.1 m median error and size errors from 14 to 21 percent.
+   */
+  rescaleToFused?: boolean;
 }
 
 /** Nouns of a room, used when the caller gives none (the first pass, before the inventory exists). */
@@ -496,6 +501,7 @@ export class Perceiver {
 
   /** Positions and sizes are measured in the geometry's own metric; the reported room is the fused one, so scale each axis to it. */
   private rescale(p: Placement, g: Geometry): Placement {
+    if (this.deps.rescaleToFused !== true) return p;
     const k = (a: number, b: number): number => (a > 0.5 && b > 0.5 ? b / a : 1);
     const sx = k(g.box.width.value, g.fused.width.value);
     const sz = k(g.box.depth.value, g.fused.depth.value);
@@ -585,6 +591,12 @@ export class Perceiver {
     return overlayDataUrl(drawOverlay(this.raster, items));
   }
 
+  /** The metric depth grid at the working size with its camera model and room frame (for the self-test benchmark and the CLI); null before the geometry ran or without one. */
+  debugGeometry(): { grid: DepthGrid; cam: Cam; fr: RoomFrame; box: RoomBox } | null {
+    const g = this.geometry;
+    return g ? { grid: g.grid, cam: g.cam, fr: g.fr, box: g.box } : null;
+  }
+
   /** Full-resolution mask of an object (for tests and the CLI). */
   maskOf(id: string): Mask | undefined {
     return this.masks.get(id);
@@ -604,7 +616,7 @@ export function perceptionText(rep: PerceptionReport, maxObjects = 30): string {
   if (rep.room && rep.camera) {
     const r = rep.room;
     const d = (x: RoomBox['width']): string => `${x.value} m (${x.low}-${x.high}, ${x.confidence}: ${x.basis})`;
-    L.push(`Room (metric depth, planes fitted): width ${d(r.width)}; depth ${d(r.depth)}; height ${d(r.height)}. Camera ${r.cameraHeight} m above the floor, horizontal field of view about ${rep.camera.fovDeg} degrees (plausible ${rep.camera.fovRange[0]}-${rep.camera.fovRange[1]}), ${Math.abs(rep.camera.yawDeg) <= 6 ? 'facing the back wall' : `turned ${Math.abs(rep.camera.yawDeg)} degrees ${rep.camera.yawDeg > 0 ? 'right' : 'left'} of the back wall`}. Walls found: ${(['back', 'left', 'right', 'ceiling'] as const).filter((k) => r.walls[k]).join(', ') || 'none'}.${r.notes.length > 0 ? ` ${r.notes.join('; ')}.` : ''}`);
+    L.push(`Room (metric depth, planes fitted): width ${d(r.width)}; depth ${d(r.depth)}; height ${d(r.height)}. Camera ${r.cameraHeight} m above the floor, horizontal field of view about ${rep.camera.fovDeg} degrees (plausible ${rep.camera.fovRange[0]}-${rep.camera.fovRange[1]}), ${Math.abs(rep.camera.yawDeg) <= 6 ? 'facing the back wall' : `turned ${Math.abs(rep.camera.yawDeg)} degrees ${rep.camera.yawDeg > 0 ? 'left' : 'right'} of the back wall (the back wall lies ${rep.camera.yawDeg > 0 ? 'to the right' : 'to the left'} of the picture's centre line)`}. Walls found: ${(['back', 'left', 'right', 'ceiling'] as const).filter((k) => r.walls[k]).join(', ') || 'none'}.${r.notes.length > 0 ? ` ${r.notes.join('; ')}.` : ''}`);
   }
   if (rep.crossCheck) L.push(`Cross-check (relative depth, ${rep.crossCheck.basis}): ${rep.crossCheck.width} x ${rep.crossCheck.depth} x ${rep.crossCheck.height} m. Where the two disagree, say which you trust and why.`);
   const s = rep.surfaces;

@@ -121,3 +121,24 @@ describe('measured comparison of a built object with the photo', () => {
     expect(m.rows[0]!.iou).toBeGreaterThan(0.9);
   });
 });
+
+describe('instance raster: near plane and part silhouettes', () => {
+  it('a camera beside the side walls, looking along them, leaves no hole (triangles with a corner behind the eye are clipped, not dropped)', async () => {
+    const world = await room();
+    const spec = photoCameraSpec(d, ASPECT);
+    const p = customPose(world, PHOTO_BUILDING_ID, { ...spec, at: [spec.at[0], 0.2], heading: 90, pitch: 0, fov: 60 })!;
+    const inst = renderInstanceIds(world, PHOTO_BUILDING_ID, p, ASPECT, 128)!;
+    expect(inst.buffer.reduce((a, v) => a + (v === 0 ? 1 : 0), 0)).toBe(0);
+  });
+
+  it('a chair is drawn as its parts: the seat and the back cover far fewer pixels than the prism of its footprint', async () => {
+    const { silhouetteParts } = await import('@aether/arch');
+    const fp: Array<[number, number]> = [[-0.25, -0.25], [0.25, -0.25], [0.25, 0.25], [-0.25, 0.25]];
+    const parts = silhouetteParts({ kind: 'chair', footprint: fp, yaw: 0, y0: 0, y1: 0.9, mount: 'floor' });
+    expect(parts).not.toBeNull();
+    const vol = (parts ?? []).reduce((s, b) => s + (b[1] - b[0]) * (b[3] - b[2]) * (b[5] - b[4]), 0);
+    expect(vol).toBeLessThan(0.5 * 0.5 * 0.9 * 0.5);
+    expect(silhouetteParts({ kind: 'wardrobe', footprint: fp, yaw: 0, y0: 0, y1: 2, mount: 'floor' })).toBeNull();
+    expect(silhouetteParts({ kind: 'art', footprint: fp, yaw: 0, y0: 1, y1: 2, mount: 'wall' })).toBeNull();
+  });
+});

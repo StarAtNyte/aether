@@ -101,11 +101,13 @@ export interface MeasureInput {
   render: Raster;
   /** Pixel size of the photo, for pixel errors. */
   px: { w: number; h: number };
+  /** The building to draw (default: the photo room); the self-test benchmark compares other worlds. */
+  building?: string;
 }
 
 export function compareObjects(inp: MeasureInput): Measured | null {
   const W = 256;
-  const inst = renderInstanceIds(inp.world, PHOTO_BUILDING_ID, inp.pose, inp.aspect, W);
+  const inst = renderInstanceIds(inp.world, inp.building ?? PHOTO_BUILDING_ID, inp.pose, inp.aspect, W);
   if (!inst) return null;
   const H = inst.height;
   const idMask = (match: (id: string) => boolean): Uint8Array => {
@@ -133,7 +135,7 @@ export function compareObjects(inp: MeasureInput): Measured | null {
   }
   gain = Math.round(gain * 100) / 100;
   const align = (hex: string): string => (gain === 1 ? hex : scaleHexLight(hex, gain));
-  const proj = projectBuilt(inp.world, inp.pose, inp.aspect);
+  const proj = projectBuilt(inp.world, inp.pose, inp.aspect, inp.building ?? PHOTO_BUILDING_ID);
   const byPerceived = new Map<string, PerceivedObject>(inp.report.objects.map((o) => [o.id, o]));
   const rows: ObjectMeasure[] = [];
   // Objects with no link are matched to the built piece whose visible mask overlaps the photo mask most (at least 0.25), one piece to one object.

@@ -60,8 +60,8 @@ export function worldShiftOnFloor(pose: ReviewPose, aspect: number, anchor: Vec3
   return worldShiftFor(pose, aspect, anchor, target, 'floor');
 }
 
-export function projectBuilt(world: WorldDoc, pose: ReviewPose, aspect: number): Projection {
-  const geometry = entityGeometry(world, PHOTO_BUILDING_ID);
+export function projectBuilt(world: WorldDoc, pose: ReviewPose, aspect: number, building: string = PHOTO_BUILDING_ID): Projection {
+  const geometry = entityGeometry(world, building);
   return { geometry, boxes: projectGeometry(geometry, pose, aspect), pose, aspect };
 }
 

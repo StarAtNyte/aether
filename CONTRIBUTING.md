@@ -40,7 +40,12 @@ Game worlds keep their sealed proofs: a rebake must not change them.
 Then the browser suite closest to your change, for example `npm run e2e`, `npm run e2e:arch`, `npm run e2e:refine` or
 `npm run e2e:gameplay`. If you change the room-from-photo flow (`packages/agent/src/photo`, the photo tools or the chat
 cards), run `npm run e2e:photo` (about 2 minutes, scripted model, no quota). If you change rendering, also run
-`npm run e2e:render`.
+`npm run e2e:render`. If you change what the photo flow measures (perception, room geometry, the instance raster, the
+measured comparison), run `npm run bench:photo-selftest`: it scores the measuring stages (camera, room box, depth, masks,
+back-projection, colour, the projection and comparison oracles) against worlds whose truth we know, with no model call.
+It renders its fixtures first when they are missing (Chromium, `GEN_GPU=intel`; a few minutes) and then takes about four
+minutes on the CPU (`--reuse` skips the models). It is not part of CI. See `docs/PHOTO_TO_ROOM_HARNESS.md`
+("Ground-truth self-test").
 
 ## Rules of the road
 

@@ -1,0 +1,33 @@
+/** Debug picture of one fixture: photo | true labels | pipeline instance raster (plain pose) | pipeline raster (via the photo camera spec). */
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { homedir } from 'node:os';
+import { createWorld, type WorldDoc } from '@aether/core';
+import { renderInstanceIds } from '@aether/arch';
+import { encodePng } from '../../apps/cli/src/mcp/png';
+import { decodeMasks, type TruthMasks } from '../../packages/agent/src/photo/selftest/fixture';
+import type { SelftestTruth } from '../../packages/agent/src/photo/selftest/metrics';
+import { pipelinePose, plainPose } from '../../packages/agent/src/photo/selftest/oracle';
+import { spawnSync } from 'node:child_process';
+
+const [world, pose] = process.argv.slice(2);
+const dir = join(homedir(), '.local/share/aether/qa/selftest', world as string, pose as string);
+const truth = JSON.parse(readFileSync(join(dir, 'truth.json'), 'utf8')) as SelftestTruth;
+const m = JSON.parse(readFileSync(join(dir, 'masks.json'), 'utf8')) as TruthMasks;
+const raw = JSON.parse(readFileSync(resolve('apps/studio/public/templates/worlds', `${world}.json`), 'utf8')) as { world?: unknown };
+const w = createWorld((raw.world ?? raw) as never) as WorldDoc;
+const colour = (i: number): [number, number, number] => [(i * 97) % 256, (i * 57 + 80) % 256, (i * 151 + 30) % 256];
+const W = m.width, H = m.height;
+const tile = (get: (k: number) => number): Uint8Array => { const o = new Uint8Array(W * H * 4); for (let k = 0; k < W * H; k++) { const i = get(k); const c = i === 0 ? [0, 0, 0] : colour(i); o[k * 4] = c[0] as number; o[k * 4 + 1] = c[1] as number; o[k * 4 + 2] = c[2] as number; o[k * 4 + 3] = 255; } return o; };
+const dm = decodeMasks(m);
+const tl = tile((k) => dm.data[k] as number);
+const rast = (p: ReturnType<typeof plainPose>): Uint8Array => { const inst = renderInstanceIds(w, truth.room.building, p, truth.camera.aspect, W, H); return tile((k) => (inst ? (inst.buffer[k] as number) : 0)); };
+const sp = pipelinePose(w, truth);
+console.log('plain', JSON.stringify(plainPose(truth)).slice(0, 300));
+console.log('spec ', JSON.stringify(sp).slice(0, 300));
+const photo = spawnSync('ffmpeg', ['-v', 'error', '-i', join(dir, 'photo.png'), '-vf', `scale=${W}:${H}`, '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgba', 'pipe:1'], { maxBuffer: 1 << 28 }).stdout;
+const tiles = [new Uint8Array(photo.buffer, photo.byteOffset, W * H * 4), tl, rast(plainPose(truth)), sp ? rast(sp) : new Uint8Array(W * H * 4)];
+const out = new Uint8Array(W * 4 * H * 4);
+tiles.forEach((t, n) => { for (let y = 0; y < H; y++) out.set(t.subarray(y * W * 4, (y + 1) * W * 4), (y * W * 4 + n * W) * 4); });
+writeFileSync(join(dir, 'debug-masks.png'), encodePng(out, W * 4, H));
+console.log('wrote', join(dir, 'debug-masks.png'));

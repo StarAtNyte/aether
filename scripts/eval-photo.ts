@@ -258,11 +258,13 @@ interface Report {
 }
 
 async function runPhoto(args: Args, live: Provider | null): Promise<Report> {
-  const spec = PHOTOS[args.photo];
-  if (!spec) throw new Error(`unknown photo ${args.photo}; choose ${Object.keys(PHOTOS).join(', ')}`);
+  // `selftest:<world>/<pose>`: a photo of the ground-truth benchmark (scripts/photo-selftest), so the result can be scored against its truth
+  const self = /^selftest:([\w-]+)\/([\w-]+)$/.exec(args.photo);
+  const spec = self ? { file: join(process.env['SELFTEST_ROOT'] ?? '/home/at-office/.local/share/aether/qa/selftest', self[1] as string, self[2] as string, 'photo.jpg'), prompt: 'Recreate this room from the photo' } : PHOTOS[args.photo];
+  if (!spec) throw new Error(`unknown photo ${args.photo}; choose ${Object.keys(PHOTOS).join(', ')} or selftest:<world>/<pose>`);
   if (!existsSync(spec.file)) throw new Error(`missing ${spec.file}`);
   const { dataUrl, jpeg } = prepare(spec.file);
-  const dir = join(args.out, args.photo);
+  const dir = join(args.out, args.photo.replace(/[^\w-]+/g, '_'));
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, 'photo.jpg'), jpeg);
   const fixturePath = join(FIXTURES, `${args.photo}.transcript.json`);
