@@ -53,8 +53,11 @@ export interface ExamplePrompt {
   kind: TemplateKind;
 }
 
-/** The shown templates' prompts as example prompts (photo rooms are left out: their prompt names a photo, it does not rebuild the room). */
-export const EXAMPLE_PROMPTS: readonly ExamplePrompt[] = Object.freeze(TEMPLATES.filter((t) => t.origin !== 'photo').map((t) => ({ title: t.title, prompt: t.prompt, kind: t.kind })));
+/** True when the offline planner rebuilds the template from its prompt (not a photo room, not a world from a live Claude Code or Codex run). */
+export const isPlannerRebuildable = (t: WorldTemplate): boolean => t.origin !== 'photo' && !(t.origin === 'agent' && t.provenance !== 'offline-planner');
+
+/** The shown templates' prompts as example prompts (photo rooms and live-run worlds are left out: their prompt does not rebuild the room offline). */
+export const EXAMPLE_PROMPTS: readonly ExamplePrompt[] = Object.freeze(TEMPLATES.filter(isPlannerRebuildable).map((t) => ({ title: t.title, prompt: t.prompt, kind: t.kind })));
 
 /** Short suggestions offered as chips in the agent's empty state. */
 export const SUGGESTION_CHIPS: readonly string[] = Object.freeze([

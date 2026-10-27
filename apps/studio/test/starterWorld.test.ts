@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { validateWorld } from '@aether/core';
 import { BUILTIN_GENERATORS } from '@aether/procgen';
 import { createStarterWorld } from '../src/lib/starterWorld';
-import { EXAMPLE_PROMPTS, TEMPLATES } from '../src/lib/examples';
+import { EXAMPLE_PROMPTS, TEMPLATES, isPlannerRebuildable } from '../src/lib/examples';
 
 describe('starter world', () => {
   it('is a valid world using only built-in generators', () => {
@@ -30,7 +30,7 @@ describe('starter world', () => {
 
 describe('example prompts', () => {
   it('ships one prompt per shown template that is not a photo room, each with a unique title and prompt', () => {
-    expect(EXAMPLE_PROMPTS.length).toBe(TEMPLATES.filter((t) => t.origin !== 'photo').length);
+    expect(EXAMPLE_PROMPTS.length).toBe(TEMPLATES.filter(isPlannerRebuildable).length);
     expect(new Set(EXAMPLE_PROMPTS.map((p) => p.title)).size).toBe(EXAMPLE_PROMPTS.length);
     expect(new Set(EXAMPLE_PROMPTS.map((p) => p.prompt)).size).toBe(EXAMPLE_PROMPTS.length);
   });

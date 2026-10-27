@@ -42,6 +42,11 @@ export const TemplateCard = memo(function TemplateCard({ template, onPick, eager
             {PROVENANCE_LABEL[template.provenance]}
           </span>
         )}
+        {template.origin === 'agent' && (
+          <span className="card__desc" title={`Prompt: “${template.prompt}”`}>
+            Prompt: “{template.prompt}”
+          </span>
+        )}
         {template.photo && (
           <span className="card__desc" title={`Photo: ${template.photo.author}, ${template.photo.licence}\n${template.photo.url}`}>
             Rebuilt from a photo by {template.photo.author} ({template.photo.licence})
