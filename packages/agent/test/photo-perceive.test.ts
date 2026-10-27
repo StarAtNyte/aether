@@ -96,7 +96,7 @@ describe('perceive_photo: measurements from specialised models (mocked runners, 
     const { deps: d, calls } = deps();
     const p = new Perceiver(d);
     const rep = (await p.run({ find: ['rug', 'desk'] })) as PerceptionReport;
-    expect(rep.version).toBe(1);
+    expect(rep.version).toBe(2);
     expect(rep.models).toMatchObject({ detector: expect.stringContaining('Florence'), segmenter: expect.stringContaining('SAM'), depth: expect.stringContaining('metric') });
     // the whole-frame "house" is dropped; the chair and the rug stay
     expect(rep.objects.map((o) => o.label).sort()).toEqual(['chair', 'rug']);
@@ -343,7 +343,7 @@ describe('the perception layer in the photo flow', () => {
       // 3. the final resume state keeps the report (versioned, resume-safe)
       const done = evs.filter((e): e is Extract<AgentEvent, { type: 'photo' }> => e.type === 'photo').find((e) => e.phase === 'done');
       const kept = (done?.resume as { perception?: PerceptionReport } | undefined)?.perception;
-      expect(kept?.version).toBe(1);
+      expect(kept?.version).toBe(2);
       expect(kept?.objects.length).toBeGreaterThan(0);
     } finally {
       spyRun.mockRestore();
