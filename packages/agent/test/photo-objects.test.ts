@@ -255,6 +255,7 @@ describe('room from a photo, object by object', () => {
           call('declare_repair', { difference: 'obj-picture-left-position', cause: 'geometry', why: 'the judges say it is off' }),
           call('edit_items', { edits: [{ op: 'move', ref: 'picture-left', wall: 'north', t: 1.6 }] }),
         ],
+        () => [{ type: 'text', text: 'Edits made, waiting for the next render.' }],
         // Round 2: confirm and finish.
         () => [call('report_differences', { differences: [{ id: 'obj-picture-left-position', what: 'fixed', size: 0, status: 'fixed' }] }), call('finish', { message: 'done' })],
       ],
@@ -318,6 +319,7 @@ describe('room from a photo, object by object', () => {
             call('edit_items', { edits: [{ op: 'move', ref: 'picture-left', wall: 'north', t: original.t - 0.6 }] }),
           ];
         },
+        () => [{ type: 'text', text: 'Edits made, waiting for the next render.' }],
         () => [call('report_differences', { differences: [{ id: 'obj-nightstand-position', what: 'ok', size: 0, status: 'fixed' }] }), call('state_object_reason', { reasons: [{ id: 'nightstand', aspect: 'all', reason: 'tried to place it; the tools cannot match it' }] }), call('finish', { message: 'done' })],
       ],
       critic({

@@ -376,7 +376,7 @@ export const OBJECT_RUBRIC = [
 export const OBJECT_JUDGE_TOOL: ToolDef = {
   name: OBJECT_JUDGE_TOOL_NAME,
   description:
-    'Judge every listed object, separately for each aspect. {verdicts:[{id, present:boolean, type:0..4, position:0..4, size:0..4, material:0..4, na?:[aspects you cannot judge, e.g. "material" when the object is hidden or too small], evidence, fix}]}. present = the object the photo shows is in the render at all. type = the kind and model are right (a round table is not a square one). position = left/right and depth order against its neighbours, offset from the walls and corner, height off the floor, orientation. size = width, height and depth against the photo and its neighbours. material = colour, finish and pattern. evidence = one sentence naming what the photo shows and what the render shows. fix = one line saying what to change ("move 0.3 m to the right", "taller by a third", "replace by a round mirror", "darker oak"). When present is false give 0 for the others.',
+    'Judge every listed object, separately for each aspect. {verdicts:[{id, present:boolean, type:0..4, position:0..4, size:0..4, material:0..4, na?:[aspects you cannot judge, e.g. "material" when the object is hidden or too small], evidence, fix}]}. present = the object the photo shows is in the render at all. type = the kind and model are right (a round table is not a square one). position = left/right and depth order against its neighbours, offset from the walls and corner, height off the floor, orientation. size = width, height and depth against the photo and its neighbours. material = colour, finish and pattern. evidence = one sentence naming what the photo shows and what the render shows. fix = one line saying what to change ("move 0.3 m to the right", "taller by a third", "replace by a round mirror", "darker oak"). When present is false the other scores may be left out. When present is true give all four scores (an aspect you cannot judge is listed in na and may get any score).',
   inputSchema: {
     type: 'object',
     properties: {
@@ -397,7 +397,7 @@ export const OBJECT_JUDGE_TOOL: ToolDef = {
             evidence: { type: 'string' },
             fix: { type: 'string' },
           },
-          required: ['id', 'present', 'type', 'position', 'size', 'material', 'evidence'],
+          required: ['id', 'present', 'evidence'],
         },
       },
     },
@@ -410,10 +410,10 @@ const Sc = z.preprocess((v) => (typeof v === 'string' && /^\s*\d+(\.\d+)?\s*$/.t
 const ObjVerdict = z.object({
   id: z.string().min(1).max(60),
   present: z.preprocess((v) => (v === 'true' ? true : v === 'false' ? false : v), z.boolean()),
-  type: Sc,
-  position: Sc,
-  size: Sc,
-  material: Sc,
+  type: Sc.optional(),
+  position: Sc.optional(),
+  size: Sc.optional(),
+  material: Sc.optional(),
   na: z.array(z.enum(SCORED_ASPECTS)).max(4).optional(),
   evidence: z.string().trim().min(3).max(400),
   fix: z.string().max(240).optional(),
@@ -435,7 +435,10 @@ export function parseObjectJudgement(input: unknown, ids: ReadonlySet<string>): 
   for (const raw of p.data.verdicts) {
     const v = ObjVerdict.safeParse(raw);
     if (!v.success || !ids.has(v.data.id)) continue;
-    out.set(v.data.id, { present: v.data.present, scores: { type: v.data.type, position: v.data.position, size: v.data.size, material: v.data.material }, na: new Set(v.data.na ?? []), evidence: v.data.evidence, fix: (v.data.fix ?? '').trim() });
+    const d = v.data;
+    // An absent object needs no scores for the rest; a present one needs all four (the others are dropped, and the seat is asked again).
+    if (d.present && [d.type, d.position, d.size, d.material].some((x) => x === undefined) && !(d.na && d.na.length > 0)) continue;
+    out.set(v.data.id, { present: v.data.present, scores: { type: d.type ?? (d.present ? 4 : 0), position: d.position ?? (d.present ? 4 : 0), size: d.size ?? (d.present ? 4 : 0), material: d.material ?? (d.present ? 4 : 0) }, na: new Set(v.data.na ?? []), evidence: v.data.evidence, fix: (v.data.fix ?? '').trim() });
   }
   return out.size > 0 ? out : null;
 }

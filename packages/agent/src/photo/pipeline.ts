@@ -1212,6 +1212,9 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
     let declared = false;
     let rolledBack = false;
     let toolCalls = 0;
+    // With the object table the model repairs several objects in a round (one declared repair and edit per turn); the judges see the result next round.
+    let editTurns = 0;
+    const maxEditTurns = objects && objects.ready ? 4 : 1;
     let listed = ledger === null;
     let objNags = 0;
     /** Finishing with objects failing and no reason given is answered twice with the list, then accepted (the model may be right). */
@@ -1221,7 +1224,8 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
       return objectsDueText(objects.open());
     };
     const ready = (): boolean => standing !== null || workerJudged;
-    for (let turn = 0; turn < TURNS_PER_ROUND && !declared && !(ready() && (edited || rolledBack) && !(shellDue && !shellAnswered)); turn++) {
+    for (let turn = 0; turn < TURNS_PER_ROUND && !declared && !(ready() && ((edited && editTurns >= maxEditTurns) || rolledBack) && !(shellDue && !shellAnswered)); turn++) {
+      const callsBefore = toolCalls;
       const res = await ask(run, messages, tools, true);
       messages.push({ role: 'assistant', content: res.content });
       const calls = res.content.filter((b): b is Extract<ContentBlock, { type: 'tool_use' }> => b.type === 'tool_use');
@@ -1429,6 +1433,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
       }
       messages.push({ role: 'user', content: results });
       if (lookBlocks.length > 0) pushUser(messages, lookBlocks.splice(0));
+      if (toolCalls > callsBefore) editTurns++;
     }
 
     if (!standing) {
