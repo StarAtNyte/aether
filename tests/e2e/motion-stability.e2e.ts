@@ -110,6 +110,7 @@ async function runPath(page: Page, pose: number[], cfg: string, frames: number, 
           r.setCameraPose(...a);
           r.requestRender();
           await new Promise((res) => setTimeout(res, 3500));
+          r.requestRender();
           await nextFrame();
           out.push(luma());
         }
@@ -253,8 +254,8 @@ async function main(): Promise<void> {
               r.setRenderTier('ultra');
               r.setRenderQuality('studio');
             } else {
-              r.setRenderQuality('realtime');
               r.setRenderTier('auto');
+              r.setRenderQuality('studio');
               r.setAdaptiveResolution(true);
               r.setMotionProfile?.(c === 'default-smooth' ? 'smooth' : 'sharp');
             }

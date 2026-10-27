@@ -8,6 +8,8 @@ and `docs/REVIEW_LOG.md` carries the measured detail. Workspace packages share t
 First tagged state of the framework: natural language to verified, interactive 3D worlds in the studio, the CLI, the MCP server and the local bridge.
 
 ### Rendering and performance
+
+- Motion profile: the default view keeps its resolution while the camera zooms or orbits (Sharp: the scale falls only under about 26 fps, never below 0.75, with an emergency step under 15 fps) instead of dropping to 0.5-0.7 and sharpening at rest; Smooth in Settings restores the 60 fps policy. Sharp measures as sharp as explicit Studio in motion (about 30 fps on the integrated GPU at 1280x720; the heaviest room, a penthouse, 19 fps).
 - Studio render is the default view on integrated GPUs, with a silent fallback where the device cannot run it. A light chain draws while the view moves and the full chain once it rests; resolution steps by frame time and is kept during CPU-bound slowdowns.
 - 60 fps work on the Intel integrated GPU: lean surface shading and a cheaper light volume while the view moves, culled and LOD'd foliage fields, static merging of unique procedural props, a sun shadow map reused while only the camera moves, shadow-pass cache keys no longer rebuilt per frame.
 - Scene pass at an adaptive scale with a sharpening (Catmull-Rom) upsample and texture level bias; temporal upsample below half scale on WebGL2.

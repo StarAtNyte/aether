@@ -6740,3 +6740,40 @@ Limits: the white selection box has little contrast over a white sky; it is the 
 
 Gates: `tsc`, `vitest` over `apps/studio` and `packages/render` (1811 tests), `smoke` (39 of 39), `e2e:projects`, `e2e:showcase` pass. Screenshots: `~/.local/share/aether/qa/ui-neutral/{before,after3}`.
 
+
+## Motion: Sharp by default, Smooth as the 60 fps choice
+
+**Report**: flicker and blur while zooming or orbiting in the default view, better in explicit Studio.
+
+**Finding (measured, not every candidate proven)**: the default view on integrated / unknown GPUs drew its motion phase
+with the adaptive scale (down to 0.72 on the hotel room, 0.5 on casa and the twin room, 0.6 on Highland Trail in the
+scripted zoom), which is the blur; the scale then returns to 1 at rest, so the picture sharpens and shifts. The scale
+only moves when frames fall under 50 fps, which an integrated GPU does on every room at 1280x720. Lean shading is no
+longer toggled by motion, and the motion phase runs the same effect set as rest, so those were not the cause here. Not
+investigated further: shadow-map reuse refits during zoom and the 220 ms hand-off cross-fade (with the scale kept at 1
+neither changes the picture's resolution across the hand-off).
+
+**Change**: a motion profile. `sharp` (default): the scale falls only when the p90 frame rate is under 26 fps for 2 s,
+aims at 30 fps, never goes below 0.75, and only an unusable machine (under 15 fps for 3 s) opens an emergency floor of
+0.4, which closes again once the scale is back at 0.75. `smooth`: the previous policy (58 fps target, floors 0.5 / 0.15,
+temporal upsample below 0.5). The Settings dialog has a Motion switch (Sharp / Smooth). The performance ladder's
+scale gate moved from 0.72 to 0.76 so it still opens when the scale sits at the Sharp floor.
+
+**Measurements** (`tests/e2e/motion-stability.e2e.ts`, Chromium on the Intel iGPU, 1280x720, scripted +-2.2 m dolly with a
+slow orbit, 180 frames read back at 480x270; lapVar = Laplacian variance, higher is sharper; flicker = mean second
+temporal difference, comparable only at equal sharpness; vsync on, so rates quantise to 60/30/20):
+
+| room | Smooth fps / lapVar / min scale | Sharp (default) fps / lapVar | explicit Studio fps / lapVar |
+| --- | --- | --- | --- |
+| hotel | 44.7 / 161 / 0.72 | 31.4 / 251 | 30.7 / 251 |
+| twin | 45.9 / 231 / 0.52 | 31.8 / 380 | 30.8 / 381 |
+| vaulted | 42.5 / 192 / 0.72 | 30.7 / 283 | 29.7 / 283 |
+| Highland Trail | 41.7 / 714 / 0.60 | 29.3 / 1079 | 29.2 / 1081 |
+| casa | 35.7 / 900 / 0.50 | 27.5 / 1445 | 24.2 / 1588 |
+| skyline | blank frames under load (invalid) | 18.8 / 432 (scale 0.75) | 8.3 / 852 |
+
+Sharp matches explicit Studio's sharpness and flicker figure within noise (hotel 5.277 vs 5.279, Highland 7.565 vs
+7.568), and its scale changed at most twice. No room reaches 60 fps on this iGPU in either profile: Smooth, which was the
+old default, also stopped at 36-46 fps while giving up 35-50 percent of the sharpness. The SSIM against converged stills
+is only meaningful for the three photo rooms (0.98 for Sharp and Studio, 0.97 for Smooth); the other rooms' references
+differ by shadow and foliage noise. The skyline Smooth run returned blank frames and is not counted.
