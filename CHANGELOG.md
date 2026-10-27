@@ -16,6 +16,8 @@ First tagged state of the framework: natural language to verified, interactive 3
 - Room exposure is one number per room from the room's own light, plus a closed-loop trim from the finished picture at rest. The model can state a lighting intent (a key); dim keys are built dim and an over-lit picture is flagged.
 - Exterior context from data (`environment.surroundings`: hills, tree line, field patchwork), facade depth, section poche, neon smear fix, day grade that counters AgX's lifted blacks.
 
+- Editing: an identical repeat of an architecture edit on the same document is answered from its last results (the studio tried candidate ops and then committed the winner through the same call, doing the work twice): drawing a room 135 to 71 ms and 111 to 62 ms. A view-mode harness (`tests/e2e/arch-view-perf.e2e.ts`) counts wall rebuilds, geometry creations and GL objects over cutaway turns and level-mode toggles. A second pass over Pascal Editor's rendering and performance code is recorded in `docs/PASCAL_COMPARISON.md`.
+
 ### Generation
 - Generation brief: before building, the model plans what a space needs and how elaborate it should be, with counts worked out from area and spacing. The plan shows in chat as a collapsible card and can be edited before the build.
 - Richness review: a world built from free pieces is compared against its brief with an overview and eye-height views; shortfalls go back to the model once per set, and a stall on repeated findings does not end a review whose brief is satisfied.

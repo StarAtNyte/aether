@@ -6696,3 +6696,28 @@ Honest reading
 Gates: `tsc`, `vitest` over `packages/agent`, `packages/arch`, `apps/studio` (2396 tests), `smoke` (39 of 39), `showcase:bake --check`, `showcase:lightmaps --verify` pass. Tests: `photo-objects.test.ts` (reconciliation of the two inventories, the panel median and the three words, selection of what to re-judge, best-keep and revert, give-up, plateau, round cap, keep refining from the saved ledger, scripted agent runs of inventory, per-object judge, repair, re-judge and revert on regression), `photo-objects-evidence.test.ts` (unprojection of a box onto the floor and wall planes on synthetic data).
 
 Evidence: `~/.local/share/aether/qa/objjudge/{twin1,twin2,twin3,hotel3}` (run.json with the per-object table, montage, logs).
+
+
+## 2026-10-27 Rendering and performance ideas from Pascal Editor: what was borrowed, what was measured, what did not pay off
+
+Task: read Pascal Editor (MIT, commit `c0284b68e952196a944e9b5ea958227499ddc3c0`, shallow clone in a scratch directory, read only, nothing of theirs run) for rendering and performance techniques that beat ours, and keep an item only with a measured win. The comparison table (about twenty techniques with file paths, what we do, verdict) is in `docs/PASCAL_COMPARISON.md`, section "Rendering and performance".
+
+Measurement conditions (read these before any number): Intel UHD 770 through WebGL2 over ANGLE/GL, headless Chromium, flock-serialised, but the machine carried 13 to 18 load average from other jobs and the integrated GPU was shared. A `render()` call took 1 to 2 s in busy turns (11 to 13 ms in the first, quiet turn of the same run), so GPU frame time could not be compared before and after. The kept change is on the CPU authoring path and measured in Node, back to back, change stashed and applied, median of 12.
+
+Kept
+
+| change | measure | before | after |
+| --- | --- | --- | --- |
+| `applyArchOps` answers an identical repeat on the same document from its last four results (`packages/arch/src/ops.ts`) | studio draw-room flow (candidates tried, winner committed through the same call), median of 12, two buildings | 134.6 ms / 111.1 ms | 71.0 ms / 62.5 ms |
+
+The result arrays are copied on a repeat, the key is the serialised ops on the document's identity (a document is replaced, never edited in place), and ops that cannot be serialised are not kept. No render path is involved, so stills at rest and lightmap keys cannot change (the lightmap key is a content hash of the world; the same world gives the same patches, covered by `packages/arch/test/ops-repeat.test.ts`).
+
+Looked at, measured, not worth doing
+
+- Cutaway wall regeneration (Pascal swaps material variants instead of regenerating): skyline-penthouse, one full turn of the camera in cutaway: 8 wall rebuilds, 32 geometry creations; GL geometries 607 to 634 in the first turn then flat for four more turns (textures 163, meshes 895). No churn, no leak. A graveyard that keeps released geometries alive would save at most those 32 uploads per turn.
+- Selection outline: ours is one `BoxHelper` refit per drawn frame; 0.105 ms for a 600 object subtree (node microbench), under 1 % of a 16.7 ms frame. Their merged screen-space outline (14 render targets) would cost more.
+- Per-level miter cache: we have no per-wall solver to cache; the whole building compiles in about 15 ms, and `checkBuilding`, `furnishRoom` and `settleStairs` (the nested stairless compile in `levelDoors` is 14 ms of 50) dominate an edit. They run once per edit; a cache would only hit on the stair-only edits, which are rare. Not done.
+- Frame loop, DPR cap, culling, BatchedMesh, CSG, SSGI settings, shadow handling, material and texture sharing, disposal, pointer-event raycast cache: ours match or go beyond (adaptive scene-pass scale, worker merges, analytic openings, BVH picking, reference-counted disposal); nothing to port. See the table.
+- A first cpu-perf run on skyline-penthouse on this machine showed `render()` n=0 in the orbit and idle frames drawn 46 of 46 (residents animate), so the per-frame JS numbers were not used.
+
+Gates: see the commit that closes this entry.

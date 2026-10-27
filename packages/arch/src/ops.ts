@@ -190,7 +190,38 @@ function withOverrides(piece: Entity, overrides: Readonly<Record<string, Json>>)
 }
 
 /** Apply a batch of architecture ops to `world` (pure). */
+/** Results kept per world document (identity) for repeated identical calls; a document is replaced, never edited in place. */
+const RECENT_PER_WORLD = 4;
+const recent = new WeakMap<WorldDoc, Array<{ key: string; result: ArchOpsResult }>>();
+
+/**
+ * Apply architecture ops to a world. The same ops on the same document give the same result, so a repeat is answered
+ * from the last few results of that document: the studio tries candidate ops to find one that works and then commits
+ * the winner through the same call, which used to compile, furnish and check the building twice.
+ */
 export function applyArchOps(world: WorldDoc, rawOps: readonly unknown[]): ArchOpsResult {
+  let key: string | null = null;
+  try {
+    key = JSON.stringify(rawOps);
+  } catch {
+    key = null;
+  }
+  if (key !== null) {
+    const hit = recent.get(world)?.find((x) => x.key === key);
+    if (hit) return { ...hit.result, patches: [...hit.result.patches], lines: [...hit.result.lines], errors: [...hit.result.errors], compiled: [...hit.result.compiled], reports: [...hit.result.reports] };
+  }
+  const result = applyArchOpsFresh(world, rawOps);
+  if (key !== null) {
+    const list = recent.get(world) ?? [];
+    list.push({ key, result });
+    if (list.length > RECENT_PER_WORLD) list.shift();
+    recent.set(world, list);
+    return { ...result, patches: [...result.patches], lines: [...result.lines], errors: [...result.errors], compiled: [...result.compiled], reports: [...result.reports] };
+  }
+  return result;
+}
+
+function applyArchOpsFresh(world: WorldDoc, rawOps: readonly unknown[]): ArchOpsResult {
   const errors: ArchOpError[] = [];
   const lines: string[] = [];
   const plans = new Map<EntityId, BuildingPlan>();

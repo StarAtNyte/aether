@@ -1000,6 +1000,12 @@ kept here.
 | `packages/ifc-converter/src/export/guid.ts` | `packages/arch/src/ifc/guid.ts` | Deterministic 22-character IFC GlobalIds from a seed. Seed prefix changed to `aether:`. |
 | `packages/ifc-converter/src/export/ifc-model.ts` | `packages/arch/src/ifc/ifc-model.ts` | IFC4 entity builders (placements, profiles, extrusions, triangulated face sets, styles, property sets). Verbatim apart from the header. |
 
+**Rendering and performance pass (ideas only, no code taken).** The same commit was read again for rendering and
+performance techniques (`packages/viewer`, `packages/nodes`, `packages/core`; see `docs/PASCAL_COMPARISON.md`, section
+"Rendering and performance"). The one change that came out of it, the repeat answer of `applyArchOps` in
+`packages/arch/src/ops.ts`, follows the idea of `packages/viewer/src/systems/wall/level-miter-cache.ts` (cache a derived
+result by its exact inputs) and shares no upstream code, so it carries no licence header.
+
 `packages/arch/src/ifc/world-to-ifc.ts` is Aether's own mapping from the World
 IR (it follows the spatial structure and opening / filling relations of IFC4,
 which the upstream exporter also uses, but shares no upstream code).
