@@ -22,3 +22,8 @@ eval-out/
 
 # Compiled output of tsc -b (never commit)
 *.tsbuildinfo
+
+# Local render outputs (never commit)
+gameplay-out/
+photoreal-out/
+screenshots/

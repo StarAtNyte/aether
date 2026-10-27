@@ -3,6 +3,27 @@
   "private": true,
   "version": "0.1.0",
   "description": "Aether — an AI-native WebGL/WebGPU framework that turns natural language into physically verified, interactive 3D worlds.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/StarAtNyte/aether.git"
+  },
+  "bugs": {
+    "url": "https://github.com/StarAtNyte/aether/issues"
+  },
+  "homepage": "https://aether-studio-lyart.vercel.app",
+  "keywords": [
+    "webgpu",
+    "threejs",
+    "webgl",
+    "ai-agents",
+    "procedural-generation",
+    "3d",
+    "game-engine",
+    "architecture-visualization",
+    "mcp",
+    "typescript"
+  ],
+  "author": "Aether contributors",
   "license": "MIT",
   "type": "module",
   "bin": {

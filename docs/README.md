@@ -10,6 +10,8 @@ Start here: the [README](../README.md) (what Aether is, quickstart, scripts) and
 | Content | [ASSETS](ASSETS.md), [CHARACTERS](CHARACTERS.md), [DESIGN](DESIGN.md) |
 | Trust and safety | [SECURITY](SECURITY.md), [PROOFS](PROOFS.md), [PRODUCTION_READINESS](PRODUCTION_READINESS.md), [THIRD_PARTY](THIRD_PARTY.md) (licences, credits, AI disclosure) |
 | Evidence | [BENCHMARK](BENCHMARK.md), [EVAL_AIFIRST](EVAL_AIFIRST.md), [REVIEW_LOG](REVIEW_LOG.md), [RESEARCH_LOG](RESEARCH_LOG.md) |
-| Write-ups | [WRITEUP](WRITEUP.md), [DEMO_SCRIPT](DEMO_SCRIPT.md) |
+| Generation | [GENERATION_BRIEF](GENERATION_BRIEF.md) (the plan before a build and the richness review) |
+| Write-ups and demo | [WRITEUP](WRITEUP.md), [DEMO_SCRIPT](DEMO_SCRIPT.md), [DEMO_VIDEO](DEMO_VIDEO.md) |
+| Project | [BRANCHES](BRANCHES.md) (what the non-main branches are), [CONTRIBUTING](../CONTRIBUTING.md), [SECURITY policy](../SECURITY.md), [CODE_OF_CONDUCT](../CODE_OF_CONDUCT.md) |
 
 Release notes are in the [CHANGELOG](../CHANGELOG.md).

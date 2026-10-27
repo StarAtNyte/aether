@@ -3,11 +3,46 @@
 Aether follows [Semantic Versioning](https://semver.org/) once it is published; until then every change lands on `main`
 and `docs/REVIEW_LOG.md` carries the measured detail. Workspace packages share the version in the root `package.json`.
 
-## Unreleased
+## 0.1.0 (pre-release, 2026-10-27)
+
+First tagged state of the framework: natural language to verified, interactive 3D worlds in the studio, the CLI, the MCP server and the local bridge.
+
+### Rendering and performance
+- Studio render is the default view on integrated GPUs, with a silent fallback where the device cannot run it. A light chain draws while the view moves and the full chain once it rests; resolution steps by frame time and is kept during CPU-bound slowdowns.
+- 60 fps work on the Intel integrated GPU: lean surface shading and a cheaper light volume while the view moves, culled and LOD'd foliage fields, static merging of unique procedural props, a sun shadow map reused while only the camera moves, shadow-pass cache keys no longer rebuilt per frame.
+- Scene pass at an adaptive scale with a sharpening (Catmull-Rom) upsample and texture level bias; temporal upsample below half scale on WebGL2.
+- Main-thread work moved to workers: character mask decode, the GLB export metal-rough composite, shared shader and noise preparation. A long-task harness and frame-cost scripts measure each flow.
+- Baked light: lightmaps for the six bundled worlds and the four photo rooms (2.4 MB, content-keyed, applied on open with no bake). The key no longer depends on the graphics backend or quality tier. Light volume traces windows, walls as built and curtains.
+- Room exposure is one number per room from the room's own light, plus a closed-loop trim from the finished picture at rest. The model can state a lighting intent (a key); dim keys are built dim and an over-lit picture is flagged.
+- Exterior context from data (`environment.surroundings`: hills, tree line, field patchwork), facade depth, section poche, neon smear fix, day grade that counters AgX's lifted blacks.
+
+### Generation
+- Generation brief: before building, the model plans what a space needs and how elaborate it should be, with counts worked out from area and spacing. The plan shows in chat as a collapsible card and can be edited before the build.
+- Richness review: a world built from free pieces is compared against its brief with an overview and eye-height views; shortfalls go back to the model once per set, and a stall on repeated findings does not end a review whose brief is satisfied.
+- `shape_land` layouts: tier and grid (rows, raked seating), wall, along, perimeter and around, and `street` (a village street with regional houses, fences with gates in line with doors, gardens and lamps). Land follows the plot; forests count trees per hectare.
+- `find_model` offers crafted parts by alias and refuses a different kind of object as a stand-in.
+
+### Library and parts
+- Asset library for any world: 76 Poly Haven outdoor and street models, Kenney space, castle and watercraft kits, five more HDRIs, KTX2 twins. The hosted build ships the subset the example worlds use and fetches the rest from a pinned CDN.
+- Crafted procedural parts: furniture (sinks, cane chairs, fridges, ovens, rugs), venue and public space (cinema seat, tier floor, screen, stage, speakers, acoustic panels, lectern, stanchions, statue and bust, wall labels, place settings, candles, columns, planters), gym, clinic and street pieces (treadmill, rack, hospital bed, bus shelter, market stall), harbour (five kinds of boat, bollards, cleats, piles, lobster pots, gulls), and seven regional dwelling types with real roofs, shutters, reveals, plinths, fences, gardens and street lamps. Thatch and slate roof finishes.
+- Facade pass for buildings made from a design: entrance surround, canopy, sign with emissive lettering, cornice, pilasters, forecourt, lamps.
+
+### Photo to room
+- `measure_room`: an advisory room size from a monocular depth network (Depth Anything V2 Small, Apache-2.0, CPU, weights fetched on first use). The estimate is added to the first analysis and a space refusal hands the model the room's numbers.
+- The shell size answer is explicit and accountable; curtains hang at wide glazed doors; golden-hour skies keep to the side of noon their hour is on; real furniture models are placed where they fit.
 
 ### Studio
 - Removed the Plan Reveal (the arch bar's Reveal button, the ink-on-paper plan overlay and the rising-walls animation). The Reveal video camera move in Publish stays.
 - Project cards and rows show the actions button (…) at all times as a frosted 32 px button with a visible focus ring, plus a trash button. A Select mode deletes several projects with one confirmation and one Undo, with a message when some could not be deleted or restored. Delete or Backspace on a focused card opens the confirmation, Escape leaves Select, and the editor's Aether menu has Delete project….
+- No text over the picture for mode switches, scene or texture preparation, lighting, checks or play tests. Stop puts the editor camera back where Play found it.
+
+### Tooling
+- Demo video pipeline (`npm run demo`): a scripted recorder for the real studio, an ffmpeg edit with burned-in captions, and checks.
+- Scripts: `brief-probe`, `world-stills`, `exposure-audit`, `world-perf`, `dwelling-sheet`, `furn-sheet`.
+- Community files: CONTRIBUTING, SECURITY, CODE_OF_CONDUCT, issue and pull request templates; `docs/BRANCHES.md`.
+- `three` stays pinned to an exact version; `packages/render/test/three-internals.test.ts` fails with the member name when an upgrade changes a private shape.
+- `npm run budget` checks the first-visit download against `scripts/size-budget.json`; `npm run licences` checks production licences against `docs/THIRD_PARTY.md`.
+- `docs/README.md` indexes the documentation.
 
 ### Security
 - The dev and preview servers answer to localhost only. A tunnel host is allowed by naming it in `AETHER_DEV_ALLOWED_HOSTS`.
@@ -17,13 +52,3 @@ and `docs/REVIEW_LOG.md` carries the measured detail. Workspace packages share t
 - Uncaught errors and unhandled promise rejections are logged once each and shown as at most one calm notice per 15 seconds.
 - Frames are presented only when complete: scene and effect passes are prepared before the screen pass opens.
 - Rendering resolution is preserved during CPU-bound slowdowns; shared shaders and procedural noise prepare off the UI thread.
-
-### Tooling
-- `three` stays pinned to an exact version; `packages/render/test/three-internals.test.ts` fails with the member name when an upgrade changes a private shape.
-- `npm run budget` checks the first-visit download against `scripts/size-budget.json`; `npm run licences` checks production licences against `docs/THIRD_PARTY.md`.
-- `docs/README.md` indexes the documentation.
-
-## 0.1.0
-
-First tagged state of the framework: natural language to verified, interactive 3D worlds in the studio, the CLI, the MCP server
-and the local bridge.
