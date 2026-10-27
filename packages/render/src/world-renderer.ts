@@ -66,7 +66,7 @@ import { FrameStats } from './view/frame-stats';
 import { gradeFor, gradeWithPreset } from './gpu/grade';
 import { autoTier, degrade, effectsKey, effectsOf, evScale, GRADE_PRESETS, isGradePresetId, presetFor, resolveEffects, type EffectOverrides, type GradePreset, type GradePresetId, type PostEffects, type RenderTier } from './gpu/finishing';
 import { CameraTour, TOUR_SECONDS, tourKeys } from './view/tour';
-import { AdaptiveResolution } from './view/adaptive-resolution';
+import { AdaptiveResolution, MOTION_PROFILES, type MotionProfile } from './view/adaptive-resolution';
 import { MeshBasicNodeMaterial } from 'three/webgpu';
 import { textureWork } from './gpu/task-queue';
 import { BATCHED_LAYER } from './sync/static-batches';
@@ -395,8 +395,6 @@ export type RenderProcessingStage = 'scene' | 'materials' | 'render' | 'lighting
 
 /** Size of the planar water mirror relative to the frame at full scale (see PlanarMirror). */
 const MIRROR_SCALE = 0.5;
-/** Lowest adaptive scale of a scene pass that is upsampled and sharpened (the drawing buffer's own floor is 0.5). */
-const PASS_SCALE_FLOOR = 0.15;
 /** Frame time (s) beyond which an animating scene at rest cannot afford the full chain, and for how many frames in a row. */
 const REST_SLOW_DT = 0.034;
 const REST_SLOW_FRAMES = 10;
@@ -707,7 +705,7 @@ export class WorldRenderer {
   /** What the browser says about the machine (cores, memory): weak hardware gets a cheaper automatic tier and pixel ratio. */
   private readonly hardware: HardwareHints = readHardware();
   /** Steps down the performance ladder while frames stay slow (automatic tier only). */
-  private readonly governor = new PerformanceGovernor();
+  private readonly governor = new PerformanceGovernor({ afterScale: 0.76 });
   private readonly adaptiveTier = new AdaptiveTier();
   /** Firefox on WebGL2 with a real GPU: nearest shadow comparison, cleared targets and a light start that climbs (gpu/gecko-safe.ts). */
   private readonly geckoSafe: boolean;
@@ -842,7 +840,8 @@ export class WorldRenderer {
   private lastDrawCalls = 0;
   private framesDrawn = 0;
   /** Frame-time driven resolution scale (see {@link AdaptiveResolution}). */
-  private readonly adaptive = new AdaptiveResolution();
+  private readonly adaptive = new AdaptiveResolution(MOTION_PROFILES.sharp.opts);
+  private motionProfile: MotionProfile = 'sharp';
   /** The previous animation frame drew (continuous rendering streak). */
   private drewLastFrame = false;
   private lastTriangles = 0;
@@ -2199,6 +2198,22 @@ export class WorldRenderer {
     this.resize(this.cssWidth, this.cssHeight);
     this.boundsDirty = true;
     this.needsDraw = true;
+  }
+
+  /**
+   * `sharp` (default): the resolution stays high and stable, frames may run at 30-45 fps on a weak GPU; `smooth`: the
+   * resolution falls aggressively to hold 60 fps (soft in motion).
+   */
+  setMotionProfile(profile: MotionProfile): void {
+    if (profile === this.motionProfile || !MOTION_PROFILES[profile]) return;
+    this.motionProfile = profile;
+    this.motionScale = 1;
+    this.adaptive.configure(MOTION_PROFILES[profile].opts);
+    this.resize(this.cssWidth, this.cssHeight);
+  }
+
+  get motionProfileNow(): MotionProfile {
+    return this.motionProfile;
   }
 
   /** Turn adaptive resolution on or off (off restores the full budget resolution at once). */
@@ -5424,7 +5439,7 @@ export class WorldRenderer {
   /** Keep the scene pass at the adaptive scale (and the scaler's floor) of the way the scale is applied. */
   private syncSceneScale(): void {
     const via = this.scalesViaPass();
-    const lowered = this.adaptive.setFloor(via ? PASS_SCALE_FLOOR : undefined);
+    const lowered = this.adaptive.setFloor(via ? MOTION_PROFILES[this.motionProfile].passFloor : undefined);
     if (lowered || via !== this.viaPassApplied) {
       this.viaPassApplied = via;
       // Called while drawing: the buffer follows without asking for another frame (that would count as the view moving, and a

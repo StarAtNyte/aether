@@ -136,7 +136,7 @@ export class PerformanceGovernor {
   enabled = true;
   /** Lowest level the climb may return to (raised when a climb was undone at once). */
   floor = 0;
-  private readonly o: typeof GOVERNOR_DEFAULTS;
+  private readonly o: { [K in keyof typeof GOVERNOR_DEFAULTS]: number };
   private readonly ring: Float32Array;
   private readonly sorted: Float32Array;
   private cursor = 0;
@@ -151,7 +151,7 @@ export class PerformanceGovernor {
   private lastMoveAt = Number.NEGATIVE_INFINITY;
   private lastUpAt = Number.NEGATIVE_INFINITY;
 
-  constructor(opts: Partial<typeof GOVERNOR_DEFAULTS> = {}) {
+  constructor(opts: { [K in keyof typeof GOVERNOR_DEFAULTS]?: number } = {}) {
     this.o = { ...GOVERNOR_DEFAULTS, ...opts };
     this.ring = new Float32Array(this.o.window);
     this.sorted = new Float32Array(this.o.window);

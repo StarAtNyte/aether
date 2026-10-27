@@ -362,7 +362,7 @@ export class Studio {
           if (prev.lowMemory !== s.settings.lowMemory) this.applyMemory();
           if (prev.backend !== s.settings.backend) void this.restartRenderer('Switching renderer…');
           if (prev.showPerf !== s.settings.showPerf) this.sim?.setStatsWhileEditing(s.settings.showPerf);
-          if (prev.renderTier !== s.settings.renderTier || prev.effects !== s.settings.effects) this.applyGraphics();
+          if (prev.renderTier !== s.settings.renderTier || prev.motion !== s.settings.motion || prev.effects !== s.settings.effects) this.applyGraphics();
         }
       }),
     );
@@ -625,6 +625,7 @@ export class Studio {
       if (typeof v === 'boolean') overrides[k] = v;
     }
     r.setRenderTier(st.settings.renderTier);
+    r.setMotionProfile(st.settings.motion);
     r.setEffects(overrides);
     this.publishGraphicsState();
   }

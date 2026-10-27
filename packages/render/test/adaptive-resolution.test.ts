@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AdaptiveResolution, ADAPTIVE_DEFAULTS } from '../src/view/adaptive-resolution';
+import { AdaptiveResolution, ADAPTIVE_DEFAULTS, MOTION_PROFILES } from '../src/view/adaptive-resolution';
 
 /** Feed `seconds` of continuous frames at `fps`; returns the number of scale changes. */
 function feed(a: AdaptiveResolution, fps: number, seconds: number): number {
@@ -99,5 +99,37 @@ describe('AdaptiveResolution floor', () => {
     a.setFloor(0.3);
     expect(a.setFloor()).toBe(false);
     expect(a.scale).toBe(1);
+  });
+});
+
+describe('sharp motion profile', () => {
+  const sharp = (): AdaptiveResolution => new AdaptiveResolution(MOTION_PROFILES.sharp.opts);
+
+  it('keeps full resolution at 40 fps and at 30 fps', () => {
+    const a = sharp();
+    expect(feed(a, 40, 60)).toBe(0);
+    expect(feed(a, 30, 60)).toBe(0);
+    expect(a.scale).toBe(1);
+  });
+
+  it('only falls clearly below 30 fps and stops at 0.75 above the emergency rate', () => {
+    const a = sharp();
+    feed(a, 20, 60);
+    expect(a.scale).toBe(0.75);
+  });
+
+  it('opens the emergency floor only when the machine is unusable, and closes it when it recovers', () => {
+    const a = sharp();
+    feed(a, 10, 60);
+    expect(a.scale).toBeLessThan(0.75);
+    expect(a.scale).toBeGreaterThanOrEqual(0.4);
+    feed(a, 60, 120);
+    expect(a.scale).toBe(1);
+  });
+
+  it('smooth keeps the old policy', () => {
+    const a = new AdaptiveResolution(MOTION_PROFILES.smooth.opts);
+    feed(a, 45, 20);
+    expect(a.scale).toBeLessThan(0.75);
   });
 });

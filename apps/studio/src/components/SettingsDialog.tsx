@@ -12,7 +12,7 @@ const AiConnectionPane = lazyBoundary(async () => ({ default: (await import('./a
 import { SHORTCUTS } from '../app/useShortcuts';
 import type { BackendReport } from '@aether/render';
 import { backendHeadline, backendWhy } from '../lib/backendLabel';
-import { EFFECT_SETTINGS, type BackendSetting, type EffectSetting, type LowMemorySetting, type RenderTierSetting, type StudioSettings } from '../lib/storage';
+import { EFFECT_SETTINGS, type BackendSetting, type EffectSetting, type LowMemorySetting, type MotionSetting, type RenderTierSetting, type StudioSettings } from '../lib/storage';
 import { Toggle } from './fields';
 import { Dialog } from './ui/Dialog';
 import { Segmented } from './ui/Segmented';
@@ -25,6 +25,11 @@ const VIEWPORT_OPTIONS: ReadonlyArray<[BooleanSetting, string, string]> = [
   ['showColliders', 'Show colliders', 'Wireframe physics colliders.'],
   ['shadows', 'Shadows', 'Soft shadows (applies after reload).'],
   ['showNavHint', 'Navigation hint', 'Mouse and touch controls shown over an idle viewport.'],
+];
+
+const MOTION_CHOICES: ReadonlyArray<[MotionSetting, string]> = [
+  ['sharp', 'Sharp'],
+  ['smooth', 'Smooth'],
 ];
 
 const TIER_CHOICES: ReadonlyArray<[RenderTierSetting, string]> = [
@@ -158,6 +163,13 @@ export const SettingsDialog = memo(function SettingsDialog({
                 </span>
               </span>
               <Segmented<RenderTierSetting> label="Graphics quality" value={settings.renderTier} onChange={(v) => update({ renderTier: v })} options={TIER_CHOICES} />
+            </div>
+            <div className="setting-row">
+              <span className="setting-row__text">
+                <span className="setting-row__label">Motion</span>
+                <span className="setting-row__hint">Sharp keeps the picture crisp and steady while you move, and may run below 60 fps on a weak GPU. Smooth lowers the resolution while moving to hold 60 fps.</span>
+              </span>
+              <Segmented<MotionSetting> label="Motion" value={settings.motion} onChange={(v) => update({ motion: v })} options={MOTION_CHOICES} />
             </div>
             {EFFECT_SETTINGS.map((key) => {
               const tier = settings.renderTier === 'auto' ? ((gpu?.render?.auto ?? 'medium') as Exclude<RenderTierSetting, 'auto'>) : settings.renderTier;

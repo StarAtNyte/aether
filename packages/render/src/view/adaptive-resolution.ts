@@ -42,10 +42,31 @@ export const ADAPTIVE_DEFAULTS = Object.freeze({
   failWindow: 8,
   /** Frame deltas above this break the "continuous" streak (s). */
   maxContinuousDt: 0.25,
+  /** Emergency step: under this frame rate for `emergencyAfter` seconds the floor opens down to `emergencyScale` (0: no emergency step). */
+  emergencyFps: 0,
+  emergencyAfter: 3,
+  emergencyScale: 0,
 });
 
 /** Options of {@link AdaptiveResolution}. */
-export type AdaptiveOptions = Partial<typeof ADAPTIVE_DEFAULTS>;
+export type AdaptiveOptions = { [K in keyof typeof ADAPTIVE_DEFAULTS]?: number };
+
+/**
+ * How hard the scale is traded for frame rate. `sharp` (default) keeps the picture crisp and stable: the scale only falls
+ * when frames are clearly slow (about 30 fps) and not below {@link MOTION_PROFILES.sharp.minScale} unless the machine is
+ * unusable (under `emergencyFps` for `emergencyAfter` seconds), when the lower `emergencyScale` opens. `smooth` aims at
+ * 60 fps and may drop low (the older policy).
+ */
+export type MotionProfile = 'sharp' | 'smooth';
+
+/** Profiles: governor options, the scale the scene pass may reach and the emergency step. */
+export const MOTION_PROFILES: Readonly<Record<MotionProfile, { opts: AdaptiveOptions; passFloor: number }>> = Object.freeze({
+  sharp: {
+    opts: { lowFps: 26, highFps: 33, targetFps: 30, minScale: 0.75, minStep: 0.8, downAfter: 2, upAfter: 8, emergencyFps: 15, emergencyAfter: 3, emergencyScale: 0.4 },
+    passFloor: 0.75,
+  },
+  smooth: { opts: {}, passFloor: 0.15 },
+});
 
 /** Frame-time driven resolution scale controller. */
 export class AdaptiveResolution {
@@ -55,13 +76,16 @@ export class AdaptiveResolution {
   enabled = true;
   /** The lowest scale in force (the options' `minScale` unless {@link setFloor} lowered it). */
   private floor: number;
-  private readonly o: typeof ADAPTIVE_DEFAULTS;
+  private o: { [K in keyof typeof ADAPTIVE_DEFAULTS]: number };
   private fps = 0;
   private below = 0;
   private above = 0;
   private upWait: number;
   private sinceUpscale = Number.POSITIVE_INFINITY;
   private changes = 0;
+  /** Seconds spent under the emergency frame rate, and whether the emergency floor is open. */
+  private crisis = 0;
+  private crisisOpen = false;
   /** Ring of recent continuous frame times (s) and a scratch copy for the percentile. */
   private readonly window = new Float32Array(WINDOW);
   private readonly sorted = new Float32Array(WINDOW);
@@ -80,7 +104,12 @@ export class AdaptiveResolution {
    */
   setFloor(floor: number = this.o.minScale): boolean {
     this.floor = Math.max(0.1, Math.min(1, floor));
-    return this.scale < this.floor ? this.set(this.floor) : false;
+    return this.scale < this.lowest ? this.set(this.lowest) : false;
+  }
+
+  /** The lowest scale allowed now: the floor, or the emergency scale while the machine is unusably slow. */
+  private get lowest(): number {
+    return this.crisisOpen ? Math.min(this.floor, this.o.emergencyScale) : this.floor;
   }
 
   /** Number of scale changes so far (diagnostics). */
@@ -119,12 +148,17 @@ export class AdaptiveResolution {
       this.filled = 0;
       this.below = 0;
       this.above = 0;
+      this.crisis = 0;
       return false;
     }
     this.window[this.cursor] = dt;
     this.cursor = (this.cursor + 1) % WINDOW;
     if (this.filled < WINDOW) this.filled++;
     this.fps = 1 / this.p90();
+    if (this.o.emergencyFps > 0 && this.o.emergencyScale > 0) {
+      this.crisis = this.fps < this.o.emergencyFps && this.filled >= WINDOW ? this.crisis + dt : 0;
+      if (this.crisis >= this.o.emergencyAfter) this.crisisOpen = true;
+    }
     // Clear GPU headroom means reducing pixels cannot fix the observed CPU delay.
     // Leave margin for the next upscale's extra pixels; absent evidence retains the old policy.
     const gpuHeadroom = gpuSeconds !== undefined && Number.isFinite(gpuSeconds) && gpuSeconds > 0 && gpuSeconds < .8 / this.o.targetFps;
@@ -138,10 +172,10 @@ export class AdaptiveResolution {
       this.below = 0;
       this.above = 0;
     }
-    if (this.below >= this.o.downAfter && this.scale > this.floor) {
+    if (this.below >= this.o.downAfter && this.scale > this.lowest) {
       if (this.sinceUpscale < this.o.failWindow) this.upWait = Math.min(this.o.maxUpAfter, this.upWait * 2);
       const factor = Math.max(this.o.minStep, Math.min(this.o.step, Math.sqrt(Math.max(this.fps, 1) / this.o.targetFps)));
-      return this.set(Math.max(this.floor, this.scale * factor));
+      return this.set(Math.max(this.lowest, this.scale * factor));
     }
     if (this.above >= this.upWait && this.scale < 1) {
       this.sinceUpscale = 0;
@@ -159,6 +193,15 @@ export class AdaptiveResolution {
     this.above = 0;
     this.upWait = this.o.upAfter;
     this.sinceUpscale = Number.POSITIVE_INFINITY;
+    this.crisis = 0;
+    this.crisisOpen = false;
+  }
+
+  /** Switch the policy (a profile's options); the scale returns to 1. */
+  configure(opts: AdaptiveOptions): void {
+    this.o = { ...ADAPTIVE_DEFAULTS, ...opts };
+    this.floor = this.o.minScale;
+    this.reset();
   }
 
   private set(next: number): boolean {
@@ -170,6 +213,7 @@ export class AdaptiveResolution {
     this.filled = 0;
     if (rounded === this.scale) return false;
     this.scale = rounded;
+    if (this.crisisOpen && rounded >= this.floor) this.crisisOpen = false;
     this.changes++;
     return true;
   }

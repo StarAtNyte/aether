@@ -115,6 +115,8 @@ export type BackendSetting = 'auto' | 'webgpu' | 'webgl2';
 export type LowMemorySetting = 'auto' | 'on' | 'off';
 
 /** Interactive graphics quality: automatic from the GPU, or a fixed render tier. */
+/** Motion policy: `sharp` keeps the resolution high (default), `smooth` lowers it aggressively to hold 60 fps. */
+export type MotionSetting = 'sharp' | 'smooth';
 export type RenderTierSetting = 'auto' | 'low' | 'medium' | 'high' | 'ultra';
 /** The finishing-chain effects a user can switch individually. */
 export type EffectSetting = 'ao' | 'gi' | 'taa' | 'contact' | 'ssr' | 'shafts' | 'halation' | 'aberration' | 'grain';
@@ -147,6 +149,8 @@ export interface StudioSettings {
   reduceMotion: boolean;
   /** Graphics quality tier (auto follows the GPU). */
   renderTier: RenderTierSetting;
+  /** Sharp (default) or Smooth: whether the picture gives up resolution in motion to hold the frame rate. */
+  motion: MotionSetting;
   /** Individual effect switches on top of the tier. */
   effects: EffectSettings;
 }
@@ -167,6 +171,7 @@ export const DEFAULT_SETTINGS: Readonly<StudioSettings> = Object.freeze({
   immersivePlay: true,
   reduceMotion: false,
   renderTier: 'auto',
+  motion: 'sharp',
   effects: Object.freeze({}) as EffectSettings,
 });
 
@@ -214,6 +219,7 @@ export function loadSettings(storage: StorageLike | null, prefersDark = false): 
     }
     out.backend = oneOf(own('backend'), BACKENDS) ?? (own('preferWebGPU') === false ? 'webgl2' : DEFAULT_SETTINGS.backend);
     out.lowMemory = oneOf(own('lowMemory'), LOW_MEMORY) ?? (own('lowPower') === true ? 'on' : DEFAULT_SETTINGS.lowMemory);
+    out.motion = oneOf(own('motion'), ['sharp', 'smooth'] as const) ?? DEFAULT_SETTINGS.motion;
     out.renderTier = oneOf(own('renderTier'), RENDER_TIER_SETTINGS) ?? DEFAULT_SETTINGS.renderTier;
     out.effects = parseEffectSettings(own('effects'));
     const repairs = own('repairs');
