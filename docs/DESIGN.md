@@ -14,10 +14,12 @@ competes with the world and every bit of colour in the UI means something.
 
 Principles:
 
-1. **One accent, and it means "Aether is doing this".** Indigo marks the
-   primary action, focus, the agent's plan, the proof and the active state.
-   Everything else is cool neutral grey. Status colours (success, warning,
-   danger) are muted and only show state.
+1. **Neutral chrome; colour only for meaning.** The primary action is a
+   solid ink button on light and a paper button on dark. Secondary actions are
+   outline or ghost. Selected and active states show with weight, a subtle
+   neutral fill or an underline, never a hue. Colour appears for danger (red),
+   warning (amber) and success (muted green), plus one small warm dot for the
+   agent's presence. There is no blue anywhere in the chrome.
 2. **Annotate the world, don't decorate the chrome.** The expressive layer
    lives in the viewport: plan marks drawn around what the agent places,
    labels that name what is being built, the ghost replay of a physics
@@ -64,7 +66,7 @@ first paint. The values below are the light theme.
 | Surfaces | `--bg` 97.2% · `--surface` 100% · `--surface-2/3/4` · `--canvas` (behind the viewport) |
 | Lines | `--border` · `--border-strong` · `--border-hover` |
 | Text | `--text` 21.5% · `--text-2` 43% · `--text-3` 52.5% · `--text-disabled` |
-| Accent | `--accent` oklch(54% 0.19 268) · `--accent-hover/-press` · `--accent-text` · `--accent-soft` (9%) · `--accent-border` (35%) · `--focus-ring` |
+| Primary (ink / paper) | `--accent` is the ink (22%) on light and the paper (93%) on dark: primary buttons, slider fill, checked switches · `--on-accent` · `--accent-hover/-press` · `--accent-text` · `--accent-soft` (6% ink wash) · `--accent-border` · `--focus-ring` (2 px solid ink or paper) · `--presence` (the one warm dot) |
 | Status | `--success*` · `--warning*` · `--danger*` (muted, never decorative) |
 | Overlays | `--overlay` (84% white glass) · `--overlay-border` · `--scrim` · `--shadow-1/2` |
 | Space | 4 px grid: `--s-1` 4 · `--s-2` 8 · `--s-3` 12 · `--s-4` 16 · `--s-5` 20 · `--s-6` 24 · `--s-8` 32 · `--s-10` 40 · `--s-12` 48 |
@@ -73,13 +75,18 @@ first paint. The values below are the light theme.
 | Motion | `--ease` cubic-bezier(0.2, 0, 0, 1) · `--dur` 150 ms · `--dur-slow` 200 ms |
 | Layers | `--z-overlay` 10 · `--z-drawer` 30 · `--z-menu` 50 · `--z-toast` 60 · `--z-tooltip` 70 · `--z-palette` 80 |
 
-Every text pair meets WCAG AA in both themes (`--text-3` on `--surface-3` is
-the lowest at 4.8:1; white on the accent is 5.3:1). New UI must reuse these tokens and never add raw
-colours. There are two exceptions. The in-world game HUDs (`voxel.css`) have
-their own dark-glass palette, because they sit on bright sky and dark caves
-alike. The proof replay and plan marks are drawn in the 3D scene, in the
-accent family (`#6b72ff` → `#c2ecff` trails, `#7c86ff` marks, `#8c95ff`
-ghosts).
+Every text pair meets WCAG AA in both themes (`npm run check:ui-colour` computes every pair from the tokens; the lowest text pair is 4.97:1, the primary label on ink is 16.6:1). New UI must reuse these tokens and never add raw
+colours. There are two exceptions. The in-world game HUDs (`voxel.css`, `npc.css`) and
+the published player (`player.css`) have their own dark-glass palette, because
+they sit on bright sky and dark caves alike; it is warm grey with a paper
+primary, also without blue. The editor's selection outline, edit gizmos, path
+and replay overlays are drawn in the 3D scene in white and warm grey.
+
+Rules for new UI: warm-grey surfaces (hue 85, chroma under 0.01), few borders,
+no gradients (scrims over images excepted), radii from `--r-1..3`, weights 400
+to 600, hover is a step on the neutral ramp. `npm run check:ui-colour` fails on
+a contrast miss or any blue or purple hue left in the stylesheets;
+`scripts/ui-audit.ts` takes the screenshots for a visual check.
 
 ## Type and icons
 
@@ -124,9 +131,9 @@ reduced motion and costs nothing once it has finished.
 | Moment | What happens | Where |
 | --- | --- | --- |
 | **Prompt flight** | The sent prompt lifts out of the composer as a pill, arcs into the viewport and dissolves into a ring that widens over the world (620 ms + 900 ms). Two short-lived DOM nodes, Web Animations. | `lib/promptFlight.ts`, `.prompt-flight`, `.vp-ripple` |
-| **Plan marks** | When the agent builds, every new object is first bracketed (thin accent corner ticks around where it will stand), and the groups are named on the world ("Palm ×12", "Coin ×8", dashed accent labels). Objects then grow into their brackets after a 0.3 s lead. The marks hold for 1.8 s and fade over 0.7 s. The first world of a session just materialises, without marks. | `render/view/blueprint.ts`, `lib/planMarks.ts`, `.vp-label--plan` |
+| **Plan marks** | When the agent builds, every new object is first bracketed (thin ink corner ticks around where it will stand), and the groups are named on the world ("Palm ×12", "Coin ×8", dashed ink labels). Objects then grow into their brackets after a 0.3 s lead. The marks hold for 1.8 s and fade over 0.7 s. The first world of a session just materialises, without marks. | `render/view/blueprint.ts`, `lib/planMarks.ts`, `.vp-label--plan` |
 | **Materialisation** | Grow-in ripple from the centre of the scene outward, with an ease-out-back pop for small things and none for mountains. | `render/view/grow-in.ts` |
-| **The proof** | After verification, translucent indigo ghosts of the bodies that moved re-enact the simulated run (recorded in the worker, not simulated again) while the originals step aside. The ghosts leave fading trails, hold the final pose, then dissolve. The camera brings the motion into view first if it is too small to read. The **seal** lands at the top of the viewport: a ring draws itself closed around a check, with "Proved · 4 of 4 checks · 7.3 s simulated" and a Replay button. A failed run gets a quiet warning chip that links to Checks. | `physics/trace.ts`, `render/view/proof-replay.ts`, `ProofSeal.tsx` |
+| **The proof** | After verification, translucent warm-grey ghosts of the bodies that moved re-enact the simulated run (recorded in the worker, not simulated again) while the originals step aside. The ghosts leave fading trails, hold the final pose, then dissolve. The camera brings the motion into view first if it is too small to read. The **seal** lands at the top of the viewport: a ring draws itself closed around a check, with "Proved · 4 of 4 checks · 7.3 s simulated" and a Replay button. A failed run gets a quiet warning chip that links to Checks. | `physics/trace.ts`, `render/view/proof-replay.ts`, `ProofSeal.tsx` |
 | **Play** | An iris opens the viewport, the panels step aside, and the HUD (score/time, or the block-world hotbar, hearts and food) takes over. Esc returns to the exact pre-play world. | `.viewport.is-entering`, `[data-immersive]`, `PlayHud`, `VoxelHud` |
 | **Share** | A link that carries the world itself (compressed, in the URL fragment), so no upload is needed and it works on any static host. It opens the viewer, and Remix makes it yours. | `lib/shareLink.ts`, `ViewerRoute.tsx` |
 
