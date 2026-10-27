@@ -877,6 +877,6 @@ export async function* buildFromMeasurements(deps: BuildDeps): AsyncGenerator<Ag
   const dropped = plan.rows.filter((r) => r.action === 'drop').length;
   const stillRefused = plan.rows.filter((r) => r.action === 'place' && r.refused).length;
   const text = `First build from the measurements: ${placed} pieces placed in one batch, ${plan.rows.filter((r) => r.action === 'keep' || r.action === 'adjust').length} already built and linked, ${stillRefused} refused after the second look, ${dropped} not built (${plan.rows.filter((r) => r.action === 'drop').slice(0, 6).map((r) => `${r.label}: ${r.reason}`.slice(0, 70)).join('; ')}). ${linked} of ${plan.rows.length} perceived objects have a linked piece.`;
-  yield { type: 'photo', phase: 'built', text };
+  yield { type: 'photo', phase: 'building', text };
   return { plan, placed, refused: stillRefused, dropped, linked, calls, decisions: n, text };
 }

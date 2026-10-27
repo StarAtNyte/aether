@@ -309,7 +309,8 @@ export class ObjectStage {
       } catch { this.measured = null; }
     }
     if (this.measured) {
-      yield { type: 'photo', phase: 'round', round: inp.round, text: `${this.measured.line} ${this.coverageLine()}` };
+      const m = this.measured;
+      yield { type: 'photo', phase: 'round', round: inp.round, text: `${m.line} ${this.coverageLine()}`, measured: { rows: m.rows.map((x) => ({ id: x.id, label: x.label, perceivedId: x.perceivedId, verdict: x.verdict, iou: x.iou, deltaE: x.deltaE, offsetM: x.offsetM, sizeRatio: x.sizeRatio, ...(x.linked ? { linked: x.linked } : {}) })), surfaces: m.surfaces.map((x) => ({ surface: x.surface, deltaE: x.deltaE, ...(x.rawDeltaE !== undefined ? { rawDeltaE: x.rawDeltaE } : {}) })), counts: { ...m.counts }, coverage: this.coverage() } };
       this.mergeMeasured();
       const openIds = ledger.list().filter((r) => openAspects(r).length > 0).map((r) => r.item.id);
       const verdictOf = new Map(this.measured.rows.map((m) => [m.id, m.verdict]));

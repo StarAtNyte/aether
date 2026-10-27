@@ -86,7 +86,7 @@ export type AgentEvent =
   | { type: 'message'; text: string }
   | { type: 'review'; round: number; phase: ReviewPhase; text: string; score?: number; findings?: number; differences?: PhotoDifferenceView[] }
   /** Progress of a room rebuilt from a photograph: reading it, the assumptions, each compare round, the final score. */
-  | { type: 'photo'; phase: PhotoPhase; text: string; round?: number; assumptions?: PhotoAssumptionView[]; score?: PhotoScoreView; palette?: string[]; reads?: PhotoReadsView; differences?: PhotoDifferenceView[]; objects?: PhotoObjectView[]; stages?: PhotoStageView[]; provenance?: Provenance; resume?: PhotoResumeState }
+  | { type: 'photo'; phase: PhotoPhase; text: string; round?: number; assumptions?: PhotoAssumptionView[]; score?: PhotoScoreView; palette?: string[]; reads?: PhotoReadsView; differences?: PhotoDifferenceView[]; objects?: PhotoObjectView[]; stages?: PhotoStageView[]; provenance?: Provenance; resume?: PhotoResumeState; measured?: PhotoMeasuredView }
   /** A small edit applied locally (no model call): what changed, as a compact diff. */
   | { type: 'edit'; summary: string; diff: DiffLine[]; targets: EntityId[]; cosmetic: boolean; notes: string[]; ms: number; local: boolean }
   /** The request is ambiguous: the candidates to choose from (the host highlights them). */
@@ -104,6 +104,14 @@ export type AgentEvent =
   | { type: 'steer'; text: string }
   | { type: 'error'; text: string }
   | { type: 'done'; usage: { inputTokens: number; outputTokens: number; calls: number; cachedInputTokens?: number; models?: string[] } };
+
+/** The measured comparison of a round (rows per object, surfaces, counts, coverage), for the run record. */
+export interface PhotoMeasuredView {
+  rows: Array<{ id: string; label: string; perceivedId: string; verdict: string; iou: number | null; deltaE: number | null; offsetM: number | null; sizeRatio: { w: number; h: number } | null; linked?: string }>;
+  surfaces: Array<{ surface: string; deltaE: number | null; rawDeltaE?: number | null }>;
+  counts: Record<string, number>;
+  coverage: { linked: number; perceived: number };
+}
 
 /** Where the review loop is: looking, found problems, fixing, finished (approved, stalled or out of rounds). */
 export type ReviewPhase = 'checking' | 'found' | 'fixing' | 'approved' | 'stalled' | 'limit' | 'crosscheck';

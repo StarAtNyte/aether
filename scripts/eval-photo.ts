@@ -83,6 +83,7 @@ interface Args {
   /** The object inventory and per-object judge (with the differences ledger, cross-check and staged harness). */
   objects: boolean;
   perception: boolean;
+  measuredBuild: boolean;
 }
 
 function parseArgs(argv: readonly string[]): Args {
@@ -104,6 +105,7 @@ function parseArgs(argv: readonly string[]): Args {
     judges: mode === 'replay' ? 0 : Math.max(0, Math.min(7, Number(get('judges') ?? 3))),
     objects: mode === 'live' && get('objects') !== '0',
     perception: get('perception') !== '0',
+    measuredBuild: get('measured') !== '0',
   };
 }
 
@@ -246,6 +248,10 @@ interface Report {
   assumptions: number;
   /** The per-object table of the final state (objects on) and the width of the built room. */
   objects: PhotoObjectView[] | null;
+  /** The measured comparison of every round (per object IoU, deltaE, verdict, coverage). */
+  measuredRounds: Array<{ round: number | null } & NonNullable<Extract<AgentEvent, { type: 'photo' }>['measured']>>;
+  /** Lines of the first build from the measurements (plan, review, batch, coverage). */
+  buildLines: string[];
   builtWidth: number | null;
   builtDepth: number | null;
   objectLines: string[];
@@ -279,16 +285,18 @@ async function runPhoto(args: Args, live: Provider | null): Promise<Report> {
   // AETHER_NO_TEXTURES=1 runs the same room without the photo-texture pass (the "before" of a comparison).
   if (process.env['AETHER_NO_TEXTURES'] === '1') (host as unknown as { storeTexture?: unknown }).storeTexture = undefined;
   if (args.render === 'gpu') host.gpu = await GpuRoom.open({ headed: process.env['SHOT_HEADED'] === '1' });
-  const agent = new WorldAgent({ provider, catalogs: CATALOGS, maxTurns: 10, maxToolCalls: 60, photo: { ...(args.rounds !== undefined ? { maxRounds: args.rounds } : {}), stallRounds: args.stall, vision: true, judges: args.judges, reads: args.reads, reconcile: args.reconcile, perception: args.perception, ...(args.objects ? { differences: true, crossCheck: true, harness: true, objects: true } : {}) } });
+  const agent = new WorldAgent({ provider, catalogs: CATALOGS, maxTurns: 10, maxToolCalls: 60, photo: { ...(args.rounds !== undefined ? { maxRounds: args.rounds } : {}), stallRounds: args.stall, vision: true, judges: args.judges, reads: args.reads, reconcile: args.reconcile, perception: args.perception, measuredBuild: args.measuredBuild, ...(args.objects ? { differences: true, crossCheck: true, harness: true, objects: true } : {}) } });
   const t0 = performance.now();
   const events: AgentEvent[] = [];
-  const report: Report = { photo: args.photo, source, judges: args.judges, reads: null, calls: 0, ms: 0, rounds: [], first: null, final: null, errors: [], assumptions: 0, objects: null, builtWidth: null, builtDepth: null, objectLines: [] };
+  const report: Report = { photo: args.photo, source, judges: args.judges, reads: null, calls: 0, ms: 0, rounds: [], first: null, final: null, errors: [], assumptions: 0, objects: null, builtWidth: null, builtDepth: null, objectLines: [], measuredRounds: [], buildLines: [] };
   for await (const e of agent.run(spec.prompt, host, { images: [dataUrl], photo: 'recreate' })) {
     events.push(e);
     if (e.type === 'photo') {
       console.log(`  [${args.photo}] ${e.phase}${e.round ? ` ${e.round}` : ''}: ${e.text.slice(0, e.phase === 'textures' ? 1200 : 200)}`);
       if (e.assumptions) report.assumptions = e.assumptions.length;
       if (e.objects) report.objects = e.objects;
+      if (e.measured) report.measuredRounds.push({ round: e.round ?? null, ...e.measured });
+      if (/^(Build plan|Surfaces set|Surface colours|First build from|Coverage:|\d+ of the planned|Refused pieces|The build from the measurements)/.test(e.text)) report.buildLines.push(e.text);
       if (/^Objects: judged|^Inventory of the photo/.test(e.text)) report.objectLines.push(`${e.round ? `r${e.round} ` : ''}${e.text}`);
       if (e.phase === 'described' && e.reads) report.reads = e.reads;
       if (e.phase === 'round' && e.score && e.round !== undefined && /^Round \d+:/.test(e.text)) report.rounds.push(roundRow(e.round, e.score));
