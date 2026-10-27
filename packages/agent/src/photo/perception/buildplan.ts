@@ -443,6 +443,27 @@ export function makeBuildPlan(inp: PlanInput): BuildPlan {
       }
     }
   }
+  // A floor piece planned onto ground an existing piece already covers is that piece (same family: linked) or would be refused for the overlap (dropped with the reason).
+  const linkedNow = new Set(rows.flatMap((r) => (r.entity ? [r.entity] : [])));
+  for (const r of rows) {
+    if (r.action !== 'place' || r.mount !== 'floor' || !r.kind) continue;
+    const fb = floorBox(r, inp, bits.items);
+    if (!fb) continue;
+    const area = (b: Box2): number => (b.x1 - b.x0) * (b.z1 - b.z0);
+    const hit = bits.items.filter((b) => b.mount === 'floor').map((b) => {
+      const w = Math.min(fb.x1, b.box.x1) - Math.max(fb.x0, b.box.x0);
+      const h = Math.min(fb.z1, b.box.z1) - Math.max(fb.z0, b.box.z0);
+      return { b, share: w > 0 && h > 0 ? (w * h) / Math.max(0.01, Math.min(area(fb), area(b.box))) : 0 };
+    }).filter((x) => x.share > 0.35).sort((p, q) => q.share - p.share)[0];
+    if (!hit) continue;
+    if (family(hit.b.kind) === family(r.kind) && !linkedNow.has(hit.b.id)) {
+      r.action = 'keep'; r.entity = hit.b.id; linkedNow.add(hit.b.id);
+      r.notes.push(`the built ${hit.b.kind} ${hit.b.id} already stands on this ground: linked, not built twice`);
+    } else {
+      r.action = 'drop';
+      r.reason = `its footprint overlaps the built ${hit.b.kind} ${hit.b.id} by ${Math.round(hit.share * 100)}%${family(hit.b.kind) === family(r.kind) ? ' (already linked to another object: the same piece)' : ' (the room checks would refuse it: say so with an edit if the photo shows both)'}`;
+    }
+  }
   const surfaces = surfaceOps(report, inp.rooms);
   const counts = { place: 0, adjust: 0, keep: 0, drop: 0 } as Record<PlanAction, number>;
   for (const r of rows) counts[r.action]++;
@@ -844,7 +865,7 @@ export async function* buildFromMeasurements(deps: BuildDeps): AsyncGenerator<Ag
   // Refused rows go back to the model once, with the reasons (space refusals give numbers and a widen call).
   const bounced = plan.rows.filter((r) => r.action === 'place' && r.refused && r.kind !== 'window' && r.kind !== 'door');
   if (bounced.length > 0 && placed + refused > 0) {
-    yield { type: 'photo', phase: 'building', text: `${bounced.length} of the planned pieces were refused by the placement checks; the assistant settles them once.` };
+    yield { type: 'photo', phase: 'building', text: `${bounced.length} of the planned pieces were refused by the placement checks; the assistant settles them once. ${bounced.slice(0, 3).map((r) => `${r.label}: ${r.refused.slice(0, 200)}`).join(' | ')}` };
     try {
       const shown = bounced.map((r) => ({ ...r, notes: [...r.notes, `REFUSED: ${r.refused}`] }));
       const before = bounced.map((r) => r.refused);
@@ -876,7 +897,8 @@ export async function* buildFromMeasurements(deps: BuildDeps): AsyncGenerator<Ag
   }
   const dropped = plan.rows.filter((r) => r.action === 'drop').length;
   const stillRefused = plan.rows.filter((r) => r.action === 'place' && r.refused).length;
-  const text = `First build from the measurements: ${placed} pieces placed in one batch, ${plan.rows.filter((r) => r.action === 'keep' || r.action === 'adjust').length} already built and linked, ${stillRefused} refused after the second look, ${dropped} not built (${plan.rows.filter((r) => r.action === 'drop').slice(0, 6).map((r) => `${r.label}: ${r.reason}`.slice(0, 70)).join('; ')}). ${linked} of ${plan.rows.length} perceived objects have a linked piece.`;
+  const why = plan.rows.filter((r) => r.refused).slice(0, 4).map((r) => `${r.label} [${r.perceivedId}]: ${r.refused.slice(0, 160)}`).join(' | ');
+  const text = `First build from the measurements${why ? ` (refused: ${why})` : ''}: ${placed} pieces placed in one batch, ${plan.rows.filter((r) => r.action === 'keep' || r.action === 'adjust').length} already built and linked, ${stillRefused} refused after the second look, ${dropped} not built (${plan.rows.filter((r) => r.action === 'drop').slice(0, 6).map((r) => `${r.label}: ${r.reason}`.slice(0, 70)).join('; ')}). ${linked} of ${plan.rows.length} perceived objects have a linked piece.`;
   yield { type: 'photo', phase: 'building', text };
   return { plan, placed, refused: stillRefused, dropped, linked, calls, decisions: n, text };
 }
