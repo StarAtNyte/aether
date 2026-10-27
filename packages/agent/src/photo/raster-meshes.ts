@@ -130,6 +130,8 @@ async function loadKey(world: WorldDoc, entityId: string): Promise<{ key: string
 /** Unit meshes (by entity id) of the pieces of the photo room, loading what is not cached yet. */
 export async function warmMeshes(world: WorldDoc, building: string = PHOTO_BUILDING_ID): Promise<Map<string, UnitMesh>> {
   const out = new Map<string, UnitMesh>();
+  // AETHER_RASTER_MESHES=off keeps the box parts (before/after runs).
+  if (typeof process !== 'undefined' && process.env['AETHER_RASTER_MESHES'] === 'off') return out;
   const scene = readScene(world, building);
   if (!scene) return out;
   await loadCatalog().catch(() => null);
