@@ -33,6 +33,7 @@ import {
   type AgentEvent,
   type PhotoScoreView,
   type PhotoReadsView,
+  type PhotoObjectView,
   type Provider,
   type ReviewViewRequest,
 } from '@aether/agent';
@@ -44,6 +45,7 @@ import { GpuRoom } from './lib/gpu-room';
 import { createHeadlessProvider } from '../apps/bridge/src/headless';
 import { captureReviewHeadless } from '../apps/cli/src/mcp/review';
 import { initPhysics } from '@aether/physics';
+import { readScene } from '@aether/arch';
 import { CATALOGS, GENERATOR_DRY_RUN_MS, NodeAgentHost } from './lib/headless-world';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -78,6 +80,8 @@ interface Args {
   render: 'software' | 'gpu';
   recordFixture: boolean;
   judges: number;
+  /** The object inventory and per-object judge (with the differences ledger, cross-check and staged harness). */
+  objects: boolean;
 }
 
 function parseArgs(argv: readonly string[]): Args {
@@ -97,6 +101,7 @@ function parseArgs(argv: readonly string[]): Args {
     render: get('render') === 'gpu' ? 'gpu' : 'software',
     recordFixture: argv.includes('--record-fixture'),
     judges: mode === 'replay' ? 0 : Math.max(0, Math.min(7, Number(get('judges') ?? 3))),
+    objects: mode === 'live' && get('objects') !== '0',
   };
 }
 
@@ -237,6 +242,11 @@ interface Report {
   final: { passed: number; total: number; objective: number | null; judge: number | null; judgedBy: string | null; fidelity: PhotoScoreView['fidelity'] | null; structuralFailed: boolean; failing: Array<{ id: string; note: string }> } | null;
   errors: string[];
   assumptions: number;
+  /** The per-object table of the final state (objects on) and the width of the built room. */
+  objects: PhotoObjectView[] | null;
+  builtWidth: number | null;
+  builtDepth: number | null;
+  objectLines: string[];
 }
 
 async function runPhoto(args: Args, live: Provider | null): Promise<Report> {
@@ -267,15 +277,17 @@ async function runPhoto(args: Args, live: Provider | null): Promise<Report> {
   // AETHER_NO_TEXTURES=1 runs the same room without the photo-texture pass (the "before" of a comparison).
   if (process.env['AETHER_NO_TEXTURES'] === '1') (host as unknown as { storeTexture?: unknown }).storeTexture = undefined;
   if (args.render === 'gpu') host.gpu = await GpuRoom.open({ headed: process.env['SHOT_HEADED'] === '1' });
-  const agent = new WorldAgent({ provider, catalogs: CATALOGS, maxTurns: 10, maxToolCalls: 60, photo: { ...(args.rounds !== undefined ? { maxRounds: args.rounds } : {}), stallRounds: args.stall, vision: true, judges: args.judges, reads: args.reads, reconcile: args.reconcile } });
+  const agent = new WorldAgent({ provider, catalogs: CATALOGS, maxTurns: 10, maxToolCalls: 60, photo: { ...(args.rounds !== undefined ? { maxRounds: args.rounds } : {}), stallRounds: args.stall, vision: true, judges: args.judges, reads: args.reads, reconcile: args.reconcile, ...(args.objects ? { differences: true, crossCheck: true, harness: true, objects: true } : {}) } });
   const t0 = performance.now();
   const events: AgentEvent[] = [];
-  const report: Report = { photo: args.photo, source, judges: args.judges, reads: null, calls: 0, ms: 0, rounds: [], first: null, final: null, errors: [], assumptions: 0 };
+  const report: Report = { photo: args.photo, source, judges: args.judges, reads: null, calls: 0, ms: 0, rounds: [], first: null, final: null, errors: [], assumptions: 0, objects: null, builtWidth: null, builtDepth: null, objectLines: [] };
   for await (const e of agent.run(spec.prompt, host, { images: [dataUrl], photo: 'recreate' })) {
     events.push(e);
     if (e.type === 'photo') {
       console.log(`  [${args.photo}] ${e.phase}${e.round ? ` ${e.round}` : ''}: ${e.text.slice(0, e.phase === 'textures' ? 1200 : 200)}`);
       if (e.assumptions) report.assumptions = e.assumptions.length;
+      if (e.objects) report.objects = e.objects;
+      if (/^Objects: judged|^Inventory of the photo/.test(e.text)) report.objectLines.push(`${e.round ? `r${e.round} ` : ''}${e.text}`);
       if (e.phase === 'described' && e.reads) report.reads = e.reads;
       if (e.phase === 'round' && e.score && e.round !== undefined && /^Round \d+:/.test(e.text)) report.rounds.push(roundRow(e.round, e.score));
       if (e.phase === 'done' && e.score) {
@@ -289,6 +301,11 @@ async function runPhoto(args: Args, live: Provider | null): Promise<Report> {
     } else if (e.type === 'done') report.calls = e.usage.calls;
   }
   report.ms = Math.round(performance.now() - t0);
+  const room = readScene(host.getWorld(), 'room-photo')?.rooms[0];
+  if (room) {
+    report.builtWidth = Math.round((room.bbox[2] - room.bbox[0]) * 100) / 100;
+    report.builtDepth = Math.round((room.bbox[3] - room.bbox[1]) * 100) / 100;
+  }
   const r0 = report.rounds[0];
   if (r0) report.first = { passed: r0.passed, total: r0.total, objective: r0.objective, judge: r0.judge, judgedBy: r0.judgedBy };
   // Renders for the montage: the first attempt (the room as first built) and the final room, from the photo's camera.
