@@ -493,7 +493,7 @@ function boxHillIds(patches: readonly unknown[]): string[] {
 function shapeLandTool(ctx: ExecutorContext, input: LandInput): ToolOutcome {
   const { patches, summary, refused } = landPatches(ctx.host.getWorld(), input);
   if (refused) return { content: summary, isError: true, events: [], edited: false };
-  const message = ({ land: 'Shape the land', row: 'String a row along a line', mound: 'Raise a hill', path: 'Lay a path', grid: 'Lay a block of pieces', tier: 'Build raked seating', wall: 'Hang pieces along a wall', along: 'Place pieces along a line', perimeter: 'Seat the tables', around: 'Place pieces round the room' } as const)[input.op];
+  const message = ({ land: 'Shape the land', row: 'String a row along a line', mound: 'Raise a hill', path: 'Lay a path', grid: 'Lay a block of pieces', tier: 'Build raked seating', wall: 'Hang pieces along a wall', along: 'Place pieces along a line', perimeter: 'Seat the tables', around: 'Place pieces round the room', street: 'Build a village street' } as const)[input.op];
   const result = ctx.host.applyPatches(patches, message);
   const events: AgentEvent[] = [{ type: 'patches', patches: result.applied, message, result: { applied: result.applied.length, errors: result.errors } }];
   if (result.errors.length > 0) return { content: `shape_land could not apply ${result.errors.length} of ${patches.length} patches: ${result.errors.slice(0, 4).map((e) => e.message.slice(0, 160)).join('; ')}`, isError: result.applied.length === 0, events, edited: result.applied.length > 0 };

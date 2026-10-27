@@ -19,6 +19,7 @@ import { z } from 'zod';
 import { Builder, r2, type Mood } from './providers/mock/builder';
 import { naturalGround, scatterBelt, type ThemeCtx } from './providers/mock/decor';
 import { groundRibbon, terrainHeight } from './providers/mock/showcase/kit';
+import { StreetInput, streetPatches } from './street';
 import { alongPatches, aroundPatches, gridPatches, perimeterPatches, tierPatches, type Facing } from './layout';
 
 const XZ = z.number().min(-2000).max(2000);
@@ -168,6 +169,7 @@ export const LandInput = z.discriminatedUnion('op', [
     light: z.object({ every: z.number().int().min(1).max(50).default(1), type: z.enum(['point', 'spot']).default('point'), color: Color.default('#ffd7a6'), intensity: z.number().min(0.05).max(6).default(0.6), range: z.number().min(1).max(40).default(6), rise: z.number().min(-2).max(10).default(0.3), out: z.number().min(0).max(3).default(0.35) }).optional(),
     name: z.string().max(60).optional(),
   }),
+  StreetInput,
   z.object({
     op: z.literal('row'),
     points: z.array(z.tuple([XZ, XZ])).min(2).max(64),
@@ -269,6 +271,10 @@ export function landPatches(world: WorldDoc, input: LandInput): { patches: Patch
   const seed = hashString(JSON.stringify(input)) >>> 0;
   const ids = Object.keys(world.entities);
   if (input.op === 'row') return rowPatches(world, input, seed, ids);
+  if (input.op === 'street') {
+    const road = (): PatchInput[] => landPatches(world, { op: 'path', points: input.points, width: input.width, surface: input.surface, name: input.name ? `${input.name} road` : 'Street' }).patches;
+    return streetPatches(world, input, seed, worldGround(world), road);
+  }
   if (input.op === 'grid') return gridPatches(world, { ...input, facing: input.facing as Facing, params: input.params as Record<string, Json> | undefined }, seed, knownGenerator(world));
   if (input.op === 'wall' || input.op === 'along') return alongPatches(world, { ...input, mode: input.op, facing: input.facing as Facing | undefined, params: input.params as Record<string, Json> | undefined, labels: input.labels ? { ...input.labels, params: input.labels.params as Record<string, Json> | undefined } : undefined, variants: input.variants as Array<Record<string, Json>> | undefined }, seed, knownGenerator(world));
   if (input.op === 'perimeter') return perimeterPatches(world, { ...input, params: input.params as Record<string, Json> | undefined, table: input.table ? { ...input.table, params: input.table.params as Record<string, Json> | undefined } : undefined, settings: input.settings ? { ...input.settings, params: input.settings.params as Record<string, Json> | undefined } : undefined, centre: input.centre ? { ...input.centre, params: input.centre.params as Record<string, Json> | undefined } : undefined }, seed, knownGenerator(world));

@@ -132,7 +132,7 @@ function roofSlab(api: InternalApi, run: number, thick: number, len: number): Me
 
 const house = defineGenerator({
   id: 'house',
-  description: 'Cozy cottage with walls, foundation, pitched shingle roof, door, framed windows and a chimney. Multi-floor capable.',
+  description: 'Cozy cottage with walls, foundation, pitched shingle roof, door, framed windows and a chimney. Multi-floor capable. For a village or street use the crafted furn-dwelling (stone cottage, timber frame, Mediterranean, machiya, brick terrace, adobe, Nordic) through shape_land street.',
   category: 'architecture',
   params: {
     width: pNum(6, 3, 20, 'width (x) in meters'),
