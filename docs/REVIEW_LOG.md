@@ -6662,3 +6662,37 @@ Changes:
 Tests: arch `plan-match.test.ts` (screen vs crafted cinema-screen under another name, outside-room candidate, declared mapping survives a resent plan, vanished entity, refusals); agent `review-repeat.test.ts` (fold after two rounds, nothing dropped); `plan-declare.test.ts` (scripted agent: matched screen not reported; declared mapping not repeated in later rounds).
 
 Limits: kind matching trusts the part kind, so a planned "screen" matched to any cinema-screen in the room; the evidence line is there for the model to correct it. Free shapes made by library models (not crafted parts) are not matched by kind, only by declaration. No live check: Codex is rate-limited and a Claude Code probe was not run here.
+
+## Photo to room: every object listed and judged, with a good-enough standard and a stop
+
+Task: make the photo judge go through every element and its position, and repair each failing one until it passes or the model gives a reason. Code in `packages/agent/src/photo/objects.ts`, `objects-evidence.ts`, `objects-stage.ts`; the compare loop in `pipeline.ts` calls it (switched on by `PhotoOptions.objects`, which the studio sets). Design and rules are in `docs/PHOTO_TO_ROOM_HARNESS.md` ("Object by object").
+
+What was built
+- An inventory: two stateless seats list the photo (one told the built pieces so it can link each object to one, one blind); the lists are reconciled and an object only one seat saw is flagged, never dropped. A versioned ledger keeps it, resume-safe.
+- A per-object panel (the existing number of judges, median per aspect) on present, type, position, size, material, from paired photo/render crops and a render with the inventory boxes drawn. Layout relations from the inventory are judged as statements. Failing aspects become `obj-<id>-<aspect>` differences with the repair route; re-judging covers the changed objects and their neighbours, with a sweep every four rounds; the best state per object is kept and an object that got worse is put back.
+- Measured advice per object (projected position against the inventory box in pixels and in percent, size ratios, distances), a suggested correction unprojected onto the piece's own plane, and a residual line in the result of each edit. Advice only; the panel decides.
+- After the live runs below the standard was changed on the owner's direction: three words per aspect (match / close / off) plus unclear, close passes, unclear is not chased, tolerance described to the judges in words; an aspect that does not improve in two repair attempts is given up with the reason; the loop ends on a plateau (three rounds without a higher pass rate or a lower open count) or at 12 object rounds (`objectRounds`), marks what is still off as `stopped: <reason>`, keeps the best state per object, and "keep refining" resumes from the saved ledger.
+
+Which results are live and which are not
+- Live, Codex: one twin run, first object round only (62 objects inventoried, 56 in both lists; 7 of 62 pass every aspect, present 38/62, position 17/38); Codex then hit its subscription usage limit and the run ended without a repair round.
+- Live, Claude Code, before the changes after them were made: twin (two runs, `qa/objjudge/twin2`, `twin3`) and hotel (`hotel3`). Strict integer rubric (pass at 3 of 4), no plateau stop.
+- NOT validated live: the measured-offset feedback and suggested correction, the residual after each edit, the match/close/off/unclear verdicts, the give-up rule, the plateau and round-cap stop, and keep refining. They are covered by unit and scripted-agent tests only. Two reruns of twin and hotel with that code were started and then cancelled on the owner's decision, so there is no live number for them.
+
+Live numbers (Claude Code, strict judge, same machine, GPU stills on software GL)
+
+| run | inventory | object round 1 | object last round | checklist first / final | built size | rounds | time | model calls |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| twin2 (single edit turn per round) | 38 | 7 of 38 pass every aspect, present 17/38 | 7 of 38, present 19/38, open 61 to 53 | 9/15 / 14/15 | 3.88 x 6.28 m | 5 | 12.6 min | 88 |
+| twin3 (up to 4 edits per round) | 34 | 4 of 34, present 19/34, open 64 | 4 of 34, present 17/34, open 65 | 12/15 / 12/15 | 3.88 x 6.28 m | 5 | 13.8 min | 98 |
+| hotel3 (a whole-frame preference no longer discards repairs) | 30 | 8 of 30, present 25/30, position 12/25, open 58 | 8 of 30, position 14/23, open 48 (58, 60, 53, 46, 52, 48 by round) | 10/19 / 14/19 | 4.58 x 5.48 m | 6 | 21.9 min | 169 |
+
+Honest reading
+- The object judge is much stricter than the checklist: where the checklist said 14/15 (twin) or 14/19 (hotel), 4 to 8 objects in 30 to 38 passed every aspect. It found real gaps the checklist did not (absent small items, wrong positions and sizes).
+- The repair rounds did not reduce the open count in the twin runs, and only slowly in hotel (58 to 48 aspects, with large swings between rounds). Position and size stayed at about half. The twin built width, 3.88 m, is narrower than the 4.2 m of the earlier run; it did not improve. The earlier results cited for comparison (twin 15/16 at about 4.2 m, hotel 11/19 to 19/19) are from other runs with different checklists, so the totals are not directly comparable.
+- Causes seen in the edit logs: with one edit turn per round the model fixed one thing at a time (twin2); the whole-frame panel rolled back the model's repairs in rounds where the checklist did not move (twin3), which is why that rule was removed; many edits were refused (overlaps, parts that do not exist, e.g. no teal painted band); the best-state revert fired on the same few objects (bed, art, floor lamp) every round, which suggests the model's fixes for them keep making them worse, and a judge that flips an aspect between rounds adds noise. The measured correction was added in answer to this and is untested live.
+- Judge calls with the Claude Code backend often failed schema validation when an absent object came without the four scores; they are optional now, and in the new verdict form an aspect left out of a present object reads as unclear.
+- The 12-round cap and the plateau stop stop the loop with an honest "not perfect"; they do not make the room better.
+
+Gates: `tsc`, `vitest` over `packages/agent`, `packages/arch`, `apps/studio` (2396 tests), `smoke` (39 of 39), `showcase:bake --check`, `showcase:lightmaps --verify` pass. Tests: `photo-objects.test.ts` (reconciliation of the two inventories, the panel median and the three words, selection of what to re-judge, best-keep and revert, give-up, plateau, round cap, keep refining from the saved ledger, scripted agent runs of inventory, per-object judge, repair, re-judge and revert on regression), `photo-objects-evidence.test.ts` (unprojection of a box onto the floor and wall planes on synthetic data).
+
+Evidence: `~/.local/share/aether/qa/objjudge/{twin1,twin2,twin3,hotel3}` (run.json with the per-object table, montage, logs).
