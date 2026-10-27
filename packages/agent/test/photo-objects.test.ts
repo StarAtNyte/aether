@@ -288,6 +288,10 @@ describe('room from a photo, object by object', () => {
     expect(second).toMatch(/picture-left \[picture left; built as room-photo-picture-left\] present:ok type:ok position:FAIL/);
     expect(second).toMatch(/blind-clock .*present:FAIL/);
     expect(second).toContain('OBJECTS.');
+    expect(second).toMatch(/suggested correction \(advisory, unprojected through the photo camera/);
+    expect(second).toMatch(/on the north wall: [+-][0-9.]+ m along the wall/);
+    // Closed loop: the edit result already says whether the piece moved the right way, before any judge looks.
+    expect(JSON.stringify(provider.requests[2]?.messages)).toMatch(/Residual after this edit[^]*picture left: render box/);
     // The fix was applied and only the changed object (and its neighbours) went back to the panel.
     expect(sceneItem(host, 'picture-left')?.wall?.t).toBeCloseTo(1.6, 1);
     const later = judgedRounds.slice(6);

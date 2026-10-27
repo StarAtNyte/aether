@@ -38,7 +38,7 @@ import {
   type ObjectBatch,
   type ObjectRec,
 } from './objects';
-import { autoLink, boxSignature, builtPiecesText, evidenceMap, knownEntityIds, projectBuilt, projectedBox, type Projection } from './objects-evidence';
+import { autoLink, boxSignature, builtPiecesText, evidenceMap, knownEntityIds, projectBuilt, projectedBox, repairEvidence, residualLine, residualOf, suggestCorrection, type Projection } from './objects-evidence';
 import { restorePatches } from './revert';
 import type { Raster } from './score';
 
@@ -94,6 +94,10 @@ export class ObjectStage {
   private lastLook: string | null = null;
   private evidence = new Map<string, string>();
   private lastReverted: string[] = [];
+  /** The photo camera of the latest judged render, and the residual (pixels) each linked object had when last measured. */
+  private pose: ReviewPose | null = null;
+  private aspect = 1.5;
+  private resid = new Map<string, number>();
 
   constructor(private readonly deps: StageDeps, ledger?: ObjectLedger | null) {
     this.ledger = ledger ?? new ObjectLedger();
@@ -181,14 +185,21 @@ export class ObjectStage {
     const empty: RoundResult = { judged: 0, full: false, gain: false, reverted: [], worse: [], calls: 0 };
     this.lastReverted = [];
     const proj = inp.pose ? projectBuilt(inp.world, inp.pose, inp.aspect) : null;
+    this.pose = inp.pose;
+    this.aspect = inp.aspect;
     if (proj) autoLink(ledger, proj);
     this.evidence = proj ? evidenceMap(inp.world, ledger, proj, this.deps.px) : new Map();
+    this.resid = new Map();
+    if (proj) for (const r of ledger.list()) { const x = residualOf(r.item, proj, this.deps.px); if (x) this.resid.set(r.item.id, x.errPx); }
     const now = new Map<string, Current>();
     for (const r of ledger.list()) now.set(r.item.id, { sig: inp.raster ? boxSignature(inp.raster, r.item.box) : null, proj: proj ? projectedBox(r.item, proj) : null });
     const force = this.lastLook !== null && this.lastLook !== inp.lookKey;
     this.lastLook = inp.lookKey;
     const sel = selectObjects(ledger, now, inp.round, { force });
-    if (sel.ids.length === 0) return empty;
+    if (sel.ids.length === 0) {
+      if (proj) this.evidence = repairEvidence(inp.world, ledger, proj, this.deps.px);
+      return empty;
+    }
     const openBefore = ledger.openCount();
     const order = ledger.list().map((r) => r.item.id);
     const boxes = this.deps.boxesShot && inp.pose ? await this.deps.boxesShot(inp.pose, ledger.list().map((r, i) => ({ n: i + 1, box: r.item.box }))).catch(() => null) : null;
@@ -269,6 +280,14 @@ export class ObjectStage {
       }
     }
     if (sel.full) ledger.swept = inp.round;
+    // For the objects whose position or size fails: the measured offset and the correction the box suggests (the table the model reads).
+    const after = this.deps.getWorld();
+    const projNow = inp.pose ? projectBuilt(after, inp.pose, inp.aspect) : null;
+    if (projNow) {
+      this.evidence = repairEvidence(after, ledger, projNow, this.deps.px);
+      this.resid = new Map();
+      for (const r of ledger.list()) { const x = residualOf(r.item, projNow, this.deps.px); if (x) this.resid.set(r.item.id, x.errPx); }
+    }
     const result: RoundResult = { judged: judged.length, full: sel.full, gain: ledger.openCount() < openBefore, reverted, worse, calls };
     const t = ledger.aspectTotals();
     yield {
@@ -279,6 +298,42 @@ export class ObjectStage {
       objects: this.views(),
     };
     return result;
+  }
+
+  /** The linked pieces of every object as documents, to tell after an edit which objects it touched. */
+  snapshotLinked(world: WorldDoc): Map<string, string> {
+    const out = new Map<string, string>();
+    for (const r of this.ledger.list()) if (r.item.entities.length > 0) out.set(r.item.id, JSON.stringify(r.item.entities.map((e) => world.entities[e] ?? null)));
+    return out;
+  }
+
+  /**
+   * Closed-loop feedback inside the round: after an edit, the objects whose pieces changed are projected through the same photo
+   * camera again, and the model is told at once whether each moved the right way (the residual before and after) and what is still
+   * suggested. Only the changed objects are recomputed. Advisory: the judges decide at the next look.
+   */
+  afterEdit(before: Map<string, string>): string {
+    if (!this.pose) return '';
+    const world = this.deps.getWorld();
+    const proj = projectBuilt(world, this.pose, this.aspect);
+    const lines: string[] = [];
+    for (const r of this.ledger.list()) {
+      const was = before.get(r.item.id);
+      if (was === undefined || r.item.entities.length === 0) continue;
+      const now = JSON.stringify(r.item.entities.map((e) => world.entities[e] ?? null));
+      if (now === was) continue;
+      const res = residualOf(r.item, proj, this.deps.px);
+      const prev = this.resid.get(r.item.id);
+      if (!res) {
+        lines.push(`- ${residualLine(r.item, null)}`);
+        continue;
+      }
+      const verdict = prev === undefined ? '' : res.errPx < prev - 3 ? ` - closer (was ${prev} px, now ${res.errPx} px)` : res.errPx > prev + 3 ? ` - FURTHER (was ${prev} px, now ${res.errPx} px): undo or try the other direction` : ` - about the same (${prev} px)`;
+      this.resid.set(r.item.id, res.errPx);
+      const sug = res.errPx > 12 || res.sw < 0.85 || res.sw > 1.18 || res.sh < 0.85 || res.sh > 1.18 ? suggestCorrection(world, r.item, proj, this.deps.px) : '';
+      lines.push(`- ${residualLine(r.item, res)}${verdict}${sug ? `. Still ${sug.replace('suggested correction (advisory, unprojected through the photo camera at the piece\'s own depth): ', 'suggested: ')}` : '. Within a few pixels of the photo box'}`);
+    }
+    return lines.length === 0 ? '' : `Residual after this edit (measured through the photo camera, advisory; the judges decide at the next look):\n${lines.slice(0, 8).join('\n')}`;
   }
 
   private async pair(box: Box, render: string): Promise<string | null> {

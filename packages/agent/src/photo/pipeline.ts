@@ -1424,6 +1424,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
           results.push({ type: 'tool_result', toolUseId: call.id, content: cam.text, ...(cam.ok ? {} : { isError: true }) });
           continue;
         }
+        const linkedBefore = objects && objects.ready ? objects.snapshotLinked(host.getWorld()) : null;
         const out = await executeTool(ctx, call.name, call.input);
         yield { type: 'step', tool: call.name, label: stepLabel(call.name, call.input, !out.isError), ok: !out.isError };
         for (const ev of out.events) yield ev;
@@ -1433,7 +1434,8 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
           ledger?.markEdited();
         }
         if (out.isError || /refused/i.test(out.content)) refusals.push(`${call.name}: ${out.content.split('\n').slice(0, 3).join(' ').slice(0, 300)}`);
-        results.push({ type: 'tool_result', toolUseId: call.id, content: out.content, ...(out.isError ? { isError: true } : {}) });
+        const feedback = linkedBefore && out.edited && objects ? objects.afterEdit(linkedBefore) : '';
+        results.push({ type: 'tool_result', toolUseId: call.id, content: feedback ? `${out.content}\n${feedback}` : out.content, ...(out.isError ? { isError: true } : {}) });
       }
       messages.push({ role: 'user', content: results });
       if (lookBlocks.length > 0) pushUser(messages, lookBlocks.splice(0));

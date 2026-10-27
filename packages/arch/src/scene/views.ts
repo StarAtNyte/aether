@@ -502,6 +502,39 @@ export function planDelta(world: WorldDoc, building: EntityId, d: P2): Vec3 | nu
   return [r[0], 0, r[1]];
 }
 
+/** The plan displacement (x, z of the building's frame) of a world displacement: the inverse of {@link planDelta}. */
+export function planDeltaOfWorld(world: WorldDoc, building: EntityId, d: Vec3): P2 | null {
+  const scene = readScene(world, building);
+  if (!scene) return null;
+  const f = frameOf(world, scene);
+  return rotateYaw(d[0], d[2], -f.yaw);
+}
+
+/** Where a world point appears in the picture of `pose` (normalised, origin top-left; z is the depth), or null behind the camera. */
+export function projectPoint(pose: ReviewPose, aspect: number, w: Vec3): { x: number; y: number; z: number } | null {
+  return project(camOf(pose, aspect), w);
+}
+
+/**
+ * The world point where the ray through the picture point (x, y in 0..1, origin top-left) meets a plane, or null when the ray is
+ * parallel to it or the point lies behind the camera.
+ */
+export function unprojectToPlane(pose: ReviewPose, aspect: number, x: number, y: number, plane: { point: Vec3; normal: Vec3 }): Vec3 | null {
+  const cam = camOf(pose, aspect);
+  const nx = 2 * x - 1;
+  const ny = 1 - 2 * y;
+  const d: Vec3 = [
+    cam.fwd[0] + cam.right[0] * nx * cam.tan * cam.aspect + cam.upv[0] * ny * cam.tan,
+    cam.fwd[1] + cam.right[1] * nx * cam.tan * cam.aspect + cam.upv[1] * ny * cam.tan,
+    cam.fwd[2] + cam.right[2] * nx * cam.tan * cam.aspect + cam.upv[2] * ny * cam.tan,
+  ];
+  const den = dot(d, plane.normal);
+  if (Math.abs(den) < 1e-6) return null;
+  const t = dot(sub(plane.point, cam.p), plane.normal) / den;
+  if (t <= 0) return null;
+  return [cam.p[0] + d[0] * t, cam.p[1] + d[1] * t, cam.p[2] + d[2] * t];
+}
+
 /** A normalised image box (x0, y0, x1, y1; origin top-left). */
 export type ImageBox = [number, number, number, number];
 
