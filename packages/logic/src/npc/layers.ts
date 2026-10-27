@@ -300,7 +300,7 @@ export class NavLayers {
 export function hasBuildings(world: WorldDoc): boolean {
   for (const id of Object.keys(world.entities)) {
     const e = world.entities[id];
-    if (e && e.shape.kind === 'procedural' && (e.shape.generator === 'arch-wall' || e.shape.generator === 'arch-stair')) return true;
+    if (e && e.shape.kind === 'procedural' && (e.shape.generator === 'arch-wall' || e.shape.generator === 'arch-stair' || e.shape.generator === 'arch-spiral-stair')) return true;
   }
   return false;
 }

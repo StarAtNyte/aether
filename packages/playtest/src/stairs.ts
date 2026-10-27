@@ -9,7 +9,7 @@
  * the bot follows that line over the stair and picks the grid route up again where the stair ends.
  */
 import { worldTransform, type Vec3, type WorldDoc } from '@aether/core';
-import { pointInPolygon, StairParams, stairFootprint, stairWalkLine } from '@aether/arch';
+import { pointInPolygon, SpiralStairParams, spiralDisc, spiralLayout, spiralWalkLine, StairParams, stairFootprint, stairWalkLine } from '@aether/arch';
 
 /** One stair: its plan footprint and walking line in world space. */
 export interface StairGuide {
@@ -30,14 +30,32 @@ function yawOf(q: readonly [number, number, number, number]): number {
   return (2 * Math.atan2(q[1], q[3]) * 180) / Math.PI;
 }
 
-/** The compiled stairs of a world (entities with the `arch-stair` generator), in world space. */
+/** A stair's footprint, walking line, rise and half width in its own frame, by generator (null: not a stair, or bad params). */
+function localStair(generator: string, raw: unknown): { footprint: Array<[number, number]>; line: Vec3[]; rise: number; halfWidth: number } | null {
+  if (generator === 'arch-stair') {
+    const parsed = StairParams.safeParse(raw ?? {});
+    if (!parsed.success) return null;
+    const p = parsed.data;
+    return { footprint: stairFootprint(p) as Array<[number, number]>, line: stairWalkLine(p), rise: p.rise, halfWidth: p.width / 2 };
+  }
+  if (generator === 'arch-spiral-stair') {
+    const parsed = SpiralStairParams.safeParse(raw ?? {});
+    if (!parsed.success) return null;
+    const p = parsed.data;
+    const l = spiralLayout(p);
+    // The whole disc counts as the stair (the landing sector included: the bot arrives on it), a tread's reach is its depth.
+    return { footprint: spiralDisc(p) as Array<[number, number]>, line: spiralWalkLine(p), rise: p.rise, halfWidth: (l.outer - l.inner) / 2 + 0.05 };
+  }
+  return null;
+}
+
+/** The compiled stairs of a world (entities with the `arch-stair` or `arch-spiral-stair` generator), in world space. */
 export function stairGuides(world: WorldDoc): StairGuide[] {
   const out: StairGuide[] = [];
   for (const [id, e] of Object.entries(world.entities)) {
-    if (e.shape.kind !== 'procedural' || e.shape.generator !== 'arch-stair') continue;
-    const parsed = StairParams.safeParse(e.shape.params ?? {});
-    if (!parsed.success) continue;
-    const p = parsed.data;
+    if (e.shape.kind !== 'procedural') continue;
+    const local = localStair(e.shape.generator, e.shape.params);
+    if (!local) continue;
     let wt;
     try {
       wt = worldTransform(world, id);
@@ -52,11 +70,11 @@ export function stairGuides(world: WorldDoc): StairGuide[] {
     const s = Math.sin(t);
     // Rotation about +Y: x' = x cos + z sin, z' = −x sin + z cos.
     const toWorld = (x: number, y: number, z: number): Vec3 => [wt.position[0] + x * c + z * s, wt.position[1] + y, wt.position[2] - x * s + z * c];
-    const footprint = stairFootprint(p).map(([x, z]) => {
+    const footprint = local.footprint.map(([x, z]) => {
       const q = toWorld(x, 0, z);
       return [q[0], q[2]] as [number, number];
     });
-    out.push({ id, footprint, y0: wt.position[1], y1: wt.position[1] + p.rise, line: stairWalkLine(p).map(([x, y, z]) => toWorld(x, y, z)), halfWidth: p.width / 2 });
+    out.push({ id, footprint, y0: wt.position[1], y1: wt.position[1] + local.rise, line: local.line.map(([x, y, z]) => toWorld(x, y, z)), halfWidth: local.halfWidth });
   }
   return out;
 }

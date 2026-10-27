@@ -9,7 +9,7 @@
  * Pure functions of the document; the results are plain typed arrays built once per navigation build.
  */
 import { worldTransform, type EntityId, type Vec3, type WorldDoc } from '@aether/core';
-import { StairParams, stairFootprint, stairLayout, stairWalkLine } from '@aether/arch';
+import { SpiralStairParams, spiralDisc, spiralLayout, spiralWalkLine, StairParams, stairFootprint, stairLayout, stairWalkLine } from '@aether/arch';
 
 /** Most stairs one navigation build links (the rest are left to the grid). */
 export const MAX_STAIR_LINKS = 16;
@@ -66,10 +66,12 @@ export function stairLinks(world: WorldDoc): StairLink[] {
   for (const id of Object.keys(world.entities)) {
     if (out.length >= MAX_STAIR_LINKS) break;
     const e = world.entities[id];
-    if (!e || e.template || e.shape.kind !== 'procedural' || e.shape.generator !== 'arch-stair') continue;
-    const parsed = StairParams.safeParse(e.shape.params ?? {});
-    if (!parsed.success) continue;
-    const p = parsed.data;
+    if (!e || e.template || e.shape.kind !== 'procedural' || (e.shape.generator !== 'arch-stair' && e.shape.generator !== 'arch-spiral-stair')) continue;
+    const spiral = e.shape.generator === 'arch-spiral-stair' ? SpiralStairParams.safeParse(e.shape.params ?? {}) : null;
+    const parsed = StairParams.safeParse(spiral ? {} : e.shape.params ?? {});
+    if (spiral ? !spiral.success : !parsed.success) continue;
+    const p = (parsed.success ? parsed.data : StairParams.parse({})) as StairParams;
+    const sp = spiral?.success ? spiral.data : null;
     let wt;
     try {
       wt = worldTransform(world, id);
@@ -83,8 +85,9 @@ export function stairLinks(world: WorldDoc): StairLink[] {
     const sn = Math.sin(t);
     const toWorld = (x: number, y: number, z: number): Vec3 => [wt.position[0] + x * c + z * sn, wt.position[1] + y, wt.position[2] - x * sn + z * c];
     // The walking line, densified; a point belongs to the second flight once the line has passed the landing's centre.
-    const raw = stairWalkLine(p);
-    const turnAt = raw.length > 3 ? 2 : raw.length;
+    const raw = sp ? spiralWalkLine(sp) : stairWalkLine(p);
+    const rise = sp ? sp.rise : p.rise;
+    const turnAt = sp || raw.length <= 3 ? raw.length : 2;
     const pts: number[] = [];
     for (let k = 0; k + 1 < raw.length && pts.length / 3 < MAX_LINE_POINTS - 1; k++) {
       const a = raw[k] as [number, number, number];
@@ -95,22 +98,23 @@ export function stairLinks(world: WorldDoc): StairLink[] {
         const u = i / steps;
         const x = a[0] + (b[0] - a[0]) * u;
         const z = a[2] + (b[2] - a[2]) * u;
-        const w = toWorld(x, heightAlong(p, x, z, k >= turnAt), z);
+        // A spiral's line carries its own heights (linear between the tread centres); a flight's are stepped.
+        const w = toWorld(x, sp ? a[1] + (b[1] - a[1]) * u : heightAlong(p, x, z, k >= turnAt), z);
         pts.push(w[0], w[1], w[2]);
       }
     }
     const last = raw[raw.length - 1] as [number, number, number];
-    const end = toWorld(last[0], p.rise, last[2]);
+    const end = toWorld(last[0], rise, last[2]);
     pts.push(end[0], end[1], end[2]);
     const n = pts.length / 3;
     const line = Float32Array.from(pts);
     const cum = new Float32Array(n);
     for (let i = 1; i < n; i++) cum[i] = (cum[i - 1] as number) + Math.hypot((line[i * 3] as number) - (line[i * 3 - 3] as number), (line[i * 3 + 2] as number) - (line[i * 3 - 1] as number));
-    const footprint = stairFootprint(p).map(([x, z]) => {
+    const footprint = (sp ? spiralDisc(sp) : stairFootprint(p)).map(([x, z]) => {
       const q = toWorld(x, 0, z);
       return [q[0], q[2]] as [number, number];
     });
-    out.push({ id, line, n, cum, length: cum[n - 1] as number, y0: wt.position[1], y1: wt.position[1] + p.rise, footprint, halfWidth: p.width / 2 });
+    out.push({ id, line, n, cum, length: cum[n - 1] as number, y0: wt.position[1], y1: wt.position[1] + rise, footprint: footprint as Array<[number, number]>, halfWidth: sp ? (spiralLayout(sp).outer - spiralLayout(sp).inner) / 2 : p.width / 2 });
   }
   return out;
 }
