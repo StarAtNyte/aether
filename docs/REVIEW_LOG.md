@@ -6581,3 +6581,37 @@ Stills viewed (overview, eye height): the camp now sits in a clearing with tents
 ### Honest limits
 
 Single runs. The model, not code, picks counts when it passes `woods`; the text now asks for forest density but nothing enforces it. One run showed fallen logs hanging in the air (model placement, not investigated here). Only one of the two default trails was laid in that run (the other bearings crossed the stream).
+
+## Cinema over-lit: dim keys built dim, a trim that can dim, an over-lit flag
+
+Task: the live cinema read mean 188 of 255 at the trim's -2.5 EV limit and the trim could not dim it.
+
+### Cause found (measured on a fresh cinema before the change)
+
+The model stated `intent.key: moderate` for a "dim but readable" cinema (it put "dim" in the text only), set `ambientIntensity` 1.6, `lampStrength` 2, `grade.exposureEv` +0.3, built cream walls and a pale carpet, and added four spill lights of intensity 4 to 6. Emissive meshes (the screen picture at about 0.8, the sconce glass) do not light anything in the light volume or the lightmap (only window panes are special-cased), so the screen and lamp glow were not the cause and were left unchanged; the over-light came from the model's own ambient, lamp strength, spill lights and pale finishes, and from a moderate key. Same world with the key set to dim by hand: mean 105, room exposure already at its -1.5 EV floor.
+
+### What changed
+
+- Brief text: the key follows the place (cinema, theatre, bar, club, night venue, gallery are `dim`, "readable" goes in the text), and a dim key means dim light: dark wall and floor finishes, ambient about 0.3 to 0.6, lampStrength 1 or less, sconces 0.4 to 0.9, one soft screen spill light of 1 to 2, the focus the brightest thing.
+- Exposure trim: `trimFloor(intent)` lowers the floor below -2.5 EV by the exposure the author raised by eye (exposure above 1, exposureEv above 0), so the author's boost can always be taken back and the whole range is left for dimming. No other limit moved.
+- Review: `lightEvidenceText` takes the stated key and adds an `OVER-LIT for a dim intent` line (with what to lower: lamps, ambient, bright emissives; not the exposure) for any image above the key's band (the same bands as the trim: dim 0.38, moderate 0.58, bright 0.68 of 255).
+- Tests: trim floor and dimming past -2.5 with a boost; over-lit flag for dim, none for moderate or without a key.
+
+### Result (single live Claude Code runs, review views from the studio renderer on the Intel iGPU)
+
+| cinema | mean | washed | crushed | trim | draw calls |
+| --- | --- | --- | --- | --- | --- |
+| before (key moderate, ambient 1.6, lamps x2) | 152, 50 (wall), 156, 157 | 0 | 0 | at limit in the earlier audit (188 live) | 248 |
+| after, fresh run (states dim itself, ambient 0.35, lampStrength 0.8) | 94, 89, 30 (wall view), 108 | 0.3 % | 9.6 % overall (dark steps and booth wall) | -1.01 EV, not at the limit; no pumping on two walks (0 per frame) | 265 |
+
+Stills viewed (eye height from both ends, overview): dark walls and ceiling baffles, warm sconce pools, red seats readable, the screen the brightest thing, no cream wash. Crushed shares are the black risers under the seats.
+
+Frame cost: the still counters read 10 ms per frame at 265 draw calls (the fps field in the stills run is a warm-up reading of 17 to 24; the audit at the same pose read 57 to 60 fps on the iGPU earlier).
+
+### Gates
+
+tsc clean; vitest packages/agent assets arch procgen render apps/studio 400 files, 3990 tests passed; smoke 34/34; `showcase:bake --check` up to date; `showcase:lightmaps --verify` 6/6 keys unchanged (no key input touched); `e2e:lightmap-open` ok.
+
+### Honest limits
+
+One run per prompt: the model chose its own numbers and the improvement depends on it following the brief text; a model that still states moderate for a cinema gets the over-lit flag only if its key is dim. There is no code cap on lamp or ambient intensity (the model judges). The floor extension only matters when the author boosted exposure.
