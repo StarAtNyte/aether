@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { deltaE2000, rgbToLab } from '../src/photo/colour';
-import { colourName, labHex, labToRgb, measureAppearance } from '../src/photo/appearance';
+import { colourName, estimateIlluminant, labHex, labToRgb, measureAppearance, normaliseHex } from '../src/photo/appearance';
+import { hexDeltaE } from '../src/photo/colour';
 
 const W = 120, H = 90;
 /** An RGBA raster filled by `f(x, y)` and an all-ones mask of the box. */
@@ -83,5 +84,52 @@ describe('appearance of a masked region', () => {
     const a = measureAppearance(r, m, [0, 0, 1, 1])!;
     expect(a.finish).toBe('glossy');
     expect(a.colour.name).toMatch(/brown/);
+  });
+});
+
+
+describe('dark colours under low exposure', () => {
+  // A dark blue carpet (#1b2a4a) photographed at 0.5x exposure with a warm cast, a cast shadow across a third of it and a glare spot.
+  const CARPET: [number, number, number] = [27, 42, 74];
+  const seen = (c: [number, number, number], k = 0.5): [number, number, number] => {
+    const lin = c.map((v) => (v / 255) ** 2.2);
+    const cast = [1.12, 1.0, 0.86];
+    return lin.map((v, i) => Math.round(255 * Math.min(1, v * k * (cast[i] as number)) ** (1 / 2.2))) as [number, number, number];
+  };
+  const scene = make((x, y) => {
+    const base = seen(CARPET);
+    const n = ((x * 7 + y * 13) % 5) - 2; // texture noise
+    if (x > 80) return base.map((v) => Math.round(v * 0.55 + n)) as [number, number, number]; // cast shadow
+    if (x === 30 && y === 30) return [250, 250, 250];
+    return base.map((v) => Math.max(0, v + n)) as [number, number, number];
+  });
+
+  it('reports the carpet dark blue, not black, ignoring the shadow and the glare', () => {
+    const a = measureAppearance(scene.r, scene.m, [0, 0, 1, 1], { dominant: true });
+    expect(a).not.toBeNull();
+    const c = a!.colour;
+    expect(c.lab[0]).toBeGreaterThan(10); // not black
+    expect(c.name).toMatch(/blue/);
+    // within a few delta E of the lit carpet as seen
+    const lit = rgbToLab(...seen(CARPET));
+    const got = rgbToLab(parseInt(c.hex.slice(1, 3), 16), parseInt(c.hex.slice(3, 5), 16), parseInt(c.hex.slice(5, 7), 16));
+    expect(deltaE2000(lit, got)).toBeLessThan(6);
+  });
+
+  it('removes the cast and the exposure with a white ceiling as the reference', () => {
+    const ceiling = seen([236, 236, 232]);
+    const ceilHex = `#${ceiling.map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+    const ill = estimateIlluminant([{ hex: ceilHex, kind: 'ceiling' }]);
+    expect(ill).not.toBeNull();
+    expect(ill!.exposure).toBeGreaterThan(1.4);
+    const carpetHex = `#${seen(CARPET).map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+    const fixed = normaliseHex(carpetHex, ill!);
+    const truth = '#1b2a4a';
+    expect(hexDeltaE(fixed, truth) ?? 99).toBeLessThan(hexDeltaE(carpetHex, truth) ?? 0);
+    expect(hexDeltaE(fixed, truth) ?? 99).toBeLessThan(14);
+  });
+
+  it('keeps a purple wall purple: no white reference, no correction', () => {
+    expect(estimateIlluminant([{ hex: '#6b4e6d', kind: 'wall' }])).toBeNull();
   });
 });

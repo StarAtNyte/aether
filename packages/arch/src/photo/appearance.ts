@@ -240,8 +240,33 @@ export function patternHint(r: Raster, m: MaskRaster, box: readonly [number, num
   return { kind: 'plain', strength };
 }
 
-/** Everything measured for a region. `box` is the mask's bounding box in 0..1 (used for the pattern grid). Null when the region has too few pixels. */
-export function measureAppearance(r: Raster, m: MaskRaster, box: readonly [number, number, number, number]): Appearance | null {
+/** The mask without its one-pixel rim (mask edges blend with what is behind). Masks under 400 pixels are returned as they are. */
+export function erodeMask(m: MaskRaster): MaskRaster {
+  let n = 0;
+  for (let i = 0; i < m.width * m.height; i++) if (m.data[i]) n++;
+  if (n < 400) return m;
+  const out = new Uint8Array(m.width * m.height);
+  for (let y = 1; y < m.height - 1; y++) for (let x = 1; x < m.width - 1; x++) {
+    const i = y * m.width + x;
+    if (m.data[i] && m.data[i - 1] && m.data[i + 1] && m.data[i - m.width] && m.data[i + m.width]) out[i] = 1;
+  }
+  let k = 0;
+  for (let i = 0; i < out.length; i++) k += out[i] as number;
+  return k >= 12 ? { width: m.width, height: m.height, data: out } : m;
+}
+
+export interface MeasureOptions {
+  /** Use the largest colour cluster instead of the whole region (a plane crossed by a stripe, a shadow, a rug edge). */
+  dominant?: boolean;
+}
+
+/**
+ * Everything measured for a region. `box` is the mask's bounding box in 0..1 (used for the pattern grid). Null when the region has too
+ * few pixels. The colour is read from the eroded mask, without glare and clipped pixels and without the darkest 12 percent (cast
+ * shadow, contact shade), so a dark surface in a dark photo keeps its own colour instead of the shadow's.
+ */
+export function measureAppearance(r: Raster, m0: MaskRaster, box: readonly [number, number, number, number], opt: MeasureOptions = {}): Appearance | null {
+  const m = erodeMask(m0);
   const p = collect(r, m);
   if (p.lab.length < 12) return null;
   const Ls = sorted(p.lab.map((l) => l[0]));
@@ -249,8 +274,22 @@ export function measureAppearance(r: Raster, m: MaskRaster, box: readonly [numbe
   const p95 = pct(Ls, 0.95);
   // Glare: far above the median lightness and almost colourless (a highlight, a window reflection), or blown out.
   const isGlare = (l: [number, number, number]): boolean => (l[0] > medL + 22 && Math.hypot(l[1], l[2]) < 12) || l[0] > 97;
-  const keep = p.lab.filter((l) => !isGlare(l) && l[0] <= Math.max(p95, medL + 30));
-  const base = keep.length >= 12 ? keep : p.lab;
+  const kept = p.lab.filter((l) => !isGlare(l) && l[0] <= Math.max(p95, medL + 30));
+  const pool = kept.length >= 12 ? kept : p.lab;
+  // Shadow band: drop the darkest 12 percent of what is left, but only when that is a real tail (more than 3 L below the median).
+  const poolL = sorted(pool.map((l) => l[0]));
+  const cut = pct(poolL, 0.12);
+  const shaded = pool.filter((l) => l[0] >= cut || pct(poolL, 0.5) - cut < 3);
+  let base = shaded.length >= 12 ? shaded : pool;
+  if (opt.dominant) {
+    const km0 = kmeansLab(base, 3);
+    const top = km0[0];
+    if (top && top.n >= base.length * 0.35) {
+      const c = top.centre;
+      const near = base.filter((l) => (l[0] - c[0]) ** 2 + (l[1] - c[1]) ** 2 + (l[2] - c[2]) ** 2 < 14 ** 2);
+      if (near.length >= 12) base = near;
+    }
+  }
   const colour = swatch([trimmedMedian(base.map((l) => l[0]), 0.1), trimmedMedian(base.map((l) => l[1]), 0.1), trimmedMedian(base.map((l) => l[2]), 0.1)], 1);
   const km = kmeansLab(base, 3);
   const tot = km.reduce((s, c) => s + c.n, 0) || 1;
@@ -261,9 +300,56 @@ export function measureAppearance(r: Raster, m: MaskRaster, box: readonly [numbe
     colour,
     palette,
     luminance: Math.round(lumMean * 1000) / 1000,
-    pattern: patternHint(r, m, box),
+    pattern: patternHint(r, m0, box),
     glareShare: Math.round(glareShare * 1000) / 1000,
     finish: glareShare > 0.12 ? 'glossy' : glareShare > 0.04 ? 'satin' : 'matte',
     pixels: p.lab.length,
   };
+}
+
+
+// ---- white reference: exposure and cast ----
+
+export interface Illuminant {
+  /** Linear-light gains per channel that make the white reference neutral (a colour cast removed). */
+  gains: [number, number, number];
+  /** Linear gain that lifts the reference to the reflectance of white paint (never darkens). */
+  exposure: number;
+  /** Which surfaces served. */
+  reference: string;
+}
+
+const srgbToLin = (v: number): number => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+const linToSrgb = (v: number): number => { const c = Math.max(0, Math.min(1, v)); return Math.round(255 * (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055)); };
+const hexRgb = (h: string): [number, number, number] => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+
+/**
+ * The light of the photo from its whitish surfaces: a ceiling or wall whose chroma is low (under 16 in CIELAB) is taken to be white
+ * paint (reflectance about 0.8). Its linear colour gives the cast (gains) and its lightness the exposure. Null when no surface is
+ * whitish enough (a purple wall may really be purple): then colours are reported as seen. Exposure is only ever lifted, up to 3.2x.
+ */
+export function estimateIlluminant(refs: readonly { hex: string; kind: 'ceiling' | 'wall' }[]): Illuminant | null {
+  const ok = refs.filter((q) => {
+    const [R, G, B] = hexRgb(q.hex);
+    const l = rgbToLab(R, G, B);
+    return Math.hypot(l.a, l.b) < 16 && l.L > 30;
+  });
+  if (ok.length === 0) return null;
+  // the ceiling is the better reference (it is nearly always white paint)
+  const use = ok.some((q) => q.kind === 'ceiling') ? ok.filter((q) => q.kind === 'ceiling') : ok;
+  const lin = [0, 0, 0];
+  for (const q of use) hexRgb(q.hex).forEach((v, i) => { lin[i] = (lin[i] as number) + srgbToLin(v) / use.length; });
+  const lum = 0.2126 * (lin[0] as number) + 0.7152 * (lin[1] as number) + 0.0722 * (lin[2] as number);
+  if (lum < 0.01) return null;
+  const clamp = (g: number): number => Math.max(0.75, Math.min(1.35, g));
+  const gains = lin.map((c) => clamp(lum / Math.max(1e-4, c))) as [number, number, number];
+  // gains keep the luminance of the reference, so the exposure is separate
+  const exposure = Math.max(1, Math.min(3.2, 0.8 / lum));
+  return { gains, exposure: Math.round(exposure * 100) / 100, reference: use.map((q) => q.kind).join('+') };
+}
+
+/** A colour as it would read under the white reference (cast removed, exposure lifted), as hex. */
+export function normaliseHex(hex: string, ill: Illuminant): string {
+  const rgb = hexRgb(hex).map((v, i) => linToSrgb(srgbToLin(v) * (ill.gains[i] as number) * ill.exposure));
+  return `#${rgb.map((v) => v.toString(16).padStart(2, '0')).join('')}`;
 }

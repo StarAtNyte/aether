@@ -10,8 +10,8 @@
  * rest still work; with none the tool says so and nothing else changes.
  */
 import {
-  detectSegments, estimateRoomEnsemble, estimateRoomFromDepth, measureAppearance, placeObject, solveCamera, solveManhattan,
-  type Appearance, type Cam, type DepthGrid, type DisparityMap, type EstimatorResult, type ManhattanCamera, type Placement, type RoomBox, type RoomFrame,
+  detectSegments, estimateIlluminant, normaliseHex, estimateRoomEnsemble, estimateRoomFromDepth, measureAppearance, placeObject, solveCamera, solveManhattan,
+  type Appearance, type Cam, type Illuminant, type DepthGrid, type DisparityMap, type EstimatorResult, type ManhattanCamera, type Placement, type RoomBox, type RoomFrame,
 } from '@aether/arch/photo';
 import type { DepthRaster } from '../depth-model';
 import { estimateDepthMap } from '../depth-model';
@@ -95,6 +95,8 @@ export interface PerceptionReport {
   /** Camera from vanishing points (image lines): field of view range, tilt (positive looks down), yaw, how much of the line length is explained. */
   vanishing: { fovDeg: number; fovRange: [number, number]; pitchDeg: number; yawDeg: number; rollDeg: number; explained: number; segments: number } | null;
   surfaces: SurfaceColours;
+  /** The white reference of the photo (cast and exposure from the ceiling or a whitish wall), or null when no surface is whitish. */
+  illuminant: Illuminant | null;
   objects: PerceivedObject[];
   /** Nouns asked for that no box was found for. */
   notFound: string[];
@@ -195,6 +197,8 @@ export class Perceiver {
   private notes: string[] = [];
   private metricName: string | null = null;
   private counter = 0;
+  /** The plane masks of the surface colours (for tests and the CLI overlay). */
+  debugMasks: { floor: Uint8Array; ceil: Uint8Array; wall: Uint8Array; w: number; h: number } | null = null;
 
   constructor(private deps: PerceiveDeps) {}
 
@@ -347,7 +351,7 @@ export class Perceiver {
     this.geometry = { grid: own.grid, cam: own.cam, fr: own.frame, box: own.box, fused: fusedBox, sweep: legacy?.sweep ?? [], vp, estimators: ens?.estimators ?? [] };
     if (rel.ok) this.crossCheckFrom(rel.map);
     // surface colours from the plane masks
-    const { fr, cam, box } = this.geometry;
+    const { fr, cam, box, grid: pg } = this.geometry;
     const floor = new Uint8Array(w * h);
     const ceil = new Uint8Array(w * h);
     const wall = new Uint8Array(w * h);
@@ -359,7 +363,7 @@ export class Perceiver {
       for (let i = 0; i < s.length; i++) if (s[i]) obj[i] = 1;
     }
     const cloudY = (u: number, v: number): { y: number; a: number; b: number } | null => {
-      const d = grid.data[v * w + u] as number;
+      const d = pg.data[v * w + u] as number;
       if (!(d > 0.2 && d < 19.5)) return null;
       const a = (u - cam.cx) / cam.f;
       const b = -(v - cam.cy) / cam.f;
@@ -372,7 +376,7 @@ export class Perceiver {
       if (obj[v * w + u]) continue;
       const q = cloudY(u, v);
       if (!q) continue;
-      if (Math.abs(q.y) < 0.1 && v > h * 0.45) floor[v * w + u] = 1;
+      if (Math.abs(q.y) < 0.08 + 0.04 * q.b && v > h * 0.45) floor[v * w + u] = 1;
       else if (box.walls.ceiling && q.y > box.height.value - 0.1 && q.y < box.height.value + 0.3) ceil[v * w + u] = 1;
       else if (q.y > 0.3 && q.y < Math.min(box.height.value - 0.3, 2.3)) {
         const o1 = q.a * Math.sin(phi) + q.b * Math.cos(phi);
@@ -382,9 +386,12 @@ export class Perceiver {
       }
     }
     const app = (m: Uint8Array): Appearance | null => {
+      // a surface that is barely in view (under 1.2 percent of the frame) is not read: a few pixels at a corner are not its colour
+      if (m.reduce((a, b) => a + b, 0) < w * h * 0.012) return null;
       const bb = bbox(m, w, h);
-      return bb ? measureAppearance(r, { width: w, height: h, data: m }, bb) : null;
+      return bb ? measureAppearance(r, { width: w, height: h, data: m }, bb, { dominant: true }) : null;
     };
+    this.debugMasks = { floor, ceil, wall, w, h };
     this.surfaces = { floor: app(floor), ceiling: app(ceil), walls: app(wall) };
   }
 
@@ -438,6 +445,13 @@ export class Perceiver {
     if (est) this.crossCheck = { width: est.width.value, depth: est.depth.value, height: est.height.value, basis: `relative depth, scale from ${door ? `the detected door ${door.id}` : 'a standard ceiling'}; width a lower bound` };
   }
 
+  private illuminant(): Illuminant | null {
+    const refs: { hex: string; kind: 'ceiling' | 'wall' }[] = [];
+    if (this.surfaces.ceiling) refs.push({ hex: this.surfaces.ceiling.colour.hex, kind: 'ceiling' });
+    if (this.surfaces.walls) refs.push({ hex: this.surfaces.walls.colour.hex, kind: 'wall' });
+    return estimateIlluminant(refs);
+  }
+
   report(): PerceptionReport {
     const g = this.geometry ?? null;
     const fovs = g ? g.sweep.filter((s) => s.score >= Math.max(...g.sweep.map((x) => x.score)) - 0.12).map((s) => s.fov) : [];
@@ -452,6 +466,7 @@ export class Perceiver {
       vanishing: g?.vp ? { fovDeg: g.vp.fovDeg, fovRange: g.vp.fovRange, pitchDeg: g.vp.pitchDeg, yawDeg: g.vp.yawDeg, rollDeg: g.vp.rollDeg, explained: g.vp.explained, segments: g.vp.segmentsUsed } : null,
       crossCheck: this.crossCheck,
       surfaces: this.surfaces,
+      illuminant: this.illuminant(),
       objects: this.objects.map((o) => ({ ...o })),
       notFound: [...this.asked].filter((n) => !this.objects.some((o) => o.asked === n || o.label === n)),
       caption: this.caption,
@@ -481,7 +496,7 @@ const hexRgb = (h: string): [number, number, number] => [parseInt(h.slice(1, 3),
 
 // ---- text for the model ----
 
-const sw = (a: Appearance | null): string => (a ? `${a.colour.name} ${a.colour.hex}` : 'not measured');
+const sw = (a: Appearance | null, ill?: Illuminant | null): string => (a ? `${a.colour.name} ${a.colour.hex}${ill ? ` (lit like white ${normaliseHex(a.colour.hex, ill)})` : ''}` : 'not measured');
 
 export function perceptionText(rep: PerceptionReport, maxObjects = 30): string {
   const L: string[] = [];
@@ -494,7 +509,8 @@ export function perceptionText(rep: PerceptionReport, maxObjects = 30): string {
   }
   if (rep.crossCheck) L.push(`Cross-check (relative depth, ${rep.crossCheck.basis}): ${rep.crossCheck.width} x ${rep.crossCheck.depth} x ${rep.crossCheck.height} m. Where the two disagree, say which you trust and why.`);
   const s = rep.surfaces;
-  if (s.floor || s.walls || s.ceiling) L.push(`Surfaces (pixels on the fitted planes, furniture removed): floor ${sw(s.floor)}${s.floor ? ` (${s.floor.pattern.kind}, ${s.floor.finish})` : ''}; walls ${sw(s.walls)}; ceiling ${sw(s.ceiling)}.`);
+  if (s.floor || s.walls || s.ceiling) L.push(`Surfaces (pixels on the fitted planes, furniture removed): floor ${sw(s.floor, rep.illuminant)}${s.floor ? ` (${s.floor.pattern.kind}, ${s.floor.finish})` : ''}; walls ${sw(s.walls)}; ceiling ${sw(s.ceiling)}.`);
+  if (rep.illuminant) L.push(`White reference (${rep.illuminant.reference}): exposure lift ${rep.illuminant.exposure}x, cast gains ${rep.illuminant.gains.map((g) => g.toFixed(2)).join('/')}. Colours below are as seen in the photo; "lit like white" is what they would read under that reference.`);
   if (rep.caption) L.push(`Caption: ${rep.caption}`);
   const objs = rep.objects.slice(0, maxObjects);
   if (objs.length > 0) {
@@ -504,7 +520,7 @@ export function perceptionText(rep: PerceptionReport, maxObjects = 30): string {
       const p = o.placement;
       const bits = [
         `${i + 1}. ${o.label} [${o.id}] conf ${o.confidence}, box [${o.box.join(',')}], ${(o.areaFraction * 100).toFixed(1)}% of frame${o.mask ? `, mask ${o.mask.score}` : ', no mask'}`,
-        a ? `colour ${a.colour.name} ${a.colour.hex} (Lab ${a.colour.lab.join(',')}), palette ${a.palette.map((c) => `${c.name} ${Math.round(c.share * 100)}%`).join(' / ')}, luminance ${a.luminance}, ${a.pattern.kind}${a.pattern.kind === 'plain' ? '' : ` (period ~${a.pattern.periodPx}px)`}, ${a.finish}` : '',
+        a ? `colour ${a.colour.name} ${a.colour.hex}${rep.illuminant ? ` (lit like white ${normaliseHex(a.colour.hex, rep.illuminant)})` : ''} (Lab ${a.colour.lab.join(',')}), palette ${a.palette.map((c) => `${c.name} ${Math.round(c.share * 100)}%`).join(' / ')}, luminance ${a.luminance}, ${a.pattern.kind}${a.pattern.kind === 'plain' ? '' : ` (period ~${a.pattern.periodPx}px)`}, ${a.finish}` : '',
         p ? `${p.kind}, at x ${p.centre.x} z ${p.centre.z} m${p.centre.frame === 'camera' ? ' (camera frame: side walls not both found)' : ''}, visible size ${p.size.w} wide x ${p.size.h} high x ${p.size.d} deep m, ${p.y.low}-${p.y.high} m above the floor` : '',
         o.relations.length > 0 ? o.relations.join('; ') : '',
       ].filter(Boolean);
