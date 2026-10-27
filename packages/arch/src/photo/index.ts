@@ -12,3 +12,5 @@ export * from './consensus';
 export * from './surface';
 export * from './scale';
 export * from './depth';
+export * from './appearance';
+export * from './roomgeometry';

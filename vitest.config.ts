@@ -7,7 +7,7 @@ export default defineConfig({
     testTimeout: 30000,
     // Cap parallelism so a plain `vitest run` cannot saturate a laptop.
     maxWorkers: 2,
-    // Tests never fetch or run the depth network (the photo flow's measure_room); depth tests inject a fake.
-    env: { AETHER_DEPTH: 'off' },
+    // Tests never fetch or run the depth or perception networks (measure_room, perceive_photo); their tests inject fakes.
+    env: { AETHER_DEPTH: 'off', AETHER_PERCEPTION: 'off' },
   },
 });

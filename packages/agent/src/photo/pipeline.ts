@@ -83,6 +83,9 @@ import { CLOSER_TOOL, CLOSER_TOOL_NAME, lookCloser } from './closer';
 import { OBJECT_REASON_TOOL, OBJECT_REASON_TOOL_NAME, ObjectLedger, applyReasons, objectsDueText, objectsProcedure, objectsSummary } from './objects';
 import { ObjectStage } from './objects-stage';
 import type { DepthRaster } from './depth-model';
+import { Perceiver, perceptionText, type PerceptionReport } from './perception/perceive';
+import { PERCEIVE_TOOL, PERCEIVE_TOOL_NAME, parsePerceiveInput, perceivePhoto } from './perception/tool';
+import { seedInventory } from './perception/seed';
 import { MEASURE_TOOL, MEASURE_TOOL_NAME, analysisDepthText, autoAnchor, measureRoom, parseMeasureInput, type Measured } from './measure';
 import { compareImages, extractPalette, regionColourScore, type Raster } from './score';
 import { runReconcile } from './reconcile';
@@ -113,6 +116,20 @@ export interface PhotoRun {
 
 /** The depth estimate made before the photo is read, for the first message of every reading. */
 const depthEvidence = new WeakMap<PhotoRun, Measured>();
+/** The perception layer of a run (models and measurements of the photo), created when `options.perception` is on. */
+const perceivers = new WeakMap<PhotoRun, Perceiver>();
+/** What the first perception pass found, for the first message of every reading. */
+const perceiveEvidence = new WeakMap<PhotoRun, { text: string; blocks: ContentBlock[]; report: PerceptionReport }>();
+function perceiverOf(run: PhotoRun): Perceiver | null {
+  const host = run.ctx.host;
+  if (run.options.perception !== true || typeof host.decodeImage !== 'function' || process.env['AETHER_PERCEPTION'] === 'off') return null;
+  let p = perceivers.get(run);
+  if (!p) {
+    p = new Perceiver({ raster: () => host.decodeImage!(run.image, 1024) });
+    perceivers.set(run, p);
+  }
+  return p;
+}
 /** The photo as the depth network takes it, or null when depth is off or the host cannot decode. */
 function depthSource(run: PhotoRun): (() => Promise<DepthRaster | null>) | null {
   const host = run.ctx.host;
@@ -223,7 +240,8 @@ type Analysis = { ok: true; description: RoomDescription; fixes: string[]; callI
 async function analyse(run: PhotoRun, messages: ChatMessage[] = [], seed?: number): Promise<Analysis> {
   if (messages.length === 0) {
     const depth = depthEvidence.get(run);
-    messages.push({ role: 'user', content: [{ type: 'image', dataUrl: run.image }, ...(depth ? [...depth.blocks.filter((b) => b.type === 'image'), { type: 'text' as const, text: analysisDepthText(depth) }] : []), { type: 'text', text: analysisUserText(run.request) }] });
+    const perc = perceiveEvidence.get(run);
+    messages.push({ role: 'user', content: [{ type: 'image', dataUrl: run.image }, ...(depth ? [...depth.blocks.filter((b) => b.type === 'image'), { type: 'text' as const, text: analysisDepthText(depth) }] : []), ...(perc ? [...perc.blocks, { type: 'text' as const, text: `${perc.text}\nThese are measurements by detection, segmentation and depth models, not the truth: a label can be wrong and a box can cover the wrong thing. Use them as evidence for what is in the photo (an object listed here that you do not see is probably wrong; one you see that is missing here may have been missed), for colours (compare with what you see) and for sizes, and decide yourself.` }] : []), { type: 'text', text: analysisUserText(run.request) }] });
   }
   let lastError = 'the model did not describe the room';
   for (let attempt = 0; attempt < ANALYSIS_ATTEMPTS; attempt++) {
@@ -621,6 +639,17 @@ export async function* reconstructRoom(run: PhotoRun): AsyncGenerator<AgentEvent
       yield { type: 'step', tool: MEASURE_TOOL_NAME, label: `Depth estimate before the first shell: ${m.estimate.width.value} × ${m.estimate.depth.value} × ${m.estimate.height.value} m (${m.estimate.scale.basis} scale; width a lower bound)`, ok: true };
     }
   }
+  const perceiver = perceiverOf(run);
+  if (perceiver) {
+    yield { type: 'status', text: 'Measuring the photo (detection, masks, metric depth)…' };
+    const got = await perceivePhoto(perceiver, { find: [] }, true).catch(() => null);
+    if (got && !got.isError && got.report) {
+      perceiveEvidence.set(run, { text: got.text, blocks: got.blocks, report: got.report });
+      yield { type: 'step', tool: PERCEIVE_TOOL_NAME, label: `Measured the photo: ${got.report.objects.length} objects${got.report.room ? `, room about ${got.report.room.width.value} x ${got.report.room.depth.value} x ${got.report.room.height.value} m` : ''}`, ok: true };
+    } else if (got) {
+      yield { type: 'step', tool: PERCEIVE_TOOL_NAME, label: got.text.slice(0, 160), ok: false };
+    }
+  }
   let analysis: Reading;
   try {
     analysis = await readPhoto(run);
@@ -862,7 +891,7 @@ async function* repairAndDeliver(run: PhotoRun, photo: Photo, desc: RoomDescript
       models: ctx.usage.models ?? [],
       exports: ['playable project', 'GLB (portable)', 'provenance (JSON)'],
     });
-    const resume: PhotoResumeState = { version: 1, sha256: hash, description: desc, openings: { ...openings }, stages: hs.stages.snapshot(), assumptions: hs.assume.snapshot(), differences: ledger?.snapshot() ?? null, ...(objects && objects.ready ? { objects: objects.ledger.snapshot() } : {}), repairs: hs.guard.log.map((r) => ({ ...r })), rounds: hs.rounds };
+    const resume: PhotoResumeState = { version: 1, sha256: hash, description: desc, openings: { ...openings }, stages: hs.stages.snapshot(), assumptions: hs.assume.snapshot(), differences: ledger?.snapshot() ?? null, ...(objects && objects.ready ? { objects: objects.ledger.snapshot() } : {}), ...(perceiveEvidence.get(run) ? { perception: perceiveEvidence.get(run)?.report } : {}), repairs: hs.guard.log.map((r) => ({ ...r })), rounds: hs.rounds };
     extra = { stages: hs.stages.views(), provenance, resume };
   }
   yield { type: 'photo', phase: 'done', text: lines.join(' '), assumptions, ...(final ? { score: scoreView(final) } : {}), ...(ledger && ledger.ranked().length > 0 ? { differences: differenceViews(ledger.ranked()) } : {}), ...(objects && objects.ready ? { objects: objects.views() } : {}), ...extra };
@@ -891,6 +920,7 @@ function makeObjects(run: PhotoRun, photo: Photo, saved: ObjectLedger | null): O
         : undefined,
       getWorld: () => host.getWorld(),
       applyPatches: (p, m) => host.applyPatches(p, m),
+      ...(perceiverOf(run) ? { perceive: async (labels: string[]) => (await perceiverOf(run)?.run({ find: labels }).catch(() => null)) ?? null } : {}),
       ...(run.options.objectRounds !== undefined ? { maxRounds: run.options.objectRounds } : {}),
       ...(signal ? { signal } : {}),
     },
@@ -956,7 +986,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
   /** The photo for the depth network (null without a host decoder: the measure tool is then not offered). */
   const depthRaster = depthSource(run);
   let depthFirst: Promise<Measured> | null = null;
-  const tools: ToolDef[] = [VERDICT_TOOL, ...(ledger ? [DIFFERENCES_TOOL] : []), ...(hs ? [GATE_TOOL, ...(ledger ? [REPAIR_TOOL] : []), CAMERA_TOOL] : []), ...(photo.raster ? [SAMPLE_TOOL] : []), ...(objects ? [OBJECT_REASON_TOOL] : []), CLOSER_TOOL, ...(depthRaster ? [MEASURE_TOOL] : []), ...designTools, ...(run.ctx.textures?.photo ? [MAKE_TEXTURE_TOOL] : []), ...run.tools.filter((t) => t.name === 'tune_look' || t.name === 'finish' || t.name === 'find_model')];
+  const tools: ToolDef[] = [VERDICT_TOOL, ...(ledger ? [DIFFERENCES_TOOL] : []), ...(hs ? [GATE_TOOL, ...(ledger ? [REPAIR_TOOL] : []), CAMERA_TOOL] : []), ...(photo.raster ? [SAMPLE_TOOL] : []), ...(objects ? [OBJECT_REASON_TOOL] : []), CLOSER_TOOL, ...(depthRaster ? [MEASURE_TOOL] : []), ...(perceiverOf(run) ? [PERCEIVE_TOOL] : []), ...designTools, ...(run.ctx.textures?.photo ? [MAKE_TEXTURE_TOOL] : []), ...run.tools.filter((t) => t.name === 'tune_look' || t.name === 'finish' || t.name === 'find_model')];
   const messages: ChatMessage[] = [];
   /** Where progress is measured from: with a panel, the last state the judges preferred; without, the best state. */
   // (Written through `settle`, so the declared type is spelled out: control flow would otherwise narrow it to null.)
@@ -1335,6 +1365,18 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
           const look = await lookCloser({ photoUrl: photo.dataUrl, renderUrl: shot.clean, compose: run.ctx.host.composeImages?.bind(run.ctx.host), plan: () => planShot(run, photo.aspect), roomLine: `Room ${desc.footprint.width} m (west-east) by ${desc.footprint.depth} m (north-south), ceiling ${desc.footprint.ceiling} m.` }, call.input);
           results.push({ type: 'tool_result', toolUseId: call.id, content: look.text, ...(look.isError ? { isError: true } : {}) });
           lookBlocks.push(...look.blocks);
+          continue;
+        }
+        if (call.name === PERCEIVE_TOOL_NAME && perceiverOf(run)) {
+          const input = parsePerceiveInput(call.input);
+          if (!input) {
+            results.push({ type: 'tool_result', toolUseId: call.id, content: 'perceive_photo: expected {find?: string[] of object nouns, generic?: boolean}.', isError: true });
+            continue;
+          }
+          const got = await perceivePhoto(perceiverOf(run) as Perceiver, input);
+          results.push({ type: 'tool_result', toolUseId: call.id, content: got.text, ...(got.isError ? { isError: true } : {}) });
+          lookBlocks.push(...got.blocks);
+          if (got.report) perceiveEvidence.set(run, { text: got.text, blocks: got.blocks, report: got.report });
           continue;
         }
         if (call.name === MEASURE_TOOL_NAME && depthRaster) {

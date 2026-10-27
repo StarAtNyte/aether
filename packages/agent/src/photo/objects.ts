@@ -70,8 +70,10 @@ export interface InventoryItem {
   /** Ids of the built entities that stand for it (empty: nothing built, or not linked yet). */
   entities: string[];
   linkedBy: 'model' | 'projection' | 'none';
-  /** Which seats listed it. */
-  seen: 'both' | 'primary' | 'blind';
+  /** Which seats listed it (`measured`: only the perception models found it). */
+  seen: 'both' | 'primary' | 'blind' | 'measured';
+  /** What the perception layer measured for it (advisory; absent when it was not run or found no match). */
+  measured?: { id: string; colour: string; hex: string; text: string };
 }
 
 /**
@@ -1029,7 +1031,7 @@ export interface ObjectView {
   material: AspectState;
   /** The fix hint or the reason given; '' when it passes. */
   note: string;
-  seen: 'both' | 'primary' | 'blind';
+  seen: 'both' | 'primary' | 'blind' | 'measured';
   waived?: string;
   /** "stopped: ..." when the loop ended with this object still off. */
   stopped?: string;

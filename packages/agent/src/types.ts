@@ -136,7 +136,7 @@ export interface PhotoObjectView {
   /** The fix hint of the judges, or the reason the model gave for leaving it. */
   note: string;
   /** Which of the two independent inventories listed it. */
-  seen: 'both' | 'primary' | 'blind';
+  seen: 'both' | 'primary' | 'blind' | 'measured';
   /** The model's stated reason for leaving a failing aspect (empty otherwise). */
   waived?: string;
   /** "stopped: ..." when the loop ended (plateau or round cap) with this object still off. */
@@ -168,6 +168,8 @@ export interface PhotoResumeState {
   differences: unknown;
   /** The object inventory ledger (see photo/objects.ts), so a continued run does not list the photo again or forget a failing object. */
   objects?: unknown;
+  /** The perception report (see photo/perception/perceive.ts, version 1): measured evidence, kept with the run. */
+  perception?: unknown;
   repairs: Array<{ round: number; difference: string; cause: string; why: string }>;
   rounds: number;
 }
@@ -436,6 +438,12 @@ export interface PhotoOptions {
    * become differences, and the loop goes on until every object passes or the model states a reason for it.
    */
   objects?: boolean;
+  /**
+   * Perception (default false; Node hosts turn it on): specialised vision models measure the photo (open-vocabulary detection, masks,
+   * metric depth, room box, per-object colour and place) and the numbers go to the model as advisory evidence: with the first reading,
+   * through the `perceive_photo` tool, and into the object inventory. Models are fetched on first use; offline the layer is simply absent.
+   */
+  perception?: boolean;
   /** Most object rounds in one run of the object loop (default 12). "Keep refining" (a continued run) starts a new count. The loop also ends when 3 rounds in a row raised neither the pass rate nor lowered the open count. */
   objectRounds?: number;
   /**

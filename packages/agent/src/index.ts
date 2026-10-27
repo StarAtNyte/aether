@@ -94,3 +94,6 @@ export { CallLedger, REPEAT_LIMIT, STREAK_LIMIT, budgetNote, drainSteer, guarded
 export { StageMachine, RepairGuard, AssumptionsLedger, STAGES, STAGE_IDS, GATE_TOOL, REPAIR_TOOL, CAMERA_TOOL, buildProvenance, hashDataUrl, type StageId, type StageStatus, type Provenance } from './photo/stages';
 export { BRIEF_TOOL, BRIEF_TOOL_NAME, BriefSchema, REFERENCE_TOOL, briefChecklistText, briefSystem, parseBrief, richnessEvidence, richnessReviewText, type Brief, type BriefView, type Elaboration, type ReferenceRecord } from './brief';
 export { briefStage, lookReference, referencePrompt, type BriefReviewer, type BriefStageResult } from './brief-stage';
+export { Perceiver, perceptionText, encodeRle, decodeRle, DEFAULT_NOUNS, PERCEPTION_VERSION, PERCEIVE_TOOL_NAME, type PerceptionReport, type PerceivedObject } from './photo/perception/perceive';
+export { PERCEIVE_TOOL, perceivePhoto } from './photo/perception/tool';
+export { seedInventory } from './photo/perception/seed';

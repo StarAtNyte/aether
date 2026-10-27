@@ -6,6 +6,8 @@
  * The models look and judge (objects.ts holds the prompts and the panel); this file sequences the calls, draws the paired
  * crops and writes the books. Nothing here passes or fails an object by a number.
  */
+import type { PerceptionReport } from './perception/perceive';
+import { seedInventory } from './perception/seed';
 import type { Entity, WorldDoc } from '@aether/core';
 import type { ReviewPose } from '@aether/arch';
 import type { AgentEvent, AgentHost, ContentBlock, PhotoObjectView } from '../types';
@@ -60,6 +62,8 @@ export interface StageDeps {
   signal?: AbortSignal;
   /** Most object rounds in this run (default {@link OBJECT_ROUNDS_DEFAULT}). */
   maxRounds?: number;
+  /** Measure the nouns of the inventory (perception layer); null when it is unavailable. */
+  perceive?: (labels: string[]) => Promise<PerceptionReport | null>;
 }
 
 export interface RoundInput {
@@ -206,6 +210,16 @@ export class ObjectStage {
     } else {
       items = lead.items.map((i) => ({ ...i, seen: first ? ('primary' as const) : ('blind' as const) }));
       line = `Inventory of the photo: ${items.length} objects (${first ? 'the second, blind list failed' : 'only the blind list answered'}).`;
+    }
+    if (this.deps.perceive) {
+      const rep = await this.deps.perceive([...new Set(items.map((i) => i.kind))].slice(0, 30)).catch(() => null);
+      aborted(this.deps.signal);
+      if (rep && rep.objects.length > 0) {
+        const seeded = seedInventory(items, rep);
+        items = seeded.items;
+        line = `${line} ${seeded.line}`;
+        if (seeded.added.length > 0) notes = [...notes, `Found by measurement only (check that they exist in the room): ${seeded.added.join(', ')}.`];
+      }
     }
     this.ledger.load(items, notes);
     yield { type: 'photo', phase: 'round', text: `${line}${lead.skipped > 0 ? ` ${lead.skipped} entries were not valid and are left out.` : ''}`, objects: this.views() };

@@ -149,7 +149,7 @@ export interface ObjectEventView {
   size: AspectEventState;
   material: AspectEventState;
   note: string;
-  seen: 'both' | 'primary' | 'blind';
+  seen: 'both' | 'primary' | 'blind' | 'measured';
   waived?: string;
   /** "stopped: ...": the loop ended with this object still off. */
   stopped?: string;
