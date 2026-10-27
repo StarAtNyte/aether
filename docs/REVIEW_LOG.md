@@ -6925,3 +6925,82 @@ What happened. The coverage hole closed: every real perceived object now has a l
 Bugs found and fixed in the run: (1) an `auto` model without a kind (an edit that named none) went to place_items as `model:auto` and was refused; now refused at the plan. (2) Floor pieces planned onto ground an existing piece covers were refused for the overlap; now linked (same family) or dropped with the overlap named. (3) Refusal reasons were not logged; they are now.
 
 Next weakest link (from the logs): the linked objects are the description's pieces, so their position, size and colour still come from the picture, and the plan only moves one when it is more than 0.5 m off and the same kind within 1.6 m; mask semantics also differ (the `bed duvet` mask is compared with the whole bed piece, 0.7 m and 1.6 m off). The surface colour normalisation (white reference from a graded ceiling) removes a cast the photo genuinely has (hotel walls 23.8, floor 60: the floor mask there is largely the bed linen). Next: compare part-level masks (duvet, headboard) against the sub-piece, take the floor colour from pixels outside any object mask, and adjust sizes of linked pieces from the extents, not only positions.
+
+
+## 2026-10-28 Photo to room: ground-truth self-test (what is measurement error and what is model error)
+
+Task: the judges said 84 to 97 percent while the measured comparison said median mask IoU 0.12 to 0.34 and mostly `off`, and there was no ground truth to say which side was wrong. Built `npm run bench:photo-selftest` (design and stage list in `docs/PHOTO_TO_ROOM_HARNESS.md`, "Ground-truth self-test"): seven of our own worlds (twin, hotel, four-poster, vaulted bedroom rebuilt from photographs; scandi living room; pool house; cafe) drawn by the studio (Studio still chain at rest, 1280 px, Intel iGPU WebGL2) from 14 cameras (end pose, corner pose, wide lens 92 degrees for twin and living room), with the true camera, room box, every piece (kind, centre, size, colours) and a per-cell entity label and depth from rays cast on the real meshes. Perception (Florence-2, SAM 2.1, metric depth, vanishing points) runs on each photo on the CPU (about 14 s) and every stage is scored with no language model. Fixtures: `~/.local/share/aether/qa/selftest/<world>/<pose>/`; results `results.json`; baseline `tests/fixtures/selftest/baseline.json`.
+
+Measured (medians over 14 photos; per photo below; code of this entry)
+
+| stage | result | target | verdict |
+| --- | --- | --- | --- |
+| camera field of view error | 1.75 deg (normal lens within 2 deg; wide lens -17, -11.5, pool house -32) | 5 deg | met for normal lenses, not for wide or open spaces |
+| camera eye height | 0.2 to 0.5 m too low (floor plane fit) | none | open |
+| room box width, depth, height (relative) | 0.12 | 0.08 | missed |
+| metric depth on true surfaces | 10.5 percent median, scale 0.99, shape error 2 to 5 percent after the scale | none | the network is not the main problem |
+| detection (pieces of 0.15 percent of the frame or more) | recall at IoU 0.3: 0.87; median mask IoU 0.84; label accuracy 0.57 to 1.0 | none | good on clean renders |
+| floor piece position vs the visible centre | 0.66 m (0.49 m relative to the eye) | 0.15 m | missed |
+| size error (width, height) | 0.14 | 0.15 | met |
+| colour: measured vs the pixels under the true mask | deltaE 0.7 | 8 | met |
+| colour: measured, normalised by the ceiling, vs the colour the world was made with | 6 to 26, raw 20 to 40 | none | single-view limit |
+| projection oracle: true pieces through the pipeline raster vs true masks | 0.45 before, 0.67 after the raster fixes | 0.9 | missed |
+| comparison oracle: perfect build and true masks through `compareObjects`, match or close | 0.24 before, 0.56 after | 0.9 | missed |
+
+| photo | fov err | room rel w/d/h | depth scale | recall .3 | median IoU | floor pos m | projection IoU | comparison good |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| cafe-interior/corner | -2.5 | -0.34/-0.17/-0.09 | 0.90 | 0.76 | 0.84 | 1.56 | 0.40 | 0.08 |
+| cafe-interior/end | 0.5 | -0.24/-0.21/-0.20 | 0.81 | 0.81 | 0.80 | 1.42 | 0.41 | 0.14 |
+| photo-four-poster/corner | -4.5 | -0.36/-0.11/0.01 | 0.97 | 0.89 | 0.92 | 0.50 | 0.79 | 0.67 |
+| photo-four-poster/end | -6.5 | 0.03/-0.10/0.07 | 1.01 | 1.00 | 0.98 | 0.58 | 0.67 | 0.71 |
+| photo-hotel-bedroom/corner | -1.0 | 0.63/1.44/-0.10 | 0.96 | 1.00 | 0.93 | 0.25 | 0.82 | 0.67 |
+| photo-hotel-bedroom/end | 1.0 | -0.02/0.68/-0.10 | 0.90 | 0.86 | 0.94 | 0.42 | 0.82 | 0.71 |
+| photo-twin-room/corner | -0.5 | 0.20/0.35/-0.03 | 1.01 | 1.00 | 0.82 | 0.24 | 0.74 | 0.67 |
+| photo-twin-room/end | -6.0 | 0.00/0.45/-0.03 | 1.14 | 0.88 | 0.90 | 0.20 | 0.66 | 0.50 |
+| photo-twin-room/end-wide | -17.0 | 0.00/-0.03/-0.03 | 1.34 | 0.88 | 0.89 | 0.74 | 0.88 | 0.63 |
+| photo-vaulted-bedroom/corner | -0.5 | -0.16/0.11/-0.38 | 1.02 | 0.89 | 0.71 | 0.31 | 0.56 | 0.22 |
+| pool-house/end | -32.5 | -0.13/0.32/-0.10 | 1.85 | 0.60 | 0.73 | 3.02 | 0.72 | 0.80 |
+| scandi-living-room/corner | 0.0 | -0.19/0.08/0.07 | 0.86 | 0.75 | 0.84 | 1.17 | 0.59 | 0.50 |
+| scandi-living-room/end | 1.0 | 0.59/0.09/0.26 | 0.88 | 0.73 | 0.82 | 0.75 | 0.42 | 0.18 |
+| scandi-living-room/end-wide | -11.5 | 0.15/0.19/-0.03 | 1.10 | 0.58 | 0.64 | 0.79 | 0.59 | 0.42 |
+
+Findings, in order of how much error each contributes to a measured mismatch
+1. The comparison itself was a large part of the live `off` counts. With the TRUE world as a perfect build and the true masks, only 24 percent of objects read match or close. The camera chain was not at fault (the pose through `photoCameraSpec` and `customPose` gives the same raster as a plain pose: field of view convention, heading, pitch sign, level offset and aspect are right). Two faults of the instance raster were: it drew every piece as the solid prism of its footprint (a chair 1.4 times its pixels, a dining table 2.4, a pendant 2.7, a plant 4.4), and it dropped any triangle with a corner behind the near plane. Fixed: clip at the near plane; chairs, stools, armchairs, sofas, tables, desks, beds, lamps, pendants and plants are drawn as parts (`silhouetteParts`). Projection IoU 0.45 to 0.67, perfect-build good share 0.24 to 0.56. What is left: scene sizes are nominal (a chair renders 15 percent taller than the size the scene holds, a coffee table 20 percent), legs are thin at 256 px, and a solid prism is still used for cabinets; large pieces reach 0.8 to 0.97 in the better poses. So even a perfect build reads `near` or `off` for a third of the pieces: the measured counts have a floor of error that is not the build's.
+2. Placement was scaled to the fused room box, whose depth reads through windows and glass doors (hotel 8.2 m for 4.9, twin 8.6 for 5.9). That moved floor pieces by up to 1.5 m. Off by default (`rescaleToFused`): floor position 1.08 to 0.66 m, size error 21 to 14 percent.
+3. What remains of the position error is the room frame, not depth: the estimated eye position in the room frame is off by 0.3 to 1.6 m in half the photos (back and side wall lines wrong or shifted), and the eye-relative error is 0.49 m against 0.66 m absolute. Metric depth itself has scale 0.99 (0.8 to 1.15 except open spaces). No fusion rule tried on these photos (median of families, metric only, no door anchor, metric depth with ceiling height) beat the current median; the door anchor is worse on depth (0.56 to 0.74 relative error).
+4. Camera: field of view is good for normal lenses and bad for wide ones: a view square on to a wall has no vanishing-point evidence for the focal length (92 degrees read as 74 to 83; the prior weight is not the cause, tried 0 to 0.04). Eye height reads 0.2 to 0.5 m low. Yaw was reported with the opposite sign in the text the model reads (the report is positive when the back wall lies to the right of the axis): text corrected.
+5. Detection, masks and colour are not the weak part on clean renders (recall 0.87, mask IoU 0.84, colour read within deltaE 0.7 of the pixels under the true mask). The deltaE of the live colours against what the world was made with (20 to 40 raw) is the renderer's exposure and tone, which a single photo cannot undo; the ceiling normalisation brings it to 6 to 26 and makes a few worse.
+6. Phone-photo variant (`photo.jpg`: blur, noise, JPEG) and the pool house (open space behind the glass: field of view -32, depth scale 1.85) are the cases where the measuring stages break; the bench runs the PNG by default (`--variant=jpg`).
+
+Honest reading against live8: the measured counts (median mask IoU 0.34 twin, 0.12 hotel, mostly `off`) mix three things: perception mask error (small on a clean render, unknown on a real photo), the raster's limits (a perfect build reads match or close for only 56 percent of pieces) and real build error. The judges (84 to 97 percent) were never checked against a number; section 5 of this entry does that.
+
+Not changed (and why): the room box fusion (nothing tested was better), the wide-lens field of view (no evidence in the image), the eye height (floor plane fit; not explained), the ceiling normalisation of colours. They are listed above as misses against their targets, not as fixed.
+
+Gates: `tsc`, `vitest` over `packages/agent`, `packages/arch`, `apps/studio` (2493 tests), `smoke` (39 of 39), `showcase:bake --check`, `showcase:lightmaps --verify`, `budget` (index 922 kB gzip, limit 930), `licences` pass.
+
+### The full pipeline on two self-test photos, scored against the truth (Claude Code, `--render=gpu`, objects on, perception on, build from the measurements; Codex not used)
+
+Runs: `scripts/eval-photo.ts --photo=selftest:<world>/<pose>` (the JPEG variant of the photo, the model sees only the photo), scored by `scripts/photo-selftest/score-world.ts` (entity by entity against `truth.json`, in the room frame of the run's own camera; mask IoU is the built room drawn from the run's photo camera against the true masks). Evidence: `~/.local/share/aether/qa/selftest-live/<run>/` (`selftest-score.json`, `run.json`, `world.json`).
+
+| | twin, end pose | living room, end pose |
+| --- | --- | --- |
+| true pieces seen (0.15 percent of the frame or more) matched / missing / extra built | 7 of 8 / 1 (mirror) / 0 | 11 of 11 / 0 / 1 |
+| position of matched pieces, median; within 25 cm | 0.39 m; 3 of 7 | 0.88 m; 1 of 11 |
+| width, height error of matched pieces, median | 0.07, 0.00 | 0.02, 0.02 |
+| mask IoU of the built piece against the true piece, median over true pieces | 0.42 | 0.36 |
+| colour deltaE, built piece colour against the colour the world was made with (pieces whose generator names a colour) | 29.8 (bed 42, lamp 68, curtains 17) | 3.1 (accent 0.7, rug 4.7, floor lamp 1.4, curtains 5.3) |
+| shell width, depth, height built / true | 4.48 / 4.20, 5.78 / 5.88, 2.60 / 2.68 | 6.48 / 5.60, 6.78 / 7.00, 2.60 / 2.68 |
+| camera: field of view, eye height, pitch error | 2.2 deg, -0.10 m, 0.1 deg | 8.5 deg, -0.16 m, 0.4 deg |
+| structure IoU floor / ceiling / walls | 0.44 / 0.84 / 0.70 | 0.49 / 0.74 / 0.46 |
+| the run's judge panel, final | 11 of 13 pass (85 percent), judge score 77 | 9 of 21 pass (43 percent), judge score 58 |
+| the run's measured comparison, last round (match / close / near / off) | 0 / 2 / 3 / 1 | 0 / 0 / 3 / 7 |
+| rounds, model calls, time | 7, 182, 18 min | 6, 190, 30 min |
+
+Reading it
+- The real accuracy number: the model finds the pieces (7 of 8 and 11 of 11 true pieces have a built piece of the right kind within 2.5 m), gets their size right (median error 0 to 7 percent) and the shell within 7 to 15 percent, but places them poorly: the median piece is 0.39 m (twin) and 0.88 m (living room) from where it stands, and only 4 of 18 are within 25 cm. The median overlap of a built piece with the true piece's pixels is 0.36 to 0.42, so the measured comparison's "mostly off" is an honest reading of the build, not only an artefact of the comparison (the perfect-build oracle of this entry reads 56 percent match or close; the builds read 33 and 0 percent).
+- The judge panel does not track this. The twin's 85 percent pass sits next to a 0.39 m position error and IoU 0.42; the living room's 43 percent sits next to a similar IoU of 0.36 and a larger error. Between the two photos the judges differ by 42 points while the entity-level numbers differ by a factor of two in position and are about equal in overlap. The measured comparison (twin 2 close and 3 near, living room 3 near and 7 off) orders the two runs in the same direction as the position error. Judges are not a measurement of position.
+- The build does not beat the perception it was built from. The perception stage alone (benchmark, same photos, no model) puts the matched floor pieces at 0.20 m (twin end) and 0.75 m (living room end) from the true visible centre; the finished builds are at 0.39 m and 0.88 m from the true piece centre. The model's edits move pieces by eye and the repair rounds do not close the gap that the wall frame opens (see finding 3 above): with the measured room frame wrong by 0.3 to 1.6 m, even a perfect reading of every piece lands it wrong.
+- Colour: where the model took the measured colour, the result is close (deltaE 1 to 5 on the living room's rug, lamp, curtains and accent); the twin's large numbers are two pieces whose generator colour the model chose differently from the world's (a white-linen bed built with other linen, a lamp base), which the crude "main colour of the generator" truth cannot excuse.
+- Field of view 8.5 degrees off on the living room (the end pose is square on to the wall, the case the benchmark flags) moved the shell 15 percent wider than the truth; the twin, with side walls in view, is within 2.2 degrees.
+
+Limits of this number: two photos, one run each; the truth colour is the generator's main colour parameter, not what the photo shows; position is scored in the room frame the run itself chose (back wall by heading), so a run whose back wall is a different one of the room's four walls would score badly; the judge numbers are the run's own and vary between runs.
