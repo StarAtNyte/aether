@@ -83,7 +83,7 @@ import { CLOSER_TOOL, CLOSER_TOOL_NAME, lookCloser } from './closer';
 import { OBJECT_REASON_TOOL, OBJECT_REASON_TOOL_NAME, ObjectLedger, applyReasons, objectsDueText, objectsProcedure, objectsSummary } from './objects';
 import { ObjectStage } from './objects-stage';
 import type { DepthRaster } from './depth-model';
-import { Perceiver, perceptionText, type PerceptionReport } from './perception/perceive';
+import { Perceiver, perceptionDownloadMb, perceptionText, type PerceptionReport } from './perception/perceive';
 import { APPLY_COLOUR_TOOL, APPLY_COLOUR_TOOL_NAME, COLOUR_PARAMS, PERCEIVE_TOOL, PERCEIVE_TOOL_NAME, parseApplyColourInput, parsePerceiveInput, perceivePhoto } from './perception/tool';
 import { seedInventory } from './perception/seed';
 import { similarModelsText } from './perception/retrieve';
@@ -124,7 +124,7 @@ const perceivers = new WeakMap<PhotoRun, Perceiver>();
 const perceiveEvidence = new WeakMap<PhotoRun, { text: string; blocks: ContentBlock[]; report: PerceptionReport }>();
 function perceiverOf(run: PhotoRun): Perceiver | null {
   const host = run.ctx.host;
-  if (run.options.perception !== true || typeof host.decodeImage !== 'function' || process.env['AETHER_PERCEPTION'] === 'off') return null;
+  if (run.options.perception === false || typeof host.decodeImage !== 'function' || process.env['AETHER_PERCEPTION'] === 'off') return null;
   let p = perceivers.get(run);
   if (!p) {
     p = new Perceiver({ raster: () => host.decodeImage!(run.image, 1024) });
@@ -643,7 +643,8 @@ export async function* reconstructRoom(run: PhotoRun): AsyncGenerator<AgentEvent
   }
   const perceiver = perceiverOf(run);
   if (perceiver) {
-    yield { type: 'status', text: 'Measuring the photo (detection, masks, metric depth)…' };
+    const mb = await perceptionDownloadMb().catch(() => 0);
+    yield { type: 'status', text: mb > 0 ? `Measuring the photo. First use: fetching the measuring models (about ${mb} MB, checked and kept on this machine; offline they are skipped). To skip them: set aether.perception to off in the browser local storage (AETHER_PERCEPTION=off from the command line); the room is then built from the picture alone.` : 'Measuring the photo (detection, labels, masks, depth, room box)…' };
     const got = await perceivePhoto(perceiver, { find: [] }, true).catch(() => null);
     if (got && !got.isError && got.report) {
       perceiveEvidence.set(run, { text: got.text, blocks: got.blocks, report: got.report });

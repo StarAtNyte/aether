@@ -103,7 +103,7 @@ function parseArgs(argv: readonly string[]): Args {
     recordFixture: argv.includes('--record-fixture'),
     judges: mode === 'replay' ? 0 : Math.max(0, Math.min(7, Number(get('judges') ?? 3))),
     objects: mode === 'live' && get('objects') !== '0',
-    perception: get('perception') === '1',
+    perception: get('perception') !== '0',
   };
 }
 
@@ -279,7 +279,7 @@ async function runPhoto(args: Args, live: Provider | null): Promise<Report> {
   // AETHER_NO_TEXTURES=1 runs the same room without the photo-texture pass (the "before" of a comparison).
   if (process.env['AETHER_NO_TEXTURES'] === '1') (host as unknown as { storeTexture?: unknown }).storeTexture = undefined;
   if (args.render === 'gpu') host.gpu = await GpuRoom.open({ headed: process.env['SHOT_HEADED'] === '1' });
-  const agent = new WorldAgent({ provider, catalogs: CATALOGS, maxTurns: 10, maxToolCalls: 60, photo: { ...(args.rounds !== undefined ? { maxRounds: args.rounds } : {}), stallRounds: args.stall, vision: true, judges: args.judges, reads: args.reads, reconcile: args.reconcile, ...(args.perception ? { perception: true } : {}), ...(args.objects ? { differences: true, crossCheck: true, harness: true, objects: true } : {}) } });
+  const agent = new WorldAgent({ provider, catalogs: CATALOGS, maxTurns: 10, maxToolCalls: 60, photo: { ...(args.rounds !== undefined ? { maxRounds: args.rounds } : {}), stallRounds: args.stall, vision: true, judges: args.judges, reads: args.reads, reconcile: args.reconcile, perception: args.perception, ...(args.objects ? { differences: true, crossCheck: true, harness: true, objects: true } : {}) } });
   const t0 = performance.now();
   const events: AgentEvent[] = [];
   const report: Report = { photo: args.photo, source, judges: args.judges, reads: null, calls: 0, ms: 0, rounds: [], first: null, final: null, errors: [], assumptions: 0, objects: null, builtWidth: null, builtDepth: null, objectLines: [] };

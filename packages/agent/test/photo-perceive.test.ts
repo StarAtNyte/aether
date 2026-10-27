@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { buildChecklist, parseRoomDescription, type RoomDescription } from '@aether/arch/photo';
 import { makeCam } from '@aether/arch/photo';
 import { partKinds } from '@aether/arch';
@@ -381,9 +381,11 @@ describe('the perception layer in the photo flow', () => {
 });
 
 describe('second-pass labels (CLIP) and duplicate merging', () => {
-  const vocabEmb = (variant: string): Float32Array => clipVocabulary().find((x) => x.variant === variant)?.emb as Float32Array;
+  let VOC: Awaited<ReturnType<typeof clipVocabulary>> = [];
+  beforeAll(async () => { VOC = await clipVocabulary(); });
+  const vocabEmb = (variant: string): Float32Array => VOC.find((x) => x.variant === variant)?.emb as Float32Array;
   it('classifies a vocabulary embedding as its own label, with synonyms summed', () => {
-    const g = classifyEmbedding(vocabEmb('bunk bed'));
+    const g = classifyEmbedding(VOC, vocabEmb('bunk bed'));
     expect(g[0]?.label).toBe('bed');
     expect(g[0]?.p).toBeGreaterThan(0.5);
     expect(g.reduce((a, b) => a + b.p, 0)).toBeCloseTo(1, 5);

@@ -15,13 +15,19 @@ import {
 } from '@aether/arch/photo';
 import type { DepthRaster } from '../depth-model';
 import { estimateDepthMap } from '../depth-model';
-import { classifyEmbedding, loadClip, type Clip, type LabelGuess } from './clip';
+import { CLIP_SET, classifyEmbedding, clipVocabulary, loadClip, type Clip, type LabelGuess } from './clip';
+import { FLORENCE_SET, METRIC_SET, SAM_SET, missingBytes } from './weights';
 import { loadFlorence, type Florence, type RawBox } from './florence';
 import { estimateMetricDepth, type MetricDepth } from './metric-depth';
 import { drawOverlay, overlayDataUrl, type OverlayItem } from './overlay';
 import { loadSam, type Mask, type Segmenter } from './sam2';
 
 export const PERCEPTION_VERSION = 2;
+
+/** Megabytes of measuring models not yet on this machine (0: all cached, nothing to fetch). */
+export async function perceptionDownloadMb(): Promise<number> {
+  return Math.round((await missingBytes([FLORENCE_SET, SAM_SET, METRIC_SET, CLIP_SET])) / 1e6);
+}
 export const PERCEIVE_TOOL_NAME = 'perceive_photo';
 
 export interface Rle {
@@ -342,13 +348,14 @@ export class Perceiver {
     const c = await this.time('load-labeller', () => this.clipP as Promise<{ ok: true; model: Clip } | { ok: false; reason: string }>);
     if (!c.ok) { this.note(c.reason); return; }
     this.clipReady = true;
+    const vocab = await clipVocabulary();
     const r = this.raster;
     for (const o of objs) {
       const m = this.masks.get(o.id);
       const [eb, em] = await this.time('label', () => c.model.embed(r, [{ box: o.box }, { box: o.box, mask: m }]));
       if (!eb || !em) continue;
       this.embeds.set(o.id, em);
-      const g = classifyEmbedding([eb, em]);
+      const g = classifyEmbedding(vocab, [eb, em]);
       const top = g[0] as LabelGuess;
       const own = g.find((x) => x.label === o.label)?.p ?? 0.02;
       const detector = o.label;

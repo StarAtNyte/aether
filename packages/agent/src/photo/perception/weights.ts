@@ -86,6 +86,33 @@ export async function weightsDir(set: WeightSet): Promise<string | null> {
   return path.join(env('AETHER_HOME') ?? path.join(os.homedir(), '.local', 'share', 'aether'), 'models', 'perception', set.id);
 }
 
+/**
+ * Bytes still to fetch for these sets (files not in the cache), without hashing: Node looks at the cache directory, the browser at the
+ * Cache API. 0 when everything is cached; the sum of the files when the layout cannot be checked. Used for the first-use message.
+ */
+export async function missingBytes(sets: readonly WeightSet[]): Promise<number> {
+  let total = 0;
+  try {
+    if (isNode) {
+      const fs = await nodeImport('node:fs/promises');
+      const path = await nodeImport('node:path');
+      for (const set of sets) {
+        const dir = (await weightsDir(set)) as string;
+        for (const f of set.files) {
+          const st = await fs.stat(path.join(dir, f.file)).catch(() => null);
+          if (!st || st.size !== f.bytes && Math.abs(st.size - f.bytes) > f.bytes * 0.1) total += f.bytes;
+        }
+      }
+      return total;
+    }
+    const cache = typeof caches !== 'undefined' ? await caches.open('aether-models') : null;
+    for (const set of sets) for (const f of set.files) if (!(cache && (await cache.match(f.url)))) total += f.bytes;
+    return total;
+  } catch {
+    return sets.reduce((a, s) => a + s.files.reduce((b, f) => b + f.bytes, 0), 0);
+  }
+}
+
 /** All files of a set, checked, or the reason one is missing. `AETHER_PERCEPTION_NO_FETCH=1` never touches the network. */
 export async function loadWeights(set: WeightSet): Promise<Loaded> {
   if (env('AETHER_PERCEPTION') === 'off') return { ok: false, reason: 'perception models are turned off (AETHER_PERCEPTION=off)' };

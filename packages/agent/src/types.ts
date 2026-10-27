@@ -439,7 +439,7 @@ export interface PhotoOptions {
    */
   objects?: boolean;
   /**
-   * Perception (default false; Node hosts turn it on): specialised vision models measure the photo (open-vocabulary detection, masks,
+   * Perception (default ON when the host can decode images; false turns it off):  specialised vision models measure the photo (open-vocabulary detection, masks,
    * metric depth, room box, per-object colour and place) and the numbers go to the model as advisory evidence: with the first reading,
    * through the `perceive_photo` tool, and into the object inventory. Models are fetched on first use; offline the layer is simply absent.
    */

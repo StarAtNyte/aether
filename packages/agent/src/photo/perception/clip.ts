@@ -8,7 +8,6 @@
  */
 import type { DepthRaster } from '../depth-model';
 import { createSession, loadWeights, type WeightSet } from './weights';
-import vocabJson from './clip-vocab.json';
 
 const CLIP_REV = 'https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/d15189d7028b43f1d3e65039190477f6af591c2a';
 /** OpenAI CLIP ViT-B/32 (MIT licence, github.com/openai/CLIP), Xenova ONNX export, uint8 vision tower. */
@@ -113,9 +112,18 @@ const b64ToInt8 = (s: string): Int8Array => {
   for (let i = 0; i < bin.length; i++) a[i] = (bin.charCodeAt(i) << 24) >> 24;
   return a;
 };
-let vocab: { label: string; variant: string; emb: Float32Array }[] | null = null;
-export function clipVocabulary(): { label: string; variant: string; emb: Float32Array }[] {
-  vocab ??= (vocabJson as { labels: { label: string; variant: string; emb: string }[] }).labels.map((l) => ({ label: l.label, variant: l.variant, emb: Float32Array.from(b64ToInt8(l.emb), (v) => v / 127) }));
+export interface VocabEntry {
+  label: string;
+  variant: string;
+  emb: Float32Array;
+}
+let vocab: VocabEntry[] | null = null;
+/** The pre-embedded vocabulary (a lazy chunk: 88 KB the studio's first load does not carry). */
+export async function clipVocabulary(): Promise<VocabEntry[]> {
+  if (vocab) return vocab;
+  const m = (await import('./clip-vocab.json')) as { default?: unknown };
+  const j = (m.default ?? m) as { labels: { label: string; variant: string; emb: string }[] };
+  vocab = j.labels.map((l) => ({ label: l.label, variant: l.variant, emb: Float32Array.from(b64ToInt8(l.emb), (v) => v / 127) }));
   return vocab;
 }
 
@@ -134,8 +142,7 @@ export interface LabelGuess {
  * Probabilities over the vocabulary labels for one or more embeddings of the same object (a box crop with its surroundings and a
  * masked crop: their similarities are averaged), best first. `prefer` adds a log-odds boost to a label (the detector's own name).
  */
-export function classifyEmbedding(e: ArrayLike<number> | ArrayLike<number>[], prefer: { label: string; boost: number }[] = []): LabelGuess[] {
-  const v = clipVocabulary();
+export function classifyEmbedding(v: readonly VocabEntry[], e: ArrayLike<number> | ArrayLike<number>[], prefer: { label: string; boost: number }[] = []): LabelGuess[] {
   const es: ArrayLike<number>[] = typeof (e as ArrayLike<number>)[0] === 'number' ? [e as ArrayLike<number>] : (e as ArrayLike<number>[]);
   const logit = v.map((x) => (100 * es.reduce((s, q) => s + dotv(q, x.emb), 0)) / es.length + (prefer.find((q) => q.label === x.label)?.boost ?? 0));
   const mx = Math.max(...logit);

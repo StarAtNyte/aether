@@ -7,6 +7,13 @@ and `docs/REVIEW_LOG.md` carries the measured detail. Workspace packages share t
 
 First tagged state of the framework: natural language to verified, interactive 3D worlds in the studio, the CLI, the MCP server and the local bridge.
 
+### Photo to room accuracy
+
+- Room box by agreement of independent reads (vanishing-point camera from image lines, metric and relative depth, door or ceiling scale), spread reported as confidence; the twin reads within 11 percent of the known size, the hotel width is flagged a lower bound.
+- Colour: the black twin floor was a depth-grid mismatch; masks are eroded, shadows and glare dropped, a white reference gives "lit like white" colours.
+- Labels: CLIP second pass with probabilities and alternatives, duplicates merged.
+- Repair loop: measured comparison (instance-id render of the build against the perception masks: IoU, offset, size, deltaE, fix hints), `apply_measured_colour`, `find_model like_crop` (appearance retrieval over a 0.5 MB CLIP index of the library thumbnails). Perception is on by default with a first-use download message and a skip.
+
 ### Rendering and performance
 
 - Motion profile: the default view keeps its resolution while the camera zooms or orbits (Sharp: the scale falls only under about 26 fps, never below 0.75, with an emergency step under 15 fps) instead of dropping to 0.5-0.7 and sharpening at rest; Smooth in Settings restores the 60 fps policy. Sharp measures as sharp as explicit Studio in motion (about 30 fps on the integrated GPU at 1280x720; the heaviest room, a penthouse, 19 fps).
