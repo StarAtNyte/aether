@@ -52,6 +52,7 @@
     "demo": "tsx scripts/demo/record.ts && tsx scripts/demo/compose.ts && tsx scripts/demo/verify.ts",
     "budget": "tsx scripts/check-budget.ts",
     "licences": "tsx scripts/check-licences.ts",
+    "check:ui-colour": "tsx scripts/check-ui-colour.ts",
     "e2e": "tsx tests/e2e/studio.e2e.ts",
     "e2e:memory": "tsx tests/e2e/memory.e2e.ts",
     "e2e:switch": "tsx tests/e2e/worldswitch.e2e.ts",

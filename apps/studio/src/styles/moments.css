@@ -253,7 +253,7 @@
   z-index: var(--z-overlay);
   inset: 0;
   border-radius: inherit;
-  background: radial-gradient(circle at 50% 55%, transparent 0%, transparent 38%, oklch(12% 0.02 265 / 0.85) 100%);
+  background: radial-gradient(circle at 50% 55%, transparent 0%, transparent 38%, oklch(12% 0.02 85 / 0.85) 100%);
   pointer-events: none;
   animation: play-iris 650ms var(--ease) forwards;
 }
@@ -445,7 +445,7 @@
 
 @keyframes tour-pulse {
   50% {
-    box-shadow: 0 0 0 2px var(--accent), 0 0 0 11px oklch(54% 0.19 268 / 0);
+    box-shadow: 0 0 0 2px var(--accent), 0 0 0 11px transparent;
   }
 }
 

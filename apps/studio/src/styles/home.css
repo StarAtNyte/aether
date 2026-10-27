@@ -1087,8 +1087,8 @@
   aspect-ratio: 16 / 9;
   overflow: hidden;
   border-radius: var(--r-3);
-  /* A soft sky-to-ground wash shows while the first picture loads (or if it cannot), never a flat grey box. */
-  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 22%, var(--canvas)) 0%, var(--canvas) 62%, color-mix(in srgb, var(--accent) 10%, var(--canvas)) 100%);
+  /* A flat canvas shows while the first picture loads. */
+  background: var(--canvas);
   box-shadow: inset 0 0 0 1px var(--border), var(--shadow-2);
   isolation: isolate;
 }
@@ -1129,8 +1129,8 @@
   gap: var(--s-3);
   padding: var(--s-10) var(--s-4) var(--s-3);
   border: 0;
-  background: linear-gradient(to top, oklch(15% 0.01 265 / 0.72), transparent);
-  color: oklch(98% 0.003 265);
+  background: linear-gradient(to top, oklch(15% 0.01 85 / 0.72), transparent);
+  color: oklch(98% 0.003 85);
   font: inherit;
   text-align: left;
   cursor: pointer;

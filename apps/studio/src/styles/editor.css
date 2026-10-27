@@ -1597,7 +1597,7 @@
   border-top: 1px solid var(--border);
   border-radius: var(--r-3) var(--r-3) 0 0;
   background: var(--surface);
-  box-shadow: 0 -8px 24px -12px oklch(20% 0.02 265 / 0.18);
+  box-shadow: 0 -8px 24px -12px oklch(20% 0.02 85 / 0.18);
   transition: height var(--dur-slow) var(--ease);
 }
 

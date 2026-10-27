@@ -403,6 +403,7 @@ button.switch[aria-checked='true'],
 
 button.switch[aria-checked='true'] .switch__thumb,
 .toggle__input:checked + .switch .switch__thumb {
+  background: var(--on-accent);
   transform: translateX(12px);
 }
 
@@ -505,42 +506,42 @@ button.switch:hover:not(:disabled):not([aria-checked='true']) {
 }
 
 .slider::-webkit-slider-runnable-track {
-  height: 4px;
+  height: 2px;
   border-radius: 999px;
-  background: linear-gradient(to right, var(--accent) var(--pct, 0%), var(--surface-4) var(--pct, 0%));
+  background: linear-gradient(to right, var(--accent) var(--pct, 0%), var(--border-strong) var(--pct, 0%));
 }
 
 .slider::-moz-range-track {
-  height: 4px;
+  height: 2px;
   border-radius: 999px;
-  background: var(--surface-4);
+  background: var(--border-strong);
 }
 
 .slider::-moz-range-progress {
-  height: 4px;
+  height: 2px;
   border-radius: 999px;
   background: var(--accent);
 }
 
 .slider::-webkit-slider-thumb {
   appearance: none;
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
   margin-top: -5px;
-  border: 1px solid var(--border-strong);
+  border: 2px solid var(--surface);
   border-radius: 999px;
-  background: oklch(100% 0 0);
-  box-shadow: var(--shadow-1);
+  background: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
   transition: transform var(--dur) var(--ease);
 }
 
 .slider::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  border: 1px solid var(--border-strong);
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--surface);
   border-radius: 999px;
-  background: oklch(100% 0 0);
-  box-shadow: var(--shadow-1);
+  background: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .slider:hover::-webkit-slider-thumb {
@@ -670,6 +671,11 @@ button.chip:hover {
   background: var(--success);
 }
 
+/* Agent presence: the one warm accent in the chrome, a 6 px dot. */
+.chip--quiet .status-dot.is-live {
+  background: var(--presence);
+}
+
 .status-chip {
   display: inline-flex;
   align-items: center;
@@ -713,11 +719,13 @@ button.chip:hover {
   font-size: var(--fs-13);
   font-weight: 500;
   border-radius: 4px;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
 }
 
 .link:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  text-decoration-thickness: 2px;
 }
 
 /* ---- Thumbnails --------------------------------------------------------- */
@@ -1024,6 +1032,8 @@ button.chip:hover {
 
 .toast__action {
   color: var(--accent-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .toasts--game .toast {
