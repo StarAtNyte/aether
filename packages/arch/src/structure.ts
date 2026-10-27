@@ -13,6 +13,9 @@ import { buildBasin, buildCeiling, buildColumn, buildRailing, buildSlab } from '
 import { buildRoof } from './roof';
 import { buildStair } from './stair';
 import { buildSign } from './sign';
+import { buildSpiralStair } from './spiral';
+import { buildDormer } from './dormer';
+import { buildTurretRoof } from './turret';
 import { buildDoor, buildFrame, buildSash, buildWindow } from './openings';
 
 /** Ids of the structural generators. */
@@ -75,6 +78,12 @@ export function buildStructure(id: StructureId, params: Record<string, Json> | u
       return buildBasin(parseWith(id, S[id], params));
     case 'arch-sign':
       return buildSign(parseWith(id, S[id], params));
+    case 'arch-spiral-stair':
+      return buildSpiralStair(parseWith(id, S[id], params));
+    case 'arch-dormer':
+      return buildDormer(parseWith(id, S[id], params));
+    case 'arch-turret-roof':
+      return buildTurretRoof(parseWith(id, S[id], params));
   }
 }
 
@@ -90,7 +99,10 @@ export const STRUCTURE_DESCRIPTIONS: Readonly<Record<StructureId, string>> = Obj
   'arch-window': 'Window: frame, mullions, sashes, glass, interior sill and drip sill.',
   'arch-sash': 'Opening casement of a window: frame, glass and handle; swings on its left edge.',
   'arch-railing': 'Railing along a plan polyline (glass, bars, cable or solid).',
-  'arch-column': 'Round or square column.',
+  'arch-column': 'Round or square column; style fluted, classical (base, tapering shaft, capital) or pilaster.',
   'arch-basin': 'Swimming pool basin recessed below y = 0 with coping and water.',
   'arch-sign': 'Sign: block lettering from `text` in an emissive material on a dark panel with a brass rim; origin bottom centre, front +Z.',
+  'arch-spiral-stair': 'Spiral stair: radius, turns, handedness, centre post or open core, balustrade and a guard round the stairwell above.',
+  'arch-dormer': 'Dormer (gable, shed or hip) with a window, standing on a roof plane: cheeks and roof meet the slope, flashing along the edges.',
+  'arch-turret-roof': 'Conical, bell, dome or ogee turret cap (round or polygonal) with a finial, an optional turret wall and slits.',
 });

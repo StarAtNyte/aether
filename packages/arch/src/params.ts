@@ -340,8 +340,113 @@ export const ColumnParams = z.object({
   size: z.number().min(0.05).max(3).default(0.3),
   height: z.number().min(0.2).max(ARCH_LIMITS.MAX_HEIGHT).default(2.8),
   finish: MaterialSpec.default({ finish: 'concrete' }),
+  /**
+   * Additive: the column's style. Omitted (or `plain`) the shaft is the plain cylinder or pier above. `fluted` grooves the
+   * round shaft; `classical` adds a base (plinth and torus), a tapering shaft (entasis) and a capital (see `capital`);
+   * `pilaster` is a shallow pier engaged to a wall (its back face on z = 0, projecting `projection` toward +Z) with the
+   * same base and capital.
+   */
+  style: z.enum(['plain', 'fluted', 'classical', 'pilaster']).optional(),
+  /** Additive: capital of a `classical` or `pilaster` column (default `doric`). */
+  capital: z.enum(['tuscan', 'doric', 'ionic']).optional(),
+  /** Additive: number of flutes of a `fluted` or `classical` column (0 = smooth; default 20 fluted, 0 classical). */
+  flutes: z.number().int().min(0).max(32).optional(),
+  /** Additive: how far a pilaster stands out of its wall (m; default a third of its width). */
+  projection: z.number().min(0.02).max(1).optional(),
 });
 export type ColumnParams = z.infer<typeof ColumnParams>;
+
+/**
+ * `arch-spiral-stair` params. Local frame: the axis of the stair is the entity's Y axis; angle 0 points along +X and a
+ * 'right' stair climbs clockwise seen from above (the angle grows from +X toward +Z), a 'left' one counter-clockwise. The
+ * first tread starts at `startAngle`; the last riser lands on the floor above (`rise` higher), which keeps the sector
+ * after the last tread, so the stairwell is the disc without that sector (see `spiralFootprint`).
+ */
+export const SpiralStairParams = z.object({
+  /** Outer radius of the treads. */
+  radius: z.number().min(0.55).max(3).default(1.4),
+  /** Total rise (floor to floor). */
+  rise: z.number().min(0.5).max(ARCH_LIMITS.MAX_HEIGHT).default(2.8),
+  /** Turns the stair makes from its first tread to the floor above (0.25 to 4). */
+  turns: z.number().min(0.25).max(4).default(1),
+  /** Climbing clockwise seen from above (`right`) or counter-clockwise (`left`). */
+  hand: z.enum(['right', 'left']).default('right'),
+  /** Risers (0 = automatic, about 18 cm each). */
+  steps: z.number().int().min(0).max(ARCH_LIMITS.MAX_STEPS).default(0),
+  /** Direction of the first tread in plan (degrees from +X). */
+  startAngle: z.number().min(-360).max(360).default(0),
+  /** `solid`: a centre post the treads are fixed to. `open`: no post, the treads are cantilevered from a slim core. */
+  core: z.enum(['solid', 'open']).default('solid'),
+  /** Radius of the centre post (solid) or of the slim core (open). */
+  postRadius: z.number().min(0.03).max(0.4).optional(),
+  /** Balustrade: on the outer edge, on both edges (open core only; a solid post is the inner side) or none. */
+  rail: z.enum(['outer', 'both', 'none']).default('outer'),
+  /** Look of the balustrade. */
+  balustrade: z.enum(['steel', 'timber', 'glass']).default('steel'),
+  /** Guard round the stairwell on the floor above (the open part of the disc). */
+  landingRail: z.boolean().default(true),
+  finish: MaterialSpec.default({ finish: 'oak' }),
+  structure: MaterialSpec.default({ finish: 'black-metal' }),
+  railMaterial: MaterialSpec.default({ finish: 'black-metal' }),
+});
+export type SpiralStairParams = z.infer<typeof SpiralStairParams>;
+
+/**
+ * `arch-dormer` params. Local frame: the origin is the point of the roof surface where the foot of the front wall
+ * stands, centred across the dormer; +Z points down the roof slope (outward), +Y up, so the main roof plane is
+ * `y = −tan(roofPitch) · z`. The cheeks and roof run back up the slope until they meet that plane (the dormer's depth
+ * follows from its height and the roof's pitch), with a flashing strip along every edge that meets the roof.
+ */
+export const DormerParams = z.object({
+  style: z.enum(['gable', 'shed', 'hip']).default('gable'),
+  /** Outer width of the front wall (between the cheeks). */
+  width: z.number().min(0.6).max(4).default(1.4),
+  /** Height of the front wall above the roof surface it stands on. */
+  wallHeight: z.number().min(0.6).max(2.4).default(1.3),
+  /** Pitch of the main roof the dormer stands on (degrees). */
+  roofPitch: z.number().min(15).max(65).default(35),
+  /** Pitch of the dormer's own roof (degrees; a shed dormer's is kept at least 4 degrees under the main roof's). */
+  pitch: z.number().min(5).max(60).default(30),
+  /** Roof overhang past the cheeks and the front wall. */
+  overhang: z.number().min(0).max(0.5).default(0.15),
+  /** The window in the front wall: sill height above the foot of the wall and the frame's glazing bars. */
+  sill: z.number().min(0.1).max(1.2).default(0.4),
+  bars: z.enum(['none', 'cross', 'grid']).default('cross'),
+  finish: MaterialSpec.default({ finish: 'plaster', color: '#ece8e1' }),
+  roof: MaterialSpec.default({ finish: 'roof-tile' }),
+  trim: MaterialSpec.default({ finish: 'paint', color: '#ece9e3' }),
+  frame: MaterialSpec.default({ finish: 'paint', color: '#f2f0eb' }),
+  glass: MaterialSpec.default({ finish: 'glass' }),
+  flashing: MaterialSpec.default({ finish: 'brushed-metal', color: '#7a7f84' }),
+});
+export type DormerParams = z.infer<typeof DormerParams>;
+
+/**
+ * `arch-turret-roof` params: a conical (or polygonal, or domed) cap over a round or polygonal turret. Local frame: centred
+ * on the axis, y = 0 at the eave line (the top of the turret wall), the cone rising to `height`. With `wallHeight` > 0 the
+ * turret's own wall stands below y = 0 (down to −wallHeight), with `slits` narrow windows.
+ */
+export const TurretRoofParams = z.object({
+  /** Radius of the wall the roof caps. */
+  radius: z.number().min(0.4).max(8).default(1.6),
+  /** Height of the cap above the eaves. */
+  height: z.number().min(0.3).max(14).default(2.6),
+  overhang: z.number().min(0).max(1).default(0.3),
+  /** 0: a true cone; 3 to 16: a pyramid of that many sides. */
+  sides: z.number().int().min(0).max(16).default(0).refine((n) => n === 0 || n >= 3, 'sides is 0 (round) or 3 to 16'),
+  /** `cone` straight, `bell` concave flare at the eaves (witch's hat), `dome` rounded, `ogee` an S-curve. */
+  profile: z.enum(['cone', 'bell', 'dome', 'ogee']).default('cone'),
+  /** Finial on the tip (0 = none): its height. */
+  finial: z.number().min(0).max(1.5).default(0.35),
+  /** Turret wall below the eaves (m, 0 = just the roof) and the narrow windows round it. */
+  wallHeight: z.number().min(0).max(12).default(0),
+  slits: z.number().int().min(0).max(8).default(0),
+  finish: MaterialSpec.default({ finish: 'roof-tile' }),
+  trim: MaterialSpec.default({ finish: 'paint', color: '#ece9e3' }),
+  wall: MaterialSpec.default({ finish: 'plaster', color: '#ece8e1' }),
+  metal: MaterialSpec.default({ finish: 'brushed-metal', color: '#5d6166' }),
+});
+export type TurretRoofParams = z.infer<typeof TurretRoofParams>;
 
 /** `arch-basin` params: a pool recessed below y = 0 (coping at y = 0). */
 export const BasinParams = z.object({
@@ -386,6 +491,9 @@ export const STRUCTURE_SCHEMAS = Object.freeze({
   'arch-column': ColumnParams,
   'arch-basin': BasinParams,
   'arch-sign': SignParams,
+  'arch-spiral-stair': SpiralStairParams,
+  'arch-dormer': DormerParams,
+  'arch-turret-roof': TurretRoofParams,
 });
 
 /** Id of a structural generator. */

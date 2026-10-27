@@ -9,6 +9,7 @@ import { PartSet } from '../parts';
 import type { P2 } from '../math2';
 import { choice, color, flag, mat, num, seeded, type FurnitureDef } from './kit';
 import { bevelSlab } from './venue-kit';
+import { buildStyledColumn } from '../column-styles';
 
 const paint = (c: string, roughness = 0.7) => ({ finish: 'paint' as const, color: c, roughness });
 const EMISSIVE = (c: string, k: number) => ({ preset: 'emissive' as const, color: c, emissive: c, emissiveIntensity: k });
@@ -296,9 +297,9 @@ export const COLUMN: FurnitureDef = {
   kind: 'column',
   aliases: ['column', 'pillar', 'pilaster', 'colonnade column', 'classical column', 'fluted column', 'doric column', 'support column', 'architectural column', 'half column'],
   description:
-    'Classical column with a plinth base, torus, shaft and capital: `variant` round (smooth), fluted (grooved), square (a square pier with a moulded cap) or pilaster (a shallow engaged pier for a wall: back flat at z = -depth/2, 0.14 m proud). `height` is floor to ceiling (3.2 m by default). Perimeter and colonnade runs: shape_land {op:"around"} for a whole room, {op:"along"} for one line.',
+    'Classical column with a plinth base, torus, shaft and capital: `variant` round (smooth), fluted (grooved), square (a square pier with a moulded cap), pilaster (a shallow engaged pier for a wall: back flat at z = -depth/2, 0.14 m proud), classical (plinth, torus base, tapering fluted shaft with entasis and a doric capital) or ionic (the same with scroll volutes). `height` is floor to ceiling (3.2 m by default). Perimeter and colonnade runs: shape_land {op:"around"} for a whole room, {op:"along"} for one line.',
   params: {
-    variant: choice(['round', 'fluted', 'square', 'pilaster'], 'round', 'column type'),
+    variant: choice(['round', 'fluted', 'square', 'pilaster', 'classical', 'ionic'], 'round', 'column type'),
     height: num(3.2, 0.8, 12, 'floor to top of capital (m)'),
     diameter: num(0.5, 0.2, 1.6, 'shaft diameter or width at the base (m)'),
     finish: choice(['plaster', 'marble', 'stone', 'concrete', 'paint'], 'plaster', 'shaft finish'),
@@ -314,6 +315,9 @@ export const COLUMN: FurnitureDef = {
     const D = p.num('diameter');
     const v = p.str('variant');
     const finish = p.str('finish') === 'paint' ? paint(p.color('color'), 0.6) : mat(p.str('finish'), p.color('color'));
+    if (v === 'classical' || v === 'ionic') {
+      return buildStyledColumn({ shape: 'round', size: D, height: H, finish, style: 'classical', capital: v === 'ionic' ? 'ionic' : 'doric', flutes: 20 });
+    }
     const baseH = Math.min(0.28, H * 0.08);
     const capH = Math.min(0.4, H * 0.1);
     const shaftH = H - baseH - capH;

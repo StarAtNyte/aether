@@ -21,6 +21,10 @@ export { nearestFinishes, finishFromWords, finishMatchText, type FinishMatch, ty
 export { buildWall, openingSpans, clipConvexX, SKIRTING_HEIGHT, SKIRTING_DEPTH, SECTION_CAP, type OpeningSpan } from './wall';
 export { solveWallJoins, JOIN_TOLERANCE, type JoinWall, type WallJoin } from './wall-joins';
 export { wallNetwork, type NetworkRoom, type NetworkWall } from './wall-network';
+export { buildSpiralStair, spiralDisc, spiralFootprint, spiralHeadroom, spiralLayout, spiralMaxTurns, spiralProblems, spiralTreadDepth, SPIRAL_MIN_TREAD, spiralWalkLine, SPIRAL_GUARD_HEIGHT, SPIRAL_HEADROOM, type SpiralLayout } from './spiral';
+export { buildDormer, dormerPlacement, dormerShape, type DormerShape } from './dormer';
+export { buildTurretRoof, turretProfile } from './turret';
+export { buildStyledColumn, columnProportions } from './column-styles';
 export { buildSlab, buildCeiling, buildColumn, buildRailing, buildBasin, slabArea } from './elements';
 export { buildRoof, roofRise } from './roof';
 export { buildStair, stairFootprint, stairGuardOutlines, stairGuardPieces, stairLayout, stairRisers, stairWalkLine, GUARD_HALF, GUARD_HEIGHT, GUARD_OFFSET, GUARD_START, STAIR_WALK_LINE_RUN_OUT, DEFAULT_RISER, type StairGuardPiece } from './stair';

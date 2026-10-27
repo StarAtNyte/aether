@@ -56,6 +56,9 @@ const STRUCTURE_HINTS: Record<StructureId, Record<string, ParamSpec>> = {
   'arch-railing': { height: { type: 'number', default: 1.05, min: 0.3, max: 2, description: 'points [[x,z]…] required' } },
   'arch-column': { size: { type: 'number', default: 0.3, min: 0.05, max: 3, description: 'diameter / side' }, height: { type: 'number', default: 2.8, min: 0.2, max: 30, description: 'height' } },
   'arch-sign': { height: { type: 'number', default: 0.55, min: 0.15, max: 3, description: 'panel height (m); text (string, required, up to 40 characters), width, letters colour, glow, panel and rim materials' } },
+  'arch-spiral-stair': { radius: { type: 'number', default: 1, min: 0.55, max: 3, description: 'outer radius of the treads (m)' }, rise: { type: 'number', default: 2.8, min: 0.5, max: 30, description: 'floor-to-floor height (m)' }, turns: { type: 'number', default: 1, min: 0.25, max: 4, description: 'turns from the first tread to the floor above; also hand (right|left), core (solid|open), rail, balustrade' } },
+  'arch-dormer': { width: { type: 'number', default: 1.4, min: 0.6, max: 4, description: 'width of the front wall (m)' }, style: { type: 'enum', default: 'gable', options: ['gable', 'shed', 'hip'], description: 'dormer roof form; also wallHeight, roofPitch (of the main roof), pitch, overhang' } },
+  'arch-turret-roof': { radius: { type: 'number', default: 1.6, min: 0.4, max: 8, description: 'radius of the wall it caps (m)' }, height: { type: 'number', default: 2.6, min: 0.3, max: 14, description: 'height of the cap (m); also profile (cone|bell|dome|ogee), sides, wallHeight, slits, finial' } },
   'arch-basin': { width: { type: 'number', default: 8, min: 0.5, max: 60, description: 'pool X' }, length: { type: 'number', default: 4, min: 0.5, max: 60, description: 'pool Z' } },
 };
 

@@ -9,6 +9,7 @@ import { isAxisRectangle, bounds, positive, signedArea, type P2 } from './math2'
 import type { BasinParams, CeilingParams, ColumnParams, RailingParams, SlabParams } from './params';
 import type { ArchOutput } from './types';
 import { triangulate } from './triangulate';
+import { buildStyledColumn } from './column-styles';
 import { addCeilingCornice, buildStyledCeilingParts } from './ceiling-styles';
 
 /** Side band of a polygon from y0 to y1 (outward faces). */
@@ -178,6 +179,7 @@ function insetRect(poly: readonly P2[], d: number): P2[] | null {
 
 /** Column standing on y = 0. */
 export function buildColumn(p: ColumnParams): ArchOutput {
+  if (p.style !== undefined && p.style !== 'plain') return buildStyledColumn(p);
   const set = new PartSet();
   const r = p.size / 2;
   if (p.shape === 'round') {

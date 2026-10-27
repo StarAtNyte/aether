@@ -24,6 +24,7 @@ import { DISPLAY } from './display';
 import { HARBOUR } from './harbour';
 import { DWELLING, DWELLINGS, dwellingDoor } from './dwelling';
 import { GARDEN_PIECES } from './garden';
+import { STRUCTURE_PIECES } from './structure-pieces';
 
 export type { FurnitureDef, Mount, MovableMotion, MovableSpec, ParamReader } from './kit';
 export { glowMaterial } from './lighting';
@@ -31,7 +32,7 @@ export { DWELLING_TYPES } from './dwelling';
 export { tierHeights, TIER_BASE } from './venue';
 
 /** Every furniture generator, in a stable order. */
-export const FURNITURE: readonly FurnitureDef[] = Object.freeze([...SEATING, ...CANE, ...TABLES, ...BEDROOM, ...KITCHEN_SET, ...BATH, ...SINKS, ...DECOR, ...LIGHTING, ...TREES, ...VENUE, ...CIVIC, ...WORLD_PIECES, ...DISPLAY, ...HARBOUR, ...DWELLINGS, ...GARDEN_PIECES]);
+export const FURNITURE: readonly FurnitureDef[] = Object.freeze([...SEATING, ...CANE, ...TABLES, ...BEDROOM, ...KITCHEN_SET, ...BATH, ...SINKS, ...DECOR, ...LIGHTING, ...TREES, ...VENUE, ...CIVIC, ...WORLD_PIECES, ...DISPLAY, ...HARBOUR, ...DWELLINGS, ...GARDEN_PIECES, ...STRUCTURE_PIECES]);
 
 const BY_ID: ReadonlyMap<string, FurnitureDef> = new Map(FURNITURE.map((f) => [f.id, f]));
 const BY_KIND: ReadonlyMap<string, FurnitureDef> = new Map(FURNITURE.map((f) => [f.kind, f]));
