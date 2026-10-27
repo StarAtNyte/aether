@@ -6867,3 +6867,28 @@ Not checked
 - The heap still peaks near 600 MB during preparation of this world, above the studio's low-memory threshold: the stills run printed "JS heap under pressure; switching to low memory mode". The peak was not traced to a source (render object node-builder state for about 600 objects and shader strings are the suspects).
 - The first 30 s show pieces appearing as their programs finish; a priority order (what is in view first) is not done. WebGPU on a real adapter was not measured (headless WebGPU here is SwiftShader, which is slow in the same way).
 - The budget is per GPU tier, not measured per world: an integrated GPU draws 8 live lamps however light the shaders are.
+
+## Perception layer: perceive_photo measures the photo (detection, masks, metric depth, colour); advisory
+
+What was wrong
+- The model both perceived and judged, so colours, positions and sizes were guessed from the picture (the twin run: a teal carpet where the pixels are dark blue, desk and luggage missing, a door added).
+
+What changed
+- `perceive_photo` (tool, `scripts/perceive-photo.ts`, `packages/agent/src/photo/perception/`): Florence-2 base (MIT) boxes, SAM 2.1 tiny (Apache-2.0) masks, Depth Anything V2 metric indoor small (Apache-2.0) metres, RANSAC floor and ceiling planes, wall lines and a room box, back-projection of every mask to room coordinates, per-mask CIELAB median (glare removed, tails trimmed), palette, pattern and finish hints, plane colours for floor, walls and ceiling. Versioned `PerceptionReport` in the resume state, text summary, annotated overlay. Pinned SHA-256 weights fetched on first use, each model optional, `AETHER_PERCEPTION=off`. Reaches the model in the first reading, through the tool, and seeds the object inventory (flagged `measured`). Off by default (`PhotoOptions.perception`); the studio leaves it off (340 MB). Not wired into the repair loop.
+- Licences checked on the model cards and LICENSE files (docs/THIRD_PARTY.md). The SAM 2.1 ONNX export repo and the metric depth ONNX file declare no or only a community licence tag; the upstream weights are Apache-2.0. Florence-2 large, Grounding DINO and OWLv2 were not used (size, no verified pinned export, licence not verified).
+
+Measured on the four fixture photos (CPU, 32 cores, about 14 to 18 s per photo, models loaded each run; Florence 276 MB, SAM 62 MB, metric depth 99 MB)
+- Detection recall against the Claude Code inventories of `qa/objjudge` (only twin and hotel have one; pd1 and pd2 have no saved LLM inventory, so no recall number): hotel 17 of 19 non-structure objects matched by box and name (89 percent); twin 8 of 22 (36 percent) and 6 of 16 (38 percent), 50 to 56 percent when only the box has to overlap. Misses on the twin: small or thin things (rails, papers, radiator, wall lights, backpack, carrier bag, the far bed). The desk, rug and luggage the Codex run missed are found, as a table/desk-like box, a rug and a luggage box. Labels are often wrong (near bed as "sofa", mattress as "towel", a canopy bed as "window" and "wardrobe"): they are hints.
+- Mask quality (looked at in the overlays): good edges on furniture, curtains, rugs, pictures; thin legs and glass are loose; some masks cover a neighbouring object when the box was wrong.
+- Colour: the mask readings are right where the mask is right. The twin carpet pixels are dark blue (about #1a2a35 to #364655), not teal; the report's floor colour on the final geometry is wrong though (see failures).
+- Room box against the known twin 4.2 x 5.88 m: metric depth gave width 2.88 m (lower bound, one wall), depth 6.82 m, height 3.1 m (ceiling reads high); the relative-depth cross-check gave 4.18 x 6.09 x 2.5 m, closer. Hotel 2.87 x 5.41 x 2.88, cross-check 3.38 x 5.23 x 2.5. pd1 4.05 x 6.72 x 3.75, pd2 4.55 x 6.5 x 3.99 (no ground truth for these). Spread over fields of view is 40 to 80 percent on depth.
+
+Failures, stated plainly
+- The room box is the weak part. The metric network over-reads depth by about 15 to 25 percent on the twin, the field of view cannot be recovered for a camera aligned with the walls (width and height scale with it), furniture can stand in for a wall, and the width is often only a lower bound. Use the cross-check and the model's own reading beside it.
+- The twin floor colour came out black (#0d0c12): the fitted floor plane (camera 1.65 m) picks up dark pixels; an earlier geometry version read dark greyish blue. Not fixed.
+- Florence-2 base names things wrongly and gives no calibrated score; the seeded inventory adds only objects with confidence 0.3 or more, a mask and 0.4 percent of the frame, at most 8, flagged for the judges, but a false object can still become a difference.
+- Not tested: a live Claude Code photo run with perception on (only the scripted agent test shows the tool result reaching the model), the studio (browser) path, the effect on the final room.
+
+Verification
+- `tsc` clean; `vitest packages/agent packages/arch apps/studio` 234 files, 2469 tests pass (new: appearance, geometry on synthetic raycast rooms, perceiver with mocked runners, seeding, tool, scripted agent); `smoke` 39 of 39.
+

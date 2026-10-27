@@ -107,6 +107,8 @@ export interface PerceiveDeps {
   segmenter?: () => Promise<{ ok: true; model: Segmenter } | { ok: false; reason: string }>;
   metric?: (r: DepthRaster) => Promise<{ ok: true; depth: MetricDepth } | { ok: false; reason: string }>;
   relative?: typeof estimateDepthMap;
+  /** Field of view of the camera the metric network was trained on (Hypersim: 60 degrees); null: the depth is taken as exact. */
+  trainedFovDeg?: number | null;
 }
 
 /** Nouns of a room, used when the caller gives none (the first pass, before the inventory exists). */
@@ -315,9 +317,10 @@ export class Perceiver {
       const s = shrinkMask(m, w, h);
       for (let i = 0; i < s.length; i++) if (s[i]) notWall[i] = 1;
     }
-    const sol = await this.time('geometry', async () => solveCamera(grid, { notWall }));
+    const trained = this.deps.trainedFovDeg === undefined ? 60 : this.deps.trainedFovDeg;
+    const sol = await this.time('geometry', async () => solveCamera(grid, { notWall, ...(trained ? { trainedFovDeg: trained } : {}) }));
     if (!sol) { this.note('no floor plane could be fitted to the depth map, so no room geometry'); this.geometry = null; return; }
-    this.geometry = { grid, cam: sol.cam, fr: sol.fr, box: sol.box, sweep: sol.sweep };
+    this.geometry = { grid: sol.grid, cam: sol.cam, fr: sol.fr, box: sol.box, sweep: sol.sweep };
     // surface colours from the plane masks
     const { fr, cam, box } = this.geometry;
     const floor = new Uint8Array(w * h);
@@ -344,7 +347,7 @@ export class Perceiver {
       if (obj[v * w + u]) continue;
       const q = cloudY(u, v);
       if (!q) continue;
-      if (Math.abs(q.y) < 0.08) floor[v * w + u] = 1;
+      if (Math.abs(q.y) < 0.1 && v > h * 0.45) floor[v * w + u] = 1;
       else if (box.walls.ceiling && q.y > box.height.value - 0.1 && q.y < box.height.value + 0.3) ceil[v * w + u] = 1;
       else if (q.y > 0.3 && q.y < Math.min(box.height.value - 0.3, 2.3)) {
         const o1 = q.a * Math.sin(phi) + q.b * Math.cos(phi);

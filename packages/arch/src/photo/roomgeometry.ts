@@ -115,7 +115,7 @@ export function fitPlane(pts: V3[]): { n: V3; d: number } | null {
  * RANSAC plane. `accept` restricts the normal (for example: near the up axis for a floor). The threshold grows with
  * distance because depth noise does.
  */
-export function ransacPlane(pts: V3[], opt: { iters?: number; thr?: number; thrPerM?: number; accept?: (n: V3) => boolean; seed?: number }): Plane | null {
+export function ransacPlane(pts: V3[], opt: { iters?: number; thr?: number; thrPerM?: number; accept?: (n: V3) => boolean; seed?: number; tighten?: [number, number][] }): Plane | null {
   const iters = opt.iters ?? 300;
   const thr0 = opt.thr ?? 0.04;
   const thrM = opt.thrPerM ?? 0.02;
@@ -138,8 +138,11 @@ export function ransacPlane(pts: V3[], opt: { iters?: number; thr?: number; thrP
   }
   if (!best) return null;
   let { n, d } = best;
-  for (let r = 0; r < 2; r++) {
-    const inl = pts.filter((p) => within(n, d, p));
+  // Refit on the inliers, tightening the threshold step by step: a loose threshold finds the plane despite depth noise, a tight one removes the
+  // bias that nearby surfaces (a wall foot, a bed edge) put into the fit.
+  const steps: [number, number][] = opt.tighten ?? [[thr0, thrM], [thr0, thrM]];
+  for (const [t0, tm] of steps) {
+    const inl = pts.filter((p) => Math.abs(dot(n, p) - d) < t0 + tm * p[2]);
     const f = fitPlane(inl);
     if (!f) break;
     if (opt.accept && !opt.accept(f.n)) break;
@@ -373,15 +376,18 @@ function pctile(v: number[], p: number): number {
  * (share of wall points in the four wall peaks). The sweep is reported as the range because a single photo fixes the
  * field of view only loosely.
  */
-export function solveCamera(grid: DepthGrid, opt: { fovs?: number[]; notWall?: ArrayLike<number>; kinds?: ('z' | 'ray')[] } = {}): { cam: Cam; fr: RoomFrame; box: RoomBox; cloud: Cloud; sweep: { fov: number; kind: string; score: number }[] } | null {
+export function solveCamera(grid: DepthGrid, opt: { fovs?: number[]; notWall?: ArrayLike<number>; kinds?: ('z' | 'ray')[]; trainedFovDeg?: number } = {}): { cam: Cam; fr: RoomFrame; box: RoomBox; cloud: Cloud; sweep: { fov: number; kind: string; score: number }[]; grid: DepthGrid } | null {
   const fovs = opt.fovs ?? [52, 56, 60, 64, 68, 72, 76, 80, 86];
-  type Cand = { cam: Cam; fr: RoomFrame; box: RoomBox; cloud: Cloud; score: number };
+  type Cand = { cam: Cam; fr: RoomFrame; box: RoomBox; cloud: Cloud; score: number; grid: DepthGrid };
   const cands: Cand[] = [];
   const sweep: { fov: number; kind: string; score: number }[] = [];
   for (const kind of opt.kinds ?? ['z']) {
     for (const fov of fovs) {
       const cam = makeCam(grid, fov, kind);
-      const cloud = cloudOf(grid, cam);
+      // A network trained on one camera (Hypersim: 60 degrees) reads a wider photo as farther away: objects look smaller, so it puts them
+      // deeper at the same size, while their sideways positions stay right. Dividing the depth by tan(fov/2) / tan(trained/2) undoes that.
+      const g = opt.trainedFovDeg ? scaleDepth(grid, Math.tan((opt.trainedFovDeg * Math.PI) / 360) / Math.tan((fov * Math.PI) / 360)) : grid;
+      const cloud = cloudOf(g, cam);
       const notWall = opt.notWall ? cloud.p.map((_, i) => !!opt.notWall![(cloud.v[i] as number) * grid.width + (cloud.u[i] as number)]) : undefined;
       const floor = findFloor(cloud, grid, 40, notWall);
       if (!floor || floor.support < 0.2) continue;
@@ -395,10 +401,10 @@ export function solveCamera(grid: DepthGrid, opt: { fovs?: number[]; notWall?: A
       // For a camera aligned with the walls the planes are equally flat at every field of view (it only scales width and height), so the
       // ceiling height is what pins it: a ceiling in view should read about 2.6 m (2.3 to 3.2 is ordinary), and without one the camera
       // height should be about 1.4 m.
-      const heightPrior = box.walls.ceiling ? Math.min(1, Math.abs(Math.log(box.height.value / 2.6))) * 0.8 : Math.min(1, Math.abs(Math.log(fr.cameraHeight / 1.4))) * 0.2;
+      const heightPrior = opt.trainedFovDeg ? 0 : box.walls.ceiling ? Math.min(1, Math.abs(Math.log(box.height.value / 2.6))) * 0.8 : Math.min(1, Math.abs(Math.log(fr.cameraHeight / 1.4))) * 0.2;
       const score = floor.support + wallShare - hPenalty - prior - heightPrior;
       sweep.push({ fov, kind, score: r2(score) });
-      cands.push({ cam, fr, box, cloud, score });
+      cands.push({ cam, fr, box, cloud, score, grid: g });
     }
   }
   if (cands.length === 0) return null;
@@ -420,7 +426,13 @@ export function solveCamera(grid: DepthGrid, opt: { fovs?: number[]; notWall?: A
     return round({ value, low, high, confidence, basis: `${own.basis}; median over fields of view ${Math.min(...fv)}-${Math.max(...fv)} degrees (spread ${Math.round(spread * 100)}%)` });
   };
   const box: RoomBox = { ...best.box, width: merge((b) => b.width), depth: merge((b) => b.depth), height: merge((b) => b.height) };
-  return { cam: best.cam, fr: best.fr, box, cloud: best.cloud, sweep };
+  return { cam: best.cam, fr: best.fr, box, cloud: best.cloud, sweep, grid: best.grid };
+}
+
+function scaleDepth(g: DepthGrid, k: number): DepthGrid {
+  const out = new Float32Array(g.width * g.height);
+  for (let i = 0; i < out.length; i++) out[i] = (g.data[i] as number) * k;
+  return { width: g.width, height: g.height, data: out };
 }
 
 // ---- objects ----

@@ -21,6 +21,10 @@ First tagged state of the framework: natural language to verified, interactive 3
 
 - Editing: an identical repeat of an architecture edit on the same document is answered from its last results (the studio tried candidate ops and then committed the winner through the same call, doing the work twice): drawing a room 135 to 71 ms and 111 to 62 ms. A view-mode harness (`tests/e2e/arch-view-perf.e2e.ts`) counts wall rebuilds, geometry creations and GL objects over cutaway turns and level-mode toggles. A second pass over Pascal Editor's rendering and performance code is recorded in `docs/PASCAL_COMPARISON.md`.
 
+### Photo to room
+
+- `perceive_photo`: open-licence vision models measure the photo (Florence-2 detection, SAM 2.1 masks, metric depth, floor and wall planes, per-object colour in CIELAB) and the numbers go to the model as advisory evidence and seed the object inventory. Off by default, models fetched on first use with pinned checksums.
+
 ### Generation
 - Generation brief: before building, the model plans what a space needs and how elaborate it should be, with counts worked out from area and spacing. The plan shows in chat as a collapsible card and can be edited before the build.
 - Richness review: a world built from free pieces is compared against its brief with an overview and eye-height views; shortfalls go back to the model once per set, and a stall on repeated findings does not end a review whose brief is satisfied.

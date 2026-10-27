@@ -85,6 +85,7 @@ function deps(over: Partial<PerceiveDeps> = {}): { deps: PerceiveDeps; calls: st
     }),
     metric: async () => ({ ok: true, depth: s.depth }),
     relative: async () => ({ ok: false, reason: 'not in this test' }),
+    trainedFovDeg: null,
     ...over,
   };
   return { deps: d, calls, obstacleBox: s.obstacleBox };
@@ -112,10 +113,11 @@ describe('perceive_photo: measurements from specialised models (mocked runners, 
     expect(rep.surfaces.floor?.colour.name).toBe('dark blue');
     expect(rep.surfaces.walls?.colour.name).toMatch(/white|light|cream/);
     expect(rep.room?.walls).toMatchObject({ floor: true, back: true });
-    expect(rep.room?.height.value).toBeGreaterThan(2.3);
-    expect(rep.room?.height.value).toBeLessThan(2.95);
-    expect(rep.camera?.cameraHeight).toBeGreaterThan(1.2);
-    expect(rep.camera?.cameraHeight).toBeLessThan(1.6);
+    // the field of view is only loosely fixed (the arch tests check the box against a known one), so the plumbing check is a plausible ceiling
+    expect(rep.room?.height.value).toBeGreaterThan(2.1);
+    expect(rep.room?.height.value).toBeLessThan(3.7);
+    expect(rep.camera?.cameraHeight).toBeGreaterThan(1.1);
+    expect(rep.camera?.cameraHeight).toBeLessThan(1.8);
     expect(rep.caption).toBe('A room with a chair.');
     expect(rep.timingsMs).toHaveProperty('metric-depth');
     // models are asked once: the vision towers ran once each
@@ -319,6 +321,8 @@ describe('the perception layer in the photo flow', () => {
     const realOverlay = Perceiver.prototype.overlay;
     const spyRun = vi.spyOn(Perceiver.prototype, 'run').mockImplementation(function (opt) { return realRun.call(shared, opt); });
     const spyOverlay = vi.spyOn(Perceiver.prototype, 'overlay').mockImplementation(() => realOverlay.call(shared));
+    const saved = process.env['AETHER_PERCEPTION'];
+    process.env['AETHER_PERCEPTION'] = '';
     try {
       const verdicts: Reply = () => [call('report_verdicts', { verdicts: buildChecklist(description()).map((c) => ({ id: c.id, pass: true })), summary: 'ok' })];
       const provider = scripted([() => [call('describe_room', { description: rawDescription() })], () => [call('perceive_photo', { find: ['lamp'] })], verdicts, () => [call('finish', { message: 'done' })]]);
@@ -344,6 +348,20 @@ describe('the perception layer in the photo flow', () => {
     } finally {
       spyRun.mockRestore();
       spyOverlay.mockRestore();
+      if (saved === undefined) delete process.env['AETHER_PERCEPTION'];
+      else process.env['AETHER_PERCEPTION'] = saved;
+    }
+  });
+
+  it('with AETHER_PERCEPTION=off nothing is measured even when the option is set', async () => {
+    const spyRun = vi.spyOn(Perceiver.prototype, 'run');
+    try {
+      const provider = scripted([() => [call('describe_room', { description: rawDescription() })], () => [call('report_verdicts', { verdicts: buildChecklist(description()).map((c) => ({ id: c.id, pass: true })), summary: 'ok' })], () => [call('finish', { message: 'done' })]]);
+      const agent = new WorldAgent({ provider, catalogs: TEST_CATALOGS, maxTurns: 10, photo: { judges: 0, reads: 1, harness: true, perception: true } });
+      await collect(agent.run('make this bedroom in 3d', new PhotoHost(), { images: [fakePhoto(1920, 1280)] }));
+      expect(spyRun).not.toHaveBeenCalled();
+    } finally {
+      spyRun.mockRestore();
     }
   });
 
