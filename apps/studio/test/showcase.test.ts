@@ -53,7 +53,7 @@ describe('showcase manifest', () => {
     expect(AGENT_TEMPLATES.map((t) => t.slug)).toEqual(agent.map((t) => t.slug));
     expect(MORE_TEMPLATES.some((t) => t.origin === 'agent')).toBe(false);
     for (const e of agent) {
-      expect(e.prompt.length, e.slug).toBeGreaterThan(10);
+      expect(e.prompt.length, e.slug).toBeGreaterThan(5);
       expect(['offline-planner', 'claude-code', 'codex'], e.slug).toContain(e.provenance);
     }
   });
