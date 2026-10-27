@@ -9,3 +9,4 @@ export { seedInventory } from './seed';
 export { similarModelsText } from './retrieve';
 export { compareObjects } from '../objects-measure';
 export { normaliseHex } from '@aether/arch/photo';
+export { buildFromMeasurements, makeBuildPlan, planText, BUILD_PLAN_TOOL } from './buildplan';

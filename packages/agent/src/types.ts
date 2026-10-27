@@ -444,6 +444,8 @@ export interface PhotoOptions {
    * through the `perceive_photo` tool, and into the object inventory. Models are fetched on first use; offline the layer is simply absent.
    */
   perception?: boolean;
+  /** Build from the perception report (default ON when perception ran): a plan of every measured object, settled by the model, placed in one batch and linked in the ledger. false: the description's build only. */
+  measuredBuild?: boolean;
   /** Most object rounds in one run of the object loop (default 12). "Keep refining" (a continued run) starts a new count. The loop also ends when 3 rounds in a row raised neither the pass rate nor lowered the open count. */
   objectRounds?: number;
   /**

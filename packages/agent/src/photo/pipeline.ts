@@ -906,6 +906,42 @@ async function* repairAndDeliver(run: PhotoRun, photo: Photo, desc: RoomDescript
   yield { type: 'message', text: lines.join(' ') };
 }
 
+/** Plan the build from the perception report, let the model settle it, place it in one batch and record the links in the ledger. */
+async function* measuredFirstBuild(run: PhotoRun, photo: Photo, desc: RoomDescription, build: PhotoBuild, objects: ObjectStage, targets: readonly FramingTarget[]): AsyncGenerator<AgentEvent> {
+  const { ctx } = run;
+  const host = ctx.host;
+  const pc = perceiverOf(run) as Perceiver;
+  const report = pc.report();
+  if (report.objects.length === 0) return;
+  const world = host.getWorld();
+  const fit = calibrateCamera(world, desc, photo.aspect, targets);
+  const cam = fit?.improved ? fit.camera : desc.camera;
+  const pose = customPose(world, PHOTO_BUILDING_ID, photoCameraSpec({ ...desc, camera: cam }, photo.aspect));
+  if (pose) objects.prelink(world, pose, photo.aspect);
+  const room0 = build.plan.levels[0]?.rooms[0] as { floor?: { finish?: string; color?: string }; finish?: { finish?: string; color?: string }; wallColor?: string } | undefined;
+  const code = codeOf(run);
+  const outcome = yield* code.buildFromMeasurements({
+    report,
+    items: () => objects.ledger.list().map((r) => r.item),
+    link: (id, ents) => objects.linkEntities(id, ents),
+    world: () => host.getWorld(),
+    shell: { width: desc.footprint.width, depth: desc.footprint.depth, ceiling: desc.footprint.ceiling },
+    camera: { x: cam.x, z: cam.z, heading: cam.heading },
+    ...(room0 ? { rooms: { floor: room0.floor, finish: room0.finish, wallColor: room0.wallColor } } : {}),
+    complete: (req) => complete(run, req),
+    photoUrl: photo.dataUrl,
+    overlay: () => pc.overlay(),
+    like: async (id) => {
+      const emb = pc.embeddingOf(id);
+      if (!emb) return [];
+      return (await code.similarModelsText(emb, 3, '')).ids;
+    },
+    tool: async (name, input) => executeTool(ctx, name, input),
+    ...(ctx.signal ? { signal: ctx.signal } : {}),
+  });
+  if (outcome.placed > 0 || outcome.dropped > 0) yield { type: 'photo', phase: 'round', text: objects.coverageLine(), objects: objects.views() };
+}
+
 /** The object stage of a run: the inventory and the per-object judge, with the host's drawing and editing. */
 function makeObjects(run: PhotoRun, photo: Photo, saved: ObjectLedger | null): ObjectStage {
   const host = run.ctx.host;
@@ -1145,6 +1181,15 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
     } catch (e) {
       if (ctx.signal?.aborted || e instanceof Unavailable) throw e;
       yield { type: 'photo', phase: 'round', text: `The object inventory could not be made (${errorMessage(e).slice(0, 160)}); the room is judged by the checklist alone.` };
+    }
+  }
+  // The perception report builds what the seats' description did not: every perceived object gets a linked piece before the first look.
+  if (objects && objects.ready && perceiverOf(run) && run.options.measuredBuild !== false) {
+    try {
+      yield* measuredFirstBuild(run, photo, desc, build, objects, targets);
+    } catch (e) {
+      if (ctx.signal?.aborted || e instanceof Unavailable) throw e;
+      yield { type: 'photo', phase: 'round', text: `The build from the measurements failed (${errorMessage(e).slice(0, 160)}); the room stands as the description built it.` };
     }
   }
   for (round = 1; round <= maxRounds; round++) {

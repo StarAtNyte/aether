@@ -55,6 +55,8 @@ export interface Measured {
   counts: Record<MeasuredVerdict, number>;
   /** Linear gain applied to render colours so that its ceiling (else wall) is as bright as the photo's: the render is tone-mapped with the room's exposure, the photo has its own. 1: no reference. */
   exposureGain: number;
+  /** Of the unclear rows: no linked piece (a coverage gap) against a mask too small or missing (not measurable). */
+  unclearBy: { unlinked: number; unmeasurable: number };
   text: string;
   line: string;
 }
@@ -227,11 +229,13 @@ export function compareObjects(inp: MeasureInput): Measured | null {
   }
   const counts: Record<MeasuredVerdict, number> = { match: 0, close: 0, near: 0, off: 0, unclear: 0 };
   for (const r of rows) counts[r.verdict]++;
+  const unlinked = rows.filter((r) => r.verdict === 'unclear' && /no built piece is linked/.test(r.hint)).length;
+  const unclearBy = { unlinked, unmeasurable: counts.unclear - unlinked };
   const surfLine = surfaces.filter((s) => s.deltaE !== null).map((s) => `${s.surface} dE ${s.deltaE} (raw ${s.rawDeltaE})`).join(', ');
-  const line = `Measured comparison (mask IoU and colour deltaE against the photo, render exposure matched to the photo's ${anchor ?? 'none'}${anchor ? ` x${gain}` : ''}): ${counts.match} match, ${counts.close} close, ${counts.near} near, ${counts.off} off, ${counts.unclear} unclear of ${rows.length} objects${surfLine ? `; ${surfLine}` : ''}.`;
+  const line = `Measured comparison (mask IoU and colour deltaE against the photo, render exposure matched to the photo's ${anchor ?? 'none'}${anchor ? ` x${gain}` : ''}): ${counts.match} match, ${counts.close} close, ${counts.near} near, ${counts.off} off, ${counts.unclear} unclear (${unclearBy.unlinked} with no linked piece, ${unclearBy.unmeasurable} not measurable) of ${rows.length} objects${surfLine ? `; ${surfLine}` : ''}.`;
   const worst = rows.filter((r) => r.verdict === 'off' || r.verdict === 'near').sort((a, b) => (a.iou ?? 0) - (b.iou ?? 0)).slice(0, 16);
   const tl: string[] = [`${line} (advisory: close = mask IoU above 0.6 and deltaE under 10; the judges decide)`];
   for (const r of worst) tl.push(`- ${r.label} [${r.id}] ${r.verdict}: IoU ${r.iou}, centre ${r.centroidPx} px off${r.offsetM !== null ? ` (${r.offsetM} m)` : ''}${r.sizeRatio ? `, photo/render size ${r.sizeRatio.w}x wide ${r.sizeRatio.h}x high` : ''}${r.deltaE !== null ? `, deltaE ${r.deltaE} (render ${r.renderHex}, photo ${r.photoHex}; ${colourName(hexToLab(r.photoHex ?? '#000000') ?? { L: 0, a: 0, b: 0 })})` : ''}${r.hint ? `. Fix: ${r.hint}` : ''}`);
   for (const s of surfaces) if (s.hint) tl.push(`- ${s.hint}`);
-  return { rows, surfaces, counts, exposureGain: gain, text: tl.join('\n'), line };
+  return { rows, surfaces, counts, unclearBy, exposureGain: gain, text: tl.join('\n'), line };
 }

@@ -140,6 +140,29 @@ export class ObjectStage {
     return null;
   }
 
+  /** Record the built pieces that stand for an inventory object (the perception-driven first build; entity <-> perceived id). */
+  linkEntities(itemId: string, entities: string[]): void {
+    const rec = this.ledger.get(itemId);
+    if (!rec || entities.length === 0) return;
+    rec.item = { ...rec.item, entities: [...new Set([...rec.item.entities, ...entities])], linkedBy: 'model' };
+  }
+
+  /** Link built pieces that project onto an object's box before any round (the same projection link the rounds make). */
+  prelink(world: WorldDoc, pose: ReviewPose, aspect: number): number {
+    return autoLink(this.ledger, projectBuilt(world, pose, aspect));
+  }
+
+  /** Perceived objects (inventory entries with a measured id, not structure) and how many have a linked built piece. */
+  coverage(): { linked: number; perceived: number } {
+    const ps = this.ledger.list().filter((r) => r.item.measured?.id && r.item.category !== 'structure' && r.item.category !== 'view');
+    return { linked: ps.filter((r) => r.item.entities.length > 0).length, perceived: ps.length };
+  }
+
+  coverageLine(): string {
+    const c = this.coverage();
+    return `Coverage: ${c.linked} of ${c.perceived} perceived objects have a linked built piece.`;
+  }
+
   /** Mark every object still off with the reason; the best state of each stays in the room. */
   finalizeStop(reason: string): number {
     return this.ledger.markStopped(reason);
@@ -286,7 +309,7 @@ export class ObjectStage {
       } catch { this.measured = null; }
     }
     if (this.measured) {
-      yield { type: 'photo', phase: 'round', round: inp.round, text: this.measured.line };
+      yield { type: 'photo', phase: 'round', round: inp.round, text: `${this.measured.line} ${this.coverageLine()}` };
       this.mergeMeasured();
       const openIds = ledger.list().filter((r) => openAspects(r).length > 0).map((r) => r.item.id);
       const verdictOf = new Map(this.measured.rows.map((m) => [m.id, m.verdict]));
