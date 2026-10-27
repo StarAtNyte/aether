@@ -237,6 +237,7 @@ export const AGENT_TOOLS: ToolDef[] = [
     inputSchema: {
       type: 'object',
       properties: {
+        like_crop: { type: 'string', description: 'Photo rebuilds with perception on: the id of a perceived object (p3) or an inventory object; ranks the library by how much each model LOOKS like that crop of the photo (image similarity), so a cane chair crop finds cane chairs. Use it when the name search finds nothing good; give `what` too for the name search.' },
         what: { type: 'string', description: 'The piece, e.g. "sofa", "green armchair", "pine tree", "sandstone cliff", "street lamp", "fire hydrant", "wooden pier", "cannon".' },
         style: { type: 'string', description: 'Design style (modern, scandinavian, industrial, japandi, classic, rustic, vintage...) or biome (forest, desert, coastal, urban, farm, scifi, fantasy, medieval...).' },
         category: { type: 'string', enum: [...ASSET_CATEGORIES], description: 'Only this category (nature, rocks, plants, street, building, vehicles, props, tools, decor, lighting, furniture...).' },
@@ -245,7 +246,7 @@ export const AGENT_TOOLS: ToolDef[] = [
         size: { type: 'array', items: { type: 'number' }, minItems: 1, maxItems: 3, description: 'Wanted [width, height, depth] in metres (0 for a side that does not matter).' },
         limit: { type: 'integer', minimum: 1, maximum: 8 },
       },
-      required: ['what'],
+      required: [],
       additionalProperties: false,
     },
   },
@@ -502,7 +503,9 @@ export const ToolInputs = {
     limit: z.number().int().min(1).max(20).default(8),
   }),
   find_model: z.object({
-    what: z.string().min(1).max(120),
+    what: z.string().max(120).default(''),
+    /** Photo rebuilds: the id of a perceived object (p3) or an inventory object whose crop is matched to the library by appearance. */
+    like_crop: z.string().max(40).optional(),
     style: z.string().max(40).optional(),
     category: z.enum(ASSET_CATEGORIES).optional(),
     look: z.enum(['realistic', 'stylised', 'low-poly', 'any']).optional(),

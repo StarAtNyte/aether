@@ -258,6 +258,7 @@ export function causesOfTool(name: string, input: unknown): Cause[] | null {
     case CAMERA_TOOL_NAME:
       return ['camera'];
     case 'make_texture':
+    case 'apply_measured_colour':
       return ['materials'];
     case 'tune_look':
       return ['lighting'];

@@ -5,7 +5,7 @@
  * nothing here passes or fails an object.
  */
 import { PHOTO_BUILDING_ID } from '@aether/arch/photo';
-import { entityGeometry, planDeltaOfWorld, planDelta, projectGeometry, readScene, unprojectToPlane, type EntityGeometry, type ImageBox, type ReviewPose } from '@aether/arch';
+import { entityGeometry, planDeltaOfWorld, planDelta, projectGeometry, readScene, renderInstanceIds, unprojectToPlane, type EntityGeometry, type ImageBox, type ReviewPose } from '@aether/arch';
 import type { Vec3, WorldDoc } from '@aether/core';
 import { boxCentre, boxIou, openAspects, type Box, type InventoryItem, type ObjectLedger } from './objects';
 import type { Raster } from './score';
@@ -51,6 +51,13 @@ export interface Projection {
   boxes: Map<string, ImageBox>;
   pose: ReviewPose;
   aspect: number;
+}
+
+export { renderInstanceIds };
+
+/** The world displacement that moves a point on the floor (through the point's own height) to where the photo shows it; null when the ray misses. */
+export function worldShiftOnFloor(pose: ReviewPose, aspect: number, anchor: Vec3, target: readonly [number, number]): Vec3 | null {
+  return worldShiftFor(pose, aspect, anchor, target, 'floor');
 }
 
 export function projectBuilt(world: WorldDoc, pose: ReviewPose, aspect: number): Projection {

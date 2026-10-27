@@ -45,6 +45,7 @@ import {
 } from './objects';
 import { autoLink, boxSignature, builtPiecesText, evidenceMap, knownEntityIds, projectBuilt, projectedBox, repairEvidence, residualLine, residualOf, suggestCorrection, type Projection } from './objects-evidence';
 import { restorePatches } from './revert';
+import { compareObjects, type Measured } from './objects-measure';
 import type { Raster } from './score';
 
 export interface StageDeps {
@@ -64,6 +65,10 @@ export interface StageDeps {
   maxRounds?: number;
   /** Measure the nouns of the inventory (perception layer); null when it is unavailable. */
   perceive?: (labels: string[]) => Promise<PerceptionReport | null>;
+  /** The perception report of the run (masks, measured colours), for the measured comparison each round; null: none. */
+  report?: () => PerceptionReport | null;
+  /** Library models that look like the crop of a perceived or inventory object (one line), for objects whose type or presence is off; null: none. */
+  like?: (object: string) => Promise<string | null>;
 }
 
 export interface RoundInput {
@@ -92,6 +97,8 @@ export interface RoundResult {
   /** Objects that got worse and could not be put back (no linked piece). */
   worse: string[];
   calls: number;
+  /** The measured comparison of this round (absent without a perception report). */
+  measured?: Measured['counts'] & { surfaces: Array<{ surface: string; deltaE: number | null }> };
 }
 
 const aborted = (s?: AbortSignal): void => {
@@ -107,6 +114,10 @@ export class ObjectStage {
   private pose: ReviewPose | null = null;
   private aspect = 1.5;
   private resid = new Map<string, number>();
+  private measured: Measured | null = null;
+  /** Rounds in a row in which every object the judges still fault measures close or match. */
+  private closeStreak = 0;
+  private likeLines = new Map<string, string>();
   /** Object rounds, model calls and time in this run of the loop (a continued run starts again). */
   private rounds = 0;
   private calls = 0;
@@ -121,6 +132,7 @@ export class ObjectStage {
   stopCheck(): string | null {
     if (!this.ready || this.open() === 0) return null;
     if (this.rounds >= this.cap) return `reached the limit of ${this.cap} object rounds`;
+    if (this.closeStreak >= 2) return 'every object the judges still fault measures close (mask IoU above 0.6, colour deltaE under 10) for 2 rounds in a row: the judges and the measurements disagree, and the measurements are the finer instrument for a small difference';
     if (this.ledger.plateau()) return `the last ${PLATEAU_ROUNDS} rounds raised neither the pass rate nor lowered the open count`;
     return null;
   }
@@ -159,9 +171,26 @@ export class ObjectStage {
     return objectViews(this.ledger);
   }
 
+  private measuredSummary(): { measured?: NonNullable<RoundResult['measured']> } {
+    return this.measured ? { measured: { ...this.measured.counts, surfaces: this.measured.surfaces.map((x) => ({ surface: x.surface, deltaE: x.deltaE })) } } : {};
+  }
+
+  /** Put the measured hints (and the look-alike library models) next to each object's evidence. */
+  private mergeMeasured(): void {
+    if (!this.measured) return;
+    for (const m of this.measured.rows) {
+      const bits = [`measured: ${m.verdict}${m.iou !== null ? `, mask IoU ${m.iou}` : ''}${m.deltaE !== null ? `, colour deltaE ${m.deltaE}` : ''}${m.hint ? `. ${m.hint}` : ''}`];
+      const like = this.likeLines.get(m.id);
+      if (like) bits.push(like);
+      const prev = this.evidence.get(m.id) ?? '';
+      this.evidence.set(m.id, `${prev.replace(/ ?measured: [^\n]*$/s, '')}${prev ? ' ' : ''}${bits.join(' ')}`.trim());
+    }
+    for (const [id, like] of this.likeLines) if (!this.measured.rows.some((m) => m.id === id)) this.evidence.set(id, `${this.evidence.get(id) ?? ''} ${like}`.trim());
+  }
+
   /** The table the fixing model reads. */
   text(): string {
-    const t = objectTableText(this.ledger, { evidence: this.evidence });
+    const t = objectTableText(this.ledger, { evidence: this.evidence }) + (this.measured ? `\n${this.measured.text}` : '');
     const back = this.lastReverted.length > 0 ? `\nPut back to their best state before this round because the last change made them worse: ${this.lastReverted.join(', ')}. The pictures below were taken before they were put back.` : '';
     return t + back;
   }
@@ -241,6 +270,29 @@ export class ObjectStage {
     this.evidence = proj ? evidenceMap(inp.world, ledger, proj, this.deps.px) : new Map();
     this.resid = new Map();
     if (proj) for (const r of ledger.list()) { const x = residualOf(r.item, proj, this.deps.px); if (x) this.resid.set(r.item.id, x.errPx); }
+    this.measured = null;
+    const report = this.deps.report?.() ?? null;
+    if (report && inp.pose && inp.raster) {
+      try {
+        this.measured = compareObjects({ world: inp.world, pose: inp.pose, aspect: inp.aspect, report, ledger, render: inp.raster, px: this.deps.px });
+      } catch { this.measured = null; }
+    }
+    if (this.measured) {
+      yield { type: 'photo', phase: 'round', round: inp.round, text: this.measured.line };
+      this.mergeMeasured();
+      const openIds = ledger.list().filter((r) => openAspects(r).length > 0).map((r) => r.item.id);
+      const verdictOf = new Map(this.measured.rows.map((m) => [m.id, m.verdict]));
+      const allClose = openIds.length > 0 && openIds.every((id) => { const v = verdictOf.get(id); return v === 'match' || v === 'close'; });
+      this.closeStreak = allClose ? this.closeStreak + 1 : 0;
+      if (this.deps.like) {
+        this.likeLines = new Map();
+        for (const r of ledger.list().filter((x) => openAspects(x).some((a) => a === 'type' || a === 'present')).slice(0, 4)) {
+          const l = await this.deps.like(r.item.measured?.id ?? r.item.id).catch(() => null);
+          if (l) this.likeLines.set(r.item.id, l);
+        }
+        this.mergeMeasured();
+      }
+    }
     const now = new Map<string, Current>();
     for (const r of ledger.list()) now.set(r.item.id, { sig: inp.raster ? boxSignature(inp.raster, r.item.box) : null, proj: proj ? projectedBox(r.item, proj) : null });
     const force = this.lastLook !== null && this.lastLook !== inp.lookKey;
@@ -248,8 +300,9 @@ export class ObjectStage {
     const sel = selectObjects(ledger, now, inp.round, { force });
     if (sel.ids.length === 0) {
       if (proj) this.evidence = repairEvidence(inp.world, ledger, proj, this.deps.px);
+      this.mergeMeasured();
       ledger.noteRound(inp.round);
-      return empty;
+      return { ...empty, ...this.measuredSummary() };
     }
     const openBefore = ledger.openCount();
     const order = ledger.list().map((r) => r.item.id);
@@ -337,12 +390,13 @@ export class ObjectStage {
     const projNow = inp.pose ? projectBuilt(after, inp.pose, inp.aspect) : null;
     if (projNow) {
       this.evidence = repairEvidence(after, ledger, projNow, this.deps.px);
+      this.mergeMeasured();
       this.resid = new Map();
       for (const r of ledger.list()) { const x = residualOf(r.item, projNow, this.deps.px); if (x) this.resid.set(r.item.id, x.errPx); }
     }
     this.calls += calls;
     ledger.noteRound(inp.round);
-    const result: RoundResult = { judged: judged.length, full: sel.full, gain: ledger.openCount() < openBefore, reverted, worse, calls };
+    const result: RoundResult = { judged: judged.length, full: sel.full, gain: ledger.openCount() < openBefore, reverted, worse, calls, ...this.measuredSummary() };
     yield {
       type: 'photo',
       phase: 'round',

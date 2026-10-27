@@ -584,3 +584,112 @@ export function projectOverlays(world: WorldDoc, building: EntityId, pose: Revie
   }
   return out;
 }
+
+/** What a pixel of an instance buffer shows. */
+export interface InstanceBuffer {
+  width: number;
+  height: number;
+  /** `ids[k - 1]` is the entity (or `floor:<room>`, `wall:<room>:<edge>`, `ceiling:<room>`) drawn where the buffer holds k; 0 is nothing. */
+  ids: string[];
+  buffer: Uint16Array;
+}
+
+/**
+ * An INSTANCE-ID render of a building through a camera: every piece (the prism of its footprint between its lowest and highest
+ * point), opening, floor, wall and ceiling is rasterised into a depth-tested buffer holding the id of what is nearest at each pixel.
+ * It has no materials, no shadows and no glass, so it is the silhouette and occlusion of the built scene: a per-entity pixel mask for
+ * comparing the build with the masks measured on the photo. Pure and deterministic; independent of the GPU renderer.
+ */
+export function renderInstanceIds(world: WorldDoc, building: EntityId, pose: ReviewPose, aspect: number, width: number, height = Math.max(8, Math.round(width / aspect))): InstanceBuffer | null {
+  const scene = readScene(world, building);
+  if (!scene) return null;
+  const f = frameOf(world, scene);
+  const cam = camOf(pose, aspect);
+  const buffer = new Uint16Array(width * height);
+  const depth = new Float32Array(width * height).fill(Infinity);
+  const ids: string[] = [];
+  const idOf = new Map<string, number>();
+  const idx = (id: string): number => {
+    let k = idOf.get(id);
+    if (k === undefined) { ids.push(id); k = ids.length; idOf.set(id, k); }
+    return k;
+  };
+  type PV = { x: number; y: number; iz: number; z: number };
+  const toPix = (w: Vec3): PV | null => {
+    const p = project(cam, w);
+    return p ? { x: p.x * width, y: p.y * height, iz: 1 / p.z, z: p.z } : null;
+  };
+  const tri = (a: Vec3, b: Vec3, c: Vec3, k: number): void => {
+    const A = toPix(a), B = toPix(b), C = toPix(c);
+    if (!A || !B || !C) return;
+    const minX = Math.max(0, Math.floor(Math.min(A.x, B.x, C.x))), maxX = Math.min(width - 1, Math.ceil(Math.max(A.x, B.x, C.x)));
+    const minY = Math.max(0, Math.floor(Math.min(A.y, B.y, C.y))), maxY = Math.min(height - 1, Math.ceil(Math.max(A.y, B.y, C.y)));
+    const area = (B.x - A.x) * (C.y - A.y) - (C.x - A.x) * (B.y - A.y);
+    if (Math.abs(area) < 1e-9) return;
+    for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++) {
+      const px = x + 0.5, py = y + 0.5;
+      const w0 = ((B.x - px) * (C.y - py) - (C.x - px) * (B.y - py)) / area;
+      const w1 = ((C.x - px) * (A.y - py) - (A.x - px) * (C.y - py)) / area;
+      const w2 = 1 - w0 - w1;
+      if (w0 < -1e-6 || w1 < -1e-6 || w2 < -1e-6) continue;
+      const z = 1 / (w0 * A.iz + w1 * B.iz + w2 * C.iz);
+      const i = y * width + x;
+      if (z < (depth[i] as number)) { depth[i] = z; buffer[i] = k; }
+    }
+  };
+  const quad = (a: Vec3, b: Vec3, c: Vec3, d: Vec3, k: number, cells = 1): void => {
+    // subdivided so that a surface partly behind the camera still shows its visible part
+    const lerp = (p: Vec3, q: Vec3, t: number): Vec3 => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t, p[2] + (q[2] - p[2]) * t];
+    for (let i = 0; i < cells; i++) for (let j = 0; j < cells; j++) {
+      const u0 = i / cells, u1 = (i + 1) / cells, v0 = j / cells, v1 = (j + 1) / cells;
+      const p = (u: number, v: number): Vec3 => lerp(lerp(a, b, u), lerp(d, c, u), v);
+      tri(p(u0, v0), p(u1, v0), p(u1, v1), k);
+      tri(p(u0, v0), p(u1, v1), p(u0, v1), k);
+    }
+  };
+  for (const r of scene.rooms) {
+    const poly = r.polygon;
+    if (poly.length >= 3) {
+      const kf = idx(`floor:${r.id}`);
+      const kc = idx(`ceiling:${r.id}`);
+      for (let i = 1; i + 1 < poly.length; i++) {
+        const a = poly[0] as P2, b = poly[i] as P2, c = poly[i + 1] as P2;
+        // a fan of cells: subdivide each triangle by edge midpoints (twice)
+        const sub4 = (p: P2, q: P2, s: P2, depthLeft: number, y: number, k: number): void => {
+          if (depthLeft === 0) { tri(toWorld(f, p, y, r.levelId), toWorld(f, q, y, r.levelId), toWorld(f, s, y, r.levelId), k); return; }
+          const m = (u: P2, v: P2): P2 => [(u[0] + v[0]) / 2, (u[1] + v[1]) / 2];
+          const pq = m(p, q), qs = m(q, s), sp = m(s, p);
+          sub4(p, pq, sp, depthLeft - 1, y, k); sub4(pq, q, qs, depthLeft - 1, y, k); sub4(sp, qs, s, depthLeft - 1, y, k); sub4(pq, qs, sp, depthLeft - 1, y, k);
+        };
+        sub4(a, b, c, 3, 0, kf);
+        sub4(a, b, c, 3, r.ceiling, kc);
+      }
+    }
+    for (const w of r.walls) {
+      const a: P2 = [w.a[0] - w.out[0] * w.inset, w.a[1] - w.out[1] * w.inset];
+      const b: P2 = [w.b[0] - w.out[0] * w.inset, w.b[1] - w.out[1] * w.inset];
+      quad(toWorld(f, a, 0, r.levelId), toWorld(f, b, 0, r.levelId), toWorld(f, b, r.ceiling, r.levelId), toWorld(f, a, r.ceiling, r.levelId), idx(`wall:${r.id}:${w.edge}`), 8);
+    }
+  }
+  for (const it of scene.items) {
+    const fp = it.footprint;
+    if (fp.length < 3) continue;
+    const k = idx(it.id);
+    for (let i = 0; i < fp.length; i++) {
+      const p = fp[i] as P2, q = fp[(i + 1) % fp.length] as P2;
+      quad(toWorld(f, p, it.y0, it.levelId), toWorld(f, q, it.y0, it.levelId), toWorld(f, q, it.y1, it.levelId), toWorld(f, p, it.y1, it.levelId), k, 2);
+    }
+    for (let i = 1; i + 1 < fp.length; i++) tri(toWorld(f, fp[0] as P2, it.y1, it.levelId), toWorld(f, fp[i] as P2, it.y1, it.levelId), toWorld(f, fp[i + 1] as P2, it.y1, it.levelId), k);
+  }
+  const seen = new Set<string>();
+  for (const r of scene.rooms) for (const w of r.walls) for (const o of w.openings) {
+    if (seen.has(o.id)) continue;
+    seen.add(o.id);
+    const c = openingCorners(f, r, w, o);
+    // an opening is a flat quad on the wall, drawn slightly in front of it
+    const n: Vec3 = (() => { const t = toWorld(f, [w.out[0], w.out[1]], 0, r.levelId); const o0 = toWorld(f, [0, 0], 0, r.levelId); return [t[0] - o0[0], 0, t[2] - o0[2]]; })();
+    const e = (p: Vec3): Vec3 => [p[0] - n[0] * 0.02, p[1], p[2] - n[2] * 0.02];
+    quad(e(c[0] as Vec3), e(c[2] as Vec3), e(c[3] as Vec3), e(c[1] as Vec3), idx(o.id), 1);
+  }
+  return { width, height, ids, buffer };
+}

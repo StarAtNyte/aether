@@ -412,6 +412,7 @@ function craftedLines(what: string): string[] {
 }
 
 async function findModelTool(input: z.infer<typeof ToolInputs.find_model>): Promise<ToolOutcome> {
+  if (!input.what) return fail(input.like_crop ? 'find_model like_crop needs a photo rebuild with the perception layer on (it matches a crop of the photo); give `what` for the name search.' : 'find_model needs `what` (the piece to find).');
   const crafted = craftedLines(input.what);
   const catalog = await loadCatalog();
   const craftedBlock = crafted.length > 0 ? `Crafted parts (procedural, built to the real object, preferred over a box or a stretched model):\n${crafted.join('\n')}\n` : '';

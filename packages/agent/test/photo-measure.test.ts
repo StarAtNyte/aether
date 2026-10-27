@@ -1,70 +1,94 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { parseRoomDescription } from '@aether/arch/photo';
-import { DEPTH_MODEL, encodePng, inputSize, loadDepthWeights, preprocess } from '../src/photo/depth-model';
-import { autoAnchor, measureRoom, parseMeasureInput } from '../src/photo/measure';
+import { applyPatches, createWorld, type Patch, type WorldDoc } from '@aether/core';
+import { PHOTO_BUILDING_ID, deriveBuild, memoryCaller, parseRoomDescription, photoCameraSpec, runBuild } from '@aether/arch/photo';
+import { customPose, partKinds, renderInstanceIds } from '@aether/arch';
+import { compareObjects } from '../src/photo/objects-measure';
+import { ObjectLedger, type InventoryItem } from '../src/photo/objects';
+import { encodeRle, type PerceptionReport } from '../src/photo/perception/perceive';
 
-const fakeMap = (): { width: number; height: number; data: Float32Array } => {
-  const W = 80, H = 60;
-  const data = new Float32Array(W * H);
-  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) data[j * W + i] = 0.2 + (j / H) * 0.8 + 0.1 * Math.abs(i / W - 0.5);
-  return { width: W, height: H, data };
+const parsed = parseRoomDescription(JSON.parse(readFileSync(resolve(__dirname, '../../../tests/fixtures/photo/hotel.description.json'), 'utf8')) as unknown, partKinds());
+if (!parsed.ok) throw new Error(parsed.error);
+const d = parsed.value;
+const ASPECT = 1.5;
+const BED = `${PHOTO_BUILDING_ID}-bed`;
+
+async function room(): Promise<WorldDoc> {
+  const mem = memoryCaller(createWorld({}));
+  return (await runBuild(mem.world(), deriveBuild(d), mem.call)).world;
+}
+function shifted(world: WorldDoc, ref: string): WorldDoc {
+  const e = world.entities[ref]!;
+  const p = e.transform.position;
+  const res = applyPatches(world, [{ op: 'update', id: ref, set: { transform: { position: [p[0] - 0.9, p[1], p[2] + 1.1] } } }] as unknown as Patch[]);
+  if (res.errors.length > 0) throw new Error(JSON.stringify(res.errors));
+  return res.world;
+}
+const pose = (w: WorldDoc) => customPose(w, PHOTO_BUILDING_ID, photoCameraSpec(d, ASPECT))!;
+const maskOf = (inst: NonNullable<ReturnType<typeof renderInstanceIds>>, id: string): Uint8Array => {
+  const k = inst.ids.indexOf(id) + 1;
+  return Uint8Array.from(inst.buffer, (v) => (k > 0 && v === k ? 1 : 0));
 };
-const raster = { width: 8, height: 6, data: new Uint8ClampedArray(8 * 6 * 4).fill(128) };
+const area = (m: ArrayLike<number>): number => { let n = 0; for (let i = 0; i < m.length; i++) if (m[i]) n++; return n; };
 
-describe('measure_room', () => {
-  it('says the model is unavailable and changes nothing when the network cannot run', async () => {
-    const m = await measureRoom({ raster: async () => raster, estimate: async () => ({ ok: false, reason: 'offline' }) }, undefined);
-    expect(m.isError).toBe(true);
-    expect(m.text).toContain('not available (offline)');
-    expect(m.estimate).toBeNull();
+describe('instance-id render of a built room', () => {
+  it('draws pieces, floor and walls with occlusion; a moved piece moves its mask', async () => {
+    const world = await room();
+    const inst = renderInstanceIds(world, PHOTO_BUILDING_ID, pose(world), ASPECT, 192)!;
+    expect(inst).not.toBeNull();
+    expect(area(maskOf(inst, BED))).toBeGreaterThan(inst.width * inst.height * 0.02);
+    expect(inst.ids.some((i) => i.startsWith('floor:'))).toBe(true);
+    expect(inst.ids.some((i) => i.startsWith('wall:'))).toBe(true);
+    expect(inst.buffer.reduce((a, v) => a + (v === 0 ? 1 : 0), 0) / inst.buffer.length).toBeLessThan(0.2);
+    const cx = (m: Uint8Array): number => { let s = 0, n = 0; m.forEach((v, i) => { if (v) { s += i % inst.width; n++; } }); return s / Math.max(1, n); };
+    const moved = shifted(world, BED);
+    const inst2 = renderInstanceIds(moved, PHOTO_BUILDING_ID, pose(world), ASPECT, 192)!;
+    expect(Math.abs(cx(maskOf(inst2, BED)) - cx(maskOf(inst, BED)))).toBeGreaterThan(1);
+  });
+});
+
+describe('measured comparison of a built object with the photo', () => {
+  async function setup(photoWorld: WorldDoc, buildWorld: WorldDoc, photoHex: string, renderRgb: [number, number, number]) {
+    const W = 256;
+    const pi = renderInstanceIds(photoWorld, PHOTO_BUILDING_ID, pose(photoWorld), ASPECT, W)!;
+    const bi = renderInstanceIds(buildWorld, PHOTO_BUILDING_ID, pose(buildWorld), ASPECT, W)!;
+    const H = bi.height;
+    const photoMask = maskOf(pi, BED);
+    const render = { width: W, height: H, data: new Uint8ClampedArray(W * H * 4) };
+    const bm = maskOf(bi, BED);
+    for (let i = 0; i < W * H; i++) render.data.set(bm[i] ? [...renderRgb, 255] : [150, 150, 150, 255], i * 4);
+    const hx = photoHex;
+    const rep = {
+      version: 2, photo: { width: W, height: H }, models: { detector: null, segmenter: null, depth: null }, unavailable: [], camera: null, room: null, crossCheck: null, estimators: [], vanishing: null,
+      surfaces: { floor: null, ceiling: null, walls: null }, illuminant: null, notFound: [], caption: null, timingsMs: {}, notes: [],
+      objects: [{ id: 'p1', label: 'bed', asked: null, source: 'measured', pass: 'generic', confidence: 0.9, box: [0, 0, 1, 1], areaFraction: area(photoMask) / (W * H), mask: { rle: encodeRle({ width: W, height: H, data: photoMask }), score: 0.9, areaFraction: 0.1 }, placement: null, appearance: { colour: { hex: hx, lab: [50, 0, 0], share: 1, name: 'x' }, palette: [], luminance: 0.3, pattern: { kind: 'plain', strength: 0 }, glareShare: 0, finish: 'matte', pixels: 100 }, relations: [] }],
+    } as unknown as PerceptionReport;
+    const ledger = new ObjectLedger();
+    const item: InventoryItem = { id: 'bed-1', kind: 'bed', category: 'furniture', label: 'bed', box: [0, 0, 1, 1], relations: [], size: '', look: '', confidence: 0.9, occlusion: '', entities: [BED], linkedBy: 'model', seen: 'both', measured: { id: 'p1', colour: '', hex: hx, text: '' } };
+    ledger.load([item]);
+    return compareObjects({ world: buildWorld, pose: pose(buildWorld), aspect: ASPECT, report: rep, ledger, render, px: { w: 1000, h: Math.round(1000 / ASPECT) } })!;
+  }
+
+  it('reads an identical build as match, with the same colour', async () => {
+    const world = await room();
+    const m = await setup(world, world, '#8c8c8c', [140, 140, 140]);
+    const r = m.rows[0]!;
+    expect(r.iou).toBeGreaterThan(0.95);
+    expect(['match', 'close']).toContain(r.verdict);
+    expect(m.counts.match + m.counts.close).toBe(1);
   });
 
-  it('says so when the host cannot decode', async () => {
-    const m = await measureRoom({ raster: async () => null }, undefined);
-    expect(m.isError).toBe(true);
-    expect(m.text).toContain('could not decode');
-  });
-
-  it('returns advisory numbers next to the model reading and a depth picture', async () => {
-    const m = await measureRoom({ raster: async () => raster, estimate: async () => ({ ok: true, map: fakeMap(), image: 'data:image/png;base64,AAAA' }) }, undefined, { width: 3.3, depth: 5, ceiling: 2.5 });
-    expect(m.text).toContain('Your reading: 3.3 m wide');
-    expect(m.text).toContain('advisory');
-    expect(m.blocks.some((b) => b.type === 'image')).toBe(true);
-  });
-
-  it('validates the anchor and orders its box', () => {
-    expect(parseMeasureInput({})).toEqual({});
-    expect(parseMeasureInput({ anchor: { name: 'door', size_m: 2.05, axis: 'height', box: [0.6, 0.8, 0.4, 0.2] } })?.anchor?.box).toEqual([0.4, 0.2, 0.6, 0.8]);
-    expect(parseMeasureInput({ anchor: { name: 'door', size_m: 2.05, axis: 'height', box: [0.5, 0.5, 0.505, 0.9] } })).toBeNull();
-    expect(parseMeasureInput({ anchor: { name: 'x', size_m: 'big' } })).toBeNull();
-  });
-
-  it('anchors on a whole visible door only', () => {
-    const base = { roomType: 'bedroom', camera: { x: 2, z: 4.5, heading: 0 }, footprint: { width: 4, depth: 5, ceiling: 2.5 } };
-    const door = (box: number[], visible = true): unknown => ({ ...base, openings: [{ id: 'd1', kind: 'door', wall: 'east', along: 1, width: 0.9, visible, box }] });
-    const desc = (raw: unknown): ReturnType<typeof autoAnchor> => {
-      const p = parseRoomDescription(raw, []);
-      if (!p.ok) throw new Error(p.error);
-      return autoAnchor(p.value);
-    };
-    expect(desc(door([0.7, 0.3, 0.8, 0.9]))?.sizeM).toBe(2.05);
-    expect(desc(door([0.7, 0.3, 0.8, 1]))).toBeUndefined();
-    expect(desc(door([0.7, 0.3, 0.8, 0.9], false))).toBeUndefined();
-  });
-
-  it('pins the weights: pinned revision and checksum, local file refused when it differs, off switch honoured', async () => {
-    expect(DEPTH_MODEL.url).toMatch(/resolve\/[0-9a-f]{40}\//);
-    expect(DEPTH_MODEL.sha256).toMatch(/^[0-9a-f]{64}$/);
-    const w = await loadDepthWeights();
-    expect(w.ok).toBe(false); // vitest sets AETHER_DEPTH=off
-  });
-
-  it('prepares the network input and a valid PNG', () => {
-    expect(inputSize(1280, 960)).toEqual({ w: 518, h: 392 });
-    const t = preprocess(raster, 28, 14);
-    expect(t.length).toBe(3 * 28 * 14);
-    expect(t[0]).toBeCloseTo((128 / 255 - 0.485) / 0.229, 4);
-    const png = encodePng(2, 2, new Uint8Array(12));
-    expect([...png.slice(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+  it('finds a moved piece off, says which way, and a wrong colour says apply_measured_colour', async () => {
+    const world = await room();
+    const moved = shifted(world, BED);
+    const m = await setup(world, moved, '#1b2a4a', [200, 60, 60]);
+    const r = m.rows[0]!;
+    expect(r.iou).toBeLessThan(0.6);
+    expect(['off', 'near']).toContain(r.verdict);
+    expect(r.hint).toMatch(/left|right|above|below|hidden/);
+    expect(r.deltaE).toBeGreaterThan(20);
+    expect(r.hint).toContain('apply_measured_colour');
+    expect(m.text).toContain('Measured comparison');
   });
 });

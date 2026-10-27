@@ -361,6 +361,17 @@ export class Perceiver {
     }
   }
 
+  /** CLIP embedding of any box of the photo (an inventory object that no detector box matched); null when the labeller is unavailable. */
+  async embedBox(box: readonly [number, number, number, number]): Promise<Float32Array | null> {
+    if (!this.raster) this.raster = await this.deps.raster().catch(() => null);
+    const loader = this.deps.clip === undefined ? (this.deps.detector === undefined ? loadClip : null) : this.deps.clip;
+    if (!this.raster || !loader) return null;
+    this.clipP ??= loader();
+    const c = await this.clipP;
+    if (!c.ok) return null;
+    return (await c.model.embed(this.raster, [{ box }]))[0] ?? null;
+  }
+
   /** Embedding of an object's masked crop (CLIP), for appearance retrieval; null when the labeller did not run. */
   embeddingOf(id: string): Float32Array | null {
     return this.embeds.get(id) ?? null;

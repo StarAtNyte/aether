@@ -51,3 +51,27 @@ export async function perceivePhoto(p: Perceiver, input: { find: string[]; gener
   const blocks: ContentBlock[] = overlay ? [{ type: 'text', text: 'Annotated photo from perceive_photo (numbered boxes, masks, measured colour chips)' }, { type: 'image', dataUrl: overlay }] : [];
   return { text: `${perceptionText(rep)}${overlay ? '\nThe annotated picture follows this reply.' : ''}`, blocks, isError: false, report: rep };
 }
+
+export const APPLY_COLOUR_TOOL_NAME = 'apply_measured_colour';
+export const APPLY_COLOUR_TOOL: ToolDef = {
+  name: APPLY_COLOUR_TOOL_NAME,
+  description:
+    'Set a built piece\'s colour from the colour MEASURED on the photo, in one step (no hex to copy by hand). `object`: the inventory object id or the perceived id (p3) whose photo colour is used; `ref`: the built entity to colour (default: the object\'s first linked piece); `source`: "seen" (the colour as the photo shows it, default) or "lit-like-white" (the cast and exposure removed with the ceiling or a whitish wall as the white reference: use it when the photo is under- or over-exposed and the preview light is neutral); `param`: which colour parameter of the piece (default: color, else the first of linen, upholstery, shade, headboard, seat, body, top that holds a hex). Goes through edit_items (resize with params), so it is one measured, validated, undoable edit; pieces whose colour is a named finish cannot take a hex and are refused with the reason. Advisory: look at the next render and say if it is better.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      object: { type: 'string', description: 'Inventory object id or perceived object id.' },
+      ref: { type: 'string', description: 'Built entity id to colour.' },
+      source: { type: 'string', enum: ['seen', 'lit-like-white'] },
+      param: { type: 'string' },
+    },
+    required: ['object'],
+    additionalProperties: false,
+  },
+};
+const ColourInput = z.object({ object: z.string().min(1).max(60), ref: z.string().max(80).optional(), source: z.enum(['seen', 'lit-like-white']).optional(), param: z.string().max(40).optional() });
+export function parseApplyColourInput(input: unknown): z.infer<typeof ColourInput> | null {
+  const p = ColourInput.safeParse(input);
+  return p.success ? p.data : null;
+}
+export const COLOUR_PARAMS = ['color', 'linen', 'upholstery', 'shade', 'headboard', 'seat', 'body', 'top'] as const;

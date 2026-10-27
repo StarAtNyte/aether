@@ -84,8 +84,10 @@ import { OBJECT_REASON_TOOL, OBJECT_REASON_TOOL_NAME, ObjectLedger, applyReasons
 import { ObjectStage } from './objects-stage';
 import type { DepthRaster } from './depth-model';
 import { Perceiver, perceptionText, type PerceptionReport } from './perception/perceive';
-import { PERCEIVE_TOOL, PERCEIVE_TOOL_NAME, parsePerceiveInput, perceivePhoto } from './perception/tool';
+import { APPLY_COLOUR_TOOL, APPLY_COLOUR_TOOL_NAME, COLOUR_PARAMS, PERCEIVE_TOOL, PERCEIVE_TOOL_NAME, parseApplyColourInput, parsePerceiveInput, perceivePhoto } from './perception/tool';
 import { seedInventory } from './perception/seed';
+import { similarModelsText } from './perception/retrieve';
+import { normaliseHex } from '@aether/arch/photo';
 import { MEASURE_TOOL, MEASURE_TOOL_NAME, analysisDepthText, autoAnchor, measureRoom, parseMeasureInput, type Measured } from './measure';
 import { compareImages, extractPalette, regionColourScore, type Raster } from './score';
 import { runReconcile } from './reconcile';
@@ -921,6 +923,16 @@ function makeObjects(run: PhotoRun, photo: Photo, saved: ObjectLedger | null): O
       getWorld: () => host.getWorld(),
       applyPatches: (p, m) => host.applyPatches(p, m),
       ...(perceiverOf(run) ? { perceive: async (labels: string[]) => (await perceiverOf(run)?.run({ find: labels }).catch(() => null)) ?? null } : {}),
+      ...(perceiverOf(run) ? { report: () => perceiverOf(run)?.report() ?? perceiveEvidence.get(run)?.report ?? null } : {}),
+      ...(perceiverOf(run) ? {
+        like: async (object: string) => {
+          const pc = perceiverOf(run) as Perceiver;
+          const emb = pc.embeddingOf(object);
+          if (!emb) return null;
+          const sim = await similarModelsText(emb, 3, '');
+          return sim.ids.length > 0 ? `Library models that look like this crop (find_model like_crop:"${object}" for the facts): ${sim.ids.join(', ')}.` : null;
+        },
+      } : {}),
       ...(run.options.objectRounds !== undefined ? { maxRounds: run.options.objectRounds } : {}),
       ...(signal ? { signal } : {}),
     },
@@ -986,7 +998,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
   /** The photo for the depth network (null without a host decoder: the measure tool is then not offered). */
   const depthRaster = depthSource(run);
   let depthFirst: Promise<Measured> | null = null;
-  const tools: ToolDef[] = [VERDICT_TOOL, ...(ledger ? [DIFFERENCES_TOOL] : []), ...(hs ? [GATE_TOOL, ...(ledger ? [REPAIR_TOOL] : []), CAMERA_TOOL] : []), ...(photo.raster ? [SAMPLE_TOOL] : []), ...(objects ? [OBJECT_REASON_TOOL] : []), CLOSER_TOOL, ...(depthRaster ? [MEASURE_TOOL] : []), ...(perceiverOf(run) ? [PERCEIVE_TOOL] : []), ...designTools, ...(run.ctx.textures?.photo ? [MAKE_TEXTURE_TOOL] : []), ...run.tools.filter((t) => t.name === 'tune_look' || t.name === 'finish' || t.name === 'find_model')];
+  const tools: ToolDef[] = [VERDICT_TOOL, ...(ledger ? [DIFFERENCES_TOOL] : []), ...(hs ? [GATE_TOOL, ...(ledger ? [REPAIR_TOOL] : []), CAMERA_TOOL] : []), ...(photo.raster ? [SAMPLE_TOOL] : []), ...(objects ? [OBJECT_REASON_TOOL] : []), CLOSER_TOOL, ...(depthRaster ? [MEASURE_TOOL] : []), ...(perceiverOf(run) ? [PERCEIVE_TOOL, ...(objects ? [APPLY_COLOUR_TOOL] : [])] : []), ...designTools, ...(run.ctx.textures?.photo ? [MAKE_TEXTURE_TOOL] : []), ...run.tools.filter((t) => t.name === 'tune_look' || t.name === 'finish' || t.name === 'find_model')];
   const messages: ChatMessage[] = [];
   /** Where progress is measured from: with a panel, the last state the judges preferred; without, the best state. */
   // (Written through `settle`, so the declared type is spelled out: control flow would otherwise narrow it to null.)
@@ -1365,6 +1377,57 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
           const look = await lookCloser({ photoUrl: photo.dataUrl, renderUrl: shot.clean, compose: run.ctx.host.composeImages?.bind(run.ctx.host), plan: () => planShot(run, photo.aspect), roomLine: `Room ${desc.footprint.width} m (west-east) by ${desc.footprint.depth} m (north-south), ceiling ${desc.footprint.ceiling} m.` }, call.input);
           results.push({ type: 'tool_result', toolUseId: call.id, content: look.text, ...(look.isError ? { isError: true } : {}) });
           lookBlocks.push(...look.blocks);
+          continue;
+        }
+        if (call.name === 'find_model' && perceiverOf(run) && typeof (call.input as { like_crop?: unknown } | null)?.like_crop === 'string') {
+          // Appearance retrieval: the library ranked by how much each model looks like the crop of this object; the name search follows in the same reply when `what` is given.
+          const like = (call.input as { like_crop: string; what?: string }).like_crop;
+          const pc = perceiverOf(run) as Perceiver;
+          let emb = pc.embeddingOf(like);
+          const rec = objects?.ledger.items.get(like);
+          if (!emb && rec) emb = await pc.embedBox(rec.item.box as [number, number, number, number]).catch(() => null);
+          if (!emb) {
+            results.push({ type: 'tool_result', toolUseId: call.id, content: `find_model like_crop: no crop for "${like.slice(0, 40)}" (use a perceived id such as p3 or an inventory id), or the image labeller is unavailable; use the name search.`, isError: true });
+            continue;
+          }
+          const sim = await similarModelsText(emb, 3, `object ${like}`);
+          let text = sim.text;
+          const what = (call.input as { what?: unknown }).what;
+          if (typeof what === 'string' && what.length > 0) {
+            const named = await executeTool(run.ctx, 'find_model', { what, ...((call.input as { limit?: number }).limit ? { limit: (call.input as { limit: number }).limit } : {}) }).catch(() => null);
+            if (named?.content) text += `\n\nBy name:\n${named.content}`;
+          }
+          results.push({ type: 'tool_result', toolUseId: call.id, content: text });
+          continue;
+        }
+        if (call.name === APPLY_COLOUR_TOOL_NAME && perceiverOf(run)) {
+          const input = parseApplyColourInput(call.input);
+          const fail = (t: string): void => { results.push({ type: 'tool_result', toolUseId: call.id, content: `apply_measured_colour: ${t}`, isError: true }); };
+          if (!input) { fail('expected {object, ref?, source?: "seen"|"lit-like-white", param?}.'); continue; }
+          const rep = (perceiverOf(run) as Perceiver).report();
+          const rec = objects?.ledger.items.get(input.object);
+          const pid = rec?.item.measured?.id ?? input.object;
+          const po = rep.objects.find((o) => o.id === pid);
+          const seen = po?.appearance?.colour.hex;
+          if (!seen) { fail(`no colour was measured for "${input.object.slice(0, 40)}" (use an inventory id or a perceived id such as p3).`); continue; }
+          const hex = input.source === 'lit-like-white' && rep.illuminant ? normaliseHex(seen, rep.illuminant) : seen;
+          const ref = input.ref ?? rec?.item.entities[0];
+          const ent = ref ? run.ctx.host.getWorld().entities[ref] : undefined;
+          const params = (ent && ent.shape.kind === 'procedural' ? (ent.shape.params as Record<string, unknown>) : null) ?? {};
+          const key = input.param ?? COLOUR_PARAMS.find((k) => typeof params[k] === 'string' && /^#[0-9a-f]{6}$/i.test(params[k] as string));
+          if (!ref || !ent) { fail('give `ref`, the built entity to colour (the object has no linked piece).'); continue; }
+          if (!key) { fail(`${ref} has no hex colour parameter (its colour is a named finish or a texture); use edit_items resize with params, or choose another piece.`); continue; }
+          const order = hs ? hs.guard.allow(APPLY_COLOUR_TOOL_NAME, call.input) : null;
+          if (order) { results.push({ type: 'tool_result', toolUseId: call.id, content: order, isError: true }); continue; }
+          if (toolCalls >= run.maxToolCalls) { fail('tool-call budget of this round used up.'); continue; }
+          toolCalls++;
+          const linkedBefore = objects && objects.ready ? objects.snapshotLinked(host.getWorld()) : null;
+          const out = await executeTool(ctx, 'edit_items', { edits: [{ op: 'resize', ref, params: { [key]: hex } }], message: `Colour ${ref} ${key} ${hex} from the photo (${pid}, ${input.source ?? 'seen'})` });
+          yield { type: 'step', tool: APPLY_COLOUR_TOOL_NAME, label: `Colour ${ref} from the photo: ${hex}`, ok: !out.isError };
+          for (const ev of out.events) yield ev;
+          if (out.edited) { edited = true; ledger?.markEdited(); }
+          const feedback = linkedBefore && out.edited && objects ? objects.afterEdit(linkedBefore) : '';
+          results.push({ type: 'tool_result', toolUseId: call.id, content: `${out.isError ? 'Refused: ' : `Set ${ref}.${key} to ${hex} (measured on the photo as ${seen}${hex !== seen ? `, lit like white ${hex}` : ''}). `}${out.content}${feedback ? `\n${feedback}` : ''}`, ...(out.isError ? { isError: true } : {}) });
           continue;
         }
         if (call.name === PERCEIVE_TOOL_NAME && perceiverOf(run)) {
