@@ -128,17 +128,19 @@ export interface PhotoObjectView {
   id: string;
   label: string;
   kind: string;
-  present: 'pass' | 'fail' | 'na' | 'unjudged';
-  type: 'pass' | 'fail' | 'na' | 'unjudged';
-  position: 'pass' | 'fail' | 'na' | 'unjudged';
-  size: 'pass' | 'fail' | 'na' | 'unjudged';
-  material: 'pass' | 'fail' | 'na' | 'unjudged';
+  present: 'pass' | 'close' | 'fail' | 'unclear' | 'na' | 'unjudged';
+  type: 'pass' | 'close' | 'fail' | 'unclear' | 'na' | 'unjudged';
+  position: 'pass' | 'close' | 'fail' | 'unclear' | 'na' | 'unjudged';
+  size: 'pass' | 'close' | 'fail' | 'unclear' | 'na' | 'unjudged';
+  material: 'pass' | 'close' | 'fail' | 'unclear' | 'na' | 'unjudged';
   /** The fix hint of the judges, or the reason the model gave for leaving it. */
   note: string;
   /** Which of the two independent inventories listed it. */
   seen: 'both' | 'primary' | 'blind';
   /** The model's stated reason for leaving a failing aspect (empty otherwise). */
   waived?: string;
+  /** "stopped: ..." when the loop ended (plateau or round cap) with this object still off. */
+  stopped?: string;
 }
 
 /** One stage of the staged photo flow, as the chat shows it (a checklist with ticks). */
@@ -434,6 +436,8 @@ export interface PhotoOptions {
    * become differences, and the loop goes on until every object passes or the model states a reason for it.
    */
   objects?: boolean;
+  /** Most object rounds in one run of the object loop (default 12). "Keep refining" (a continued run) starts a new count. The loop also ends when 3 rounds in a row raised neither the pass rate nor lowered the open count. */
+  objectRounds?: number;
   /**
    * The staged harness (default false; the studio turns it on): stage verdicts the model gives (`stage_gate`), repairs in the
    * order camera, geometry, materials, lighting (`declare_repair`, `set_photo_camera`), an assumptions ledger and a provenance

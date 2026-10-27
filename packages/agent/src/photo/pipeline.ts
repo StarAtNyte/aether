@@ -752,6 +752,7 @@ async function* resumeRun(run: PhotoRun, hs: HarnessState, resume: { state: Phot
   const ledger = new DifferenceLedger();
   ledger.restore(state.differences as ReturnType<DifferenceLedger['snapshot']>);
   const savedObjects = ObjectLedger.restore(state.objects);
+  savedObjects?.resume();
   const build = deriveBuild(desc);
   build.notes.push('This is a continued run: the room in the world may have been edited since it was first built, so judge the renders, not the plan.');
   const photo = await decodePhoto(run);
@@ -890,6 +891,7 @@ function makeObjects(run: PhotoRun, photo: Photo, saved: ObjectLedger | null): O
         : undefined,
       getWorld: () => host.getWorld(),
       applyPatches: (p, m) => host.applyPatches(p, m),
+      ...(run.options.objectRounds !== undefined ? { maxRounds: run.options.objectRounds } : {}),
       ...(signal ? { signal } : {}),
     },
     saved,
@@ -1456,11 +1458,20 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
       yield { type: 'photo', phase: 'round', round, text: `Every checklist item matches the photo${objects && objects.ready ? ' and every inventoried object passes or has a stated reason' : ''}.`, score: scoreView(j) };
       return yield* conclude(j, changed);
     }
+    // The object loop does not run to perfection: it ends on a plateau or at its round cap, keeps the best state of each object and says what is still off.
+    const objStop = objects && objects.ready ? objects.stopCheck() : null;
+    if (objects && objStop && !(declared && !edited)) {
+      const n = objects.finalizeStop(objStop);
+      yield { type: 'photo', phase: 'round', round, text: `Stopped refining the objects: ${objStop}. ${n} object${n === 1 ? '' : 's'} still off are marked "stopped"; the best state of each is kept (${objects.budgetLine()}). The result is not perfect; "keep refining" continues from the saved list.`, objects: objects.views(), score: scoreView(j) };
+      return yield* conclude(j, changed);
+    }
     if (declared && !edited) {
+      if (objects && objects.ready && objects.open() > 0) objects.finalizeStop('the assistant finished while they were still off');
       yield { type: 'photo', phase: 'round', round, text: `The assistant decided it is good enough as it stands, with ${j.score.failing.length} item${j.score.failing.length === 1 ? '' : 's'} it judged still different${objects && objects.ready && objects.open() > 0 ? ` and ${objects.open()} object aspect${objects.open() === 1 ? '' : 's'} open` : ''}.`, score: scoreView(j) };
       return yield* conclude(j, false);
     }
     if (verdict.stalled) {
+      if (objects && objects.ready && objects.open() > 0) objects.finalizeStop(verdict.reason);
       yield { type: 'photo', phase: 'round', round, text: `Stopped comparing: ${verdict.reason}.`, score: scoreView(j) };
       return yield* conclude(j, changed);
     }

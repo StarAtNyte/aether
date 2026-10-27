@@ -136,7 +136,7 @@ export interface PhotoEventView {
   objects?: ObjectEventView[];
 }
 
-export const ASPECT_STATES = ['pass', 'fail', 'na', 'unjudged'] as const;
+export const ASPECT_STATES = ['pass', 'close', 'fail', 'unclear', 'na', 'unjudged'] as const;
 export type AspectEventState = (typeof ASPECT_STATES)[number];
 export const OBJECT_ASPECTS = ['present', 'type', 'position', 'size', 'material'] as const;
 export interface ObjectEventView {
@@ -151,6 +151,8 @@ export interface ObjectEventView {
   note: string;
   seen: 'both' | 'primary' | 'blind';
   waived?: string;
+  /** "stopped: ...": the loop ended with this object still off. */
+  stopped?: string;
 }
 
 /** Bounded, validated per-object table (live or stored). */
@@ -169,6 +171,7 @@ export function toObjects(v: unknown): ObjectEventView[] | undefined {
     note: str(o['note'], 160),
     seen: o['seen'] === 'blind' ? 'blind' : o['seen'] === 'primary' ? 'primary' : 'both',
     ...(typeof o['waived'] === 'string' && o['waived'] ? { waived: str(o['waived'], 160) } : {}),
+    ...(typeof o['stopped'] === 'string' && o['stopped'] ? { stopped: str(o['stopped'], 200) } : {}),
   }));
   return out.length > 0 ? out : undefined;
 }

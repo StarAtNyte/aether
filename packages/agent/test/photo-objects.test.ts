@@ -17,9 +17,13 @@ import {
   reconcileInventories,
   selectObjects,
   SWEEP_EVERY,
+  type Aspect,
   type Current,
   type InventoryItem,
   type ObjectSample,
+  type ObjectVerdictWord,
+  GIVE_UP_AFTER,
+  PLATEAU_ROUNDS,
 } from '../src/photo/objects';
 import type { Raster } from '../src/photo/score';
 import type { AgentEvent, CompletionRequest, CompletionResponse, ContentBlock, Provider, ReviewViewRequest } from '../src/types';
@@ -106,8 +110,9 @@ const inv = (id: string, over: Record<string, unknown> = {}): Record<string, unk
 };
 const CLOCK = { id: 'clock', kind: 'clock', category: 'decor', label: 'wall clock', box: [0.6, 0.1, 0.66, 0.19], relations: ['above the pictures'], confidence: 0.6 };
 
+type Plan = Record<string, Partial<Record<Aspect, ObjectVerdictWord>>>;
 /** The independent critic seats: the checklist panel (all pass), the two inventories, the object judge and the layout judge. */
-function critic(opts: { objects: (ids: string[], req: CompletionRequest) => Record<string, Partial<{ present: boolean; type: number; position: number; size: number; material: number }>>; blind?: boolean }): (req: CompletionRequest) => ContentBlock[] {
+function critic(opts: { objects: (ids: string[], req: CompletionRequest) => Plan }): (req: CompletionRequest) => ContentBlock[] {
   return (req) => {
     const tool = toolOf(req);
     if (tool === 'report_inventory') {
@@ -118,7 +123,7 @@ function critic(opts: { objects: (ids: string[], req: CompletionRequest) => Reco
     if (tool === 'report_object_judgement') {
       const ids = [...textOf(req).matchAll(/id ([a-z0-9-]+):/g)].map((m) => m[1] as string);
       const plan = opts.objects(ids, req);
-      return [call('report_object_judgement', { verdicts: ids.map((id) => ({ id, present: true, type: 4, position: 4, size: 4, material: 4, evidence: `photo shows ${id}; render shows ${id}`, ...(plan[id] ?? {}), ...(plan[id]?.present === false ? { type: 0, position: 0, size: 0, material: 0 } : {}), fix: plan[id] ? `fix ${id}` : '' })) })];
+      return [call('report_object_judgement', { verdicts: ids.map((id) => ({ id, present: 'match', type: 'match', position: 'match', size: 'match', material: 'match', evidence: `photo shows ${id}; render shows ${id}`, ...(plan[id] ?? {}), ...(plan[id]?.present === 'off' ? { type: undefined, position: undefined, size: undefined, material: undefined } : {}), fix: plan[id] ? `fix ${id}` : '' })) })];
     }
     if (tool === 'report_relations') {
       const ids = [...textOf(req).matchAll(/- (rel-[a-z0-9-]+):/g)].map((m) => m[1] as string);
@@ -161,28 +166,36 @@ describe('inventory parsing and reconciliation', () => {
 });
 
 describe('the per-object panel', () => {
-  const s = (over: Partial<ObjectSample> & { position?: number } = {}): ObjectSample => ({ present: true, scores: { type: 4, position: over.position ?? 4, size: 4, material: 4 }, na: over.na ?? new Set(), evidence: 'photo vs render', fix: over.fix ?? '', ...(over.present === false ? { present: false } : {}) });
-  it('takes the median per aspect and the majority for presence, so one wavering judge cannot flip an aspect', () => {
-    const a = aggregateObject([s({ position: 1, fix: 'move 0.3 m right' }), s({ position: 4 }), s({ position: 1 })]);
-    expect(a?.aspects.position).toEqual({ state: 'fail', score: 1 });
+  const s = (position: ObjectVerdictWord, over: Partial<Record<Aspect, ObjectVerdictWord>> = {}, fix = ''): ObjectSample => ({ words: { present: 'match', type: 'match', position, size: 'match', material: 'match', ...over }, evidence: 'photo vs render', fix });
+  it('takes the median of match, close and off per aspect, so one wavering judge cannot flip an aspect; close passes', () => {
+    const a = aggregateObject([s('off', {}, 'move 0.3 m right'), s('match'), s('off')]);
+    expect(a?.aspects.position).toEqual({ state: 'fail', score: 0 });
     expect(a?.aspects.size.state).toBe('pass');
     expect(a?.fix).toBe('move 0.3 m right');
-    expect(aggregateObject([s({ position: 1 }), s({ position: 4 }), s({ position: 4 })])?.aspects.position.state).toBe('pass');
-    const gone = aggregateObject([s({ present: false }), s({ present: false }), s()]);
+    expect(aggregateObject([s('off'), s('match'), s('match')])?.aspects.position.state).toBe('pass');
+    expect(aggregateObject([s('close'), s('close'), s('match')])?.aspects.position).toEqual({ state: 'close', score: 1 });
+    expect(aggregateObject([s('off'), s('close'), s('match')])?.aspects.position.state).toBe('close');
+    const gone = aggregateObject([s('match', { present: 'off' }), s('match', { present: 'off' }), s('match')]);
     expect(gone?.aspects.present.state).toBe('fail');
     expect(gone?.aspects.position.state).toBe('unjudged');
-    const hidden = aggregateObject([s({ na: new Set(['material']) }), s({ na: new Set(['material']) }), s()]);
-    expect(hidden?.aspects.material.state).toBe('na');
+    const hidden = aggregateObject([s('match', { material: 'unclear' }), s('match', { material: 'unclear' }), s('match')]);
+    expect(hidden?.aspects.material).toEqual({ state: 'unclear', score: null });
+    const l = new ObjectLedger();
+    l.load([itemOf('lamp', [0.1, 0.1, 0.2, 0.2])]);
+    l.apply('lamp', hidden!, 1, { sig: null, proj: null, entities: {} });
+    expect(l.openCount()).toBe(0);
+    expect(l.verdictTotals()).toMatchObject({ unclear: 1, off: 0, passRate: 1 });
   });
 
-  it('parses a judge answer and drops ids that are not in the request', () => {
-    const got = parseObjectJudgement({ verdicts: [{ id: 'bed', present: true, type: 4, position: '2', size: 3, material: 4, evidence: 'ok then' }, { id: 'ghost', present: true, type: 4, position: 4, size: 4, material: 4, evidence: 'ok then' }] }, new Set(['bed']));
+  it('parses a judge answer in words, drops ids that are not in the request, and reads a missing aspect of a present object as unclear', () => {
+    const got = parseObjectJudgement({ verdicts: [{ id: 'bed', present: 'match', type: 'Close', position: 'off', size: 'match', evidence: 'ok then' }, { id: 'ghost', present: 'match', evidence: 'ok then' }] }, new Set(['bed']));
     expect([...(got?.keys() ?? [])]).toEqual(['bed']);
-    expect(got?.get('bed')?.scores.position).toBe(2);
+    expect(got?.get('bed')?.words).toMatchObject({ type: 'close', position: 'off', material: 'unclear' });
   });
 });
 
 describe('what is judged again', () => {
+  const W = (position: ObjectVerdictWord, over: Partial<Record<Aspect, ObjectVerdictWord>> = {}): ObjectSample => ({ words: { present: 'match', type: 'match', position, size: 'match', material: 'match', ...over }, evidence: 'x', fix: '' });
   const ledger = (): ObjectLedger => {
     const l = new ObjectLedger();
     l.load([itemOf('bed', [0.1, 0.5, 0.5, 0.9]), itemOf('lamp', [0.5, 0.4, 0.6, 0.6]), itemOf('tv', [0.8, 0.1, 0.95, 0.3])]);
@@ -193,7 +206,7 @@ describe('what is judged again', () => {
     for (const r of l.list()) {
       const c = { sig: [10, 20, 30], proj: null };
       now.set(r.item.id, c);
-      l.apply(r.item.id, aggregateObject([{ present: true, scores: { type: 4, position: 4, size: 4, material: 4 }, na: new Set(), evidence: 'x', fix: '' }]) as never, round, { ...c, entities: {} });
+      l.apply(r.item.id, aggregateObject([W('match')]) as never, round, { ...c, entities: {} });
     }
     l.swept = round;
     return now;
@@ -212,7 +225,7 @@ describe('what is judged again', () => {
   });
   it('does not judge an object the model gave a reason for, and a reason ends the open count', () => {
     const l = ledger();
-    const bad = aggregateObject([{ present: true, scores: { type: 4, position: 1, size: 4, material: 4 }, na: new Set(), evidence: 'far left', fix: 'move right' }]) as never;
+    const bad = aggregateObject([{ ...W('off'), evidence: 'far left', fix: 'move right' }]) as never;
     l.apply('tv', bad, 1, { sig: null, proj: null, entities: {} });
     expect(openAspects(l.get('tv')!)).toEqual(['position']);
     expect(l.openCount()).toBe(1);
@@ -222,12 +235,12 @@ describe('what is judged again', () => {
     expect(l.openCount()).toBe(0);
     expect(d.ranked()).toHaveLength(0);
     expect(d.waivedList()).toHaveLength(1);
-    expect(objectTableText(l)).toMatch(/Given a reason by you earlier/);
+    expect(objectTableText(l)).toMatch(/Left as they are, with a reason/);
   });
   it('keeps the best state and says an object got worse; a snapshot restores with everything', () => {
     const l = ledger();
-    const good = aggregateObject([{ present: true, scores: { type: 4, position: 4, size: 4, material: 4 }, na: new Set(), evidence: 'same', fix: '' }]) as never;
-    const bad = aggregateObject([{ present: true, scores: { type: 4, position: 1, size: 4, material: 4 }, na: new Set(), evidence: 'moved', fix: 'back' }]) as never;
+    const good = aggregateObject([W('match')]) as never;
+    const bad = aggregateObject([{ ...W('off'), evidence: 'moved', fix: 'back' }]) as never;
     expect(l.apply('bed', good, 1, { sig: [1], proj: null, entities: { a: { id: 'a' } } })?.regressed).toBe(false);
     expect(l.apply('bed', bad, 2, { sig: [2], proj: null, entities: { a: { id: 'a', moved: true } } })?.regressed).toBe(true);
     expect(l.get('bed')?.best?.round).toBe(1);
@@ -237,6 +250,54 @@ describe('what is judged again', () => {
     copy?.markReverted('bed');
     expect(openAspects(copy!.get('bed')!)).toEqual([]);
     expect(ObjectLedger.restore({ version: 2 })).toBeNull();
+  });
+  it('close keeps the best state: match to close is not a regression, and it counts as passing', () => {
+    const l = ledger();
+    l.apply('bed', aggregateObject([W('match')]) as never, 1, { sig: [1], proj: null, entities: {} });
+    expect(l.apply('bed', aggregateObject([W('close')]) as never, 2, { sig: [2], proj: null, entities: {} })?.regressed).toBe(false);
+    expect(l.get('bed')?.aspects.position.state).toBe('close');
+    expect(l.openCount()).toBe(0);
+    expect(l.passingObjects()).toBe(1);
+  });
+  it('gives up on an aspect that did not get better after two repair attempts, and records why', () => {
+    const l = ledger();
+    const off = (): never => aggregateObject([{ ...W('off'), evidence: 'still far left' }]) as never;
+    expect(l.apply('tv', off(), 1, { sig: [10], proj: null, entities: {} })?.gaveUp).toEqual([]);
+    expect(l.apply('tv', off(), 2, { sig: [50], proj: null, entities: {} })?.gaveUp).toEqual([]);
+    expect(l.openCount()).toBe(1);
+    const third = l.apply('tv', off(), 3, { sig: [90], proj: null, entities: {} });
+    expect(GIVE_UP_AFTER).toBe(2);
+    expect(third?.gaveUp).toEqual(['position']);
+    expect(l.get('tv')?.waived['position']).toMatch(/stopped chasing it.*2 repair attempts/);
+    expect(l.openCount()).toBe(0);
+    // An attempt that made it better restarts the count.
+    const m = ledger();
+    const half = aggregateObject([W('off'), W('off'), W('close'), W('close')]) as never;
+    m.apply('tv', off(), 1, { sig: [10], proj: null, entities: {} });
+    m.apply('tv', off(), 2, { sig: [50], proj: null, entities: {} });
+    expect(m.apply('tv', half, 3, { sig: [90], proj: null, entities: {} })?.gaveUp).toEqual([]);
+  });
+  it('stops on a plateau (three rounds that raised neither the pass rate nor lowered the open count) and marks what is still off', () => {
+    const l = ledger();
+    l.apply('tv', aggregateObject([W('off')]) as never, 1, { sig: null, proj: null, entities: {} });
+    l.noteRound(1);
+    for (let r = 2; r <= 1 + PLATEAU_ROUNDS; r++) {
+      expect(l.plateau()).toBe(false);
+      l.noteRound(r);
+    }
+    expect(l.plateau()).toBe(true);
+    // A round that lowers the open count ends the plateau.
+    l.apply('tv', aggregateObject([W('match')]) as never, 5, { sig: null, proj: null, entities: {} });
+    l.noteRound(5);
+    expect(l.plateau()).toBe(false);
+    l.apply('tv', aggregateObject([W('off')]) as never, 6, { sig: null, proj: null, entities: {} });
+    expect(l.markStopped('the last 3 rounds did not help')).toBe(1);
+    expect(l.get('tv')?.stopped).toMatch(/last 3 rounds/);
+    const copy = ObjectLedger.restore(JSON.parse(JSON.stringify(l.snapshot())))!;
+    expect(copy.stopReason).toMatch(/last 3 rounds/);
+    copy.resume();
+    expect(copy.get('tv')?.stopped).toBeUndefined();
+    expect(copy.history).toEqual([]);
   });
 });
 
@@ -263,7 +324,7 @@ describe('room from a photo, object by object', () => {
         objects: (ids) => {
           judgedRounds.push(ids);
           if (!fixed && sceneItem(host, 'picture-left')?.wall?.t !== undefined && Math.abs((sceneItem(host, 'picture-left')?.wall?.t ?? 0) - 1.6) < 0.05) fixed = true;
-          return { 'picture-left': { position: fixed ? 4 : 1 }, 'blind-clock': { present: false } } as never;
+          return { 'picture-left': { position: fixed ? 'match' : 'off' }, 'blind-clock': { present: 'off' } };
         },
       }),
     );
@@ -285,8 +346,8 @@ describe('room from a photo, object by object', () => {
     // The failing aspects became differences with the repair route; the model saw the table.
     const second = textOf(provider.requests[1]!);
     expect(second).toContain('Per-object judgement (9 objects');
-    expect(second).toMatch(/picture-left \[picture left; built as room-photo-picture-left\] present:ok type:ok position:FAIL/);
-    expect(second).toMatch(/blind-clock .*present:FAIL/);
+    expect(second).toMatch(/picture-left \[picture left; built as room-photo-picture-left\] present:match type:match position:OFF/);
+    expect(second).toMatch(/blind-clock .*present:OFF/);
     expect(second).toContain('OBJECTS.');
     expect(second).toMatch(/suggested correction \(advisory, unprojected through the photo camera/);
     expect(second).toMatch(/on the north wall: [+-][0-9.]+ m along the wall/);
@@ -299,7 +360,7 @@ describe('room from a photo, object by object', () => {
     expect(later.flat()).toContain('picture-left');
     expect(new Set(later.flat())).toEqual(new Set(['picture-left', 'bed']));
     const done = photoEvents(events).find((e) => e.phase === 'done');
-    expect(done?.text).toMatch(/Object by object: 9 of 9 objects pass every aspect|Object by object: 8 of 9 objects pass every aspect/);
+    expect(done?.text).toMatch(/Object by object: [89] of 9 objects have nothing off \(\d+ match, \d+ close, \d+ off, \d+ unclear; pass rate \d+%/);
     expect(done?.text).toMatch(/left as they are with a stated reason/);
     expect(done?.objects?.find((o) => o.id === 'picture-left')).toMatchObject({ position: 'pass' });
     expect(done?.objects?.find((o) => o.label === 'wall clock')?.waived).toMatch(/cut off/);
@@ -330,7 +391,7 @@ describe('room from a photo, object by object', () => {
         objects: (ids) => {
           calls++;
           const moved = Math.abs((sceneItem(host, 'picture-left')?.wall?.t ?? 0) - original.t) > 0.3 && original.t > 0;
-          return { nightstand: { position: 1 }, ...(moved ? { 'picture-left': { position: 1 } } : {}) } as never;
+          return { nightstand: { position: 'off' }, ...(moved ? { 'picture-left': { position: 'off' } } : {}) } as Plan;
         },
       }),
     );
@@ -347,19 +408,65 @@ describe('room from a photo, object by object', () => {
     const host = new ObjHost();
     const first = scripted(
       [() => [call('describe_room', { description: rawDescription() })], () => [call('report_differences', { differences: [] }), call('finish', { message: 'stop' }), call('finish', { message: 'stop' })]],
-      critic({ objects: () => ({ tv: { size: 1 } }) as never }),
+      critic({ objects: () => ({ tv: { size: 'off' } }) as Plan }),
     );
     const ev1 = await collect(agent(first, { maxRounds: 1 }).run('make this bedroom in 3d', host, { images: [photo] }));
     const done1 = photoEvents(ev1).find((e) => e.phase === 'done');
     const saved = (done1?.resume as { objects?: unknown } | undefined)?.objects;
     expect(saved).toBeDefined();
     expect(ObjectLedger.restore(saved)?.openCount()).toBeGreaterThan(0);
-    const second = scripted([() => [call('report_differences', { differences: [] }), call('state_object_reason', { reasons: [{ id: 'tv', aspect: 'all', reason: 'no matching model after find_model' }] }), call('finish', { message: 'ok' })]], critic({ objects: () => ({ tv: { size: 1 } }) as never }));
+    const second = scripted([() => [call('report_differences', { differences: [] }), call('state_object_reason', { reasons: [{ id: 'tv', aspect: 'all', reason: 'no matching model after find_model' }] }), call('finish', { message: 'ok' })]], critic({ objects: () => ({ tv: { size: 'off' } }) as Plan }));
     const ev2 = await collect(agent(second).run('keep going', host, { images: [photo], photoResume: done1!.resume!, photo: 'recreate', intent: 'refine' }));
     expect(second.critics.filter((r) => toolOf(r) === 'report_inventory')).toHaveLength(0);
     expect(textOf(second.requests[0]!)).toMatch(/Per-object judgement/);
     expect(textOf(second.requests[0]!)).toMatch(/tv \[/);
     const done2 = photoEvents(ev2).find((e) => e.phase === 'done');
     expect(done2?.objects?.find((o) => o.id === 'tv')?.waived).toMatch(/no matching model/);
+  });
+
+  /** A model that edits the left picture every round (so there is always something to judge) while the tv stays off. */
+  const restless = (): Reply[] => [
+    () => [call('describe_room', { description: rawDescription() })],
+    ...Array.from({ length: 40 }, (_, k): Reply => (k % 2 === 0
+      ? () => [
+          call('report_differences', { differences: [{ id: 'obj-tv-position', kind: 'position', cause: 'geometry', where: 'tv', what: 'the tv is off', size: 3 }] }),
+          call('declare_repair', { difference: 'obj-tv-position', cause: 'geometry', why: 'try again' }),
+          call('edit_items', { edits: [{ op: 'move', ref: 'picture-left', wall: 'north', t: k % 4 === 0 ? 1.6 : 1.5 }] }),
+        ]
+      : () => [{ type: 'text', text: 'Edits made.' }])),
+  ];
+  const tvOff = (): ((req: CompletionRequest) => ContentBlock[]) => critic({ objects: () => ({ tv: { position: 'off' } }) as Plan });
+
+  it('stops on a plateau, keeps the best state, marks what is still off as stopped, and "keep refining" resumes from the saved list', async () => {
+    const photo = fakePhoto(1920, 1280);
+    const host = new ObjHost();
+    const first = scripted(restless(), tvOff());
+    const ev1 = await collect(agent(first).run('make this bedroom in 3d', host, { images: [photo] }));
+    const stop = photoEvents(ev1).find((e) => /Stopped refining the objects: the last 3 rounds raised neither the pass rate nor lowered the open count/.test(e.text));
+    expect(stop).toBeDefined();
+    expect(stop?.text).toMatch(/object round 4 of 12, \d+ model calls/);
+    expect(stop?.text).toMatch(/not perfect.*keep refining/);
+    expect(stop?.objects?.find((o) => o.id === 'tv')?.stopped).toMatch(/^stopped: the last 3 rounds/);
+    const done1 = photoEvents(ev1).find((e) => e.phase === 'done');
+    expect(done1?.text).toMatch(/still off \(stopped: the last 3 rounds/);
+    const saved = (done1?.resume as { objects?: { stopReason?: string; history?: unknown[] } } | undefined)?.objects;
+    expect(saved?.stopReason).toMatch(/last 3 rounds/);
+    // Keep refining: the ledger comes back without the stop markers, a fresh count, and the model sees the table at once.
+    const second = scripted([() => [call('report_differences', { differences: [] }), call('state_object_reason', { reasons: [{ id: 'tv', aspect: 'all', reason: 'the tv cannot be matched with these tools' }] }), call('finish', { message: 'ok' })]], tvOff());
+    const ev2 = await collect(agent(second).run('keep refining', host, { images: [photo], photoResume: done1!.resume!, photo: 'recreate', intent: 'refine' }));
+    expect(second.critics.filter((r) => toolOf(r) === 'report_inventory')).toHaveLength(0);
+    const done2 = photoEvents(ev2).find((e) => e.phase === 'done');
+    expect(done2?.objects?.find((o) => o.id === 'tv')?.stopped).toBeUndefined();
+    expect(done2?.objects?.find((o) => o.id === 'tv')?.waived).toMatch(/cannot be matched/);
+  });
+
+  it('stops at the round cap (a setting), with the budget in the feed', async () => {
+    const host = new ObjHost();
+    const provider = scripted(restless(), tvOff());
+    const events = await collect(agent(provider, { objectRounds: 2 }).run('make this bedroom in 3d', host, { images: [fakePhoto(1920, 1280)] }));
+    const stop = photoEvents(events).find((e) => /Stopped refining the objects: reached the limit of 2 object rounds/.test(e.text));
+    expect(stop).toBeDefined();
+    expect(photoEvents(events).some((e) => /object round 1 of 2.*1 round left before the loop stops/.test(e.text))).toBe(true);
+    expect(photoEvents(events).find((e) => e.phase === 'done')?.objects?.find((o) => o.id === 'tv')?.stopped).toMatch(/limit of 2 object rounds/);
   });
 });

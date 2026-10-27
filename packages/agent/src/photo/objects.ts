@@ -5,8 +5,9 @@
  * plants, textiles, views), each with a box in the picture, its relations to the things around it, its relative size, its
  * colour and material and how sure it is. A second seat lists the same photo blind and the two lists are reconciled, so an
  * object only one seat saw is flagged, never dropped. Each object is then judged on its own, against the render from the
- * same camera, on five aspects (present, type, position, size, material) by a panel; the aspects that fail become
- * differences of the ledger and are repaired until they pass or the model states why they cannot.
+ * same camera, on five aspects (present, type, position, size, material) by a panel, each with one of three verdicts
+ * (match, close, off) or unclear; match and close pass, unclear is not chased, and the aspects that are off become
+ * differences of the ledger, repaired until they pass, the model states why they cannot, or two attempts did not help.
  *
  * Code only keeps the books here: the inventory ledger (versioned, restorable), the median over the panel, the best state
  * of each object and the text the models read. Measured evidence (projected position against the box, distances) is
@@ -34,10 +35,14 @@ export type ObjectCategory = (typeof OBJECT_CATEGORIES)[number];
 export const MAX_INVENTORY = 80;
 /** Objects judged in one request (one paired crop each). */
 export const OBJECTS_PER_REQUEST = 6;
-/** An aspect passes at this median score. */
-export const OBJECT_PASS = 3;
 /** A full sweep of every object is made at least this often (rounds). */
 export const SWEEP_EVERY = 4;
+/** An aspect that is off and did not improve after this many repair attempts is given up on (with the reason recorded). */
+export const GIVE_UP_AFTER = 2;
+/** Default most object rounds in one run of the loop ("keep refining" starts a new run). */
+export const OBJECT_ROUNDS_DEFAULT = 12;
+/** The loop ends when this many rounds in a row raised neither the pass rate nor lowered the open count. */
+export const PLATEAU_ROUNDS = 3;
 
 export const INVENTORY_TOOL_NAME = 'report_inventory';
 export const OBJECT_JUDGE_TOOL_NAME = 'report_object_judgement';
@@ -69,7 +74,13 @@ export interface InventoryItem {
   seen: 'both' | 'primary' | 'blind';
 }
 
-export type AspectState = 'pass' | 'fail' | 'na' | 'unjudged';
+/**
+ * pass: match. close: acceptable, a small deviation nobody would care about (counts as a pass, still recorded). fail: off, clearly
+ * wrong or missing. unclear (and the older na): cannot be told from the photo, excluded from the failing count. unjudged: not looked at.
+ */
+export type AspectState = 'pass' | 'close' | 'fail' | 'unclear' | 'na' | 'unjudged';
+/** The states that do not count as failing. */
+export const isPassing = (s: AspectState): boolean => s === 'pass' || s === 'close' || s === 'unclear' || s === 'na';
 
 export interface AspectRec {
   state: AspectState;
@@ -102,6 +113,10 @@ export interface ObjectRec {
   judgedRound: number;
   best: BestRec | null;
   reverts: number;
+  /** Repair attempts that did not make a failing aspect better (the object was edited and the aspect still fails). Two, and it is given up. */
+  tries?: Partial<Record<Aspect, { n: number; best: number }>>;
+  /** Why the loop stopped with this object not perfect ("stopped: ..."); set when the loop ends by plateau or round cap. */
+  stopped?: string;
 }
 
 export interface RelationRec {
@@ -123,6 +138,9 @@ export interface ObjectsSnapshot {
   relations: RelationRec[];
   /** Notes from the reconciliation of the two inventories. */
   reconcile: string[];
+  /** Pass rate and open count after each judged round (for the plateau stop), and why the loop last stopped. */
+  history?: Array<{ round: number; passRate: number; open: number }>;
+  stopReason?: string;
 }
 
 // ---------------------------------------------------------------------------------------------------------------- geometry of boxes
@@ -365,18 +383,24 @@ export function inventoryText(builtPieces: string, summary: string): string {
 export const OBJECT_JUDGE_SYSTEM =
   'You are a meticulous, consistent reviewer of architectural reconstructions. For each listed object you compare the reference photograph with a render of the 3D room from the same camera, and you answer separately whether the object is present, whether its type is right, whether its position is right, whether its size is right, and whether its colour and material are right. You back each judgement with what you can point to in the images. You never guess: the same pictures always get the same answer from you. You answer only by calling the report_object_judgement tool.';
 
-export const OBJECT_RUBRIC = [
-  '4 = matches the photo',
-  '3 = close: one minor difference (a few centimetres, a slightly different shade)',
-  '2 = clearly off: recognisably the same object but visibly wrong in this aspect',
-  '1 = wrong: another kind, another wall or place, another colour family',
-  '0 = not there at all (for presence) or hopelessly wrong',
+/** The standard the judges hold an object to, in words (the judges apply it; there are no numeric gates). */
+export const OBJECT_GUIDE = [
+  'GOOD ENOUGH IS THE STANDARD. Perfect is not possible from one photograph; call an aspect "match" when it agrees, "close" when it is acceptable (a small deviation that a person looking at the room would not notice or care about), and "off" only when it is clearly wrong or missing. "close" passes.',
+  'position: close is fine when the object is on the right wall or side, in the right relation to its neighbours (left of the bed, under the window, on the desk) and roughly where the photo has it: about a hand-span of a metre, or around a tenth of the frame, off is still close. Off means the wrong wall, side, neighbour or order, or far from where it is.',
+  'size: within about 20 percent of the photo is close. Off means clearly bigger or smaller, or a different proportion.',
+  'material: the right colour family and finish is close (warm oak against dark walnut is close; wood against white laminate, or a blue against a green, is off).',
+  'type: the same kind of object is a match or close (a different chair style is close). Off means another kind of thing.',
+  'present: off only when the thing the photo shows is not in the render at all.',
+  'unclear: use it for any aspect you cannot tell from the pictures: small items, things partly hidden or cut off by the frame, things the photo shows only vaguely, or too small in the render to compare. Say why in the evidence. An unclear aspect is not chased.',
 ];
+
+export const OBJECT_VERDICTS = ['match', 'close', 'off', 'unclear'] as const;
+export type ObjectVerdictWord = (typeof OBJECT_VERDICTS)[number];
 
 export const OBJECT_JUDGE_TOOL: ToolDef = {
   name: OBJECT_JUDGE_TOOL_NAME,
   description:
-    'Judge every listed object, separately for each aspect. {verdicts:[{id, present:boolean, type:0..4, position:0..4, size:0..4, material:0..4, na?:[aspects you cannot judge, e.g. "material" when the object is hidden or too small], evidence, fix}]}. present = the object the photo shows is in the render at all. type = the kind and model are right (a round table is not a square one). position = left/right and depth order against its neighbours, offset from the walls and corner, height off the floor, orientation. size = width, height and depth against the photo and its neighbours. material = colour, finish and pattern. evidence = one sentence naming what the photo shows and what the render shows. fix = one line saying what to change ("move 0.3 m to the right", "taller by a third", "replace by a round mirror", "darker oak"). When present is false the other scores may be left out. When present is true give all four scores (an aspect you cannot judge is listed in na and may get any score).',
+    'Judge every listed object, separately for each aspect, with one word each: match, close, off or unclear. {verdicts:[{id, present, type, position, size, material, evidence, fix?}]}. present = the object the photo shows is in the render at all. type = the kind (and model) is right. position = left/right and depth order against its neighbours, offset from the walls and corner, height off the floor, orientation. size = width, height and depth. material = colour, finish, pattern. match = agrees; close = acceptable, a small deviation a person would not care about; off = clearly wrong or missing; unclear = you cannot tell from the pictures (small, hidden, vague): it is not chased. When present is off the other aspects may be left out. evidence = one sentence naming what the photo shows and what the render shows. fix = one line saying what to change, for anything off.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -388,12 +412,11 @@ export const OBJECT_JUDGE_TOOL: ToolDef = {
           type: 'object',
           properties: {
             id: { type: 'string' },
-            present: { type: 'boolean' },
-            type: { type: 'integer', minimum: 0, maximum: 4 },
-            position: { type: 'integer', minimum: 0, maximum: 4 },
-            size: { type: 'integer', minimum: 0, maximum: 4 },
-            material: { type: 'integer', minimum: 0, maximum: 4 },
-            na: { type: 'array', items: { type: 'string', enum: [...SCORED_ASPECTS] } },
+            present: { type: 'string', enum: [...OBJECT_VERDICTS] },
+            type: { type: 'string', enum: [...OBJECT_VERDICTS] },
+            position: { type: 'string', enum: [...OBJECT_VERDICTS] },
+            size: { type: 'string', enum: [...OBJECT_VERDICTS] },
+            material: { type: 'string', enum: [...OBJECT_VERDICTS] },
             evidence: { type: 'string' },
             fix: { type: 'string' },
           },
@@ -406,24 +429,21 @@ export const OBJECT_JUDGE_TOOL: ToolDef = {
   },
 };
 
-const Sc = z.preprocess((v) => (typeof v === 'string' && /^\s*\d+(\.\d+)?\s*$/.test(v) ? Number(v) : v), z.number().finite().min(0).max(4).transform((n) => Math.round(n)));
+const Word = z.preprocess((v) => (typeof v === 'string' ? v.trim().toLowerCase() : v), z.enum(OBJECT_VERDICTS));
 const ObjVerdict = z.object({
   id: z.string().min(1).max(60),
-  present: z.preprocess((v) => (v === 'true' ? true : v === 'false' ? false : v), z.boolean()),
-  type: Sc.optional(),
-  position: Sc.optional(),
-  size: Sc.optional(),
-  material: Sc.optional(),
-  na: z.array(z.enum(SCORED_ASPECTS)).max(4).optional(),
+  present: Word,
+  type: Word.optional(),
+  position: Word.optional(),
+  size: Word.optional(),
+  material: Word.optional(),
   evidence: z.string().trim().min(3).max(400),
   fix: z.string().max(240).optional(),
 });
 
-/** One judge's answer for one object. */
+/** One judge's answer for one object: a word per aspect. An aspect left out of a present object counts as unclear. */
 export interface ObjectSample {
-  present: boolean;
-  scores: Record<ScoredAspect, number>;
-  na: Set<ScoredAspect>;
+  words: Record<Aspect, ObjectVerdictWord>;
   evidence: string;
   fix: string;
 }
@@ -436,14 +456,12 @@ export function parseObjectJudgement(input: unknown, ids: ReadonlySet<string>): 
     const v = ObjVerdict.safeParse(raw);
     if (!v.success || !ids.has(v.data.id)) continue;
     const d = v.data;
-    // An absent object needs no scores for the rest; a present one needs all four (the others are dropped, and the seat is asked again).
-    if (d.present && [d.type, d.position, d.size, d.material].some((x) => x === undefined) && !(d.na && d.na.length > 0)) continue;
-    out.set(v.data.id, { present: v.data.present, scores: { type: d.type ?? (d.present ? 4 : 0), position: d.position ?? (d.present ? 4 : 0), size: d.size ?? (d.present ? 4 : 0), material: d.material ?? (d.present ? 4 : 0) }, na: new Set(v.data.na ?? []), evidence: v.data.evidence, fix: (v.data.fix ?? '').trim() });
+    out.set(d.id, { words: { present: d.present, type: d.type ?? 'unclear', position: d.position ?? 'unclear', size: d.size ?? 'unclear', material: d.material ?? 'unclear' }, evidence: d.evidence, fix: (d.fix ?? '').trim() });
   }
   return out.size > 0 ? out : null;
 }
 
-/** The panel's judgement of one object. */
+/** The panel's judgement of one object. `score` is the median on match 2, close 1, off 0 (null: unclear or not looked at). */
 export interface ObjectAggregate {
   aspects: Record<Aspect, { state: AspectState; score: number | null }>;
   evidence: string;
@@ -451,33 +469,30 @@ export interface ObjectAggregate {
   judges: number;
 }
 
-/** Median per aspect over the judges that answered for the object. A majority saying "cannot judge" makes the aspect not applicable. */
+const ORDINAL: Record<ObjectVerdictWord, number | null> = { match: 2, close: 1, off: 0, unclear: null };
+
+/** One aspect over the judges: the median of match 2, close 1, off 0 among those who could tell; a majority of "unclear" makes it unclear. */
+function aspectOf(words: readonly ObjectVerdictWord[]): { state: AspectState; score: number | null } {
+  const n = words.length;
+  const vals = words.map((w) => ORDINAL[w]).filter((x): x is number => x !== null);
+  if (vals.length === 0 || (n - vals.length) * 2 > n) return { state: 'unclear', score: null };
+  const m = median(vals);
+  return { state: m >= 2 ? 'pass' : m >= 1 ? 'close' : 'fail', score: m };
+}
+
+/** Median per aspect over the judges that answered for the object. An absent object is not judged on the other aspects. */
 export function aggregateObject(samples: readonly ObjectSample[]): ObjectAggregate | null {
   if (samples.length === 0) return null;
-  const n = samples.length;
-  const presentVotes = samples.filter((s) => s.present).length;
-  const present = presentVotes * 2 >= n;
   const aspects = {} as ObjectAggregate['aspects'];
-  aspects.present = { state: present ? 'pass' : 'fail', score: present ? 4 : 0 };
+  aspects.present = aspectOf(samples.map((s) => s.words.present));
   for (const a of SCORED_ASPECTS) {
-    if (!present) {
-      aspects[a] = { state: 'unjudged', score: null };
-      continue;
-    }
-    const naVotes = samples.filter((s) => s.na.has(a)).length;
-    if (naVotes * 2 > n) {
-      aspects[a] = { state: 'na', score: null };
-      continue;
-    }
-    const scores = samples.filter((s) => !s.na.has(a)).map((s) => s.scores[a]);
-    const m = median(scores);
-    aspects[a] = { state: m >= OBJECT_PASS ? 'pass' : 'fail', score: m };
+    aspects[a] = aspects.present.state === 'fail' ? { state: 'unjudged', score: null } : aspects.present.state === 'unclear' ? { state: 'unclear', score: null } : aspectOf(samples.map((s) => s.words[a]));
   }
-  // The evidence and the fix hint of the judge that agrees best with the median position score (or the first when none does).
-  const mp = aspects.position.score ?? 4;
-  const near = [...samples].sort((x, y) => Math.abs(x.scores.position - mp) - Math.abs(y.scores.position - mp))[0] as ObjectSample;
+  // The evidence and the fix of a judge who found something off (the first of them), else of the first judge.
+  const bad = samples.find((s) => ASPECTS.some((a) => s.words[a] === 'off' && aspects[a].state === 'fail')) ?? samples.find((s) => ASPECTS.some((a) => s.words[a] === 'off'));
+  const pick = bad ?? (samples[0] as ObjectSample);
   const fixes = samples.map((s) => s.fix).filter((f) => f.length > 0);
-  return { aspects, evidence: near.evidence, fix: near.fix || fixes[0] || '', judges: n };
+  return { aspects, evidence: pick.evidence, fix: pick.fix || fixes[0] || '', judges: samples.length };
 }
 
 // ---------------------------------------------------------------------------------------------------------------- relations
@@ -537,14 +552,14 @@ export function passCount(states: Record<Aspect, AspectState | AspectRec>): numb
   return ASPECTS.filter((a) => {
     const s = states[a];
     const st = typeof s === 'string' ? s : s.state;
-    return st === 'pass' || st === 'na';
+    return st !== 'unjudged' && isPassing(st);
   }).length;
 }
 
 /** How bad an object is: absent counts most, then by how far each failing aspect is from passing. */
 export function severity(rec: ObjectRec): number {
   let s = 0;
-  for (const a of openAspects(rec)) s += a === 'present' ? 8 : 4 - (rec.aspects[a].score ?? 0);
+  for (const a of openAspects(rec)) s += a === 'present' ? 8 : 4 - 2 * (rec.aspects[a].score ?? 0);
   return s;
 }
 
@@ -565,6 +580,8 @@ export class ObjectLedger {
   reconcile: string[] = [];
   /** Round of the last full sweep (0: none yet). */
   swept = 0;
+  history: Array<{ round: number; passRate: number; open: number }> = [];
+  stopReason = '';
 
   get size(): number {
     return this.items.size;
@@ -587,13 +604,26 @@ export class ObjectLedger {
     return this.items.get(id);
   }
 
-  /** Record the panel's judgement of one object. Returns what changed against its best state. */
-  apply(id: string, agg: ObjectAggregate, round: number, mark: { sig: number[] | null; proj: Box | null; entities: Record<string, unknown> }): { regressed: boolean; before: number; after: number } | null {
+  /** Record the panel's judgement of one object. Returns what changed against its best state, and the aspects given up on. */
+  apply(id: string, agg: ObjectAggregate, round: number, mark: { sig: number[] | null; proj: Box | null; entities: Record<string, unknown> }): { regressed: boolean; before: number; after: number; gaveUp: Aspect[] } | null {
     const rec = this.items.get(id);
     if (!rec) return null;
     const before = rec.best?.passes ?? -1;
+    // The object was edited since its last judgement when its crop or its projected box changed (after a revert the mark is empty: not counted).
+    const edited = rec.judgedRound > 0 && rec.sig !== null && mark.sig !== null && sigDistance(rec.sig, mark.sig) > SIG_TOLERANCE;
+    const tries = (rec.tries ??= {});
+    const gaveUp: Aspect[] = [];
     for (const a of ASPECTS) {
       const g = agg.aspects[a];
+      const prev = rec.aspects[a];
+      if (g.state === 'fail') {
+        const t = tries[a];
+        if (prev.state === 'fail' && edited && t) {
+          if ((g.score ?? 0) > t.best + 0.01) tries[a] = { n: 0, best: g.score ?? 0 };
+          else tries[a] = { n: t.n + 1, best: t.best };
+          if ((tries[a]?.n ?? 0) >= GIVE_UP_AFTER) gaveUp.push(a);
+        } else if (prev.state !== 'fail' || !t) tries[a] = { n: 0, best: g.score ?? 0 };
+      } else delete tries[a];
       const note = a === 'present' || g.state === 'pass' ? '' : agg.evidence;
       rec.aspects[a] = { state: g.state, score: g.score, note: note.slice(0, 240), round };
     }
@@ -601,14 +631,16 @@ export class ObjectLedger {
     rec.sig = mark.sig;
     rec.proj = mark.proj;
     rec.judgedRound = round;
+    delete rec.stopped;
     const after = passCount(rec.aspects);
-    // Aspects that pass now clear their waivers: a reason is only needed while the aspect fails.
+    // Aspects that no longer fail clear their reasons: a reason is only needed while the aspect fails.
     for (const a of ASPECTS) if (rec.aspects[a].state !== 'fail') delete rec.waived[a];
+    for (const a of gaveUp) rec.waived[a] = `stopped chasing it: it did not get better in ${GIVE_UP_AFTER} repair attempts (${agg.evidence.slice(0, 120)})`;
     if (rec.best === null || after >= rec.best.passes) {
       rec.best = { passes: after, round, states: Object.fromEntries(ASPECTS.map((a) => [a, rec.aspects[a].state])) as Record<Aspect, AspectState>, entities: mark.entities };
-      return { regressed: false, before, after };
+      return { regressed: false, before, after, gaveUp };
     }
-    return { regressed: true, before, after };
+    return { regressed: true, before, after, gaveUp };
   }
 
   /** The object was put back to its best state: its aspects are those of that state, and it is judged again next time. */
@@ -634,31 +666,85 @@ export class ObjectLedger {
     return this.list().reduce((n, r) => n + openAspects(r).length, 0) + [...this.relations.values()].filter((r) => r.state === 'fail' && !r.waived).length;
   }
 
-  /** Objects with every aspect passing or not applicable. */
+  /** Objects with no aspect off (match, close and unclear all pass). */
   passingObjects(): number {
-    return this.list().filter((r) => ASPECTS.every((a) => r.aspects[a].state === 'pass' || r.aspects[a].state === 'na')).length;
+    return this.list().filter((r) => ASPECTS.every((a) => isPassing(r.aspects[a].state))).length;
   }
 
   waivedCount(): number {
     return this.list().filter((r) => Object.keys(r.waived).length > 0).length;
   }
 
-  /** Pass counts per aspect over the judged objects. */
-  aspectTotals(): Record<Aspect, { pass: number; judged: number }> {
-    const t = Object.fromEntries(ASPECTS.map((a) => [a, { pass: 0, judged: 0 }])) as Record<Aspect, { pass: number; judged: number }>;
+  /** Verdict counts per aspect over the objects looked at: match, close, off, unclear; `pass` = match + close, `judged` = match + close + off (unclear is left out). */
+  aspectTotals(): Record<Aspect, { match: number; close: number; off: number; unclear: number; pass: number; judged: number }> {
+    const t = Object.fromEntries(ASPECTS.map((a) => [a, { match: 0, close: 0, off: 0, unclear: 0, pass: 0, judged: 0 }])) as Record<Aspect, { match: number; close: number; off: number; unclear: number; pass: number; judged: number }>;
     for (const r of this.list()) {
       for (const a of ASPECTS) {
         const s = r.aspects[a].state;
+        const c = t[a];
         if (s === 'unjudged') continue;
-        t[a].judged++;
-        if (s === 'pass' || s === 'na') t[a].pass++;
+        if (s === 'pass') c.match++;
+        else if (s === 'close') c.close++;
+        else if (s === 'fail') c.off++;
+        else c.unclear++;
+      }
+      for (const a of ASPECTS) {
+        t[a].pass = t[a].match + t[a].close;
+        t[a].judged = t[a].match + t[a].close + t[a].off;
       }
     }
     return t;
   }
 
+  /** All aspects together: counts of match, close, off, unclear and the pass rate (match + close) of the judged. */
+  verdictTotals(): { match: number; close: number; off: number; unclear: number; judged: number; passRate: number } {
+    const t = this.aspectTotals();
+    const sum = (k: 'match' | 'close' | 'off' | 'unclear'): number => ASPECTS.reduce((n, a) => n + t[a][k], 0);
+    const match = sum('match');
+    const close = sum('close');
+    const off = sum('off');
+    const judged = match + close + off;
+    return { match, close, off, unclear: sum('unclear'), judged, passRate: judged === 0 ? 1 : (match + close) / judged };
+  }
+
+  /** Note the state after a judged round (for the plateau stop). */
+  noteRound(round: number): void {
+    this.history.push({ round, passRate: this.verdictTotals().passRate, open: this.openCount() });
+    if (this.history.length > 40) this.history.shift();
+  }
+
+  /** The last `n` rounds raised neither the pass rate nor lowered the open count, against everything before them. */
+  plateau(n = PLATEAU_ROUNDS): boolean {
+    if (this.history.length <= n) return false;
+    const before = this.history.slice(0, this.history.length - n);
+    const bestRate = Math.max(...before.map((h) => h.passRate));
+    const bestOpen = Math.min(...before.map((h) => h.open));
+    return this.history.slice(-n).every((h) => h.passRate <= bestRate + 1e-9 && h.open >= bestOpen);
+  }
+
+  /** The loop stopped with objects still off: each of them carries the reason, the best state of each stays. */
+  markStopped(reason: string): number {
+    this.stopReason = reason;
+    let n = 0;
+    for (const r of this.list()) {
+      if (openAspects(r).length > 0) {
+        r.stopped = reason;
+        n++;
+      }
+    }
+    return n;
+  }
+
+  /** "Keep refining": the markers of an earlier stop are cleared and the plateau window starts again. */
+  resume(): void {
+    this.stopReason = '';
+    this.history = [];
+    for (const r of this.list()) delete r.stopped;
+    this.swept = 0;
+  }
+
   snapshot(): ObjectsSnapshot {
-    return { version: 1, swept: this.swept, items: this.list().map((r) => JSON.parse(JSON.stringify(r)) as ObjectRec), relations: [...this.relations.values()].map((r) => ({ ...r, items: [...r.items] })), reconcile: [...this.reconcile] };
+    return { version: 1, swept: this.swept, items: this.list().map((r) => JSON.parse(JSON.stringify(r)) as ObjectRec), relations: [...this.relations.values()].map((r) => ({ ...r, items: [...r.items] })), reconcile: [...this.reconcile], history: this.history.map((h) => ({ ...h })), stopReason: this.stopReason };
   }
 
   static restore(s: unknown): ObjectLedger | null {
@@ -673,6 +759,8 @@ export class ObjectLedger {
     }
     for (const r of x.relations) if (r && typeof (r as RelationRec).id === 'string') l.relations.set((r as RelationRec).id, r as RelationRec);
     l.swept = typeof x.swept === 'number' ? x.swept : 0;
+    l.history = Array.isArray(x.history) ? x.history.filter((h) => h && typeof h.round === 'number') : [];
+    l.stopReason = typeof x.stopReason === 'string' ? x.stopReason : '';
     l.reconcile = Array.isArray(x.reconcile) ? x.reconcile.filter((n): n is string => typeof n === 'string') : [];
     return l;
   }
@@ -752,9 +840,9 @@ export interface ObjectBatch {
 export function objectJudgeText(b: ObjectBatch): string {
   return [
     'JUDGE EACH OBJECT. Image 1 is the reference PHOTO. Image 2 is the RENDER of the 3D room from the photo\'s camera' + (b.boxes ? ' with the boxes of the inventory drawn on it (numbered); each listed object is the box with its number.' : '.') + (b.pairs.some((p) => p) ? ' After them come paired crops, one per object in the order listed: the PHOTO crop on the left, the RENDER crop of the same place on the right.' : ''),
-    `Score with this rubric (integers):\n${OBJECT_RUBRIC.map((r) => `- ${r}`).join('\n')}`,
-    'For every object answer separately: present (is it in the render at all, where the photo has it), type (right kind and model), position (left/right and depth order against neighbours, distance from walls and corners, height off the floor, orientation), size (width, height, depth against the photo and neighbours), material (colour, finish, pattern). Give "na" for an aspect you cannot judge (hidden, too small, out of frame) and say why in the evidence. Judge shape, size, place and hue relative to the surroundings; the render is a plain preview with flatter light, so never lower a score for lighting, glare or a flat sky alone.',
-    'The measured lines are advice computed from the built pieces (projected place against the photo\'s box, distances in metres); look at the pictures and decide for yourself. Give a fix: one line saying what to change.',
+    OBJECT_GUIDE.join('\n'),
+    'For every object answer separately: present (is it in the render at all, where the photo has it), type (right kind and model), position (left/right and depth order against neighbours, distance from walls and corners, height off the floor, orientation), size (width, height, depth against the photo and neighbours), material (colour, finish, pattern). Judge shape, size, place and hue relative to the surroundings; the render is a plain preview with flatter light, so never mark an aspect off for lighting, glare or a flat sky alone.',
+    'The measured lines are advice computed from the built pieces (projected place against the photo\'s box, distances in metres); look at the pictures and decide for yourself. Give a fix for anything off: one line saying what to change.',
     `Objects:\n${b.items.map((x) => `${x.n}. id ${x.item.id}: ${x.item.label} (${x.item.kind}); photo box [${x.item.box.join(', ')}]${x.item.size ? `; size: ${x.item.size}` : ''}${x.item.look ? `; look: ${x.item.look}` : ''}${x.item.relations.length > 0 ? `; relations: ${x.item.relations.join('; ')}` : ''}${x.item.occlusion ? `; hard to see: ${x.item.occlusion}` : ''}${x.evidence ? `\n   measured (advice): ${x.evidence}` : ''}`).join('\n')}`,
     'Call report_object_judgement once with every id above.',
   ].join('\n');
@@ -788,7 +876,7 @@ export async function runObjectPanel(complete: CompleteFn, batch: ObjectBatch, j
         ...req.messages,
         { role: 'assistant', content: res.content.length > 0 ? res.content : [{ type: 'text', text: '(no answer)' }] },
         ...(call
-          ? [{ role: 'user' as const, content: [{ type: 'tool_result' as const, toolUseId: call.id, content: 'No usable verdicts: each needs an id from the list, present, type, position, size, material (integers 0..4) and evidence.', isError: true }] }]
+          ? [{ role: 'user' as const, content: [{ type: 'tool_result' as const, toolUseId: call.id, content: 'No usable verdicts: each needs an id from the list, present, type, position, size, material (each one of match, close, off, unclear) and evidence.', isError: true }] }]
           : [{ role: 'user' as const, content: [{ type: 'text' as const, text: 'Call report_object_judgement now with a verdict for every listed object.' }] }]),
       ];
     }
@@ -821,7 +909,7 @@ export async function runRelationPanel(complete: CompleteFn, input: { photo: str
   const ids = new Set(input.relations.map((r) => r.id));
   const text = [
     'JUDGE THE LAYOUT. Image 1 is the reference PHOTO, image 2 the RENDER of the 3D room from the same camera' + (input.boxes ? ' with the inventory boxes drawn on it.' : '.'),
-    'Each statement below is a relation between objects, or between an object and the room, that holds in the photo (centred, level, in a row, above, beside, a distance from a corner). For each, say whether the render shows the SAME relation. Judge relations, not colours. Say what the render shows instead when it does not.',
+    'Each statement below is a relation between objects, or between an object and the room, that holds in the photo (centred, level, in a row, above, beside, a distance from a corner). For each, say whether the render shows the SAME relation. Judge relations, not colours. Good enough is the standard: answer ok when the relation roughly holds (about a hand-span of a metre, or a tenth of the frame, off is still ok), and not ok only when it is clearly different. Say what the render shows instead when it does not.',
     input.evidence ? `Measured advice:\n${input.evidence}` : '',
     `Statements:\n${input.relations.map((r) => `- ${r.id}: ${r.text}`).join('\n')}`,
     'Call report_relations once with every id.',
@@ -896,14 +984,20 @@ export function applyReasons(ledger: ObjectLedger, input: unknown, diffs?: { wai
 
 // ---------------------------------------------------------------------------------------------------------------- text
 
-const mark = (s: AspectState): string => (s === 'pass' ? 'ok' : s === 'fail' ? 'FAIL' : s === 'na' ? 'n/a' : '--');
+const mark = (s: AspectState): string => (s === 'pass' ? 'match' : s === 'close' ? 'close' : s === 'fail' ? 'OFF' : s === 'unclear' || s === 'na' ? 'unclear' : '--');
+
+/** The counts line: match, close, off, unclear over the judged aspects and the pass rate (match + close) of the judged. */
+export function countsLine(ledger: ObjectLedger): string {
+  const v = ledger.verdictTotals();
+  return `${v.match} match, ${v.close} close, ${v.off} off, ${v.unclear} unclear; pass rate ${Math.round(v.passRate * 100)}% (match + close of ${v.judged} judged)`;
+}
 
 /** One line per object: the table the fixing model works from. */
 export function objectTableText(ledger: ObjectLedger, opts: { limit?: number; evidence?: ReadonlyMap<string, string> } = {}): string {
   const recs = ledger.list();
   if (recs.length === 0) return '';
   const totals = ledger.aspectTotals();
-  const head = `Per-object judgement (${recs.length} objects, independent panel, median per aspect; pass ${ASPECTS.map((a) => `${a} ${totals[a].pass}/${totals[a].judged}`).join(', ')}; ${ledger.passingObjects()} objects pass every aspect, ${ledger.openCount()} open aspects${ledger.waivedCount() > 0 ? `, ${ledger.waivedCount()} given a reason` : ''}):`;
+  const head = `Per-object judgement (${recs.length} objects, independent panel, median per aspect; ${countsLine(ledger)}; per aspect ${ASPECTS.map((a) => `${a} ${totals[a].pass}/${totals[a].judged}`).join(', ')}; ${ledger.passingObjects()} objects have no aspect off, ${ledger.openCount()} aspects are off and open${ledger.waivedCount() > 0 ? `, ${ledger.waivedCount()} given a reason` : ''}). Good enough is the standard: close passes, unclear is not chased.`;
   const bad = recs.filter((r) => openAspects(r).length > 0).sort((a, b) => severity(b) - severity(a));
   const lines = bad.slice(0, opts.limit ?? 14).map((r) => {
     const open = openAspects(r);
@@ -915,11 +1009,11 @@ export function objectTableText(ledger: ObjectLedger, opts: { limit?: number; ev
   const relLines = rel.slice(0, 8).map((r) => `- layout ${r.id}: ${r.text}${r.note ? ` | ${r.note}` : ''}`);
   const waived = recs.filter((r) => Object.keys(r.waived).length > 0).slice(0, 6).map((r) => `- ${r.item.id}: ${Object.entries(r.waived).map(([k, v]) => `${k}: ${v}`).join('; ')}`);
   const out = [head];
-  if (lines.length > 0) out.push(`Still failing, worst first (fix the worst first; position and size are geometry, type is another model, material is materials; one change per object, then the next render is judged again for the changed objects and their neighbours):`, ...lines);
-  if (bad.length > lines.length) out.push(`...and ${bad.length - lines.length} more objects fail; they come after these.`);
+  if (lines.length > 0) out.push(`Still off, worst first (fix the worst first; position and size are geometry, type is another model, material is materials; one change per object, then the next render is judged again for the changed objects and their neighbours; an aspect that does not get better after ${GIVE_UP_AFTER} attempts is given up on):`, ...lines);
+  if (bad.length > lines.length) out.push(`...and ${bad.length - lines.length} more objects are off; they come after these.`);
   if (relLines.length > 0) out.push('Layout relations that do not hold in the render:', ...relLines);
-  if (waived.length > 0) out.push('Given a reason by you earlier:', ...waived);
-  if (lines.length === 0 && relLines.length === 0) out.push('Every judged object passes.');
+  if (waived.length > 0) out.push('Left as they are, with a reason:', ...waived);
+  if (lines.length === 0 && relLines.length === 0) out.push('No object is off.');
   return out.join('\n');
 }
 
@@ -937,6 +1031,8 @@ export interface ObjectView {
   note: string;
   seen: 'both' | 'primary' | 'blind';
   waived?: string;
+  /** "stopped: ..." when the loop ended with this object still off. */
+  stopped?: string;
 }
 
 export function objectViews(ledger: ObjectLedger, limit = 80): ObjectView[] {
@@ -952,16 +1048,15 @@ export function objectViews(ledger: ObjectLedger, limit = 80): ObjectView[] {
     note: (Object.keys(r.waived).length > 0 ? Object.values(r.waived)[0] ?? '' : openAspects(r).length > 0 ? r.fix || r.aspects[openAspects(r)[0] as Aspect].note : '').slice(0, 160),
     seen: r.item.seen,
     ...(Object.keys(r.waived).length > 0 ? { waived: Object.values(r.waived)[0] ?? '' } : {}),
+    ...(r.stopped ? { stopped: `stopped: ${r.stopped}`.slice(0, 200) } : {}),
   }));
 }
 
 /** One sentence for the closing message. */
 export function objectsSummary(ledger: ObjectLedger): string {
   if (ledger.size === 0) return '';
-  const t = ledger.aspectTotals();
   const open = ledger.list().filter((r) => openAspects(r).length > 0);
-  const parts = ASPECTS.map((a) => `${a} ${t[a].pass}/${t[a].judged}`).join(', ');
-  return `Object by object: ${ledger.passingObjects()} of ${ledger.size} objects pass every aspect (${parts})${ledger.waivedCount() > 0 ? `; ${ledger.waivedCount()} left as they are with a stated reason` : ''}${open.length > 0 ? `; still failing: ${open.slice(0, 6).map((r) => `${r.item.label} (${openAspects(r).join(', ')})`).join('; ')}${open.length > 6 ? `; and ${open.length - 6} more` : ''}` : ''}.`;
+  return `Object by object: ${ledger.passingObjects()} of ${ledger.size} objects have nothing off (${countsLine(ledger)})${ledger.waivedCount() > 0 ? `; ${ledger.waivedCount()} left as they are with a stated reason` : ''}${open.length > 0 ? `; still off${ledger.stopReason ? ` (stopped: ${ledger.stopReason})` : ''}: ${open.slice(0, 6).map((r) => `${r.item.label} (${openAspects(r).join(', ')})`).join('; ')}${open.length > 6 ? `; and ${open.length - 6} more` : ''}` : ''}.`;
 }
 
 // ---------------------------------------------------------------------------------------------------------------- instructions
@@ -969,8 +1064,8 @@ export function objectsSummary(ledger: ObjectLedger): string {
 /** What the fixing model is told about the object table each round. */
 export function objectsProcedure(round: number): string {
   return [
-    'OBJECTS. The photo was inventoried object by object and a panel of independent judges rates each object on five aspects against the render (present, type, position, size, material). The table above lists what fails, worst first, with the judges\' fix hint, advisory measured evidence (projected place against the photo, distances) and the tool that repairs it.',
-    'Work through the worst objects: position and size are geometry (edit_items move/resize, or design_plan for the shell), a wrong type is another model (find_model, then remove and place_items), a missing object is added (place_items), colour and finish are materials. Declare each repair (declare_repair with the object\'s obj-<id>-<aspect> difference), make one change per object, and leave objects that pass alone: a change that makes an object worse is put back for that object.',
+    'OBJECTS. The photo was inventoried object by object and a panel of independent judges rates each object on five aspects against the render (present, type, position, size, material) as match, close (good enough), off or unclear (not chased). The table above lists what is off, worst first, with the judges\' fix hint, advisory measured evidence (projected place against the photo, distances) and the tool that repairs it.',
+    'Work through the worst objects: position and size are geometry (edit_items move/resize, or design_plan for the shell), a wrong type is another model (find_model, then remove and place_items), a missing object is added (place_items), colour and finish are materials. Declare each repair (declare_repair with the object\'s obj-<id>-<aspect> difference), make one change per object, and leave objects that pass (match or close) alone: a change that makes an object worse is put back for that object.',
     round > 1 ? 'The next render is judged again for the objects you changed and their neighbours (and for everything every few rounds).' : '',
     'When an object cannot be fixed (hidden or cut off in the photo, no matching model after trying find_model, a limit of the tools, or a wrong inventory box), call state_object_reason with the reason instead of leaving it: the run does not finish while an object fails without one.',
   ].filter((l) => l.length > 0).join('\n');

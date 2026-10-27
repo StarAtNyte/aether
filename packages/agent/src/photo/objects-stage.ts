@@ -25,6 +25,9 @@ import {
   objectTableText,
   objectViews,
   openAspects,
+  countsLine,
+  OBJECT_ROUNDS_DEFAULT,
+  PLATEAU_ROUNDS,
   parseInventory,
   reconcileInventories,
   runObjectPanel,
@@ -55,6 +58,8 @@ export interface StageDeps {
   getWorld(): WorldDoc;
   applyPatches(patches: unknown[], message: string): { errors: unknown[]; applied: unknown[] };
   signal?: AbortSignal;
+  /** Most object rounds in this run (default {@link OBJECT_ROUNDS_DEFAULT}). */
+  maxRounds?: number;
 }
 
 export interface RoundInput {
@@ -98,6 +103,35 @@ export class ObjectStage {
   private pose: ReviewPose | null = null;
   private aspect = 1.5;
   private resid = new Map<string, number>();
+  /** Object rounds, model calls and time in this run of the loop (a continued run starts again). */
+  private rounds = 0;
+  private calls = 0;
+  private readonly started = Date.now();
+
+  get cap(): number {
+    const c = this.deps.maxRounds ?? OBJECT_ROUNDS_DEFAULT;
+    return Number.isFinite(c) ? Math.max(1, Math.min(200, Math.floor(c))) : OBJECT_ROUNDS_DEFAULT;
+  }
+
+  /** Why the loop should end now with objects still off (null: go on). */
+  stopCheck(): string | null {
+    if (!this.ready || this.open() === 0) return null;
+    if (this.rounds >= this.cap) return `reached the limit of ${this.cap} object rounds`;
+    if (this.ledger.plateau()) return `the last ${PLATEAU_ROUNDS} rounds raised neither the pass rate nor lowered the open count`;
+    return null;
+  }
+
+  /** Mark every object still off with the reason; the best state of each stays in the room. */
+  finalizeStop(reason: string): number {
+    return this.ledger.markStopped(reason);
+  }
+
+  /** A line on the budget used so far, with a warning when the cap is near. */
+  budgetLine(): string {
+    const min = Math.round((Date.now() - this.started) / 6000) / 10;
+    const left = this.cap - this.rounds;
+    return `object round ${this.rounds} of ${this.cap}, ${this.calls} model calls, ${min} min so far${left <= 2 ? ` (${left <= 0 ? 'last round' : `${left} round${left === 1 ? '' : 's'} left`} before the loop stops)` : ''}`;
+  }
 
   constructor(private readonly deps: StageDeps, ledger?: ObjectLedger | null) {
     this.ledger = ledger ?? new ObjectLedger();
@@ -140,6 +174,7 @@ export class ObjectStage {
       const content: ContentBlock[] = [{ type: 'text', text: inventoryText(withBuilt ? built : '', summary) }, { type: 'text', text: 'Image 1: the PHOTO' }, { type: 'image', dataUrl: this.deps.photoUrl }];
       const messages: Array<{ role: 'user' | 'assistant'; content: ContentBlock[] }> = [{ role: 'user', content }];
       for (let attempt = 0; attempt < 2; attempt++) {
+        this.calls++;
         const res = await this.deps.complete({ role: 'critic', system: INVENTORY_SYSTEM, messages, tools: [INVENTORY_TOOL], maxTokens: 12000, temperature: 0, seed: INVENTORY_SEED + seat });
         const call = res.content.find((b): b is Extract<ContentBlock, { type: 'tool_use' }> => b.type === 'tool_use' && b.name === INVENTORY_TOOL_NAME);
         const parsed = call ? parseInventory(call.input, withBuilt ? known : undefined) : null;
@@ -184,6 +219,7 @@ export class ObjectStage {
     const { ledger } = this;
     const empty: RoundResult = { judged: 0, full: false, gain: false, reverted: [], worse: [], calls: 0 };
     this.lastReverted = [];
+    this.rounds++;
     const proj = inp.pose ? projectBuilt(inp.world, inp.pose, inp.aspect) : null;
     this.pose = inp.pose;
     this.aspect = inp.aspect;
@@ -198,6 +234,7 @@ export class ObjectStage {
     const sel = selectObjects(ledger, now, inp.round, { force });
     if (sel.ids.length === 0) {
       if (proj) this.evidence = repairEvidence(inp.world, ledger, proj, this.deps.px);
+      ledger.noteRound(inp.round);
       return empty;
     }
     const openBefore = ledger.openCount();
@@ -227,6 +264,7 @@ export class ObjectStage {
         const ents: Record<string, unknown> = {};
         for (const e of rec.item.entities) if (inp.world.entities[e]) ents[e] = JSON.parse(JSON.stringify(inp.world.entities[e]));
         const res = ledger.apply(id, agg, inp.round, { sig: c.sig, proj: c.proj, entities: ents });
+        for (const a of res?.gaveUp ?? []) inp.diffs?.waive(`obj-${id}-${a}`, (ledger.get(id) as ObjectRec).waived[a] ?? 'no improvement after repeated attempts');
         judged.push(id);
         if (res?.regressed) regressed.push(id);
       }
@@ -288,13 +326,14 @@ export class ObjectStage {
       this.resid = new Map();
       for (const r of ledger.list()) { const x = residualOf(r.item, projNow, this.deps.px); if (x) this.resid.set(r.item.id, x.errPx); }
     }
+    this.calls += calls;
+    ledger.noteRound(inp.round);
     const result: RoundResult = { judged: judged.length, full: sel.full, gain: ledger.openCount() < openBefore, reverted, worse, calls };
-    const t = ledger.aspectTotals();
     yield {
       type: 'photo',
       phase: 'round',
       round: inp.round,
-      text: `Objects: judged ${judged.length}${sel.full ? ' (all)' : ` (${sel.changed.length} changed plus neighbours)`}; ${ledger.passingObjects()} of ${ledger.size} pass every aspect (${ASPECTS.map((a) => `${a} ${t[a].pass}/${t[a].judged}`).join(', ')}); ${ledger.openCount()} aspect${ledger.openCount() === 1 ? '' : 's'} open${reverted.length > 0 ? `; put back to their best: ${reverted.join(', ')}` : ''}${worse.length > 0 ? `; got worse with no piece to put back: ${worse.join(', ')}` : ''}.`,
+      text: `Objects: judged ${judged.length}${sel.full ? ' (all)' : ` (${sel.changed.length} changed plus neighbours)`}; ${ledger.passingObjects()} of ${ledger.size} objects have nothing off (${countsLine(ledger)}); ${ledger.openCount()} aspect${ledger.openCount() === 1 ? '' : 's'} open; ${this.budgetLine()}${reverted.length > 0 ? `; put back to their best: ${reverted.join(', ')}` : ''}${worse.length > 0 ? `; got worse with no piece to put back: ${worse.join(', ')}` : ''}.`,
       objects: this.views(),
     };
     return result;

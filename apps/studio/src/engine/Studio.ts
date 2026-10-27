@@ -1110,6 +1110,8 @@ export class Studio {
     const text = prompt.trim().slice(0, MAX_PROMPT_CHARS);
     const st = this.store.getState();
     if (!text || st.agentBusy) return;
+    // "keep refining" continues the photo room from the saved list of objects (the loop stops on a plateau or a round cap, not on perfection).
+    if (!opts.continuePhoto && this.photoResume && this.photoSource && /^\s*(please\s+)?(keep|continue) refining\b/i.test(text)) opts = { ...opts, continuePhoto: true, intent: 'refine' };
     if (this.sim?.mode === 'play') await this.sim.stop();
     this.sim?.touch();
     // Intent: the turn will verify the world, so load physics in a worker while the model plans.

@@ -2598,6 +2598,7 @@ button.chip:disabled {
 .objects tbody th i { font-style: normal; opacity: 0.7; }
 .objects__cell { text-align: center; min-width: 22px; }
 .objects__cell.is-pass { color: var(--ok, #3b8a4a); }
+.objects__cell.is-close { color: var(--ok, #3b8a4a); opacity: 0.8; }
 .objects__cell.is-fail { color: var(--danger, #c0392b); font-weight: 600; }
-.objects__cell.is-na, .objects__cell.is-unjudged { opacity: 0.5; }
+.objects__cell.is-na, .objects__cell.is-unclear, .objects__cell.is-unjudged { opacity: 0.5; }
 .objects__note { max-width: 28ch; overflow-wrap: anywhere; }

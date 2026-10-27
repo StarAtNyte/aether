@@ -174,19 +174,30 @@ const ClarifyView = memo(function ClarifyView({ event }: { event: Extract<ChatEv
  * The ranked differences between the reference (the photo, or what was asked for) and the render, as the AI listed them:
  * largest first, each with its kind, where, the amount and whether the next render showed it smaller.
  */
-const ASPECT_MARK: Record<string, string> = { pass: '✓', fail: '✗', na: '–', unjudged: '·' };
+const ASPECT_MARK: Record<string, string> = { pass: '✓', close: '≈', fail: '✗', unclear: '?', na: '?', unjudged: '·' };
 
 /** The per-object table: one row per object of the photo's inventory, one cell per aspect the judges rate. */
-function ObjectsTable({ items }: { items: readonly ObjectEventView[] }): ReactElement {
+function ObjectsTable({ items, canContinue = false }: { items: readonly ObjectEventView[]; canContinue?: boolean }): ReactElement {
+  const studio = useStudio();
+  const busy = useUI((s) => s.agentBusy);
   const [open, setOpen] = useState(false);
   const failing = items.filter((o) => OBJECT_ASPECTS.some((a) => o[a] === 'fail' && !o.waived)).length;
+  const stopped = items.find((o) => o.stopped)?.stopped;
+  const count = (k: string): number => items.reduce((n, o) => n + OBJECT_ASPECTS.filter((a) => o[a] === k).length, 0);
+  const judged = count('pass') + count('close') + count('fail');
   const sorted = [...items].sort((a, b) => OBJECT_ASPECTS.filter((x) => b[x] === 'fail').length - OBJECT_ASPECTS.filter((x) => a[x] === 'fail').length);
   return (
     <>
       <button type="button" className="diff-chips" onClick={() => setOpen((o) => !o)} aria-expanded={open} data-testid="objects-toggle">
-        <span className="diff-chips__msg">{items.length} objects, {failing === 0 ? 'all pass' : `${failing} still differ`}</span>
+        <span className="diff-chips__msg">{items.length} objects: {count('pass')} match, {count('close')} close, {count('fail')} off, {count('unclear') + count('na')} unclear · pass rate {judged === 0 ? 100 : Math.round(((count('pass') + count('close')) / judged) * 100)}%{failing === 0 ? '' : ` · ${failing} objects still off`}</span>
         <Icon name={open ? 'chevronUp' : 'chevronDown'} className="diff-chips__chev" />
       </button>
+      {stopped && (
+        <p className="photo__measures" data-testid="objects-stopped">
+          {stopped}. The result is not perfect; the best state of each object is kept.{' '}
+          {canContinue && <button type="button" className="chip chip--action" disabled={busy} onClick={() => void studio.send('Keep refining the objects of this room.', { continuePhoto: true, intent: 'refine' })} data-testid="objects-keep-refining">Keep refining</button>}
+        </p>
+      )}
       {open && (
         <table className="objects" data-testid="objects-table">
           <thead>
@@ -208,7 +219,7 @@ function ObjectsTable({ items }: { items: readonly ObjectEventView[] }): ReactEl
                 {OBJECT_ASPECTS.map((a) => (
                   <td key={a} className={`objects__cell is-${o[a]}`} aria-label={`${a} ${o[a]}`}>{ASPECT_MARK[o[a]]}</td>
                 ))}
-                <td className="objects__note">{o.waived ? `left: ${o.waived}` : o.note}</td>
+                <td className="objects__note">{o.waived ? `left: ${o.waived}` : o.stopped ? `${o.stopped}${o.note ? ` · ${o.note}` : ''}` : o.note}</td>
               </tr>
             ))}
           </tbody>
@@ -368,7 +379,7 @@ const PhotoView = memo(function PhotoView({ event }: { event: Extract<ChatEventV
         </div>
       )}
       {event.differences && event.differences.length > 0 && <DifferencesList items={event.differences} label="difference" />}
-      {event.objects && event.objects.length > 0 && <ObjectsTable items={event.objects} />}
+      {event.objects && event.objects.length > 0 && <ObjectsTable items={event.objects} canContinue={event.phase === 'done' && event.resumable === true} />}
       {event.provenance && <ProvenancePanel prov={event.provenance} resumable={event.resumable === true} />}
       {event.score && event.score.failing.length > 0 && (
         <>
