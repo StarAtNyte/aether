@@ -6892,3 +6892,13 @@ Failures, stated plainly
 Verification
 - `tsc` clean; `vitest packages/agent packages/arch apps/studio` 234 files, 2469 tests pass (new: appearance, geometry on synthetic raycast rooms, perceiver with mocked runners, seeding, tool, scripted agent); `smoke` 39 of 39.
 
+
+## Photo e2e: the scripted model matched the old flow, not a regression
+
+`npm run e2e:photo` failed with "expected two compare rounds, got describe,describe,describe,compare-1,other". Cause: the test was stale, the product behaved as designed. The staged flow now needs the model to list differences (`report_differences`) and declare a repair (`declare_repair`) before any edit tool is accepted; the old script sent verdicts and `edit_items` only, so the edit was refused, the model "finished" and round 2 never ran. The three `describe` steps are the intended merged readings.
+
+- The script now follows the flow: verdicts, difference list, declared repair, the picture move, finish; round 2 closes the difference and finishes. It also answers the object seats (inventory listed twice, a verdict per object and per layout statement), so the per-object table is checked (11 rows). The checklist judge panel is deliberately not scripted (it answers nothing and the assistant's own verdicts decide).
+- Assertions are stricter than before: exact step order, exactly two compare rounds, one repair and two difference lists, repair tools offered in both rounds, the difference list and final-round messages in the chat, the world result, no checker errors, assumption chips. Chromium runs with perception off and on, Firefox with it on.
+- A second failure was a test artefact: the test reads the finished world in Node, where the asset catalog was not loaded, so the library armchair was measured as its smaller procedural stand-in and reported as poking 0.04 m through the wall. The test now loads the catalog first. The product placement is right (reproduced in Node with the catalog loaded: no checker error).
+- Not covered: perception models are not reachable in this run, so "perception on" exercises the fallback to the picture alone, not the measurements.
+- Added `e2e:photo` to the CONTRIBUTING gate list (about 100 s for all three browser runs).

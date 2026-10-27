@@ -38,7 +38,9 @@ If a world with a bundled lightmap changed (`apps/studio/public/templates/lightm
 Game worlds keep their sealed proofs: a rebake must not change them.
 
 Then the browser suite closest to your change, for example `npm run e2e`, `npm run e2e:arch`, `npm run e2e:refine` or
-`npm run e2e:gameplay`. If you change rendering, also run `npm run e2e:render`.
+`npm run e2e:gameplay`. If you change the room-from-photo flow (`packages/agent/src/photo`, the photo tools or the chat
+cards), run `npm run e2e:photo` (about 2 minutes, scripted model, no quota). If you change rendering, also run
+`npm run e2e:render`.
 
 ## Rules of the road
 
