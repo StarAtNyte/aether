@@ -80,6 +80,8 @@ import { restorePatches } from './revert';
 import { applyGrade, estimatePhotoGrade, lookEvidenceText, matchGrade, type PhotoGrade } from './grade';
 import { JUDGES_DEFAULT, JUDGES_MAX, ProgressTracker, consensusText, decideRound, runPanel, type Consensus, type Decision, type RoundState } from './judge';
 import { CLOSER_TOOL, CLOSER_TOOL_NAME, lookCloser } from './closer';
+import { OBJECT_REASON_TOOL, OBJECT_REASON_TOOL_NAME, ObjectLedger, applyReasons, objectsDueText, objectsProcedure, objectsSummary } from './objects';
+import { ObjectStage } from './objects-stage';
 import type { DepthRaster } from './depth-model';
 import { MEASURE_TOOL, MEASURE_TOOL_NAME, analysisDepthText, autoAnchor, measureRoom, parseMeasureInput, type Measured } from './measure';
 import { compareImages, extractPalette, regionColourScore, type Raster } from './score';
@@ -348,6 +350,8 @@ interface Shot {
   lookEvidence: string;
   /** Standard-size sanity of the built room as advisory text ('' when unmeasured). */
   scale: string;
+  /** The photo camera of this render (what the object evidence projects through). */
+  cam: ReviewPose;
 }
 
 interface Photo {
@@ -448,7 +452,7 @@ async function snapshot(run: PhotoRun, photo: Photo, desc0: RoomDescription, tar
   const fidelity = measureFidelity(world, desc0, { framing, similarity, regionColour });
   const objective = fidelity?.score ?? null;
   const measure = fidelity ? fidelityLine(fidelity) : [framing ? `framing ${Math.round(framing.score * 100)}%` : '', similarity !== null ? `similarity ${Math.round(similarity * 100)}%` : ''].filter(Boolean).join(', ');
-  return { images, legend: legendText(markIndex(world, PHOTO_BUILDING_ID), shown), objective, measure, framing, fidelity, clean: cleanShot?.dataUrl ?? null, renderRaster, lookEvidence, scale: scaleAdvisory(world) };
+  return { images, legend: legendText(markIndex(world, PHOTO_BUILDING_ID), shown), objective, measure, framing, fidelity, clean: cleanShot?.dataUrl ?? null, renderRaster, lookEvidence, scale: scaleAdvisory(world), cam };
 }
 
 /** The room from above for `look_closer`: the level plan with its numbered pieces, and the legend of the numbers. */
@@ -747,12 +751,13 @@ async function* resumeRun(run: PhotoRun, hs: HarnessState, resume: { state: Phot
   for (const id of ['repair', 'crosscheck', 'delivery'] as const) hs.stages.reset(id);
   const ledger = new DifferenceLedger();
   ledger.restore(state.differences as ReturnType<DifferenceLedger['snapshot']>);
+  const savedObjects = ObjectLedger.restore(state.objects);
   const build = deriveBuild(desc);
   build.notes.push('This is a continued run: the room in the world may have been edited since it was first built, so judge the renders, not the plan.');
   const photo = await decodePhoto(run);
   const assumptions = chips(desc, build, []);
   yield { type: 'photo', phase: 'stage', text: `Continuing the repair of this room at round ${state.rounds + 1}: ${ledger.ranked().length} open difference${ledger.ranked().length === 1 ? '' : 's'}, ${hs.assume.list().length} assumptions kept.`, stages: hs.stages.views() };
-  yield* repairAndDeliver(run, photo, desc, state.openings, buildChecklist(desc), build, [], assumptions, '', hash, ledger);
+  yield* repairAndDeliver(run, photo, desc, state.openings, buildChecklist(desc), build, [], assumptions, '', hash, ledger, savedObjects);
 }
 
 /** The text of the repair order for the model: open differences by cause class, then size. */
@@ -763,7 +768,7 @@ function repairOrderText(open: readonly Difference[]): string {
 }
 
 /** Compare, repair, cross-check, verify and close. The stages after the build; also where a continued run starts. */
-async function* repairAndDeliver(run: PhotoRun, photo: Photo, desc: RoomDescription, openings: Readonly<Record<string, string>>, checklist: readonly ChecklistItem[], build: PhotoBuild, refusals: readonly string[], assumptions: PhotoAssumptionView[], textureLine: string, hash: string | null, ledger0: DifferenceLedger | null = null): AsyncGenerator<AgentEvent> {
+async function* repairAndDeliver(run: PhotoRun, photo: Photo, desc: RoomDescription, openings: Readonly<Record<string, string>>, checklist: readonly ChecklistItem[], build: PhotoBuild, refusals: readonly string[], assumptions: PhotoAssumptionView[], textureLine: string, hash: string | null, ledger0: DifferenceLedger | null = null, objects0: ObjectLedger | null = null): AsyncGenerator<AgentEvent> {
   const { ctx } = run;
   const host = ctx.host;
   const hs = run.harness ?? null;
@@ -772,6 +777,7 @@ async function* repairAndDeliver(run: PhotoRun, photo: Photo, desc: RoomDescript
   // A piece the first build refused for lack of space is a geometry difference until the model places it (widening the shell), not a piece to drop.
   if (ledger && !ledger0) for (const r of refusals) { const m = /^(\S+) \((\S+)\): .*Space evidence/.exec(r); if (m) ledger.seed(m[1] as string, `the ${m[2]} was refused for lack of space in the first build and is not in the room: widen the shell (see the space evidence) and place it again`); }
   const targets = framingTargets(desc, openings);
+  const objects = run.options.objects === true && ledger ? makeObjects(run, photo, objects0) : null;
   let final: Judged | null = null;
   let finalNote = '';
   if (hs) {
@@ -779,13 +785,14 @@ async function* repairAndDeliver(run: PhotoRun, photo: Photo, desc: RoomDescript
     yield stageEv('Compare and repair: camera first, then geometry, materials and lighting.');
   }
   try {
-    const loop = yield* compareLoop(run, photo, desc, targets, checklist, build, refusals, ledger);
+    const loop = yield* compareLoop(run, photo, desc, targets, checklist, build, refusals, ledger, objects);
     final = loop.judged;
     finalNote = loop.note ?? '';
     if (hs && !hs.stages.blocker()) {
       const big = ledger?.ranked().filter((d) => d.size >= BLOCKING_SIZE) ?? [];
       if (!final) hs.stages.skip('repair', 'No render of the room could be made, so it was not compared.');
-      else if (final.score.failing.length === 0) hs.stages.pass('repair', 'Every checklist item matches the photo.');
+      else if (final.score.failing.length === 0 && (objects?.open() ?? 0) > 0) hs.stages.fail('repair', `The checklist passes but ${objects!.open()} object aspect${objects!.open() === 1 ? '' : 's'} still fail without a stated reason.`);
+      else if (final.score.failing.length === 0) hs.stages.pass('repair', `Every checklist item matches the photo${objects && objects.ready ? ' and every inventoried object passes or has a stated reason' : ''}.`);
       else if (big.length === 0) hs.stages.pass('repair', `No open difference of size ${BLOCKING_SIZE} or more; ${final.score.failing.length} smaller item${final.score.failing.length === 1 ? '' : 's'} left.`);
       else hs.stages.fail('repair', `${big.length} difference${big.length === 1 ? '' : 's'} of size ${BLOCKING_SIZE} or more still open: ${big.slice(0, 3).map((d) => d.id).join(', ')}.`);
       yield stageEv(`Repair stage: ${hs.stages.status('repair')}.`);
@@ -825,6 +832,8 @@ async function* repairAndDeliver(run: PhotoRun, photo: Photo, desc: RoomDescript
     if (finalNote) lines.push(finalNote);
     if (s.failing.length > 0) lines.push(`Still different: ${s.failing.slice(0, 5).map((f) => `${f.id}${f.note && f.note !== 'not judged' ? ` (${f.note.slice(0, 80)})` : ''}`).join('; ')}.`);
   } else lines.push('Rebuilt the room from your photo (not compared with it: no renders were available).');
+  const objLine = objects && objects.ready ? objectsSummary(objects.ledger) : '';
+  if (objLine) lines.push(objLine);
   const open = ledger?.unresolvedText() ?? '';
   if (open) lines.push(open);
   if (findings.length > 0) lines.push(`The checker still reports ${findings.length} problem${findings.length === 1 ? '' : 's'}.`);
@@ -852,11 +861,39 @@ async function* repairAndDeliver(run: PhotoRun, photo: Photo, desc: RoomDescript
       models: ctx.usage.models ?? [],
       exports: ['playable project', 'GLB (portable)', 'provenance (JSON)'],
     });
-    const resume: PhotoResumeState = { version: 1, sha256: hash, description: desc, openings: { ...openings }, stages: hs.stages.snapshot(), assumptions: hs.assume.snapshot(), differences: ledger?.snapshot() ?? null, repairs: hs.guard.log.map((r) => ({ ...r })), rounds: hs.rounds };
+    const resume: PhotoResumeState = { version: 1, sha256: hash, description: desc, openings: { ...openings }, stages: hs.stages.snapshot(), assumptions: hs.assume.snapshot(), differences: ledger?.snapshot() ?? null, ...(objects && objects.ready ? { objects: objects.ledger.snapshot() } : {}), repairs: hs.guard.log.map((r) => ({ ...r })), rounds: hs.rounds };
     extra = { stages: hs.stages.views(), provenance, resume };
   }
-  yield { type: 'photo', phase: 'done', text: lines.join(' '), assumptions, ...(final ? { score: scoreView(final) } : {}), ...(ledger && ledger.ranked().length > 0 ? { differences: differenceViews(ledger.ranked()) } : {}), ...extra };
+  yield { type: 'photo', phase: 'done', text: lines.join(' '), assumptions, ...(final ? { score: scoreView(final) } : {}), ...(ledger && ledger.ranked().length > 0 ? { differences: differenceViews(ledger.ranked()) } : {}), ...(objects && objects.ready ? { objects: objects.views() } : {}), ...extra };
   yield { type: 'message', text: lines.join(' ') };
+}
+
+/** The object stage of a run: the inventory and the per-object judge, with the host's drawing and editing. */
+function makeObjects(run: PhotoRun, photo: Photo, saved: ObjectLedger | null): ObjectStage {
+  const host = run.ctx.host;
+  const size = imageSize(run.image);
+  const signal = run.ctx.signal;
+  return new ObjectStage(
+    {
+      complete: (req) => complete(run, req),
+      judges: Math.max(1, judgesOf(run.options)),
+      photoUrl: photo.dataUrl,
+      px: size ? { w: size.width, h: size.height } : { w: 1000, h: Math.round(1000 / photo.aspect) },
+      compose: host.composeImages ? host.composeImages.bind(host) : undefined,
+      boxesShot: typeof host.captureReview === 'function'
+        ? async (pose, marks) => {
+            const req = toRequest(pose, photo.aspect, marks.map((m) => ({ n: m.n, x: (m.box[0] + m.box[2]) / 2, y: (m.box[1] + m.box[3]) / 2, w: (m.box[2] - m.box[0]) / 2, h: (m.box[3] - m.box[1]) / 2 })));
+            req.name = 'photo-camera-boxes';
+            const got = await raceAbort(host.captureReview!([req], signal ? { signal } : {}), signal);
+            return got[0]?.dataUrl ?? null;
+          }
+        : undefined,
+      getWorld: () => host.getWorld(),
+      applyPatches: (p, m) => host.applyPatches(p, m),
+      ...(signal ? { signal } : {}),
+    },
+    saved,
+  );
 }
 
 interface LoopResult {
@@ -901,7 +938,7 @@ async function* layoutStep(run: PhotoRun, photo: Photo, desc: RoomDescription, t
  * conversation), accept the new state or go back to the accepted one, then let the model fix what still differs.
  * Returns the judgement of the room as it ends up.
  */
-async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, targets: readonly FramingTarget[], checklist: readonly ChecklistItem[], build: PhotoBuild, firstRefusals: readonly string[], ledger: DifferenceLedger | null = null): AsyncGenerator<AgentEvent, LoopResult> {
+async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, targets: readonly FramingTarget[], checklist: readonly ChecklistItem[], build: PhotoBuild, firstRefusals: readonly string[], ledger: DifferenceLedger | null = null, objects: ObjectStage | null = null): AsyncGenerator<AgentEvent, LoopResult> {
   const { ctx } = run;
   const kitOn = ledger !== null || (run.options.crops ?? 0) > 0;
   const host = ctx.host;
@@ -917,7 +954,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
   /** The photo for the depth network (null without a host decoder: the measure tool is then not offered). */
   const depthRaster = depthSource(run);
   let depthFirst: Promise<Measured> | null = null;
-  const tools: ToolDef[] = [VERDICT_TOOL, ...(ledger ? [DIFFERENCES_TOOL] : []), ...(hs ? [GATE_TOOL, ...(ledger ? [REPAIR_TOOL] : []), CAMERA_TOOL] : []), ...(photo.raster ? [SAMPLE_TOOL] : []), CLOSER_TOOL, ...(depthRaster ? [MEASURE_TOOL] : []), ...designTools, ...(run.ctx.textures?.photo ? [MAKE_TEXTURE_TOOL] : []), ...run.tools.filter((t) => t.name === 'tune_look' || t.name === 'finish' || t.name === 'find_model')];
+  const tools: ToolDef[] = [VERDICT_TOOL, ...(ledger ? [DIFFERENCES_TOOL] : []), ...(hs ? [GATE_TOOL, ...(ledger ? [REPAIR_TOOL] : []), CAMERA_TOOL] : []), ...(photo.raster ? [SAMPLE_TOOL] : []), ...(objects ? [OBJECT_REASON_TOOL] : []), CLOSER_TOOL, ...(depthRaster ? [MEASURE_TOOL] : []), ...designTools, ...(run.ctx.textures?.photo ? [MAKE_TEXTURE_TOOL] : []), ...run.tools.filter((t) => t.name === 'tune_look' || t.name === 'finish' || t.name === 'find_model')];
   const messages: ChatMessage[] = [];
   /** Where progress is measured from: with a panel, the last state the judges preferred; without, the best state. */
   // (Written through `settle`, so the declared type is spelled out: control flow would otherwise narrow it to null.)
@@ -1046,6 +1083,15 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
     const fitted = yield* layoutStep(run, photo, desc, targets);
     if (fitted.length > 0) build.notes.push(`Before this first look the builder fitted ${fitted.length} piece${fitted.length === 1 ? '' : 's'} to where the photo shows them (${fitted.slice(0, 8).join('; ')}).`);
   }
+  // Every element the photo shows, listed twice (the second list blind) and reconciled; nothing is dropped between rounds.
+  if (objects && !objects.ready) {
+    try {
+      yield* objects.inventory(desc.summary || desc.roomType);
+    } catch (e) {
+      if (ctx.signal?.aborted || e instanceof Unavailable) throw e;
+      yield { type: 'photo', phase: 'round', text: `The object inventory could not be made (${errorMessage(e).slice(0, 160)}); the room is judged by the checklist alone.` };
+    }
+  }
   for (round = 1; round <= maxRounds; round++) {
     if (ctx.signal?.aborted) throw new Error('aborted');
     if (hs) {
@@ -1090,6 +1136,20 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
       }
     }
 
+    // Each object on its own: the objects whose render changed (and their neighbours) are judged by the panel; what got worse is put back.
+    let objGain = false;
+    let objReverted = false;
+    if (objects && objects.ready && view === shot && shot.clean) {
+      try {
+        const r = yield* objects.round({ round, world: judgedWorld, render: shot.clean, raster: shot.renderRaster, pose: shot.cam, aspect: photo.aspect, diffs: ledger, lookKey: JSON.stringify(desc.camera) });
+        objGain = r.gain;
+        objReverted = r.reverted.length > 0;
+      } catch (e) {
+        if (ctx.signal?.aborted || e instanceof Unavailable) throw e;
+        yield { type: 'photo', phase: 'round', round, text: `The object judgement failed this round (${errorMessage(e).slice(0, 160)}); the checklist stands.` };
+      }
+    }
+
     // The compare kit (side by side, crops of the regions that still fail, a colour readout) of the render the model works from.
     const priority = new Set<string>();
     for (const f of last?.score.failing ?? []) {
@@ -1121,7 +1181,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
     const shellDue = !!(hs && ledger) && ((standing ?? last)?.score.failing.some((f) => f.id === 'shell-size') === true || (ledger?.ranked().some((d) => /lack of space/i.test(d.what)) ?? false));
     let shellAnswered = false;
     let finishNag = false;
-    const notes = [rejectNote, standing?.panel ? consensusText(standing.panel) : '', advisory, view.fidelity ? fidelityText(view.fidelity) : '', view.lookEvidence, view.scale, round === 1 ? footprintAdvisory(desc) : '', depthNote, kit?.readout ?? '', ledger ? ledger.roundText() : '', hs && ledger ? repairOrderText(ledger.ranked()) : '', shellDue ? SHELL_DUE_TEXT : ''].filter((l) => l.length > 0).join('\n');
+    const notes = [rejectNote, standing?.panel ? consensusText(standing.panel) : '', objects && objects.ready ? objects.text() : '', advisory, view.fidelity ? fidelityText(view.fidelity) : '', view.lookEvidence, view.scale, round === 1 ? footprintAdvisory(desc) : '', depthNote, kit?.readout ?? '', ledger ? ledger.roundText() : '', hs && ledger ? repairOrderText(ledger.ranked()) : '', shellDue ? SHELL_DUE_TEXT : ''].filter((l) => l.length > 0).join('\n');
     const blocks: ContentBlock[] = [];
     if (intro) {
       const sampled = photo.raster ? surfaceColourText(sampleSurfaces(photo.raster, desc)) : '';
@@ -1133,6 +1193,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
     if (kit) kit.images.forEach((im, i) => blocks.push({ type: 'text', text: `Image ${view.images.length + 2 + i}: ${im.label}` }, { type: 'image', dataUrl: im.dataUrl }));
     blocks.push(...depthImages);
     if (ledger) blocks.push({ type: 'text', text: differencesProcedure(round, kit !== null && kit.images.length > 0) });
+    if (objects && objects.ready) blocks.push({ type: 'text', text: objectsProcedure(round) });
     if (hs) blocks.push({ type: 'text', text: harnessProcedure(round, baseRounds + round) });
     // Judging alone, the model decides whether its last changes helped by looking at the best state next to the new one.
     const bestImage = ref0 ? (ref0.shot.clean ?? ref0.shot.images[0]?.dataUrl ?? null) : null;
@@ -1152,6 +1213,13 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
     let rolledBack = false;
     let toolCalls = 0;
     let listed = ledger === null;
+    let objNags = 0;
+    /** Finishing with objects failing and no reason given is answered twice with the list, then accepted (the model may be right). */
+    const objectsOwed = (): string | null => {
+      if (!objects || !objects.ready || objects.open() === 0 || objNags >= 2) return null;
+      objNags++;
+      return objectsDueText(objects.open());
+    };
     const ready = (): boolean => standing !== null || workerJudged;
     for (let turn = 0; turn < TURNS_PER_ROUND && !declared && !(ready() && (edited || rolledBack) && !(shellDue && !shellAnswered)); turn++) {
       const res = await ask(run, messages, tools, true);
@@ -1169,6 +1237,11 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
           continue;
         }
         if (ready()) {
+          const owed = objectsOwed();
+          if (owed && !edited) {
+            pushUser(messages, [{ type: 'text', text: owed }]);
+            continue;
+          }
           if (text) yield { type: 'message', text };
           declared = true;
           break;
@@ -1179,7 +1252,7 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
       if (text) yield { type: 'plan', text };
       const results: ContentBlock[] = [];
       // Verdicts first, edits next, finish last: the order the work has to happen in.
-      const rank = (n: string): number => (n === VERDICT_TOOL_NAME || n === SAMPLE_TOOL_NAME || n === CLOSER_TOOL_NAME || n === DIFFERENCES_TOOL_NAME || n === GATE_TOOL_NAME ? 0 : n === 'finish' ? 3 : n === REPAIR_TOOL_NAME || n === 'find_model' ? 1 : 2);
+      const rank = (n: string): number => (n === VERDICT_TOOL_NAME || n === SAMPLE_TOOL_NAME || n === OBJECT_REASON_TOOL_NAME || n === CLOSER_TOOL_NAME || n === DIFFERENCES_TOOL_NAME || n === GATE_TOOL_NAME ? 0 : n === 'finish' ? 3 : n === REPAIR_TOOL_NAME || n === 'find_model' ? 1 : 2);
       for (const call of [...calls].sort((a, b) => rank(a.name) - rank(b.name))) {
         if (ctx.signal?.aborted) throw new Error('aborted');
         if (call.name === DIFFERENCES_TOOL_NAME) {
@@ -1233,6 +1306,17 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
           results.push({ type: 'tool_result', toolUseId: call.id, content: note });
           continue;
         }
+        if (call.name === OBJECT_REASON_TOOL_NAME) {
+          if (!objects) {
+            results.push({ type: 'tool_result', toolUseId: call.id, content: 'Unknown tool here.', isError: true });
+            continue;
+          }
+          const r = applyReasons(objects.ledger, call.input, ledger ?? undefined);
+          yield { type: 'step', tool: OBJECT_REASON_TOOL_NAME, label: r.ok ? 'Gave reasons for objects left as they are' : 'Object reasons not recorded', ok: r.ok };
+          if (r.ok) yield { type: 'photo', phase: 'round', round, text: `Objects left as they are, with the model's stated reasons: ${objects.ledger.waivedCount()}.`, objects: objects.views() };
+          results.push({ type: 'tool_result', toolUseId: call.id, content: r.text, ...(r.ok ? {} : { isError: true }) });
+          continue;
+        }
         if (call.name === SAMPLE_TOOL_NAME) {
           results.push({ type: 'tool_result', toolUseId: call.id, content: samplePhotoText(photo.raster, desc, call.input) });
           continue;
@@ -1284,6 +1368,11 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
           if (shellDue && !shellAnswered && !finishNag) {
             finishNag = true;
             results.push({ type: 'tool_result', toolUseId: call.id, content: SHELL_DUE_TEXT, isError: true });
+            continue;
+          }
+          const owed = objectsOwed();
+          if (owed && !edited) {
+            results.push({ type: 'tool_result', toolUseId: call.id, content: owed, isError: true });
             continue;
           }
           declared = true;
@@ -1350,14 +1439,14 @@ async function* compareLoop(run: PhotoRun, photo: Photo, desc: RoomDescription, 
     last = j;
     if (!j.panel) yield { type: 'photo', phase: 'round', round, text: `Round ${round}: ${lookLine(j)}.`, score: scoreView(j, !rolledBack) };
     extraWalls = [...new Set(j.score.failing.map((f) => wallOf(desc, f)).filter((w): w is string => w !== null))].slice(0, 2);
-    const verdict = tracker.observe({ gain: decision?.gain ?? false, keys: new Set(j.score.failing.map((f) => f.id)) });
-    changed = edited && !rolledBack;
-    if (j.score.failing.length === 0) {
-      yield { type: 'photo', phase: 'round', round, text: 'Every checklist item matches the photo.', score: scoreView(j) };
+    const verdict = tracker.observe({ gain: (decision?.gain ?? false) || objGain, keys: new Set([...j.score.failing.map((f) => f.id), ...(objects?.openKeys() ?? [])]) });
+    changed = (edited && !rolledBack) || objReverted;
+    if (j.score.failing.length === 0 && (!objects || !objects.ready || objects.open() === 0)) {
+      yield { type: 'photo', phase: 'round', round, text: `Every checklist item matches the photo${objects && objects.ready ? ' and every inventoried object passes or has a stated reason' : ''}.`, score: scoreView(j) };
       return yield* conclude(j, changed);
     }
     if (declared && !edited) {
-      yield { type: 'photo', phase: 'round', round, text: `The assistant decided it is good enough as it stands, with ${j.score.failing.length} item${j.score.failing.length === 1 ? '' : 's'} it judged still different.`, score: scoreView(j) };
+      yield { type: 'photo', phase: 'round', round, text: `The assistant decided it is good enough as it stands, with ${j.score.failing.length} item${j.score.failing.length === 1 ? '' : 's'} it judged still different${objects && objects.ready && objects.open() > 0 ? ` and ${objects.open()} object aspect${objects.open() === 1 ? '' : 's'} open` : ''}.`, score: scoreView(j) };
       return yield* conclude(j, false);
     }
     if (verdict.stalled) {

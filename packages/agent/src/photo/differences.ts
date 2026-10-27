@@ -90,8 +90,10 @@ export interface Difference {
   rounds: number;
   /** The round it was first reported in. */
   since: number;
-  /** Who found it: the model that fixes, or the independent check at the end. */
-  source: 'model' | 'independent';
+  /** Who found it: the model that fixes, the independent check at the end, or the per-object judges. */
+  source: 'model' | 'independent' | 'object';
+  /** The model's reason for leaving it as it is (set through `state_object_reason`); a waived difference is not open. */
+  waived?: string;
 }
 
 /** What `record` says back. */
@@ -164,9 +166,35 @@ export class DifferenceLedger {
     this.entries.set(key, { id: key, kind: 'missing', cause: 'geometry', where, what: what.slice(0, 300), size: 3, status: 'open', rounds: 1, since: 0, source: 'model' });
   }
 
+  /** A difference the per-object judges found (or found again). Open until they judge it passing or the model gives a reason. */
+  upsert(e: { id: string; kind: DiffKind; cause: Cause; where: string; what: string; size: number }): void {
+    const id = e.id.slice(0, 60);
+    const prev = this.entries.get(id);
+    const size = Math.max(1, Math.min(5, Math.round(e.size)));
+    if (prev) this.entries.set(id, { ...prev, kind: e.kind, cause: e.cause, where: e.where.slice(0, 80), what: e.what.slice(0, 300), size, status: prev.status === 'fixed' ? 'open' : prev.size > size ? 'smaller' : prev.status === 'smaller' || prev.status === 'worse' || prev.status === 'same' ? prev.status : 'open', rounds: prev.status === 'fixed' ? 1 : prev.rounds + 1, waived: undefined });
+    else this.entries.set(id, { id, kind: e.kind, cause: e.cause, where: e.where.slice(0, 80), what: e.what.slice(0, 300), size, status: 'open', rounds: 1, since: this.round, source: 'object' });
+  }
+
+  /** The per-object judges found it passing: closed. */
+  resolve(id: string): void {
+    const d = this.entries.get(id.slice(0, 60));
+    if (d && d.status !== 'fixed') this.entries.set(d.id, { ...d, status: 'fixed', size: 0, waived: undefined });
+  }
+
+  /** The model gave a reason to leave it as it is. */
+  waive(id: string, reason: string): void {
+    const d = this.entries.get(id.slice(0, 60));
+    if (d) this.entries.set(d.id, { ...d, waived: reason.slice(0, 240) });
+  }
+
+  /** Differences left as they are with a reason. */
+  waivedList(): Difference[] {
+    return [...this.entries.values()].filter((d) => d.waived !== undefined && d.status !== 'fixed');
+  }
+
   /** Open differences, largest first (older first among equals). */
   ranked(): Difference[] {
-    return [...this.entries.values()].filter((d) => d.status !== 'fixed').sort((a, b) => b.size - a.size || b.rounds - a.rounds || a.since - b.since);
+    return [...this.entries.values()].filter((d) => d.status !== 'fixed' && d.waived === undefined).sort((a, b) => b.size - a.size || b.rounds - a.rounds || a.since - b.since);
   }
 
   /** Everything still open, in words, for the closing message ('' when nothing is). */
@@ -213,7 +241,7 @@ export interface DifferenceView {
   size: number;
   status: string;
   rounds: number;
-  source: 'model' | 'independent';
+  source: 'model' | 'independent' | 'object';
 }
 
 export function differenceViews(ds: readonly Difference[], limit = 20): DifferenceView[] {

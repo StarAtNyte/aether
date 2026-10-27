@@ -86,7 +86,7 @@ export type AgentEvent =
   | { type: 'message'; text: string }
   | { type: 'review'; round: number; phase: ReviewPhase; text: string; score?: number; findings?: number; differences?: PhotoDifferenceView[] }
   /** Progress of a room rebuilt from a photograph: reading it, the assumptions, each compare round, the final score. */
-  | { type: 'photo'; phase: PhotoPhase; text: string; round?: number; assumptions?: PhotoAssumptionView[]; score?: PhotoScoreView; palette?: string[]; reads?: PhotoReadsView; differences?: PhotoDifferenceView[]; stages?: PhotoStageView[]; provenance?: Provenance; resume?: PhotoResumeState }
+  | { type: 'photo'; phase: PhotoPhase; text: string; round?: number; assumptions?: PhotoAssumptionView[]; score?: PhotoScoreView; palette?: string[]; reads?: PhotoReadsView; differences?: PhotoDifferenceView[]; objects?: PhotoObjectView[]; stages?: PhotoStageView[]; provenance?: Provenance; resume?: PhotoResumeState }
   /** A small edit applied locally (no model call): what changed, as a compact diff. */
   | { type: 'edit'; summary: string; diff: DiffLine[]; targets: EntityId[]; cosmetic: boolean; notes: string[]; ms: number; local: boolean }
   /** The request is ambiguous: the candidates to choose from (the host highlights them). */
@@ -120,7 +120,25 @@ export interface PhotoDifferenceView {
   /** Rounds it has been open. */
   rounds: number;
   /** The model that fixes, or the independent check at the end. */
-  source: 'model' | 'independent';
+  source: 'model' | 'independent' | 'object';
+}
+
+/** One object of the photo's inventory with the verdict of the judges on each aspect (the per-object table of the step feed). */
+export interface PhotoObjectView {
+  id: string;
+  label: string;
+  kind: string;
+  present: 'pass' | 'fail' | 'na' | 'unjudged';
+  type: 'pass' | 'fail' | 'na' | 'unjudged';
+  position: 'pass' | 'fail' | 'na' | 'unjudged';
+  size: 'pass' | 'fail' | 'na' | 'unjudged';
+  material: 'pass' | 'fail' | 'na' | 'unjudged';
+  /** The fix hint of the judges, or the reason the model gave for leaving it. */
+  note: string;
+  /** Which of the two independent inventories listed it. */
+  seen: 'both' | 'primary' | 'blind';
+  /** The model's stated reason for leaving a failing aspect (empty otherwise). */
+  waived?: string;
 }
 
 /** One stage of the staged photo flow, as the chat shows it (a checklist with ticks). */
@@ -146,6 +164,8 @@ export interface PhotoResumeState {
   stages: unknown;
   assumptions: unknown;
   differences: unknown;
+  /** The object inventory ledger (see photo/objects.ts), so a continued run does not list the photo again or forget a failing object. */
+  objects?: unknown;
   repairs: Array<{ round: number; difference: string; cause: string; why: string }>;
   rounds: number;
 }
@@ -407,6 +427,13 @@ export interface PhotoOptions {
    * render and lists what still differs (default false; the studio turns it on). It records, it does not fix.
    */
   crossCheck?: boolean;
+  /**
+   * The object inventory and per-object judge (default false; the studio turns it on; needs the differences ledger): the model
+   * lists every element the photo shows (a second blind seat lists it too and the lists are reconciled), a panel judges each
+   * object on presence, type, position, size and material against the render from the photo camera, the failing aspects
+   * become differences, and the loop goes on until every object passes or the model states a reason for it.
+   */
+  objects?: boolean;
   /**
    * The staged harness (default false; the studio turns it on): stage verdicts the model gives (`stage_gate`), repairs in the
    * order camera, geometry, materials, lighting (`declare_repair`, `set_photo_camera`), an assumptions ledger and a provenance
