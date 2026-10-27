@@ -6902,3 +6902,26 @@ Verification
 - A second failure was a test artefact: the test reads the finished world in Node, where the asset catalog was not loaded, so the library armchair was measured as its smaller procedural stand-in and reported as poking 0.04 m through the wall. The test now loads the catalog first. The product placement is right (reproduced in Node with the catalog loaded: no checker error).
 - Not covered: perception models are not reachable in this run, so "perception on" exercises the fallback to the picture alone, not the measurements.
 - Added `e2e:photo` to the CONTRIBUTING gate list (about 100 s for all three browser runs).
+
+## 2026-10-28 Photo to room: first build from the measurements (live8, Claude Code, twin and hotel)
+
+Task: the measured loop could only critique a build (live7: 10 of 14 twin and 11 of 22 hotel perceived objects `unclear` for lack of a built piece, measured counts flat across rounds, 55 percent of open objects waived, judge pass rate plateau 84 and 94 percent). Change: `perception/buildplan.ts` makes a build plan from the report (one record per perceived object, kind or look-alike model, position and size in room metres, facing, measured colour, surfaces and openings), the model accepts, edits or drops each row with a reason (`review_build_plan`), everything is placed in one batch and recorded in the ledger against the perceived id. Coverage line and an honest `unclear` split added. Offline flow unchanged (test).
+
+Live (`--render=gpu`, objects on, `~/.local/share/aether/qa/live8/`; main at the commit of this entry):
+
+| | live7 twin | live8 twin | live7 hotel | live8 hotel |
+| --- | --- | --- | --- | --- |
+| coverage, linked / perceived (rejected with a reason counted apart) | 4 of 14 | 7 of 7 (7 rejected) | 11 of 22 | 12 of 12 (10 rejected) |
+| measured match/close/near/off/unclear (last round) | 0/0/2/2/10 of 14 | 0/0/1/6/7 (7 are the rejected, no piece by decision) | 0/0/3/8/11 of 22 | 0/0/2/10/0 |
+| median mask IoU of linked objects | n/a | 0.34 (7) | n/a | 0.12 (12) |
+| floor / wall deltaE aligned | 15.3 / n/a | 9.6 / 5.7 (raw 5.6 / 15.8) | 54 / n/a | 60.6 / 23.8 |
+| judge pass rate (waivers never counted as pass) | 84% | 84% | 94% | 97% |
+| waived | 24 of 44 | 8 objects (27 aspects off in all) of 49 | 18 of 37 | 3 objects (8 aspects) of 33 |
+| rounds, time, calls | | 9, 36.7 min, 343 | | 8, 42.3 min, 255 |
+| built shell vs known | 3.88 x 6.28 | 3.98 x 6.28 | | 4.68 x 5.48 |
+
+What happened. The coverage hole closed: every real perceived object now has a linked piece. But most "build" rows were already built by the description: the batch placed 1 new piece on each photo, 6 and 11 were linked to existing pieces, and the model dropped 6 and 10 rows with sensible reasons (a television that is the wall mirror, a plant that is the window with trees, pillows that are part of the bed, a sofa that duplicates a bed). So the false detections were the bulk of the old "unclear" count, not missing pieces. The measured numbers did NOT improve: with every object compared, most read `off` (twin median IoU 0.34, hotel 0.12) and did not fall across rounds. The twin floor improved (15.3 to 9.6); the hotel did not (60 against 54: the photo is heavily purple-graded and the lighting makes the render brown, see below). Judge pass rate did not move on the twin (84) and rose on the hotel (97, with far fewer waivers). Honest verdict: coverage and waiver share improved, measured accuracy did not.
+
+Bugs found and fixed in the run: (1) an `auto` model without a kind (an edit that named none) went to place_items as `model:auto` and was refused; now refused at the plan. (2) Floor pieces planned onto ground an existing piece covers were refused for the overlap; now linked (same family) or dropped with the overlap named. (3) Refusal reasons were not logged; they are now.
+
+Next weakest link (from the logs): the linked objects are the description's pieces, so their position, size and colour still come from the picture, and the plan only moves one when it is more than 0.5 m off and the same kind within 1.6 m; mask semantics also differ (the `bed duvet` mask is compared with the whole bed piece, 0.7 m and 1.6 m off). The surface colour normalisation (white reference from a graded ceiling) removes a cast the photo genuinely has (hotel walls 23.8, floor 60: the floor mask there is largely the bed linen). Next: compare part-level masks (duvet, headboard) against the sub-piece, take the floor colour from pixels outside any object mask, and adjust sizes of linked pieces from the extents, not only positions.
