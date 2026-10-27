@@ -6621,3 +6621,11 @@ One run per prompt: the model chose its own numbers and the improvement depends 
 `showcase:bake --check` reported these three stale. Structural diff of the saved vs freshly compiled world: same entity count and ids, only the Fridge door and Freezer door differ (door height 1.2 to 1.245 m, centre 7 mm lower), from the default 1.9 m tall fridge layout added in b113de5d. Not the dwelling or facade commits, which add pieces only when asked for. Intended; no circulation, door swing or position elsewhere changed, so no stills were regenerated (the delta is 7 mm on a fridge door). Rebaked; the casa-patio lightmap key did not change, so its bundled `.lmap` still applies. CI now runs `showcase:bake -- --check` in the check job; rebake rules are in CONTRIBUTING.md and docs/CONTRACTS.md.
 
 Limit: the diff was read as data, not viewed; a visual regression of 7 mm is not expected.
+
+## e2e:verified: "the too-narrow door was not widened"
+
+Not a product regression. The offline café plan gives the washroom a 0.8 m door; its leaf is 0.744 m, so the clear width (0.744 m) is 6 mm short of what the player body needs (0.75 m). The bot treats such a door as a warning when it squeezes through and as an error only when a room stays unreachable, and with a 6 mm margin that outcome flips with the furniture models in place and with timing: the offline unit test (procedural chairs) fails the walk and repairs, the browser run (asset chairs) sometimes passes with a warning, and sometimes repairs. The same run also repaired in one browser run and not in another, so no single commit is to blame (bisect not needed); making any narrow door an error fails the generated two-bedroom apartment (a 0.73 m clear door), so the product rule stays.
+
+Fix in the harness, assertion unchanged: after the café run settles, the test narrows the washroom door to 0.65 m (opening, frame and leaf, one history commit), runs the check again and still requires the "Widened the washroom door" repair. Changing the planner door to 0.7 m was tried and rejected: it makes the saved cafe-interior world stale.
+
+Limit: the unit test still depends on the 6 mm margin for the default café; the e2e no longer does. Full `e2e:verified` (both browsers) takes about 2 to 3 minutes on the iGPU, so it is not a CI step.

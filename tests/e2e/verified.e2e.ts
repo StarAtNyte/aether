@@ -260,6 +260,27 @@ async function vaultFlow(page: Page, base: string): Promise<void> {
 
 async function houseFlow(page: Page, base: string): Promise<void> {
   await buildFromHero(page, base, 'a small café interior');
+  // The offline plan's washroom door is 0.8 m: its clear width (0.744 m) is within a centimetre of what the player's body needs (0.75 m),
+  // so whether the bot squeezes through depends on the furniture models in place and is no fixture for a defect. Plant a doorway that
+  // is unmistakably too narrow (0.65 m) the way a hand edit would: door, frame and the opening cut in the wall.
+  // Let the run on the freshly built café finish first (a repair is never applied over a newer edit), then plant and check again.
+  await verdict(page, 'café as planned');
+  await page.evaluate(() => {
+    const h = window.__aether!.history;
+    const w = h.current;
+    const wall = w.entities['cafe-l0-w1'];
+    const openings = (wall?.shape as unknown as { params: { openings: Array<Record<string, unknown>> } }).params.openings.map((o) => (o['kind'] === 'door' && o['offset'] === 5.5 ? { ...o, width: 0.65 } : o));
+    h.commit(
+      [
+        { op: 'update', id: 'cafe-l0-w1', set: { shape: { params: { openings } } } },
+        { op: 'update', id: 'cafe-l0-d2', set: { shape: { params: { width: 0.65 } } } },
+        { op: 'update', id: 'cafe-l0-d2-leaf', set: { shape: { params: { width: 0.594 } }, joint: { anchor: [-0.297, 0, 0] } } },
+      ],
+      'Narrow the washroom door to 0.65 m',
+      'user',
+    );
+  });
+  await page.evaluate(() => void window.__aether!.studio.playtest.run({ repair: true }));
   const s = await verdict(page, 'café walkthrough');
   check(s.kind === 'walkthrough', 'a building was not walked through');
   check(s.status === 'passed' && s.proven, `the café was not verified walkable: ${s.sentence}`);
