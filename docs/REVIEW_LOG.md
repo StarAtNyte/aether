@@ -3,6 +3,22 @@
 Self-review notes per change set: security and performance gates, with the
 measurements behind each claim.
 
+## Finishes drawn with the first finish's textures
+
+**Cause (measured).** Cobble, stone and plaster boxes (same colour) drew alike: whichever was drawn first set the
+texture of every later anti-tiled finish (reversing the order made all four boxes cobble). The three finishes had
+distinct texture objects and distinct node cache keys; the render objects still shared one node-builder state
+(`nodeBuilderCache` entry with `usedTimes` 4, one set of bound textures). three keys the program by the *classic*
+material (`RenderObject.getMaterialCacheKey`): its `colorNode` and friends count only as "an object", and the
+textures read inside the node functions are bound once per program.
+
+**Fix.** `applyAntiTile` sets `material.customProgramCacheKey` to `antiTileProgramKey` (finish, graph options, ids of
+the three maps). Same finish in another colour still shares its program, so the program count does not grow.
+
+**Check.** `scripts/zz-mat-test.ts row` renders five boxes and exits 1 unless cobble, stone and plaster differ in
+grain; before the fix the regions were indistinguishable, after: cobble/plaster 11.5, stone/plaster 12.9 (gradient plus
+spread, threshold 1.5). Unit test in `packages/render/test/anti-tile.test.ts`.
+
 ## Studio theme, typography and layout (light default, dark switch)
 
 **What changed**
