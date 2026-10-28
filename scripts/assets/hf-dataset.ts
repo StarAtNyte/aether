@@ -17,6 +17,7 @@ import { join, resolve } from 'node:path';
 import { CatalogEntry, type Catalog } from '../../packages/assets/src/schema';
 import { synonymsOf } from '../../packages/assets/src/synonyms';
 import { tokenize } from '../../packages/assets/src/search';
+import { importUserAsset } from '../../packages/assets/src/user';
 import { ImportedAsset } from '../../packages/assets/src/imported';
 import {
   HUB_LICENCE_URLS, hubLicenceAllowed, HUB_MAX_MAIN_BYTES, HubConfig, HubEmbeddingsHeader, HubIndex, HubMinIndex, HubRow, hubCreditText, hubModelPath, hubSourceLabel, toMinIndex, type HubLicence,
@@ -308,7 +309,7 @@ function walk(dir: string, rel = ''): string[] {
   return readdirSync(join(dir, rel), { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? walk(dir, `${rel}${d.name}/`) : [`${rel}${d.name}`]));
 }
 
-function verify(): void {
+async function verify(): Promise<void> {
   const dest = stageDir();
   const errors: string[] = [];
   const err = (m: string): void => void (errors.length < 40 && errors.push(m));
@@ -339,6 +340,11 @@ function verify(): void {
       if (buf.byteLength !== f.bytes) err(`${f.path}: size`);
       if (sha(buf) !== f.sha256) err(`${f.path}: hash`);
       if (f.path.endsWith('.glb') && buf.toString('latin1', 0, 4) !== 'glTF') err(`${f.path}: not a GLB`);
+      // The studio stores a hub model like a dropped file: the main file must pass the same validator.
+      if (f.path === r.files.main.path) {
+        const v = await importUserAsset(new Uint8Array(buf), `${r.id}.glb`);
+        if (!v.ok) err(`${f.path}: the GLB validator refuses it (${v.error})`);
+      }
       if (f.path.endsWith('.webp') && buf.toString('latin1', 8, 12) !== 'WEBP') err(`${f.path}: not a WebP`);
     }
     if (r.source.dataset) known.add(`models/${r.id}/provenance.json`);
@@ -430,7 +436,7 @@ print(json.dumps({'sha': info.sha, 'private': info.private}))
 const cmd = process.argv.slice(2).find((a) => !a.startsWith('--'));
 try {
   if (cmd === 'build') build();
-  else if (cmd === 'verify') verify();
+  else if (cmd === 'verify') await verify();
   else if (cmd === 'upload') upload();
   else {
     console.error('usage: assets:hf -- build | verify [--remote] | upload [--public] [--pin]   (--stage=<dir>)');

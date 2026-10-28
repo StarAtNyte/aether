@@ -400,13 +400,27 @@ function validateGlb(bytes: Uint8Array, limits: GltfLimits): GltfResult {
     bin = bytes.subarray(binAt + 8, binAt + 8 + binLen);
   }
   const buffers = parsed.buffers ?? [];
+  // A meshopt-compressed file (glTF-Transform, gltfpack) declares a second, empty "fallback" buffer for the uncompressed twin of
+  // the data. It carries no bytes and nothing loads it when the decoder is present, so it is accepted (and only it): the views
+  // on it must name the real, compressed range in the binary chunk.
+  const fallback = new Set<number>();
   for (let i = 0; i < buffers.length; i++) {
     const b = buffers[i]!;
     if (b.uri !== undefined) return fail('the model references an external buffer (only self-contained files are accepted)');
-    if (i !== 0) return fail('a GLB may only use its embedded binary buffer');
+    if (i !== 0) {
+      if (!isMeshoptFallback(b) || b.byteLength > 256 * 1024 * 1024) return fail('a GLB may only use its embedded binary buffer');
+      fallback.add(i);
+      continue;
+    }
     if (!bin || b.byteLength > bin.byteLength) return fail('the GLB binary chunk is smaller than its buffer');
   }
   for (const v of parsed.bufferViews ?? []) {
+    const ext = meshoptRange(v);
+    if (ext && (!bin || ext.offset + ext.length > bin.byteLength)) return fail('a buffer view points outside the binary chunk');
+    if (fallback.has(v.buffer)) {
+      if (!ext) return fail('a buffer view points outside the binary chunk');
+      continue;
+    }
     if (v.buffer !== 0 || !bin || (v.byteOffset ?? 0) + v.byteLength > bin.byteLength) return fail('a buffer view points outside the binary chunk');
   }
   const err = checkJson(parsed, limits) ?? checkPayload(parsed, bin, limits);
@@ -414,6 +428,21 @@ function validateGlb(bytes: Uint8Array, limits: GltfLimits): GltfResult {
   sanitizeJson(parsed);
   const size = normaliseRoot(parsed);
   return { ok: true, glb: writeGlb(parsed, bin), report: report(parsed, size) };
+}
+
+/** A buffer that only declares the uncompressed twin of meshopt-compressed data (`EXT_meshopt_compression.fallback`). */
+function isMeshoptFallback(b: object): boolean {
+  const ext = (b as { extensions?: { EXT_meshopt_compression?: { fallback?: unknown } } }).extensions?.EXT_meshopt_compression;
+  return ext?.fallback === true;
+}
+
+/** The compressed range in the binary chunk that a meshopt buffer view really reads, or null for an ordinary view. */
+function meshoptRange(v: object): { offset: number; length: number } | null {
+  const ext = (v as { extensions?: { EXT_meshopt_compression?: { buffer?: unknown; byteOffset?: unknown; byteLength?: unknown } } }).extensions?.EXT_meshopt_compression;
+  if (!ext) return null;
+  const off = ext.byteOffset === undefined ? 0 : ext.byteOffset;
+  if (ext.buffer !== 0 || typeof off !== 'number' || typeof ext.byteLength !== 'number' || off < 0 || ext.byteLength < 0) return { offset: Number.MAX_SAFE_INTEGER, length: 1 };
+  return { offset: off, length: ext.byteLength };
 }
 
 function validateGltfJson(bytes: Uint8Array, limits: GltfLimits): GltfResult {

@@ -1,9 +1,11 @@
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import {
   HUB_MAX_MAIN_BYTES, HubIndex, HubMinIndex, HubRow, hubCreditText, hubFileUrl, hubItems, hubLicenceAllowed, hubModelPath, hubSourceLabel, readHubEmbeddings, searchHubItems, similarHubIds, toMinIndex, verifyHubBytes, type HubItem,
 } from '../src/hub';
 import { HubClient, type HubCache } from '../src/hub-client';
+import { importUserAsset } from '../src/user';
 
 const sha = (b: Uint8Array | string): string => createHash('sha256').update(b).digest('hex');
 
@@ -197,5 +199,41 @@ describe('HubClient', () => {
     const r = await new HubClient({ config: cfg, fetch: f, cache }).search('chair');
     expect(r.ok).toBe(true);
     expect(seen).toEqual([undefined, '"e1"']);
+  });
+});
+
+describe('meshopt hub models pass the GLB validator', () => {
+  const lib = (file: string): Uint8Array => new Uint8Array(readFileSync(new URL(`../../../assets/lib/${file}`, import.meta.url)));
+  /** Rewrite the JSON chunk of a GLB. */
+  function edit(glb: Uint8Array, fn: (j: any) => void): Uint8Array {
+    const dv = new DataView(glb.buffer, glb.byteOffset, glb.byteLength);
+    const jl = dv.getUint32(12, true);
+    const json = JSON.parse(new TextDecoder().decode(glb.subarray(20, 20 + jl)));
+    fn(json);
+    let text = new TextEncoder().encode(JSON.stringify(json));
+    const pad = (4 - (text.byteLength % 4)) % 4;
+    text = new Uint8Array([...text, ...new Array(pad).fill(0x20)]);
+    const rest = glb.subarray(20 + jl);
+    const out = new Uint8Array(20 + text.byteLength + rest.byteLength);
+    out.set(glb.subarray(0, 12));
+    new DataView(out.buffer).setUint32(8, out.byteLength, true);
+    new DataView(out.buffer).setUint32(12, text.byteLength, true);
+    out.set(glb.subarray(16, 20), 16);
+    out.set(text, 20);
+    out.set(rest, 20 + text.byteLength);
+    return out;
+  }
+  it('accepts a library model with the empty fallback buffer, and refuses a forged one', async () => {
+    const glb = lib('i/armchair-green.b273d491.glb');
+    const ok = await importUserAsset(glb, 'armchair.glb');
+    expect(ok).toMatchObject({ ok: true });
+    // A second buffer that is not the meshopt fallback is still refused.
+    const bad1 = await importUserAsset(edit(glb, (j) => void delete j.buffers[1].extensions), 'x.glb');
+    expect(bad1).toMatchObject({ ok: false });
+    // A view on the fallback buffer must name a real compressed range.
+    const bad2 = await importUserAsset(edit(glb, (j) => { for (const v of j.bufferViews) if (v.buffer === 1) { v.extensions.EXT_meshopt_compression.byteLength = 1e9; break; } }), 'x.glb');
+    expect(bad2).toMatchObject({ ok: false });
+    const bad3 = await importUserAsset(edit(glb, (j) => { for (const v of j.bufferViews) if (v.buffer === 1) { delete v.extensions; break; } }), 'x.glb');
+    expect(bad3).toMatchObject({ ok: false });
   });
 });
