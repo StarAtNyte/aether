@@ -1196,7 +1196,7 @@ export class Studio {
       // three on a subscription, one on a paid key (still stateless, with the fixed rubric and the relative comparison).
       const photo = primary && promptProfile === 'full' ? { vision: () => chain?.active()?.vision ?? resolved.vision, differences: true, crossCheck: true, harness: true, objects: true, perception: (() => { try { return globalThis.localStorage?.getItem('aether.perception') !== 'off'; } catch { return true; } })(), ...(subscription ? {} : { maxRounds: PHOTO_ROUNDS_METERED, judges: PHOTO_JUDGES_METERED, reads: PHOTO_READS_METERED }) } : { vision: false };
       // The level tools serve the offline planner too: an "onto" move is set down on the surface measured under it.
-      const agent = new WorldAgent({ provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: Number.isFinite(repairs) ? repairs : MAX_REPAIRS, promptProfile, photo, ...(buildAsset ? { buildAsset } : {}), ...(promptProfile === 'full' && primary ? { importAsset: this.assetImporter(entryId) } : {}), ...(promptProfile === 'full' ? { levelTools: lazyLevelTools, textures: { images: primary ? this.ai.imageGenerator() : null } } : {}), ...(promptProfile === 'full' && primary ? { brief: {} } : {}), ...(review ? { review, maxTurns: REVIEW_MAX_TURNS, maxToolCalls: REVIEW_MAX_TOOL_CALLS } : {}) });
+      const agent = new WorldAgent({ provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: Number.isFinite(repairs) ? repairs : MAX_REPAIRS, promptProfile, photo, ...(buildAsset ? { buildAsset } : {}), ...(promptProfile === 'full' && primary ? { importAsset: this.assetImporter(entryId), hubSearch: this.hubSearcher() } : {}), ...(promptProfile === 'full' ? { levelTools: lazyLevelTools, textures: { images: primary ? this.ai.imageGenerator() : null } } : {}), ...(promptProfile === 'full' && primary ? { brief: {} } : {}), ...(review ? { review, maxTurns: REVIEW_MAX_TURNS, maxToolCalls: REVIEW_MAX_TOOL_CALLS } : {}) });
       session = primary && (resolved.kind === 'local' || resolved.kind === 'bridge') ? (projectSessionKey(this.projectId) ?? undefined) : undefined;
       // The untouched default glade is a placeholder, not something the user made: the first prompt builds a new world.
       const intent = opts.intent ?? (before === this.history.current && st.chat.length === 0 && !this.history.canUndo() && isPristineStarter(before) ? 'new' : 'auto');
@@ -1270,9 +1270,19 @@ export class Studio {
         this.store.getState().pushEvent(entryId, { type: 'status', text: text.slice(0, 300) });
         this.store.getState().setAgentStep(text.slice(0, 120));
       };
-      const r = await this.assets.importModelFromServer(request.query, request.maxSize, { ...(o.signal ? { signal: o.signal } : {}), onProgress: push });
+      const r = request.hubId ? await this.assets.importHubModel(request.hubId, { ...(o.signal ? { signal: o.signal } : {}), onProgress: push }) : await this.assets.importModelFromServer(request.query, request.maxSize, { ...(o.signal ? { signal: o.signal } : {}), onProgress: push });
       if (!r.ok) return r;
       return { ok: true, id: r.meta.id, name: r.meta.name, size: r.meta.size ?? [1, 1, 1], triangles: r.meta.triangles ?? 0, credit: r.meta.credit ?? '', licence: r.licence };
+    };
+  }
+
+  /** The agent's window on the asset hub: ranked hits from the pinned dataset, or the reason it is unavailable. */
+  private hubSearcher(): NonNullable<ConstructorParameters<typeof WorldAgent>[0]['hubSearch']> {
+    return async (query, o) => {
+      const { hubClient } = await import('../assets/hub');
+      const r = await (await hubClient()).search(query, { limit: o.limit, ...(o.style ? { style: o.style } : {}), ...(o.maxBytes !== undefined ? { maxBytes: o.maxBytes } : {}) });
+      if (!r.ok) return r;
+      return { ok: true, total: r.total, hits: r.hits.map(({ item }) => ({ id: item.id, name: item.name, category: item.category, style: item.style, size: item.size, triangles: item.triangles, bytes: item.bytes, licence: item.licence, author: item.author })) };
     };
   }
 

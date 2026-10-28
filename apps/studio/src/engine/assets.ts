@@ -447,6 +447,53 @@ export class AssetController {
     }
   }
 
+  /**
+   * Load a model from the Aether asset hub (a Hugging Face dataset; no local server): the GLB is fetched lazily from the
+   * pinned commit, checked against the index's SHA-256, validated like any dropped file and stored with the project as a user
+   * asset carrying its credit line and the hub revision. Exports and published games embed it. Never throws.
+   */
+  async importHubModel(id: string, o: { signal?: AbortSignal; onProgress?: (text: string) => void } = {}): Promise<{ ok: true; meta: UserAssetMeta; licence: string; item: { name: string; credit: string; licence: string } } | { ok: false; reason: 'unavailable' | 'failed'; message: string }> {
+    const st = this.host.store.getState();
+    try {
+      const { hubClient, hubOrigin } = await import('../assets/hub');
+      const hub = await hubClient();
+      o.onProgress?.(`Fetching "${id}" from the asset hub…`);
+      this.state.setState({ busy: `Fetching ${id} from the asset hub…` });
+      const got = await hub.fetchModel(id);
+      if (o.signal?.aborted) return { ok: false, reason: 'failed', message: 'Cancelled.' };
+      if (!got.ok) return { ok: false, reason: hub.getState().status === 'unavailable' ? 'unavailable' : 'failed', message: got.reason };
+      const { importUserAsset } = await import('@aether/assets/import');
+      const v = await importUserAsset(got.bytes, `${got.item.name}.glb`);
+      if (!v.ok) return { ok: false, reason: 'failed', message: `The hub model was refused: ${v.error}` };
+      const meta: UserAssetMeta = { ...v.asset.meta, name: got.item.name.slice(0, 64), credit: got.item.credit.slice(0, 200), origin: hubOrigin(hub.config.dataset, got.revision, id) };
+      const store = await this.userStore();
+      await store.put(meta, v.asset.data);
+      this.register(meta, new Blob([v.asset.data as Uint8Array<ArrayBuffer>], { type: meta.mime }));
+      await this.refreshImports();
+      st.toast(`Added ${meta.name} from the asset hub (${got.item.licence === 'CC0-1.0' ? 'CC0' : 'CC BY 4.0, credited'})`, 'info', 4);
+      return { ok: true, meta, licence: got.item.licence, item: { name: got.item.name, credit: got.item.credit, licence: got.item.licence } };
+    } catch (err) {
+      return { ok: false, reason: 'failed', message: `Loading the hub model failed: ${err instanceof Error ? err.message.slice(0, 120) : 'error'}` };
+    } finally {
+      this.state.setState({ busy: null });
+    }
+  }
+
+  /** Add a hub model to the project and drop it into the world (the palette's hub tiles). Returns the entity id. */
+  async placeHub(id: string, ndc: { x: number; y: number } | null = null): Promise<string | null> {
+    const st = this.host.store.getState();
+    if (st.mode === 'play') {
+      st.toast('Stop the simulation before adding objects.', 'info');
+      return null;
+    }
+    const r = await this.importHubModel(id);
+    if (!r.ok) {
+      st.toast(r.reason === 'unavailable' ? 'The asset hub is not reachable right now. The bundled library still works.' : r.message, r.reason === 'unavailable' ? 'info' : 'error', 4);
+      return null;
+    }
+    return this.place(r.meta.id, ndc);
+  }
+
   /** Delete an import from this browser (worlds using it show stand-ins). */
   async removeImport(id: string): Promise<void> {
     if (!isUserAssetId(id)) return;

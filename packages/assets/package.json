@@ -10,6 +10,7 @@
     "./import": "./src/user.ts",
     "./zip": "./src/zip.ts",
     "./hub": "./src/hub.ts",
+    "./hub-client": "./src/hub-client.ts",
     "./simready-fetch": "./src/simready-fetch.ts",
     "./characters": "./src/characters/index.ts",
     "./offline-sw": "./src/offline-sw.ts"

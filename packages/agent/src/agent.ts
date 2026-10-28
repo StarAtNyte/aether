@@ -361,6 +361,7 @@ export class WorldAgent {
       ...(this.opts.resolveGenerator ? { resolveGenerator: this.opts.resolveGenerator } : {}),
       ...(this.opts.buildAsset ? { buildAsset: this.opts.buildAsset } : {}),
       ...(this.opts.importAsset ? { importAsset: this.opts.importAsset } : {}),
+      ...(this.opts.hubSearch ? { hubSearch: this.opts.hubSearch } : {}),
       ...(this.opts.levelTools ? { levelTools: this.opts.levelTools } : {}),
       ...(this.opts.textures ? { textures: this.opts.textures } : {}),
       ...(signal ? { signal } : {}),

@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { BYOK_ORIGINS } from '../../studio/src/ai/byokCatalog';
-import { BYOK_API_HOSTS, CSP_DIRECTIVES, DAG_WORKER_CSP, DAG_WORKER_PATH, PLAY_CSP, SANDBOX_WORKER_CSP, SANDBOX_WORKER_PATH, TRANSCODER_WORKER_CSP, TRANSCODER_WORKER_PATH, VERIFY_WORKER_CSP, VERIFY_WORKER_PATH } from '../src/middleware';
+import { BYOK_API_HOSTS, CSP_DIRECTIVES, HUB_IMAGE_HOSTS, DAG_WORKER_CSP, DAG_WORKER_PATH, PLAY_CSP, SANDBOX_WORKER_CSP, SANDBOX_WORKER_PATH, TRANSCODER_WORKER_CSP, TRANSCODER_WORKER_PATH, VERIFY_WORKER_CSP, VERIFY_WORKER_PATH } from '../src/middleware';
 import { cleanupDirs, makeApp, makeConfig } from './helpers';
 
 type Policy = Map<string, string[]>;
@@ -201,5 +201,27 @@ describe('player page policy (/play, published builds)', () => {
     const studio = await app.request('/api/health');
     expect(studio.headers.get('x-frame-options')).toBe('DENY');
     cleanupDirs();
+  });
+});
+
+describe('asset hub (Hugging Face dataset)', () => {
+  it('lets the studio page GET the index, models and thumbnails from Hugging Face and its CDN redirect hosts, and nothing else new', () => {
+    const p = serverPolicy();
+    expect([...HUB_IMAGE_HOSTS].sort()).toEqual(
+      ['https://huggingface.co', 'https://cdn-lfs.huggingface.co', 'https://cdn-lfs-us-1.huggingface.co', 'https://cdn-lfs.hf.co', 'https://cdn-lfs-us-1.hf.co', 'https://cas-bridge.xethub.hf.co'].sort(),
+    );
+    for (const h of HUB_IMAGE_HOSTS) {
+      expect(p.get('connect-src'), h).toContain(h);
+      expect(p.get('img-src'), h).toContain(h);
+    }
+    // Thumbnails only: no hub host may run scripts, load frames, workers or media.
+    for (const d of ['script-src', 'worker-src', 'media-src', 'font-src', 'style-src', 'default-src']) expect((p.get(d) ?? []).filter((s) => /huggingface|hf\.co/.test(s)), d).toEqual([]);
+  });
+
+  it('keeps the player closed: published games embed the hub models they use and never talk to Hugging Face', () => {
+    expect(PLAY_CSP).not.toMatch(/huggingface|hf\.co/);
+    expect(parsePolicy(PLAY_CSP).get('connect-src')).toEqual(["'self'", 'blob:', 'data:'].sort());
+    expect(parsePolicy(PLAY_CSP).get('img-src')).toEqual(["'self'", 'data:', 'blob:'].sort());
+    expect(readFileSync(fileURLToPath(new URL('../../studio/src/publish/gameBuild.ts', import.meta.url)), 'utf8')).not.toMatch(/Content-Security-Policy[^\n]*huggingface/i);
   });
 });

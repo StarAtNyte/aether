@@ -233,7 +233,7 @@ export const AGENT_TOOLS: ToolDef[] = [
   {
     name: 'find_model',
     description:
-      'Find the right piece for one object: first the crafted procedural parts (cinema seat, pew, altar, stage, cinema screen, vitrine, reception desk, library stack, school desk, blackboard, lectern, speaker, acoustic panel, sink, fridge...: real detail, cheap, instancing, named with aliases such as "theatre seat" or "display case"), then real, real-size models ranked by style/biome, colour and size, with their facts so you can choose: furniture and decor, and also trees, rocks, cliffs, shrubs, grass, street furniture (lamps, hydrants, benches, bins, barriers), building facades, industrial and sci-fi parts, harbour and farm props, medieval and fantasy pieces. Each model is tagged with a category and a look (realistic photographed models by default; look "stylised" or "low-poly" asks the Kenney-style kits for cartoon or blocky worlds). Pick one and place it in a room with place_items {"kind":"model:<id>"} (optional "fit":[w,h,d] metres to scale it, "yaw"); kind "sofa" with "model":"auto" lets the finder choose. In an open world (no rooms) add an entity whose shape is {"kind":"asset","id":"<id>"} with apply_patches (scale it with transform.scale; models are real size in metres, base on y 0). Models do not open (no drawers or doors): keep the parametric part for wardrobes, cabinets and kitchens. Biome words work as the style: forest, desert, coastal, harbour, urban, industrial, farm, scifi, fantasy, medieval.',
+      'Find the right piece for one object: first the crafted procedural parts (cinema seat, pew, altar, stage, cinema screen, vitrine, reception desk, library stack, school desk, blackboard, lectern, speaker, acoustic panel, sink, fridge...: real detail, cheap, instancing, named with aliases such as "theatre seat" or "display case"), then real, real-size models ranked by style/biome, colour and size, with their facts so you can choose: furniture and decor, and also trees, rocks, cliffs, shrubs, grass, street furniture (lamps, hydrants, benches, bins, barriers), building facades, industrial and sci-fi parts, harbour and farm props, medieval and fantasy pieces. Each model is tagged with a category and a look (realistic photographed models by default; look "stylised" or "low-poly" asks the Kenney-style kits for cartoon or blocky worlds). Pick one and place it in a room with place_items {"kind":"model:<id>"} (optional "fit":[w,h,d] metres to scale it, "yaw"); kind "sofa" with "model":"auto" lets the finder choose. In an open world (no rooms) add an entity whose shape is {"kind":"asset","id":"<id>"} with apply_patches (scale it with transform.scale; models are real size in metres, base on y 0). Models do not open (no drawers or doors): keep the parametric part for wardrobes, cabinets and kitchens. Biome words work as the style: forest, desert, coastal, harbour, urban, industrial, farm, scifi, fantasy, medieval. Models marked "hub" come from the Aether asset hub (a public online dataset of CC0 and CC BY models): they are not in the bundled library, and import_asset {query, hub_id} loads one into the project (it works without the local server; the credit is recorded). The hub is optional and may be unavailable: then only the bundled library is listed.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -274,6 +274,7 @@ export const AGENT_TOOLS: ToolDef[] = [
       properties: {
         query: { type: 'string', description: 'What the object is, e.g. "toolbox", "gas cylinder", "stapler".' },
         max_size: { type: 'number', description: 'Largest side in metres the object may have.' },
+        hub_id: { type: 'string', description: 'An asset id marked "hub" in a find_model answer: loads that model from the Aether asset hub (no local server needed, small, licence-checked) instead of searching SimReady Central.' },
       },
       required: ['query'],
       additionalProperties: false,
@@ -550,6 +551,7 @@ export const ToolInputs = {
   import_asset: z.object({
     query: z.string().min(1).max(120),
     max_size: z.number().finite().positive().max(100).optional(),
+    hub_id: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/).optional(),
   }),
   inspect: z.object({ ids: z.array(z.string().max(64)).max(TOOL_LIMITS.MAX_INSPECT_IDS).optional(), groups: z.boolean().optional() }),
   run_verification: z.object({}),

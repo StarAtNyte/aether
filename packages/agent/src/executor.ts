@@ -49,6 +49,8 @@ export interface ExecutorContext {
   buildAsset?: AgentOptions['buildAsset'];
   /** Importing from SimReady Central through the local server; see `AgentOptions.importAsset`. */
   importAsset?: AgentOptions['importAsset'];
+  /** Searching the Aether asset hub; see `AgentOptions.hubSearch`. */
+  hubSearch?: AgentOptions['hubSearch'];
   /** Level tools (`query_level`, `place_level_items`); see `AgentOptions.levelTools`. */
   levelTools?: AgentOptions['levelTools'];
   /** Texture sources for `make_texture` (see `AgentOptions.textures`). */
@@ -422,7 +424,7 @@ async function simreadySearchTool(input: z.infer<typeof ToolInputs.simready_sear
 async function importAssetTool(ctx: ExecutorContext, input: z.infer<typeof ToolInputs.import_asset>): Promise<ToolOutcome> {
   if (!ctx.importAsset) return { content: 'Importing needs the local Aether server (npx aether start); this page cannot import. Carry on with find_model, the crafted parts or the nearest library model, and say in your message which model you would have imported.', isError: false, events: [], edited: false };
   let last = '';
-  const r = await ctx.importAsset({ query: input.query, ...(input.max_size !== undefined ? { maxSize: input.max_size } : {}) }, { ...(ctx.signal ? { signal: ctx.signal } : {}), onProgress: (t) => { last = t; } });
+  const r = await ctx.importAsset({ query: input.query, ...(input.hub_id ? { hubId: input.hub_id } : {}), ...(input.max_size !== undefined ? { maxSize: input.max_size } : {}) }, { ...(ctx.signal ? { signal: ctx.signal } : {}), onProgress: (t) => { last = t; } });
   if (!r.ok) return { content: clip(`${r.message}${last ? ` (last step: ${last})` : ''} Carry on with find_model, the crafted parts or the nearest library model.`), isError: false, events: [], edited: false };
   const size = r.size.map((v) => Math.round(v * 100) / 100).join(' x ');
   return { content: clip(`Imported "${r.name}" as ${r.id}: ${size} m (width x height x depth), ${r.triangles} triangles, ${r.licence}. The credit is recorded with the world and appears in its credits and exports: "${r.credit}". Place it in an open world with shape {"kind":"asset","id":"${r.id}"} (apply_patches; real size, base on y 0), or in a room with place_items {"kind":"model:${r.id}","room":...,"fit":[w,h,d]}. It is stored with the project, so published and exported games carry it.`), isError: false, events: [], edited: false };
@@ -441,7 +443,29 @@ function craftedLines(what: string): string[] {
   return out;
 }
 
-async function findModelTool(input: z.infer<typeof ToolInputs.find_model>): Promise<ToolOutcome> {
+/** find_model: the bundled library and crafted parts first, then the asset hub's models the library does not hold. */
+async function findModelTool(ctx: ExecutorContext, input: z.infer<typeof ToolInputs.find_model>): Promise<ToolOutcome> {
+  const base = await findModelCore(input);
+  if (!ctx.hubSearch || !input.what || base.isError) return base;
+  let note = '';
+  try {
+    const catalog = await loadCatalog();
+    const have = new Set(catalog.entries.map((e) => e.id));
+    const r = await ctx.hubSearch(input.what, { limit: input.limit + 4, ...(input.look === 'realistic' ? { style: 'realistic' as const } : input.look === 'stylised' || input.look === 'low-poly' ? { style: 'stylized' as const } : {}), ...(ctx.signal ? { signal: ctx.signal } : {}) });
+    if (r.ok) {
+      const hits = r.hits.filter((h) => !have.has(h.id)).slice(0, input.limit);
+      if (hits.length > 0) {
+        const lines = hits.map((h) => `${h.id} — ${h.name} [${h.category}, ${h.style}] hub, ${h.size.map((v) => Math.round(v * 100) / 100).join('x')} m, ${h.triangles} triangles, ${(h.bytes / 1000).toFixed(0)} KB, ${h.licence}, by ${h.author.slice(0, 50)}`);
+        note = `\nHub models (Aether asset hub, not in the bundled library; load with import_asset {"query":"<name>","hub_id":"<id>"} before placing; the credit is added automatically):\n${lines.join('\n')}`;
+      }
+    }
+  } catch {
+    /* the hub is optional: the library answer stands */
+  }
+  return note ? { ...base, content: clip(`${base.content}${note}`) } : base;
+}
+
+async function findModelCore(input: z.infer<typeof ToolInputs.find_model>): Promise<ToolOutcome> {
   if (!input.what) return fail(input.like_crop ? 'find_model like_crop needs a photo rebuild with the perception layer on (it matches a crop of the photo); give `what` for the name search.' : 'find_model needs `what` (the piece to find).');
   const crafted = craftedLines(input.what);
   const catalog = await loadCatalog();
@@ -635,7 +659,7 @@ export async function executeTool(ctx: ExecutorContext, name: string, rawInput: 
       }
       case 'find_model': {
         const p = ToolInputs.find_model.safeParse(rawInput);
-        return p.success ? await findModelTool(p.data) : fail(`Invalid find_model input: ${issuesText(p.error)}`);
+        return p.success ? await findModelTool(ctx, p.data) : fail(`Invalid find_model input: ${issuesText(p.error)}`);
       }
       case 'simready_search': {
         const p = ToolInputs.simready_search.safeParse(rawInput);

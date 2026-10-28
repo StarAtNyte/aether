@@ -351,6 +351,12 @@ export interface AgentOptions {
    */
   importAsset?: (request: ImportAssetRequest, o: { signal?: AbortSignal; onProgress: (text: string) => void }) => Promise<ImportAssetResult>;
   /**
+   * Search the Aether asset hub (a public Hugging Face dataset of CC0 and CC BY models, read in the browser; no local server).
+   * `find_model` lists its hits after the bundled library's, marked as hub models; `import_asset {hub_id}` loads one. Absent, or
+   * unavailable (offline, dataset not public, blocked): find_model carries on with the library alone and says nothing is wrong.
+   */
+  hubSearch?: (query: string, o: { limit: number; style?: 'realistic' | 'stylized'; maxBytes?: number; signal?: AbortSignal }) => Promise<HubSearchResult>;
+  /**
    * Prompt profile (default 'full'). 'compact' is for small models with a
    * ~4k-token context (on-device): a condensed system prompt, only the
    * apply_patches and finish tools, a shorter world summary and history,
@@ -525,8 +531,25 @@ export interface UsageTotals {
   models?: string[];
 }
 
+/** One hub model as `find_model` lists it. */
+export interface HubModelHit {
+  id: string;
+  name: string;
+  category: string;
+  style: string;
+  size: [number, number, number];
+  triangles: number;
+  bytes: number;
+  licence: string;
+  author: string;
+}
+/** Result of {@link AgentOptions.hubSearch}. */
+export type HubSearchResult = { ok: true; hits: HubModelHit[]; total: number } | { ok: false; reason: string };
+
 /** What {@link AgentOptions.importAsset} is asked for. */
 export interface ImportAssetRequest {
+  /** An asset id of the Aether asset hub (from find_model): load that model instead of searching SimReady Central. */
+  hubId?: string;
   query: string;
   /** Largest side in metres. */
   maxSize?: number;

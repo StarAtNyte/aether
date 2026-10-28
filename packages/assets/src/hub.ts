@@ -33,6 +33,8 @@ export type HubConfig = z.infer<typeof HubConfig>;
 export const HubLicence = z.enum(['CC0-1.0', 'CC-BY-4.0']);
 export type HubLicence = z.infer<typeof HubLicence>;
 export const HUB_LICENCES: readonly HubLicence[] = ['CC0-1.0', 'CC-BY-4.0'];
+/** The licence gate: only these two ever enter the dataset or the client. */
+export const hubLicenceAllowed = (l: string): l is HubLicence => (HUB_LICENCES as readonly string[]).includes(l);
 export const HUB_LICENCE_URLS: Readonly<Record<HubLicence, string>> = {
   'CC0-1.0': 'https://creativecommons.org/publicdomain/zero/1.0/',
   'CC-BY-4.0': 'https://creativecommons.org/licenses/by/4.0/',

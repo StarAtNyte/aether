@@ -34,6 +34,8 @@ export const UserAssetMeta = z.object({
   size: z.tuple([z.number().min(0).max(100_000), z.number().min(0).max(100_000), z.number().min(0).max(100_000)]).optional(),
   /** Licence / credit the user entered (shown in credits; free text, sanitised). */
   credit: z.string().max(200).optional(),
+  /** Where the file came from when it was not dropped by the user: `hub:<dataset>@<revision>/<id>` (the Aether asset hub). */
+  origin: z.string().max(160).optional(),
   createdAt: z.number().int().min(0),
 });
 export type UserAssetMeta = z.infer<typeof UserAssetMeta>;

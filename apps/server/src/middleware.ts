@@ -105,6 +105,13 @@ export const WEBLLM_HOSTS: readonly string[] = Object.freeze([
   'https://raw.githubusercontent.com',
 ]);
 
+/**
+ * Where the asset hub's thumbnails come from (the same Hugging Face hosts a dataset file redirects to). The studio fetches the hub's
+ * index and models with GET from these hosts (connect-src above) and shows thumbnails from them. The player gets none of this:
+ * a game embeds the hub models it uses, so a published page never talks to Hugging Face.
+ */
+export const HUB_IMAGE_HOSTS: readonly string[] = Object.freeze(WEBLLM_HOSTS.filter((h) => h.includes('huggingface.co') || h.includes('hf.co')));
+
 /** CDN that serves the library files a lean studio build does not ship (a pinned GitHub commit, see scripts/vite/asset-library.ts). */
 export const LIBRARY_CDN_HOSTS: readonly string[] = Object.freeze(['https://cdn.jsdelivr.net']);
 
@@ -120,7 +127,7 @@ export const CSP_DIRECTIVES = Object.freeze({
   defaultSrc: ["'self'"],
   scriptSrc: ["'self'", "'wasm-unsafe-eval'"],
   workerSrc: ["'self'", 'blob:'],
-  imgSrc: ["'self'", 'data:', 'blob:'],
+  imgSrc: ["'self'", 'data:', 'blob:', ...HUB_IMAGE_HOSTS],
   // Exported videos and music previews play from blob: URLs.
   mediaSrc: ["'self'", 'blob:'],
   // blob:/data: so locally imported glTF models (blob URLs, data URIs) can be fetched.

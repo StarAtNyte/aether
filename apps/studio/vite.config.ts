@@ -5,6 +5,8 @@ import { rapierWasm } from '../../scripts/vite/rapier-wasm.ts';
 import { assetLibrary, libraryCdn } from '../../scripts/vite/asset-library.ts';
 import { playerManifest } from '../../scripts/vite/player-manifest.ts';
 import { siteMeta } from '../../scripts/vite/site-meta.ts';
+import { hubProxy } from '../../scripts/vite/hub-proxy.ts';
+import hubConfig from '../../assets/hub.json' with { type: 'json' };
 import { editorPrefetch } from '../../scripts/vite/editor-prefetch.ts';
 
 /** The curated asset library (`npm run assets:build`), served at `/assets/lib/`. */
@@ -48,7 +50,7 @@ export default defineConfig(async ({ command }) => {
   return {
   define: { __AETHER_LIB_LEAN__: JSON.stringify(libCdn !== undefined) },
   // Rapier's wasm ships as a cached `.wasm` file (streaming compile) instead of a 4 MB base64 string.
-  plugins: [react(), rapierWasm({ warn: (m) => console.warn(m) }), assetLibrary(LIBRARY_DIR, libCdn), playRoute(), playerManifest(), siteMeta(), editorPrefetch()],
+  plugins: [react(), rapierWasm({ warn: (m) => console.warn(m) }), assetLibrary(LIBRARY_DIR, libCdn), playRoute(), hubProxy(hubConfig.dataset), playerManifest(), siteMeta(), editorPrefetch()],
   experimental: {
     // The player page and every chunk reference files relative to themselves, so a published
     // build works from any sub-path (itch.io, GitHub Pages, a folder on any static host).

@@ -19,7 +19,7 @@ import { synonymsOf } from '../../packages/assets/src/synonyms';
 import { tokenize } from '../../packages/assets/src/search';
 import { ImportedAsset } from '../../packages/assets/src/imported';
 import {
-  HUB_LICENCES, HUB_LICENCE_URLS, HUB_MAX_MAIN_BYTES, HubConfig, HubEmbeddingsHeader, HubIndex, HubMinIndex, HubRow, hubCreditText, hubModelPath, hubSourceLabel, toMinIndex, type HubLicence,
+  HUB_LICENCE_URLS, hubLicenceAllowed, HUB_MAX_MAIN_BYTES, HubConfig, HubEmbeddingsHeader, HubIndex, HubMinIndex, HubRow, hubCreditText, hubModelPath, hubSourceLabel, toMinIndex, type HubLicence,
 } from '../../packages/assets/src/hub';
 
 const ROOT = resolve(import.meta.dirname, '../..');
@@ -78,7 +78,7 @@ function candidates(max: number): Candidate[] {
     const e = CatalogEntry.parse(raw);
     const pack = packs.get(e.pack);
     if (e.kind !== 'model' || !e.file) { DROP.kind++; continue; }
-    if (!pack || !(HUB_LICENCES as readonly string[]).includes(pack.licence)) { DROP.licence++; continue; }
+    if (!pack || !hubLicenceAllowed(pack.licence)) { DROP.licence++; continue; }
     if (e.category === 'characters') { DROP.characters++; continue; }
     if (e.bytes > max) { DROP.bytes++; continue; }
     if (e.tris <= 0 || e.size.every((v) => v === 0)) { DROP.empty++; continue; }
@@ -105,7 +105,7 @@ function candidates(max: number): Candidate[] {
       if (!parsed.success) continue;
       const a = parsed.data;
       const lic = a.credit.licence;
-      if (!(HUB_LICENCES as readonly string[]).includes(lic)) { DROP.licence++; continue; }
+      if (!hubLicenceAllowed(lic)) { DROP.licence++; continue; }
       if (have.has(a.id) || [...have].some((i) => a.provenance.package && i.includes(a.provenance.package.toLowerCase().replace(/[^a-z0-9]+/g, '-')))) { DROP.dup++; continue; }
       if (!a.entry.file || a.entry.bytes > max) { DROP.bytes++; continue; }
       DROP.noThumb++; // server imports render no thumbnail: they join the hub through the library build (assets:thumbs)
@@ -322,7 +322,7 @@ function verify(): void {
     HubRow.parse(r);
     if (ids.has(r.id)) err(`duplicate id ${r.id}`);
     ids.add(r.id);
-    if (!(HUB_LICENCES as readonly string[]).includes(r.licence)) err(`${r.id}: licence ${r.licence} is not allowed`);
+    if (!hubLicenceAllowed(r.licence)) err(`${r.id}: licence ${r.licence} is not allowed`);
     if (r.licenceUrl !== HUB_LICENCE_URLS[r.licence]) err(`${r.id}: licence URL`);
     if (!r.credit || !r.author || !r.source.url || !r.source.name) err(`${r.id}: missing credit or source`);
     if (r.licence === 'CC-BY-4.0' && !r.modified) err(`${r.id}: CC BY needs the modification notice`);

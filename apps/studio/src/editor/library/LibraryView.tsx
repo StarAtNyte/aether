@@ -10,6 +10,7 @@ import { useStudio, useUI } from '../../app/context';
 import { Icon } from '../../components/Icon';
 import { ASSET_DRAG_TYPE, dragState, useLibrary } from './useLibrary';
 import { MATERIAL_DRAG_TYPE } from '../../lib/materials';
+import { useHubSearch, type HubSearchView } from './useHubSearch';
 
 /** Category chips in display order, with labels. */
 export const CATEGORY_LABELS: ReadonlyArray<readonly [AssetCategory, string]> = [
@@ -89,6 +90,36 @@ const AssetTile = memo(function AssetTile({ entry, catalog, favorite, disabled }
   );
 });
 
+/** A hub model: not in the bundled library; a click fetches it (hash-checked, credited) and drops it in the world. */
+const HubTile = memo(function HubTile({ hit, disabled }: { hit: HubSearchView['hits'][number]; disabled: boolean }): ReactElement {
+  const studio = useStudio();
+  const [broken, setBroken] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const { item } = hit;
+  const f = (v: number): string => (v >= 10 ? v.toFixed(0) : v.toFixed(1));
+  return (
+    <div className="asset-tile" data-asset={item.id} data-hub="1">
+      <button
+        type="button"
+        className="tile asset-tile__btn"
+        disabled={disabled || busy}
+        onClick={() => {
+          setBusy(true);
+          void studio.assets.placeHub(item.id).finally(() => setBusy(false));
+        }}
+        aria-label={`Add ${item.name} from the asset hub`}
+        data-tip={`${item.name} — ${f(item.size[0])} × ${f(item.size[1])} × ${f(item.size[2])} m\nAsset hub · ${item.author} · ${item.licence}`}
+      >
+        <span className="tile__art">
+          {broken ? <Icon name="cube" size={20} /> : <img src={hit.thumbUrl} alt="" width={96} height={96} loading="lazy" decoding="async" draggable={false} referrerPolicy="no-referrer" onError={() => setBroken(true)} />}
+          <span className="asset-tile__badge" aria-label="From the asset hub">Hub</span>
+        </span>
+        <span className="tile__label">{busy ? 'Adding…' : item.name}</span>
+      </button>
+    </div>
+  );
+});
+
 /** The library grid (search text comes from the panel toolbar). */
 export const LibraryView = memo(function LibraryView({ query }: { query: string }): ReactElement {
   const studio = useStudio();
@@ -113,6 +144,8 @@ export const LibraryView = memo(function LibraryView({ query }: { query: string 
     return query.trim() === '' && filter === 'all' ? [...filtered.filter((e) => fav.has(e.id)), ...filtered.filter((e) => !fav.has(e.id))] : filtered;
   }, [catalog, favorites, filter, query]);
   const browsing = query.trim() === '' && filter === 'all';
+  const inLibrary = useMemo(() => new Set((catalog?.entries ?? []).map((e) => e.id)), [catalog]);
+  const hub = useHubSearch(filter === 'all' ? query : '', inLibrary);
   if (!catalog) return <p className="panel-empty">Loading the asset library…</p>;
   if (catalog.entries.length === 0) return <p className="panel-empty">The asset library is not installed in this build.</p>;
   const fav = new Set(favorites);
@@ -191,6 +224,26 @@ export const LibraryView = memo(function LibraryView({ query }: { query: string 
             <AssetTile key={e.id} entry={e} catalog={catalog} favorite={fav.has(e.id)} disabled={playing} />
           ))}
         </div>
+      )}
+      {hub.status !== 'idle' && (
+        <section className="assets__section" aria-labelledby="lib-hub" data-hub-status={hub.status}>
+          <header className="assets__head">
+            <h3 id="lib-hub" className="assets__title">
+              Asset hub
+            </h3>
+          </header>
+          {hub.hits.length > 0 ? (
+            <div className="tile-grid asset-grid" data-count={hub.hits.length}>
+              {hub.hits.map((h) => (
+                <HubTile key={h.item.id} hit={h} disabled={playing} />
+              ))}
+            </div>
+          ) : (
+            <p className="panel-empty" role="status">
+              {hub.status === 'loading' ? 'Searching the asset hub…' : hub.status === 'unavailable' ? 'Asset hub unavailable (offline or not public yet). The bundled library is shown.' : `Nothing in the asset hub for “${query.trim()}”.`}
+            </p>
+          )}
+        </section>
       )}
     </div>
   );
