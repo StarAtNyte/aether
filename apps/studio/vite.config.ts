@@ -5,6 +5,7 @@ import { rapierWasm } from '../../scripts/vite/rapier-wasm.ts';
 import { assetLibrary, libraryCdn } from '../../scripts/vite/asset-library.ts';
 import { playerManifest } from '../../scripts/vite/player-manifest.ts';
 import { siteMeta } from '../../scripts/vite/site-meta.ts';
+import { editorPrefetch } from '../../scripts/vite/editor-prefetch.ts';
 
 /** The curated asset library (`npm run assets:build`), served at `/assets/lib/`. */
 const LIBRARY_DIR = fileURLToPath(new URL('../../assets/lib', import.meta.url));
@@ -47,7 +48,7 @@ export default defineConfig(async ({ command }) => {
   return {
   define: { __AETHER_LIB_LEAN__: JSON.stringify(libCdn !== undefined) },
   // Rapier's wasm ships as a cached `.wasm` file (streaming compile) instead of a 4 MB base64 string.
-  plugins: [react(), rapierWasm({ warn: (m) => console.warn(m) }), assetLibrary(LIBRARY_DIR, libCdn), playRoute(), playerManifest(), siteMeta()],
+  plugins: [react(), rapierWasm({ warn: (m) => console.warn(m) }), assetLibrary(LIBRARY_DIR, libCdn), playRoute(), playerManifest(), siteMeta(), editorPrefetch()],
   experimental: {
     // The player page and every chunk reference files relative to themselves, so a published
     // build works from any sub-path (itch.io, GitHub Pages, a folder on any static host).
@@ -108,6 +109,8 @@ export default defineConfig(async ({ command }) => {
             { name: 'quickjs', test: /[\\/]node_modules[\\/](quickjs-emscripten-core|@jitl)[\\/]/, priority: 30 },
             // The opt-in on-device model runtime (multi-MB): only loaded from Settings → AI connection.
             { name: 'webllm', test: /[\\/]node_modules[\\/](@mlc-ai|loglevel)[\\/]/, priority: 30 },
+            // onnxruntime-web (the photo depth/perception model runtime, ~300 kB) is only imported dynamically: keep it out of the eager vendor chunk.
+            { name: 'ort', test: /[\\/]node_modules[\\/]onnxruntime-(web|common)[\\/]/, priority: 30 },
             // The path tracer (BVH, light-map unwrapping, tracing shaders) loads only when a path-traced still is requested.
             { name: 'pathtracer', test: /[\\/]node_modules[\\/](three-gpu-pathtracer|three-mesh-bvh|xatlas-web)[\\/]/, priority: 30 },
             { name: 'react', test: /[\\/]node_modules[\\/](react|react-dom|scheduler|zustand)[\\/]/, priority: 20 },

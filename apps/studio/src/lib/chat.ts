@@ -4,7 +4,8 @@
  * so the transcript stays small in memory and in localStorage, and anything
  * loaded back from storage is re-validated field by field.
  */
-import { diffLineText, type AgentEvent, type ChatMessage } from '@aether/agent';
+import { diffLineText } from '@aether/agent/diff-text';
+import type { AgentEvent, ChatMessage } from '@aether/agent';
 import { AGENT_CONTEXT_TURNS, MAX_CHAT_ENTRIES, MAX_EVENTS_PER_ENTRY, MAX_EVENT_TEXT } from '../config';
 import { summarizePatches, type PatchSummary } from './patchSummary';
 import { clip } from './format';
