@@ -13,12 +13,14 @@ import { createBlankProject, createEmptyWorld, createFromTemplate } from './proj
 import { isHomeRoute } from './lib/router';
 import { applyTheme, themeFromSetting } from './lib/theme';
 import { FirstRunHost } from './onboarding/FirstRunHost';
+import { prefetchEditorSoon } from './lib/prefetch';
 
 /**
  * The editor (renderer, physics, agent — three.js and the engine packages)
  * loads on demand: the projects home never pays for it.
  */
-const EditorRoute = lazyBoundary(() => import('./editor/EditorRoute').then((m) => ({ default: m.EditorRoute })), { what: 'editor', fallback: <EditorSkeleton /> });
+const loadEditorRoute = (): Promise<{ default: typeof import('./editor/EditorRoute').EditorRoute }> => import('./editor/EditorRoute').then((m) => ({ default: m.EditorRoute }));
+const EditorRoute = lazyBoundary(loadEditorRoute, { what: 'editor', fallback: <EditorSkeleton /> });
 /** Read-only viewer of a world carried in a share link (same engine chunk as the editor). */
 const ViewerRoute = lazyBoundary(() => import('./editor/ViewerRoute').then((m) => ({ default: m.ViewerRoute })), { what: 'viewer', fallback: <EditorSkeleton /> });
 
@@ -30,6 +32,8 @@ const NewRoute = memo(function NewRoute({ template }: { template: string | null 
   const { repo, navigate, store } = useApp();
   const started = useRef(false);
   const [error, setError] = useState<string | null>(null);
+  // The editor downloads while the project is created, instead of after it.
+  useEffect(() => void loadEditorRoute().catch(() => undefined), []);
   useEffect(() => {
     if (!repo || started.current) return;
     started.current = true;
@@ -72,6 +76,7 @@ export const App = memo(function App(): ReactElement {
   const dark = useAppState((s) => s.settings.darkTheme);
   useEffect(() => applyTheme(document, themeFromSetting(dark)), [dark]);
   useShareLink();
+  useEffect(() => (route.name === 'editor' || route.name === 'view' ? undefined : prefetchEditorSoon()), [route.name]);
   let page: ReactElement;
   if (route.name === 'editor') {
     page = <EditorRoute key={route.id} id={route.id} />;

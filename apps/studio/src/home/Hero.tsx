@@ -77,11 +77,14 @@ const Stage = memo(function Stage({ onPick }: { onPick: (t: WorldTemplate) => vo
     };
   }, []);
   const current = STAGE[index] ?? STAGE[0];
+  // Only the slide on screen and the next one are fetched; the others join as the rotation reaches them.
+  const mounted = useRef(new Set<number>());
+  mounted.current.add(index).add((index + 1) % Math.max(1, STAGE.length));
   if (STAGE.length === 0) return null;
   return (
     <figure className="hero-stage" aria-label="Example worlds">
       <div className="hero-stage__frame">
-        {STAGE.map((t, i) => (
+        {STAGE.map((t, i) => mounted.current.has(i) && (
           <img
             key={t.slug}
             className={`hero-stage__img${i === index ? ' is-on' : ''}`}
@@ -90,7 +93,8 @@ const Stage = memo(function Stage({ onPick }: { onPick: (t: WorldTemplate) => vo
             aria-hidden={i === index ? undefined : true}
             width={640}
             height={360}
-            loading={i < 2 ? 'eager' : 'lazy'}
+            loading="eager"
+            fetchPriority={i === 0 ? 'high' : undefined}
             decoding="async"
             draggable={false}
           />
