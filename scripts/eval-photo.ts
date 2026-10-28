@@ -280,7 +280,7 @@ async function runPhoto(args: Args, live: Provider | null): Promise<Report> {
     if (!live) throw new Error('live mode needs a provider');
     rec = createRecordingProvider(live);
     provider = rec;
-    source = `live ${args.backend} (${args.effort})`;
+    source = `live ${process.env["AETHER_ALLOW_CLI"] === "1" ? args.backend : "anthropic-api"} (${args.effort})`;
   }
   const sandbox = createNodeSandbox({ timeoutMs: GENERATOR_DRY_RUN_MS });
   const host = new PhotoNodeHost(sandbox);
