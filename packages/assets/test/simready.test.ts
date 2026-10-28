@@ -142,3 +142,36 @@ function statSizeOk(file: string): boolean {
   const p = join(ROOT, 'assets', 'lib', file);
   return existsSync(p) && readFileSync(p).byteLength < 700 * 1024;
 }
+
+describe('the imported common props', () => {
+  const props = catalog.entries.filter((e) => e.id.startsWith('simready-') && e.id !== ID);
+  it('are 28 licence-clean, game-sized models with real size, a thumbnail and credits', () => {
+    expect(props).toHaveLength(28);
+    for (const e of props) {
+      expect(e.tris, e.id).toBeLessThanOrEqual(20_000);
+      expect(e.bytes, e.id).toBeLessThanOrEqual(600 * 1024);
+      expect(e.thumb, e.id).toBeTruthy();
+      expect(Math.max(...e.size), e.id).toBeLessThan(3);
+      expect(catalog.packs.find((p) => p.id === e.pack), e.id).toMatchObject({ licence: 'CC-BY-4.0' });
+      expect(e.authors?.length ?? 0, e.id).toBeGreaterThan(0);
+    }
+  });
+  it('are found by the words people use for them', () => {
+    const want: Record<string, string> = {
+      'office chair': 'simready-office-chair-manager',
+      sofa: 'simready-sofa-soft-01',
+      'filing cabinet': 'simready-cabinet-filing',
+      monitor: 'simready-monitor-office',
+      keyboard: 'simready-keyboard-computer',
+      'trash bin': 'simready-bin-waste',
+      mug: 'simready-mug-ceramic',
+      plate: 'simready-plate-dinner',
+      hammer: 'simready-hammer-claw',
+      wrench: 'simready-wrench-adjustable',
+      workbench: 'simready-workbench-standard',
+      toolbox: 'simready-toolbox-hardcase',
+      'cardboard box': 'simready-box-cardboard',
+    };
+    for (const [w, id] of Object.entries(want)) expect(findModels(catalog, { text: w, limit: 8 }).map((h) => h.entry.id), w).toContain(id);
+  });
+});

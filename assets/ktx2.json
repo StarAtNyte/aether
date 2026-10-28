@@ -6647,6 +6647,933 @@
     "after": 349552
    }
   },
+  "s/simready-bin-pedal.afd1981c.glb": {
+   "file": "k/simready-bin-pedal.7ccedec3.glb",
+   "sha256": "7ccedec3b17a0c2ba7706bce3ed9276151806d1603e5583a5f7257c5288f831d",
+   "bytes": 298848,
+   "source": {
+    "sha256": "afd1981c5aa8a5645a3b3f4d902b967a4dda11c70523e9669600935b7eec12a0",
+    "bytes": 230600
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9524
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9737
+    }
+   ],
+   "gpu": {
+    "before": 2796200,
+    "after": 699104
+   }
+  },
+  "s/simready-bin-waste.4de36209.glb": {
+   "file": "k/simready-bin-waste.f7fdf7c5.glb",
+   "sha256": "f7fdf7c55cf921780d3eb81b8eef877faa9c86a2e832124b113db5fd6b18a39f",
+   "bytes": 145116,
+   "source": {
+    "sha256": "4de362097340824fbccd181d4051a689ccabe8fcd363ea3a1caf35192828dcc2",
+    "bytes": 133872
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9896
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9996
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    }
+   ],
+   "gpu": {
+    "before": 9786700,
+    "after": 2446864
+   }
+  },
+  "s/simready-box-cardboard.2acb79e6.glb": {
+   "file": "k/simready-box-cardboard.7095972b.glb",
+   "sha256": "7095972b1fde83de1be3e6505d75c90b7beaa3d66a52697f921da2ec2291d490",
+   "bytes": 163060,
+   "source": {
+    "sha256": "2acb79e61a29787f1db8edd8818dca2aa2e54b21e9fad182058dde3c62d5f7ba",
+    "bytes": 46816
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9803
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9923
+    }
+   ],
+   "gpu": {
+    "before": 2796200,
+    "after": 699104
+   }
+  },
+  "s/simready-box-shipping.ee9df37b.glb": {
+   "file": "k/simready-box-shipping.52c739f5.glb",
+   "sha256": "52c739f50230b76aaa672618bcbe27e9a6e77547a28f2065a6bb9431ea8d564d",
+   "bytes": 255372,
+   "source": {
+    "sha256": "ee9df37b4201a0c6b1f87ff70a4c1c6a0f583fca1a5a92c30cab678050dd8539",
+    "bytes": 169812
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9642
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9638
+    }
+   ],
+   "gpu": {
+    "before": 2796200,
+    "after": 699104
+   }
+  },
+  "s/simready-bucket-red.895b0280.glb": {
+   "file": "k/simready-bucket-red.8ce8d479.glb",
+   "sha256": "8ce8d479f6ae999d199ba4734e5bedbf32dd702a0e82a724c56fbb4f648d0edb",
+   "bytes": 124352,
+   "source": {
+    "sha256": "895b02804d0e8810ad128646fbcb01b79051fc160afee28e1db9771d3703017c",
+    "bytes": 114756
+   },
+   "textures": [
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9898
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    }
+   ],
+   "gpu": {
+    "before": 4194300,
+    "after": 1048656
+   }
+  },
+  "s/simready-cabinet-filing.1f57b0d0.glb": {
+   "file": "k/simready-cabinet-filing.d94c796e.glb",
+   "sha256": "d94c796e64ea49cb895665a6d453f67f9a179e2f75fc8cbc61167a482a86d16a",
+   "bytes": 191104,
+   "source": {
+    "sha256": "1f57b0d0760ca0e378b936a689cb6fcce9c68d279c1adae740e95c0f36810945",
+    "bytes": 173232
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.985
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9997
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9951
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    }
+   ],
+   "gpu": {
+    "before": 8388600,
+    "after": 2097312
+   }
+  },
+  "s/simready-desk-office.a2647f5b.glb": {
+   "file": "k/simready-desk-office.714af41c.glb",
+   "sha256": "714af41c95984503c9936d0d41aab7b73f415b5f3b61c306479f9a715ee4cb2c",
+   "bytes": 315704,
+   "source": {
+    "sha256": "a2647f5bbbb9286dee19b26e633cbffb8e3540af9a2179fc52fe8cfcb28ae847",
+    "bytes": 292040
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9896
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9997
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9995
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    }
+   ],
+   "gpu": {
+    "before": 8388600,
+    "after": 2097312
+   }
+  },
+  "s/simready-hammer-claw.0a88a542.glb": {
+   "file": "k/simready-hammer-claw.b3f35344.glb",
+   "sha256": "b3f3534481b5190b207997b636d75d28f314179f8569b3b9fc09bfccabdce0e0",
+   "bytes": 355952,
+   "source": {
+    "sha256": "0a88a5426343911cdaf4007b276d69bf63194dc3211d12ad961d093f4224824e",
+    "bytes": 130192
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9993
+    }
+   ],
+   "gpu": {
+    "before": 1398100,
+    "after": 349552
+   }
+  },
+  "s/simready-keyboard-computer.d41a5058.glb": {
+   "file": "k/simready-keyboard-computer.4ec0c745.glb",
+   "sha256": "4ec0c745ec05e1bdad1816cd44bd0fe811317da1ef9ae96e05bcb84164513704",
+   "bytes": 171860,
+   "source": {
+    "sha256": "d41a5058656903f4414854bd46bc50585b1d199abf211836fb475bfdc79995ed",
+    "bytes": 165364
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9967
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    }
+   ],
+   "gpu": {
+    "before": 2796200,
+    "after": 699104
+   }
+  },
+  "s/simready-lamp-bedside.aaa577b2.glb": {
+   "file": "k/simready-lamp-bedside.4d4086b9.glb",
+   "sha256": "4d4086b95fc02c49cae6bec038e570692d874505c1fc3b9e6c46826b0b2f7f54",
+   "bytes": 174584,
+   "source": {
+    "sha256": "aaa577b2475bd396521e236250f450d9387823c81d20cb3391e2a9b2993be811",
+    "bytes": 138588
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.985
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9956
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.999
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9996
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9999
+    }
+   ],
+   "gpu": {
+    "before": 11184800,
+    "after": 2796416
+   }
+  },
+  "s/simready-lamp-desk-arm.18c7bebf.glb": {
+   "file": "k/simready-lamp-desk-arm.10ad86f2.glb",
+   "sha256": "10ad86f22964100a64aa5c3c759d9be451ea1cb45588f8489e7daa7f834c10af",
+   "bytes": 315276,
+   "source": {
+    "sha256": "18c7bebf9c149b5d8b885a69c78b750907336f017a7a5ee9c9d7e03f88157068",
+    "bytes": 232840
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9689
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9565
+    }
+   ],
+   "gpu": {
+    "before": 2796200,
+    "after": 699104
+   }
+  },
+  "s/simready-light-work-tripod.53302d06.glb": {
+   "file": "k/simready-light-work-tripod.bfc04964.glb",
+   "sha256": "bfc049648afb41d00c490d6ae2b328c0f46171bf57529aa64beeff9cdd28ca03",
+   "bytes": 295612,
+   "source": {
+    "sha256": "53302d0692b27b40af6a47d8937fc77cca076fd6a6bfcec2bcf39d67d3081f82",
+    "bytes": 263900
+   },
+   "textures": [
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9985
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9995
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9999
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9997
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.99
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    }
+   ],
+   "gpu": {
+    "before": 20971500,
+    "after": 5243280
+   }
+  },
+  "s/simready-monitor-office.5e564ca8.glb": {
+   "file": "k/simready-monitor-office.1fe97d4a.glb",
+   "sha256": "1fe97d4af269f58940c55a3a123df5c0bd0a1f7e528d57582abd1a2a8c553101",
+   "bytes": 201536,
+   "source": {
+    "sha256": "5e564ca8c2ece70bc30e0aef944104daede4161adbf0ec8ef1152394bfab4a3f",
+    "bytes": 169996
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9898
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9996
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9907
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9913
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9835
+    }
+   ],
+   "gpu": {
+    "before": 13981000,
+    "after": 3495520
+   }
+  },
+  "s/simready-office-chair-black.5735478e.glb": {
+   "file": "k/simready-office-chair-black.85976c6c.glb",
+   "sha256": "85976c6cd9ce8b3a954c39f9d523ef724e086a9635b3e39c77d9914189173e71",
+   "bytes": 751624,
+   "source": {
+    "sha256": "5735478e2bc87b2a4d09cb8c5674bd0f233d3793e9cbdcddd3b048808714143a",
+    "bytes": 359032
+   },
+   "textures": [
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9704
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9848
+    }
+   ],
+   "gpu": {
+    "before": 5592400,
+    "after": 1398208
+   }
+  },
+  "s/simready-office-chair-manager.b25cf091.glb": {
+   "file": "k/simready-office-chair-manager.0644d5ba.glb",
+   "sha256": "0644d5ba364ae1022c3ef66a0158b696eb56e1a298ae2dbb5089bb024ab3151b",
+   "bytes": 880104,
+   "source": {
+    "sha256": "b25cf09109e2e94f1382cacfcb2a54500bb430c3a0421b2b52201c933948e735",
+    "bytes": 410948
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9995
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9848
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9858
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9849
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9898
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    }
+   ],
+   "gpu": {
+    "before": 11184800,
+    "after": 2796416
+   }
+  },
   "s/simready-range-cooker-lg.c12d9ef8.glb": {
    "file": "k/simready-range-cooker-lg.7631b94a.glb",
    "sha256": "7631b94acb7ba6c78efefe3b105301f30ef9b0fa09378b0bbea9761e579adbef",
@@ -6795,6 +7722,819 @@
    "gpu": {
     "before": 20272452,
     "after": 5068528
+   }
+  },
+  "s/simready-shelf-storage-basic.b4c23ba1.glb": {
+   "file": "k/simready-shelf-storage-basic.09b6bee6.glb",
+   "sha256": "09b6bee66426a8d05fe68b9e95953276f9874f373127d4db66f9997f3e0b97d5",
+   "bytes": 383364,
+   "source": {
+    "sha256": "b4c23ba184f321efc2e18ed71b05f422eadbdf3e2ac11ee94a0449c290b83d9e",
+    "bytes": 335540
+   },
+   "textures": [
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.999
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9744
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    }
+   ],
+   "gpu": {
+    "before": 5592400,
+    "after": 1398208
+   }
+  },
+  "s/simready-sofa-soft-01.5170e473.glb": {
+   "file": "k/simready-sofa-soft-01.20cb284f.glb",
+   "sha256": "20cb284f64c866b5325f6911d9d0c88bf9ba96c2d5dcea47d0335673bc9a4f5d",
+   "bytes": 257588,
+   "source": {
+    "sha256": "5170e473285ba073c03f4505c533228d81a6b0942750bde693faf09dab9db43d",
+    "bytes": 235020
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9739
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9996
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    }
+   ],
+   "gpu": {
+    "before": 8388600,
+    "after": 2097312
+   }
+  },
+  "s/simready-sofa-soft-02.dea8ea4b.glb": {
+   "file": "k/simready-sofa-soft-02.0f40b6b7.glb",
+   "sha256": "0f40b6b7c9537b52164523715d980d695bb862e6e492e82c1c9d627e5c3aad84",
+   "bytes": 357364,
+   "source": {
+    "sha256": "dea8ea4bb937917768fbd677ca305da3202c743b40c71b490d15828e2878354b",
+    "bytes": 257772
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9739
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9939
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9906
+    }
+   ],
+   "gpu": {
+    "before": 8388600,
+    "after": 2097312
+   }
+  },
+  "s/simready-stool-padded-vinyl.12cb1586.glb": {
+   "file": "k/simready-stool-padded-vinyl.e10ad4fa.glb",
+   "sha256": "e10ad4fafc6785fd9fdcaefccfe37638a6804f6780a32d126731a59d2fb20996",
+   "bytes": 401188,
+   "source": {
+    "sha256": "12cb158677831642e48aebbd1e8ada68708e3d4f4dcdcda2dc50daa34242bdd7",
+    "bytes": 213340
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9898
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9939
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9906
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.998
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9919
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    }
+   ],
+   "gpu": {
+    "before": 12582900,
+    "after": 3145968
+   }
+  },
+  "s/simready-table-coffee-low.6aa1ed3d.glb": {
+   "file": "k/simready-table-coffee-low.32190412.glb",
+   "sha256": "321904121d644b053456a00ae4b061347b59e53205620ccaddc34bf61aab053c",
+   "bytes": 186612,
+   "source": {
+    "sha256": "6aa1ed3dbb42ab6d7fd4bea0b58e37905ea83e78d950f4c9001f3dbe4f2bc315",
+    "bytes": 129328
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9948
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.999
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9634
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9992
+    }
+   ],
+   "gpu": {
+    "before": 8388600,
+    "after": 2097312
+   }
+  },
+  "s/simready-table-stainless.d63c19ef.glb": {
+   "file": "k/simready-table-stainless.68fbba7d.glb",
+   "sha256": "68fbba7df7e56fc7ec84738930d426b1f923dde4c46294d36f9328762cf65908",
+   "bytes": 169712,
+   "source": {
+    "sha256": "d63c19ef633e100081449dc53063202dab8687859673ee391361be668baccc6f",
+    "bytes": 143120
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9752
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9996
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    }
+   ],
+   "gpu": {
+    "before": 5592400,
+    "after": 1398208
+   }
+  },
+  "s/simready-tool-cabinet-rolling.0a9a7fda.glb": {
+   "file": "k/simready-tool-cabinet-rolling.5885952d.glb",
+   "sha256": "5885952ded64cd0566ab238632ff3784cf641545943fece9d9ccb3b0889acce9",
+   "bytes": 672660,
+   "source": {
+    "sha256": "0a9a7fdad3f4fb2d299b2e8e9a0984d5be95077b896c917779c1f3b12d74f810",
+    "bytes": 344028
+   },
+   "textures": [
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9994
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9998
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9801
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9997
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9845
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9995
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    }
+   ],
+   "gpu": {
+    "before": 13981000,
+    "after": 3495520
+   }
+  },
+  "s/simready-toolbox-hardcase.5865bc3f.glb": {
+   "file": "k/simready-toolbox-hardcase.d6b6562b.glb",
+   "sha256": "d6b6562b8d5d709e097631cb85041e935933ec3c43cd9974ecc8367e44e1d787",
+   "bytes": 261856,
+   "source": {
+    "sha256": "5865bc3f2f98bfb17dafae32815d5ee1c35227f11880a612c1a04545218c8a20",
+    "bytes": 227764
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.985
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9995
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9943
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9951
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    }
+   ],
+   "gpu": {
+    "before": 11184800,
+    "after": 2796416
+   }
+  },
+  "s/simready-toolbox-metal.84807575.glb": {
+   "file": "k/simready-toolbox-metal.b8a35353.glb",
+   "sha256": "b8a353535ed7369013b0fadffaf9121ead3dfe8d094f4d502c90f17023102c91",
+   "bytes": 370792,
+   "source": {
+    "sha256": "84807575d66b467244087acedd2fda6b27dc603bb5902a16396e9586950bb9ed",
+    "bytes": 282288
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9596
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.962
+    }
+   ],
+   "gpu": {
+    "before": 2796200,
+    "after": 699104
+   }
+  },
+  "s/simready-workbench-standard.741eabcf.glb": {
+   "file": "k/simready-workbench-standard.9b73d940.glb",
+   "sha256": "9b73d940826258eab8bd094a584099219c62ddbb0f5c5f4dc42a953c88f58323",
+   "bytes": 317448,
+   "source": {
+    "sha256": "741eabcf122e385bb7b3ed5ba98c0c6b58f09bd7d5ab5099a6b2a652fd5ee533",
+    "bytes": 244584
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9912
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9979
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9916
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.999
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9673
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9985
+    }
+   ],
+   "gpu": {
+    "before": 16777200,
+    "after": 4194624
+   }
+  },
+  "s/simready-wrench-adjustable.ced62812.glb": {
+   "file": "k/simready-wrench-adjustable.a1670d1a.glb",
+   "sha256": "a1670d1a6eb713be43135d6560c3b37f0bf5f18e79f3527a094d2bbc51af0b87",
+   "bytes": 227552,
+   "source": {
+    "sha256": "ced62812c85b5e98146fc364848130dab242795d9dd8f93fafbcd7a7bf6c2ef6",
+    "bytes": 172796
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9751
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9779
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9999
+    }
+   ],
+   "gpu": {
+    "before": 6990500,
+    "after": 1747760
    }
   }
  }

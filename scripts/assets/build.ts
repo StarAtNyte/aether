@@ -756,7 +756,9 @@ async function buildSimready(): Promise<void> {
   // Variants: other models of the same interior type and category (the cooker gets the Poly Haven electric cooker).
   const cp = join(OUT, 'catalog.json');
   const cat = JSON.parse(readFileSync(cp, 'utf8')) as { entries: CatalogEntryInput[] };
-  for (const e of cat.entries.filter((x) => fresh.has(x.id))) e.variants = cat.entries.filter((x) => x.id !== e.id && x.interior?.type === e.interior?.type && x.category === e.category).map((x) => x.id).slice(0, 12);
+  // Every SimReady entry gets them (a partial run merges the earlier ones back without their variants).
+  const mineIds = new Set(file.entries.map((x) => x.id));
+  for (const e of cat.entries.filter((x) => mineIds.has(x.id))) e.variants = cat.entries.filter((x) => x.id !== e.id && x.interior?.type === e.interior?.type && x.category === e.category).map((x) => x.id).slice(0, 12);
   Catalog.parse(cat);
   writeFileSync(cp, `${JSON.stringify(cat)}\n`);
 }

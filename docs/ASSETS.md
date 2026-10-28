@@ -16,7 +16,7 @@ CC0 / CC-BY asset → built-in generator → AI-written generator → primitive 
 | --- | --- |
 | Entries | 666: 625 models (animated: people and animals with idle / walk / run, 2 chests that open), 10 HDR skies, 23 photographed surfaces, 8 forge originals; 250 models are realistic (photographed), 348 low-poly and 68 stylised (the kits of Kenney and the code-authored creatures and vehicles) |
 | Categories | furniture 115, building 53, vehicles 50, decor 50, street 47, nature 38, animals 37, rocks 28, plants 25, kitchen 25, lighting 24, food 24, props 77, characters 19, bathroom 10, tools 11, skies 10, surfaces 23 |
-| Sources | 17 Kenney kits (CC0; the later sci-fi base, castle and watercraft kits are built by `build.ts --extra`), about 190 Poly Haven models (98 interiors, 76 outdoor, street, industrial, harbour, farm and fantasy models, 16 earlier ones) + 10 Poly Haven HDRIs (CC0), 23 ambientCG PBR materials (CC0), Quaternius Farm Animals (CC0, 7 models), Khronos Fox (CC-BY-4.0), 1 NVIDIA SimReady Central model (an LG range cooker, CC-BY-4.0), 8 first-party forge originals, 13 code-authored creatures and 13 vehicles (MIT) |
+| Sources | 17 Kenney kits (CC0; the later sci-fi base, castle and watercraft kits are built by `build.ts --extra`), about 190 Poly Haven models (98 interiors, 76 outdoor, street, industrial, harbour, farm and fantasy models, 16 earlier ones) + 10 Poly Haven HDRIs (CC0), 23 ambientCG PBR materials (CC0), Quaternius Farm Animals (CC0, 7 models), Khronos Fox (CC-BY-4.0), 29 NVIDIA SimReady Central models (an LG range cooker and 28 common props: office chairs, desk, tables, shelf, cabinets, sofas, lamps, monitor, keyboard, bins, mug, plate, bucket, boxes, tools; CC-BY-4.0), 8 first-party forge originals, 13 code-authored creatures and 13 vehicles (MIT) |
 | Disk | 170 MB under `assets/lib/` (meshopt-compressed GLB, JPEG textures at 256 / 512 / 1k, 512 px surface maps, 192 px WebP thumbnails, 1k HDR), plus 68 MB of KTX2 twins under `assets/lib/k/` ([GPU-compressed textures](#gpu-compressed-textures-ktx2)); the library is fetched on demand, never bundled with the app code |
 | Catalog | `assets/catalog.json`, 464 KB (83 KB gzip), loaded lazily after the editor starts |
 | Provenance | `assets/manifest.json`: source archive + SHA-256 (Kenney) or per-file MD5 (Poly Haven API), file inside the archive, licence, authors and SHA-256 of every shipped file |
@@ -289,7 +289,7 @@ npx tsx scripts/assets/thumbs.ts --only a,b --front=out --yaw=0   # straight-on 
 [NVIDIA SimReady Central](https://huggingface.co/spaces/nvidia/simready-central) is a semantic search over about 3,600
 OpenUSD packages that vendors and labs publish as Hugging Face datasets (97 percent CC BY 4.0, Apache-2.0 code for the
 service). Aether uses it as a **searchable, licence-filtered source of candidates**; it is not part of the shipped library
-and the studio never needs it. One package is imported so far: an LG range cooker.
+and the studio never needs it for what ships. 29 packages are imported ahead of time: an LG range cooker and 28 common props (triangles 560 to 11,800, 45 to 400 KB each, 9.1 MB for all files and tiers; the hosted build ships only their thumbnails, the models come from the CDN when a world uses one). Anything else can be imported while you work, see below.
 
 ```sh
 npm run assets:simready -- search "range cooker" [--limit=8] [--max-size=2] [--min-size=0.2] [--json]
