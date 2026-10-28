@@ -7181,13 +7181,13 @@
     "after": 699104
    }
   },
-  "s/simready-light-work-tripod.53302d06.glb": {
-   "file": "k/simready-light-work-tripod.bfc04964.glb",
-   "sha256": "bfc049648afb41d00c490d6ae2b328c0f46171bf57529aa64beeff9cdd28ca03",
-   "bytes": 295612,
+  "s/simready-light-work-tripod.8ae02422.glb": {
+   "file": "k/simready-light-work-tripod.29c6272c.glb",
+   "sha256": "29c6272c3cf41a1c5663c65518f26f29d5b96c3aefc0fe8d9b716e55c97991f1",
+   "bytes": 290060,
    "source": {
-    "sha256": "53302d0692b27b40af6a47d8937fc77cca076fd6a6bfcec2bcf39d67d3081f82",
-    "bytes": 263900
+    "sha256": "8ae02422b77a88ff702b8a23a37f3ab0cd04cdeb1068be90c660b0107684baab",
+    "bytes": 258348
    },
    "textures": [
     {

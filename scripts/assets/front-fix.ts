@@ -153,6 +153,8 @@ export async function loadLibCands(): Promise<Cand[]> {
   const cat = JSON.parse(readFileSync(join(ROOT, 'assets', 'catalog.json'), 'utf8')) as { entries: Array<{ id: string; name: string; category: string; placement?: string; size: [number, number, number]; file: string; pack: string; interior?: { type: string } }> };
   const { SIMREADY } = await import('./selection-simready');
   const rows = new Map(SIMREADY.map((s) => [s.row[1], s]));
+  // A model the check already turned was rebuilt with that rotation (build.ts applies simready-fronts.json to the rows).
+  const seen = loadFrontOverrides();
   const out: Cand[] = [];
   for (const e of cat.entries) {
     const item = rows.get(e.id);
@@ -163,7 +165,7 @@ export async function loadLibCands(): Promise<Cand[]> {
       type: e.interior?.type ?? item.row[2],
       category: e.category,
       size: e.size,
-      builtRot: item.row[6]?.rot ?? 0,
+      builtRot: seen[e.id]?.rot ?? item.row[6]?.rot ?? 0,
       src: item.source,
       url: `/lib/${e.file}`,
       source: 'lib',

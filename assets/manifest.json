@@ -755,21 +755,6 @@
    "retrieved": "2026-10-28"
   },
   {
-   "id": "simready-nvidia-lighting-tasklight-tripodflood-a01",
-   "provider": "NVIDIA SimReady Central (Hugging Face)",
-   "title": "Work light on a tripod",
-   "version": "653d91e182011f357cf1644013cc94ddf194d349",
-   "author": "nvidia (Hugging Face user nvidia)",
-   "licence": "CC-BY-4.0",
-   "licenceUrl": "https://creativecommons.org/licenses/by/4.0/",
-   "licenceEvidence": "com.nvidia.simready.packaging.json of the package: \"license\": \"CC-BY-4.0\"; dataset card (huggingface.co/api/datasets/nvidia/simready-assets) cardData.license: cc-by-4.0",
-   "page": "https://huggingface.co/datasets/nvidia/simready-assets/tree/653d91e182011f357cf1644013cc94ddf194d349/lighting_taskLight_tripodFlood_a01",
-   "archive": "https://huggingface.co/datasets/nvidia/simready-assets/resolve/653d91e182011f357cf1644013cc94ddf194d349/lighting_taskLight_tripodFlood_a01/simready_usd/sm_lighting_taskLight_tripodFlood_a01_01.usd",
-   "sha256": "c074fa9d82bfaa29254f107dd90fd3298581e02769d6e7dfbdb7ef953aae6ac3",
-   "packageHash": "83e99e93bdb11a13a1e1daacd0c679a5058e02c735bb29340a79f738b037c167",
-   "retrieved": "2026-10-28"
-  },
-  {
    "id": "simready-nvidia-computer-monitor-office-a01",
    "provider": "NVIDIA SimReady Central (Hugging Face)",
    "title": "Computer monitor",
@@ -1037,6 +1022,21 @@
    "archive": "https://huggingface.co/datasets/nvidia/simready-assets/resolve/653d91e182011f357cf1644013cc94ddf194d349/chair_office_amf_black_a01/simready_usd/sm_chair_office_amf_black_a01_01.usd",
    "sha256": "6479861d24d982a380d9e3b97b19ce4302ab4a28c215576abde4175aaf6f1db5",
    "packageHash": "a33f1462f4902fa00ff882cdeee933af064dd89be21b375e5feb2b208d3851e9",
+   "retrieved": "2026-10-28"
+  },
+  {
+   "id": "simready-nvidia-lighting-tasklight-tripodflood-a01",
+   "provider": "NVIDIA SimReady Central (Hugging Face)",
+   "title": "Work light on a tripod",
+   "version": "653d91e182011f357cf1644013cc94ddf194d349",
+   "author": "nvidia (Hugging Face user nvidia)",
+   "licence": "CC-BY-4.0",
+   "licenceUrl": "https://creativecommons.org/licenses/by/4.0/",
+   "licenceEvidence": "com.nvidia.simready.packaging.json of the package: \"license\": \"CC-BY-4.0\"; dataset card (huggingface.co/api/datasets/nvidia/simready-assets) cardData.license: cc-by-4.0",
+   "page": "https://huggingface.co/datasets/nvidia/simready-assets/tree/653d91e182011f357cf1644013cc94ddf194d349/lighting_taskLight_tripodFlood_a01",
+   "archive": "https://huggingface.co/datasets/nvidia/simready-assets/resolve/653d91e182011f357cf1644013cc94ddf194d349/lighting_taskLight_tripodFlood_a01/simready_usd/sm_lighting_taskLight_tripodFlood_a01_01.usd",
+   "sha256": "c074fa9d82bfaa29254f107dd90fd3298581e02769d6e7dfbdb7ef953aae6ac3",
+   "packageHash": "83e99e93bdb11a13a1e1daacd0c679a5058e02c735bb29340a79f738b037c167",
    "retrieved": "2026-10-28"
   }
  ],
@@ -15420,35 +15420,6 @@
    ]
   },
   {
-   "id": "simready-light-work-tripod",
-   "pack": "simready-nvidia",
-   "licence": "CC-BY-4.0",
-   "authors": [
-    "nvidia"
-   ],
-   "source": {
-    "archive": "https://huggingface.co/datasets/nvidia/simready-assets/resolve/653d91e182011f357cf1644013cc94ddf194d349/lighting_taskLight_tripodFlood_a01/simready_usd/sm_lighting_taskLight_tripodFlood_a01_01.usd",
-    "path": "lighting_taskLight_tripodFlood_a01/simready_usd/sm_lighting_taskLight_tripodFlood_a01_01.usd"
-   },
-   "files": [
-    {
-     "path": "s/simready-light-work-tripod.53302d06.glb",
-     "sha256": "53302d0692b27b40af6a47d8937fc77cca076fd6a6bfcec2bcf39d67d3081f82",
-     "bytes": 263900
-    },
-    {
-     "path": "s/simready-light-work-tripod.lod1.6f8216b6.glb",
-     "sha256": "6f8216b6afd5814340f13487d9a99d64cd70cbad222044ded03cdf255fda2bf3",
-     "bytes": 93640
-    },
-    {
-     "path": "s/simready-light-work-tripod.lite.660fd278.glb",
-     "sha256": "660fd278e794b9f5cde7da40d231a872ffe301f6c8b337f32cc1218fe5209ce0",
-     "bytes": 85352
-    }
-   ]
-  },
-  {
    "id": "simready-monitor-office",
    "pack": "simready-nvidia",
    "licence": "CC-BY-4.0",
@@ -15962,6 +15933,35 @@
      "path": "s/simready-office-chair-black.lite.247e6885.glb",
      "sha256": "247e68857b92d4f5b710149c309f6511c520cc6774f92c52dd033d2899a80773",
      "bytes": 81036
+    }
+   ]
+  },
+  {
+   "id": "simready-light-work-tripod",
+   "pack": "simready-nvidia",
+   "licence": "CC-BY-4.0",
+   "authors": [
+    "nvidia"
+   ],
+   "source": {
+    "archive": "https://huggingface.co/datasets/nvidia/simready-assets/resolve/653d91e182011f357cf1644013cc94ddf194d349/lighting_taskLight_tripodFlood_a01/simready_usd/sm_lighting_taskLight_tripodFlood_a01_01.usd",
+    "path": "lighting_taskLight_tripodFlood_a01/simready_usd/sm_lighting_taskLight_tripodFlood_a01_01.usd"
+   },
+   "files": [
+    {
+     "path": "s/simready-light-work-tripod.8ae02422.glb",
+     "sha256": "8ae02422b77a88ff702b8a23a37f3ab0cd04cdeb1068be90c660b0107684baab",
+     "bytes": 258348
+    },
+    {
+     "path": "s/simready-light-work-tripod.lod1.b44fef82.glb",
+     "sha256": "b44fef82d0e8cae18a124b4d8607fda2702d2f8f12055e59df556b69b8916063",
+     "bytes": 95032
+    },
+    {
+     "path": "s/simready-light-work-tripod.lite.e25afdab.glb",
+     "sha256": "e25afdab52e1e9cfd700ab109df63d56b955d386cff2fdadc08e7e7e26853e07",
+     "bytes": 86004
     }
    ]
   }
