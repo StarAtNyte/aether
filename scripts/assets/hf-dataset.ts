@@ -13,6 +13,7 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { gzipSync } from 'node:zlib';
 import { join, resolve } from 'node:path';
 import { CatalogEntry, type Catalog } from '../../packages/assets/src/schema';
 import { synonymsOf } from '../../packages/assets/src/synonyms';
@@ -27,6 +28,9 @@ const ROOT = resolve(import.meta.dirname, '../..');
 const LIB = join(ROOT, 'assets', 'lib');
 const DEFAULT_STAGE = join(homedir(), '.local', 'share', 'aether', 'hf-assets-stage');
 const IMPORT_DIR = process.env['AETHER_IMPORT_DIR'] ?? join(homedir(), '.local', 'share', 'aether', 'imported');
+const BULK_DIR = process.env['AETHER_BULK_DIR'] ?? join(homedir(), '.local', 'share', 'aether', 'simready-bulk');
+const BULK_OUT = join(BULK_DIR, 'out');
+const TOKEN_FILE = join(homedir(), '.config', 'aether', 'hf-write.token');
 const VENV_PY = join(homedir(), '.local', 'share', 'aether', 'simready', 'venv', 'bin', 'python');
 
 const arg = (name: string): string | undefined => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
@@ -65,6 +69,8 @@ interface Candidate {
   source: HubRow['source'];
   converted: string;
   srcId?: string;
+  /** Provenance written as is (bulk SimReady imports record it themselves). */
+  provenance?: Record<string, unknown>;
 }
 
 const DROP = { licence: 0, kind: 0, bytes: 0, noThumb: 0, noFile: 0, characters: 0, empty: 0, dup: 0 };
@@ -95,6 +101,21 @@ function candidates(max: number): Candidate[] {
       converted = 'Converted by Aether from OpenUSD to GLB (world transforms baked, triangulated, welded, Z-up to Y-up, metres), reduced in triangles and textures and compressed (meshopt). Modified from the source package; not NVIDIA-validated.';
     }
     out.push({ entry: e, dir: LIB, licence: pack.licence as HubLicence, author, source, converted });
+  }
+  // Bulk SimReady imports (`assets:simready -- bulk`): one folder per accepted model under the bulk output.
+  const known = new Set(out.map((c) => c.entry.id));
+  if (existsSync(BULK_OUT)) {
+    for (const d of readdirSync(BULK_OUT).sort()) {
+      const rec = join(BULK_OUT, d, 'record.json');
+      if (!existsSync(rec)) continue;
+      const r = readJson(rec) as { entry: unknown; licence: string; author: string; source: HubRow['source']; converted: string; provenance: Record<string, unknown> };
+      const e = CatalogEntry.parse(r.entry);
+      if (!hubLicenceAllowed(r.licence)) { DROP.licence++; continue; }
+      if (known.has(e.id)) { DROP.dup++; continue; }
+      if (e.bytes > max) { DROP.bytes++; continue; }
+      known.add(e.id);
+      out.push({ entry: e, dir: join(BULK_OUT, d, 'lib'), licence: r.licence, author: r.author, source: r.source, converted: r.converted, provenance: r.provenance });
+    }
   }
   // Imports of the local server that the library does not hold yet (they need a thumbnail to be listed).
   const have = new Set(out.map((c) => c.entry.id));
@@ -157,7 +178,8 @@ function stage(c: Candidate, dest: string): HubRow {
     ...(e.anims && e.anims.clips.length > 0 ? { animated: true } : {}),
     files: { main, ...(lod1 ? { lod1 } : {}), ...(lite ? { lite } : {}), thumb },
   };
-  if (c.source.dataset) {
+  if (c.provenance) writeFileSync(join(dir, 'provenance.json'), `${JSON.stringify(c.provenance, null, 2)}\n`);
+  else if (c.source.dataset) {
     // Provenance of a SimReady-derived model: the pinned source package. Not a SimReady package and not NVIDIA-validated.
     const sources = readJson(join(ROOT, 'assets', 'sources.json')) as Sources;
     const p = sources.simready.packages.find((x) => x.dataset === c.source.dataset && x.revision === c.source.revision && c.source.path.startsWith(`${x.package}/`));
@@ -166,26 +188,87 @@ function stage(c: Candidate, dest: string): HubRow {
   return row;
 }
 
-function embed(rows: HubRow[], dest: string): { have: number } {
-  const clip = readJson(join(ROOT, 'assets', 'clip-index.json')) as { dim: number; ids: string[]; emb: string };
-  const bin = Buffer.from(clip.emb, 'base64');
-  const at = new Map(clip.ids.map((id, i) => [id, i]));
+/**
+ * Int8 CLIP image embeddings of every staged thumbnail (the same tower as the photo perception layer). Embeddings are cached by
+ * the thumbnail's SHA-256, so a rebuild only embeds new thumbnails. When the CLIP weights cannot be loaded, the library's
+ * `assets/clip-index.json` covers the models it knows.
+ */
+async function embed(rows: HubRow[], dest: string): Promise<{ have: number }> {
+  const cachePath = join(BULK_DIR, 'emb-cache.json');
+  const cache: Record<string, string> = existsSync(cachePath) ? (readJson(cachePath) as Record<string, string>) : {};
+  const fallback = readJson(join(ROOT, 'assets', 'clip-index.json')) as { dim: number; ids: string[]; emb: string };
+  const fbBin = Buffer.from(fallback.emb, 'base64');
+  const fbAt = new Map(fallback.ids.map((id, i) => [id, i]));
+  const dim = fallback.dim;
+  let model: { embed(r: { width: number; height: number; data: Uint8ClampedArray }, c: Array<{ box: [number, number, number, number] }>): Promise<Float32Array[]>; dispose(): Promise<void> } | null = null;
+  let tried = false;
+  const clip = async (): Promise<typeof model> => {
+    if (!tried) {
+      tried = true;
+      try {
+        const { loadClip } = await import('../../packages/agent/src/photo/perception/clip');
+        const l = await loadClip();
+        if (l.ok) model = l.model as unknown as typeof model;
+        else console.error(`CLIP not loaded (${l.reason}); using assets/clip-index.json where it has the model`);
+      } catch (e) {
+        console.error(`CLIP not loaded (${e instanceof Error ? e.message : 'failed'})`);
+      }
+    }
+    return model;
+  };
   const ids: string[] = [];
   const parts: Buffer[] = [];
+  let fresh = 0;
   for (const r of rows) {
-    const i = at.get(r.id);
-    if (i === undefined) continue;
+    const key = r.files.thumb.sha256;
+    let v = cache[key];
+    if (!v) {
+      const m = await clip();
+      if (m) {
+        const dec = spawnSync('ffmpeg', ['-v', 'error', '-i', join(dest, r.files.thumb.path), '-vf', 'scale=224:224:flags=area', '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgba', 'pipe:1'], { maxBuffer: 1 << 26 });
+        if (dec.status === 0 && dec.stdout.length === 224 * 224 * 4) {
+          const raster = { width: 224, height: 224, data: new Uint8ClampedArray(dec.stdout.buffer, dec.stdout.byteOffset, dec.stdout.length) };
+          const [emb] = await m.embed(raster, [{ box: [0, 0, 1, 1] }]);
+          if (emb) {
+            v = Buffer.from(Int8Array.from(emb, (x) => Math.round(x * 127)).buffer).toString('base64');
+            cache[key] = v;
+            fresh++;
+          }
+        }
+      }
+    }
+    if (!v) {
+      const i = fbAt.get(r.id);
+      if (i === undefined) continue;
+      v = fbBin.subarray(i * dim, (i + 1) * dim).toString('base64');
+    }
     ids.push(r.id);
-    parts.push(bin.subarray(i * clip.dim, (i + 1) * clip.dim));
+    parts.push(Buffer.from(v, 'base64'));
   }
+  if (fresh > 0) {
+    mkdirSync(BULK_DIR, { recursive: true });
+    writeFileSync(cachePath, JSON.stringify(cache));
+  }
+  const m = model as { dispose(): Promise<void> } | null;
+  if (m) await m.dispose();
   const all = Buffer.concat(parts);
   writeFileSync(join(dest, 'embeddings.bin'), all);
-  const header = HubEmbeddingsHeader.parse({ version: 1, model: 'openai/clip-vit-base-patch32 vision tower (MIT), int8 x127 of the unit vector, embeddings of thumb.webp', dim: clip.dim, count: ids.length, ids, sha256: sha(all) });
+  const header = HubEmbeddingsHeader.parse({ version: 1, model: 'openai/clip-vit-base-patch32 vision tower (MIT), int8 x127 of the unit vector, embeddings of thumb.webp', dim, count: ids.length, ids, sha256: sha(all) });
   writeFileSync(join(dest, 'embeddings.json'), `${JSON.stringify(header)}\n`);
   return { have: ids.length };
 }
 
 const mb = (n: number): string => `${(n / 1e6).toFixed(1)} MB`;
+
+/** One row per asset: the whole attribution table as a file (the README links it when the table would be huge). */
+function credits(index: HubIndex): string {
+  const q = (v: string): string => `"${v.replace(/"/g, '""')}"`;
+  const head = 'id,name,author,licence,credit,source,source_url,dataset,revision,path';
+  return `${[head, ...index.rows.map((r) => [r.id, r.name, r.author, r.licence, r.credit, r.source.name, r.source.url, r.source.dataset ?? '', r.source.revision ?? '', r.source.path].map(q).join(','))].join('\n')}\n`;
+}
+
+/** Above this many CC BY rows the README links credits.csv instead of listing them. */
+const README_TABLE_MAX = 150;
 
 function card(index: HubIndex, cfg: HubConfig): string {
   const by = (l: HubLicence): HubRow[] => index.rows.filter((r) => r.licence === l);
@@ -217,7 +300,7 @@ tags:
 - cc0
 - cc-by
 size_categories:
-- n<1K
+- ${index.count < 1000 ? 'n<1K' : '1K<n<10K'}
 configs:
 - config_name: default
   data_files: index.json
@@ -254,6 +337,7 @@ index.json                   one row per asset: id, name, aliases, tags, categor
                              licence (SPDX), author, credit, source (dataset, revision, path), conversion note,
                              collider, SHA-256 of every file
 index.min.json               the compact index the client loads (search only needs this)
+credits.csv                  attribution table of every asset (author, licence, credit line, pinned source)
 embeddings.bin + .json       int8 CLIP ViT-B/32 image embeddings of the thumbnails (similar-looking models)
 \`\`\`
 
@@ -273,7 +357,7 @@ Check the file against \`files.main.sha256\` before use. In a browser, fetch \`h
 
 ## Attribution (CC BY 4.0 assets)
 
-${ccBy.length === 0 ? 'None.' : `| Asset | Author | Source |\n|---|---|---|\n${ccBy.map((r) => `| ${esc(r.name)} (\`${r.id}\`) | ${esc(r.author)} | [${esc(r.source.name)}](${r.source.url}) |`).join('\n')}`}
+${ccBy.length === 0 ? 'None.' : ccBy.length > README_TABLE_MAX ? `${ccBy.length} CC BY 4.0 assets: the full table (asset, author, licence, ready-made credit line, source dataset and commit) is [credits.csv](credits.csv). \`index.json\` carries the same fields per asset.` : `| Asset | Author | Source |\n|---|---|---|\n${ccBy.map((r) => `| ${esc(r.name)} (\`${r.id}\`) | ${esc(r.author)} | [${esc(r.source.name)}](${r.source.url}) |`).join('\n')}`}
 
 CC0 assets are listed in \`index.json\` with their author and source; the Kenney kits and Poly Haven models are public-domain dedications.
 
@@ -283,7 +367,7 @@ The files are data. The index hashes (SHA-256) let a client check every download
 `;
 }
 
-function build(): void {
+async function build(): Promise<void> {
   const max = Number(arg('max-main') ?? HUB_MAX_MAIN_BYTES);
   const cfg = config();
   const dest = stageDir();
@@ -296,7 +380,8 @@ function build(): void {
   const min = toMinIndex(index);
   HubMinIndex.parse(min);
   writeFileSync(join(dest, 'index.min.json'), JSON.stringify(min));
-  const e = embed(index.rows, dest);
+  const e = await embed(index.rows, dest);
+  writeFileSync(join(dest, 'credits.csv'), credits(index));
   writeFileSync(join(dest, 'README.md'), card(index, cfg));
   const total = rows.reduce((n, r) => n + Object.values(r.files).reduce((m, f) => m + f.bytes, 0), 0);
   const per = (l: HubLicence): number => rows.filter((r) => r.licence === l).length;
@@ -316,7 +401,7 @@ async function verify(): Promise<void> {
   const index = HubIndex.parse(readJson(join(dest, 'index.json')));
   const min = HubMinIndex.parse(readJson(join(dest, 'index.min.json')));
   if (JSON.stringify(min) !== JSON.stringify(toMinIndex(index))) err('index.min.json differs from index.json');
-  const known = new Set(['index.json', 'index.min.json', 'embeddings.bin', 'embeddings.json', 'README.md']);
+  const known = new Set(['index.json', 'index.min.json', 'embeddings.bin', 'embeddings.json', 'README.md', 'credits.csv']);
   const ids = new Set<string>();
   let total = 0;
   for (const r of index.rows) {
@@ -358,14 +443,26 @@ async function verify(): Promise<void> {
   if (/hackathon|judg|competition|deadline/i.test(readme)) err('README mentions a forbidden word');
   const per = (l: HubLicence): number => index.rows.filter((r) => r.licence === l).length;
   const sizeLimit = statSync(join(dest, 'index.min.json')).size;
-  if (sizeLimit > 400_000) err(`index.min.json is ${sizeLimit} bytes`);
+  const gz = gzipSync(readFileSync(join(dest, 'index.min.json'))).byteLength;
+  if (gz > 400_000) err(`index.min.json is ${gz} bytes gzipped: shard it`);
+  if (!existsSync(join(dest, 'credits.csv'))) err('credits.csv missing');
   if (flag('remote')) remoteCheck(index);
   if (errors.length > 0) {
     console.error(`verify failed:\n  ${errors.join('\n  ')}`);
     process.exit(1);
   }
-  console.log(`verify ok: ${index.count} models, ${mb(total)}, CC0 ${per('CC0-1.0')}, CC-BY ${per('CC-BY-4.0')}, index.min.json ${sizeLimit} bytes, ${emb.count} embeddings`);
+  console.log(`verify ok: ${index.count} models, ${mb(total)}, CC0 ${per('CC0-1.0')}, CC-BY ${per('CC-BY-4.0')}, index.min.json ${sizeLimit} bytes (${gz} gzipped), ${emb.count} embeddings`);
 }
+
+/** Python prelude: the write token comes from the private token file first, else HF_TOKEN (a shell's HF_TOKEN may be a read-only one), straight into huggingface_hub (never printed). */
+const TOKEN_PY = `import os
+def _tok():
+    p = os.path.expanduser('~/.config/aether/hf-write.token')
+    if os.path.exists(p):
+        return open(p).read().strip()
+    t = os.environ.get('HF_TOKEN')
+    return t.strip() if t else None
+`;
 
 /** Python helper run with the venv (huggingface_hub reads the token itself; it is never passed on a command line). */
 function py(script: string, args: string[]): { status: number; out: string } {
@@ -377,7 +474,7 @@ function py(script: string, args: string[]): { status: number; out: string } {
 function remoteCheck(index: HubIndex): void {
   const cfg = config();
   const r = py(
-    `import sys, json\nfrom huggingface_hub import HfApi\napi = HfApi()\nrepo, rev = sys.argv[1], sys.argv[2]\ninfo = api.dataset_info(repo, revision=rev, files_metadata=True)\nprint(json.dumps({'private': info.private, 'sha': info.sha, 'files': {s.rfilename: [s.size, getattr(getattr(s, 'lfs', None), 'sha256', None)] for s in info.siblings}}))`,
+    `${TOKEN_PY}import sys, json\nfrom huggingface_hub import HfApi\napi = HfApi(token=_tok())\nrepo, rev = sys.argv[1], sys.argv[2]\ninfo = api.dataset_info(repo, revision=rev, files_metadata=True)\nprint(json.dumps({'private': info.private, 'sha': info.sha, 'files': {s.rfilename: [s.size, getattr(getattr(s, 'lfs', None), 'sha256', None)] for s in info.siblings}}))`,
     [cfg.dataset, cfg.revision === 'main' ? 'main' : cfg.revision],
   );
   if (r.status !== 0) { console.error(`remote check failed: ${r.out.split('\n').slice(-1)[0]}`); process.exit(1); }
@@ -389,7 +486,7 @@ function remoteCheck(index: HubIndex): void {
     else if (got[0] !== f.bytes) bad.push(`${f.path}: size ${got[0]} != ${f.bytes}`);
     else if (got[1] && got[1] !== f.sha256) bad.push(`${f.path}: sha256`);
   }
-  for (const n of ['index.json', 'index.min.json', 'embeddings.bin', 'embeddings.json', 'README.md']) if (!remote.files[n]) bad.push(`${n}: not on the hub`);
+  for (const n of ['index.json', 'index.min.json', 'embeddings.bin', 'embeddings.json', 'README.md', 'credits.csv']) if (!remote.files[n]) bad.push(`${n}: not on the hub`);
   if (bad.length > 0) { console.error(`remote check failed:\n  ${bad.slice(0, 20).join('\n  ')}`); process.exit(1); }
   console.log(`remote ok: ${Object.keys(remote.files).length} files at ${remote.sha.slice(0, 12)}, ${remote.private ? 'private' : 'public'}`);
 }
@@ -399,29 +496,32 @@ function upload(): void {
   const dest = stageDir();
   if (!existsSync(join(dest, 'index.json'))) throw new Error('nothing staged: run build first');
   const message = arg('message') ?? 'Add models';
-  const script = `
+  const script = `${TOKEN_PY}
 import sys, os, json
 from huggingface_hub import HfApi
-repo, stage, msg, public = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4] == '1'
-api = HfApi()
+repo, stage, msg, public, only = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4] == '1', sys.argv[5]
+api = HfApi(token=_tok())
 if not api.repo_exists(repo, repo_type='dataset'):
     api.create_repo(repo, repo_type='dataset', private=True)
     print('created private repo')
 models = sorted(os.listdir(os.path.join(stage, 'models')))
+if only:
+    want = set(json.load(open(only)))
+    models = [m for m in models if m in want]
 BATCH = 120
 for i in range(0, len(models), BATCH):
     part = models[i:i + BATCH]
     api.upload_folder(repo_id=repo, repo_type='dataset', folder_path=stage, allow_patterns=[f'models/{m}/*' for m in part], commit_message=f'{msg} ({i + 1}-{i + len(part)} of {len(models)})')
     print('batch', i // BATCH + 1, 'of', (len(models) + BATCH - 1) // BATCH)
 # The index goes last, so a half-finished upload never points at missing files.
-top = ['index.json', 'index.min.json', 'embeddings.bin', 'embeddings.json', 'README.md']
+top = ['index.json', 'index.min.json', 'embeddings.bin', 'embeddings.json', 'README.md', 'credits.csv']
 ci = api.upload_folder(repo_id=repo, repo_type='dataset', folder_path=stage, allow_patterns=top, commit_message=f'{msg}: index and dataset card')
 if public:
     api.update_repo_settings(repo, repo_type='dataset', private=False)
 info = api.dataset_info(repo)
 print(json.dumps({'sha': info.sha, 'private': info.private}))
 `;
-  const r = py(script, [cfg.dataset, dest, message, flag('public') ? '1' : '0']);
+  const r = py(script, [cfg.dataset, dest, message, flag('public') ? '1' : '0', arg('only') ?? '']);
   console.log(r.out.split('\n').filter((l) => !/token|hf_[A-Za-z0-9]{8}/i.test(l)).slice(-12).join('\n'));
   if (r.status !== 0) process.exit(1);
   const last = r.out.split('\n').filter((l) => l.startsWith('{')).pop();
@@ -435,11 +535,11 @@ print(json.dumps({'sha': info.sha, 'private': info.private}))
 
 const cmd = process.argv.slice(2).find((a) => !a.startsWith('--'));
 try {
-  if (cmd === 'build') build();
+  if (cmd === 'build') await build();
   else if (cmd === 'verify') await verify();
   else if (cmd === 'upload') upload();
   else {
-    console.error('usage: assets:hf -- build | verify [--remote] | upload [--public] [--pin]   (--stage=<dir>)');
+    console.error('usage: assets:hf -- build | verify [--remote] | upload [--public] [--pin] [--only=<json list of ids>]   (--stage=<dir>)');
     process.exit(1);
   }
 } catch (err) {

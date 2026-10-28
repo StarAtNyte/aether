@@ -79,6 +79,9 @@ export const HubRow = z.object({
     revision: z.string().max(64).optional(),
     /** File or package inside the source. */
     path: z.string().max(300),
+    /** SHA-256 of the source USD file and the package's own hash (bulk SimReady imports). */
+    sha256: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+    packageHash: z.string().regex(/^[0-9a-f]{64}$/).optional(),
   }),
   /** How the file was made from the source. */
   converted: z.string().min(1).max(300),

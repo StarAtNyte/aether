@@ -15,6 +15,7 @@ const ROOT = resolve(import.meta.dirname, '../..');
 const MOUNTS: Record<string, string> = {
   '/three/': join(ROOT, 'node_modules', 'three'),
   '/lib/': join(ROOT, 'assets', 'lib'),
+  ...(process.env['AETHER_BROWSER_EXTRA_DIR'] ? { '/extra/': resolve(process.env['AETHER_BROWSER_EXTRA_DIR']) } : {}),
 };
 const TYPES: Record<string, string> = { '.js': 'text/javascript', '.glb': 'model/gltf-binary', '.hdr': 'application/octet-stream', '.webp': 'image/webp', '.jpg': 'image/jpeg', '.png': 'image/png', '.html': 'text/html' };
 

@@ -14,6 +14,9 @@
  *   small files, then the package's own bill of materials (sha256 of every file), whose hash packaging.json pins.
  *   Downloaded files are untrusted data: nothing in them is ever run, and the converter reads them with `python -I`.
  *
+ * bulk: the unattended, resumable pipeline that converts a curated set of packages and publishes them to the hub dataset
+ *   (scripts/assets/simready-bulk.ts, docs/ASSETS.md "Bulk import").
+ *
  * Importing into the library afterwards: see docs/ASSETS.md, "SimReady Central".
  */
 import { closeSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -28,6 +31,10 @@ const arg = (name: string): string | undefined => process.argv.find((a) => a.sta
 
 async function main(): Promise<void> {
   const [cmd, ...rest] = process.argv.slice(2).filter((a) => !a.startsWith('--'));
+  if (cmd === 'bulk') {
+    await (await import('./simready-bulk')).bulk();
+    return;
+  }
   if (cmd === 'search') {
     const query = rest.join(' ');
     const maxSize = arg('max-size');
@@ -107,7 +114,7 @@ async function main(): Promise<void> {
     console.log(`pinned ${id} in assets/sources.json (${got.licence}, usd sha256 ${got.usd.sha256})`);
     return;
   }
-  console.error('usage: assets:simready -- search "<text>" [--limit=8] [--max-size=2] [--json]\n       assets:simready -- fetch <owner>/<dataset>@<40-hex revision>/<package>\n       assets:simready -- add <owner>/<dataset>@<40-hex revision>/<package> [--title="..."]   (fetch and pin in assets/sources.json)');
+  console.error('usage: assets:simready -- bulk [--max=600] [--concurrency=2] [--time-budget=8]   (resumable bulk import into the hub dataset, docs/ASSETS.md "Bulk import")\n       assets:simready -- search "<text>" [--limit=8] [--max-size=2] [--json]\n       assets:simready -- fetch <owner>/<dataset>@<40-hex revision>/<package>\n       assets:simready -- add <owner>/<dataset>@<40-hex revision>/<package> [--title="..."]   (fetch and pin in assets/sources.json)');
   process.exit(1);
 }
 

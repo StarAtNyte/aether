@@ -23,11 +23,12 @@ import { pickRoles } from '../../packages/assets/src/info';
 import { readSources, SOURCE_DIR, type PolyhavenRecord } from './fetch';
 import { packageDir } from './simready';
 import { colliderFor, kebab, prettyName, tagsFor } from './describe';
-import { hullPoints, isAnimated, normaliseAndMerge, normaliseAnimated, sceneBounds, scenePositions, simplifyDocument } from './process';
+import { hullPoints, isAnimated, normaliseAndMerge, normaliseAnimated, sceneBounds, scenePositions, setUvAwareSimplify, simplifyDocument } from './process';
 import { SELECTION, type ItemSel, type PackSel } from './selection';
 import { EXISTING_FACTS, INTERIOR as INTERIOR_ROWS, type InteriorRow } from './selection-interior';
 import { OUTDOOR } from './selection-outdoor';
 import { SIMREADY } from './selection-simready';
+import { budgetFor } from './simready-gate';
 import { EXTRA_HDRIS, EXTRA_HDRI_IDS, EXTRA_SELECTION } from './selection-extra';
 
 const INTERIOR = [...INTERIOR_ROWS, ...OUTDOOR];
@@ -862,6 +863,8 @@ interface ImportJobFile {
   pack: string;
   work: string;
   convert?: string[];
+  /** Bulk import (`assets:simready -- bulk`): own triangle budget and the front found from the shape. */
+  bulk?: { symmetric: boolean };
 }
 
 async function buildImportOne(jobPath: string): Promise<void> {
@@ -869,6 +872,7 @@ async function buildImportOne(jobPath: string): Promise<void> {
   if (!process.env['AETHER_ASSET_LIB'] || !process.env['AETHER_TIER_CACHE']) throw new Error('--import-one needs AETHER_ASSET_LIB and AETHER_TIER_CACHE (a temp folder)');
   if (sha(readFileSync(job.usd)) !== job.usdSha256) throw new Error('the USD differs from the hash recorded when it was fetched');
   if (!existsSync(SIMREADY_PY)) throw new Error(`${SIMREADY_PY} not found: the USD converter needs a venv with usd-core, numpy and pillow (AETHER_USD_PYTHON)`);
+  setUvAwareSimplify(!!job.bulk);
   const nio = await io();
   const id = job.row[1];
   const conv = join(job.work, 'converted');
@@ -876,6 +880,10 @@ async function buildImportOne(jobPath: string): Promise<void> {
   const full = join(conv, 'full.glb');
   const r = spawnSync(SIMREADY_PY, ['-I', join(ROOT, 'scripts', 'assets', 'usd2glb.py'), job.usd, full, '--max-tex=1024', ...(job.convert ?? []), `--report=${join(conv, 'report.json')}`], { encoding: 'utf8', timeout: 240_000, maxBuffer: 16 * 1024 * 1024, env: { PATH: process.env['PATH'] ?? '', HOME: job.work } });
   if (r.status !== 0) throw new Error(`usd2glb.py failed: ${(r.stderr || r.stdout || String(r.error ?? '')).slice(-600)}`);
+  if (job.bulk) {
+    const tin = (JSON.parse(readFileSync(join(conv, 'report.json'), 'utf8')) as { triangles_in?: number }).triangles_in ?? 0;
+    if (tin > 3_000_000) throw new Error(`REJECT source-too-heavy: ${tin} source triangles`);
+  }
   console.log('stage:optimising');
   const gdoc = await nio.read(full);
   gdoc.getRoot().listTextures().forEach((t, i) => t.setURI(`tex-${i}.${t.getMimeType() === 'image/png' ? 'png' : 'jpg'}`));
@@ -885,11 +893,24 @@ async function buildImportOne(jobPath: string): Promise<void> {
   await nio.write(src, gdoc);
   // Triangle budget by size (the cap stays 20,000): a toolbox does not need what a sofa needs.
   const sb = sceneBounds(gdoc);
-  const longest = Math.max(sb.max[0] - sb.min[0], sb.max[1] - sb.min[1], sb.max[2] - sb.min[2]);
+  const dx = sb.max[0] - sb.min[0];
+  const dz = sb.max[2] - sb.min[2];
+  const longest = Math.max(dx, sb.max[1] - sb.min[1], dz);
   const o = job.row[6] ?? {};
-  const row: InteriorRow = [job.row[0], job.row[1], job.row[2], job.row[3], job.row[4], job.row[5], { ...o, tris: Math.min(o.tris ?? 20000, longest < 0.6 ? 6000 : longest < 1.5 ? 12000 : 20000) }];
+  let row: InteriorRow;
+  let front: { rot: number | null; sure: boolean; why: string } | undefined;
+  if (job.bulk) {
+    // Front: this index is authored with the front along +X (Z-up): a piece whose long side runs along the glTF Z axis (sofa,
+    // desk, shelf) turns by 270 degrees to face +Z, the way the 28 reviewed props were set. Long side along X: front on +Z or -Z,
+    // not decidable from the shape. Near-square pieces: only symmetric ones are sure.
+    const asp = Math.max(dx, dz) / Math.max(1e-6, Math.min(dx, dz));
+    if (job.bulk.symmetric) front = { rot: null, sure: true, why: 'symmetric' };
+    else if (asp >= 1.25 && dz > dx) front = { rot: 270, sure: true, why: `long side along Z (${asp.toFixed(2)})` };
+    else front = { rot: null, sure: false, why: asp >= 1.25 ? 'long side along X: front on +Z or -Z' : 'near square' };
+    row = [job.row[0], job.row[1], job.row[2], job.row[3], job.row[4], job.row[5], { ...o, tris: budgetFor(longest), ...(front.rot ? { rot: front.rot } : {}) }];
+  } else row = [job.row[0], job.row[1], job.row[2], job.row[3], job.row[4], job.row[5], { ...o, tris: Math.min(o.tris ?? 20000, longest < 0.6 ? 6000 : longest < 1.5 ? 12000 : 20000) }];
   const built = await buildInteriorModel(nio, row, { src, texDir: srcDir, authors: [job.author], archive: job.archive, pack: job.pack, licence: job.licence, cacheKey: `import-${id}`, dir: 's' });
-  writeFileSync(join(job.work, 'result.json'), `${JSON.stringify({ entry: built.entry, files: built.asset.files })}\n`);
+  writeFileSync(join(job.work, 'result.json'), `${JSON.stringify({ entry: built.entry, files: built.asset.files, ...(front ? { front } : {}), source: { size: [dx, sb.max[1] - sb.min[1], dz], trianglesIn: (JSON.parse(readFileSync(join(conv, 'report.json'), 'utf8')) as { triangles_in?: number }).triangles_in ?? null } })}\n`);
 }
 
 const importOne = process.argv.find((a) => a.startsWith('--import-one='))?.slice(13);

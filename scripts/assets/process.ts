@@ -200,8 +200,17 @@ export function normaliseAnimated(doc: Document, scale: number, offset: Vec3, fl
  * Simplify every primitive to about `ratio` of its triangles (meshoptimizer,
  * attribute-blind). Returns the new triangle count.
  */
+let uvAware = false;
+/**
+ * UV-aware simplification (the bulk SimReady import): the vertex UVs join the error metric, so a colour atlas of sharp islands
+ * (a white kettle with a black handle) is not smeared, the error limit grows step by step when a primitive stalls, and only a
+ * primitive that still misses its goal falls back to the attribute-blind sloppy pass. Replaces the aggressive pass.
+ */
+export const setUvAwareSimplify = (on: boolean): void => void (uvAware = on);
+
 export async function simplifyDocument(doc: Document, ratio: number, maxError = 0.05, aggressive = false): Promise<number> {
   await MeshoptSimplifier.ready;
+  if (uvAware) aggressive = false;
   let tris = 0;
   // `aggressive` (CAD-like sources of hundreds of thousands of triangles, whose seams and shells the default pass cannot
   // collapse): stage one is the permissive pass at one absolute error for the whole model (metres, found by bisection to
@@ -250,7 +259,22 @@ export async function simplifyDocument(doc: Document, ratio: number, maxError = 
       const target = Math.max(3, Math.floor((indices.length / 3) * ratio) * 3);
       // UV / normal seams split vertices, so locking borders would freeze most edges; LOD files are
       // only drawn when small on screen, where a hairline seam is invisible.
-      let [out] = aggressive ? MeshoptSimplifier.simplify(indices, positions, 3, 3, absError, ['ErrorAbsolute', 'Permissive', 'Prune']) : MeshoptSimplifier.simplify(indices, positions, 3, target, maxError, []);
+      const uvAcc = uvAware ? prim.getAttribute('TEXCOORD_0') : null;
+      let out: Uint32Array;
+      if (uvAcc) {
+        const uv = new Float32Array(pos.getCount() * 2);
+        const u: number[] = [0, 0];
+        for (let i = 0; i < pos.getCount(); i++) {
+          uvAcc.getElement(i, u);
+          uv.set(u, i * 2);
+        }
+        out = indices;
+        for (const err of [maxError, 0.15, 0.4, 1]) {
+          [out] = MeshoptSimplifier.simplifyWithAttributes(indices, positions, 3, uv, 2, [1, 1], null, target, err, []);
+          if (out.length <= target * 1.1) break;
+        }
+        if (out.length > target * 1.25) [out] = MeshoptSimplifier.simplifySloppy(out, positions, 3, null, target, 1);
+      } else [out] = aggressive ? MeshoptSimplifier.simplify(indices, positions, 3, 3, absError, ['ErrorAbsolute', 'Permissive', 'Prune']) : MeshoptSimplifier.simplify(indices, positions, 3, target, maxError, []);
       if (aggressive && share < 1) {
         const want = Math.max(3, Math.floor((out.length / 3) * share) * 3);
         if (out.length > want * 1.1) [out] = MeshoptSimplifier.simplifySloppy(out, positions, 3, null, want, 1);
