@@ -93,6 +93,7 @@
     "e2e:mcp": "tsx tests/e2e/mcp.e2e.ts",
     "assets:fetch": "tsx scripts/assets/fetch.ts",
     "assets:simready": "tsx scripts/assets/simready.ts",
+    "assets:hf": "tsx scripts/assets/hf-dataset.ts",
     "assets:simready-setup": "tsx scripts/assets/simready-setup.ts",
     "assets:simready-e2e": "tsx scripts/assets/simready-e2e.ts",
     "assets:build": "tsx scripts/assets/build.ts",

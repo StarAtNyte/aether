@@ -9,6 +9,7 @@
     ".": "./src/index.ts",
     "./import": "./src/user.ts",
     "./zip": "./src/zip.ts",
+    "./hub": "./src/hub.ts",
     "./simready-fetch": "./src/simready-fetch.ts",
     "./characters": "./src/characters/index.ts",
     "./offline-sw": "./src/offline-sw.ts"
