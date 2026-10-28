@@ -1,6 +1,41 @@
 {
  "about": "Front (rot about Y, degrees) and mounting per model, decided by a vision model from four turned views. Written by scripts/assets/front-fix.ts; read by the bulk converter and the library build.",
  "fronts": {
+  "simready-accessory-eyeglasses-a01": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.8,
+   "reason": "In B the lens fronts face the viewer with the temple arms extending away behind them.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-air-fryer": {
+   "rot": 0,
+   "mounting": "table",
+   "confidence": 0.93,
+   "reason": "Tile B shows the control panel with the display, dial and drawer front facing the viewer; an air fryer sits on a countertop.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-airplane-seat-tray": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.8,
+   "reason": "Tile C shows the tray table and net pocket side facing the viewer, while B shows the plain back.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-appliance-handdryer-automatic-a01": {
+   "rot": 270,
+   "mounting": "wall",
+   "confidence": 0.4,
+   "reason": "front unsure; Tile A shows the recessed hand-drying face, while C looks like the flat wall-mount back.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-bench-vise": {
+   "rot": 0,
+   "mounting": "table",
+   "confidence": 0.4,
+   "reason": "front unsure; Tile C shows the vise end-on with the handle and screw end toward the viewer, which is the operator side; the other tiles are side views.",
+   "model": "claude-sonnet-5-5"
+  },
   "simready-bin-waste": {
    "rot": 270,
    "mounting": "floor",
@@ -22,11 +57,130 @@
    "reason": "The reflective mirror glass faces the viewer in D, while the back housing and mount stem show in B.",
    "model": "claude-sonnet-5-5"
   },
+  "simready-bodypart-headlight-c01": {
+   "rot": 270,
+   "mounting": "table",
+   "confidence": 0.8,
+   "reason": "Tile B shows the clear lens face of the headlight toward the viewer, while tile C shows the dark rear housing.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-bodypart-interior-roof-panel-d01": {
+   "rot": 0,
+   "mounting": "ceiling",
+   "confidence": 0.3,
+   "reason": "front unsure; Car headliner panel with sunroof openings; the front edge is guessed to face the viewer in A, but the orientation is ambiguous.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-box-cardboard-folded-brown-a01": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.3,
+   "reason": "front unsure; Flat folded cardboard sheet with no clear front; C is a guess, chosen because its long side runs across the view, matching the listed x width.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-box-cardboard-large-b01": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.5,
+   "reason": "front unsure; The shipping label is on the face toward the viewer in tile C, and a cardboard box otherwise has no clear front.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-box-cardboard-large-b02": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.4,
+   "reason": "front unsure; Cardboard box with a shipping label; the label faces the viewer in tile D, which is the most plausible front.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-box-cardboard-open-a06": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.6,
+   "reason": "front unsure; Open cardboard bin whose low cut-down front wall with a label and clip faces the viewer in A, with the taller back wall behind.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-box-cube-a01": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.3,
+   "reason": "front unsure; Cardboard cube box with nearly the same look from every side; I chose the tile where the tape seam runs down the visible face.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-box-cube-a09": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.3,
+   "reason": "front unsure; Cardboard cube with no clear front; A shows the taped face with tape ends toward the viewer, but it is a near-arbitrary choice.",
+   "model": "claude-sonnet-5-5"
+  },
   "simready-box-cube-brown-b04": {
    "rot": 0,
    "mounting": "floor",
    "confidence": 0.55,
    "reason": "front unsure; The large 'PROFESSIONAL MOVING BOX SMALL' printed face points toward the viewer in tile A.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-box-cube-white-b05": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.5,
+   "reason": "front unsure; The printed 'PROFESSIONAL MOVING BOX SMALL' face is toward the viewer in C (D looks almost identical), so C is the most plausible front.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-box-flat-white-b09": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.3,
+   "reason": "front unsure; Nearly square cardboard box with no real front; tape seam runs down the viewer-facing side in C, with B nearly as plausible.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-box-multidepth-a11": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.3,
+   "reason": "front unsure; Cardboard box with nearly identical sides; the recycling/CE label faces the viewer in A, so it is the best guess.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-box-multidepth-a12": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.4,
+   "reason": "front unsure; Box has no real front; tile D shows the long face with the recycling and fragile markings toward the viewer.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-box-multidepth-white-b05": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.3,
+   "reason": "front unsure; Cardboard box with no real front; tile A's face carries the recycle and CE marks, so it is the likeliest labeled face.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-box-printer-a08": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.35,
+   "reason": "front unsure; Cardboard box with no real front; the wide long face is toward the viewer in C and D, so I chose C.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-box-printer-brown-b04": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.3,
+   "reason": "front unsure; Cardboard box with no clear front; the face where the tape seam ends and a tab shows is the most plausible front.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-box-printer-brown-b05": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.3,
+   "reason": "front unsure; Cardboard box with no clear front; the tape seam runs down the face toward the viewer in A, so I treated that as the front.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-cabinet-file-a03": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.85,
+   "reason": "Tile B shows the two door panels of the tall cabinet facing the viewer, while D shows the plain back.",
    "model": "claude-sonnet-5-5"
   },
   "simready-cabinet-filing": {
@@ -36,11 +190,207 @@
    "reason": "Tile C shows the open shelves and the lower doors with handles facing the viewer, while D shows the plain back.",
    "model": "claude-sonnet-5-5"
   },
+  "simready-cabinet-for-drugs-a06": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.88,
+   "reason": "Tile C shows the cabinet's doors, handles and drawers facing the viewer, while A and B show plain back or side panels.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-chest-of-drawers": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.93,
+   "reason": "Tile A shows the drawer fronts with knobs facing the viewer, while C shows the open back.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-cleaning-abrasivepowder-a01": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.85,
+   "reason": "Tile B shows the main Nova Bleach label centered and facing the viewer.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-cleaning-dishsoap-a01": {
+   "rot": 270,
+   "mounting": "table",
+   "confidence": 0.8,
+   "reason": "Tile D shows the bottle's main front label with the Glissi logo and NEW badge, while B shows the back label with fine print and a barcode.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-cleaning-soapdispenser-a02": {
+   "rot": 270,
+   "mounting": "table",
+   "confidence": 0.85,
+   "reason": "The main 'Heartwood' label faces the viewer in tile C, so that is the front of the soap dispenser bottle.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-cleaning-soapdispenser-b01": {
+   "rot": 0,
+   "mounting": "table",
+   "confidence": 0.6,
+   "reason": "front unsure; The tulip decoration (the label side) faces the viewer most directly in tile B.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-computer-desktop-tower-a01": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.8,
+   "reason": "Tile A shows the mesh front bezel with ports and buttons, while tile B shows the rear panel with the PSU and expansion slots.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-consumable-absorbent-roll-b01": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.6,
+   "reason": "front unsure; A cylindrical absorbent roll is rotationally symmetric, with only a minor seam, so it has no meaningful front.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-consumable-additive-egr-cleaner-a01": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.85,
+   "reason": "Tile A shows the main printed label with the brand name and 'EGR CLEANER' facing the viewer.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-consumable-antifreeze-coolant-a01": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.8,
+   "reason": "Tile D shows the main brand label (ThermaXion Titanium) facing the viewer, while B shows the back label with the chart and barcode.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-consumable-antifreeze-diesel-engine-a01": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.9,
+   "reason": "Tile D shows the main printed label (brand, ANTIFREEZE, DIESEL ENGINE) facing the viewer.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-consumable-brake-fluid-a01": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.85,
+   "reason": "The printed label (ULTRA BRAKE FLUID DOT 4) faces the viewer in tile D; the bottle is a small item that sits on a table or shelf.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-consumable-fuel-filter-canister-a01": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.8,
+   "reason": "Tile A shows the main brand logo 'ANTORX Fuel Filter' facing the viewer, while the other tiles show the small-print or back side.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-consumable-hydraulic-fluid-a01": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.88,
+   "reason": "The printed blue label (HIDRO ISO 46) is the face of the canister, and it points toward the viewer in tile A.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-consumable-lubricant-grease-red-tacky-a01": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.8,
+   "reason": "Tile B shows the main 'Super Grease Multi-Purpose Grease' label centered and facing the viewer.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-consumable-lubricant-grease-white-lithium-a01": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.7,
+   "reason": "Tile C shows the main Motor King Silicone label face-on, while A shows the fine-print and barcode side.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-consumable-lubricant-oil-multi-purpose-a01": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.85,
+   "reason": "Tile B shows the main label with the horse logo and 'OIL' text facing the viewer, while A shows the back with the barcode.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-consumable-lubricant-silicone-super-lube-a01": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.85,
+   "reason": "Tile C shows the main 'PRO GREASE' label facing the viewer, while D shows the back label with fine print and A and B show the label from the side.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-consumable-lubricant-silicone-wd40-a01": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.8,
+   "reason": "The main label (Pioneer Grease SILICONE) faces the viewer squarely in tile A.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-consumable-resin-metalrepair-a01": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.85,
+   "reason": "Tile A shows the main FIXLITE brand and 'Performance Metal Resin' label facing the viewer, while B and D show the back text panel.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-consumable-sealant-window-a01": {
+   "rot": 0,
+   "mounting": "table",
+   "confidence": 0.6,
+   "reason": "front unsure; Tube lying on its side; the printed label with readable text faces the viewer in D.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-container-black-c04": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.35,
+   "reason": "front unsure; A plain black lidded crate with no distinct front; A and B show the long side toward the viewer, so I picked A.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-container-gray-c04": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.35,
+   "reason": "front unsure; Gray lidded storage crate with no clear front; the long side faces the viewer in B and C, so B is a guess.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-container-orange-c04": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.3,
+   "reason": "front unsure; Lidded storage crate with no clear front; the long side faces the viewer in A and C, and A is a guess between them.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-container-recycle-blue-wheeled-a01": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.7,
+   "reason": "Tile C shows the recycle-logo face toward the viewer, while tile B shows the wheel and axle side, which is the back of the bin.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-container-white-c04": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.35,
+   "reason": "front unsure; Stackable crate is nearly symmetric; B and C both show the long side facing the viewer, and B shows it most squarely.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-cooking-wcep6423f": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.85,
+   "reason": "Tile D shows the double oven's two door openings facing the viewer, while A and B show closed back or side panels.",
+   "model": "claude-sonnet-5-5"
+  },
   "simready-d00144": {
    "rot": 0,
    "mounting": "floor",
    "confidence": 0.4,
    "reason": "front unsure; A flat, nearly square rug lying on the floor looks the same from every side and has no meaningful front.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-d00157": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.7,
+   "reason": "Tile A shows the display, buttons, label, spout and drip tray facing the viewer; it is a small countertop dispenser.",
    "model": "claude-sonnet-5-5"
   },
   "simready-d00738": {
@@ -57,11 +407,221 @@
    "reason": "front unsure; Hinged-lid box whose lid is hinged at the back with the long side facing the viewer in C, though B is also plausible.",
    "model": "claude-sonnet-5-5"
   },
+  "simready-detector-smoke-fire-a01": {
+   "rot": 0,
+   "mounting": "ceiling",
+   "confidence": 0.3,
+   "reason": "front unsure; Round smoke detector with almost no front; tile B shows a small tab or button facing the viewer, which is the only distinguishing feature.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-digitalsystem-touchterminal-standing-a01": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.8,
+   "reason": "Tile C shows the tilted dark screen face of the standing kiosk toward the viewer, while A shows the back and B and D are side profiles.",
+   "model": "claude-sonnet-5-5"
+  },
   "simready-dining-chair": {
    "rot": 0,
    "mounting": "floor",
    "confidence": 0.8,
    "reason": "In B the backrest spindles are behind the seat, so the seat faces the viewer; in C the backrest is toward the viewer.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-dish-drying-rack": {
+   "rot": 0,
+   "mounting": "table",
+   "confidence": 0.4,
+   "reason": "front unsure; Long side faces the viewer in A with the utensil caddy at the right; C is the opposite long side, so it is a near coin flip.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-equipment-bench-vise-a01": {
+   "rot": 0,
+   "mounting": "table",
+   "confidence": 0.3,
+   "reason": "front unsure; Vise jaw faces point toward the viewer in D, with the base clamping to a bench, but the orientation is hard to judge.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-equipment-poweroutlet-wallmount-b01": {
+   "rot": 270,
+   "mounting": "wall",
+   "confidence": 0.5,
+   "reason": "front unsure; The flat faceplate of the wall outlet faces the viewer in D, while the boxy body sits behind it.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-extractor-ceiling-a01": {
+   "rot": 0,
+   "mounting": "ceiling",
+   "confidence": 0.25,
+   "reason": "front unsure; Nearly square flat ceiling extractor panel with no clear front; small dark holes are the only asymmetric cue.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-facilityfurniture-lockerunit-multidoor-a01": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.93,
+   "reason": "Tile D shows the yellow locker doors with handles facing the viewer, while B shows the plain black back.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-food-beverage-bottledwater-b01": {
+   "rot": 270,
+   "mounting": "table",
+   "confidence": 0.85,
+   "reason": "Tile A shows the brand logo side of the label (aquvia, 500ml) facing the viewer, while the other tiles show the side, nutrition facts, and barcode.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-food-beverage-bottledwater-j01": {
+   "rot": 270,
+   "mounting": "table",
+   "confidence": 0.7,
+   "reason": "The brand logo on the label is clearly readable and faces the viewer in tile C.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-food-beverage-boxeddrink-a01": {
+   "rot": 270,
+   "mounting": "table",
+   "confidence": 0.6,
+   "reason": "front unsure; Tile B shows the main branded front panel with the lemon iced tea label and logo; A is a side panel and C and D show the back with nutrition info.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-food-beverage-coffeecup-m01": {
+   "rot": 270,
+   "mounting": "table",
+   "confidence": 0.8,
+   "reason": "The sleeve's cup logo and text face the viewer squarely in tile A.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-food-beverage-rumbottle-a01": {
+   "rot": 270,
+   "mounting": "table",
+   "confidence": 0.93,
+   "reason": "The rum label, 'Mariner's Ember Rum', faces the viewer in tile D.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-food-canned-fruit-a01": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.9,
+   "reason": "Tile D shows the main label with the Monte Delight logo, fruit picture and 'Fruit Cocktail' facing the viewer.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-food-canned-fruit-a02": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.7,
+   "reason": "Tile C shows the main Monte Delight label with the fruit picture and 'Fruit Cocktail' text facing the viewer.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-food-canned-soup-a01": {
+   "rot": 0,
+   "mounting": "table",
+   "confidence": 0.55,
+   "reason": "front unsure; Tile B shows the brand name and soup bowl on the label mostly facing the viewer, while A shows the same face turned further away.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-food-egg-chicken-b06": {
+   "rot": 270,
+   "mounting": "table",
+   "confidence": 0.6,
+   "reason": "front unsure; A chicken egg is an ovoid with no meaningful front, and as a small food prop it would rest on a table.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-food-prepared-bar-a01": {
+   "rot": 270,
+   "mounting": "table",
+   "confidence": 0.9,
+   "reason": "Tile D shows the wrapper's branded front with the CacaoDelight logo and cake image, while tile A shows the ingredients and barcode on the back.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-food-prepared-bar-c01": {
+   "rot": 270,
+   "mounting": "table",
+   "confidence": 0.88,
+   "reason": "Tile B shows the front printed face of the package with the NutriBite logo and product picture facing the viewer.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-food-processed-cannedfood-f01": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.88,
+   "reason": "Tile C shows the main label with the product name and soup picture facing the viewer.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-food-processed-cannedfood-k01": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.88,
+   "reason": "Tile D shows the main label with the brand name and soup bowl image facing the viewer.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-food-processed-condiment-a01": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.9,
+   "reason": "Tile A shows the front label with the brand and 'Hickory & Brown Sugar' facing the viewer, while B shows the back label with nutrition text and barcode.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-food-processed-jam-a02": {
+   "rot": 270,
+   "mounting": "table",
+   "confidence": 0.9,
+   "reason": "Tile D shows the main Heartwood Blends logo label with fruit picture facing the viewer, not the nutrition facts or the text side.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-food-processed-jam-a04": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.85,
+   "reason": "Tile A shows the jar's main Heartwood Blends label with the logo and strawberries facing the viewer, while the other tiles show the nutrition facts and back text.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-food-processed-ketchup-c01": {
+   "rot": 0,
+   "mounting": "table",
+   "confidence": 0.6,
+   "reason": "front unsure; Ketchup bottle is a rotationally symmetric cylinder with a central nozzle and looks the same in all four tiles.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-food-produce-kiwi-a07": {
+   "rot": 0,
+   "mounting": "table",
+   "confidence": 0.3,
+   "reason": "front unsure; A kiwi is nearly symmetric; tile A shows the stem-end scar facing the viewer, which I took as the most plausible front.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-french-press": {
+   "rot": 0,
+   "mounting": "table",
+   "confidence": 0.4,
+   "reason": "front unsure; In A the handle is behind the body, so the spout side faces the viewer; B shows the handle toward the viewer.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-furniture-workbench-modular-a01": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.8,
+   "reason": "Tile C shows the double doors with a center gap and a knob facing the viewer, while A is a plain back panel.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-gate-seating": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.88,
+   "reason": "In B the seat cushions face the viewer with the backrests behind them; D shows the backs.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-grid-ceiling-a01": {
+   "rot": 0,
+   "mounting": "ceiling",
+   "confidence": 0.3,
+   "reason": "front unsure; Thin flat grid strip with no clear front; B shows its long side across the view, facing +Z, and it appears to be a ceiling grid.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-handtool-socket-1-7-16in-a01": {
+   "rot": 0,
+   "mounting": "table",
+   "confidence": 0.6,
+   "reason": "front unsure; A socket is a small, nearly rotationally symmetric cylinder with no meaningful front, and it would sit on a workbench or table.",
    "model": "claude-sonnet-5-5"
   },
   "simready-handtruck-convertible-steel-red-a01": {
@@ -71,6 +631,20 @@
    "reason": "In A the toe plate projects toward the viewer from the upright frame, while D shows the frame's back with the plate hidden and B and C are side views.",
    "model": "claude-sonnet-5-5"
   },
+  "simready-hvac-vent-system-straight-a02": {
+   "rot": 0,
+   "mounting": "ceiling",
+   "confidence": 0.3,
+   "reason": "front unsure; Straight duct is nearly symmetric with no clear front; A shows the long side facing the viewer, but A and C look almost the same.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-instrument-bone-forceps-b01": {
+   "rot": 0,
+   "mounting": "table",
+   "confidence": 0.6,
+   "reason": "front unsure; A flat surgical forceps (scissor-like hand tool) lying on its side has no meaningful front, and it would rest on a table or tray.",
+   "model": "claude-sonnet-5-5"
+  },
   "simready-instrument-mirror-a01": {
    "rot": 0,
    "mounting": "table",
@@ -78,11 +652,151 @@
    "reason": "front unsure; Small flat hand tool (instrument mirror on a long handle) with no meaningful front; it would rest on a table.",
    "model": "claude-sonnet-5-5"
   },
+  "simready-instrument-storage-a01": {
+   "rot": 0,
+   "mounting": "table",
+   "confidence": 0.3,
+   "reason": "front unsure; Small flat perforated tray with no clear front; long side faces the viewer in A, so I chose A as the default.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-interiorpart-dashboard-b01": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.8,
+   "reason": "Instrument cluster gauges are visible facing the viewer in tile C.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-interiorpart-dashboard-c01": {
+   "rot": 270,
+   "mounting": "table",
+   "confidence": 0.8,
+   "reason": "The gauge face with the dials and glass faces the viewer in tile D, while the other tiles show the back or side housing.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-interiorpart-sun-visor-b01": {
+   "rot": 270,
+   "mounting": "ceiling",
+   "confidence": 0.4,
+   "reason": "front unsure; Tile B shows the visor's recessed mirror-side panel facing the viewer, while D shows the plain back with the airbag label.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-kitchen-base-cabinet": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.85,
+   "reason": "Tile C shows the drawer and door front with handles facing the viewer; A shows the open back, B a plain panel.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-kitchen-wall-cabinet": {
+   "rot": 0,
+   "mounting": "wall",
+   "confidence": 0.88,
+   "reason": "Tile A shows the two wood-finish doors with handles facing the viewer; the other tiles show the plain back or the sides.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-kitchenware-jug-b01": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.3,
+   "reason": "front unsure; Milk-can jug that is nearly symmetric; I chose the view with the handles at the sides, but B and C are about equally plausible.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-kitchenware-rollingpin-d01": {
+   "rot": 270,
+   "mounting": "table",
+   "confidence": 0.6,
+   "reason": "front unsure; A rolling pin is a symmetrical cylinder with two handles and no meaningful front; it is used on a table or counter.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-kitchenware-spatula-i02": {
+   "rot": 270,
+   "mounting": "table",
+   "confidence": 0.5,
+   "reason": "front unsure; A spatula is a flat hand tool with no meaningful front, and it is a small item that lies on a table or counter.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-lamp-ceiling-1m-rectangle-a01": {
+   "rot": 0,
+   "mounting": "ceiling",
+   "confidence": 0.3,
+   "reason": "front unsure; Flat rectangular ceiling light panel with suspension rods on top; nearly symmetric, so the front is a guess with the long side facing the viewer.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-lamp-ceiling-1m-rectangle-a02": {
+   "rot": 0,
+   "mounting": "ceiling",
+   "confidence": 0.3,
+   "reason": "front unsure; Flat rectangular ceiling lamp with mounting pins on top and no clear front; C shows the long side facing the viewer.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-lamp-ceiling-50cm-square-a01": {
+   "rot": 0,
+   "mounting": "ceiling",
+   "confidence": 0.5,
+   "reason": "front unsure; Square flat ceiling lamp panel with suspension rods, essentially symmetrical with no meaningful front.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-lamp-ceiling-50cm-square-a02": {
+   "rot": 0,
+   "mounting": "ceiling",
+   "confidence": 0.5,
+   "reason": "front unsure; A square flat ceiling lamp panel with suspension wires is nearly symmetrical, so it has no meaningful front.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-lamp-ceiling-corner-a01": {
+   "rot": 0,
+   "mounting": "ceiling",
+   "confidence": 0.3,
+   "reason": "front unsure; Flat corner-shaped panel hung by rods from above; the rounded outer edge faces the viewer in B, but the shape is nearly symmetric.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-lamp-uvc-a01": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.4,
+   "reason": "front unsure; The button markings on the base face the viewer in B, and the lamp is otherwise nearly symmetrical.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-laptop-16z90tl": {
+   "rot": 270,
+   "mounting": "table",
+   "confidence": 0.85,
+   "reason": "In D the open screen faces the viewer with the keyboard in front of it, which is the user's side of the laptop.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-laundry-dlex4000b": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.85,
+   "reason": "The round washing-machine door and the control panel are both visible facing the viewer in tile C.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-light-head-bed-a01": {
+   "rot": 270,
+   "mounting": "wall",
+   "confidence": 0.6,
+   "reason": "front unsure; Long bed-head light bar; tile B shows the labeled front face with the light strip toward the viewer, while D shows the vented back.",
+   "model": "claude-sonnet-5-5"
+  },
   "simready-light-work-tripod": {
    "rot": 270,
    "mounting": "floor",
    "confidence": 0.85,
    "reason": "Tile A shows the lit glass faces of the three floodlights toward the viewer, while C shows their dark backs.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-lighting-tasklight-adjustablearmbench-a01": {
+   "rot": 0,
+   "mounting": "table",
+   "confidence": 0.45,
+   "reason": "front unsure; Clamp-mounted desk task lamp whose light bar extends toward the viewer in D, with the clamp and arms behind it.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-lighting-tasklight-foldableceiling-a01": {
+   "rot": 0,
+   "mounting": "ceiling",
+   "confidence": 0.6,
+   "reason": "front unsure; A four-armed cross-shaped ceiling light looks the same from every side, so it has no meaningful front.",
    "model": "claude-sonnet-5-5"
   },
   "simready-machine-coffee-vending-a01": {
@@ -99,11 +813,46 @@
    "reason": "The white dial of the alarm clock faces the viewer in D, while B shows the textured back.",
    "model": "claude-sonnet-5-5"
   },
+  "simready-measurement-ruler-speedsquare-a02": {
+   "rot": 0,
+   "mounting": "table",
+   "confidence": 0.6,
+   "reason": "front unsure; A speed square is a flat triangular hand tool with no meaningful front, used on a table or workpiece.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-medical-sample-bag-a01": {
+   "rot": 270,
+   "mounting": "table",
+   "confidence": 0.9,
+   "reason": "Tile B shows the printed face of the bag with the biohazard symbol and 'SPECIMEN BAG' text, while C shows the plain back.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-medicine-c03": {
+   "rot": 0,
+   "mounting": "table",
+   "confidence": 0.7,
+   "reason": "Tile B shows the QuickJect printed label face-on toward the viewer, which is the pen's front.",
+   "model": "claude-sonnet-5-5"
+  },
   "simready-misc-eyeglasses-b01": {
    "rot": 270,
    "mounting": "table",
    "confidence": 0.7,
    "reason": "In D the lens rims face the viewer with the temples running away from it, while C shows the opposite.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-monitor-27gx790a": {
+   "rot": 270,
+   "mounting": "table",
+   "confidence": 0.88,
+   "reason": "Tile A shows the flat black screen face toward the viewer with the stand behind it, while B shows the rear housing.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-monitor-c01": {
+   "rot": 270,
+   "mounting": "table",
+   "confidence": 0.88,
+   "reason": "Tile D shows the glossy screen face with the bottom port panel toward the viewer, while C shows the back with the stand mount.",
    "model": "claude-sonnet-5-5"
   },
   "simready-monitor-office": {
@@ -120,11 +869,88 @@
    "reason": "In A the seat is in front of the backrest, which is seen from its front face, while D shows the chair's back.",
    "model": "claude-sonnet-5-5"
   },
+  "simready-paint-container-spraycan-a01": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.9,
+   "reason": "Tile D shows the main label with the PASCAL logo and 'BLACK FLAT' text facing the viewer.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-paint-container-spraycan-a02": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.85,
+   "reason": "Tile A shows the main label with the PASCAL logo and color wheel facing the viewer; the other tiles show the side or back text and barcode.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-paint-supplies-thinner-a01": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.8,
+   "reason": "Tile C shows the main brand label 'Jacob's Standard Paint Thinner' facing the viewer; the can is a small item standing on a surface.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-palletjack-lowprofile-a01": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.8,
+   "reason": "In tile C the forks extend toward the viewer and the handle is at the far end, so the fork end faces front.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-palletjack-scale-a01": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.8,
+   "reason": "In tile A the forks extend toward the viewer and the handle is behind, so the fork end faces front.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-ramp-long-a01": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.4,
+   "reason": "front unsure; Ramp is long along X, so the front is a long side; B shows the low approach side facing the viewer, though the geometry is ambiguous.",
+   "model": "claude-sonnet-5-5"
+  },
   "simready-range-cooker-lg": {
    "rot": 270,
    "mounting": "floor",
    "confidence": 0.93,
    "reason": "Tile D shows the knobs and the two oven doors facing the viewer, with the backguard behind.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-range-oven": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.92,
+   "reason": "Tile A shows the oven door with its handle and window facing the viewer, with the backsplash behind.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-refrigerator": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.95,
+   "reason": "Tile A shows the stainless french doors with handles and the bottom freezer drawer facing the viewer.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-safety-firstaidcabinet-wallmounted-a01": {
+   "rot": 270,
+   "mounting": "wall",
+   "confidence": 0.85,
+   "reason": "The green first-aid cross and text face the viewer squarely in tile A, and the cabinet is wall mounted.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-safety-firstaidkit-box-plastic-a01": {
+   "rot": 270,
+   "mounting": "table",
+   "confidence": 0.8,
+   "reason": "Tile A shows the long side with the latches and red cross label facing the viewer.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-safety-msdsbinder-wallmounted-a01": {
+   "rot": 270,
+   "mounting": "wall",
+   "confidence": 0.9,
+   "reason": "Tile A shows the printed 'SAFETY DATA SHEETS' cover face toward the viewer; the binder sits in a wall-mounted wire holder.",
    "model": "claude-sonnet-5-5"
   },
   "simready-sanitary-sink-wallmounted-a01": {
@@ -141,11 +967,81 @@
    "reason": "front unsure; Wall-mounted toilet whose bowl and seat project toward the viewer in C, with the flat wall-mount back behind.",
    "model": "claude-sonnet-5-5"
   },
+  "simready-sanitary-urinal-wallmounted-a01": {
+   "rot": 270,
+   "mounting": "wall",
+   "confidence": 0.8,
+   "reason": "In tile A the urinal's concave basin opening faces the viewer; B shows the flat back, and C and D show side views.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-screen-hospital-b05": {
+   "rot": 0,
+   "mounting": "ceiling",
+   "confidence": 0.4,
+   "reason": "front unsure; Curtain track forms a U with the back curtain facing away and the open side toward the viewer in A, though the model is nearly square and ambiguous.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-servicetool-spraygunholder-wallrack-a01": {
+   "rot": 270,
+   "mounting": "wall",
+   "confidence": 0.5,
+   "reason": "front unsure; Hooks project out from the black back plate; in D the plate faces the viewer so it is the back, which makes A the opposite side, with the hooks in front of the plate.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-sign-hospital-board-b01": {
+   "rot": 270,
+   "mounting": "wall",
+   "confidence": 0.9,
+   "reason": "Tile A shows the printed face of the sign (Emergency/Reception/Security) squarely toward the viewer, while D shows the blank back.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-sign-hospital-board-b02": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.85,
+   "reason": "Printed directions (Reception, X-Ray, Patient room, Stairs) are readable and face the viewer squarely in tile C.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-sign-hospital-donotenter-a01": {
+   "rot": 270,
+   "mounting": "wall",
+   "confidence": 0.9,
+   "reason": "Tile C shows the printed 'DO NOT ENTER' face squarely toward the viewer.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-sign-hospital-sidewall-a04": {
+   "rot": 270,
+   "mounting": "wall",
+   "confidence": 0.55,
+   "reason": "front unsure; The printed toilet face with the pictograms points toward the viewer in D, and C is a similar view, so the choice is close.",
+   "model": "claude-sonnet-5-5"
+  },
   "simready-sign-hospital-sidewall-b03": {
    "rot": 270,
    "mounting": "wall",
    "confidence": 0.93,
    "reason": "Tile D shows the printed toilet pictogram face directly toward the viewer, while B shows the blank back.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-sink-surgical-a01": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.8,
+   "reason": "Tile A shows the open basin and faucet fittings facing the viewer, while tile B shows the flat back panel.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-socket-a01": {
+   "rot": 270,
+   "mounting": "wall",
+   "confidence": 0.5,
+   "reason": "front unsure; The recessed socket face with pin holes looks toward the viewer in C, although D shows a similar face.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-socket-a02": {
+   "rot": 270,
+   "mounting": "wall",
+   "confidence": 0.6,
+   "reason": "front unsure; B shows the plate's front face with the socket holes, while A and D show the orange wiring terminals on the back.",
    "model": "claude-sonnet-5-5"
   },
   "simready-sofa-soft-01": {
@@ -160,6 +1056,118 @@
    "mounting": "floor",
    "confidence": 0.93,
    "reason": "In tile B the seat cushions face the viewer with the backrest behind them, while tile A shows the back of the sofa.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-sofa-soft-b03": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.8,
+   "reason": "In A the seat cushions face the viewer with the backrest behind, while C shows the plain back panel.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-stand-mixer": {
+   "rot": 270,
+   "mounting": "table",
+   "confidence": 0.6,
+   "reason": "front unsure; In B the head and bowl face the viewer with the column behind them, and the base extends toward the viewer.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-stationary-pastel-blue-a01": {
+   "rot": 0,
+   "mounting": "table",
+   "confidence": 0.3,
+   "reason": "front unsure; A plain pastel stick is nearly symmetrical, so the front is a guess; A and C show its long side facing the viewer.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-stationary-pastel-mint-a01": {
+   "rot": 0,
+   "mounting": "table",
+   "confidence": 0.25,
+   "reason": "front unsure; Small symmetrical pastel stick with no clear front; A is a guess among the tiles showing its long side.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-stationary-pastel-red-a01": {
+   "rot": 0,
+   "mounting": "table",
+   "confidence": 0.6,
+   "reason": "front unsure; A plain rectangular pastel stick that looks the same from either end, so it has no meaningful front, and it sits on a table or desk.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-stationary-pastel-yellow-a02": {
+   "rot": 0,
+   "mounting": "table",
+   "confidence": 0.5,
+   "reason": "front unsure; A plain pastel stick, a rectangular bar that looks nearly the same from every side, with no distinct front, and small enough to sit on a table.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-storage-box-c01": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.35,
+   "reason": "front unsure; Latch side of the storage box with lid clasps faces the viewer in A, though B looks nearly identical.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-storage-locker-double-bench-b01": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.88,
+   "reason": "Louvered locker doors face the viewer with the bench slats in front of them in tile D.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-storage-locker-double-bench-b03": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.9,
+   "reason": "Tile A shows the locker doors with the bench slats extending toward the viewer; D shows the plain back panel.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-structure-beam-center-a02": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.4,
+   "reason": "front unsure; Tile C shows the detailed bolted face of the beam toward the viewer, while A and D show the plain flat back.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-structure-beam-center-a03": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.4,
+   "reason": "front unsure; Tall dark beam whose broad bolted face is shown to the viewer in B (C looks nearly the same), so the choice between them is a guess.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-structure-beam-wallmount-b01": {
+   "rot": 0,
+   "mounting": "wall",
+   "confidence": 0.4,
+   "reason": "front unsure; Dark wall plate is at the far end in A, so the frame projects outward toward the viewer from the wall.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-testingtool-advanced-code-reader-a01": {
+   "rot": 270,
+   "mounting": "table",
+   "confidence": 0.85,
+   "reason": "Tile A shows the tablet's screen facing the viewer, while B shows the back with its kickstand.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-testingtool-multimeter-c01": {
+   "rot": 0,
+   "mounting": "table",
+   "confidence": 0.4,
+   "reason": "front unsure; Multimeter lies flat; B shows the long side with the display on top and the probe jack slots on the side facing the viewer, but D is also plausible.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-testingtool-multimeter-digital-b01": {
+   "rot": 270,
+   "mounting": "table",
+   "confidence": 0.4,
+   "reason": "front unsure; Multimeter lying flat with its display and dial readable in A, so the keys side faces the viewer; B is also plausible.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-testingtool-obdii-scanner-b01": {
+   "rot": 270,
+   "mounting": "table",
+   "confidence": 0.85,
+   "reason": "The scanner's bright screen face points toward the viewer in tile C, while the other tiles show the back or the side edge.",
    "model": "claude-sonnet-5-5"
   },
   "simready-toilet-a01": {
@@ -183,11 +1191,53 @@
    "reason": "Tile D shows the long side with the yellow latch clasps facing the viewer, which is the opening side of the toolbox.",
    "model": "claude-sonnet-5-5"
   },
+  "simready-tools-fireextinguisher-co2-a01": {
+   "rot": 90,
+   "mounting": "floor",
+   "confidence": 0.7,
+   "reason": "The instruction label faces the viewer squarely in tile A, with the handle and hose arranged around it.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-trashcan-wheeled-black-a01": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.7,
+   "reason": "Wheels are at the back, as seen in tile D, so tile A, the side opposite the wheels with no wheels facing the viewer, is the front.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-ultrasound-b01": {
+   "rot": 270,
+   "mounting": "table",
+   "confidence": 0.8,
+   "reason": "Screen faces the viewer with the keyboard in front of it, which is the user's side; D shows the back of the lid.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-vanity-sink-faucet": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.8,
+   "reason": "Tile C shows the wide wooden door face with its handle and toe kick toward the viewer, with the faucet at the back of the basin.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-vehicle-forklift-blue-a01": {
+   "rot": 180,
+   "mounting": "floor",
+   "confidence": 0.8,
+   "reason": "Forks of the pallet stacker point toward the viewer in D, with the mast and power unit behind them.",
+   "model": "claude-sonnet-5-5"
+  },
   "simready-vehicle-forklift-blue-c01": {
    "rot": 180,
    "mounting": "floor",
    "confidence": 0.8,
    "reason": "Forks and mast point toward the viewer in tile A, while D shows the rear counterweight end.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-vehicle-forklift-orange-a01": {
+   "rot": 180,
+   "mounting": "floor",
+   "confidence": 0.8,
+   "reason": "In tile C the forks point toward the viewer along the arrow, while in A the drive unit and tiller face the viewer and in B and D the forks point sideways.",
    "model": "claude-sonnet-5-5"
   },
   "simready-vehicle-forklift-red-b01": {
@@ -204,6 +1254,34 @@
    "reason": "In tile C the mast and forks point toward the viewer, while in D the red counterweight rear faces the viewer.",
    "model": "claude-sonnet-5-5"
   },
+  "simready-vehiclesupport-portable-lift-a01": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.4,
+   "reason": "front unsure; The U-shaped base legs open toward the viewer in D, with the mast at the back, so that is the likely front of this portable lift.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-vehiclesupport-wheel-chock-a01": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.35,
+   "reason": "front unsure; Wheel clamp whose open curved jaws face the viewer in B, with the bar running toward the back; the front is weakly defined.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-warehouse-box-cube-a07": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.25,
+   "reason": "front unsure; Near-cubic cardboard box with no clear front; tape seam runs down the viewer-facing side in B, so I chose it as a weak guess.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-warehouse-box-cube-a10": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.3,
+   "reason": "front unsure; Cardboard box that is nearly symmetrical; D shows the tape strip ending on the front face with a small label mark.",
+   "model": "claude-sonnet-5-5"
+  },
   "simready-warehouse-chair-office-amf-black-a01": {
    "rot": 270,
    "mounting": "floor",
@@ -211,11 +1289,46 @@
    "reason": "In D the seat is in the foreground with the backrest rising behind it, so the chair faces the viewer; C shows the back.",
    "model": "claude-sonnet-5-5"
   },
+  "simready-washbasin-a01": {
+   "rot": 270,
+   "mounting": "wall",
+   "confidence": 0.6,
+   "reason": "front unsure; In B the faucet and wall plumbing are at the far side, so the open basin side faces the viewer.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-wastemanagement-oilywastecan-firesafe-a01": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.88,
+   "reason": "The foot pedal at the base is visible and faces the viewer only in tile D.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-water-cooler-a01": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.8,
+   "reason": "Tile C shows the two taps in the dark recess with the drip tray, while D shows the back with condenser coils.",
+   "model": "claude-sonnet-5-5"
+  },
   "simready-workbench-standard": {
    "rot": 270,
    "mounting": "floor",
    "confidence": 0.85,
    "reason": "In B the work surface and cabinet doors face the viewer with the pegboard behind, while A shows the plain back.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-xdu2300-top": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.4,
+   "reason": "front unsure; Tall floor-standing cabinet; tile B shows a double-door face with a logo, while D is a plausible alternative.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-xray-machine-hvgenerator-a01": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.4,
+   "reason": "front unsure; Wide face with a large open bin full of shredded texture on a wheeled box; B is the plausible opposite.",
    "model": "claude-sonnet-5-5"
   }
  }
