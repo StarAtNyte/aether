@@ -26,7 +26,7 @@ export const SYNONYM_GROUPS: readonly (readonly string[])[] = [
   ['tv', 'television', 'screen', 'monitor'],
   ['computer', 'pc', 'laptop', 'keyboard'],
   ['fridge', 'refrigerator', 'freezer'],
-  ['stove', 'oven', 'cooker', 'range', 'hob'],
+  ['stove', 'oven', 'cooker', 'range', 'hob', 'cooktop'],
   ['sink', 'basin', 'washbasin', 'wash basin', 'handbasin', 'hand basin', 'pedestal sink', 'pedestal basin', 'vessel sink'],
   ['toilet', 'wc', 'lavatory'],
   ['bathtub', 'bath', 'tub'],

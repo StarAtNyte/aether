@@ -286,10 +286,10 @@ async function variantOf(k: Ktx, io: NodeIO, page: Page, path: string, work: str
 /** Library model files that may carry textures (LOD 0 of models and the cast; LOD files reuse LOD 0's materials). */
 function modelFiles(): string[] {
   const out: string[] = [];
-  for (const dir of ['m', 'c']) {
+  for (const dir of ['m', 'c', 's']) {
     const d = join(LIB, dir);
     if (!existsSync(d)) continue;
-    for (const f of readdirSync(d).sort()) if (f.endsWith('.glb') && !/\.lod[12]\./.test(f)) out.push(`${dir}/${f}`);
+    for (const f of readdirSync(d).sort()) if (f.endsWith('.glb') && !/\.(lod[12]|lite)\./.test(f)) out.push(`${dir}/${f}`);
   }
   return out;
 }

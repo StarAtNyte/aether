@@ -6646,6 +6646,156 @@
     "before": 1398100,
     "after": 349552
    }
+  },
+  "s/simready-range-cooker-lg.c12d9ef8.glb": {
+   "file": "k/simready-range-cooker-lg.7631b94a.glb",
+   "sha256": "7631b94acb7ba6c78efefe3b105301f30ef9b0fa09378b0bbea9761e579adbef",
+   "bytes": 670992,
+   "source": {
+    "sha256": "c12d9ef8245c2e3300403570715b47400e5ffeb493b52062bf873951fec70678",
+    "bytes": 594756
+   },
+   "textures": [
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9979
+    },
+    {
+     "slots": [
+      "emissiveTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9996
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9813
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9763
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9946
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9874
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9999
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9889
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9941
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 1
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9991
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 256,
+     "ssim": 1
+    }
+   ],
+   "gpu": {
+    "before": 20272452,
+    "after": 5068528
+   }
   }
  }
 }

@@ -45,8 +45,32 @@ const Pack = z.object({
   sha256: z.string().regex(/^[0-9a-f]{64}$/),
   retrieved: z.string(),
 });
+/** One NVIDIA SimReady Central package (a Hugging Face dataset folder pinned to a commit): CC0 or CC-BY only. */
+const SimreadyPackage = z.object({
+  id: z.string().regex(/^[a-z0-9-]+$/),
+  provider: z.string(),
+  title: z.string(),
+  dataset: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/),
+  revision: z.string().regex(/^[0-9a-f]{40}$/),
+  package: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/),
+  author: z.string(),
+  licence: z.enum(['CC0-1.0', 'CC-BY-4.0']),
+  licenceUrl: z.string().url(),
+  licenceEvidence: z.string().min(10),
+  page: z.string().url(),
+  url: z.string().url(),
+  usd: z.string().regex(/^simready_usd\/[A-Za-z0-9._-]+\.usd[acz]?$/),
+  bytes: z.number().int().positive(),
+  sha256: z.string().regex(/^[0-9a-f]{64}$/),
+  packageHash: z.string().regex(/^[0-9a-f]{64}$/),
+  retrieved: z.string(),
+});
+export type SimreadyPackage = z.infer<typeof SimreadyPackage>;
+
 /** Schema of `assets/sources.json`. */
 export const Sources = z.object({
+  /** SimReady Central packages; downloaded by `npm run assets:simready -- fetch`, not by `assets:fetch`. */
+  simready: z.object({ packages: z.array(SimreadyPackage).max(64) }).optional(),
   packs: z.array(Pack).max(64),
   polyhaven: z.object({
     licence: z.string(),

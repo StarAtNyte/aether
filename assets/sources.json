@@ -629,5 +629,29 @@
         "sha256": "9a593ffe4194132bd8c881558b47107f2c3c739018bbdad12fca5d877c90746a"
       }
     ]
+  },
+  "simready": {
+    "$comment": "NVIDIA SimReady Central packages (Hugging Face datasets, pinned to a commit). Every entry must be CC0-1.0 or CC-BY-4.0; scripts/assets/fetch.ts refuses anything else. Added by hand after `npm run assets:simready -- fetch`; the USD SHA-256 is checked by build.ts --simready.",
+    "packages": [
+      {
+        "id": "simready-lgelectronics-cooking-ldgl6924s",
+        "provider": "NVIDIA SimReady Central (Hugging Face)",
+        "title": "LG range cooker LDGL6924S",
+        "dataset": "LGElectronics/simready-assets",
+        "revision": "70ea043e1a85455227e516766443d1fa235a5ea0",
+        "package": "cooking_ldgl6924s",
+        "author": "LG Electronics (Hugging Face user LGElectronics)",
+        "licence": "CC-BY-4.0",
+        "licenceUrl": "https://creativecommons.org/licenses/by/4.0/",
+        "licenceEvidence": "com.nvidia.simready.packaging.json of the package: \"license\": \"cc-by-4.0\"; dataset card (huggingface.co/api/datasets/LGElectronics/simready-assets) cardData.license: cc-by-4.0",
+        "page": "https://huggingface.co/datasets/LGElectronics/simready-assets/tree/70ea043e1a85455227e516766443d1fa235a5ea0/cooking_ldgl6924s",
+        "url": "https://huggingface.co/datasets/LGElectronics/simready-assets/resolve/70ea043e1a85455227e516766443d1fa235a5ea0/cooking_ldgl6924s/simready_usd/cooking_ldgl6924s.usd",
+        "usd": "simready_usd/cooking_ldgl6924s.usd",
+        "bytes": 38728483,
+        "sha256": "7722e84e928a965af22acd645e5c1d891812199e1d79d5816c09c1325b74fa3e",
+        "packageHash": "6d1023ab7328df0234c0cd91de072c5fda72c3bc207d5f41382ca5e9502bb7d4",
+        "retrieved": "2026-10-28"
+      }
+    ]
   }
 }

@@ -200,9 +200,40 @@ export function normaliseAnimated(doc: Document, scale: number, offset: Vec3, fl
  * Simplify every primitive to about `ratio` of its triangles (meshoptimizer,
  * attribute-blind). Returns the new triangle count.
  */
-export async function simplifyDocument(doc: Document, ratio: number, maxError = 0.05): Promise<number> {
+export async function simplifyDocument(doc: Document, ratio: number, maxError = 0.05, aggressive = false): Promise<number> {
   await MeshoptSimplifier.ready;
   let tris = 0;
+  // `aggressive` (CAD-like sources of hundreds of thousands of triangles, whose seams and shells the default pass cannot
+  // collapse): stage one is the permissive pass at one absolute error for the whole model (metres, found by bisection to
+  // leave about twice the goal, never above 1 cm), so flat panels collapse for free and the budget stays where the detail
+  // is; stage two is the topology-free pass on what remains, with every primitive keeping the same share; stage three
+  // recomputes the normals from the new surface (the source normals no longer match its triangles).
+  let absError = 0;
+  let share = 1;
+  if (aggressive) {
+    const jobs: Array<{ positions: Float32Array; indices: Uint32Array }> = [];
+    let total = 0;
+    for (const mesh of doc.getRoot().listMeshes()) {
+      for (const prim of mesh.listPrimitives()) {
+        const pos = prim.getAttribute('POSITION');
+        const idx = prim.getIndices();
+        if (!pos || !idx) continue;
+        jobs.push({ positions: Float32Array.from(pos.getArray()!), indices: Uint32Array.from(idx.getArray()!) });
+        total += idx.getCount() / 3;
+      }
+    }
+    const goal = Math.max(1, total * ratio);
+    const count = (e: number): number => jobs.reduce((n, j) => n + MeshoptSimplifier.simplify(j.indices, j.positions, 3, 3, e, ['ErrorAbsolute', 'Permissive', 'Prune'])[0].length / 3, 0);
+    let lo = 1e-5;
+    let hi = 0.01;
+    for (let i = 0; i < 14; i++) {
+      const mid = Math.sqrt(lo * hi);
+      if (count(mid) > goal * 2) lo = mid;
+      else hi = mid;
+    }
+    absError = hi;
+    share = Math.min(1, goal / Math.max(1, count(absError)));
+  }
   for (const mesh of doc.getRoot().listMeshes()) {
     for (const prim of mesh.listPrimitives()) {
       const pos = prim.getAttribute('POSITION');
@@ -219,10 +250,11 @@ export async function simplifyDocument(doc: Document, ratio: number, maxError = 
       const target = Math.max(3, Math.floor((indices.length / 3) * ratio) * 3);
       // UV / normal seams split vertices, so locking borders would freeze most edges; LOD files are
       // only drawn when small on screen, where a hairline seam is invisible.
-      let [out] = MeshoptSimplifier.simplify(indices, positions, 3, target, maxError, []);
-      // Photoscanned meshes with a vertex per triangle (UV seams everywhere) stall far above the target: for the
-      // outdoor set (`maxError` raised) fall back to the topology-free simplifier, which keeps original vertices.
-      if (maxError > 0.05 && out.length > target * 1.25) [out] = MeshoptSimplifier.simplifySloppy(indices, positions, 3, null, target, 1);
+      let [out] = aggressive ? MeshoptSimplifier.simplify(indices, positions, 3, 3, absError, ['ErrorAbsolute', 'Permissive', 'Prune']) : MeshoptSimplifier.simplify(indices, positions, 3, target, maxError, []);
+      if (aggressive && share < 1) {
+        const want = Math.max(3, Math.floor((out.length / 3) * share) * 3);
+        if (out.length > want * 1.1) [out] = MeshoptSimplifier.simplifySloppy(out, positions, 3, null, want, 1);
+      }
       tris += out.length / 3;
       // Drop the vertices no triangle uses any more (and renumber), or the file keeps the source's full vertex buffers.
       const used = new Int32Array(pos.getCount()).fill(-1);
@@ -242,9 +274,101 @@ export async function simplifyDocument(doc: Document, ratio: number, maxError = 
         acc.setArray(next);
       }
       idx.setArray(kept > 65535 ? remapped : new Uint16Array(remapped));
+      if (aggressive) recomputeNormals(prim, 50);
     }
   }
   return tris;
+}
+
+/**
+ * Smooth normals from the triangles themselves: corners of coincident positions share a normal when the faces meet at less
+ * than `creaseDeg`, and a vertex is split only where the normal differs. Used after an aggressive simplification.
+ */
+function recomputeNormals(prim: Primitive, creaseDeg: number): void {
+  const posAcc = prim.getAttribute('POSITION');
+  const idxAcc = prim.getIndices();
+  if (!posAcc || !idxAcc) return;
+  const pos = posAcc.getArray() as Float32Array;
+  const ind = idxAcc.getArray() as Uint16Array | Uint32Array;
+  const T = ind.length / 3;
+  const canon = new Int32Array(pos.length / 3);
+  const seen = new Map<string, number>();
+  for (let v = 0; v < canon.length; v++) {
+    const key = `${Math.round(pos[v * 3]! * 1e5)},${Math.round(pos[v * 3 + 1]! * 1e5)},${Math.round(pos[v * 3 + 2]! * 1e5)}`;
+    const c = seen.get(key);
+    if (c === undefined) {
+      seen.set(key, v);
+      canon[v] = v;
+    } else canon[v] = c;
+  }
+  const un = new Float32Array(T * 3);
+  const w = new Float32Array(T * 3);
+  const at = (i: number, k: number): number => pos[ind[i]! * 3 + k]!;
+  for (let t = 0; t < T; t++) {
+    const e: number[][] = [0, 1, 2].map((c) => [0, 1, 2].map((k) => at(t * 3 + c, k)));
+    const sub = (a: number[], b: number[]): number[] => [a[0]! - b[0]!, a[1]! - b[1]!, a[2]! - b[2]!];
+    const cross = (a: number[], b: number[]): number[] => [a[1]! * b[2]! - a[2]! * b[1]!, a[2]! * b[0]! - a[0]! * b[2]!, a[0]! * b[1]! - a[1]! * b[0]!];
+    const len = (a: number[]): number => Math.hypot(a[0]!, a[1]!, a[2]!);
+    const n = cross(sub(e[1]!, e[0]!), sub(e[2]!, e[0]!));
+    const l = len(n) || 1;
+    un.set([n[0]! / l, n[1]! / l, n[2]! / l], t * 3);
+    for (let c = 0; c < 3; c++) {
+      const a = sub(e[(c + 1) % 3]!, e[c]!);
+      const b = sub(e[(c + 2) % 3]!, e[c]!);
+      w[t * 3 + c] = Math.acos(Math.max(-1, Math.min(1, (a[0]! * b[0]! + a[1]! * b[1]! + a[2]! * b[2]!) / ((len(a) * len(b)) || 1))));
+    }
+  }
+  const byCanon = new Map<number, number[]>();
+  for (let i = 0; i < ind.length; i++) {
+    const c = canon[ind[i]!]!;
+    const l = byCanon.get(c);
+    if (l) l.push(i);
+    else byCanon.set(c, [i]);
+  }
+  const cos = Math.cos((creaseDeg * Math.PI) / 180);
+  const newN = new Float32Array(ind.length * 3);
+  for (const corners of byCanon.values()) {
+    for (const i of corners) {
+      const f = Math.floor(i / 3);
+      let x = 0, y = 0, z = 0;
+      for (const j of corners) {
+        const g = Math.floor(j / 3);
+        if (un[f * 3]! * un[g * 3]! + un[f * 3 + 1]! * un[g * 3 + 1]! + un[f * 3 + 2]! * un[g * 3 + 2]! > cos) {
+          x += un[g * 3]! * w[j]!;
+          y += un[g * 3 + 1]! * w[j]!;
+          z += un[g * 3 + 2]! * w[j]!;
+        }
+      }
+      const l = Math.hypot(x, y, z) || 1;
+      newN.set([Math.round((x / l) * 512) / 512, Math.round((y / l) * 512) / 512, Math.round((z / l) * 512) / 512], i * 3);
+    }
+  }
+  // Re-weld: one vertex per (old vertex, normal).
+  const key = new Map<string, number>();
+  const order: number[] = [];
+  const out = new Uint32Array(ind.length);
+  for (let i = 0; i < ind.length; i++) {
+    const k = `${ind[i]},${newN[i * 3]},${newN[i * 3 + 1]},${newN[i * 3 + 2]}`;
+    let v = key.get(k);
+    if (v === undefined) {
+      v = order.length;
+      key.set(k, v);
+      order.push(i);
+    }
+    out[i] = v;
+  }
+  for (const semantic of prim.listSemantics()) {
+    const acc = prim.getAttribute(semantic)!;
+    const size = acc.getElementSize();
+    const old = acc.getArray()!;
+    const next = new (old.constructor as new (n: number) => typeof old)(order.length * size);
+    order.forEach((corner, nv) => {
+      if (semantic === 'NORMAL') for (let k = 0; k < 3; k++) next[nv * 3 + k] = newN[corner * 3 + k]!;
+      else for (let k = 0; k < size; k++) next[nv * size + k] = old[ind[corner]! * size + k]!;
+    });
+    acc.setArray(next);
+  }
+  idxAcc.setArray(order.length > 65535 ? out : new Uint16Array(out));
 }
 
 /** 26 directions: cube faces, edges and corners. */
