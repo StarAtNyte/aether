@@ -13,6 +13,7 @@
  */
 import { mergeIntoCatalog } from './creatures';
 import { BACKED_TYPES, FRONT_OVERRIDES, backedFront } from './front';
+import { loadFrontOverrides, placeOf } from './front-overrides';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join, relative, resolve } from 'node:path';
@@ -704,7 +705,9 @@ async function buildSimready(): Promise<void> {
   const packs: CatalogPack[] = [];
   const srcRecords: Array<Record<string, unknown>> = [];
   for (const item of SIMREADY) {
-    const row = item.row;
+    const seen = loadFrontOverrides()[item.row[1]];
+    // The vision check's front and mounting (simready-fronts.json) replace the row's own.
+    const row: typeof item.row = seen ? [item.row[0], item.row[1], item.row[2], item.row[3], item.row[4], item.row[5], { ...(item.row[6] ?? {}), rot: seen.rot % 360, place: placeOf(seen.mounting) }] : item.row;
     const id = row[1];
     if (only && !only.includes(id)) continue;
     const pkg = sources.simready?.packages.find((p) => p.id === item.source);
@@ -908,12 +911,14 @@ async function buildImportOne(jobPath: string): Promise<void> {
     // A backed piece (chair, sofa, toilet) shows its front by its back; pieces checked by eye are listed in FRONT_OVERRIDES.
     const backed = BACKED_TYPES.has(String(job.row[2])) && !job.bulk.symmetric ? backedFront(scenePositions(gdoc)) : null;
     const forced = FRONT_OVERRIDES[id];
-    if (forced !== undefined) front = { rot: forced === 0 ? null : forced, sure: true, why: 'checked in a world render' };
+    const seen = loadFrontOverrides()[id];
+    if (seen) front = { rot: seen.rot % 360 === 0 ? null : seen.rot % 360, sure: true, why: `vision check: ${seen.reason}`.slice(0, 200) };
+    else if (forced !== undefined) front = { rot: forced === 0 ? null : forced, sure: true, why: 'checked in a world render' };
     else if (backed) front = backed;
     else if (job.bulk.symmetric) front = { rot: null, sure: true, why: 'symmetric' };
     else if (asp >= 1.25 && dz > dx) front = { rot: 270, sure: true, why: `long side along Z (${asp.toFixed(2)})` };
     else front = { rot: null, sure: false, why: asp >= 1.25 ? 'long side along X: front on +Z or -Z' : 'near square' };
-    row = [job.row[0], job.row[1], job.row[2], job.row[3], job.row[4], job.row[5], { ...o, tris: budgetFor(longest), ...(front.rot ? { rot: front.rot } : {}) }];
+    row = [job.row[0], job.row[1], job.row[2], job.row[3], job.row[4], job.row[5], { ...o, tris: budgetFor(longest), ...(front.rot ? { rot: front.rot } : {}), ...(seen ? { place: placeOf(seen.mounting) } : {}) }];
   } else row = [job.row[0], job.row[1], job.row[2], job.row[3], job.row[4], job.row[5], { ...o, tris: Math.min(o.tris ?? 20000, longest < 0.6 ? 6000 : longest < 1.5 ? 12000 : 20000) }];
   const built = await buildInteriorModel(nio, row, { src, texDir: srcDir, authors: [job.author], archive: job.archive, pack: job.pack, licence: job.licence, cacheKey: `import-${id}`, dir: 's' });
   writeFileSync(join(job.work, 'result.json'), `${JSON.stringify({ entry: built.entry, files: built.asset.files, ...(front ? { front } : {}), source: { size: [dx, sb.max[1] - sb.min[1], dz], trianglesIn: (JSON.parse(readFileSync(join(conv, 'report.json'), 'utf8')) as { triangles_in?: number }).triangles_in ?? null } })}\n`);

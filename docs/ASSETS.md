@@ -441,7 +441,7 @@ world can search for a model and load it lazily without the local server. The pi
 
 `npm run assets:simready -- bulk` converts a curated slice of SimReady Central and publishes it to the hub dataset
 (`StarAtNyte1/aether-assets`, private until a person makes it public). It is deterministic (no model calls), unattended and
-resumable. **The models never enter git**: the repository only gets the code, `scripts/assets/simready-queries.json` and the
+resumable (the conversion itself makes no model calls; the front of each model is decided afterwards by the dev-time front fix below). **The models never enter git**: the repository only gets the code, `scripts/assets/simready-queries.json` and the
 small `assets/hub.json` pin; the files live in the dataset and are found through the hub search (`HubClient.search`,
 `find_model`, the Assets panel) and loaded lazily like every hub model.
 
@@ -495,6 +495,36 @@ Flags: `--max=N` (attempted conversions), `--concurrency=2`, `--time-budget=HOUR
   triangles. About a third of the packages that pass the filters are rejected or skipped before conversion by size or licence.
 - **How the hub search finds them.** Names, tags (the term and the package words), aliases from the synonym table and the type feed the same
   ranking as the library (`HubClient.search("kettle")`); `similar(id)` ranks by image embedding.
+
+### Front fix (a vision model decides each front and mounting)
+
+The shape rules guess a model's front (`front unsure` in the log) and are wrong for some pieces (an office chair turned away from its desk,
+a forklift driving backwards). `npm run assets:simready -- front-fix` asks a vision model instead. It is a dev-time script around **one model
+call per asset**; the geometry rules are advice in the prompt, the answer is the decision.
+
+```sh
+npm run assets:simready -- front-fix --budget-usd=15 [--ids=a,b] [--source=all|bulk|lib] [--scope=all|unsure] [--refresh] [--render-only]
+npm run assets:simready -- bulk --reprocess=front     # convert again only the models whose rotation or mounting changed, then publish them
+```
+
+- **What it sees.** The converted GLB (front on +Z, metres, floor-centre pivot) turned by 0, 90, 180 and 270 degrees about Y, in a per-id
+  shuffled order, as one 2x2 contact image (768 px, tiles labelled A to D, a red floor arrow marking +Z toward the viewer), rendered in the
+  headless browser with the thumbnail renderer's lights; plus the name, type, category and size. It answers JSON
+  `{front: A|B|C|D|none, mounting: floor|wall|ceiling|table, confidence, reason}` (Anthropic API key from `~/.config/aether/anthropic.key`,
+  `claude-sonnet-5-5`, low effort; never printed or logged).
+- **What it writes.** `scripts/assets/simready-fronts.json` (checked in, small): per id the absolute build rotation `rot` (a multiple of 90),
+  `mounting`, `confidence`, `reason`, `model`. A front is written only at confidence 0.7 or more; below that the model is left as it is and
+  `front unsure (model)` is logged (a wall, ceiling or table mounting is still recorded). Symmetric terms (mug, bottle, bin, drum, box, ...)
+  are skipped and logged. Answers are cached in `~/.local/share/aether/frontfix/` by model and source hash (a second run costs nothing),
+  concurrency is capped at 2, and the run stops at `--budget-usd` (token counts are summed from the replies; the price per million tokens is
+  an estimate, `--price-in`/`--price-out`). About $0.009 per model.
+- **Applying it.** `build.ts` takes the file's `rot` and `mounting` (as the catalog's placement: wall, ceiling, surface, floor) in place of
+  the shape rules for the bulk converter and for the 28 library props. `bulk --reprocess=front` converts again only the ids whose file differs
+  from what they were built with, regenerates thumbnails, hashes and embeddings, and publishes the changed models to the dataset in batches
+  and re-pins `assets/hub.json`. Model files of hub assets never go to git; the 28 library props live in `assets/lib/` and are rebuilt
+  with `build.ts --simready` when the check turns one.
+- **One publisher at a time.** Publishing and reprocessing take `<bulk dir>/publish.lock` (the owner's pid; a lock whose process is gone is
+  taken over), so two runs never write the shared staging folder or the dataset together.
 
 ## Optional image → mesh
 

@@ -17,6 +17,9 @@
  * bulk: the unattended, resumable pipeline that converts a curated set of packages and publishes them to the hub dataset
  *   (scripts/assets/simready-bulk.ts, docs/ASSETS.md "Bulk import").
  *
+ * front-fix: a vision model decides each converted model's front and mounting from four turned views
+ *   (scripts/assets/front-fix.ts, docs/ASSETS.md "Front fix").
+ *
  * Importing into the library afterwards: see docs/ASSETS.md, "SimReady Central".
  */
 import { closeSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -33,6 +36,10 @@ async function main(): Promise<void> {
   const [cmd, ...rest] = process.argv.slice(2).filter((a) => !a.startsWith('--'));
   if (cmd === 'bulk') {
     await (await import('./simready-bulk')).bulk();
+    return;
+  }
+  if (cmd === 'front-fix') {
+    await (await import('./front-fix')).frontFix();
     return;
   }
   if (cmd === 'search') {
@@ -114,7 +121,7 @@ async function main(): Promise<void> {
     console.log(`pinned ${id} in assets/sources.json (${got.licence}, usd sha256 ${got.usd.sha256})`);
     return;
   }
-  console.error('usage: assets:simready -- bulk [--max=600] [--concurrency=2] [--time-budget=8]   (resumable bulk import into the hub dataset, docs/ASSETS.md "Bulk import")\n       assets:simready -- search "<text>" [--limit=8] [--max-size=2] [--json]\n       assets:simready -- fetch <owner>/<dataset>@<40-hex revision>/<package>\n       assets:simready -- add <owner>/<dataset>@<40-hex revision>/<package> [--title="..."]   (fetch and pin in assets/sources.json)');
+  console.error('usage: assets:simready -- front-fix [--budget-usd=15] [--ids=a,b] [--source=all|bulk|lib]   (vision check of every front, writes scripts/assets/simready-fronts.json)\n       assets:simready -- bulk [--max=600] [--concurrency=2] [--time-budget=8]   (resumable bulk import into the hub dataset, docs/ASSETS.md "Bulk import")\n       assets:simready -- search "<text>" [--limit=8] [--max-size=2] [--json]\n       assets:simready -- fetch <owner>/<dataset>@<40-hex revision>/<package>\n       assets:simready -- add <owner>/<dataset>@<40-hex revision>/<package> [--title="..."]   (fetch and pin in assets/sources.json)');
   process.exit(1);
 }
 

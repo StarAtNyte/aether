@@ -34,12 +34,12 @@ describe('bulk SimReady import helpers', () => {
 describe('reprocessing after a front fix', () => {
   const base = { symmetric: false, status: 'published' as const, front: { rot: null, sure: true, why: 'x' } };
   it('picks backed pieces, unsure fronts and checked overrides built before the fix, and nothing else', () => {
-    expect(needsFrontFix({ ...base, id: 'simready-warehouse-chair', type: 'chair' })).toBe(true);
-    expect(needsFrontFix({ ...base, id: 'simready-x', type: 'cart', front: { rot: null, sure: false, why: 'near square' } })).toBe(true);
-    expect(needsFrontFix({ ...base, id: 'simready-vehicle-forklift-red-c01', type: 'vehicle' })).toBe(true);
-    expect(needsFrontFix({ ...base, id: 'simready-mug', type: 'mug' })).toBe(false);
-    expect(needsFrontFix({ ...base, id: 'simready-chair', type: 'chair', symmetric: true })).toBe(false);
-    expect(needsFrontFix({ ...base, id: 'simready-chair', type: 'chair', status: 'rejected' })).toBe(false);
-    expect(needsFrontFix({ ...base, id: 'simready-chair', type: 'chair', fixRev: FRONT_FIX_REV })).toBe(false);
+    expect(needsFrontFix({ ...base, id: 'simready-warehouse-chair', type: 'chair' }, {})).toBe(true);
+    expect(needsFrontFix({ ...base, id: 'simready-x', type: 'cart', front: { rot: null, sure: false, why: 'near square' } }, {})).toBe(true);
+    expect(needsFrontFix({ ...base, id: 'simready-vehicle-forklift-red-c01', type: 'vehicle' }, {})).toBe(true);
+    expect(needsFrontFix({ ...base, id: 'simready-mug', type: 'mug' }, {})).toBe(false);
+    expect(needsFrontFix({ ...base, id: 'simready-chair', type: 'chair', symmetric: true }, {})).toBe(false);
+    expect(needsFrontFix({ ...base, id: 'simready-chair', type: 'chair', status: 'rejected' }, {})).toBe(false);
+    expect(needsFrontFix({ ...base, id: 'simready-chair', type: 'chair', fixRev: FRONT_FIX_REV }, {})).toBe(false);
   });
 });

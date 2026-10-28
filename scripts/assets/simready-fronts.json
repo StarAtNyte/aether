@@ -1,0 +1,222 @@
+{
+ "about": "Front (rot about Y, degrees) and mounting per model, decided by a vision model from four turned views. Written by scripts/assets/front-fix.ts; read by the bulk converter and the library build.",
+ "fronts": {
+  "simready-bin-waste": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.85,
+   "reason": "The foot pedal at the base points toward the viewer in C, while the hinge bracket is at the back.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-bodypart-car-view-mirror-a01": {
+   "rot": 270,
+   "mounting": "table",
+   "confidence": 0.75,
+   "reason": "Tile A shows the shiny mirror glass facing the viewer with the mount stalk behind it, while D shows the black back.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-bodypart-car-view-mirror-b01": {
+   "rot": 270,
+   "mounting": "table",
+   "confidence": 0.8,
+   "reason": "The reflective mirror glass faces the viewer in D, while the back housing and mount stem show in B.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-box-cube-brown-b04": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.55,
+   "reason": "front unsure; The large 'PROFESSIONAL MOVING BOX SMALL' printed face points toward the viewer in tile A.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-cabinet-filing": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.95,
+   "reason": "Tile C shows the open shelves and the lower doors with handles facing the viewer, while D shows the plain back.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-d00144": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.4,
+   "reason": "front unsure; A flat, nearly square rug lying on the floor looks the same from every side and has no meaningful front.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-d00738": {
+   "rot": 270,
+   "mounting": "table",
+   "confidence": 0.85,
+   "reason": "Tile C shows the flat screen face with no camera bump, while tile D shows the back with camera lenses.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-d00817": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.45,
+   "reason": "front unsure; Hinged-lid box whose lid is hinged at the back with the long side facing the viewer in C, though B is also plausible.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-dining-chair": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.8,
+   "reason": "In B the backrest spindles are behind the seat, so the seat faces the viewer; in C the backrest is toward the viewer.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-handtruck-convertible-steel-red-a01": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.7,
+   "reason": "In A the toe plate projects toward the viewer from the upright frame, while D shows the frame's back with the plate hidden and B and C are side views.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-instrument-mirror-a01": {
+   "rot": 0,
+   "mounting": "table",
+   "confidence": 0.3,
+   "reason": "front unsure; Small flat hand tool (instrument mirror on a long handle) with no meaningful front; it would rest on a table.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-light-work-tripod": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.85,
+   "reason": "Tile A shows the lit glass faces of the three floodlights toward the viewer, while C shows their dark backs.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-machine-coffee-vending-a01": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.9,
+   "reason": "Tile C shows the machine's front with the dispensing opening and cup area facing the viewer, while D shows the plain back panel with a cable.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-measurement-clock-alarm-a01": {
+   "rot": 270,
+   "mounting": "table",
+   "confidence": 0.75,
+   "reason": "The white dial of the alarm clock faces the viewer in D, while B shows the textured back.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-misc-eyeglasses-b01": {
+   "rot": 270,
+   "mounting": "table",
+   "confidence": 0.7,
+   "reason": "In D the lens rims face the viewer with the temples running away from it, while C shows the opposite.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-monitor-office": {
+   "rot": 0,
+   "mounting": "table",
+   "confidence": 0.93,
+   "reason": "Tile D shows the lit colorful screen face toward the viewer, while B shows the black back with ports.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-office-chair-black": {
+   "rot": 0,
+   "mounting": "floor",
+   "confidence": 0.8,
+   "reason": "In A the seat is in front of the backrest, which is seen from its front face, while D shows the chair's back.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-range-cooker-lg": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.93,
+   "reason": "Tile D shows the knobs and the two oven doors facing the viewer, with the backguard behind.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-sanitary-sink-wallmounted-a01": {
+   "rot": 270,
+   "mounting": "wall",
+   "confidence": 0.5,
+   "reason": "front unsure; Wall-mounted basin; in D the faucet sits at the far edge and the curved basin front points toward the viewer.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-sanitary-toilet-wallmounted-a01": {
+   "rot": 0,
+   "mounting": "wall",
+   "confidence": 0.6,
+   "reason": "front unsure; Wall-mounted toilet whose bowl and seat project toward the viewer in C, with the flat wall-mount back behind.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-sign-hospital-sidewall-b03": {
+   "rot": 270,
+   "mounting": "wall",
+   "confidence": 0.93,
+   "reason": "Tile D shows the printed toilet pictogram face directly toward the viewer, while B shows the blank back.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-sofa-soft-01": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.85,
+   "reason": "Seat cushion is open and visible toward the viewer in C, with backrest and arms behind and beside it.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-sofa-soft-02": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.93,
+   "reason": "In tile B the seat cushions face the viewer with the backrest behind them, while tile A shows the back of the sofa.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-toilet-a01": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.72,
+   "reason": "In D the bowl opening faces the viewer with the raised lid and tank behind it; in C the lid is in front, so that tile shows the back.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-tool-cabinet-rolling": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.85,
+   "reason": "Tile C shows the row of drawer fronts facing the viewer on a wheeled cabinet that stands on the floor.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-toolbox-hardcase": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.8,
+   "reason": "Tile D shows the long side with the yellow latch clasps facing the viewer, which is the opening side of the toolbox.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-vehicle-forklift-blue-c01": {
+   "rot": 180,
+   "mounting": "floor",
+   "confidence": 0.8,
+   "reason": "Forks and mast point toward the viewer in tile A, while D shows the rear counterweight end.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-vehicle-forklift-red-b01": {
+   "rot": 180,
+   "mounting": "floor",
+   "confidence": 0.7,
+   "reason": "Order-picker forklift: in tile A the forks and operator platform point toward the viewer with the red power unit behind.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-vehicle-forklift-red-c01": {
+   "rot": 180,
+   "mounting": "floor",
+   "confidence": 0.8,
+   "reason": "In tile C the mast and forks point toward the viewer, while in D the red counterweight rear faces the viewer.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-warehouse-chair-office-amf-black-a01": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.88,
+   "reason": "In D the seat is in the foreground with the backrest rising behind it, so the chair faces the viewer; C shows the back.",
+   "model": "claude-sonnet-5-5"
+  },
+  "simready-workbench-standard": {
+   "rot": 270,
+   "mounting": "floor",
+   "confidence": 0.85,
+   "reason": "In B the work surface and cabinet doors face the viewer with the pegboard behind, while A shows the plain back.",
+   "model": "claude-sonnet-5-5"
+  }
+ }
+}

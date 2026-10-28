@@ -36,6 +36,8 @@ import { enrichRef, SIMREADY_API, parseSimreadyUrl, type FetchLike, type Simread
 import { fetchPackage, packageDir, SIMREADY_DIR } from '../../packages/assets/src/simready-fetch';
 import { hubLicenceAllowed } from '../../packages/assets/src/hub';
 import { BACKED_TYPES, FRONT_FIX_REV, FRONT_OVERRIDES } from './front';
+import { acquireLock } from './bulk-lock';
+import { loadFrontOverrides, placeOf } from './front-overrides';
 import { budgetFor, gateModel, gateThumb } from './simready-gate';
 
 const arg = (name: string): string | undefined => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
@@ -516,7 +518,16 @@ function pushPin(message: string): void {
   }
 }
 
-function publish(state: State): void {
+async function publish(state: State): Promise<void> {
+  const release = await acquireLock(BULK_DIR);
+  try {
+    publishLocked(state);
+  } finally {
+    release();
+  }
+}
+
+function publishLocked(state: State): void {
   const ready = Object.values(state.records).filter((r) => r.status === 'converted' && r.thumb);
   if (ready.length === 0) return;
   log(`publish: staging (${ready.length} new models)`);
@@ -557,8 +568,15 @@ function summary(state: State, started: number): void {
 }
 
 /** Does a front fix newer than the one this model was built with apply to it? */
-export function needsFrontFix(r: Pick<Rec, 'id' | 'type' | 'status' | 'front' | 'fixRev' | 'symmetric'>): boolean {
+export function needsFrontFix(r: Pick<Rec, 'id' | 'type' | 'status' | 'front' | 'fixRev' | 'symmetric'>, seen: Record<string, import('./front-overrides').FrontOverride> = loadFrontOverrides()): boolean {
   if (r.status !== 'converted' && r.status !== 'published') return false;
+  // The vision check decides: a model it covers is converted again only when its rotation or mounting differs from the build's.
+  const v = seen[r.id];
+  if (v) {
+    const entryFile = join(OUT, r.id, 'entry.json');
+    const placed = existsSync(entryFile) ? (JSON.parse(readFileSync(entryFile, 'utf8')) as { placement?: string }).placement : undefined;
+    return (v.rot % 360) !== ((r.front?.rot ?? 0) % 360) || (placed !== undefined && placed !== placeOf(v.mounting));
+  }
   if ((r.fixRev ?? 0) >= FRONT_FIX_REV) return false;
   if (FRONT_OVERRIDES[r.id] !== undefined) return true;
   if (r.symmetric) return false;
@@ -585,6 +603,11 @@ export async function bulk(): Promise<void> {
   const qf = JSON.parse(readFileSync(join(import.meta.dirname, 'simready-queries.json'), 'utf8')) as QueryFile;
   if (arg('deny')) qf.denylist.push(...(arg('deny') as string).split(','));
   if (!existsSync(PY)) throw new Error(`${PY} not found: run npm run assets:simready-setup`);
+  if (arg('reprocess') !== undefined || flag('reprocess')) {
+    // A reprocess rewrites out/ and the shared staging folder: wait for any other publisher (publish.lock) and hold the lock.
+    const release = await acquireLock(BULK_DIR);
+    process.on('exit', release);
+  }
   mkdirSync(OUT, { recursive: true });
   mkdirSync(WORK, { recursive: true });
   const state = loadState();
@@ -637,9 +660,9 @@ export async function bulk(): Promise<void> {
     for (const r of chunk) if (r.status === 'rejected' && r.reason && /thumbnail/.test(r.reason)) log(`  ${r.id} rejected (${r.reason.slice(0, 110)})`);
     saveState(state);
     sincePublish = Object.values(state.records).filter((r) => r.status === 'converted' && r.thumb).length;
-    if (!flag('no-publish') && sincePublish >= publishEvery) publish(state);
+    if (!flag('no-publish') && sincePublish >= publishEvery) await publish(state);
   }
-  if (!flag('no-publish') && sincePublish > 0) publish(state);
+  if (!flag('no-publish') && sincePublish > 0) await publish(state);
   const run = state.runs[state.runs.length - 1]!;
   run.end = new Date().toISOString();
   saveState(state);
