@@ -39,14 +39,18 @@ const warmups = new WeakMap<BufferGeometry, Promise<void>>();
 const bvhBuilds = new BvhBuildClient();
 
 /** Initial camera sight tests should await warmup rather than forcing cold BVHs onto the UI thread. */
-export async function warmRaycastTrees(root: Object3D): Promise<void> {
+export async function warmRaycastTrees(root: Object3D, boundMs = Infinity): Promise<void> {
   if (!bvhBuilds.available) return;
   const geometries = new Set<BufferGeometry>();
   root.traverse(object => {
     const mesh = object as Mesh;
     if (mesh.isMesh && mesh.raycast === bvhRaycast && bvhEligible(mesh)) geometries.add(mesh.geometry);
   });
-  await Promise.all([...geometries].map(geometry => warmTriangleBvh(geometry)));
+  performance.mark(`aether:bvh-warm-${geometries.size}`);
+  const all = Promise.all([...geometries].map(geometry => warmTriangleBvh(geometry))).then(() => undefined);
+  // Bounded: the builds go on in the worker, and a pick that needs a tree before it is done builds it itself.
+  if (!Number.isFinite(boundMs)) await all;
+  else await Promise.race([all, new Promise<void>(resolve => setTimeout(resolve, boundMs))]);
 }
 
 /** Build the idle picking cache off-thread; never install results for edited or disposed geometry. */

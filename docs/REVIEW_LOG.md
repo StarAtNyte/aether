@@ -7251,3 +7251,15 @@ Measured with `npm run e2e:load-slow` (production build, brotli, Slow 4G, 4x CPU
 What the timeline (`tests/e2e/open-timeline.e2e.ts`) shows for the cold open: 0 to 10.3 s is the 1.7 MB of editor JS on a 200 kB/s link; the project is created and the renderer starts at 10.9 to 11.5 s; the 13 library textures (39 files, 918 kB, 256 px tier) and the KTX2 transcoder (224 kB) then share the link until 19 s, and the loading overlay lifts at 19.7 s. With the transcoder blocked the 14 original model files (4 MB) hold the overlay until 46 s, so the compressed twins matter. Textures already start from a placeholder and upgrade in place (finish-textures); the lightmap pill did not show.
 
 What did not move: the time to the lifted overlay on a cold link, which is bytes (3.2 MB) over 1.6 Mbps. What would: fewer bytes ahead of the first frame (split the editor's engine imports in `Studio` so publish, forge, photo and playtest load later; stream the 14 models by distance), recorded as the next step.
+
+### Follow-up: what held the overlay (marks `aether:*`, `open-timeline`)
+
+Cold casa-patio: renderer created at 11.6 s, world synced at 14.9 s, then `warmRaycastTrees` (116 picking trees built in a worker, 4.6 s) held "Preparing camera" until 19.5 s. Models were never the gate (they mount as sized boxes and are not awaited by `setWorld`), nor was the transcoder (only the models' own loads wait on it). The first framing now waits for the trees at most 1.2 s (the rest finish in the background; a pick that needs one builds it), a second wait is skipped once the world is framed, and the loading poster stays until the renderer has presented a frame (never an empty canvas).
+
+| casa-patio, Slow 4G, 4x CPU | before | after |
+|---|---|---|
+| overlay gone, cold | 19.9 s | 17.1 s |
+| overlay gone, warm | 4.9 s (canvas still empty until 8 s) | 8.1 s, at the first presented frame |
+| renderer created to overlay gone, cold | 8.3 s | 5.3 s |
+
+Not reached: overlay under 8 s cold. The editor's 1.7 MB of JS alone takes until 11 s on this link; splitting `Studio`'s static imports (publish, forge, playtest, photo, agent stages, about 220 kB gzip) is the remaining lever and was not done: those controllers are used synchronously in 131 places.

@@ -176,6 +176,8 @@ export interface StudioMemoryReport {
 /** Application controller. See module docs. */
 /** Delay before the asset catalog is preloaded after the renderer starts (ms). */
 const CATALOG_PRELOAD_MS = 1500;
+/** Longest the loading poster waits for the first presented frame after the world is framed (ms). */
+const FIRST_DRAW_WAIT_MS = 15_000;
 
 export class Studio {
   readonly history: History;
@@ -523,6 +525,8 @@ export class Studio {
       performance.mark('aether:frameworld-start');
       await sim.frameWorld(this.attachCount++ === 0 ? { flyIn: true } : {});
       performance.mark('aether:frameworld-end');
+      // The poster stays up until the renderer has presented a frame (programs may still be linking): never an empty canvas.
+      for (let waited = 0; sim.renderer.frameCount === 0 && waited < FIRST_DRAW_WAIT_MS && gen === this.attachGen && !this.disposed; waited += 50) await new Promise<void>((r) => setTimeout(r, 50));
       // The first world rendered (generation included): this boot is healthy.
       if (gen === this.attachGen) {
         clearBooting(this.storage);

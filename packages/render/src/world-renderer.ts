@@ -587,6 +587,9 @@ async function encodePixels(pixels: Uint8Array, w: number, h: number, mime: stri
 }
 
 /** Attempts of a capture that comes back blank. */
+/** Longest the first framing waits for picking trees to be built off-thread (ms); the rest finish in the background. */
+const FIRST_FRAME_BVH_MS = 1200;
+
 /** Pause after the first frame before the KTX2 transcoder is fetched ahead of need (ms). */
 const KTX2_SETUP_DELAY_MS = 4000;
 
@@ -1672,7 +1675,7 @@ export class WorldRenderer {
       if (added.length > 0) this.startGrow(added, prev !== null);
       if (!this.framed) {
         say?.('Preparing camera…');
-        await warmRaycastTrees(this.sync.root);
+        await warmRaycastTrees(this.sync.root, FIRST_FRAME_BVH_MS);
         if (this.disposed || this.sync.world !== world) return;
         this.framed = this.frameContent({ duration: 0 });
         performance.mark('aether:framed');
@@ -2639,7 +2642,8 @@ export class WorldRenderer {
 
   /** Prepare sight-test acceleration before asynchronous hosts frame newly arrived content. */
   async prepareFraming(): Promise<void> {
-    if (!this.disposed) await warmRaycastTrees(this.sync.root);
+    // The first world was framed (and its trees warmed) while it synced: a second wait would only repeat that one.
+    if (!this.disposed) await warmRaycastTrees(this.sync.root, this.framed ? 0 : FIRST_FRAME_BVH_MS);
   }
 
   /**
