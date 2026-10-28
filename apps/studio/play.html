@@ -8,11 +8,19 @@
     <meta name="color-scheme" content="dark" />
     <meta name="referrer" content="no-referrer" />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <style>
+      /* Painted before any script downloads; the player replaces it. */
+      body { margin: 0; background: #141311; }
+      #pl-boot { position: fixed; inset: 0; display: grid; place-content: center; justify-items: center; gap: 14px; color: #a8a59e; font: 500 14px system-ui, sans-serif; }
+      #pl-boot i { width: 24px; height: 24px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: pl-boot-spin .8s linear infinite; }
+      @keyframes pl-boot-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) { #pl-boot i { animation: none; } }
+    </style>
     <title>Aether player</title>
   </head>
   <body class="pl-body">
     <noscript>This game needs JavaScript and WebGL2 (or WebGPU) to run.</noscript>
-    <div id="player"></div>
+    <div id="player"><div id="pl-boot" role="status"><i aria-hidden="true"></i><span>Loading…</span></div></div>
     <script type="module" src="/src/player/main.tsx"></script>
   </body>
 </html>
