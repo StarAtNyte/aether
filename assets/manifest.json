@@ -620,36 +620,6 @@
    "retrieved": "2026-10-28"
   },
   {
-   "id": "simready-nvidia-chair-office-fabric-manager-a01",
-   "provider": "NVIDIA SimReady Central (Hugging Face)",
-   "title": "Office chair, manager",
-   "version": "653d91e182011f357cf1644013cc94ddf194d349",
-   "author": "nvidia (Hugging Face user nvidia)",
-   "licence": "CC-BY-4.0",
-   "licenceUrl": "https://creativecommons.org/licenses/by/4.0/",
-   "licenceEvidence": "com.nvidia.simready.packaging.json of the package: \"license\": \"CC-BY-4.0\"; dataset card (huggingface.co/api/datasets/nvidia/simready-assets) cardData.license: cc-by-4.0",
-   "page": "https://huggingface.co/datasets/nvidia/simready-assets/tree/653d91e182011f357cf1644013cc94ddf194d349/chair_office_fabric_manager_a01",
-   "archive": "https://huggingface.co/datasets/nvidia/simready-assets/resolve/653d91e182011f357cf1644013cc94ddf194d349/chair_office_fabric_manager_a01/simready_usd/sm_chair_office_fabric_manager_a01_01.usd",
-   "sha256": "6da22ae0756aab5b39e819336975e334fca097b7d005e2c0c515bfb31e27ae6b",
-   "packageHash": "6925148ea252862edfbc64274cb7cbadf75e67d22777ff6ba9e4322702c80320",
-   "retrieved": "2026-10-28"
-  },
-  {
-   "id": "simready-nvidia-chair-office-amf-black-a01",
-   "provider": "NVIDIA SimReady Central (Hugging Face)",
-   "title": "Office chair, black",
-   "version": "653d91e182011f357cf1644013cc94ddf194d349",
-   "author": "nvidia (Hugging Face user nvidia)",
-   "licence": "CC-BY-4.0",
-   "licenceUrl": "https://creativecommons.org/licenses/by/4.0/",
-   "licenceEvidence": "com.nvidia.simready.packaging.json of the package: \"license\": \"CC-BY-4.0\"; dataset card (huggingface.co/api/datasets/nvidia/simready-assets) cardData.license: cc-by-4.0",
-   "page": "https://huggingface.co/datasets/nvidia/simready-assets/tree/653d91e182011f357cf1644013cc94ddf194d349/chair_office_amf_black_a01",
-   "archive": "https://huggingface.co/datasets/nvidia/simready-assets/resolve/653d91e182011f357cf1644013cc94ddf194d349/chair_office_amf_black_a01/simready_usd/sm_chair_office_amf_black_a01_01.usd",
-   "sha256": "6479861d24d982a380d9e3b97b19ce4302ab4a28c215576abde4175aaf6f1db5",
-   "packageHash": "a33f1462f4902fa00ff882cdeee933af064dd89be21b375e5feb2b208d3851e9",
-   "retrieved": "2026-10-28"
-  },
-  {
    "id": "simready-nvidia-stool-mobile-padded-vinyl-a01",
    "provider": "NVIDIA SimReady Central (Hugging Face)",
    "title": "Padded stool",
@@ -1037,6 +1007,36 @@
    "archive": "https://huggingface.co/datasets/nvidia/simready-assets/resolve/653d91e182011f357cf1644013cc94ddf194d349/sofa_soft_b02/simready_usd/sm_sofa_soft_b02_01.usd",
    "sha256": "c6f51f1dd73b2bc1647018c6b840fcd8da51f25a0b4a9e3807daab29193e688a",
    "packageHash": "1c3113ca845723e523da3f232ecada46e32fa70f6be47c5a691766c14473746c",
+   "retrieved": "2026-10-28"
+  },
+  {
+   "id": "simready-nvidia-chair-office-fabric-manager-a01",
+   "provider": "NVIDIA SimReady Central (Hugging Face)",
+   "title": "Office chair, manager",
+   "version": "653d91e182011f357cf1644013cc94ddf194d349",
+   "author": "nvidia (Hugging Face user nvidia)",
+   "licence": "CC-BY-4.0",
+   "licenceUrl": "https://creativecommons.org/licenses/by/4.0/",
+   "licenceEvidence": "com.nvidia.simready.packaging.json of the package: \"license\": \"CC-BY-4.0\"; dataset card (huggingface.co/api/datasets/nvidia/simready-assets) cardData.license: cc-by-4.0",
+   "page": "https://huggingface.co/datasets/nvidia/simready-assets/tree/653d91e182011f357cf1644013cc94ddf194d349/chair_office_fabric_manager_a01",
+   "archive": "https://huggingface.co/datasets/nvidia/simready-assets/resolve/653d91e182011f357cf1644013cc94ddf194d349/chair_office_fabric_manager_a01/simready_usd/sm_chair_office_fabric_manager_a01_01.usd",
+   "sha256": "6da22ae0756aab5b39e819336975e334fca097b7d005e2c0c515bfb31e27ae6b",
+   "packageHash": "6925148ea252862edfbc64274cb7cbadf75e67d22777ff6ba9e4322702c80320",
+   "retrieved": "2026-10-28"
+  },
+  {
+   "id": "simready-nvidia-chair-office-amf-black-a01",
+   "provider": "NVIDIA SimReady Central (Hugging Face)",
+   "title": "Office chair, black",
+   "version": "653d91e182011f357cf1644013cc94ddf194d349",
+   "author": "nvidia (Hugging Face user nvidia)",
+   "licence": "CC-BY-4.0",
+   "licenceUrl": "https://creativecommons.org/licenses/by/4.0/",
+   "licenceEvidence": "com.nvidia.simready.packaging.json of the package: \"license\": \"CC-BY-4.0\"; dataset card (huggingface.co/api/datasets/nvidia/simready-assets) cardData.license: cc-by-4.0",
+   "page": "https://huggingface.co/datasets/nvidia/simready-assets/tree/653d91e182011f357cf1644013cc94ddf194d349/chair_office_amf_black_a01",
+   "archive": "https://huggingface.co/datasets/nvidia/simready-assets/resolve/653d91e182011f357cf1644013cc94ddf194d349/chair_office_amf_black_a01/simready_usd/sm_chair_office_amf_black_a01_01.usd",
+   "sha256": "6479861d24d982a380d9e3b97b19ce4302ab4a28c215576abde4175aaf6f1db5",
+   "packageHash": "a33f1462f4902fa00ff882cdeee933af064dd89be21b375e5feb2b208d3851e9",
    "retrieved": "2026-10-28"
   }
  ],
@@ -15159,64 +15159,6 @@
    ]
   },
   {
-   "id": "simready-office-chair-manager",
-   "pack": "simready-nvidia",
-   "licence": "CC-BY-4.0",
-   "authors": [
-    "nvidia"
-   ],
-   "source": {
-    "archive": "https://huggingface.co/datasets/nvidia/simready-assets/resolve/653d91e182011f357cf1644013cc94ddf194d349/chair_office_fabric_manager_a01/simready_usd/sm_chair_office_fabric_manager_a01_01.usd",
-    "path": "chair_office_fabric_manager_a01/simready_usd/sm_chair_office_fabric_manager_a01_01.usd"
-   },
-   "files": [
-    {
-     "path": "s/simready-office-chair-manager.b25cf091.glb",
-     "sha256": "b25cf09109e2e94f1382cacfcb2a54500bb430c3a0421b2b52201c933948e735",
-     "bytes": 410948
-    },
-    {
-     "path": "s/simready-office-chair-manager.lod1.ef9d8923.glb",
-     "sha256": "ef9d8923a04c626dfdfcf82c4712caa28638be50e2ae421dd0c24c524fcfc6e6",
-     "bytes": 119416
-    },
-    {
-     "path": "s/simready-office-chair-manager.lite.081fbb4f.glb",
-     "sha256": "081fbb4f9c08db00dbd22b8192fdda44e102820ecb3e7c9febfae15ace90b929",
-     "bytes": 101676
-    }
-   ]
-  },
-  {
-   "id": "simready-office-chair-black",
-   "pack": "simready-nvidia",
-   "licence": "CC-BY-4.0",
-   "authors": [
-    "nvidia"
-   ],
-   "source": {
-    "archive": "https://huggingface.co/datasets/nvidia/simready-assets/resolve/653d91e182011f357cf1644013cc94ddf194d349/chair_office_amf_black_a01/simready_usd/sm_chair_office_amf_black_a01_01.usd",
-    "path": "chair_office_amf_black_a01/simready_usd/sm_chair_office_amf_black_a01_01.usd"
-   },
-   "files": [
-    {
-     "path": "s/simready-office-chair-black.5735478e.glb",
-     "sha256": "5735478e2bc87b2a4d09cb8c5674bd0f233d3793e9cbdcddd3b048808714143a",
-     "bytes": 359032
-    },
-    {
-     "path": "s/simready-office-chair-black.lod1.400272f1.glb",
-     "sha256": "400272f178728730cc303963da9e609bdd6aec52416139a32d3dfd80fdb91eb5",
-     "bytes": 97552
-    },
-    {
-     "path": "s/simready-office-chair-black.lite.fa542312.glb",
-     "sha256": "fa542312168ca7b175c4d413bf6a7f9124dac11416fec291e4a4c39aa5f12aa1",
-     "bytes": 81760
-    }
-   ]
-  },
-  {
    "id": "simready-stool-padded-vinyl",
    "pack": "simready-nvidia",
    "licence": "CC-BY-4.0",
@@ -15962,6 +15904,64 @@
      "path": "s/simready-sofa-soft-02.lite.e2223eb1.glb",
      "sha256": "e2223eb19b0519135a16c1d3823011cd887fc1c6af03e65cce374a1b40ca4e12",
      "bytes": 71252
+    }
+   ]
+  },
+  {
+   "id": "simready-office-chair-manager",
+   "pack": "simready-nvidia",
+   "licence": "CC-BY-4.0",
+   "authors": [
+    "nvidia"
+   ],
+   "source": {
+    "archive": "https://huggingface.co/datasets/nvidia/simready-assets/resolve/653d91e182011f357cf1644013cc94ddf194d349/chair_office_fabric_manager_a01/simready_usd/sm_chair_office_fabric_manager_a01_01.usd",
+    "path": "chair_office_fabric_manager_a01/simready_usd/sm_chair_office_fabric_manager_a01_01.usd"
+   },
+   "files": [
+    {
+     "path": "s/simready-office-chair-manager.c9f37c1c.glb",
+     "sha256": "c9f37c1ca2fd31a2c3b1d80dfed36837db8aaac3d733f46c40ffa42c107024ba",
+     "bytes": 407476
+    },
+    {
+     "path": "s/simready-office-chair-manager.lod1.17df003d.glb",
+     "sha256": "17df003d9561a2e1efe195ea5dc43bf95a33e2e6ffb7dd4cef034f1b0fb26284",
+     "bytes": 118028
+    },
+    {
+     "path": "s/simready-office-chair-manager.lite.1799c74c.glb",
+     "sha256": "1799c74c729f323ea5c8e44e26e89d978d00328f269c93cd75d8de4f9efd78eb",
+     "bytes": 101004
+    }
+   ]
+  },
+  {
+   "id": "simready-office-chair-black",
+   "pack": "simready-nvidia",
+   "licence": "CC-BY-4.0",
+   "authors": [
+    "nvidia"
+   ],
+   "source": {
+    "archive": "https://huggingface.co/datasets/nvidia/simready-assets/resolve/653d91e182011f357cf1644013cc94ddf194d349/chair_office_amf_black_a01/simready_usd/sm_chair_office_amf_black_a01_01.usd",
+    "path": "chair_office_amf_black_a01/simready_usd/sm_chair_office_amf_black_a01_01.usd"
+   },
+   "files": [
+    {
+     "path": "s/simready-office-chair-black.925c2a07.glb",
+     "sha256": "925c2a0716865425b2af8157d09c93650615faf6ba7a31e9953ea2c48cde179e",
+     "bytes": 351352
+    },
+    {
+     "path": "s/simready-office-chair-black.lod1.a26efffe.glb",
+     "sha256": "a26efffeaef805991d458054ce443ebb1343b3676d12a186e4df4316e4f2f67c",
+     "bytes": 95536
+    },
+    {
+     "path": "s/simready-office-chair-black.lite.247e6885.glb",
+     "sha256": "247e68857b92d4f5b710149c309f6511c520cc6774f92c52dd033d2899a80773",
+     "bytes": 81036
     }
    ]
   }

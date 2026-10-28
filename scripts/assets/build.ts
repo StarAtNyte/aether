@@ -12,6 +12,7 @@
  *   inside it, licence, authors and output checksums for every asset.
  */
 import { mergeIntoCatalog } from './creatures';
+import { BACKED_TYPES, FRONT_OVERRIDES, backedFront } from './front';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join, relative, resolve } from 'node:path';
@@ -904,7 +905,12 @@ async function buildImportOne(jobPath: string): Promise<void> {
     // desk, shelf) turns by 270 degrees to face +Z, the way the 28 reviewed props were set. Long side along X: front on +Z or -Z,
     // not decidable from the shape. Near-square pieces: only symmetric ones are sure.
     const asp = Math.max(dx, dz) / Math.max(1e-6, Math.min(dx, dz));
-    if (job.bulk.symmetric) front = { rot: null, sure: true, why: 'symmetric' };
+    // A backed piece (chair, sofa, toilet) shows its front by its back; pieces checked by eye are listed in FRONT_OVERRIDES.
+    const backed = BACKED_TYPES.has(String(job.row[2])) && !job.bulk.symmetric ? backedFront(scenePositions(gdoc)) : null;
+    const forced = FRONT_OVERRIDES[id];
+    if (forced !== undefined) front = { rot: forced === 0 ? null : forced, sure: true, why: 'checked in a world render' };
+    else if (backed) front = backed;
+    else if (job.bulk.symmetric) front = { rot: null, sure: true, why: 'symmetric' };
     else if (asp >= 1.25 && dz > dx) front = { rot: 270, sure: true, why: `long side along Z (${asp.toFixed(2)})` };
     else front = { rot: null, sure: false, why: asp >= 1.25 ? 'long side along X: front on +Z or -Z' : 'near square' };
     row = [job.row[0], job.row[1], job.row[2], job.row[3], job.row[4], job.row[5], { ...o, tris: budgetFor(longest), ...(front.rot ? { rot: front.rot } : {}) }];

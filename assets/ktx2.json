@@ -7436,13 +7436,13 @@
     "after": 3495520
    }
   },
-  "s/simready-office-chair-black.5735478e.glb": {
-   "file": "k/simready-office-chair-black.85976c6c.glb",
-   "sha256": "85976c6cd9ce8b3a954c39f9d523ef724e086a9635b3e39c77d9914189173e71",
-   "bytes": 751624,
+  "s/simready-office-chair-black.925c2a07.glb": {
+   "file": "k/simready-office-chair-black.dee36621.glb",
+   "sha256": "dee36621a378785a892a31311aae66de7ab2c25a51ba41b905c152caec4dc90a",
+   "bytes": 743948,
    "source": {
-    "sha256": "5735478e2bc87b2a4d09cb8c5674bd0f233d3793e9cbdcddd3b048808714143a",
-    "bytes": 359032
+    "sha256": "925c2a0716865425b2af8157d09c93650615faf6ba7a31e9953ea2c48cde179e",
+    "bytes": 351352
    },
    "textures": [
     {
@@ -7487,13 +7487,13 @@
     "after": 1398208
    }
   },
-  "s/simready-office-chair-manager.b25cf091.glb": {
-   "file": "k/simready-office-chair-manager.0644d5ba.glb",
-   "sha256": "0644d5ba364ae1022c3ef66a0158b696eb56e1a298ae2dbb5089bb024ab3151b",
-   "bytes": 880104,
+  "s/simready-office-chair-manager.c9f37c1c.glb": {
+   "file": "k/simready-office-chair-manager.248d78a1.glb",
+   "sha256": "248d78a185595f555ac5d830b96d03f20f336dcd0851e61e88f73a435a2b2093",
+   "bytes": 876632,
    "source": {
-    "sha256": "b25cf09109e2e94f1382cacfcb2a54500bb430c3a0421b2b52201c933948e735",
-    "bytes": 410948
+    "sha256": "c9f37c1ca2fd31a2c3b1d80dfed36837db8aaac3d733f46c40ffa42c107024ba",
+    "bytes": 407476
    },
    "textures": [
     {

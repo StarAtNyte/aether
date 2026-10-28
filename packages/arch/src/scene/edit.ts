@@ -351,7 +351,9 @@ export function placeItem(world: WorldDoc, buildingRef: string | undefined, spec
   let yaw = 0;
   const levelId = room.levelId;
   if (spec.on !== undefined) {
-    if (mount !== 'surface') return fail(`${def.kind} is a ${mount} piece: "on" is for pieces that stand on a table or cabinet (table-lamp)`);
+    // A small library model (a toolbox, a crate, a bucket, a kettle) stands on a table as well as on the floor, whatever kind stands in for it.
+    const small = assetInfo !== undefined && mount === 'floor' && assetInfo.size[0] <= 0.7 && assetInfo.size[2] <= 0.7 && assetInfo.size[1] <= 0.5;
+    if (mount !== 'surface' && !small) return fail(`${def.kind} is a ${mount} piece: "on" is for pieces that stand on a table or cabinet (table-lamp)`);
     const host = findItem(scene, spec.on);
     if (isLookupError(host)) return fail(host.error);
     if (host.mount !== 'floor') return fail(`${host.id} is a ${host.mount} piece and cannot carry ${def.kind}`);

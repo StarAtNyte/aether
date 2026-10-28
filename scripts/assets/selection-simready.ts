@@ -37,11 +37,11 @@ export const SIMREADY: readonly SimreadyItem[] = [
   },
   {
     source: 'simready-nvidia-chair-office-fabric-manager-a01',
-    row: ['chair_office_fabric_manager_a01', 'simready-office-chair-manager', 'chair', 'furniture', 'modern contemporary', 'Office chair, manager', { rot: 180, tex: 512, tris: 9000, tags: 'office chair swivel desk chair task chair computer chair' }],
+    row: ['chair_office_fabric_manager_a01', 'simready-office-chair-manager', 'chair', 'furniture', 'modern contemporary', 'Office chair, manager', { tex: 512, tris: 9000, tags: 'office chair swivel desk chair task chair computer chair' }],
   },
   {
     source: 'simready-nvidia-chair-office-amf-black-a01',
-    row: ['chair_office_amf_black_a01', 'simready-office-chair-black', 'chair', 'furniture', 'modern contemporary', 'Office chair, black', { rot: 180, tex: 512, tris: 9000, tags: 'office chair swivel desk chair mesh chair' }],
+    row: ['chair_office_amf_black_a01', 'simready-office-chair-black', 'chair', 'furniture', 'modern contemporary', 'Office chair, black', { tex: 512, tris: 9000, tags: 'office chair swivel desk chair mesh chair' }],
   },
   {
     source: 'simready-nvidia-stool-mobile-padded-vinyl-a01',

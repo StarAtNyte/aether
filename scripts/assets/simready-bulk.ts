@@ -35,6 +35,7 @@ import { CatalogEntry, type CatalogEntryInput } from '../../packages/assets/src/
 import { enrichRef, SIMREADY_API, parseSimreadyUrl, type FetchLike, type SimreadyRef } from '../../packages/assets/src/simready';
 import { fetchPackage, packageDir, SIMREADY_DIR } from '../../packages/assets/src/simready-fetch';
 import { hubLicenceAllowed } from '../../packages/assets/src/hub';
+import { BACKED_TYPES, FRONT_FIX_REV, FRONT_OVERRIDES } from './front';
 import { budgetFor, gateModel, gateThumb } from './simready-gate';
 
 const arg = (name: string): string | undefined => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
@@ -68,6 +69,8 @@ interface Rec {
   packageHash?: string | null;
   usdSha256?: string;
   attempts?: number;
+  /** The front rules (`front.ts`, FRONT_FIX_REV) this model was converted with; absent: converted before they existed. */
+  fixRev?: number;
   tris?: number;
   bytes?: number;
   secs?: number;
@@ -394,6 +397,7 @@ async function convertOne(state: State, r: Rec): Promise<void> {
     }
     if (r.front && !r.front.sure) log(`  front unsure: ${r.id} (${r.front.why})`);
     writeFileSync(join(dest, 'entry.json'), JSON.stringify(entry));
+    r.fixRev = FRONT_FIX_REV;
     touch(r, 'converted');
   } catch (e) {
     const m = e instanceof Error ? e.message : String(e);
@@ -552,6 +556,30 @@ function summary(state: State, started: number): void {
   for (const [k, n] of [...reasons].sort((a, b) => b[1] - a[1]).slice(0, 12)) log(`  ${String(n).padStart(5)}  ${k}`);
 }
 
+/** Does a front fix newer than the one this model was built with apply to it? */
+export function needsFrontFix(r: Pick<Rec, 'id' | 'type' | 'status' | 'front' | 'fixRev' | 'symmetric'>): boolean {
+  if (r.status !== 'converted' && r.status !== 'published') return false;
+  if ((r.fixRev ?? 0) >= FRONT_FIX_REV) return false;
+  if (FRONT_OVERRIDES[r.id] !== undefined) return true;
+  if (r.symmetric) return false;
+  return BACKED_TYPES.has(r.type) || r.front?.sure === false;
+}
+
+/** Put the models a front fix affects back in the queue (their files stay until the new ones replace them); returns their ids. */
+function markReprocess(state: State, which: string | undefined): Set<string> {
+  const named = which && which !== 'front' ? new Set(which.split(',')) : null;
+  const ids = new Set<string>();
+  for (const r of Object.values(state.records)) {
+    if (named ? !named.has(r.id) || (r.status !== 'converted' && r.status !== 'published') : !needsFrontFix(r)) continue;
+    ids.add(r.id);
+    r.attempts = 0;
+    delete r.thumb;
+    touch(r, 'discovered');
+  }
+  log(`reprocess: ${ids.size} models queued${ids.size ? ` (${[...ids].slice(0, 6).join(', ')}${ids.size > 6 ? ', ...' : ''})` : ''}`);
+  return ids;
+}
+
 export async function bulk(): Promise<void> {
   const started = Date.now();
   const qf = JSON.parse(readFileSync(join(import.meta.dirname, 'simready-queries.json'), 'utf8')) as QueryFile;
@@ -562,6 +590,11 @@ export async function bulk(): Promise<void> {
   const state = loadState();
   const retry = arg('retry');
   if (retry) for (const r of Object.values(state.records)) if (r.status === 'rejected' && (r.reason ?? '').includes(retry)) { touch(r, 'discovered'); r.attempts = 0; }
+  // `--reprocess` converts again the already converted or published models that a front fix affects (backed pieces, pieces
+  // whose front was unsure, the checked overrides) and only those: the run is then limited to them and publishes them over
+  // the old files. `--reprocess=id1,id2` names models instead.
+  const reprocess = arg('reprocess');
+  const redo = reprocess !== undefined || flag('reprocess') ? markReprocess(state, reprocess) : null;
   state.runs.push({ start: new Date().toISOString(), converted: 0, rejected: 0 });
   const only = arg('queries')?.split(',') ?? null;
   await discover(state, qf, only);
@@ -575,7 +608,7 @@ export async function bulk(): Promise<void> {
   const publishEvery = Number(arg('publish-every') ?? 50);
   const deadline = arg('time-budget') ? started + Number(arg('time-budget')) * 3600_000 : Infinity;
   const queue = Object.values(state.records)
-    .filter((r) => r.status === 'discovered' && r.licence && (!only || only.includes(r.query) || only.some((o) => r.query.includes(o))))
+    .filter((r) => r.status === 'discovered' && r.licence && (!redo || redo.has(r.id)) && (!only || only.includes(r.query) || only.some((o) => r.query.includes(o))))
     .sort((a, b) => a.priority - b.priority);
   // A resumed run first finishes thumbnails that an interrupted run left open.
   await thumbs(state, Object.values(state.records).filter((r) => r.status === 'converted' && !r.thumb));
