@@ -400,7 +400,7 @@ See [Eyes](#query_level-1).
   licence gate (CC0, CC BY 4.0, MIT), pinned download, USD to glTF conversion, reduction to at most 20,000 triangles
   ([ASSETS.md](ASSETS.md#importing-while-you-work)). The host (`AgentOptions.importAsset`, the studio's `AssetController.importModelFromServer`)
   stores the GLB with the project as a user asset carrying the CC BY credit line, so exported and published games embed it and list it.
-- **Input.** `{query ≤120, max_size? (metres)}`.
+- **Input.** `{query ≤120, max_size? (metres), hub_id?}`. With `hub_id` (an id marked "hub" in a `find_model` answer) it loads that model from the Aether asset hub instead of searching SimReady Central: no local server, hash-checked against the hub index, credit recorded ([ASSETS.md](ASSETS.md#hub-dataset-hugging-face)).
 - **Returns.** The asset id (`user-<hash>`), name, size, triangles, licence and the credit, with the placement lines
   (`shape {"kind":"asset","id"}`, or `place_items {"kind":"model:<id>"}` in a room). Progress (searching, licence, downloading,
   converting, optimising) goes to the step feed, the status line and a toast while it runs, up to about a minute.
@@ -411,6 +411,8 @@ See [Eyes](#query_level-1).
   It counts as read-only for the review loop (it changes the project's assets, not the world).
 
 ### `find_model`
+
+- **Hub models.** When the host provides `AgentOptions.hubSearch`, the answer ends with the Aether asset hub's matches that the bundled library does not hold, marked "hub" with size, triangles, bytes, licence and author, and the `import_asset {query, hub_id}` call that loads one. The hub is optional: offline, not public yet or blocked, the line is simply absent.
 
 - **What it does.** Ranks the real-size, photographed models of the library (`@aether/assets` `findModels`) by what the
   piece is, the design style or biome, the colour and the size wanted. Interiors: sofas, armchairs, chairs, tables, beds,

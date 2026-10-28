@@ -644,6 +644,15 @@ The Fox and the LG range cooker below are the only CC-BY content in the reposito
 tomkranis were first published on Sketchfab under CC BY 4.0 and reached the
 Khronos repository with that licence; no other Sketchfab asset is used.
 
+### The Aether asset hub dataset
+
+The library's CC0 and CC-BY models are republished, converted, in the Hugging Face dataset `StarAtNyte1/aether-assets`
+(`npm run assets:hf`). Nothing is added to what this file already lists: each hub row carries the same author, licence and source
+(for SimReady models the dataset, pinned commit and file) as its entry above, the CC BY rows state that they were modified
+(converted, reduced and recompressed), and the dataset card repeats the attribution table. Dataset-level licence `other`, with
+the SPDX licence of each asset in `index.json`. The CLIP ViT-B/32 image embeddings in `embeddings.bin` come from the vision tower the
+photo perception layer already uses (OpenAI CLIP, MIT).
+
 ### NVIDIA SimReady Central models (`assets/lib/s/`)
 
 SimReady Central is a search service, not a licence: each package keeps the licence its author gave it, and the library

@@ -364,8 +364,8 @@ npm run assets:simready-e2e -- "office chair"   # opt-in smoke of the whole path
   nothing else is ever downloaded) -> download of the pinned revision into `~/.cache/aether-asset-src/simready` with the hash checks of
   the CLI (shared module `packages/assets/src/simready-fetch.ts`, 150 MB cap) -> `usd2glb.py` through the venv (`AETHER_USD_PYTHON`
   overrides it; missing: `conversion tools not installed: run npm run assets:simready-setup`) -> the library's interior pipeline
-  (`build.ts --import-one`, 20,000 triangles at most, 512 px textures, a distance level, a light copy; meshopt is left out so the studio's
-  own validator accepts the file) -> `~/.local/share/aether/imported/<id>/` (`AETHER_IMPORT_DIR`) with `imported.json`: the library-shaped
+  (`build.ts --import-one`, 20,000 triangles at most, 512 px textures, a distance level, a light copy; meshopt is left out; the studio's
+  validator now also accepts a meshopt file's empty fallback buffer, as the hub's models use) -> `~/.local/share/aether/imported/<id>/` (`AETHER_IMPORT_DIR`) with `imported.json`: the library-shaped
   catalog entry, the credit line, author, licence, dataset, revision and the SHA-256 of the USD, the package and every file.
   One job at a time, a short queue, ten starts per ten minutes, twelve minutes per job.
 - **In the studio.** The step feed, the status line and a toast show the stage. The finished GLB is checked against its recorded hash,
@@ -388,6 +388,54 @@ dataset hosts are third parties and can change or vanish: nothing at run time de
 agent tool carries on, and a studio page cannot reach the service under its content-security policy (`connect-src` is not
 widened for it); the CLI and scripts can. The licence check reads the package at its pinned revision; a vendor can still mislabel a
 package, so the evidence is recorded with each import and a person approves each one.
+
+## Hub dataset (Hugging Face)
+
+The library's browser-sized models are also published as Aether's own dataset, `StarAtNyte1/aether-assets` on Hugging Face, so any
+world can search for a model and load it lazily without the local server. The pinned commit is in `assets/hub.json`
+(`{dataset, revision, visibility, indexSha256}`); a build uses that commit, so it is reproducible.
+
+- **Layout** (like the SimReady datasets): `models/<id>/<id>.glb` (the library's meshopt GLB, 512 px textures, at most 1.2 MB),
+  `<id>.lod1.glb`, `<id>.lite.glb`, `thumb.webp` (192 px), `provenance.json` (SimReady-derived models: the pinned source dataset,
+  commit, package, the USD's SHA-256 and the package hash; it states that the file is a derivative and not NVIDIA-validated);
+  `index.json` (one row per asset: id, name, aliases, tags, category, style realistic or stylized, size in metres, triangles, bytes,
+  SPDX licence, author, credit line, source name / URL / dataset / commit / path, the conversion note, the CC BY "modified" notice,
+  collider, SHA-256 and size of every file); `index.min.json` (the compact index the client loads, about 130 KB, 40 KB gzipped);
+  `embeddings.bin` + `embeddings.json` (int8 CLIP ViT-B/32 image embeddings of the thumbnails, the same tower as the photo
+  perception layer, 0.3 MB); `README.md` (the dataset card: dataset licence `other`, per-asset licence column, CC BY attribution table).
+- **What goes in.** Only CC0-1.0 and CC-BY-4.0 models of the catalog (`hubLicenceAllowed`): never non-commercial, no-derivatives,
+  share-alike or unlabelled, and not the first-party MIT creatures and vehicles. Dropped: main file over 1.2 MB, people (rigged
+  characters are not props), no thumbnail, no triangles. Every row has a credit and a source; SimReady-derived rows pin the source
+  commit.
+- **Tool.** `npm run assets:hf -- build` stages `~/.local/share/aether/hf-assets-stage/` from the catalog; `verify [--remote]` re-hashes
+  every file, audits licences, credits and source pins, validates both indexes and the embeddings, checks that every main file passes
+  the studio's GLB validator, and with `--remote` compares against the hub's file list; `upload [--public] [--pin]` creates the repo
+  **private** (unless `--public`), uploads the models in batches of 120 and the index last (a half upload never points at missing
+  files), and `--pin` writes the commit and the index hash into `assets/hub.json`. `huggingface_hub` reads the token itself
+  (`~/.cache/huggingface/token` or `HF_TOKEN`); the script never reads, prints or logs it. The token needs write access to the
+  namespace.
+- **Search** (`@aether/assets/hub`, `@aether/assets/hub-client`, both loaded lazily; the first-load budget is unchanged).
+  `HubClient.search(query, {limit, style, maxBytes})` loads `index.min.json` from
+  `https://huggingface.co/datasets/<dataset>/resolve/<revision>/` on the first query, keeps it in the Cache API (a pinned commit is
+  immutable, so it is never revalidated; an unpinned `main` is revalidated with its ETag), and ranks with the library's own search
+  (every word must match by name, alias, tag, synonym, prefix or one typo). It returns hits with thumbnail URLs and never throws:
+  offline, blocked, private or a bad answer is the state `unavailable` with a reason, and the bundled library keeps working.
+  `similar(id)` ranks by the image embeddings. Text-to-embedding search is not shipped to the browser: CLIP's text tower is 64 MB.
+- **Loading a hub model.** `AssetController.importHubModel(id)`: fetch the GLB lazily from the pinned commit, compare its SHA-256 with
+  the index (a mismatch is discarded), validate it like any dropped file, store it with the project as a user asset carrying the
+  credit line and `origin: hub:<dataset>@<commit>/<id>`. The world references the asset by its content hash (`user-<hash>`), so exports
+  and published games **embed** it: a published page never talks to Hugging Face (the player's CSP stays closed) and shared `/play`
+  links work whether the dataset is public or not. The credit appears in the credits dialog, the end screen and `CREDITS.txt`.
+- **In the studio.** The Assets panel search shows an "Asset hub" section under the library results as you type (220 ms debounce,
+  two letters minimum, thumbnails lazy, models the library already has are not repeated); a click adds the model. The agent's
+  `find_model` lists hub models after the library's, marked "hub", and `import_asset {query, hub_id}` loads one.
+- **Private dataset.** While `visibility` is `private` a built studio does not contact the hub at all. `vite dev` reads it through
+  `/__hub/…` (`scripts/vite/hub-proxy.ts`): GET only, only this dataset's index, embeddings and `models/<id>/` files, the token
+  (`AETHER_HUB_TOKEN` or `HF_TOKEN`) added on the server side and never sent to the browser or to a redirect host;
+  `AETHER_HUB_DIR=<staging folder>` serves a local build instead of the network.
+- **CSP.** The studio page may GET from `huggingface.co` and its CDN redirect hosts (`cdn-lfs*.huggingface.co`, `cdn-lfs*.hf.co`,
+  `cas-bridge.xethub.hf.co`): `connect-src` for the index and models, `img-src` for thumbnails, nothing else (no scripts, workers or
+  frames). The player and exported games get no such hosts.
 
 ## Optional image → mesh
 

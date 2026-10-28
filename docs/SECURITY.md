@@ -300,6 +300,26 @@ local server with the most exposure. What bounds it:
   isolated interpreter and the temp folder, not a container. The Python environment is created by `npm run assets:simready-setup`
   outside the repository and is never part of the runtime, the Docker image or CI.
 
+## The asset hub
+
+The studio can search and load models from a Hugging Face dataset (`assets/hub.json`, [ASSETS.md](ASSETS.md#hub-dataset-hugging-face)). What bounds it:
+
+- **Network.** GET only, no credentials, no referrer, from `huggingface.co` and its CDN redirect hosts, to URLs built from the pinned
+  `dataset`, 40-hex `revision` and a validated asset id; the studio CSP allows those hosts for `connect-src` and `img-src` only. The
+  player and exported games have none of them: hub models are embedded, so a published page never contacts Hugging Face.
+- **Trust.** The index and every file are untrusted data. The index is parsed with a strict schema (and compared with the pinned
+  SHA-256 when `indexSha256` is set); a model must match the index's SHA-256 and size, is capped at 4 MB, and then passes the same GLB
+  validator as a dropped file before it is stored. A mismatch is discarded. Nothing downloaded is executed.
+- **Failure is quiet.** Offline, private, blocked or malformed means "hub unavailable" and the bundled library; there is no error
+  path that reaches the user's world.
+- **Token.** A private dataset is read only through the dev server's `/__hub` route, which adds `HF_TOKEN` / `AETHER_HUB_TOKEN` on the
+  server side; the browser never receives it. The route answers GET only, for this dataset's index, embeddings and `models/<id>/`
+  files only, and does not forward the token to redirect hosts. The export tool never reads or prints the token (`huggingface_hub`
+  reads it itself).
+- **Licences.** Only CC0-1.0 and CC-BY-4.0 rows pass the schema, the export and the audit in `assets:hf verify`.
+- **The validator.** The studio's GLB validator accepts a meshopt file's empty fallback buffer (`EXT_meshopt_compression.fallback`)
+  and only that: any other second buffer, a view on it without a meshopt range, or a range outside the binary chunk is refused.
+
 ## Publishing
 
 - **Share links are data, never code paths.** The world travels in the URL

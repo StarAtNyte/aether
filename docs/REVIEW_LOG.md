@@ -3,6 +3,26 @@
 Self-review notes per change set: security and performance gates, with the
 measurements behind each claim.
 
+## Asset hub dataset and realtime search
+
+**What changed.** `scripts/assets/hf-dataset.ts` (build, verify, upload), `packages/assets/src/hub.ts` (schemas, credit, search),
+`hub-client.ts` (lazy pinned client), palette search, `find_model` second source, `import_asset {hub_id}`, dev token proxy,
+thumbnail hosts in the studio CSP.
+
+**Measured.** 573 models, 116 MB (main files 79 MB), CC0 570, CC BY 3; `index.min.json` 134 KB; all 573 main files pass the GLB
+validator after the fallback-buffer fix (they failed before: "a GLB may only use its embedded binary buffer"). The hub code is three
+lazy chunks of 0.7, 4.6 and 6 KB; first-load budget unchanged (index.html js 194 kB of 203, play.html 67 of 71). In Chromium the palette
+search for "office chair" and "cooker" showed hub tiles with loaded thumbnails and a click stored the hash-checked model with its credit
+and placed it. Tests: hub schema, licence gate, ranking with typos and aliases, hash verify, offline / private / tampered / ETag
+client states, find_model with hub hits and with an unavailable hub, dev proxy narrowness, CSP (player closed).
+
+**Decisions.** CLIP's text tower is 64 MB, so the browser searches by keyword, alias, tag, synonym and typo; image embeddings serve
+"similar to" only. A published page embeds hub models (as imports do), so the player's CSP gets no Hugging Face host. While the dataset
+is private a build never contacts it. The compact index is hash-pinned from `assets/hub.json`.
+
+**Not done.** The first upload: the token on this machine has the `read` role, so creating the dataset under `StarAtNyte1` returns
+403. Run `npm run assets:hf -- build && npm run assets:hf -- upload --pin` with a write token, then flip visibility when ready.
+
 ## Finishes drawn with the first finish's textures
 
 **Cause (measured).** Cobble, stone and plaster boxes (same colour) drew alike: whichever was drawn first set the
