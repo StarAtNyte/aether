@@ -83,7 +83,7 @@ describe('system prompt', () => {
 
   it('tool schemas are strict objects with documented properties', () => {
     const names = AGENT_TOOLS.map((t) => t.name);
-    expect(names).toEqual(['apply_patches', 'build_architecture', 'design_plan', 'place_items', 'edit_items', 'query_scene', 'write_generator', 'write_script', 'request_asset', 'search_assets', 'find_model', 'inspect', 'run_verification', 'shape_land', 'tune_feel', 'tune_look', 'bake_light', 'finish']);
+    expect(names).toEqual(['apply_patches', 'build_architecture', 'design_plan', 'place_items', 'edit_items', 'query_scene', 'write_generator', 'write_script', 'request_asset', 'search_assets', 'find_model', 'simready_search', 'inspect', 'run_verification', 'shape_land', 'tune_feel', 'tune_look', 'bake_light', 'finish']);
     for (const t of AGENT_TOOLS) {
       expect(t.description.length).toBeGreaterThan(20);
       expect(t.inputSchema).toMatchObject({ type: 'object', additionalProperties: false });

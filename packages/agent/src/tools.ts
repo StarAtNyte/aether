@@ -48,7 +48,7 @@ const paramSpecSchema = {
 } as const;
 
 /** Tool names. */
-export type AgentToolName = 'apply_patches' | 'build_architecture' | 'design_plan' | 'place_items' | 'edit_items' | 'query_scene' | 'write_generator' | 'write_script' | 'request_asset' | 'search_assets' | 'find_model' | 'inspect' | 'run_verification' | 'shape_land' | 'tune_feel' | 'tune_look' | 'bake_light' | 'make_texture' | 'finish';
+export type AgentToolName = 'apply_patches' | 'build_architecture' | 'design_plan' | 'place_items' | 'edit_items' | 'query_scene' | 'write_generator' | 'write_script' | 'request_asset' | 'search_assets' | 'find_model' | 'simready_search' | 'inspect' | 'run_verification' | 'shape_land' | 'tune_feel' | 'tune_look' | 'bake_light' | 'make_texture' | 'finish';
 
 /** Asset categories accepted by search_assets (mirrors @aether/assets `AssetCategory`). */
 export const ASSET_CATEGORIES = [
@@ -247,6 +247,21 @@ export const AGENT_TOOLS: ToolDef[] = [
         limit: { type: 'integer', minimum: 1, maximum: 8 },
       },
       required: [],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'simready_search',
+    description:
+      'Look for a candidate 3D model OUTSIDE the library, in NVIDIA SimReady Central (a public semantic search over about 3,600 OpenUSD packages on Hugging Face, mostly small robotics props, tools, containers and some appliances). Use it only when find_model and search_assets have nothing that reads as the object. It lists only hits with a licence the library accepts (CC0, CC BY 4.0, MIT, Apache-2.0, BSD) with licence, author, package and USD size, and says how many it rejected and why (non-commercial, no-derivatives, share-alike, custom or missing licence). It never downloads or imports anything and nothing it lists can be placed: importing is a developer step (`npm run assets:simready -- fetch <repo>@<revision>/<package>`, then the converter and the library build), which the result prints for the user. Say in your message which candidate you would import and why, and use the nearest library model or a crafted part meanwhile. The service is optional and may be unreachable (always from a browser page under its content-security policy): then the tool says so and you carry on without it.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'What the object is, e.g. "range cooker", "toolbox", "gas cylinder".' },
+        max_size: { type: 'number', description: 'Largest side in metres the object may have (the service filters on it).' },
+        limit: { type: 'integer', minimum: 1, maximum: 10 },
+      },
+      required: ['query'],
       additionalProperties: false,
     },
   },
@@ -512,6 +527,11 @@ export const ToolInputs = {
     color: z.string().max(40).optional(),
     size: z.array(z.number().finite().min(0).max(500)).min(1).max(3).optional(),
     limit: z.number().int().min(1).max(8).default(4),
+  }),
+  simready_search: z.object({
+    query: z.string().min(1).max(120),
+    max_size: z.number().finite().positive().max(100).optional(),
+    limit: z.number().int().min(1).max(10).default(5),
   }),
   inspect: z.object({ ids: z.array(z.string().max(64)).max(TOOL_LIMITS.MAX_INSPECT_IDS).optional(), groups: z.boolean().optional() }),
   run_verification: z.object({}),

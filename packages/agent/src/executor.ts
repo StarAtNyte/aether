@@ -4,7 +4,7 @@
  * All model arguments are untrusted: they are size-checked and zod-validated
  * here, and patches are validated again by the host's `applyPatches`.
  */
-import { describeModel, findModels, headNoun, lacksNoun, loadCatalog, searchAssets } from '@aether/assets';
+import { describeModel, describeSimreadyHit, findModels, headNoun, lacksNoun, loadCatalog, searchAssets, searchSimready } from '@aether/assets';
 import { applyArchOps, describePartLine, emptiesWorld, emptyWorldRefusal, findCrafted, partInfo, runDesignTool, type DesignToolName } from '@aether/arch';
 import { GeneratorDef, ScriptDef, applyPatches, carryPatches, characterPatches, hasOwn, isPlainObject, type CarriedDependent, type Patch, type PatchError, type WorldDoc } from '@aether/core';
 import { summarizeWorldForModel } from './world-text';
@@ -398,6 +398,21 @@ async function searchAssetsTool(input: z.infer<typeof ToolInputs.search_assets>)
   return { content: clip(`${lines.join('\n')}\nPlace with shape {"kind":"asset","id":"<id>"} (real size; optional "fitSize" metres).`), isError: false, events: [], edited: false };
 }
 
+/** simready_search: licence-filtered candidates from NVIDIA SimReady Central. Read-only: nothing is downloaded or imported. */
+async function simreadySearchTool(input: z.infer<typeof ToolInputs.simready_search>): Promise<ToolOutcome> {
+  const r = await searchSimready({ query: input.query, limit: input.limit, ...(input.max_size !== undefined ? { maxSize: input.max_size } : {}), timeoutMs: 20_000 });
+  if (!r.ok) return { content: `${r.error} Carry on with find_model, the crafted parts or a model from search_assets.`, isError: false, events: [], edited: false };
+  const catalog = await loadCatalog();
+  const have = (pkg: string): string | undefined => catalog.entries.find((e) => e.source.includes(`/${pkg}/`))?.id;
+  const lines = r.accepted.map((h) => {
+    const inLib = have(h.ref.pkg);
+    return `${describeSimreadyHit(h)}\n  ${inLib ? `already in the library: shape {"kind":"asset","id":"${inLib}"} / place_items {"kind":"model:${inLib}"}` : h.importable ? `not in the library. A developer imports it with: ${h.fetch}` : 'not in the library, and its licence cannot be imported yet'}`;
+  });
+  const rej = r.rejected.length > 0 ? `\nRejected, not usable (${r.rejected.length}): ${r.rejected.slice(0, 6).map((h) => `${h.ref.pkg} (${h.reason})`).join('; ')}.` : '';
+  if (lines.length === 0) return { content: clip(`SimReady Central: nothing with an accepted licence for "${input.query.slice(0, 80)}" (${r.considered} looked at).${rej}`), isError: false, events: [], edited: false };
+  return { content: clip(`SimReady Central candidates for "${r.query}" (accepted licences only; nothing is downloaded, none can be placed until imported). The service is mostly robotics props: check the size before you rely on a hit.\n${lines.join('\n')}${rej}`), isError: false, events: [], edited: false };
+}
+
 /** find_model: ranked real models for one piece with the facts to judge them by. */
 /** Crafted procedural parts that answer `what`, as lines the model can place from (free world shape, rows, or a room). */
 function craftedLines(what: string): string[] {
@@ -555,7 +570,7 @@ export async function executeTool(ctx: ExecutorContext, name: string, rawInput: 
       return fail(`Tool "${name}" failed: ${errorMessage(e).slice(0, 500)}`);
     }
   }
-  if (!isAgentTool(name)) return fail(`Unknown tool "${name.slice(0, 64)}". Available: apply_patches, shape_land, tune_feel, tune_look, bake_light, build_architecture, design_plan, place_items, edit_items, query_scene, query_level, place_level_items, write_generator, write_script, request_asset, search_assets, find_model, inspect, run_verification, finish.`);
+  if (!isAgentTool(name)) return fail(`Unknown tool "${name.slice(0, 64)}". Available: apply_patches, shape_land, tune_feel, tune_look, bake_light, build_architecture, design_plan, place_items, edit_items, query_scene, query_level, place_level_items, write_generator, write_script, request_asset, search_assets, find_model, simready_search, inspect, run_verification, finish.`);
   if (typeof rawInput === 'string') return fail('The tool arguments were not valid JSON. Resend the call with a valid JSON object.');
   if (inputSize(rawInput) > TOOL_LIMITS.MAX_INPUT_CHARS) return fail(`Tool input too large (max ${TOOL_LIMITS.MAX_INPUT_CHARS} characters). Split it into several calls.`);
   try {
@@ -606,6 +621,10 @@ export async function executeTool(ctx: ExecutorContext, name: string, rawInput: 
       case 'find_model': {
         const p = ToolInputs.find_model.safeParse(rawInput);
         return p.success ? await findModelTool(p.data) : fail(`Invalid find_model input: ${issuesText(p.error)}`);
+      }
+      case 'simready_search': {
+        const p = ToolInputs.simready_search.safeParse(rawInput);
+        return p.success ? await simreadySearchTool(p.data) : fail(`Invalid simready_search input: ${issuesText(p.error)}`);
       }
       case 'search_assets': {
         const p = ToolInputs.search_assets.safeParse(rawInput);

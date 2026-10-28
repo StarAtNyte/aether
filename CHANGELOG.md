@@ -3,6 +3,15 @@
 Aether follows [Semantic Versioning](https://semver.org/) once it is published; until then every change lands on `main`
 and `docs/REVIEW_LOG.md` carries the measured detail. Workspace packages share the version in the root `package.json`.
 
+## Unreleased
+
+### NVIDIA SimReady Central as an asset source
+
+- `npm run assets:simready -- search "<text>"` searches SimReady Central (about 3,600 OpenUSD packages on Hugging Face), reads each hit's licence (package file and dataset card) and shows only CC0, CC-BY-4.0, MIT, Apache-2.0 and BSD hits; non-commercial, no-derivatives, share-alike, custom and missing licences are listed as rejected with the reason. `fetch <repo>@<revision>/<package>` downloads one package at a pinned revision outside the repository and verifies LFS hashes, Git blob ids and the package bill of materials.
+- `scripts/assets/usd2glb.py` (dev-time Python, outside the repository) converts a package to glTF; `build.ts --simready` builds the rows of `selection-simready.ts` into `assets/lib/s/` with the interior pipeline and an aggressive decimation for CAD sources.
+- One asset imported: an LG range cooker (`simready-range-cooker-lg`, CC-BY-4.0, LG Electronics): 19,000 of 514,000 triangles, 0.59 MB main file, credited like the Fox. `find_model` answers "range cooker", "stove", "cooktop".
+- `simready_search` agent tool (read-only, never imports; says so when the service is unreachable).
+
 ## 0.1.0 (pre-release, 2026-10-27)
 
 First tagged state of the framework: natural language to verified, interactive 3D worlds in the studio, the CLI, the MCP server and the local bridge.

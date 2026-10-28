@@ -231,6 +231,9 @@ export function stepLabel(name: string, input: unknown, ok: boolean): string {
     case 'find_model':
       text = 'Choosing a real model';
       break;
+    case 'simready_search':
+      text = 'Looking for a model outside the library';
+      break;
     case 'run_verification':
       text = 'Running the checks';
       break;

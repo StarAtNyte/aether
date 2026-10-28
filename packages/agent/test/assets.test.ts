@@ -4,7 +4,7 @@
  * everyday nouns (with fallbacks), keeping nature / gameplay procedural, and
  * dressing the city street with library models when the catalog is loaded.
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createWorld, type WorldDoc } from '@aether/core';
 import { loadCatalog, setCatalog } from '@aether/assets';
 import { executeTool } from '../src/executor';
@@ -17,6 +17,7 @@ function assetIds(world: WorldDoc): string[] {
 
 afterEach(() => {
   setCatalog(null);
+  vi.unstubAllGlobals();
 });
 
 describe('search_assets tool', () => {
@@ -128,5 +129,40 @@ describe('offline planner with the asset library', () => {
     expect(result.errors).toEqual([]);
     expect(assetIds(result.world)).toEqual([]);
     expect(Object.keys(result.world.entities).length).toBeGreaterThan(20);
+  });
+});
+
+describe('simready_search tool', () => {
+  const REV = '70ea043e1a85455227e516766443d1fa235a5ea0';
+  const url = (repo: string, pkg: string): string => `https://huggingface.co/datasets/${repo}/blob/${REV}/${pkg}/simready_usd/${pkg}.usd`;
+  const ok = (v: unknown) => ({ ok: true, status: 200, json: async () => v });
+
+  it('lists only accepted licences, says what it rejected and never imports', async () => {
+    await loadCatalog();
+    vi.stubGlobal('fetch', async (u: string) => {
+      if (u.endsWith('/search')) return ok([{ url: url('LGElectronics/simready-assets', 'cooking_ldgl6924s'), score: 1.1, metadata: { size: 38_728_483 } }, { url: url('Other/set', 'toaster_nc'), score: 1, metadata: { size: 5000 } }, { url: url('Other/set', 'gripper'), score: 0.9, metadata: { size: 5000 } }]);
+      if (u.includes('/api/datasets/Other/set')) return ok({ author: 'Other', cardData: { license: 'cc-by-nc-4.0' } });
+      if (u.includes('/api/datasets/')) return ok({ author: 'LGElectronics', cardData: { license: 'cc-by-4.0' } });
+      return ok({ license: u.includes('LGElectronics') ? 'cc-by-4.0' : 'cc-by-nc-4.0', package_hash: { sha256: 'a'.repeat(64) } });
+    });
+    const out = await executeTool({ host: new MemoryHost() } as never, 'simready_search', { query: 'range cooker', max_size: 2 });
+    expect(out.isError).toBe(false);
+    expect(out.content).toContain('cooking_ldgl6924s');
+    expect(out.content).toContain('CC-BY-4.0');
+    expect(out.content).toContain('already in the library');
+    expect(out.content).toContain('Rejected');
+    expect(out.content).toContain('non-commercial');
+    expect(out.content).not.toContain('toaster_nc —');
+    expect(out.edited).toBe(false);
+  });
+
+  it('degrades to a plain message when the service cannot be reached', async () => {
+    vi.stubGlobal('fetch', async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    const out = await executeTool({ host: new MemoryHost() } as never, 'simready_search', { query: 'drill' });
+    expect(out.isError).toBe(false);
+    expect(out.content).toMatch(/not reachable/);
+    expect((await executeTool({ host: new MemoryHost() } as never, 'simready_search', { query: '' })).isError).toBe(true);
   });
 });

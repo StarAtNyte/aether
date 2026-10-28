@@ -14,9 +14,9 @@ CC0 / CC-BY asset → built-in generator → AI-written generator → primitive 
 
 | | |
 | --- | --- |
-| Entries | 665: 624 models (animated: people and animals with idle / walk / run, 2 chests that open), 10 HDR skies, 23 photographed surfaces, 8 forge originals; 249 models are realistic (photographed), 348 low-poly and 68 stylised (the kits of Kenney and the code-authored creatures and vehicles) |
-| Categories | furniture 115, building 53, vehicles 50, decor 50, street 47, nature 38, animals 37, rocks 28, plants 25, kitchen 24, lighting 24, food 24, props 77, characters 19, bathroom 10, tools 11, skies 10, surfaces 23 |
-| Sources | 17 Kenney kits (CC0; the later sci-fi base, castle and watercraft kits are built by `build.ts --extra`), about 190 Poly Haven models (98 interiors, 76 outdoor, street, industrial, harbour, farm and fantasy models, 16 earlier ones) + 10 Poly Haven HDRIs (CC0), 23 ambientCG PBR materials (CC0), Quaternius Farm Animals (CC0, 7 models), Khronos Fox (CC-BY-4.0), 8 first-party forge originals, 13 code-authored creatures and 13 vehicles (MIT) |
+| Entries | 666: 625 models (animated: people and animals with idle / walk / run, 2 chests that open), 10 HDR skies, 23 photographed surfaces, 8 forge originals; 250 models are realistic (photographed), 348 low-poly and 68 stylised (the kits of Kenney and the code-authored creatures and vehicles) |
+| Categories | furniture 115, building 53, vehicles 50, decor 50, street 47, nature 38, animals 37, rocks 28, plants 25, kitchen 25, lighting 24, food 24, props 77, characters 19, bathroom 10, tools 11, skies 10, surfaces 23 |
+| Sources | 17 Kenney kits (CC0; the later sci-fi base, castle and watercraft kits are built by `build.ts --extra`), about 190 Poly Haven models (98 interiors, 76 outdoor, street, industrial, harbour, farm and fantasy models, 16 earlier ones) + 10 Poly Haven HDRIs (CC0), 23 ambientCG PBR materials (CC0), Quaternius Farm Animals (CC0, 7 models), Khronos Fox (CC-BY-4.0), 1 NVIDIA SimReady Central model (an LG range cooker, CC-BY-4.0), 8 first-party forge originals, 13 code-authored creatures and 13 vehicles (MIT) |
 | Disk | 170 MB under `assets/lib/` (meshopt-compressed GLB, JPEG textures at 256 / 512 / 1k, 512 px surface maps, 192 px WebP thumbnails, 1k HDR), plus 68 MB of KTX2 twins under `assets/lib/k/` ([GPU-compressed textures](#gpu-compressed-textures-ktx2)); the library is fetched on demand, never bundled with the app code |
 | Catalog | `assets/catalog.json`, 464 KB (83 KB gzip), loaded lazily after the editor starts |
 | Provenance | `assets/manifest.json`: source archive + SHA-256 (Kenney) or per-file MD5 (Poly Haven API), file inside the archive, licence, authors and SHA-256 of every shipped file |
@@ -283,6 +283,74 @@ npx tsx scripts/assets/thumbs.ts --only a,b --front=out --yaw=0   # straight-on 
   or modern bed. Those stay parametric parts (or the Kenney pieces).
 - Size on disk: about 50 MB for the main files and distance levels, 17 MB more for
   the light copies. A scene fetches only the models it places.
+
+## SimReady Central
+
+[NVIDIA SimReady Central](https://huggingface.co/spaces/nvidia/simready-central) is a semantic search over about 3,600
+OpenUSD packages that vendors and labs publish as Hugging Face datasets (97 percent CC BY 4.0, Apache-2.0 code for the
+service). Aether uses it as a **searchable, licence-filtered source of candidates**; it is not part of the shipped library
+and the studio never needs it. One package is imported so far: an LG range cooker.
+
+```sh
+npm run assets:simready -- search "range cooker" [--limit=8] [--max-size=2] [--min-size=0.2] [--json]
+npm run assets:simready -- fetch LGElectronics/simready-assets@70ea043e1a85455227e516766443d1fa235a5ea0/cooking_ldgl6924s
+npx tsx scripts/assets/build.ts --simready [--ids=simready-range-cooker-lg]   # convert + build only these ids, upsert catalog, manifest, assets/simready.json
+npm run assets:thumbs -- --only simready-range-cooker-lg ; npm run assets:ktx2
+```
+
+- **API** (`packages/assets/src/simready.ts`, pure, `fetch` injected): `POST https://nvidia-simready-central.hf.space/search`
+  with `{"description": text, "limit": N, "return_metadata": true}` answers `[{url, score, metadata: {modified, size}}]`, where `url` is
+  `https://huggingface.co/datasets/<owner>/<dataset>/blob/<revision>/<package>/simready_usd/<file>.usd`. Size filters
+  are the service's own `min_bbox_x|y|z` / `max_bbox_x|y|z` (metres, Z up; the tool bounds all three with `--max-size` /
+  `--min-size`). The service has property filters for the licence too, but it matches the licence by substring (CC BY has
+  three spellings in the index) and cannot be trusted as the check, so the tool asks for three times the hits wanted and filters
+  itself. `/search_hybrid` is a variant of the same call; it is not used.
+- **Licence check, per hit.** Two sources are read: the package's own `com.nvidia.simready.packaging.json` (`license`) at
+  the pinned revision, and the dataset card (`https://huggingface.co/api/datasets/<owner>/<dataset>`, `cardData.license`). A hit is
+  shown only when every source that answers is on the allow-list: **CC0-1.0, CC-BY-4.0 (as `CC-BY 4.0`, `cc-by-4.0`,
+  `CC-BY-4.0`), MIT, Apache-2.0, BSD-3-Clause, BSD-2-Clause**; a compound licence (`A AND B`) needs every term allowed. Everything
+  else is listed under "Rejected" with the reason: non-commercial, no-derivatives, share-alike or copyleft, a custom
+  `LicenseRef-*`, no licence stated, any other licence. A package whose file and card disagree is rejected. Apache-2.0 and
+  BSD hits are findable but marked "not importable yet": the catalog schema (`AssetLicence`) takes CC0, CC-BY and MIT only.
+- **Fetch.** `fetch <owner>/<dataset>@<40-hex revision>/<package>` re-checks the licence, lists the package through the Hub tree
+  API, downloads each file by its revision-pinned `resolve` URL (https, `huggingface.co` / `*.hf.co` hosts only, size caps) into
+  `~/.cache/aether-asset-src/simready/<owner>/<dataset>/<revision>/<package>` (outside the repository, package folder name
+  unchanged, a new directory per revision), and verifies every file: Git LFS SHA-256, the Git blob id of the small files, then the
+  package's bill of materials (SHA-256 of every file) against the hash `packaging.json` pins. A branch name is refused. The files
+  are untrusted data: nothing in them is run and the converter reads them with `python -I`.
+- **Convert.** `scripts/assets/usd2glb.py` (dev-time, Python with `usd-core`, `numpy`, `pillow` in a venv outside the repository:
+  `python -m venv ~/.local/share/aether/simready/venv && ~/.local/share/aether/simready/venv/bin/pip install usd-core numpy pillow`,
+  or `AETHER_SIMREADY_PY`) bakes world transforms, triangulates, welds, converts Z-up to Y-up in metres, builds one primitive per
+  material (GeomSubsets), and reads the PBR from the UsdPreviewSurface when it has textures, else from the OmniPBR (MDL)
+  inputs next to it: diffuse, normal, emissive and opacity textures (opacity folded into the base-colour alpha), metallic and
+  roughness constants or maps. MDL-only effects are listed and skipped. Python is never a runtime or CI dependency of the repository.
+- **Build** (`selection-simready.ts`, `build.ts --simready`): the USD's SHA-256 must match `assets/sources.json`
+  (`simready.packages`, validated: CC0-1.0 or CC-BY-4.0 only). The GLB then goes through the interior pipeline (real metres,
+  floor-centre pivot, `rot` to face +Z, triangle budget 20,000 with meshopt, 512 px textures and a 256 px light copy, a distance
+  level, a box collider, colours and styles for `find_model`). Files live in `assets/lib/s/` (the `--interior` rebuild clears `i/`),
+  with an own `assets/simready.json` that a full `assets:build` merges back. Heavy CAD sources use an *aggressive* decimation
+  (`simplifyDocument(..., true)` in `process.ts`): one metric error for the whole model found by bisection, then a topology-free
+  pass, then normals recomputed from the new surface, because the default per-primitive pass stalls at about half the triangles on
+  meshes split at every UV and normal seam.
+- **Credits.** The pack carries the dataset, author and licence; a world that uses the model gets the CC-BY line in the credits
+  panel, the end-of-game screen and `CREDITS.txt`, like the Fox. [THIRD_PARTY.md](THIRD_PARTY.md) records the credit text, the
+  changes made and every hash.
+- **The agent.** `simready_search` ([AGENT_TOOLS.md](AGENT_TOOLS.md#simready_search)) lists accepted candidates and prints the fetch
+  command. It never downloads or imports.
+- **Importing another asset.** Search, fetch, add a `simready.packages` entry to `assets/sources.json` (licence evidence: the
+  `license` line of `packaging.json` and the dataset card; USD URL, size, SHA-256, package hash), add a row to
+  `selection-simready.ts` (use `rot` for the front, `convert: ['--resmooth=50']` for CAD tessellation), then run the build, thumbnails
+  and `assets:ktx2`, and add the THIRD_PARTY.md row with the changes made.
+
+**Honest limits.** The index is mostly small robotics props (median 0.19 x 0.17 x 0.11 m): furniture, buildings and nature are
+rare, and appliances come from a few vendors. Packages are CAD-derived: 100,000 to 500,000 triangles that cannot be reduced
+well, so the shipped model keeps the silhouette, the front, the hobs and the textures but has a ragged back and fewer details
+(the range cooker keeps 19,000 of 514,000 triangles). Doors and joints are not kept: the model is one static mesh at rest.
+OmniPBR clear coat and other MDL effects become plain PBR. The USD conversion needs the dev venv. The service and its
+dataset hosts are third parties and can change or vanish: nothing at run time depends on them, the search says so and the
+agent tool carries on, and a studio page cannot reach the service under its content-security policy (`connect-src` is not
+widened for it); the CLI and scripts can. The licence check reads the package at its pinned revision; a vendor can still mislabel a
+package, so the evidence is recorded with each import and a person approves each one.
 
 ## Optional image → mesh
 

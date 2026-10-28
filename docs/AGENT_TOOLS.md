@@ -31,7 +31,7 @@ and a fix. A tool result is plain text written for the model. A refusal never st
 
 | Tool set | Names | Source |
 | --- | --- | --- |
-| Planner tools (`AGENT_TOOLS`), 17 | `apply_patches`, `build_architecture`, `design_plan`, `place_items`, `edit_items`, `query_scene`, `write_generator`, `write_script`, `request_asset`, `search_assets`, `find_model`, `inspect`, `run_verification`, `shape_land`, `tune_feel`, `tune_look`, `finish` | `packages/agent/src/tools.ts` |
+| Planner tools (`AGENT_TOOLS`), 18 | `apply_patches`, `build_architecture`, `design_plan`, `place_items`, `edit_items`, `query_scene`, `write_generator`, `write_script`, `request_asset`, `search_assets`, `find_model`, `simready_search`, `inspect`, `run_verification`, `shape_land`, `tune_feel`, `tune_look`, `finish` | `packages/agent/src/tools.ts` |
 | Level tools (`LEVEL_TOOLS`), 2. Added after `AGENT_TOOLS` only when the host passes `AgentOptions.levelTools` | `query_level`, `place_level_items` | `packages/agent/src/tools.ts`, run by `packages/playtest/src/level/index.ts` |
 | Compact profile (`COMPACT_TOOLS`), 2. Used by small on-device models | `apply_patches`, `finish` (short schemas, same validators) | `packages/agent/src/tools.ts` |
 | Tools given to sub-calls, 6. The planner never sees these | `submit_generator` (coder), `describe_room`, `sample_photo`, `report_verdicts`, `report_judgement`, `reconcile_room` (photo flow) | `packages/agent/src/coder.ts`, `packages/agent/src/photo/prompt.ts` (`describe_room`, `sample_photo`, `report_verdicts`), `packages/agent/src/photo/judge.ts`, `packages/agent/src/photo/reconcile.ts` |
@@ -379,6 +379,20 @@ See [Eyes](#query_level-1).
   with their procedural shape. Places with `shape {"kind":"asset","id"}`. If the library is not loaded, the
   result says so.
 - **When to use it.** For everyday objects, ahead of primitives (system prompt, "Guidelines").
+
+### `simready_search`
+
+- **What it does.** Looks for a candidate model outside the library in NVIDIA SimReady Central (`searchSimready` in
+  `@aether/assets`; see [ASSETS.md](ASSETS.md#simready-central)). Read-only: it downloads and imports nothing.
+- **Input.** `{query ≤120, max_size? (metres, longest side), limit 1..10 (5)}`.
+- **Returns.** Only hits whose package and dataset card both carry an accepted licence (CC0, CC BY 4.0, MIT, Apache-2.0, BSD): package,
+  licence, author, dataset and USD size, whether the model is already in the library (then its id), else the
+  `npm run assets:simready -- fetch <repo>@<revision>/<package>` command a developer runs. Then how many hits were rejected and why
+  (non-commercial, no-derivatives, share-alike, custom or missing licence). If the service cannot be reached (offline, or from a
+  browser page, whose content-security policy does not allow the origin), the result says so and is not an error.
+- **When to use it.** After `find_model` and `search_assets` found nothing that reads as the object. A candidate cannot be placed:
+  the agent names the one it would import, uses the nearest library model or a crafted part meanwhile, and the user decides.
+  The service is mostly small robotics props, so check the size.
 
 ### `find_model`
 
