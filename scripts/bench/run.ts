@@ -20,7 +20,7 @@ import { GENERATOR_LIBRARY } from '@aether/procgen';
 import type { SandboxRunner } from '@aether/procgen';
 import { createNodeSandbox } from '@aether/procgen/node';
 import type { WorldDoc } from '@aether/core';
-import { createHeadlessProvider } from '../../apps/bridge/src/headless';
+import { createHeadlessProvider } from '../lib/live-provider';
 import { GENERATOR_DRY_RUN_MS } from '../lib/headless-world';
 import { coverageSummary, editSummary, repairSummary, speedSummary, winnability, type CoverageSummary, type EditSummary, type RepairSummary, type SpeedSummary, type WinnabilitySummary } from './aggregate';
 import { BASES, QUICK_BASES } from './bases';

@@ -28,7 +28,7 @@ import { GENERATOR_API_DTS, GENERATOR_EXAMPLES, catalog } from '@aether/procgen'
 import { createNodeSandbox } from '@aether/procgen/node';
 import { LIBRARY_SPECS, type LibrarySpec } from '../packages/procgen/src/library-specs';
 import { LibraryFileSchema, acceptLibraryGenerator, renderLibraryIndex, serializeLibraryFile, type LibraryEntryData, type LibraryFile } from '../packages/procgen/src/library-tools';
-import { createHeadlessProvider } from '../apps/bridge/src/headless';
+import { createHeadlessProvider } from './lib/live-provider';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const INDEX_PATH = join(ROOT, 'packages/procgen/src/library-index.ts');

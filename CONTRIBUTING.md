@@ -72,3 +72,11 @@ Short imperative subject in sentence case, no prefix, under about 100 characters
 ## Reporting problems
 
 Use the issue templates. For security problems read [SECURITY.md](SECURITY.md) first and do not open a public issue.
+
+## Live model runs in the test scripts
+
+The live scripts (`eval-photo`, `eval-design`, `eval-agent`, `brief-probe`, `bench`, ...) call an Anthropic API key through
+`scripts/lib/live-provider.ts`. Put your key in `AETHER_ANTHROPIC_API_KEY` or in `~/.config/aether/anthropic.key`
+(mode 600, outside the repo; never commit a key). The scripts' `--backend=` option is ignored; the Codex and Claude Code
+CLI backends run only with `AETHER_ALLOW_CLI=1`. Set `AETHER_LIVE_MODEL` to change the model (default `claude-sonnet-5-5`).
+The studio and the bridge are unchanged: they keep their own connections.

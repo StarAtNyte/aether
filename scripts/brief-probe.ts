@@ -17,7 +17,7 @@ import { initScripting } from '@aether/logic';
 import { initPhysics } from '@aether/physics';
 import { loadLibraryGenerator } from '@aether/procgen';
 import { createNodeSandbox } from '@aether/procgen/node';
-import { createHeadlessProvider } from '../apps/bridge/src/headless';
+import { createHeadlessProvider } from './lib/live-provider';
 import { captureReviewHeadless } from '../apps/cli/src/mcp/review';
 import { CATALOGS, GENERATOR_DRY_RUN_MS, NodeAgentHost } from './lib/headless-world';
 import { GpuRoom } from './lib/gpu-room';

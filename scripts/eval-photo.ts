@@ -42,7 +42,7 @@ import { createNodeSandbox } from '@aether/procgen/node';
 import { drawMarksRgba } from '@aether/agent';
 import { encodePng } from '../apps/cli/src/mcp/png';
 import { GpuRoom } from './lib/gpu-room';
-import { createHeadlessProvider } from '../apps/bridge/src/headless';
+import { createHeadlessProvider } from './lib/live-provider';
 import { captureReviewHeadless } from '../apps/cli/src/mcp/review';
 import { initPhysics } from '@aether/physics';
 import { readScene } from '@aether/arch';

@@ -23,7 +23,7 @@ import { initScripting } from '@aether/logic';
 import { initPhysics } from '@aether/physics';
 import { GENERATOR_LIBRARY, loadLibraryGenerator } from '@aether/procgen';
 import { createNodeSandbox } from '@aether/procgen/node';
-import { createHeadlessProvider } from '../apps/bridge/src/headless';
+import { createHeadlessProvider } from './lib/live-provider';
 import { CATALOGS, GENERATOR_DRY_RUN_MS, NodeAgentHost, runVerify } from './lib/headless-world';
 import { DEFAULT_PROMPTS } from './smoke-prompts';
 

@@ -21,7 +21,7 @@ import { BEHAVIOR_CATALOG, RULE_DOCS, SCRIPT_API_DTS } from '@aether/logic';
 import { GENERATOR_API_DTS, GENERATOR_EXAMPLES, catalog, resolveParams, type GeneratorOutput } from '@aether/procgen';
 import { createNodeSandbox } from '@aether/procgen/node';
 import { acceptLibraryGenerator, LibraryFileSchema, serializeLibraryFile, type LibraryFile } from '../../packages/procgen/src/library-tools';
-import { createHeadlessProvider } from '../../apps/bridge/src/headless';
+import { createHeadlessProvider } from '../lib/live-provider';
 import type { AssetCategory } from '../../packages/assets/src/schema';
 import { withBrowserPage } from './browser';
 

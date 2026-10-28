@@ -20,7 +20,7 @@ import { PHOTO_BUILDING_ID, buildChecklist, parseRoomDescription, scoreVerdicts,
 import { legendText, markIndex, partKinds } from '@aether/arch';
 import { TranscriptSchema, type ContentBlock, type Provider, type ReviewViewRequest } from '@aether/agent';
 import { createNodeSandbox } from '@aether/procgen/node';
-import { createHeadlessProvider } from '../apps/bridge/src/headless';
+import { createHeadlessProvider } from './lib/live-provider';
 import { captureReviewHeadless } from '../apps/cli/src/mcp/review';
 import { VERDICT_TOOL, VERDICT_TOOL_NAME, compareIntroText } from '../packages/agent/src/photo/prompt';
 import { runPanel } from '../packages/agent/src/photo/judge';
