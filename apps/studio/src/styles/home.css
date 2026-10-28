@@ -188,6 +188,21 @@
   min-width: 0;
 }
 
+.template-filter {
+  margin: 0 0 var(--s-4);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.template-filter::-webkit-scrollbar {
+  display: none;
+}
+
+.template-filter .segmented {
+  width: max-content;
+  max-width: none;
+}
+
 .home-section__lead {
   max-width: 560px;
   color: var(--text-2);

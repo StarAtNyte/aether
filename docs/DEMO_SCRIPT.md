@@ -35,7 +35,7 @@ High (so the performance governor cannot lower anything mid-take).
 ## Shots to capture separately (b-roll)
 
 Kart Canyon driving, Neon Rain City at night, Kyoto Temple, Orbital Lab, the interior of Skyline Penthouse, the
-photo example rooms (More worlds), the game-feel burst (damage flash, explosion, confetti), a resident on a stair, the Blockfall day and night cycle.
+photo example rooms (Templates, Photo to 3D), the game-feel burst (damage flash, explosion, confetti), a resident on a stair, the Blockfall day and night cycle.
 
 ## Recording checklist
 

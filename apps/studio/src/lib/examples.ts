@@ -31,6 +31,25 @@ export const AGENT_TEMPLATES: readonly WorldTemplate[] = Object.freeze(SHOWCASE.
 /** Every template that is shown somewhere: featured first, then the others. */
 export const TEMPLATES: readonly WorldTemplate[] = Object.freeze([...FEATURED_TEMPLATES, ...MORE_TEMPLATES, ...AGENT_TEMPLATES, ...PHOTO_TEMPLATES]);
 
+/** The groups of the Templates page: one per kind, plus the rooms rebuilt from a photograph. */
+export type TemplateGroup = 'game' | 'architecture' | 'scene' | 'physics' | 'story' | 'photo';
+
+/** The group a template is listed under (a room rebuilt from a photo is "Photo to 3D", whatever its kind). */
+export const templateGroup = (t: WorldTemplate): TemplateGroup => (t.origin === 'photo' ? 'photo' : t.kind);
+
+/** Groups in display order, with their heading, one-line lead and filter label. */
+export const TEMPLATE_GROUPS: readonly { id: TemplateGroup; label: string; title: string; lead: string }[] = Object.freeze([
+  { id: 'game', label: 'Games', title: 'Games', lead: 'Playable worlds with goals, rules and a verified win: open one, play it, then ask the agent to change it.' },
+  { id: 'architecture', label: 'Architecture', title: 'Architecture', lead: 'Houses, venues and interiors you can walk through, cut open and relight. Cards say whether the offline planner or a live AI run built them.' },
+  { id: 'scene', label: 'Scenes', title: 'Scenes', lead: 'Landscapes and settings to explore and restyle.' },
+  { id: 'physics', label: 'Physics', title: 'Physics', lead: 'Machines and contraptions run by the physics engine, every bounce verified.' },
+  { id: 'story', label: 'Stories', title: 'Stories', lead: 'Short interactive stories told in a world.' },
+  { id: 'photo', label: 'Photo to 3D', title: 'Photo to 3D', lead: 'Example rooms the agent reconstructed from a photograph (credited on each card). To rebuild your own, attach a photo in the chat.' },
+]);
+
+/** Templates of one group, in display order (featured first, then the rest in manifest order). */
+export const templatesInGroup = (id: TemplateGroup): readonly WorldTemplate[] => TEMPLATES.filter((t) => templateGroup(t) === id);
+
 /** Template by slug, including hidden ones (old links keep working); undefined when unknown. */
 export function templateBySlug(slug: string): WorldTemplate | undefined {
   return SHOWCASE.find((t) => t.slug === slug);

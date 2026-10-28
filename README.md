@@ -86,7 +86,7 @@ general bot does not drive.
 | ![Casa del Patio](docs/screenshots/showcase/casa-patio.webp)<br>**Casa del Patio**: a courtyard house above Sintra, every drawer opens | ![Skyline Penthouse](docs/screenshots/showcase/skyline-penthouse.webp)<br>**Skyline Penthouse**: walk it, switch the lights, change the hour | ![Dusk House by the Lake](docs/screenshots/showcase/dusk-lake-house.webp)<br>**Dusk House by the Lake**: explode it, cut it, walk to the jetty |
 
 Four more example rooms, rebuilt from CC0 or public-domain photographs, are
-listed under **More worlds**: a hotel bedroom, a twin room, a four-poster
+listed on the Templates page under **Photo to 3D**: a hotel bedroom, a twin room, a four-poster
 bedroom and a vaulted bedroom. The photo credit is on each card. They are saved runs of the photo flow
 (`npm run showcase:photo-rooms`).
 

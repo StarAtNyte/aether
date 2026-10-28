@@ -1480,7 +1480,7 @@ npm run showcase:thumbs flagship covers from art-directed cameras (docs/screensh
 
 - **Curation.** `curation: 'featured'` puts an entry in the home row, at the
   top of the Templates page and in the agent's empty state; `'candidate'`
-  lists it under "More worlds"; `'hidden'` keeps the files and old links
+  lists it on the Templates page under its type group; `'hidden'` keeps the files and old links
   (`#/new/<slug>`) without showing it. Array order is display order.
 - **Photo example rooms.** Four entries with `origin: 'photo'` (hotel bedroom, twin room, four-poster, vaulted bedroom) are
   rooms rebuilt from CC0 or public-domain photographs. Their worlds are the replayed recorded runs of the photo flow

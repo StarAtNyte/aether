@@ -171,7 +171,7 @@ advice and never decide. On a subscription the loop runs until everything
 matches or progress stalls. On a paid key it stops after 10 rounds.
 
 Four example rooms made this way (a hotel bedroom, a twin room, a four-poster
-bedroom and a vaulted bedroom) are on the home page under **More worlds**.
+bedroom and a vaulted bedroom) are on the Templates page under **Photo to 3D**.
 
 Expect a few minutes and 20 to 40 calls. Vaulted ceilings, cornices, sash
 windows and some door styles cannot be built yet. Offline, Aether says it
