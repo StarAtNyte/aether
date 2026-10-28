@@ -97,6 +97,11 @@ export interface ServerConfig {
      */
     readonly bridge: { readonly origins: readonly string[]; readonly port: number } | null;
   };
+  /**
+   * On-demand import of SimReady models (downloads from the internet and runs a converter). Only on a server that runs on the
+   * user's own computer (local AI on), or with AETHER_ALLOW_IMPORT=1. `loopbackOnly`: requests must come from this machine.
+   */
+  readonly assetImport: { readonly enabled: boolean; readonly loopbackOnly: boolean; readonly dir: string | null };
   /** Optional image → 3D wrapper (TRELLIS.2, user-run); null = off (default). */
   readonly imageTo3d: { readonly endpoint: string; readonly token?: string } | null;
   readonly generators: {
@@ -189,6 +194,10 @@ const EnvSchema = z.object({
   AETHER_HEADLESS_MODEL: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/, 'invalid model id').optional(),
   AETHER_HEADLESS_EFFORT: z.enum(['low', 'medium', 'high']).optional().default('low'),
   AETHER_LOCAL_AI: z.enum(['auto', 'on', 'off']).optional().default('auto'),
+  /** On-demand model import (`/api/assets/import`): auto = on with local AI; AETHER_ALLOW_IMPORT=1 also turns it on elsewhere. */
+  AETHER_ASSET_IMPORT: z.enum(['auto', 'off']).optional().default('auto'),
+  AETHER_ALLOW_IMPORT: z.enum(['0', '1']).optional().default('0'),
+  AETHER_IMPORT_DIR: z.string().trim().max(500).optional(),
   ANTHROPIC_API_KEY: optionalSecret,
   OPENAI_API_KEY: optionalSecret,
   ANTHROPIC_BASE_URL: optionalHttpsUrl,
@@ -378,6 +387,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>> = p
       logFile: e.AETHER_LOG_FILE ? resolvePath(e.AETHER_LOG_FILE, '') : null,
       bridge: e.AETHER_BRIDGE_ORIGINS.length > 0 ? { origins: e.AETHER_BRIDGE_ORIGINS, port: e.AETHER_BRIDGE_PORT } : null,
     },
+    assetImport: { enabled: e.AETHER_ASSET_IMPORT !== 'off' && (localAi || e.AETHER_ALLOW_IMPORT === '1'), loopbackOnly: !(e.AETHER_ALLOW_IMPORT === '1' && !localAi), dir: e.AETHER_IMPORT_DIR ? resolvePath(e.AETHER_IMPORT_DIR, '') : null },
     imageTo3d: e.AETHER_IMAGE_TO_3D_URL ? { endpoint: e.AETHER_IMAGE_TO_3D_URL, ...(e.AETHER_IMAGE_TO_3D_TOKEN ? { token: e.AETHER_IMAGE_TO_3D_TOKEN } : {}) } : null,
     generators: {
       validate: e.AETHER_VALIDATE_GENERATORS,

@@ -22,6 +22,10 @@ import { accessLog, corsAllowlist, jsonBodyLimit, originGuard, rateLimit, securi
 import { TokenBucketLimiter } from './rate-limit';
 import { createTrellisProvider, type ImageTo3DProvider } from '@aether/assets';
 import { registerImageTo3dRoutes } from './routes/image-to-3d';
+import { registerAssetImportRoutes } from './routes/assets-import';
+import { ImportService, defaultImportDir } from './assets-import/service';
+import { createConverter, toolsMissingReason, usdPython } from './assets-import/convert';
+import { REPO_ROOT } from './config';
 import { GENERATOR_HASH_RE, registerGeneratorRoutes } from './routes/generators';
 import { registerLlmRoutes, type LiveLlm } from './routes/llm';
 import { registerLocalRoutes, type LocalRouteDeps } from './routes/local';
@@ -53,6 +57,8 @@ export interface AppDeps {
   isLoopback?: LocalRouteDeps['isLoopback'];
   /** Graceful shutdown requested by the `aether` CLI (`POST /api/admin/shutdown`, session secret required). */
   requestShutdown?: () => void;
+  /** On-demand model import service override (tests: mocked search, fetch and converter). */
+  assetImport?: ImportService;
   /** Image → 3D provider override (tests); default: TRELLIS wrapper from `config.imageTo3d`. */
   imageTo3d?: ImageTo3DProvider;
   /** The in-process bridge for hosted studios (only with `config.local.bridge`). */
@@ -157,7 +163,7 @@ export function createApp(config: ServerConfig, deps: AppDeps = {}): Hono<AppEnv
   }
   const instance = config.local.instanceId;
   app.get('/api/health', (c) =>
-    c.json({ ok: true, mode: llm ? 'live' : 'mock', providers: [...providers], byok: false, local: local !== null, imageTo3d: config.imageTo3d !== null, ...(instance ? { instance } : {}) }, 200),
+    c.json({ ok: true, mode: llm ? 'live' : 'mock', providers: [...providers], byok: false, local: local !== null, imageTo3d: config.imageTo3d !== null, assetImport: config.assetImport.enabled, ...(instance ? { instance } : {}) }, 200),
   );
   if (local) {
     registerLocalRoutes(app, {
@@ -172,6 +178,20 @@ export function createApp(config: ServerConfig, deps: AppDeps = {}): Hono<AppEnv
     registerPublishRoutes(app, { store: services.store, jobs: services.jobs, lan: services.lan, logger, maxUploadBytes: MAX_BUILD_UPLOAD_BYTES });
     deps.onPublish?.(services);
     deps.shutdownSignal?.addEventListener('abort', () => void services.dispose());
+  }
+
+  if (config.assetImport.enabled) {
+    const service =
+      deps.assetImport ??
+      new ImportService({
+        dir: config.assetImport.dir ?? defaultImportDir(),
+        srcDir: process.env['AETHER_ASSET_SRC'] ?? `${process.env['HOME'] ?? ''}/.cache/aether-asset-src`,
+        logger,
+        toolsMissing: () => toolsMissingReason(REPO_ROOT, usdPython()),
+        convert: createConverter(REPO_ROOT, usdPython()),
+        ...(deps.shutdownSignal ? { shutdownSignal: deps.shutdownSignal } : {}),
+      });
+    registerAssetImportRoutes(app, { service, logger, loopbackOnly: config.assetImport.loopbackOnly, ...(config.local.sessionSecret ? { sessionSecret: config.local.sessionSecret } : {}), ...(deps.isLoopback ? { isLoopback: deps.isLoopback } : {}) });
   }
 
   registerLlmRoutes(app, {

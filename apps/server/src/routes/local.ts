@@ -58,9 +58,9 @@ export interface LocalBridgeInfo {
 }
 
 const LOOPBACK_ADDR = /^(127\.\d{1,3}\.\d{1,3}\.\d{1,3}|::1|::ffff:127\.\d{1,3}\.\d{1,3}\.\d{1,3})$/;
-const LOOPBACK_HOST = /^(localhost|127\.0\.0\.1|\[::1\])(:\d{1,5})?$/i;
+export const LOOPBACK_HOST = /^(localhost|127\.0\.0\.1|\[::1\])(:\d{1,5})?$/i;
 /** Headers a reverse proxy adds: their presence means the request did not come straight from this machine. */
-const PROXY_HEADERS = ['x-forwarded-for', 'x-real-ip', 'forwarded', 'x-forwarded-host', 'cf-connecting-ip', 'true-client-ip'] as const;
+export const PROXY_HEADERS = ['x-forwarded-for', 'x-real-ip', 'forwarded', 'x-forwarded-host', 'cf-connecting-ip', 'true-client-ip'] as const;
 
 /** Default loopback check: the socket's remote address. */
 export function socketIsLoopback(c: Context<AppEnv>): boolean {

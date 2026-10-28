@@ -43,7 +43,8 @@ let TEXTURES = new Map<string, Uint8Array>();
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const OUT = join(ROOT, 'assets');
-const LIB = join(OUT, 'lib');
+/** Library folder. `AETHER_ASSET_LIB` redirects it (the local server's on-demand import builds into a temp folder). */
+const LIB = process.env['AETHER_ASSET_LIB'] ? resolve(process.env['AETHER_ASSET_LIB']) : join(OUT, 'lib');
 /** Models above this many triangles get LOD files. */
 const LOD_MIN_TRIS = 3000;
 const LOD_RATIOS: readonly number[] = [0.5, 0.15];
@@ -506,7 +507,7 @@ async function main(): Promise<void> {
 }
 
 /** Texture tiers for the interior models are resized by `tex_tiers.py` (Pillow) and cached next to the sources. */
-const TIER_CACHE = join(SOURCE_DIR, 'polyhaven', 'tiers');
+const TIER_CACHE = process.env['AETHER_TIER_CACHE'] ? resolve(process.env['AETHER_TIER_CACHE']) : join(SOURCE_DIR, 'polyhaven', 'tiers');
 const TIER_SCRIPT = join(ROOT, 'scripts', 'assets', 'tex_tiers.py');
 
 /** Run the Python tier script on a job file; returns its colour report. */
@@ -514,7 +515,7 @@ function runTiers(spec: { jobs: Array<{ src: string; dst: string; side: number; 
   const jobFile = join(TIER_CACHE, 'job.json');
   mkdirSync(TIER_CACHE, { recursive: true });
   writeFileSync(jobFile, JSON.stringify(spec));
-  const r = spawnSync('python3', ['-I', TIER_SCRIPT, jobFile], { encoding: 'utf8', timeout: 120_000, maxBuffer: 16 * 1024 * 1024 });
+  const r = spawnSync(process.env['AETHER_TIER_PY'] ?? 'python3', ['-I', TIER_SCRIPT, jobFile], { encoding: 'utf8', timeout: 120_000, maxBuffer: 16 * 1024 * 1024 });
   if (r.status !== 0) throw new Error(`tex_tiers.py failed: ${r.stderr}`);
   return (JSON.parse(r.stdout) as { colors: Record<string, { rgb: [number, number, number]; names: string[] }> }).colors;
 }
@@ -676,7 +677,7 @@ async function buildInterior(): Promise<void> {
 }
 
 /** Python of the dev venv that has `usd-core`, `numpy` and `pillow` (outside the repository; see docs/ASSETS.md, "SimReady Central"). */
-const SIMREADY_PY = process.env['AETHER_SIMREADY_PY'] ?? join(homedir(), '.local', 'share', 'aether', 'simready', 'venv', 'bin', 'python');
+const SIMREADY_PY = process.env['AETHER_USD_PYTHON'] ?? process.env['AETHER_SIMREADY_PY'] ?? join(homedir(), '.local', 'share', 'aether', 'simready', 'venv', 'bin', 'python');
 
 /**
  * `--simready`: build the models of selection-simready.ts (NVIDIA SimReady Central packages, fetched with
@@ -840,7 +841,50 @@ function relocate(f: { path: string; sha256: string; bytes: number }, dir: strin
   return { ...f, path: to };
 }
 
-(process.argv.includes('--simready') ? buildSimready() : process.argv.includes('--interior') ? buildInterior() : process.argv.includes('--extra') ? buildExtra() : process.argv.includes('--hdri-lite') ? Promise.resolve(buildHdriLite()) : process.argv.includes('--photo-only') ? buildPhotoOnly() : main()).catch((err: unknown) => {
+/**
+ * `--import-one=<job.json>`: the on-demand import of the local server (apps/server). Converts one already fetched and
+ * hash-checked SimReady USD with `usd2glb.py` and runs the interior pipeline (real metres, floor-centre pivot, 20,000
+ * triangle budget, meshopt, 512 px textures, distance level, light copy) into `AETHER_ASSET_LIB`, then writes
+ * `result.json` (the catalog entry and the files) next to the job. The library catalog, manifest and sources are not touched.
+ * The USD and everything beside it are untrusted data: nothing in them is run and the converter reads them with `python -I`.
+ */
+interface ImportJobFile {
+  usd: string;
+  usdSha256: string;
+  row: InteriorRow;
+  author: string;
+  licence: string;
+  archive: string;
+  pack: string;
+  work: string;
+  convert?: string[];
+}
+
+async function buildImportOne(jobPath: string): Promise<void> {
+  const job = JSON.parse(readFileSync(jobPath, 'utf8')) as ImportJobFile;
+  if (!process.env['AETHER_ASSET_LIB'] || !process.env['AETHER_TIER_CACHE']) throw new Error('--import-one needs AETHER_ASSET_LIB and AETHER_TIER_CACHE (a temp folder)');
+  if (sha(readFileSync(job.usd)) !== job.usdSha256) throw new Error('the USD differs from the hash recorded when it was fetched');
+  if (!existsSync(SIMREADY_PY)) throw new Error(`${SIMREADY_PY} not found: the USD converter needs a venv with usd-core, numpy and pillow (AETHER_USD_PYTHON)`);
+  const nio = await io();
+  const id = job.row[1];
+  const conv = join(job.work, 'converted');
+  mkdirSync(conv, { recursive: true });
+  const full = join(conv, 'full.glb');
+  const r = spawnSync(SIMREADY_PY, ['-I', join(ROOT, 'scripts', 'assets', 'usd2glb.py'), job.usd, full, '--max-tex=1024', ...(job.convert ?? []), `--report=${join(conv, 'report.json')}`], { encoding: 'utf8', timeout: 240_000, maxBuffer: 16 * 1024 * 1024, env: { PATH: process.env['PATH'] ?? '', HOME: job.work } });
+  if (r.status !== 0) throw new Error(`usd2glb.py failed: ${(r.stderr || r.stdout || String(r.error ?? '')).slice(-600)}`);
+  console.log('stage:optimising');
+  const gdoc = await nio.read(full);
+  gdoc.getRoot().listTextures().forEach((t, i) => t.setURI(`tex-${i}.${t.getMimeType() === 'image/png' ? 'png' : 'jpg'}`));
+  const srcDir = join(conv, 'src');
+  mkdirSync(srcDir, { recursive: true });
+  const src = join(srcDir, `${id}.gltf`);
+  await nio.write(src, gdoc);
+  const built = await buildInteriorModel(nio, job.row, { src, texDir: srcDir, authors: [job.author], archive: job.archive, pack: job.pack, licence: job.licence, cacheKey: `import-${id}`, dir: 's' });
+  writeFileSync(join(job.work, 'result.json'), `${JSON.stringify({ entry: built.entry, files: built.asset.files })}\n`);
+}
+
+const importOne = process.argv.find((a) => a.startsWith('--import-one='))?.slice(13);
+(importOne ? buildImportOne(importOne) : process.argv.includes('--simready') ? buildSimready() : process.argv.includes('--interior') ? buildInterior() : process.argv.includes('--extra') ? buildExtra() : process.argv.includes('--hdri-lite') ? Promise.resolve(buildHdriLite()) : process.argv.includes('--photo-only') ? buildPhotoOnly() : main()).catch((err: unknown) => {
   console.error(err instanceof Error ? (err.stack ?? err.message) : err);
   process.exit(1);
 });
