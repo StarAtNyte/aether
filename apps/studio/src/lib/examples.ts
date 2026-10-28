@@ -39,8 +39,8 @@ export const templateGroup = (t: WorldTemplate): TemplateGroup => (t.origin === 
 
 /** Groups in display order, with their heading, one-line lead and filter label. */
 export const TEMPLATE_GROUPS: readonly { id: TemplateGroup; label: string; title: string; lead: string }[] = Object.freeze([
-  { id: 'game', label: 'Games', title: 'Games', lead: 'Playable worlds with goals, rules and a verified win: open one, play it, then ask the agent to change it.' },
   { id: 'architecture', label: 'Architecture', title: 'Architecture', lead: 'Houses, venues and interiors you can walk through, cut open and relight. Cards say whether the offline planner or a live AI run built them.' },
+  { id: 'game', label: 'Games', title: 'Games', lead: 'Playable worlds with goals, rules and a verified win: open one, play it, then ask the agent to change it.' },
   { id: 'scene', label: 'Scenes', title: 'Scenes', lead: 'Landscapes and settings to explore and restyle.' },
   { id: 'physics', label: 'Physics', title: 'Physics', lead: 'Machines and contraptions run by the physics engine, every bounce verified.' },
   { id: 'story', label: 'Stories', title: 'Stories', lead: 'Short interactive stories told in a world.' },
