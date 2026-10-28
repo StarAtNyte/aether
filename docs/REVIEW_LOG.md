@@ -7056,3 +7056,68 @@ Real photos (`~/.local/share/aether/qa/live9/`), last measured round, against li
 | judge pass rate | 84% | 65% (4 rounds, stopped as good enough) | 97% | 63% (12 rounds) |
 
 Reading: the better perception geometry did not carry through to the build in these runs. The model places pieces by eye and its edits move them more than the measured positions improve them (twin position got worse, 0.39 to 0.80 m; living room better, 0.88 to 0.52 m). One run each of a stochastic pipeline: the differences are within what a repeat could move, so no trend is claimed. The IoU of a perfect build is itself 0.67 (raster limit above), which caps what these counts can show. Next weakest link: the instance raster silhouettes (real library meshes), then the model's placement edits against the measured positions.
+
+## 2026-10-28 NVIDIA SimReady Central as a searchable, licence-filtered asset source (one asset imported)
+
+**What changed**
+
+- `npm run assets:simready -- search "<text>"` (`scripts/assets/simready.ts`, logic in `packages/assets/src/simready.ts`, pure with an injected `fetch`):
+  calls the public SimReady Central search (`POST /search`, `return_metadata`, optional `min/max_bbox_*` size filters), reads
+  the licence of every hit from the package's `com.nvidia.simready.packaging.json` at the pinned revision and from the dataset card, and shows only
+  hits whose every licence source is on the allow-list: **CC0-1.0, CC-BY-4.0 (any of `CC-BY 4.0`, `cc-by-4.0`, `CC-BY-4.0`), MIT, Apache-2.0,
+  BSD-3-Clause, BSD-2-Clause**. The rest is listed as rejected with the reason (non-commercial, no-derivatives, share-alike or copyleft, custom
+  `LicenseRef-*`, none or unknown, source disagreement). Live check: "range cooker" gave 15 hits, all CC-BY-4.0; "robot gripper" gave 15 hits,
+  of which one (`ur17g_1300`, Teradyne) has no licence in its package or its card and was rejected, and three onrobot BSD-3-Clause hits are found but marked
+  "not importable yet" (the catalog schema takes CC0, CC-BY and MIT only). `fetch` of the rejected package is refused with the same reason, and
+  `fetch ...@main/...` is refused (a pinned 40-hex revision is required).
+- `fetch <repo>@<revision>/<package>`: Hub tree API listing, revision-pinned `resolve` URLs on `huggingface.co` / `*.hf.co` only, caps (256 MB a file,
+  768 MB a package, 400 files), into `~/.cache/aether-asset-src/simready/<owner>/<dataset>/<revision>/<package>`; verifies the Git LFS SHA-256, the Git blob id
+  of the small files, the bill of materials against the hash `packaging.json` pins (29 of 29 files for the cooker). Nothing from the package is executed.
+- `scripts/assets/usd2glb.py` (dev-time, Python venv with `usd-core` 0.26.11, numpy, pillow outside the repository; `python -I`): world transforms, triangulation,
+  Z-up to Y-up in metres, welding, one primitive per material (GeomSubsets), PBR from the OmniPBR inputs next to the UsdPreviewSurface (the
+  fallback surface of this package has no textures), opacity folded into alpha, `--resmooth` for CAD tessellation. The cooker: 514,000 triangles, 28 materials,
+  15 images, 0.74 x 1.18 x 0.76 m, converted in 6 s.
+- `build.ts --simready` (rows of `selection-simready.ts`, sources validated in `assets/sources.json`, USD SHA-256 pinned): the interior row builder was
+  extracted into `buildInteriorModel` shared with Poly Haven (a re-run of two Poly Haven ids gave identical files, hashes and entries); files go to
+  `assets/lib/s/` so a full `--interior` run (which clears `i/`) cannot delete them; `assets/simready.json` is merged back by a full `assets:build`.
+- Decimation: the default pass (`simplifyDocument`) stalls at 50 percent on this mesh (255,000 of 514,000 triangles for a 20,000 target, 7.5 MB, over the per-model
+  cap) because every UV and normal seam splits the vertices; a permissive pass, then a topology-free pass, left a ragged shape with pinched shading. The
+  shipped mode (`aggressive`): one absolute error for the whole model found by bisection (permissive, prune), a topology-free pass on the remainder,
+  then normals recomputed (crease 50 degrees); with `--resmooth=50` in the converter. Result 18,911 triangles (budget 20,000), 28 draw calls.
+- `simready_search` agent tool (`tools.ts`, `executor.ts`; read-only; tests with a stubbed `fetch`; AGENT_TOOLS now has 18 tools).
+- `cooktop` joined the stove / oven / cooker / range / hob synonym group.
+
+**The one asset** `simready-range-cooker-lg`: LG range cooker LDGL6924S, LG Electronics (`LGElectronics/simready-assets`, revision
+`70ea043e1a85455227e516766443d1fa235a5ea0`, package `cooking_ldgl6924s`), licence `cc-by-4.0` in `packaging.json` and in the dataset card, USD SHA-256
+`7722e84e...74fa3e`, package hash `6d1023ab...b7d4`. Row: kitchen, type `cooker`, `rot: 270` (the source front is +X; found with `thumbs.ts --front --yaw`),
+floor-centre pivot, box collider, colours black / silver (the measured dominant colour named a black body "dark-brown"). Only this package is added.
+
+**Measured**
+
+| | |
+| --- | --- |
+| Triangles | 514,000 in the source, 18,911 main, 6,664 distance level, light copy about a quarter of the main budget |
+| Files | main 594,756 B (15 textures at 512 px inside), distance level 218,244 B, light copy (256 px) 172,124 B, KTX2 twin of the main file 670,992 B, thumbnail 4,302 B |
+| Library growth | `assets/lib/s` 985,124 B + `k/` 670,992 B + thumbnail 4,302 B = 1.66 MB; `catalog.json` +1.4 KB (475,077 to 476,430 B) |
+| Colour sanity | black body, stainless front, blue enamel oven cavity and glass: the source diffuse textures average (91, 91, 163) for the cavity and (176, 175, 180) for the stainless, the constants of the body are about 0.03 linear; the shipped model matches the package's own thumbnail (black sides, stainless front, dark oven windows) |
+| Stills (Intel iGPU, `GEN_GPU=intel`, studio quality) | `~/.local/share/aether/qa/simready-stills/` (`before-*` the Poly Haven electric cooker, `after-*` the SimReady cooker, same kitchen of primitives); viewed: correct size against 0.9 m counters, front to +Z, hobs, two ovens, handles and knobs read; the back is ragged and distance-level shading is soft |
+| Frame cost | default scenes: zero (a catalog entry nobody places loads nothing). A kitchen with the cooker: median frame 20.6 ms against 20.8 ms with the old cooker (same vsync-bound iGPU), draw calls 67 to 119 in the eye view (28 materials, instanced twice with the shadow pass), triangles 101,664 to 103,864 |
+| Lean build | `shippedPaths` ships only the thumbnail (4.3 KB) of the new entry until a bundled world or the source names the id; the ship-set is otherwise unchanged |
+
+**Gates** (all run on this tree after the rebase): `tsc` clean; `vitest packages/assets packages/agent apps/studio` 189 files, 1,854 tests passed; `npm run smoke` 39 of 39
+prompts; `showcase:bake --check` every world up to date (the new catalog entry and the synonym do not touch any lightmap key); `showcase:lightmaps --verify` every bundled
+lightmap applies; `npm run budget` ok (index.html js 925 kB gzip of 930, play.html 1,360 of 1,400); `npm run licences` ok (npm dependencies only; the asset licence gate is the
+validated `simready` section of `sources.json`, the catalog pack licence enum and `packages/assets/test/simready.test.ts`).
+
+**Honest limits**
+
+- The index is mostly small robotics props (median 0.19 x 0.17 x 0.11 m); furniture, buildings and nature are rare. Only a few vendors publish appliances.
+- CAD tessellation (100,000 to 500,000 triangles) does not decimate well: the shipped cooker keeps 3.7 percent of its triangles, so the back and the burner grates are
+  coarse and the distance level is soft. Its 28 materials are 28 draw calls per placed cooker.
+- The model is one static mesh: no door joints, no clear coat or other MDL effects.
+- The licence check trusts the vendor's `packaging.json` and card; a mislabelled package would pass, so every import records the evidence in `sources.json` and is approved by a person.
+- Apache-2.0 and BSD packages can be found but not imported until the schema takes them.
+- The service and the Hugging Face datasets are third parties and may change; nothing at run time needs them. A studio page cannot reach the service (its CSP is not widened),
+  so `simready_search` answers "not reachable" there and works from the CLI, MCP and scripts.
+- The USD converter needs the dev venv; Python is not a dependency of the repository or CI.
+- The reference stills use primitives for the kitchen around the cooker; no photograph of a real kitchen was reconstructed.
