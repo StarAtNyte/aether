@@ -11,6 +11,8 @@ import { EditorSkeleton } from './editor/EditorSkeleton';
 import { Home } from './home/Home';
 import { createBlankProject, createEmptyWorld, createFromTemplate } from './projects/create';
 import { isHomeRoute } from './lib/router';
+import { templateThumbnail } from './lib/examples';
+import { setLoadPoster } from './lib/loadPoster';
 import { applyTheme, themeFromSetting } from './lib/theme';
 import { FirstRunHost } from './onboarding/FirstRunHost';
 import { prefetchEditorSoon } from './lib/prefetch';
@@ -41,16 +43,24 @@ const NewRoute = memo(function NewRoute({ template }: { template: string | null 
       if (r.ok) navigate({ name: 'editor', id: r.value.id }, { replace: true });
       else {
         setError(r.error);
+        setLoadPoster(null);
         store.getState().toast(r.error, 'error', 6);
         navigate({ name: 'home' }, { replace: true });
       }
     });
   }, [repo, template, navigate, store]);
-  return (
-    <div className="page-center" aria-busy="true">
-      <span className="page-center__text">{error ?? 'Creating project…'}</span>
-    </div>
-  );
+  // The editor's own skeleton with the example's card picture behind it: the person sees the place they chose at once.
+  useEffect(() => {
+    setLoadPoster(template ? templateThumbnail(template) : null);
+  }, [template]);
+  if (error) {
+    return (
+      <div className="page-center" aria-busy="true">
+        <span className="page-center__text">{error}</span>
+      </div>
+    );
+  }
+  return <EditorSkeleton text="Creating project…" />;
 });
 
 /** Opens `?world=<id>` share links as a new project. */

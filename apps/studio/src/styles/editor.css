@@ -1065,6 +1065,54 @@
   pointer-events: none;
 }
 
+.vp-loading__poster {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.85;
+  filter: saturate(0.9);
+}
+
+.vp-loading__poster + .vp-loading__content {
+  padding: var(--s-3) var(--s-4);
+  border-radius: var(--r-3, 10px);
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+}
+
+.vp-loading__bar {
+  position: relative;
+  width: 200px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.vp-loading__bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent, currentColor);
+  transition: width 0.4s ease-out;
+}
+
+.vp-loading__steps {
+  display: flex;
+  gap: var(--s-3);
+  font-size: var(--fs-11, 11px);
+  color: var(--text-3, var(--text-2));
+}
+
+.vp-loading__steps .is-now {
+  color: var(--text-1, var(--text-2));
+  font-weight: 600;
+}
+
+.vp-loading__steps .is-done {
+  opacity: 0.6;
+}
+
 .vp-loading__text {
   position: relative;
   padding: 0 var(--s-3);

@@ -4,22 +4,37 @@
  * handle shared by both sides.
  */
 import { lazyBoundary } from '../components/ErrorBoundary';
-import { memo, useRef, type KeyboardEvent, type PointerEvent, type ReactElement, type ReactNode } from 'react';
+import { memo, useRef, type ComponentProps, type ComponentType, type KeyboardEvent, type PointerEvent, type ReactElement, type ReactNode } from 'react';
 import { useStudio, useUI } from '../app/context';
 import type { LeftView } from '../state/store';
 import { PANEL_WIDTH } from '../lib/layout';
 import { Icon } from '../components/Icon';
 import { Menu } from '../components/ui/Menu';
-import { HistoryPanel } from '../components/panels/HistoryPanel';
-import { LogicPanel } from '../components/panels/LogicPanel';
-import { Outliner } from '../components/panels/Outliner';
-import { VerifyPanel } from '../components/panels/VerifyPanel';
-import { AgentPanel } from './AgentPanel';
 
 /** The asset browser (library, imports, forge entry) loads with its first use. */
 const AssetsPanel = lazyBoundary(async () => ({ default: (await import('./AssetsPanel')).AssetsPanel }), { what: 'assets panel', fallback: <p className="panel-empty">Loading assets…</p>, variant: 'inline' });
+
+function PanelLoading(): ReactElement {
+  return <p className="panel-empty" aria-busy="true">Loading…</p>;
+}
+
+/**
+ * A side panel loaded as its own chunk, so the editor's first download is the scene and not the panels. (Holding the
+ * mount until the first frame was tried and dropped: the late layout change moved the editor camera in the Play/Stop
+ * blank-frame run.)
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- same bound as lazyBoundary
+function afterScene<C extends ComponentType<any>>(load: () => Promise<{ default: C }>, what: string): ComponentType<ComponentProps<C>> {
+  return lazyBoundary(load, { what, fallback: <PanelLoading />, variant: 'inline' });
+}
+
+const HistoryPanel = afterScene(async () => ({ default: (await import('../components/panels/HistoryPanel')).HistoryPanel }), 'history');
+const LogicPanel = afterScene(async () => ({ default: (await import('../components/panels/LogicPanel')).LogicPanel }), 'logic panel');
+const Outliner = afterScene(async () => ({ default: (await import('../components/panels/Outliner')).Outliner }), 'outliner');
+const VerifyPanel = afterScene(async () => ({ default: (await import('../components/panels/VerifyPanel')).VerifyPanel }), 'verify panel');
+const AgentPanel = afterScene(async () => ({ default: (await import('./AgentPanel')).AgentPanel }), 'assistant');
+export const InspectorPanel = afterScene(async () => ({ default: (await import('./InspectorPanel')).InspectorPanel }), 'inspector');
 import { LEFT_VIEWS } from './IconRail';
-import { InspectorPanel } from './InspectorPanel';
 
 /** Panel header: title on the left, actions on the right. */
 export function PanelHeader({ title, children, id }: { title: string; children?: ReactNode; id?: string }): ReactElement {

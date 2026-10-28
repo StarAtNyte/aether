@@ -7231,3 +7231,23 @@ Other changes: the player page paints its own loading screen from `play.html` an
 **Not done / honest limits.** Opening an example cold on Slow 4G is still about 20 s: 1.7 MB of JS (three, render, arch, agent) plus about 1 MB of textures and a 200 kB wasm are needed for the first frame, and 4x CPU gives 1.3 s of blocking while the editor boots. The background fetch halves it when the user lingers on home. Editor CSS (about 14 kB gzip) is still in the home bundle: its classes are shared with dialogs and toasts and were not safely separable in this pass. Numbers are software-rendered Chromium; relative only. TBT target met (42 ms), LCP 2.7 s first visit misses 2.5 s by 0.2 s (hero image over the throttled link), interactive 2.5 s under 4 s, JS 193 kB under 250.
 
 **Gates**: tsc clean; vitest apps/studio packages/render packages/agent 321 files, 2,846 tests; smoke 39 of 39; e2e:projects, e2e:showcase (Chromium and Firefox), e2e:photo, e2e:weak, e2e:lightmap-open pass; showcase:bake --check and showcase:lightmaps --verify ok; licences ok; `npm run budget` limits lowered to index 203 kB JS / 31 kB CSS and play 71 / 1.
+
+
+## Opening an example: the picture first
+
+Measured with `npm run e2e:load-slow` (production build, brotli, Slow 4G, 4x CPU, software GL; only the comparison counts), casa-patio.
+
+| | before | after |
+|---|---|---|
+| skeleton with the example's picture painted (cold) | 10.3 s (a text line before) | 2.3 s |
+| LCP, open cold | 10,992 ms | 2,504 ms |
+| renderer created | 11.4 s | 11.5 s |
+| first frame drawn (progressive) | 13.1 s | 13.3 s |
+| world synced, loading overlay gone (cold) | 19.7 s | 19.6 s |
+| world synced, editor prefetched | 9.8 s | 10.0 s |
+| world synced, warm cache | 7.2 s | 6.0 s |
+| home first visit LCP / JS | 2,664 ms / 194 kB | 2,880 ms (noise between runs) / 196 kB |
+
+What the timeline (`tests/e2e/open-timeline.e2e.ts`) shows for the cold open: 0 to 10.3 s is the 1.7 MB of editor JS on a 200 kB/s link; the project is created and the renderer starts at 10.9 to 11.5 s; the 13 library textures (39 files, 918 kB, 256 px tier) and the KTX2 transcoder (224 kB) then share the link until 19 s, and the loading overlay lifts at 19.7 s. With the transcoder blocked the 14 original model files (4 MB) hold the overlay until 46 s, so the compressed twins matter. Textures already start from a placeholder and upgrade in place (finish-textures); the lightmap pill did not show.
+
+What did not move: the time to the lifted overlay on a cold link, which is bytes (3.2 MB) over 1.6 Mbps. What would: fewer bytes ahead of the first frame (split the editor's engine imports in `Studio` so publish, forge, photo and playtest load later; stream the 14 models by distance), recorded as the next step.

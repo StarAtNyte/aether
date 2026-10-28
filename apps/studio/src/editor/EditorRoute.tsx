@@ -12,6 +12,7 @@ import { Studio } from '../engine/Studio';
 import { settleWithin } from '../lib/deadline';
 import { createLogger } from '../lib/log';
 import { takeRun } from '../projects/pending';
+import { getLoadPoster, setLoadPoster } from '../lib/loadPoster';
 import { abandonedPromptReply } from '../projects/create';
 import type { ProjectRepo } from '../projects/repo';
 import { Icon } from '../components/Icon';
@@ -100,6 +101,13 @@ export const EditorRoute = memo(function EditorRoute({ id }: { id: string }): Re
     let cancelled = false;
     let created: Studio | null = null;
     const cleanups: Array<() => void> = [];
+    // The project's own thumbnail is the poster behind the loading steps (a template's card picture is already set).
+    void repo.thumbnail(id).then((b) => {
+      if (cancelled || !b) return;
+      const u = URL.createObjectURL(b);
+      cleanups.push(() => URL.revokeObjectURL(u));
+      if (getLoadPoster() === null) setLoadPoster(u);
+    });
     void repo.open(id).then((r) => {
       if (cancelled) return;
       if (!r.ok) {
@@ -179,6 +187,7 @@ export const EditorRoute = memo(function EditorRoute({ id }: { id: string }): Re
     });
     return () => {
       cancelled = true;
+      setLoadPoster(null);
       for (const c of cleanups.splice(0)) c();
       if (created) {
         if (window.__aether?.studio === created) delete window.__aether;

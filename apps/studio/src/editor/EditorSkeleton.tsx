@@ -3,7 +3,7 @@ import type { ReactElement } from 'react';
 import { ViewportLoading } from '../components/viewport/ViewportLoading';
 
 /** Editor loading skeleton (same frame as the editor, so nothing shifts when it arrives). */
-export function EditorSkeleton(): ReactElement {
+export function EditorSkeleton({ text = 'Loading editor…' }: { text?: string }): ReactElement {
   return (
     <div className="editor editor--skeleton" aria-busy="true" aria-label="Opening project">
       <div className="topbar">
@@ -12,7 +12,7 @@ export function EditorSkeleton(): ReactElement {
       <div className="editor__body">
         <div className="editor__canvas">
           <div className="viewport">
-            <ViewportLoading text="Loading editor…" />
+            <ViewportLoading text={text} />
           </div>
         </div>
       </div>

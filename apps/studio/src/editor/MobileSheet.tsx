@@ -8,8 +8,7 @@ import { memo, useRef, useState, type KeyboardEvent, type PointerEvent, type Rea
 import { useStudio, useUI } from '../app/context';
 import type { LeftView } from '../state/store';
 import { Icon, type IconName } from '../components/Icon';
-import { InspectorPanel } from './InspectorPanel';
-import { LeftViewActions, LeftViewBody, PanelHeader } from './Panels';
+import { InspectorPanel, LeftViewActions, LeftViewBody, PanelHeader } from './Panels';
 import { useFailingChecks } from './IconRail';
 
 /** Sheet snap points. */
