@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Material } from 'three';
 import { MaterialCache } from '../src/materials/material-cache';
-import { ANTI_TILE_FINISHES, DETAIL_MID, DETAIL_MID_AMOUNT, DETAIL_FAR, MID_DETAIL_FINISHES, needsAntiTile } from '../src/materials/anti-tile';
+import { ANTI_TILE_FINISHES, antiTileProgramKey, DETAIL_MID, DETAIL_MID_AMOUNT, DETAIL_FAR, MID_DETAIL_FINISHES, needsAntiTile } from '../src/materials/anti-tile';
 
 type NodeCarrier = Material & { colorNode?: unknown; roughnessNode?: unknown; aoNode?: unknown; normalNode?: unknown };
 
@@ -72,5 +72,17 @@ describe('mid-range ground breakup', () => {
     expect(DETAIL_MID[0]).toBeLessThan(DETAIL_MID[1]);
     expect(DETAIL_MID[1]).toBeLessThanOrEqual(DETAIL_FAR[0]);
     expect(DETAIL_MID_AMOUNT[0] + DETAIL_MID_AMOUNT[1]).toBeLessThan(1);
+  });
+  it('keys the compiled program by the textures it samples: finishes never share one (cobble drew as plaster)', () => {
+    const cache = new MaterialCache();
+    const key = (spec: { finish: 'cobble' | 'stone' | 'plaster'; color?: string }): string => (cache.acquire(spec).material as Material).customProgramCacheKey();
+    const [cobble, stone, plaster] = [key({ finish: 'cobble', color: '#cdbfa3' }), key({ finish: 'stone', color: '#cdbfa3' }), key({ finish: 'plaster', color: '#cdbfa3' })];
+    expect(new Set([cobble, stone, plaster]).size).toBe(3);
+    // The same finish in another colour keeps its program: only factors differ.
+    expect(key({ finish: 'plaster', color: '#f2e9dc' })).toBe(plaster);
+    // The key names the maps themselves.
+    const maps = cache.finishes.get('cobble');
+    expect(cobble).toBe(antiTileProgramKey(maps, 1.2, { finish: 'cobble', stochastic: false, detail: true }));
+    cache.dispose();
   });
 });

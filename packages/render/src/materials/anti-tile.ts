@@ -113,6 +113,14 @@ export const FINISH_MAPS_KEY = 'aetherFinishMaps';
 export const FINISH_NODES_KEY = 'aetherFinish';
 
 /**
+ * Program cache key of an anti-tiled material: the textures its nodes sample (by id) and every option that shapes the node
+ * graph. Materials that differ only in colour, roughness or metalness factors share a key, so they share one program.
+ */
+export function antiTileProgramKey(maps: AntiTileMaps, normalStrength: number, opts: AntiTileOptions = {}): string {
+  return `antitile:${opts.finish ?? ''}:${opts.stochastic !== false ? 's' : 'p'}${opts.detail === true ? 'd' : ''}:${normalStrength > 0 ? 'n' : '-'}:${maps.map.id},${maps.orm.id},${maps.normal.id}`;
+}
+
+/**
  * Attach the anti-tiled nodes of `maps` to `material` (a classic material the node renderer converts).
  * `normalStrength` is the normal map's scale (0 skips the normal blend). The material must not bind
  * the maps itself (`map`, `roughnessMap`, `aoMap`, `normalMap`): the nodes replace them.
@@ -203,6 +211,11 @@ export function applyAntiTile(material: Material, maps: AntiTileMaps, normalStre
   const normalScale = float(normalStrength).mul(float(1).sub(puddle.mul(0.92)));
   // Exporters (glTF, path tracing) read classic maps: keep the textures reachable for them.
   material.userData[FINISH_MAPS_KEY] = maps;
+  // The renderer keys a compiled program by the classic material (its node properties count only as "an object"), and the
+  // textures read inside the node functions are bound once per program: two finishes with the same graph shape would
+  // share the first one's textures. The key names what the graph samples and how it is shaped.
+  const programKey = antiTileProgramKey(maps, normalStrength, opts);
+  material.customProgramCacheKey = () => programKey;
   const m = material as Material & { colorNode?: unknown; roughnessNode?: unknown; aoNode?: unknown; normalNode?: unknown };
   // The classic maps are not bound on this material (the nodes sample the textures), so the stock colour
   // and roughness accessors give the plain factors the lookups multiply.
