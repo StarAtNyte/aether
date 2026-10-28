@@ -9,12 +9,10 @@
  *
  * Run: `AETHER_OUTDIR=/tmp/x npm run build && npm run e2e:load-slow -- --dist=/tmp/x [--example=casa-patio] [--cpu=4] [--label=after]`
  */
-import { createServer, type Server } from 'node:http';
-import { readFileSync, statSync, existsSync } from 'node:fs';
-import { brotliCompressSync, constants } from 'node:zlib';
-import { extname, join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { chromium, type CDPSession } from 'playwright';
 import { CHROME_ARGS, SKIP_FIRST_RUN, findChrome } from './support/env';
+import { SLOW_4G, serveDist } from './support/slow-server';
 
 const ARGS = process.argv.slice(2);
 const arg = (n: string): string | undefined => ARGS.find((a) => a.startsWith(`--${n}=`))?.slice(n.length + 3);
@@ -22,35 +20,7 @@ const DIST = resolve(arg('dist') ?? 'apps/studio/dist');
 const EXAMPLE = arg('example') ?? 'casa-patio';
 const CPU = Number(arg('cpu') ?? 4);
 const LABEL = arg('label') ?? 'build';
-const NET = { latency: 150, downloadThroughput: (1.6 * 1024 * 1024) / 8, uploadThroughput: (750 * 1024) / 8 };
-const MIME: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.wasm': 'application/wasm', '.woff2': 'font/woff2', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.webmanifest': 'application/manifest+json', '.glb': 'model/gltf-binary', '.txt': 'text/plain' };
-const COMPRESSIBLE = new Set(['.html', '.js', '.css', '.json', '.wasm', '.svg', '.webmanifest', '.txt']);
-const brCache = new Map<string, Buffer>();
-
-function serve(): Promise<{ url: string; server: Server }> {
-  const server = createServer((req, res) => {
-    let p = decodeURIComponent((req.url ?? '/').split(/[?#]/)[0]!);
-    if (p === '/') p = '/index.html';
-    else if (p === '/play') p = '/play.html';
-    let file = join(DIST, p);
-    if (!file.startsWith(DIST) || !existsSync(file) || !statSync(file).isFile()) {
-      if (existsSync(`${file}.html`)) file = `${file}.html`;
-      else { res.writeHead(404).end('not found'); return; }
-    }
-    const ext = extname(file);
-    const headers: Record<string, string> = { 'content-type': MIME[ext] ?? 'application/octet-stream', 'cache-control': /^\/(assets|fonts)\//.test(p) ? 'public, max-age=31536000, immutable' : 'public, max-age=0, must-revalidate' };
-    let body: Buffer = readFileSync(file);
-    if (COMPRESSIBLE.has(ext) && /\bbr\b/.test(String(req.headers['accept-encoding']))) {
-      let c = brCache.get(file);
-      if (!c) { c = brotliCompressSync(body, { params: { [constants.BROTLI_PARAM_QUALITY]: 6 } }); brCache.set(file, c); }
-      body = c;
-      headers['content-encoding'] = 'br';
-    }
-    headers['content-length'] = String(body.length);
-    res.writeHead(200, headers).end(body);
-  });
-  return new Promise((ok) => server.listen(0, '127.0.0.1', () => ok({ url: `http://127.0.0.1:${(server.address() as { port: number }).port}`, server })));
-}
+const NET = SLOW_4G;
 
 const INIT = `
   window.__m = { fcp: 0, lcp: 0, longs: [] };
@@ -79,7 +49,7 @@ async function measure(cdp: CDPSession, run: () => Promise<number | null>, page:
 }
 
 async function main(): Promise<void> {
-  const { url, server } = await serve();
+  const { url, server } = await serveDist(DIST);
   const browser = await chromium.launch({ executablePath: findChrome(), args: [...CHROME_ARGS] });
   const rows: Row[] = [];
   try {

@@ -520,7 +520,9 @@ export class Studio {
         if (s.selection !== prev.selection || s.tool !== prev.tool) sim.setGizmo(s.selection, s.tool);
       });
       // Only the first renderer flies in; a replacement (recovery, backend switch) just frames the world.
+      performance.mark('aether:frameworld-start');
       await sim.frameWorld(this.attachCount++ === 0 ? { flyIn: true } : {});
+      performance.mark('aether:frameworld-end');
       // The first world rendered (generation included): this boot is healthy.
       if (gen === this.attachGen) {
         clearBooting(this.storage);

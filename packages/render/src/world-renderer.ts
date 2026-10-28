@@ -587,6 +587,9 @@ async function encodePixels(pixels: Uint8Array, w: number, h: number, mime: stri
 }
 
 /** Attempts of a capture that comes back blank. */
+/** Pause after the first frame before the KTX2 transcoder is fetched ahead of need (ms). */
+const KTX2_SETUP_DELAY_MS = 4000;
+
 /** Longest the load screen waits for the first frame's shader programs to link (ms). */
 const SHADER_WARMUP_MS = 15_000;
 /** Frames after which the cached sun shadow map is drawn again whatever happened (a safety net). */
@@ -1659,6 +1662,7 @@ export class WorldRenderer {
     say?.('Building the world…');
     try {
       await done;
+      performance.mark('aether:sync-done');
       // Ceilings measured while their geometry was still streaming in are stale.
       this.invalidateCeilings();
       if (this.disposed) return;
@@ -1671,6 +1675,7 @@ export class WorldRenderer {
         await warmRaycastTrees(this.sync.root);
         if (this.disposed || this.sync.world !== world) return;
         this.framed = this.frameContent({ duration: 0 });
+        performance.mark('aether:framed');
       }
       this.syncSmallCasters();
       if (hold) await this.warmShaders(say);
@@ -2271,8 +2276,15 @@ export class WorldRenderer {
     // Photographed finish maps from the library (once the catalog is in).
     if (!assetIds && getCatalog()) {
       this.materials.finishes.usePhotos(photoFinishResolver());
-      // The library is in: set up the KTX2 transcoder now, while the world builds, rather than when the first model asks.
-      void this.compression.loader();
+      // The library is in: set up the KTX2 transcoder ahead of the first model, but only after the first frame and a pause:
+      // its 224 kB of WebAssembly would otherwise share a slow link with the textures the first picture is waiting for
+      // (a model that asks sooner starts it itself).
+      void this.waitForFrames(1, 120_000).then(() => {
+        if (typeof setTimeout !== 'function') return;
+        setTimeout(() => {
+          if (!this.disposed && !this.lost) void this.compression.loader();
+        }, KTX2_SETUP_DELAY_MS);
+      });
     }
     const env = this.sync.world?.environment;
     if (env?.hdri && (!assetIds || assetIds.has(env.hdri))) this.env.hdri.reload();
