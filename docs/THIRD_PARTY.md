@@ -653,6 +653,12 @@ The library's CC0 and CC-BY models are republished, converted, in the Hugging Fa
 the SPDX licence of each asset in `index.json`. The CLIP ViT-B/32 image embeddings in `embeddings.bin` come from the vision tower the
 photo perception layer already uses (OpenAI CLIP, MIT).
 
+The bulk SimReady import (`npm run assets:simready -- bulk`, [ASSETS.md](ASSETS.md#bulk-import-simready-to-the-hub-dataset)) adds many more CC0 and CC BY 4.0
+SimReady-derived rows to that dataset only; none of those models is in this repository. Their credits live in the dataset: each
+row of `index.json` carries the author, licence, credit line, source dataset, pinned commit, path and the SHA-256 of the source USD,
+`models/<id>/provenance.json` repeats the pin, and `credits.csv` (linked from the dataset card, which regenerates its table on every
+build and links the CSV above 150 rows) lists them all. Only licences read from both the package and the dataset card, and only CC0-1.0 or CC-BY-4.0, are admitted.
+
 ### NVIDIA SimReady Central models (`assets/lib/s/`)
 
 SimReady Central is a search service, not a licence: each package keeps the licence its author gave it, and the library

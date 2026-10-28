@@ -437,6 +437,65 @@ world can search for a model and load it lazily without the local server. The pi
   `cas-bridge.xethub.hf.co`): `connect-src` for the index and models, `img-src` for thumbnails, nothing else (no scripts, workers or
   frames). The player and exported games get no such hosts.
 
+## Bulk import (SimReady to the hub dataset)
+
+`npm run assets:simready -- bulk` converts a curated slice of SimReady Central and publishes it to the hub dataset
+(`StarAtNyte1/aether-assets`, private until a person makes it public). It is deterministic (no model calls), unattended and
+resumable. **The models never enter git**: the repository only gets the code, `scripts/assets/simready-queries.json` and the
+small `assets/hub.json` pin; the files live in the dataset and are found through the hub search (`HubClient.search`,
+`find_model`, the Assets panel) and loaded lazily like every hub model.
+
+```sh
+npm run assets:simready-setup                        # once: the USD venv (and huggingface_hub)
+nice -n 19 npm run assets:simready -- bulk --concurrency=2 --max=600 --time-budget=8 >> ~/.local/share/aether/simready-bulk/run.log 2>&1 &
+npm run assets:simready -- bulk --discover-only      # only discovery and filters, prints the counts
+```
+
+Flags: `--max=N` (attempted conversions), `--concurrency=2`, `--time-budget=HOURS`, `--chunk=12` (assets per thumbnail pass),
+`--publish-every=50`, `--queries=a,b` (only queries containing these words), `--rediscover`, `--retry=<reason substring>`
+(re-queue rejected assets, e.g. after a converter fix), `--no-publish`, `--no-push` (do not push the pin), `--max-pkg-mb=400`,
+`--min-free-gb=6`, `--timeout-min=8`, `--max-usd-mb=60`, `--deny=word,word`.
+
+- **Discovery.** `simready-queries.json` lists about 220 terms (furniture, office, kitchen, bathroom, household, tools, warehouse,
+  lab and medical, retail, outdoor, toys, small vehicles); each is searched with 60 hits and a 4 m size limit. Hits are merged by
+  repository, commit and package, and **labelled from the package name** when a term names it (`cart_mobile_a01` is a cart even when
+  the "sofa" search found it); otherwise from the term. Packages named by a code only (`D00825`) are kept only when they are a top-8
+  match of the term, because nothing else says what they are. At most two variants per name stem (`_a01`, `_b02`) are kept.
+- **Filters before converting.** Licence (the package's `com.nvidia.simready.packaging.json` and the dataset card must agree and be CC0-1.0
+  or CC-BY-4.0: MIT, Apache and BSD are findable but the hub dataset takes CC0 and CC BY only, so they are skipped with that reason),
+  a name denylist (`denylist` in the queries file: gripper, robot arm, sensor, bracket, bolt, screw, nut, gear, connector, PCB, chip,
+  motor, ... whole words only, so a screwdriver stays), USD file over 60 MB, a package over 400 MB (they carry 4K texture sets), source
+  over 3 million triangles, and the already-have check (library ids, the 29 imported packages, the hub index). The size range of 5 cm to 4 m
+  is checked on the converted model (the search has no size in its answer); the 4 m limit is also sent to the service.
+- **Conversion.** Pinned, hash-verified fetch into `~/.cache/aether-asset-src/simready/` (deleted after each asset), `usd2glb.py`, then the
+  library's interior pipeline (`build.ts --import-one` with `bulk`): triangle budget by size (3,000 under 25 cm, 6,000 under 60 cm, 10,000
+  under 1.2 m, 14,000 above), **UV-aware simplification** (the UVs join the error metric; the old attribute-blind pass smeared colour
+  atlases, a white kettle came out blotched), meshopt, 512 px textures, a distance level and a light copy, a floor-centre pivot, metres.
+  A thumbnail (192 px WebP) is rendered by the library's thumbnail renderer in one headless browser per chunk.
+- **Front.** The index is authored with the front along +X: a piece whose long side runs along the glTF Z axis (sofa, desk, shelf) is turned
+  270 degrees (the way the 28 reviewed props were set); symmetric terms (mug, bottle, ball) need none; anything else is logged
+  `front unsure` and left as authored (the model still loads, a person may turn it). The decision is in the ledger and in each asset's `provenance.json`.
+- **Quality gates** (`simready-gate.ts`): triangles within the budget, main file at most 600 KB, UVs on every primitive of a textured model, a
+  base-colour texture or a colour other than the default white, normals not inverted (signed volume of the triangles), size plausible, base-colour
+  texture not black or white, thumbnail not blank, near-uniform, black or white. A failure goes to `rejected.json` with the reason and nothing
+  of it reaches the dataset. Hung converters are killed with their process group after 8 minutes.
+- **State.** `~/.local/share/aether/simready-bulk/`: `state.json` (the ledger: every package with status `discovered`, `fetched`,
+  `converted`, `published`, `rejected` or `skipped`, the reason, hashes, triangles, bytes, seconds, front decision; written atomically after every
+  asset), `out/<id>/` (the accepted model, its thumbnail and `record.json`), `rejected.json`, `emb-cache.json`, `run.log`. A re-run continues where the last one stopped.
+- **Publishing.** Every 50 accepted models: `hf-dataset build` (the library and the bulk output merged; ids `simready-<package>`, credit line
+  `"<name>" by <author> (SimReady Central: <repo>), CC BY 4.0, modified (converted and reduced by Aether)`, source dataset, commit, path and the USD
+  and package SHA-256 in `source`), `verify`, `upload --pin --only=<new ids>` (one commit per batch) and the pin in `assets/hub.json` pushed to main.
+  The write token is read by `hf-dataset.ts` from `~/.config/aether/hf-write.token` (else `HF_TOKEN`) straight into `huggingface_hub`: never
+  printed, logged or committed. The repository stays private.
+- **Index size.** `index.min.json` is about 240 bytes a row; the client loads it lazily and keeps it in the Cache API. `verify` measures the
+  gzip size and fails above 400 KB (611 models: 145 KB raw, 53 KB gzipped; at 1,500 models about 130 KB gzipped, so no sharding is needed yet).
+  Embeddings of **every** staged thumbnail (CLIP ViT-B/32, int8, cached by thumbnail hash in `emb-cache.json`) are rebuilt on each `build`.
+  `README.md` keeps the CC BY table only up to 150 rows; above that it links `credits.csv`, which lists every asset with its credit line and pinned source.
+- **Numbers** (first batches, two workers at `nice 19`): 15 to 110 s per asset, 40 s on average; 60 to 280 KB main files; 2,600 to 10,000
+  triangles. About a third of the packages that pass the filters are rejected or skipped before conversion by size or licence.
+- **How the hub search finds them.** Names, tags (the term and the package words), aliases from the synonym table and the type feed the same
+  ranking as the library (`HubClient.search("kettle")`); `similar(id)` ranks by image embedding.
+
 ## Optional image → mesh
 
 See [IMAGE_TO_3D.md](IMAGE_TO_3D.md) for the off-by-default TRELLIS.2
