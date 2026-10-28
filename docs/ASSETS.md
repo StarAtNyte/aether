@@ -342,6 +342,43 @@ npm run assets:thumbs -- --only simready-range-cooker-lg ; npm run assets:ktx2
   `selection-simready.ts` (use `rot` for the front, `convert: ['--resmooth=50']` for CAD tessellation), then run the build, thumbnails
   and `assets:ktx2`, and add the THIRD_PARTY.md row with the changes made.
 
+### Importing while you work
+
+When nothing in the library fits, the agent (tool [`import_asset`](AGENT_TOOLS.md#import_asset)) or a script can have the **local
+Aether server** import one model on demand. The conversion needs the Python USD tools, which cannot run in a browser, so it only
+works with `npx aether start` (or `npm run dev:server`); the hosted static site answers "importing needs the local server" and
+never errors.
+
+```sh
+npm run assets:simready-setup     # once: ~/.local/share/aether/simready/venv with usd-core, numpy, pillow, huggingface_hub
+npm run assets:simready-e2e -- "office chair"   # opt-in smoke of the whole path against the real services (not in CI)
+```
+
+- **Endpoints** (`apps/server/src/routes/assets-import.ts`; loopback and the session cookie required, off on a production or hosted
+  server unless `AETHER_ALLOW_IMPORT=1`, off everywhere with `AETHER_ASSET_IMPORT=off`; `/api/health` reports `assetImport`):
+  `POST /api/assets/import {query | ref, maxSize?}` returns `{job}` (202); `GET /api/assets/import/<job>` returns the stage
+  (`queued`, `searching`, `licence`, `downloading`, `converting`, `optimising`, `ready`, `failed`), a message, progress 0..1 and, when
+  ready, the record; `GET /api/assets/imported` lists the imports of this computer; the files are served under
+  `/api/assets/imported/files/<id>/s/<name>.<hash>.glb`.
+- **Pipeline** (`apps/server/src/assets-import/service.ts`): SimReady search (or a pinned ref) -> licence gate (only CC0-1.0, CC-BY-4.0, MIT;
+  nothing else is ever downloaded) -> download of the pinned revision into `~/.cache/aether-asset-src/simready` with the hash checks of
+  the CLI (shared module `packages/assets/src/simready-fetch.ts`, 150 MB cap) -> `usd2glb.py` through the venv (`AETHER_USD_PYTHON`
+  overrides it; missing: `conversion tools not installed: run npm run assets:simready-setup`) -> the library's interior pipeline
+  (`build.ts --import-one`, 20,000 triangles at most, 512 px textures, a distance level, a light copy; meshopt is left out so the studio's
+  own validator accepts the file) -> `~/.local/share/aether/imported/<id>/` (`AETHER_IMPORT_DIR`) with `imported.json`: the library-shaped
+  catalog entry, the credit line, author, licence, dataset, revision and the SHA-256 of the USD, the package and every file.
+  One job at a time, a short queue, ten starts per ten minutes, twelve minutes per job.
+- **In the studio.** The step feed, the status line and a toast show the stage. The finished GLB is checked against its recorded hash,
+  validated like any dropped file and **stored with the project as a user asset** (`user-<hash>`) carrying its CC BY credit line, so a
+  world never depends on the server after the import. Exported packages (`assets/user-<hash>.glb`) and published or shared games
+  embed exactly the imports the world uses, and the credits panel, the end-of-game screen and `CREDITS.txt` list one line per
+  imported model with its licence. A copied share link carries only the world, so a viewer sees stand-ins for
+  imported models (the toast says so, as for any import); a published game (`game.json` `imports`) and an exported package carry the bytes.
+- **Placing.** In an open world `shape {"kind":"asset","id":"user-..."}`; in a room `place_items {"kind":"model:user-..."}` (placed as a
+  generic floor piece, no catalogue kind).
+- **Not done.** The imported model has no `find_model` entry (the agent gets its id from the tool result), and Apache-2.0 / BSD packages
+  are findable but not imported (the credit schema takes CC0, CC BY and MIT only).
+
 **Honest limits.** The index is mostly small robotics props (median 0.19 x 0.17 x 0.11 m): furniture, buildings and nature are
 rare, and appliances come from a few vendors. Packages are CAD-derived: 100,000 to 500,000 triangles that cannot be reduced
 well, so the shipped model keeps the silhouette, the front, the hobs and the textures but has a ragged back and fewer details

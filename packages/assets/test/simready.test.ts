@@ -115,7 +115,11 @@ describe('the imported SimReady range cooker', () => {
       expect(p['sha256']).toMatch(/^[0-9a-f]{64}$/);
       expect(String(p['licenceEvidence'])).toMatch(/license/);
     }
-    expect(src.simready.packages.map((p) => p['package'])).toEqual(['cooking_ldgl6924s']);
+    const pkgs = src.simready.packages.map((p) => String(p['package']));
+    expect(pkgs[0]).toBe('cooking_ldgl6924s');
+    // Every pinned package was built into the library (nothing pinned and left out, nothing shipped unpinned).
+    for (const pkg of pkgs) expect(catalog.entries.some((e) => e.id.startsWith('simready-') && e.source.includes(`/${pkg}/`)), pkg).toBe(true);
+    expect(catalog.entries.filter((e) => e.id.startsWith('simready-')).length).toBe(pkgs.length);
   });
 
   it('find_model resolves range cooker, stove and cooktop', () => {

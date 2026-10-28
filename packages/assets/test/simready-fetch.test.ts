@@ -84,7 +84,7 @@ describe('fetchPackage', () => {
     const h = hub(files, { lfsFor: 'simready_usd/pkg.usd' });
     const tampered: StreamFetch = async (u, i) => {
       const r = await h(u, i);
-      if (u.includes('/resolve/') && u.endsWith('pkg.usd')) return { ...r, body: new Response(body('usd-DATA')).body };
+      if (u.includes('/resolve/') && u.endsWith('pkg.usd')) return { ...r, body: new Response(body('usd-DATA') as Uint8Array<ArrayBuffer>).body };
       return r;
     };
     await expect(fetchPackage(ref, { dir: out(), fetch: tampered })).rejects.toThrow(/sha256 mismatch/);

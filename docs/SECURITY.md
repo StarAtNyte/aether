@@ -270,6 +270,36 @@ still builds.
   paths, no backslashes or control characters, no Windows device names
   (`con`, `nul`, `com1` …) and no parts ending in a dot or space.
 
+## Importing models while you work
+
+The local app can download and convert one 3D model on request (`POST /api/assets/import`, the agent tool `import_asset`, see
+[ASSETS.md](ASSETS.md#importing-while-you-work)). It reaches out to the internet and runs a converter, so it is the part of the
+local server with the most exposure. What bounds it:
+
+- **Who may ask.** Only a server on the user's own computer (local AI on) serves it. A production or hosted server does not,
+  unless the operator sets `AETHER_ALLOW_IMPORT=1`. Every request needs the per-install session cookie (or the CLI header), a
+  loopback socket and Host, and no proxy header; the Host and DNS-rebinding guards of the local app apply before it. With
+  `AETHER_ALLOW_IMPORT=1` on a shared host the loopback rule is dropped and the session cookie, if configured, is the only
+  gate: leave the flag off on any host that strangers can reach.
+- **Where it connects.** Only the SimReady Central search service and `huggingface.co` / `*.hf.co` over https, to URLs the
+  server builds itself from a parsed search result or a pinned `<owner>/<dataset>@<40-hex commit>/<package>` ref. A request can
+  carry a search text, or such a ref; it can never carry a URL, a path or a branch. Redirects are re-checked against the host
+  list. No token or credential is read or sent.
+- **What it accepts.** The package's own licence and the dataset card must both be on the allow-list (CC0-1.0, CC-BY-4.0, MIT;
+  Apache-2.0 and BSD are findable but not importable yet). Everything else is refused before a byte is downloaded. Every file is
+  checked against the Hub's SHA-256 or git blob id and the package's bill of materials.
+- **Limits.** One job at a time, three waiting, ten starts per ten minutes, 150 MB per package, 200 files, twelve minutes per
+  job, nine for the converter, 20,000 triangles and 6 MB for the result. Files land in a per-job temp folder that is removed.
+- **Untrusted data.** Nothing from the download is executed. The converter is `python -I` (isolated mode: no current-directory or
+  user-site imports) running a script from this repository on the USD, with a minimal environment (no keys, no tokens, `HOME`
+  and `TMPDIR` set to the temp folder). The decimation runs in a Node child process with the same environment. The result is
+  served only by content-hashed names listed in its own record.
+- **In the studio.** The studio fetches the GLB, compares its SHA-256 with the record, and validates it again like any dropped
+  file (`importUserAsset`) before storing it with the project.
+- **Not covered.** A malicious USD could try to exploit the USD library in the converter (a parser bug); the sandbox is the
+  isolated interpreter and the temp folder, not a container. The Python environment is created by `npm run assets:simready-setup`
+  outside the repository and is never part of the runtime, the Docker image or CI.
+
 ## Publishing
 
 - **Share links are data, never code paths.** The world travels in the URL

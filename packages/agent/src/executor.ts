@@ -408,11 +408,11 @@ async function simreadySearchTool(input: z.infer<typeof ToolInputs.simready_sear
   const have = (pkg: string): string | undefined => catalog.entries.find((e) => e.source.includes(`/${pkg}/`))?.id;
   const lines = r.accepted.map((h) => {
     const inLib = have(h.ref.pkg);
-    return `${describeSimreadyHit(h)}\n  ${inLib ? `already in the library: shape {"kind":"asset","id":"${inLib}"} / place_items {"kind":"model:${inLib}"}` : h.importable ? `not in the library. A developer imports it with: ${h.fetch}` : 'not in the library, and its licence cannot be imported yet'}`;
+    return `${describeSimreadyHit(h)}\n  ${inLib ? `already in the library: shape {"kind":"asset","id":"${inLib}"} / place_items {"kind":"model:${inLib}"}` : h.importable ? `not in the library. import_asset {"query":"${input.query.slice(0, 60)}"} imports the best match on the local server, or a developer runs: ${h.fetch}` : 'not in the library, and its licence cannot be imported yet'}`;
   });
   const rej = r.rejected.length > 0 ? `\nRejected, not usable (${r.rejected.length}): ${r.rejected.slice(0, 6).map((h) => `${h.ref.pkg} (${h.reason})`).join('; ')}.` : '';
   if (lines.length === 0) return { content: clip(`SimReady Central: nothing with an accepted licence for "${input.query.slice(0, 80)}" (${r.considered} looked at).${rej}`), isError: false, events: [], edited: false };
-  return { content: clip(`SimReady Central candidates for "${r.query}" (accepted licences only; nothing is downloaded, none can be placed until imported). The service is mostly robotics props: check the size before you rely on a hit.\n${lines.join('\n')}${rej}`), isError: false, events: [], edited: false };
+  return { content: clip(`SimReady Central candidates for "${r.query}" (accepted licences only; nothing is downloaded here; none can be placed until imported). The service is mostly robotics props: check the size before you rely on a hit.\n${lines.join('\n')}${rej}`), isError: false, events: [], edited: false };
 }
 
 /**

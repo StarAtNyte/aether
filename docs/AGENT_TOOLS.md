@@ -31,7 +31,7 @@ and a fix. A tool result is plain text written for the model. A refusal never st
 
 | Tool set | Names | Source |
 | --- | --- | --- |
-| Planner tools (`AGENT_TOOLS`), 18 | `apply_patches`, `build_architecture`, `design_plan`, `place_items`, `edit_items`, `query_scene`, `write_generator`, `write_script`, `request_asset`, `search_assets`, `find_model`, `simready_search`, `inspect`, `run_verification`, `shape_land`, `tune_feel`, `tune_look`, `finish` | `packages/agent/src/tools.ts` |
+| Planner tools (`AGENT_TOOLS`), 19 | `apply_patches`, `build_architecture`, `design_plan`, `place_items`, `edit_items`, `query_scene`, `write_generator`, `write_script`, `request_asset`, `search_assets`, `find_model`, `simready_search`, `import_asset`, `inspect`, `run_verification`, `shape_land`, `tune_feel`, `tune_look`, `finish` | `packages/agent/src/tools.ts` |
 | Level tools (`LEVEL_TOOLS`), 2. Added after `AGENT_TOOLS` only when the host passes `AgentOptions.levelTools` | `query_level`, `place_level_items` | `packages/agent/src/tools.ts`, run by `packages/playtest/src/level/index.ts` |
 | Compact profile (`COMPACT_TOOLS`), 2. Used by small on-device models | `apply_patches`, `finish` (short schemas, same validators) | `packages/agent/src/tools.ts` |
 | Tools given to sub-calls, 6. The planner never sees these | `submit_generator` (coder), `describe_room`, `sample_photo`, `report_verdicts`, `report_judgement`, `reconcile_room` (photo flow) | `packages/agent/src/coder.ts`, `packages/agent/src/photo/prompt.ts` (`describe_room`, `sample_photo`, `report_verdicts`), `packages/agent/src/photo/judge.ts`, `packages/agent/src/photo/reconcile.ts` |
@@ -390,9 +390,25 @@ See [Eyes](#query_level-1).
   `npm run assets:simready -- fetch <repo>@<revision>/<package>` command a developer runs. Then how many hits were rejected and why
   (non-commercial, no-derivatives, share-alike, custom or missing licence). If the service cannot be reached (offline, or from a
   browser page, whose content-security policy does not allow the origin), the result says so and is not an error.
-- **When to use it.** After `find_model` and `search_assets` found nothing that reads as the object. A candidate cannot be placed:
+- **When to use it.** After `find_model` and `search_assets` found nothing that reads as the object. A candidate cannot be placed until it is imported (`import_asset` does that on the local server; without one):
   the agent names the one it would import, uses the nearest library model or a crafted part meanwhile, and the user decides.
   The service is mostly small robotics props, so check the size.
+
+### `import_asset`
+
+- **What it does.** Brings one model that the library lacks into the project, on the local Aether server: SimReady search,
+  licence gate (CC0, CC BY 4.0, MIT), pinned download, USD to glTF conversion, reduction to at most 20,000 triangles
+  ([ASSETS.md](ASSETS.md#importing-while-you-work)). The host (`AgentOptions.importAsset`, the studio's `AssetController.importModelFromServer`)
+  stores the GLB with the project as a user asset carrying the CC BY credit line, so exported and published games embed it and list it.
+- **Input.** `{query ≤120, max_size? (metres)}`.
+- **Returns.** The asset id (`user-<hash>`), name, size, triangles, licence and the credit, with the placement lines
+  (`shape {"kind":"asset","id"}`, or `place_items {"kind":"model:<id>"}` in a room). Progress (searching, licence, downloading,
+  converting, optimising) goes to the step feed, the status line and a toast while it runs, up to about a minute.
+- **Without a local server** (the hosted page, a server with imports off, the Python tools not installed) it answers that importing
+  needs the local server, or `conversion tools not installed: run npm run assets:simready-setup`, and is not an error: the agent
+  carries on with the nearest library model or a crafted part.
+- **When to use it.** After `find_model` and `search_assets` found nothing (and `simready_search` showed a candidate exists).
+  It counts as read-only for the review loop (it changes the project's assets, not the world).
 
 ### `find_model`
 

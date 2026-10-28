@@ -6,9 +6,10 @@
  * Needs the network and the tools from `npm run assets:simready-setup`. Imports one model into a temp folder, prints its
  * stages, triangle count, size and credit, and removes the folder. Exit code 0 when the model is ready.
  */
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { importUserAsset } from '../../packages/assets/src/user';
 import { ImportService } from '../../apps/server/src/assets-import/service';
 import { createConverter, toolsMissingReason, usdPython } from '../../apps/server/src/assets-import/convert';
 import { silentLogger } from '../../apps/server/src/logger';
@@ -34,8 +35,11 @@ for (;;) {
   if (v.stage === 'ready') {
     const a = v.asset!;
     console.log(`ready: ${a.id} "${a.entry.name}" ${a.entry.tris} triangles, ${(a.entry.bytes / 1024) | 0} KB, size ${a.entry.size.join(' x ')} m\ncredit: ${a.credit.text}`);
+    // What the studio does next: validate the file again like any dropped model.
+    const chk = await importUserAsset(new Uint8Array(readFileSync(service.filePath(a.id, a.entry.file!)!)), `${a.entry.name}.glb`);
+    console.log(chk.ok ? `studio import check: ok (${chk.asset.meta.id}, ${chk.asset.meta.triangles} triangles)` : `studio import check FAILED: ${chk.error}`);
     rmSync(tmp, { recursive: true, force: true });
-    process.exit(0);
+    process.exit(chk.ok ? 0 : 1);
   }
   if (v.stage === 'failed') {
     console.error(`failed: ${v.error}`);

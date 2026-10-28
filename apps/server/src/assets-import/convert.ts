@@ -43,7 +43,7 @@ export function createConverter(repoRoot: string, python: string = usdPython()):
       const child = spawn(process.execPath, ['--import', 'tsx', join(repoRoot, 'scripts', 'assets', 'build.ts'), `--import-one=${jobFile}`], {
         cwd: repoRoot,
         stdio: ['ignore', 'pipe', 'pipe'],
-        env: { PATH: process.env['PATH'] ?? '', HOME: input.work, TMPDIR: input.work, AETHER_ASSET_LIB: libDir, AETHER_TIER_CACHE: tiers, AETHER_USD_PYTHON: python, AETHER_TIER_PY: python, AETHER_ASSET_SRC: join(input.work, 'src'), NODE_ENV: 'production' },
+        env: { PATH: process.env['PATH'] ?? '', HOME: input.work, TMPDIR: input.work, AETHER_ASSET_LIB: libDir, AETHER_TIER_CACHE: tiers, AETHER_USD_PYTHON: python, AETHER_TIER_PY: python, AETHER_ASSET_SRC: join(input.work, 'src'), AETHER_NO_MESHOPT: '1', NODE_ENV: 'production' },
       });
       let err = '';
       let out = '';

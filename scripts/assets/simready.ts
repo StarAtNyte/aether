@@ -16,6 +16,7 @@
  *
  * Importing into the library afterwards: see docs/ASSETS.md, "SimReady Central".
  */
+import { closeSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { SIMREADY_ALLOWED, describeSimreadyHit, searchSimready } from '../../packages/assets/src/simready';
 import { fetchPackage, packageDir, parseTarget, SIMREADY_DIR } from '../../packages/assets/src/simready-fetch';
@@ -54,7 +55,59 @@ async function main(): Promise<void> {
     console.log(`ok ${got.dir}\n  licence ${got.licence} (package: ${got.licenceRaw.packaging}, dataset card: ${got.licenceRaw.card}), author ${got.author}\n  usd ${got.usd.path} ${got.usd.bytes} bytes sha256 ${got.usd.sha256}\n  package_hash ${got.packageHash}`);
     return;
   }
-  console.error('usage: assets:simready -- search "<text>" [--limit=8] [--max-size=2] [--json]\n       assets:simready -- fetch <owner>/<dataset>@<40-hex revision>/<package>');
+  if (cmd === 'add') {
+    // Fetch one package and record it in assets/sources.json (the pin the library build checks); prints the row to add.
+    if (!rest[0]) throw new Error('usage: add <owner>/<dataset>@<40-hex revision>/<package> [--title="..."]');
+    const ref = parseTarget(rest[0]);
+    const got = await fetchPackage(ref, { onProgress: (m) => process.stdout.write(`${m}\n`) });
+    if (got.licence !== 'CC0-1.0' && got.licence !== 'CC-BY-4.0') throw new Error(`licence ${got.licence} cannot be pinned (CC0-1.0 or CC-BY-4.0 only)`);
+    if (!got.packageHash) throw new Error('the package publishes no package hash');
+    const path = resolve(import.meta.dirname, '../../assets/sources.json');
+    const id = `simready-${ref.owner.toLowerCase()}-${ref.pkg.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`.replace(/-+$/, '');
+    // Several `add` runs may finish together: a lock file keeps the read-modify-write of sources.json whole.
+    const lock = `${path}.lock`;
+    for (let i = 0; ; i++) {
+      try {
+        closeSync(openSync(lock, 'wx'));
+        break;
+      } catch {
+        if (i > 600) throw new Error(`${lock} is held; remove it if no other add is running`);
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    }
+    try {
+      const file = JSON.parse(readFileSync(path, 'utf8')) as { simready: { packages: Array<Record<string, unknown>> } };
+      const licenceCode = got.licence === 'CC0-1.0' ? 'cc0-1.0' : 'cc-by-4.0';
+      const entry = {
+        id,
+        provider: 'NVIDIA SimReady Central (Hugging Face)',
+        title: arg('title') ?? ref.pkg,
+        dataset: ref.repo,
+        revision: ref.rev,
+        package: ref.pkg,
+        author: `${got.author} (Hugging Face user ${ref.owner})`,
+        licence: got.licence,
+        licenceUrl: got.licence === 'CC0-1.0' ? 'https://creativecommons.org/publicdomain/zero/1.0/' : 'https://creativecommons.org/licenses/by/4.0/',
+        licenceEvidence: `com.nvidia.simready.packaging.json of the package: "license": "${got.licenceRaw.packaging ?? ''}"; dataset card (huggingface.co/api/datasets/${ref.repo}) cardData.license: ${got.licenceRaw.card ?? licenceCode}`,
+        page: `https://huggingface.co/datasets/${ref.repo}/tree/${ref.rev}/${ref.pkg}`,
+        url: `https://huggingface.co/datasets/${ref.repo}/resolve/${ref.rev}/${ref.pkg}/${got.usd.path}`,
+        usd: got.usd.path,
+        bytes: got.usd.bytes,
+        sha256: got.usd.sha256,
+        packageHash: got.packageHash,
+        retrieved: new Date().toISOString().slice(0, 10),
+      };
+      const at = file.simready.packages.findIndex((p) => p['id'] === id);
+      if (at >= 0) file.simready.packages[at] = entry;
+      else file.simready.packages.push(entry);
+      writeFileSync(path, `${JSON.stringify(file, null, 2)}\n`);
+    } finally {
+      rmSync(lock, { force: true });
+    }
+    console.log(`pinned ${id} in assets/sources.json (${got.licence}, usd sha256 ${got.usd.sha256})`);
+    return;
+  }
+  console.error('usage: assets:simready -- search "<text>" [--limit=8] [--max-size=2] [--json]\n       assets:simready -- fetch <owner>/<dataset>@<40-hex revision>/<package>\n       assets:simready -- add <owner>/<dataset>@<40-hex revision>/<package> [--title="..."]   (fetch and pin in assets/sources.json)');
   process.exit(1);
 }
 

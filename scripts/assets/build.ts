@@ -172,6 +172,8 @@ function fixLegacyMaterials(doc: Document): void {
 
 async function encode(nio: NodeIO, doc: Document): Promise<Uint8Array> {
   const plain = await nio.writeBinary(doc);
+  // The on-demand import ships plain GLBs: the studio stores them as user assets, whose validator takes no meshopt fallback buffers.
+  if (process.env['AETHER_NO_MESHOPT'] === '1') return plain;
   try {
     const copy = await nio.readBinary(plain);
     copy.createExtension(EXTMeshoptCompression).setRequired(true).setEncoderOptions({ method: EXTMeshoptCompression.EncoderMethod.QUANTIZE });
@@ -879,7 +881,12 @@ async function buildImportOne(jobPath: string): Promise<void> {
   mkdirSync(srcDir, { recursive: true });
   const src = join(srcDir, `${id}.gltf`);
   await nio.write(src, gdoc);
-  const built = await buildInteriorModel(nio, job.row, { src, texDir: srcDir, authors: [job.author], archive: job.archive, pack: job.pack, licence: job.licence, cacheKey: `import-${id}`, dir: 's' });
+  // Triangle budget by size (the cap stays 20,000): a toolbox does not need what a sofa needs.
+  const sb = sceneBounds(gdoc);
+  const longest = Math.max(sb.max[0] - sb.min[0], sb.max[1] - sb.min[1], sb.max[2] - sb.min[2]);
+  const o = job.row[6] ?? {};
+  const row: InteriorRow = [job.row[0], job.row[1], job.row[2], job.row[3], job.row[4], job.row[5], { ...o, tris: Math.min(o.tris ?? 20000, longest < 0.6 ? 6000 : longest < 1.5 ? 12000 : 20000) }];
+  const built = await buildInteriorModel(nio, row, { src, texDir: srcDir, authors: [job.author], archive: job.archive, pack: job.pack, licence: job.licence, cacheKey: `import-${id}`, dir: 's' });
   writeFileSync(join(job.work, 'result.json'), `${JSON.stringify({ entry: built.entry, files: built.asset.files })}\n`);
 }
 
