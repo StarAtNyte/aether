@@ -73,11 +73,11 @@ export const SIMREADY: readonly SimreadyItem[] = [
   },
   {
     source: 'simready-nvidia-sofa-soft-b01',
-    row: ['sofa_soft_b01', 'simready-sofa-soft-01', 'sofa', 'furniture', 'modern contemporary', 'Soft sofa', { rot: 270, tex: 512, tris: 12000, tags: 'sofa couch settee lounge waiting room' }],
+    row: ['sofa_soft_b01', 'simready-sofa-soft-01', 'armchair', 'furniture', 'contemporary lounge', 'Soft armchair', { rot: 270, tex: 512, tris: 12000, tags: 'armchair lounge chair club chair single seat sofa chair waiting room' }],
   },
   {
     source: 'simready-nvidia-sofa-soft-b02',
-    row: ['sofa_soft_b02', 'simready-sofa-soft-02', 'sofa', 'furniture', 'modern contemporary', 'Soft sofa, two seat', { rot: 270, tex: 512, tris: 12000, tags: 'sofa couch loveseat lounge waiting room' }],
+    row: ['sofa_soft_b02', 'simready-sofa-soft-02', 'sofa', 'furniture', 'contemporary lounge', 'Soft sofa, two seat', { rot: 270, tex: 512, tris: 12000, tags: 'sofa couch loveseat lounge waiting room' }],
   },
   {
     source: 'simready-nvidia-lamp-table-bedside-a01',

@@ -7138,6 +7138,56 @@ validated `simready` section of `sources.json`, the catalog pack licence enum an
 - The USD converter needs the dev venv; Python is not a dependency of the repository or CI.
 - The reference stills use primitives for the kitchen around the cooker; no photograph of a real kitchen was reconstructed.
 
+## 2026-10-28 SimReady import on demand, and 28 common props in the library
+
+**Asked.** "Should it not import during build realtime when it needs?" Yes: the local server now imports on demand, because the USD conversion
+needs Python and cannot run in a browser; plus a first batch of common props imported ahead of time with the same pipeline.
+
+**On-demand import.**
+- `packages/assets/src/simready-fetch.ts` (Node, new subpath `@aether/assets/simready-fetch`): the licence-gated, hash-verified, size-capped download moved
+  out of `scripts/assets/simready.ts`; the CLI and the server share it (`IMPORT_LIMITS`: 150 MB, 200 files). `checkUrl` allows https on huggingface.co and
+  `*.hf.co` only (also after redirects), no credentials, no odd ports; refs are `<owner>/<dataset>@<40-hex>/<package>` or a parsed search hit.
+- `apps/server/src/assets-import/service.ts`: job state machine (queued, searching, licence, downloading, converting, optimising, ready, failed), one job at a
+  time, 3 waiting, 10 starts per 10 minutes, 12 minutes per job, the licence gate again before any byte, caps on triangles (22,000) and file size (6 MB), a
+  record per import (`imported.json`: library-shaped entry, credit line, repo, revision, USD / package / file SHA-256) under
+  `~/.local/share/aether/imported/<id>/`, the same package returns the earlier import. `convert.ts` runs `build.ts --import-one` in a child process
+  with a minimal environment (no keys), `python -I` for the USD, a temp folder, a 9-minute limit; the library's interior pipeline is reused unchanged
+  (`AETHER_ASSET_LIB`, `AETHER_TIER_CACHE` redirect its outputs), with a triangle budget by size (6,000 under 0.6 m, 12,000 under 1.5 m, 20,000 above)
+  and no meshopt (`AETHER_NO_MESHOPT`), because the studio's user-asset validator rejects meshopt fallback buffers (found by running the studio check on a real
+  import: `a GLB may only use its embedded binary buffer`).
+- `routes/assets-import.ts`: `POST /api/assets/import`, `GET /api/assets/import/<job>`, `GET /api/assets/imported`, files by hash name. Local only: config
+  `assetImport` (on with local AI, off for production unless `AETHER_ALLOW_IMPORT=1`, off with `AETHER_ASSET_IMPORT=off`), session cookie, loopback socket and Host,
+  no proxy headers; `/api/health` reports `assetImport`.
+- Missing tools answer `conversion tools not installed: run npm run assets:simready-setup` before anything is downloaded. `scripts/assets/simready-setup.ts` builds
+  the venv (usd-core, numpy, pillow, huggingface_hub) outside the repository; `scripts/assets/simready-e2e.ts` is the opt-in real-service smoke (not in CI). Real run:
+  "office chair" -> `chair_office_fabric_manager_a01`, 56 files, 72 s (46 s of it the download), 19,557 triangles, 799 KB (before the size budgets); "toolbox" ->
+  22 s, and the studio's own `importUserAsset` accepted the file.
+- Agent tool `import_asset` (`tools.ts`, `executor.ts`, `AgentOptions.importAsset`): read-only for the review loop; without a host hook it says importing needs the local
+  server and is not an error. Studio: `AssetController.importModelFromServer` (`assets/serverImport.ts` is the transport): probes `/api/health`, follows the job (progress to
+  the step feed, the status line and the busy toast), checks the GLB's SHA-256 against the record, validates it again as any dropped file and stores it as a user asset
+  carrying the credit line, so exports (`assets/user-<hash>.glb`) and published games (`game.json` imports) embed it. A copied share link carries only the world: the
+  existing toast already says imported files appear as stand-ins there.
+- Found and fixed on the way: `creditsFor` kept one credit for all user imports (the first), so a second CC BY import was not credited; it now keeps one line per distinct credit
+  and reads the licence from it. `place_items` took only library ids; it now takes a model imported into the project (generic floor piece).
+
+**First batch.** 31 candidates picked from searches for 32 object words (all hits CC BY 4.0, datasets `nvidia/simready-assets` and `ForgeCAD/simready-assets`; the
+`PalatialSim` hits have opaque ids and 1 to 40 MB of USD and were left out). Imported with `assets:simready -- add` (fetch, hash checks, pin in `sources.json` with the licence
+evidence), built with `build.ts --simready` (rows in `selection-simready.ts`), thumbnails, KTX2 twins. Looked at a contact sheet of the 3/4 thumbnails and of front views at 0, 90, 180
+and 270 degrees: dropped the kettle (decal wear showed as black blotches), the microwave (garbled door) and the plywood crate (a plain white cube); set `rot` for 13 models whose front
+was not +Z (found with `thumbs.ts --front --yaw`); a first build of the sofas ranked above the library's own modern sofa for the word "sofa" (two vitest cases caught it), and one of them is a
+single-seat armchair, so it is typed `armchair` and both carry the style `contemporary lounge`.
+Result: **28 models**, 157,012 triangles in all (560 to 11,783 each, mean 5,600), main files 45 to 401 KB (mean 200 KB, none over 600 KB), 9.1 MB for every file and tier, plus 8.2 MB of KTX2 twins and
+64 KB of thumbnails; 17.6 MB on disk in `assets/lib`. The lean build (`shippedPaths`) ships their thumbnails only (29 SimReady paths, all `t/`); the models come from the CDN when a world uses one.
+`npm run budget` unchanged (index 194 kB gzip, play 67 kB). THIRD_PARTY.md has a row per package (author, licence evidence, URL, SHA-256, package hash, credit line).
+
+**Not done / limits.** No frying pan, kettle, bottles or plant pots: the small nvidia/ForgeCAD sets have none that look right (the only hits are large opaque `PalatialSim` packages). The imported
+asset has no `find_model` entry, the agent gets its id from the tool result; Apache-2.0 and BSD packages are findable but not imported. A hostile USD could target the USD parser in the converter; the
+isolation is `python -I`, the temp folder and the minimal environment, not a container (docs/SECURITY.md). The 28 props are static meshes (no doors, drawers or wheels). "Desk lamp" and "table lamp" are
+read by `find_model` as desk and table (existing head-noun rule); "task lamp" and "floor lamp" find the new lamps.
+
+**Gates**: tsc clean; vitest packages/assets packages/agent packages/arch apps/server apps/studio scripts green after the sofa fix; smoke 39 of 39; showcase:bake --check up to date;
+showcase:lightmaps --verify ok (bundled keys unchanged); budget ok; licences ok.
+
 ## Load weight: home page 925 kB to 193 kB of JS
 
 Measured with `npm run e2e:load-slow` (production build, brotli, Slow 4G, 4x CPU, cold then warm cache).

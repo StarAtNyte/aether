@@ -159,7 +159,8 @@ describe('the imported common props', () => {
   it('are found by the words people use for them', () => {
     const want: Record<string, string> = {
       'office chair': 'simready-office-chair-manager',
-      sofa: 'simready-sofa-soft-01',
+      sofa: 'simready-sofa-soft-02',
+      'lounge armchair': 'simready-sofa-soft-01',
       'filing cabinet': 'simready-cabinet-filing',
       monitor: 'simready-monitor-office',
       keyboard: 'simready-keyboard-computer',

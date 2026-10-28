@@ -755,36 +755,6 @@
    "retrieved": "2026-10-28"
   },
   {
-   "id": "simready-nvidia-sofa-soft-b01",
-   "provider": "NVIDIA SimReady Central (Hugging Face)",
-   "title": "Soft sofa",
-   "version": "653d91e182011f357cf1644013cc94ddf194d349",
-   "author": "nvidia (Hugging Face user nvidia)",
-   "licence": "CC-BY-4.0",
-   "licenceUrl": "https://creativecommons.org/licenses/by/4.0/",
-   "licenceEvidence": "com.nvidia.simready.packaging.json of the package: \"license\": \"CC-BY-4.0\"; dataset card (huggingface.co/api/datasets/nvidia/simready-assets) cardData.license: cc-by-4.0",
-   "page": "https://huggingface.co/datasets/nvidia/simready-assets/tree/653d91e182011f357cf1644013cc94ddf194d349/sofa_soft_b01",
-   "archive": "https://huggingface.co/datasets/nvidia/simready-assets/resolve/653d91e182011f357cf1644013cc94ddf194d349/sofa_soft_b01/simready_usd/sm_sofa_soft_b01_01.usd",
-   "sha256": "f075f9d4b02655cc2eab7badc8508420b42648c7d5101170817215355db574e2",
-   "packageHash": "716086259f5e67ea2fc5554d955fb95ba1ccbe03114ec29bd74f7b5bb9c991c7",
-   "retrieved": "2026-10-28"
-  },
-  {
-   "id": "simready-nvidia-sofa-soft-b02",
-   "provider": "NVIDIA SimReady Central (Hugging Face)",
-   "title": "Soft sofa, two seat",
-   "version": "653d91e182011f357cf1644013cc94ddf194d349",
-   "author": "nvidia (Hugging Face user nvidia)",
-   "licence": "CC-BY-4.0",
-   "licenceUrl": "https://creativecommons.org/licenses/by/4.0/",
-   "licenceEvidence": "com.nvidia.simready.packaging.json of the package: \"license\": \"CC-BY-4.0\"; dataset card (huggingface.co/api/datasets/nvidia/simready-assets) cardData.license: cc-by-4.0",
-   "page": "https://huggingface.co/datasets/nvidia/simready-assets/tree/653d91e182011f357cf1644013cc94ddf194d349/sofa_soft_b02",
-   "archive": "https://huggingface.co/datasets/nvidia/simready-assets/resolve/653d91e182011f357cf1644013cc94ddf194d349/sofa_soft_b02/simready_usd/sm_sofa_soft_b02_01.usd",
-   "sha256": "c6f51f1dd73b2bc1647018c6b840fcd8da51f25a0b4a9e3807daab29193e688a",
-   "packageHash": "1c3113ca845723e523da3f232ecada46e32fa70f6be47c5a691766c14473746c",
-   "retrieved": "2026-10-28"
-  },
-  {
    "id": "simready-nvidia-lamp-table-bedside-a01",
    "provider": "NVIDIA SimReady Central (Hugging Face)",
    "title": "Bedside lamp",
@@ -1037,6 +1007,36 @@
    "archive": "https://huggingface.co/datasets/nvidia/simready-assets/resolve/653d91e182011f357cf1644013cc94ddf194d349/handTool_wrench_adjustable_a01/simready_usd/sm_handTool_wrench_adjustable_a01_01.usd",
    "sha256": "5bb67cc1a46f0284a7c6df697ad8f274dbf8630fe03c1a32d72dfcd0066e025b",
    "packageHash": "53fd47a57770e5426d7b4452c932c8673bd37b609e320d8eeda100f8df8ab40a",
+   "retrieved": "2026-10-28"
+  },
+  {
+   "id": "simready-nvidia-sofa-soft-b01",
+   "provider": "NVIDIA SimReady Central (Hugging Face)",
+   "title": "Soft sofa",
+   "version": "653d91e182011f357cf1644013cc94ddf194d349",
+   "author": "nvidia (Hugging Face user nvidia)",
+   "licence": "CC-BY-4.0",
+   "licenceUrl": "https://creativecommons.org/licenses/by/4.0/",
+   "licenceEvidence": "com.nvidia.simready.packaging.json of the package: \"license\": \"CC-BY-4.0\"; dataset card (huggingface.co/api/datasets/nvidia/simready-assets) cardData.license: cc-by-4.0",
+   "page": "https://huggingface.co/datasets/nvidia/simready-assets/tree/653d91e182011f357cf1644013cc94ddf194d349/sofa_soft_b01",
+   "archive": "https://huggingface.co/datasets/nvidia/simready-assets/resolve/653d91e182011f357cf1644013cc94ddf194d349/sofa_soft_b01/simready_usd/sm_sofa_soft_b01_01.usd",
+   "sha256": "f075f9d4b02655cc2eab7badc8508420b42648c7d5101170817215355db574e2",
+   "packageHash": "716086259f5e67ea2fc5554d955fb95ba1ccbe03114ec29bd74f7b5bb9c991c7",
+   "retrieved": "2026-10-28"
+  },
+  {
+   "id": "simready-nvidia-sofa-soft-b02",
+   "provider": "NVIDIA SimReady Central (Hugging Face)",
+   "title": "Soft sofa, two seat",
+   "version": "653d91e182011f357cf1644013cc94ddf194d349",
+   "author": "nvidia (Hugging Face user nvidia)",
+   "licence": "CC-BY-4.0",
+   "licenceUrl": "https://creativecommons.org/licenses/by/4.0/",
+   "licenceEvidence": "com.nvidia.simready.packaging.json of the package: \"license\": \"CC-BY-4.0\"; dataset card (huggingface.co/api/datasets/nvidia/simready-assets) cardData.license: cc-by-4.0",
+   "page": "https://huggingface.co/datasets/nvidia/simready-assets/tree/653d91e182011f357cf1644013cc94ddf194d349/sofa_soft_b02",
+   "archive": "https://huggingface.co/datasets/nvidia/simready-assets/resolve/653d91e182011f357cf1644013cc94ddf194d349/sofa_soft_b02/simready_usd/sm_sofa_soft_b02_01.usd",
+   "sha256": "c6f51f1dd73b2bc1647018c6b840fcd8da51f25a0b4a9e3807daab29193e688a",
+   "packageHash": "1c3113ca845723e523da3f232ecada46e32fa70f6be47c5a691766c14473746c",
    "retrieved": "2026-10-28"
   }
  ],
@@ -15420,64 +15420,6 @@
    ]
   },
   {
-   "id": "simready-sofa-soft-01",
-   "pack": "simready-nvidia",
-   "licence": "CC-BY-4.0",
-   "authors": [
-    "nvidia"
-   ],
-   "source": {
-    "archive": "https://huggingface.co/datasets/nvidia/simready-assets/resolve/653d91e182011f357cf1644013cc94ddf194d349/sofa_soft_b01/simready_usd/sm_sofa_soft_b01_01.usd",
-    "path": "sofa_soft_b01/simready_usd/sm_sofa_soft_b01_01.usd"
-   },
-   "files": [
-    {
-     "path": "s/simready-sofa-soft-01.5170e473.glb",
-     "sha256": "5170e473285ba073c03f4505c533228d81a6b0942750bde693faf09dab9db43d",
-     "bytes": 235020
-    },
-    {
-     "path": "s/simready-sofa-soft-01.lod1.563d99e6.glb",
-     "sha256": "563d99e6bd9ebb94cf1968ca37b1637da952166288433dbd8ce79ce5f59ac641",
-     "bytes": 99612
-    },
-    {
-     "path": "s/simready-sofa-soft-01.lite.49a96092.glb",
-     "sha256": "49a960926436906876cebe5935b88accb72dd9228194ee22968f2e1937d810a4",
-     "bytes": 72548
-    }
-   ]
-  },
-  {
-   "id": "simready-sofa-soft-02",
-   "pack": "simready-nvidia",
-   "licence": "CC-BY-4.0",
-   "authors": [
-    "nvidia"
-   ],
-   "source": {
-    "archive": "https://huggingface.co/datasets/nvidia/simready-assets/resolve/653d91e182011f357cf1644013cc94ddf194d349/sofa_soft_b02/simready_usd/sm_sofa_soft_b02_01.usd",
-    "path": "sofa_soft_b02/simready_usd/sm_sofa_soft_b02_01.usd"
-   },
-   "files": [
-    {
-     "path": "s/simready-sofa-soft-02.dea8ea4b.glb",
-     "sha256": "dea8ea4bb937917768fbd677ca305da3202c743b40c71b490d15828e2878354b",
-     "bytes": 257772
-    },
-    {
-     "path": "s/simready-sofa-soft-02.lod1.533d736b.glb",
-     "sha256": "533d736beb4b77d1602955e6ad8b844d077bf657b7632065091db8167cce50f9",
-     "bytes": 101740
-    },
-    {
-     "path": "s/simready-sofa-soft-02.lite.e2223eb1.glb",
-     "sha256": "e2223eb19b0519135a16c1d3823011cd887fc1c6af03e65cce374a1b40ca4e12",
-     "bytes": 71252
-    }
-   ]
-  },
-  {
    "id": "simready-lamp-bedside",
    "pack": "simready-nvidia",
    "licence": "CC-BY-4.0",
@@ -15962,6 +15904,64 @@
      "path": "s/simready-wrench-adjustable.lite.a20a7671.glb",
      "sha256": "a20a7671b35302f6d3ddbb3da264b8f9a4b86b6fc96143b05ab4472bbdf48e1f",
      "bytes": 45496
+    }
+   ]
+  },
+  {
+   "id": "simready-sofa-soft-01",
+   "pack": "simready-nvidia",
+   "licence": "CC-BY-4.0",
+   "authors": [
+    "nvidia"
+   ],
+   "source": {
+    "archive": "https://huggingface.co/datasets/nvidia/simready-assets/resolve/653d91e182011f357cf1644013cc94ddf194d349/sofa_soft_b01/simready_usd/sm_sofa_soft_b01_01.usd",
+    "path": "sofa_soft_b01/simready_usd/sm_sofa_soft_b01_01.usd"
+   },
+   "files": [
+    {
+     "path": "s/simready-sofa-soft-01.5170e473.glb",
+     "sha256": "5170e473285ba073c03f4505c533228d81a6b0942750bde693faf09dab9db43d",
+     "bytes": 235020
+    },
+    {
+     "path": "s/simready-sofa-soft-01.lod1.563d99e6.glb",
+     "sha256": "563d99e6bd9ebb94cf1968ca37b1637da952166288433dbd8ce79ce5f59ac641",
+     "bytes": 99612
+    },
+    {
+     "path": "s/simready-sofa-soft-01.lite.49a96092.glb",
+     "sha256": "49a960926436906876cebe5935b88accb72dd9228194ee22968f2e1937d810a4",
+     "bytes": 72548
+    }
+   ]
+  },
+  {
+   "id": "simready-sofa-soft-02",
+   "pack": "simready-nvidia",
+   "licence": "CC-BY-4.0",
+   "authors": [
+    "nvidia"
+   ],
+   "source": {
+    "archive": "https://huggingface.co/datasets/nvidia/simready-assets/resolve/653d91e182011f357cf1644013cc94ddf194d349/sofa_soft_b02/simready_usd/sm_sofa_soft_b02_01.usd",
+    "path": "sofa_soft_b02/simready_usd/sm_sofa_soft_b02_01.usd"
+   },
+   "files": [
+    {
+     "path": "s/simready-sofa-soft-02.dea8ea4b.glb",
+     "sha256": "dea8ea4bb937917768fbd677ca305da3202c743b40c71b490d15828e2878354b",
+     "bytes": 257772
+    },
+    {
+     "path": "s/simready-sofa-soft-02.lod1.533d736b.glb",
+     "sha256": "533d736beb4b77d1602955e6ad8b844d077bf657b7632065091db8167cce50f9",
+     "bytes": 101740
+    },
+    {
+     "path": "s/simready-sofa-soft-02.lite.e2223eb1.glb",
+     "sha256": "e2223eb19b0519135a16c1d3823011cd887fc1c6af03e65cce374a1b40ca4e12",
+     "bytes": 71252
     }
    ]
   }
