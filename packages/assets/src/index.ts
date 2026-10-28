@@ -81,3 +81,20 @@ export {
 export { createTrellisProvider, isAllowedEndpoint, type ImageTo3DProvider, type TrellisOptions } from './image-to-3d';
 
 export * from './characters';
+export {
+  SIMREADY_API,
+  SIMREADY_ALLOWED,
+  SIMREADY_IMPORTABLE,
+  judgeLicence,
+  parseSimreadyUrl,
+  fetchCommand as simreadyFetchCommand,
+  enrichRef as enrichSimreadyRef,
+  searchSimready,
+  describeSimreadyHit,
+  type LicenceVerdict,
+  type SimreadyRef,
+  type SimreadyHit,
+  type SimreadyResult,
+  type SimreadySearchOptions,
+  type FetchLike,
+} from './simready';
