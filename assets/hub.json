@@ -1,5 +1,6 @@
 {
   "dataset": "StarAtNyte1/aether-assets",
-  "revision": "main",
-  "visibility": "private"
+  "revision": "33fbab69184024ee04143bde874939eeeb74adf8",
+  "visibility": "private",
+  "indexSha256": "e7a7fa81593c287fec8e8a3aaf0eaafaef0e70e285dd0e26e37b646ac85d8a13"
 }
