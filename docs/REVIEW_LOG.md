@@ -7121,3 +7121,27 @@ validated `simready` section of `sources.json`, the catalog pack licence enum an
   so `simready_search` answers "not reachable" there and works from the CLI, MCP and scripts.
 - The USD converter needs the dev venv; Python is not a dependency of the repository or CI.
 - The reference stills use primitives for the kitchen around the cooker; no photograph of a real kitchen was reconstructed.
+
+## Load weight: home page 925 kB to 193 kB of JS
+
+Measured with `npm run e2e:load-slow` (production build, brotli, Slow 4G, 4x CPU, cold then warm cache).
+
+| Slow 4G (1.6 Mbps, 150 ms), 4x CPU | before | after |
+| --- | --- | --- |
+| Home JS, eager, gzip (`npm run budget`) | 925 kB in 30 files | 193 kB in 21 files |
+| Player JS before first paint, gzip | 1,360 kB in 39 files | 67 kB in 6 files (engine loads after the loading screen) |
+| Home, first visit: requests / transferred / JS | 60 / 1,381 kB / 886 kB | 49 / 551 kB / 267 kB |
+| Home, first visit: FCP / LCP / TBT / interactive | 1.32 s / 6.21 s / 120 ms / 5.65 s | 1.31 s / 2.71 s / 42 ms / 2.53 s |
+| Home, returning: LCP / interactive | 6.24 s / 6.07 s | 2.28 s / 2.51 s |
+| Home, warm cache: LCP / interactive | 1.40 s / 0.63 s | 0.52 s / 0.50 s |
+| Open casa-patio, cold, world synced | 22.2 s | 19.8 s |
+| Open casa-patio, 20 s after the home page (editor files already fetched) | n/a | 9.9 s |
+| Open casa-patio, warm cache, world synced | 8.6 s | 6.9 s |
+
+**What was in the home page's 925 kB.** One static import, `lib/chat.ts` -> `diffLineText` from the `@aether/agent` index, dragged in the agent (252 kB), arch compiler (247), procgen (101), assets (28) and playtest; the on-device depth runtime `onnxruntime-web` (94 kB, only ever imported dynamically) had been merged into the eager `vendor` chunk. Fixes: a narrow `@aether/agent/diff-text` export and an `ort` chunk group. Remaining eager: react-dom 63, core 38, zod 27, home/components/lib 45.
+
+Other changes: the player page paints its own loading screen from `play.html` and loads React, the engine and the UI after it; the hero fetches the shown slide and the next one (it fetched all 15) and the first slide is preloaded; the home page fetches the editor's files at low priority once idle or on first hover/focus/touch (`editor-prefetch.json`, skipped on save-data and 2G); a `#/new/<example>` link starts downloading the editor while the project is created. Caching headers (immutable hashed assets and fonts), brotli (host) and the font preload were already right.
+
+**Not done / honest limits.** Opening an example cold on Slow 4G is still about 20 s: 1.7 MB of JS (three, render, arch, agent) plus about 1 MB of textures and a 200 kB wasm are needed for the first frame, and 4x CPU gives 1.3 s of blocking while the editor boots. The background fetch halves it when the user lingers on home. Editor CSS (about 14 kB gzip) is still in the home bundle: its classes are shared with dialogs and toasts and were not safely separable in this pass. Numbers are software-rendered Chromium; relative only. TBT target met (42 ms), LCP 2.7 s first visit misses 2.5 s by 0.2 s (hero image over the throttled link), interactive 2.5 s under 4 s, JS 193 kB under 250.
+
+**Gates**: tsc clean; vitest apps/studio packages/render packages/agent 321 files, 2,846 tests; smoke 39 of 39; e2e:projects, e2e:showcase (Chromium and Firefox), e2e:photo, e2e:weak, e2e:lightmap-open pass; showcase:bake --check and showcase:lightmaps --verify ok; licences ok; `npm run budget` limits lowered to index 203 kB JS / 31 kB CSS and play 71 / 1.

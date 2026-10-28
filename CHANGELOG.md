@@ -5,6 +5,10 @@ and `docs/REVIEW_LOG.md` carries the measured detail. Workspace packages share t
 
 ## Unreleased
 
+### Lighter first load
+
+- Home page JS 925 to 193 kB gzip (first visit on Slow 4G: LCP 6.2 to 2.7 s, 1,381 to 551 kB transferred); the player loads its engine after a loading screen (1,360 to 67 kB before first paint). The agent, arch compiler, procgen and asset catalog no longer load on the home page; the editor is fetched in the background once the home page is idle. `npm run e2e:load-slow` measures it; `scripts/size-budget.json` limits are tightened.
+
 ### NVIDIA SimReady Central as an asset source
 
 - `npm run assets:simready -- search "<text>"` searches SimReady Central (about 3,600 OpenUSD packages on Hugging Face), reads each hit's licence (package file and dataset card) and shows only CC0, CC-BY-4.0, MIT, Apache-2.0 and BSD hits; non-commercial, no-derivatives, share-alike, custom and missing licences are listed as rejected with the reason. `fetch <repo>@<revision>/<package>` downloads one package at a pinned revision outside the repository and verifies LFS hashes, Git blob ids and the package bill of materials.

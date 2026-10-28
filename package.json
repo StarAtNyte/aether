@@ -118,6 +118,7 @@
     "e2e:render-bench": "tsx tests/e2e/render-bench.e2e.ts",
     "e2e:ktx2": "tsx tests/e2e/ktx2.e2e.ts",
     "e2e:load-perf": "tsx tests/e2e/load-perf.e2e.ts",
+    "e2e:load-slow": "tsx tests/e2e/load-slow.e2e.ts",
     "e2e:render": "tsx tests/e2e/render-quality.e2e.ts"
   },
   "engines": {

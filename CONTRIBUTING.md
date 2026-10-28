@@ -22,9 +22,25 @@ npm test                             # Vitest; for one package: npx vitest run p
 npm run smoke                        # the real agent loop on every featured prompt, offline
 npm run showcase:bake -- --check     # saved featured worlds still match what their prompts build
 npm run showcase:lightmaps -- --verify   # bundled lightmaps still match their worlds
-npm run budget                       # first-visit download size
+npm run budget                       # first-visit download size (fails CI when over; see below)
 npm run licences                     # production dependency licences vs docs/THIRD_PARTY.md
 ```
+
+### Keeping the first load small
+
+`npm run budget` counts the JavaScript and CSS (gzip) a first visit downloads for `index.html` (home) and `play.html`
+(player) and fails over the limits in `scripts/size-budget.json`, which sit about 5 percent above the measured size.
+The home page loads React, the home UI and the app state only; the editor, renderer, physics, agent, architecture
+compiler, procedural generators, asset catalog and exporters are dynamic imports. So:
+
+- Import a heavy package (`@aether/agent`, `arch`, `procgen`, `assets`, `playtest`) from the home route's modules only for
+  types, or through a narrow sub-path export (see `@aether/agent/diff-text`), never the package index.
+- A new lazy feature gets its own `import()`; a new dependency that is only dynamically imported must not land in the
+  eager `vendor` chunk (add a group in `apps/studio/vite.config.ts`, as for `ort`, `quickjs`, `webllm`).
+- Find what pulls code in with `AETHER_OUTDIR=/tmp/r REPORT=/tmp/r.json npx vite build -c apps/studio/vite.report.config.ts apps/studio`
+  (writes a per-chunk module list and the import graph), and measure the real effect on a slow phone with
+  `npm run e2e:load-slow -- --dist=<build dir>` (Slow 4G, 4x CPU: requests, bytes, FCP, LCP, TBT, editor open time).
+- Raising a limit needs a reason in the commit message.
 
 ### When to rebake the bundled worlds
 

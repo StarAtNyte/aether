@@ -13,7 +13,7 @@ A measured pass over the repository at `3fb306aa` plus the fixes below. Fresh-cl
 | `npm run build` | pass (134 s) |
 | `npm run smoke` | pass (54 s) |
 | `npm audit` (all deps) | 0 findings after the fix below (was 1 high, 1 moderate) |
-| `npm run budget` | index 823 kB JS + 28 kB CSS gzip, player 1292 kB + 9 kB (limits 890/32 and 1400/12 at that pass; the index limit is now 930 after the render, parts and brief work, measured 906) |
+| `npm run budget` | index 193 kB JS + 29 kB CSS gzip, player shell 67 kB + 0 kB (limits 203/31 and 71/1; was 925 and 1,360 kB before the home page stopped importing the agent, arch, procgen and assets; see REVIEW_LOG "Load weight") |
 | `npm run licences` | all 168 production packages permissive and listed |
 
 There is no linter configured. The strict TypeScript settings and the test suite are the static checks; adding one is a style decision left to the maintainers.
