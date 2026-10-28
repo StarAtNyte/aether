@@ -345,6 +345,12 @@ export interface AgentOptions {
    */
   buildAsset?: (spec: AssetBuildSpec, signal?: AbortSignal) => Promise<AssetBuildResult>;
   /**
+   * Import a model from SimReady Central while the agent works (tool `import_asset`). The host runs it on the local Aether
+   * server (search, licence gate, download, conversion) and stores the result with the project; absent, or when the host has
+   * no local server (a hosted page), the tool answers that importing needs the local server.
+   */
+  importAsset?: (request: ImportAssetRequest, o: { signal?: AbortSignal; onProgress: (text: string) => void }) => Promise<ImportAssetResult>;
+  /**
    * Prompt profile (default 'full'). 'compact' is for small models with a
    * ~4k-token context (on-device): a condensed system prompt, only the
    * apply_patches and finish tools, a shorter world summary and history,
@@ -518,6 +524,18 @@ export interface UsageTotals {
   /** Models that actually answered (as reported by the provider), in order of first use. */
   models?: string[];
 }
+
+/** What {@link AgentOptions.importAsset} is asked for. */
+export interface ImportAssetRequest {
+  query: string;
+  /** Largest side in metres. */
+  maxSize?: number;
+}
+
+/** Result of {@link AgentOptions.importAsset}. `unavailable`: no local server / tools here (not an error); `failed`: tried and could not. */
+export type ImportAssetResult =
+  | { ok: true; id: string; name: string; size: [number, number, number]; triangles: number; credit: string; licence: string }
+  | { ok: false; reason: 'unavailable' | 'failed'; message: string };
 
 /** What {@link AgentOptions.buildAsset} is asked to build. */
 export interface AssetBuildSpec {

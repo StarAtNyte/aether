@@ -11,7 +11,7 @@
  * stairs, in a door's swing, walling a room in), the placement is refused.
  */
 import { applyPatches, Entity, hasOwn, type EntityId, type Json, type Patch, type WorldDoc } from '@aether/core';
-import { assetShapeSize, catalogEntry, findModels, getCatalog } from '@aether/assets';
+import { assetInfo as libraryAssetInfo, assetShapeSize, catalogEntry, findModels, getCatalog, isUserAssetId } from '@aether/assets';
 import { furnitureByKind, furnitureSize } from '../furniture/index';
 import { kindForModel } from '../furniture/assets';
 import { yawFacingIn } from '../layout';
@@ -310,14 +310,16 @@ export function placeItem(world: WorldDoc, buildingRef: string | undefined, spec
   if (assetId) {
     if (typeof assetId !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,80}$/i.test(assetId)) return fail('asset must be a library model id (see find_model)');
     const entry = catalogEntry(assetId);
-    const size = entry ? assetShapeSize({ id: assetId }) : null;
-    if (!entry || !size) return fail(`unknown library model "${assetId.slice(0, 60)}": find ids with find_model`);
-    assetInfo = { id: assetId, size, ...(entry.placement ? { placement: entry.placement } : {}) };
+    // A model the user (or the agent, through import_asset) imported into this project: placed as a generic floor piece.
+    const imported = !entry && isUserAssetId(assetId) && libraryAssetInfo(assetId)?.kind === 'model';
+    const size = entry || imported ? assetShapeSize({ id: assetId }) : null;
+    if ((!entry && !imported) || !size) return fail(`unknown library model "${assetId.slice(0, 60)}": find ids with find_model`);
+    assetInfo = { id: assetId, size, ...(entry?.placement ? { placement: entry.placement } : {}) };
     // An explicit colour recolours upholstery and painted models (their main material is named "paint").
     const asked = spec.params?.['color'];
-    if (entry.interior?.paint && typeof asked === 'string' && /^#[0-9a-f]{6}$/i.test(asked)) assetInfo.tint = asked;
+    if (entry?.interior?.paint && typeof asked === 'string' && /^#[0-9a-f]{6}$/i.test(asked)) assetInfo.tint = asked;
     // A model placed by id stands in for the catalogue kind that mounts the way it does (sofa, lamp, picture...).
-    def ??= furnitureByKind(kindForModel(entry));
+    def ??= furnitureByKind(entry ? kindForModel(entry) : 'accent');
     if (spec.fit && spec.fit.length > 0) {
       const ratios = spec.fit.slice(0, 3).flatMap((v, i) => (Number.isFinite(v) && v > 0 && size[i]! > 0.01 ? [v / size[i]!] : []));
       if (ratios.length > 0) {

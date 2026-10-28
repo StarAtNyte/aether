@@ -20,6 +20,8 @@ export type {
   ToolDef,
   UsageTotals,
   AssetBuildSpec,
+  ImportAssetRequest,
+  ImportAssetResult,
   AssetBuildResult,
   ReviewOptions,
   ReviewPhase,

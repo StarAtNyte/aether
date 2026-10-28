@@ -47,6 +47,8 @@ export interface ExecutorContext {
   resolveGenerator?: (id: string) => Promise<GeneratorDef | null>;
   /** Agentic asset builder (deep build); see `AgentOptions.buildAsset`. */
   buildAsset?: AgentOptions['buildAsset'];
+  /** Importing from SimReady Central through the local server; see `AgentOptions.importAsset`. */
+  importAsset?: AgentOptions['importAsset'];
   /** Level tools (`query_level`, `place_level_items`); see `AgentOptions.levelTools`. */
   levelTools?: AgentOptions['levelTools'];
   /** Texture sources for `make_texture` (see `AgentOptions.textures`). */
@@ -413,6 +415,19 @@ async function simreadySearchTool(input: z.infer<typeof ToolInputs.simready_sear
   return { content: clip(`SimReady Central candidates for "${r.query}" (accepted licences only; nothing is downloaded, none can be placed until imported). The service is mostly robotics props: check the size before you rely on a hit.\n${lines.join('\n')}${rej}`), isError: false, events: [], edited: false };
 }
 
+/**
+ * import_asset: bring one model from SimReady Central into the project while working. The host does the work on the local
+ * server; without one the answer says so and the run carries on (never an error).
+ */
+async function importAssetTool(ctx: ExecutorContext, input: z.infer<typeof ToolInputs.import_asset>): Promise<ToolOutcome> {
+  if (!ctx.importAsset) return { content: 'Importing needs the local Aether server (npx aether start); this page cannot import. Carry on with find_model, the crafted parts or the nearest library model, and say in your message which model you would have imported.', isError: false, events: [], edited: false };
+  let last = '';
+  const r = await ctx.importAsset({ query: input.query, ...(input.max_size !== undefined ? { maxSize: input.max_size } : {}) }, { ...(ctx.signal ? { signal: ctx.signal } : {}), onProgress: (t) => { last = t; } });
+  if (!r.ok) return { content: clip(`${r.message}${last ? ` (last step: ${last})` : ''} Carry on with find_model, the crafted parts or the nearest library model.`), isError: false, events: [], edited: false };
+  const size = r.size.map((v) => Math.round(v * 100) / 100).join(' x ');
+  return { content: clip(`Imported "${r.name}" as ${r.id}: ${size} m (width x height x depth), ${r.triangles} triangles, ${r.licence}. The credit is recorded with the world and appears in its credits and exports: "${r.credit}". Place it in an open world with shape {"kind":"asset","id":"${r.id}"} (apply_patches; real size, base on y 0), or in a room with place_items {"kind":"model:${r.id}","room":...,"fit":[w,h,d]}. It is stored with the project, so published and exported games carry it.`), isError: false, events: [], edited: false };
+}
+
 /** find_model: ranked real models for one piece with the facts to judge them by. */
 /** Crafted procedural parts that answer `what`, as lines the model can place from (free world shape, rows, or a room). */
 function craftedLines(what: string): string[] {
@@ -570,7 +585,7 @@ export async function executeTool(ctx: ExecutorContext, name: string, rawInput: 
       return fail(`Tool "${name}" failed: ${errorMessage(e).slice(0, 500)}`);
     }
   }
-  if (!isAgentTool(name)) return fail(`Unknown tool "${name.slice(0, 64)}". Available: apply_patches, shape_land, tune_feel, tune_look, bake_light, build_architecture, design_plan, place_items, edit_items, query_scene, query_level, place_level_items, write_generator, write_script, request_asset, search_assets, find_model, simready_search, inspect, run_verification, finish.`);
+  if (!isAgentTool(name)) return fail(`Unknown tool "${name.slice(0, 64)}". Available: apply_patches, shape_land, tune_feel, tune_look, bake_light, build_architecture, design_plan, place_items, edit_items, query_scene, query_level, place_level_items, write_generator, write_script, request_asset, search_assets, find_model, simready_search, import_asset, inspect, run_verification, finish.`);
   if (typeof rawInput === 'string') return fail('The tool arguments were not valid JSON. Resend the call with a valid JSON object.');
   if (inputSize(rawInput) > TOOL_LIMITS.MAX_INPUT_CHARS) return fail(`Tool input too large (max ${TOOL_LIMITS.MAX_INPUT_CHARS} characters). Split it into several calls.`);
   try {
@@ -625,6 +640,10 @@ export async function executeTool(ctx: ExecutorContext, name: string, rawInput: 
       case 'simready_search': {
         const p = ToolInputs.simready_search.safeParse(rawInput);
         return p.success ? await simreadySearchTool(p.data) : fail(`Invalid simready_search input: ${issuesText(p.error)}`);
+      }
+      case 'import_asset': {
+        const p = ToolInputs.import_asset.safeParse(rawInput);
+        return p.success ? await importAssetTool(ctx, p.data) : fail(`Invalid import_asset input: ${issuesText(p.error)}`);
       }
       case 'search_assets': {
         const p = ToolInputs.search_assets.safeParse(rawInput);

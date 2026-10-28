@@ -9,7 +9,7 @@
 export const REVIEW_CROSSCHECK_SEED = 9931;
 
 /** Tools that only read: a round may use them before it has listed its differences. */
-export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set(['query_scene', 'query_level', 'inspect', 'search_assets', 'find_model', 'simready_search', 'run_verification', 'finish', 'report_differences']);
+export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set(['query_scene', 'query_level', 'inspect', 'search_assets', 'find_model', 'simready_search', 'import_asset', 'run_verification', 'finish', 'report_differences']);
 
 /** System prompt of the independent seat that checks a finished world against the request, with fresh eyes. */
 export const REVIEW_CROSSCHECK_SYSTEM =

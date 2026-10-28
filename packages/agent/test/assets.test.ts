@@ -166,3 +166,44 @@ describe('simready_search tool', () => {
     expect((await executeTool({ host: new MemoryHost() } as never, 'simready_search', { query: '' })).isError).toBe(true);
   });
 });
+
+describe('import_asset tool', () => {
+  const ok = { ok: true as const, id: 'user-0123456789ab', name: 'Toolbox', size: [0.45, 0.2, 0.2] as [number, number, number], triangles: 4200, credit: 'Toolbox by nvidia, CC BY 4.0, NVIDIA SimReady Central (nvidia/simready-assets); converted and reduced', licence: 'CC-BY-4.0' };
+
+  it('answers that importing needs the local server when the host has none (never an error)', async () => {
+    const out = await executeTool({ host: new MemoryHost() } as never, 'import_asset', { query: 'toolbox' });
+    expect(out.isError).toBe(false);
+    expect(out.content).toMatch(/needs the local Aether server/);
+    expect(out.edited).toBe(false);
+  });
+
+  it('imports through the host, shows progress and returns the id with its placement lines and credit', async () => {
+    const seen: string[] = [];
+    const importAsset = async (req: { query: string; maxSize?: number }, o: { onProgress: (t: string) => void }) => {
+      expect(req).toEqual({ query: 'toolbox', maxSize: 1 });
+      o.onProgress('Downloading toolbox');
+      seen.push('called');
+      return ok;
+    };
+    const out = await executeTool({ host: new MemoryHost(), importAsset } as never, 'import_asset', { query: 'toolbox', max_size: 1 });
+    expect(seen).toEqual(['called']);
+    expect(out.isError).toBe(false);
+    expect(out.content).toContain('user-0123456789ab');
+    expect(out.content).toContain('model:user-0123456789ab');
+    expect(out.content).toContain('CC BY 4.0');
+  });
+
+  it('turns a failed or unavailable import into a plain message and carries on', async () => {
+    for (const reason of ['failed', 'unavailable'] as const) {
+      const importAsset = async (_r: unknown, o: { onProgress: (t: string) => void }) => {
+        o.onProgress('Searching');
+        return { ok: false as const, reason, message: 'conversion tools not installed: run npm run assets:simready-setup' };
+      };
+      const out = await executeTool({ host: new MemoryHost(), importAsset } as never, 'import_asset', { query: 'x' });
+      expect(out.isError).toBe(false);
+      expect(out.content).toContain('conversion tools not installed');
+      expect(out.content).toContain('Carry on');
+    }
+    expect((await executeTool({ host: new MemoryHost() } as never, 'import_asset', { query: '' })).isError).toBe(true);
+  });
+});

@@ -6,6 +6,7 @@
  */
 import type { WorldDoc } from '@aether/core';
 import { assetInfo, effectiveAssetId } from './info';
+import { LICENCE_URLS } from './imported';
 import { TEXTURE_PROVENANCE_LABEL } from './texture-sets';
 import { getCatalog } from './registry';
 import type { Catalog, CatalogPack } from './schema';
@@ -44,8 +45,11 @@ export function creditsFor(world: Pick<WorldDoc, 'entities' | 'environment'> & {
     const info = assetInfo(id);
     if (!info) continue;
     if (info.user) {
-      const key = 'user';
-      const g = groups.get(key) ?? { source: 'Your imports', author: info.user.credit ?? 'Imported by the author of this world', licence: 'as provided by the author', licenceUrl: null, url: null, assets: [] };
+      // Each distinct credit line is kept (imports from SimReady Central carry their own CC BY line); the rest share one entry.
+      const credit = info.user.credit ?? 'Imported by the author of this world';
+      const key = `user|${credit}`;
+      const known = /\bCC BY 4\.0\b/.test(credit) ? 'CC-BY-4.0' : /\bCC0\b/.test(credit) ? 'CC0-1.0' : /\bMIT\b/.test(credit) ? 'MIT' : null;
+      const g = groups.get(key) ?? { source: 'Your imports', author: credit, licence: known ?? 'as provided by the author', licenceUrl: known ? (LICENCE_URLS[known] ?? null) : null, url: null, assets: [] };
       g.assets.push(info.user.name);
       groups.set(key, g);
       continue;
@@ -70,7 +74,7 @@ export function creditsFor(world: Pick<WorldDoc, 'entities' | 'environment'> & {
   const out = [...groups.values()];
   if (anyPerson) out.push(characterCredit(people.size > 0 ? [...people] : undefined));
   for (const g of out) g.assets = [...new Set(g.assets)].sort();
-  return out.sort((a, b) => (a.source === 'Your imports' ? 1 : b.source === 'Your imports' ? -1 : a.source.localeCompare(b.source) || a.author.localeCompare(b.author)));
+  return out.sort((a, b) => ((a.source === 'Your imports' ? 1 : 0) - (b.source === 'Your imports' ? 1 : 0) || a.source.localeCompare(b.source) || a.author.localeCompare(b.author)));
 }
 
 /** Plain-text credits (for `CREDITS.txt` in exported packages). */

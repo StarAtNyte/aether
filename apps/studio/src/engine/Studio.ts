@@ -1196,7 +1196,7 @@ export class Studio {
       // three on a subscription, one on a paid key (still stateless, with the fixed rubric and the relative comparison).
       const photo = primary && promptProfile === 'full' ? { vision: () => chain?.active()?.vision ?? resolved.vision, differences: true, crossCheck: true, harness: true, objects: true, perception: (() => { try { return globalThis.localStorage?.getItem('aether.perception') !== 'off'; } catch { return true; } })(), ...(subscription ? {} : { maxRounds: PHOTO_ROUNDS_METERED, judges: PHOTO_JUDGES_METERED, reads: PHOTO_READS_METERED }) } : { vision: false };
       // The level tools serve the offline planner too: an "onto" move is set down on the surface measured under it.
-      const agent = new WorldAgent({ provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: Number.isFinite(repairs) ? repairs : MAX_REPAIRS, promptProfile, photo, ...(buildAsset ? { buildAsset } : {}), ...(promptProfile === 'full' ? { levelTools: lazyLevelTools, textures: { images: primary ? this.ai.imageGenerator() : null } } : {}), ...(promptProfile === 'full' && primary ? { brief: {} } : {}), ...(review ? { review, maxTurns: REVIEW_MAX_TURNS, maxToolCalls: REVIEW_MAX_TOOL_CALLS } : {}) });
+      const agent = new WorldAgent({ provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: Number.isFinite(repairs) ? repairs : MAX_REPAIRS, promptProfile, photo, ...(buildAsset ? { buildAsset } : {}), ...(promptProfile === 'full' && primary ? { importAsset: this.assetImporter(entryId) } : {}), ...(promptProfile === 'full' ? { levelTools: lazyLevelTools, textures: { images: primary ? this.ai.imageGenerator() : null } } : {}), ...(promptProfile === 'full' && primary ? { brief: {} } : {}), ...(review ? { review, maxTurns: REVIEW_MAX_TURNS, maxToolCalls: REVIEW_MAX_TOOL_CALLS } : {}) });
       session = primary && (resolved.kind === 'local' || resolved.kind === 'bridge') ? (projectSessionKey(this.projectId) ?? undefined) : undefined;
       // The untouched default glade is a placeholder, not something the user made: the first prompt builds a new world.
       const intent = opts.intent ?? (before === this.history.current && st.chat.length === 0 && !this.history.canUndo() && isPristineStarter(before) ? 'new' : 'auto');
@@ -1257,6 +1257,23 @@ export class Studio {
     }
     if (opts.resumePlay && this.lastReply) this.store.getState().toast(this.lastReply.slice(0, 140), status === 'done' ? 'info' : 'error', 4);
     if (opts.resumePlay && this.store.getState().mode === 'edit' && this.sim && !this.disposed) void this.togglePlay();
+  }
+
+  /**
+   * `import_asset`: the model comes from the local server's SimReady import; its progress goes to the step feed, the
+   * status line and a busy toast, and the result is stored with the project (credit included).
+   */
+  private assetImporter(entryId: number): NonNullable<ConstructorParameters<typeof WorldAgent>[0]['importAsset']> {
+    return async (request, o) => {
+      const push = (text: string): void => {
+        o.onProgress(text);
+        this.store.getState().pushEvent(entryId, { type: 'status', text: text.slice(0, 300) });
+        this.store.getState().setAgentStep(text.slice(0, 120));
+      };
+      const r = await this.assets.importModelFromServer(request.query, request.maxSize, { ...(o.signal ? { signal: o.signal } : {}), onProgress: push });
+      if (!r.ok) return r;
+      return { ok: true, id: r.meta.id, name: r.meta.name, size: r.meta.size ?? [1, 1, 1], triangles: r.meta.triangles ?? 0, credit: r.meta.credit ?? '', licence: r.licence };
+    };
   }
 
   /**

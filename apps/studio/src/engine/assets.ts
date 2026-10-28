@@ -408,6 +408,45 @@ export class AssetController {
     return entityId;
   }
 
+  /**
+   * Import a model through the local server (the agent's `import_asset`): the server finds, converts and reduces it, the
+   * GLB is validated again here like any dropped file and stored with the project as a user asset carrying the credit
+   * line, so exports and published games embed it and list the credit. Never throws.
+   */
+  async importModelFromServer(
+    query: string,
+    maxSize: number | undefined,
+    o: { signal?: AbortSignal; onProgress?: (text: string) => void } = {},
+  ): Promise<{ ok: true; meta: UserAssetMeta; licence: string } | { ok: false; reason: 'unavailable' | 'failed'; message: string }> {
+    const { importFromServer } = await import('../assets/serverImport');
+    const st = this.host.store.getState();
+    const toast = (text: string): void => void st.toast(text, 'info', 4);
+    const r = await importFromServer(query, maxSize, {
+      ...(o.signal ? { signal: o.signal } : {}),
+      onProgress: (text) => {
+        o.onProgress?.(text);
+        this.state.setState({ busy: text.slice(0, 80) });
+      },
+    });
+    try {
+      if (!r.ok) return r;
+      const { importUserAsset } = await import('@aether/assets/import');
+      const v = await importUserAsset(r.bytes, `${r.asset.entry.name}.glb`);
+      if (!v.ok) return { ok: false, reason: 'failed', message: `The imported model was refused: ${v.error}` };
+      const meta: UserAssetMeta = { ...v.asset.meta, name: r.asset.entry.name.slice(0, 64), credit: r.asset.credit.text };
+      const store = await this.userStore();
+      await store.put(meta, v.asset.data);
+      this.register(meta, new Blob([v.asset.data as Uint8Array<ArrayBuffer>], { type: meta.mime }));
+      await this.refreshImports();
+      toast(`Imported ${meta.name} (${r.asset.credit.licence === 'CC0-1.0' ? 'CC0' : r.asset.credit.licence === 'CC-BY-4.0' ? 'CC BY 4.0, credited' : r.asset.credit.licence})`);
+      return { ok: true, meta, licence: r.asset.credit.licence };
+    } catch (err) {
+      return { ok: false, reason: 'failed', message: `Storing the imported model failed: ${err instanceof Error ? err.message.slice(0, 120) : 'error'}` };
+    } finally {
+      this.state.setState({ busy: null });
+    }
+  }
+
   /** Delete an import from this browser (worlds using it show stand-ins). */
   async removeImport(id: string): Promise<void> {
     if (!isUserAssetId(id)) return;

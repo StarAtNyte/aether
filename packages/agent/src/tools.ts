@@ -48,7 +48,7 @@ const paramSpecSchema = {
 } as const;
 
 /** Tool names. */
-export type AgentToolName = 'apply_patches' | 'build_architecture' | 'design_plan' | 'place_items' | 'edit_items' | 'query_scene' | 'write_generator' | 'write_script' | 'request_asset' | 'search_assets' | 'find_model' | 'simready_search' | 'inspect' | 'run_verification' | 'shape_land' | 'tune_feel' | 'tune_look' | 'bake_light' | 'make_texture' | 'finish';
+export type AgentToolName = 'apply_patches' | 'build_architecture' | 'design_plan' | 'place_items' | 'edit_items' | 'query_scene' | 'write_generator' | 'write_script' | 'request_asset' | 'search_assets' | 'find_model' | 'simready_search' | 'import_asset' | 'inspect' | 'run_verification' | 'shape_land' | 'tune_feel' | 'tune_look' | 'bake_light' | 'make_texture' | 'finish';
 
 /** Asset categories accepted by search_assets (mirrors @aether/assets `AssetCategory`). */
 export const ASSET_CATEGORIES = [
@@ -260,6 +260,20 @@ export const AGENT_TOOLS: ToolDef[] = [
         query: { type: 'string', description: 'What the object is, e.g. "range cooker", "toolbox", "gas cylinder".' },
         max_size: { type: 'number', description: 'Largest side in metres the object may have (the service filters on it).' },
         limit: { type: 'integer', minimum: 1, maximum: 10 },
+      },
+      required: ['query'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'import_asset',
+    description:
+      'Bring a real 3D model into the project that the library does not have. Use it only after find_model and search_assets found nothing that reads as the object (and, if unsure, after simready_search showed that a candidate exists). It runs on the local Aether server: it searches NVIDIA SimReady Central, takes only models with an accepted licence (CC0, CC BY 4.0, MIT), downloads and converts the best match, reduces it to a game-sized model (at most 20,000 triangles) and stores it with the project. It takes up to about a minute; progress is shown to the user. It returns an asset id you place like any model (shape {"kind":"asset","id":"<id>"} or place_items {"kind":"model:<id>"}); the CC BY credit is added to the world automatically. Where there is no local server (the hosted page) it says so: carry on with the nearest library model or a crafted part. The index is mostly small props, tools and appliances: ask for one object, not a scene.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'What the object is, e.g. "toolbox", "gas cylinder", "stapler".' },
+        max_size: { type: 'number', description: 'Largest side in metres the object may have.' },
       },
       required: ['query'],
       additionalProperties: false,
@@ -532,6 +546,10 @@ export const ToolInputs = {
     query: z.string().min(1).max(120),
     max_size: z.number().finite().positive().max(100).optional(),
     limit: z.number().int().min(1).max(10).default(5),
+  }),
+  import_asset: z.object({
+    query: z.string().min(1).max(120),
+    max_size: z.number().finite().positive().max(100).optional(),
   }),
   inspect: z.object({ ids: z.array(z.string().max(64)).max(TOOL_LIMITS.MAX_INSPECT_IDS).optional(), groups: z.boolean().optional() }),
   run_verification: z.object({}),

@@ -234,6 +234,9 @@ export function stepLabel(name: string, input: unknown, ok: boolean): string {
     case 'simready_search':
       text = 'Looking for a model outside the library';
       break;
+    case 'import_asset':
+      text = 'Importing a model from SimReady Central';
+      break;
     case 'run_verification':
       text = 'Running the checks';
       break;

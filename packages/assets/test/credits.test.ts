@@ -48,3 +48,26 @@ describe('credits', () => {
     expect(creditsText('Empty', [])).toContain('no third-party assets');
   });
 });
+
+describe('credits of models imported on demand', () => {
+  it('keeps one CC BY line per imported model, with the licence, next to the plain imports', () => {
+    setCatalog(TEST_CATALOG);
+    const mk = (id: string, name: string, credit?: string) => registerUserAsset({ meta: { id, kind: 'model', name, mime: 'model/gltf-binary', bytes: 10, createdAt: 1, ...(credit ? { credit } : {}) }, url: 'blob:x' });
+    mk('user-aaaaaaaaaaaa', 'Chair', 'Chair by nvidia, CC BY 4.0, NVIDIA SimReady Central (nvidia/simready-assets); converted and reduced');
+    mk('user-bbbbbbbbbbbb', 'Toolbox', 'Toolbox by Acme, CC BY 4.0, NVIDIA SimReady Central (acme/set); converted and reduced');
+    mk('user-cccccccccccc', 'Mine');
+    const w = createWorld({
+      name: 'W',
+      entities: Object.fromEntries(['user-aaaaaaaaaaaa', 'user-bbbbbbbbbbbb', 'user-cccccccccccc'].map((id) => [id, { id, shape: { kind: 'asset', id } }])),
+    });
+    const credits = creditsFor(w);
+    expect(credits.map((c) => c.author)).toEqual([
+      'Chair by nvidia, CC BY 4.0, NVIDIA SimReady Central (nvidia/simready-assets); converted and reduced',
+      'Imported by the author of this world',
+      'Toolbox by Acme, CC BY 4.0, NVIDIA SimReady Central (acme/set); converted and reduced',
+    ]);
+    expect(credits[0]).toMatchObject({ licence: 'CC-BY-4.0', licenceUrl: 'https://creativecommons.org/licenses/by/4.0/', assets: ['Chair'] });
+    expect(creditsText('W', credits)).toContain('Toolbox by Acme');
+    for (const id of ['user-aaaaaaaaaaaa', 'user-bbbbbbbbbbbb', 'user-cccccccccccc']) unregisterUserAsset(id);
+  });
+});
