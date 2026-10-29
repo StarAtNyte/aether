@@ -60,5 +60,5 @@ try {
   console.log(JSON.stringify(out, null, 1));
 } finally {
   await browser.close();
-  await srv.close?.();
+  await srv.stop();
 }
