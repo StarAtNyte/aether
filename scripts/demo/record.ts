@@ -9,6 +9,8 @@
  * Scenes:
  *   villa  home page, a prompt builds a two-storey villa, a chat edit with a diff and Undo, walk mode through a lit room
  *   photo  the "Rooms rebuilt from a photo" examples, one opened and walked
+ *   generate  the whole generation of one prompt (--prompt="..."): prompt typed on the home page, the agent building in the
+ *             chat and viewport as it happens (speed ramp over the wait, never cut), a short walk of the result
  *   game   a coin game: the bot's verified-playable badge and replay, a few seconds of play, the Publish hub and share link
  *
  * AI honesty: by default (`--ai=offline`) the app runs with the offline planner (the server starts with the mock
@@ -36,6 +38,7 @@ const SCENES = (arg('scene') ?? 'villa,photo,game').split(',').filter(Boolean);
 /** Prompts for a live AI (any wording); the offline planner only understands its fixed themes. */
 const LIVE_PROMPTS = { villa: 'a two-storey modern house with a pool, open-plan living room, kitchen and two bedrooms' };
 const VILLA_PROMPT = LIVE ? LIVE_PROMPTS.villa : 'a two-storey villa with a pool';
+const GENERATE_PROMPT = arg('prompt') ?? LIVE_PROMPTS.villa;
 const GAME_PROMPT = 'a coin collecting game on a tropical island';
 const OFFLINE_NOTE = 'Built by the offline planner (no AI connected), recorded in real time';
 
@@ -311,6 +314,54 @@ async function game(browser: Awaited<ReturnType<typeof chromium.launch>>, base: 
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// generate: one prompt, the whole build on camera
+// ---------------------------------------------------------------------------------------------------------------
+
+async function generate(browser: Awaited<ReturnType<typeof chromium.launch>>, base: string): Promise<void> {
+  const { ctx, page, rec } = await newTake(browser, 'generate', join(OUT, 'tmp-generate'));
+  const boot = rec.now();
+  await page.goto(`${base}/?debug=1#/`, { waitUntil: 'domcontentloaded' });
+  await page.locator('#hero-prompt').waitFor({ timeout: 90_000 });
+  await dwell(page, 2000);
+  rec.cut(boot);
+
+  rec.title('Describe a world');
+  rec.caption('One prompt');
+  await typePrompt(page, '#hero-prompt', GENERATE_PROMPT);
+  if (!LIVE) rec.note(OFFLINE_NOTE);
+  const started = rec.now();
+  const opened = /#\/p\/[a-z0-9]+/;
+  for (let i = 0; i < 8 && !opened.test(page.url()); i++) {
+    await page.keyboard.press('Enter');
+    await page.waitForURL(opened, { timeout: 4_000 }).catch(() => undefined);
+  }
+  await page.waitForURL(opened, { timeout: 30_000 });
+
+  rec.title('Aether builds it');
+  rec.caption(LIVE ? 'The AI plans, places and checks its own work' : 'The planner places the pieces', { note: false });
+  await editorReady(page);
+  await idle(page, 1_800_000);
+  await synced(page);
+  rec.ramp(started, 12000);
+  await dwell(page, 3000);
+  const bake0 = rec.now();
+  await settle(page);
+  rec.ramp(bake0, 2500);
+
+  rec.title('Walk through it');
+  const walk = page.getByRole('button', { name: 'Walk through' });
+  await click(page, walk, 900);
+  await page.waitForFunction(() => window.__aether?.store.getState().mode === 'play', null, { timeout: 60_000 });
+  await cursor(page, false);
+  await dwell(page, 1500);
+  await hold(page, 'w', 3500);
+  await hold(page, 'ArrowLeft', 700);
+  await hold(page, 'w', 3000);
+  await page.screenshot({ path: join(OUT, 'dbg-generate.png') });
+  await finish(ctx, page, rec, 'generate');
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 
 async function main(): Promise<void> {
   mkdirSync(OUT, { recursive: true });
@@ -321,6 +372,7 @@ async function main(): Promise<void> {
       log(`scene ${s} (${W}x${H}, ${LIVE ? 'live AI' : 'offline planner'})`);
       if (s === 'villa') await villa(browser, server.url);
       else if (s === 'photo') await photo(browser, server.url);
+      else if (s === 'generate') await generate(browser, server.url);
       else if (s === 'game') await game(browser, server.url);
       else throw new Error(`unknown scene ${s}`);
     }
