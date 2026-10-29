@@ -3,7 +3,7 @@
  * brief step, then renders an overview and eye-height stills with the software renderer and writes the counts.
  *
  *   npx tsx scripts/brief-probe.ts --id=cinema --prompt="make a cinema hall" --brief=on --out=probe-out/brief
- *   options: --backend=claude-code|codex --effort=low|medium|high --rounds=N --keep=<dir> (default ~/.local/share/aether/gen-worlds; the run is copied to <dir>/<id>/)
+ *   options: --backend=claude-code|codex --effort=low|medium|high --rounds=N --turns=N --tool-calls=N --keep=<dir> (default ~/.local/share/aether/gen-worlds; the run is copied to <dir>/<id>/)
  *
  * Single runs are noisy: read the counts as one sample, not a measurement.
  */
@@ -102,7 +102,7 @@ async function main(): Promise<void> {
   const host = new Host(sandbox);
   const events: AgentEvent[] = [];
   const t0 = performance.now();
-  const agent = new WorldAgent({ provider, catalogs: CATALOGS, resolveGenerator: loadLibraryGenerator, maxRepairs: 2, maxTurns: 40, maxToolCalls: 300, levelTools, textures: { images: null }, review: { vision: true, maxViews: 6, stallRounds: 3, maxRounds: rounds }, ...(withBrief ? { brief: {} } : {}) });
+  const agent = new WorldAgent({ provider, catalogs: CATALOGS, resolveGenerator: loadLibraryGenerator, maxRepairs: 2, maxTurns: Number(arg('turns', '40')), maxToolCalls: Number(arg('tool-calls', '300')), levelTools, textures: { images: null }, review: { vision: true, maxViews: 6, stallRounds: 3, maxRounds: rounds }, ...(withBrief ? { brief: {} } : {}) });
   for await (const ev of agent.run(prompt, host, { intent: 'new' })) {
     events.push(ev);
     if (ev.type === 'status' || ev.type === 'brief' || ev.type === 'review') console.log(`[${Math.round((performance.now() - t0) / 1000)}s] ${ev.type}${'phase' in ev ? `:${ev.phase}` : ''} ${'text' in ev ? ev.text.slice(0, 120) : ''}`);

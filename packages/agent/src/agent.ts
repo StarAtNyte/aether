@@ -203,8 +203,8 @@ export class WorldAgent {
   constructor(opts: AgentOptions) {
     this.opts = opts;
     this.maxRepairs = clampInt(opts.maxRepairs, DEFAULTS.maxRepairs, 0, 10);
-    this.maxTurns = clampInt(opts.maxTurns, DEFAULTS.maxTurns, 1, 50);
-    this.maxToolCalls = clampInt(opts.maxToolCalls, DEFAULTS.maxToolCalls, 1, 500);
+    this.maxTurns = clampInt(opts.maxTurns, DEFAULTS.maxTurns, 1, 200);
+    this.maxToolCalls = clampInt(opts.maxToolCalls, DEFAULTS.maxToolCalls, 1, 2000);
     this.compact = opts.promptProfile === 'compact';
     this.fineEdit = opts.fineEdit !== false;
     this.localEdits = opts.localEdits ?? this.fineEdit;
