@@ -54,13 +54,19 @@ export interface CharacterFeel {
   jumpBuffer: number;
   /** Upward speed kept when jump is released while rising (0..1); 1 disables the shorter hop. */
   jumpCut: number;
+  /** Gravity multiplier while falling (>1 makes the descent snappy instead of floaty). Default 1. */
+  fallGravity?: number;
+  /** Gravity multiplier while rising with jump released (a tap rises briefly then drops). Default 1. */
+  cutGravity?: number;
+  /** Gravity multiplier near the apex (|vy| below 1 m/s) for a short hang. Default 1. */
+  apexGravity?: number;
 }
 
 /**
  * The feel the studio gives the player: quick to reach full speed (about 0.12 s), a firm stop, mostly
  * free control in the air, a forgiving ledge and a buffered jump.
  */
-export const CHARACTER_FEEL: Readonly<CharacterFeel> = Object.freeze({ acceleration: 48, deceleration: 60, airControl: 0.55, coyoteTime: 0.11, jumpBuffer: 0.12, jumpCut: 0.55 });
+export const CHARACTER_FEEL: Readonly<CharacterFeel> = Object.freeze({ acceleration: 48, deceleration: 60, airControl: 0.55, coyoteTime: 0.11, jumpBuffer: 0.12, jumpCut: 0.55, fallGravity: 1.7, cutGravity: 2.2, apexGravity: 0.8 });
 
 /** Per-frame movement input (forward/right in [-1, 1], yaw of the camera in degrees). */
 export interface CharacterInput {
@@ -226,7 +232,13 @@ export class CharacterController {
         this.vz += (dz / d) * rate;
       }
     }
-    this.vy = Math.max(-MAX_FALL_SPEED, this.vy + gy * step);
+    let gScale = 1;
+    if (fl !== null) {
+      if (this.vy < 0) gScale = fl.fallGravity ?? 1;
+      else if (this.vy > 0 && !input.jump) gScale = fl.cutGravity ?? 1;
+      else if (Math.abs(this.vy) < 1) gScale = fl.apexGravity ?? 1;
+    }
+    this.vy = Math.max(-MAX_FALL_SPEED, this.vy + gy * gScale * step);
     const desired = { x: this.vx * step, y: this.vy * step, z: this.vz * step };
     // Keep the collider where we believe the character is (several moves may happen between world steps).
     this.collider.setTranslation({ x: this.pos[0], y: this.pos[1] + this.halfTotal, z: this.pos[2] });

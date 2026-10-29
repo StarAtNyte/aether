@@ -173,3 +173,44 @@ describe('air control', () => {
     expect(a0 - air.cc.position[2]).toBeGreaterThan(groundStop * 1.4);
   });
 });
+
+describe('jump arc', () => {
+  async function apex(jumpHeld: boolean): Promise<{ top: number; air: number }> {
+    const { pw, cc } = await setup(true);
+    run(pw, cc, 40, IDLE);
+    const y0 = cc.position[1];
+    let top = y0;
+    let air = 0;
+    for (let i = 0; i < 240; i++) {
+      cc.move({ ...IDLE, jump: i === 0 || (jumpHeld && !cc.grounded) }, DT, 5, 6);
+      pw.stepFixed();
+      top = Math.max(top, cc.position[1]);
+      if (i > 2 && cc.grounded) break;
+      air++;
+    }
+    return { top: top - y0, air };
+  }
+
+  it('a held jump rises higher than a tap, and falls faster than it rises', async () => {
+    const held = await apex(true);
+    const tap = await apex(false);
+    expect(held.top).toBeGreaterThan(tap.top + 0.2);
+    // Fall gravity > 1: the whole hop lasts less than a symmetric one (2 * 6 / 9.81 = 1.22 s) and the hold rises ~1.5 m.
+    expect(held.air / 60).toBeLessThan(1.2);
+    expect(held.top).toBeLessThan(1.9);
+  });
+
+  it('holding jump does not retrigger on landing', async () => {
+    const { pw, cc } = await setup(true);
+    run(pw, cc, 40, IDLE);
+    let jumps = 0;
+    let was = true;
+    for (let i = 0; i < 300; i++) {
+      cc.move({ ...IDLE, jump: true }, DT, 5, 6);
+      pw.stepFixed();
+      if (was && !cc.grounded) jumps++;
+      was = cc.grounded;
+    }
+    expect(jumps).toBe(1);
+  });
+});
