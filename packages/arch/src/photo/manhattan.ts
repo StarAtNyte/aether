@@ -89,6 +89,13 @@ function score(p: Prepared, ax: { up: V3; depth: V3; across: V3 }, sigma: number
   return { total: per[0] + per[1] + per[2], per };
 }
 
+/**
+ * How strongly the search is pulled toward a phone-like 66 degrees when the lines alone do not fix the field of view. It was 1: on the
+ * self-test photos a 92 degree lens then read 74 and 81 degrees (the distance along the room, and every piece in it, 17 to 30 percent
+ * too far). At 0.4 the same lenses read 80 and 95 while the normal lenses move by a few degrees either way.
+ */
+export const FOV_PRIOR_WEIGHT = 0.4;
+
 export function solveManhattan(segs: readonly Segment[], width: number, height: number, opt: { fovPriorDeg?: number; fovPriorWeight?: number } = {}): ManhattanCamera | null {
   if (segs.length < 8) return null;
   const sigma = Math.sin(rad(1.6));
@@ -101,7 +108,7 @@ export function solveManhattan(segs: readonly Segment[], width: number, height: 
     if (!p) { p = prepare(segs, width, height, fov); prepared.set(key, p); }
     return p;
   };
-  const penalty = (fov: number): number => totalW * 0.04 * (opt.fovPriorWeight ?? 1) * ((fov - prior) / 30) ** 2;
+  const penalty = (fov: number): number => totalW * 0.04 * (opt.fovPriorWeight ?? FOV_PRIOR_WEIGHT) * ((fov - prior) / 30) ** 2;
   const evalAt = (fov: number, yaw: number, pitch: number, roll: number): { total: number; per: [number, number, number] } => {
     const s = score(prep(fov), axesOf(rad(yaw), rad(pitch), rad(roll)), sigma);
     return { total: s.total - penalty(fov), per: s.per };

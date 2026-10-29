@@ -37,6 +37,7 @@ const shrink = (m: Uint8Array, mw: number, mh: number, w: number, h: number): Ui
   return out;
 };
 
+const nn = (a: Array<number | null>): number[] => a.filter((x): x is number => x !== null && !Number.isNaN(x));
 const perPhoto: Array<{ id: string; pos: number | null; rel: number | null; piece: number | null }> = [];
 const all: number[] = [];
 for (const w of readdirSync(root).sort()) {
@@ -55,15 +56,15 @@ for (const w of readdirSync(root).sort()) {
     const vpCache = join(dir, `vp.${variant}.json`);
     let vp: ManhattanCamera | null;
     const gw = geo.grid.width, gh = geo.grid.height;
-    if (existsSync(vpCache)) vp = JSON.parse(readFileSync(vpCache, 'utf8')) as ManhattanCamera | null;
+    if (existsSync(vpCache) && !process.env['VPW']) vp = JSON.parse(readFileSync(vpCache, 'utf8')) as ManhattanCamera | null;
     else {
       const photo = decode(photoFile, 1024);
       const sw = 640, sh = Math.max(16, Math.round((photo.height * 640) / photo.width));
       const seg = new Uint8Array(sw * sh);
       for (const o of rep.objects) if (o.mask && !WALLISH.test(o.label)) { const m = o.mask.rle; const s = shrink(decodeRle(m), m.width, m.height, sw, sh); for (let i = 0; i < s.length; i++) if (s[i]) seg[i] = 1; }
       const lines = detectSegments(photo, { width: 640, maskOut: seg });
-      vp = solveManhattan(lines.segments, lines.width, lines.height);
-      writeFileSync(vpCache, JSON.stringify(vp));
+      vp = solveManhattan(lines.segments, lines.width, lines.height, process.env['VPW'] ? { fovPriorWeight: Number(process.env['VPW']) } : {});
+      if (!process.env['VPW']) writeFileSync(vpCache, JSON.stringify(vp));
     }
     if (!vp) continue;
     const cachedFov = rep.vanishing?.fovDeg;
@@ -107,6 +108,22 @@ for (const w of readdirSync(root).sort()) {
       console.log(`${w}/${p} vp fov ${vp.fovDeg} (true ${truth.camera.hfov}) yaw ${vp.yawDeg} (true ${-truth.room.yawRel}) pitch ${vp.pitchDeg} (true ${-truth.camera.pitch}) | est eye x ${b.box.camera.x} z ${b.box.camera.z} walls L${b.box.lines.left?.s.toFixed(2)} R${b.box.lines.right?.s.toFixed(2)} B${b.box.lines.back?.s.toFixed(2)} | true eye u ${eye[0].toFixed(2)} v ${eye[1].toFixed(2)} room W ${truth.room.width.toFixed(2)} D ${truth.room.depth.toFixed(2)}`);
       for (const r of pe.rows) if (r.floor) { const o = rep.objects.find((q) => false); void o; }
     }
+    if (args.includes('--ray')) {
+      const [bx0, bz0, bx1, bz1] = truth.room.bbox;
+      const [cu, cv] = planToRoom(truth.room.back, truth.camera.plan.at[0] - bx0, truth.camera.plan.at[1] - bz0, bx1 - bx0, bz1 - bz0);
+      for (const r of det.rows) {
+        if (!r.perceivedId || r.iou < 0.3) continue;
+        const ti = truth.items.find((x) => x.id === r.truthId)!;
+        const po = rep.objects.find((o) => o.id === r.perceivedId)!;
+        if (!po.placement || po.placement.centre.frame !== 'room' || !ti.visible || !(ti.mount === 'floor' || ti.y0 < 0.1)) continue;
+        const [ex, ez] = [po.placement.centre.x, po.placement.centre.z];
+        const dir = [ex - cu, ez - cv]; const L = Math.hypot(dir[0]!, dir[1]!); const d = [dir[0]! / L, dir[1]! / L];
+        const al = (tx: number, tz: number) => (ex - tx) * d[0]! + (ez - tz) * d[1]!; // positive: estimate beyond the truth (farther from camera)
+        const pe = (tx: number, tz: number) => (ex - tx) * -d[1]! + (ez - tz) * d[0]!;
+        const ext = Math.abs(d[0]!) * ti.size.w + Math.abs(d[1]!) * ti.size.d; // axis-aligned piece extent along the ray
+        console.log(`RAY ${w}/${p} ${ti.kind} range ${L.toFixed(2)} alongVis ${al(ti.visible.centre.u, ti.visible.centre.v).toFixed(2)} alongPiece ${al(ti.centre.u, ti.centre.v).toFixed(2)} perp ${pe(ti.centre.u, ti.centre.v).toFixed(2)} extAlongRay ${ext.toFixed(2)} visD ${ti.visible.size.d.toFixed(2)} estD ${po.placement.size.d}`);
+      }
+    }
     if (args.includes('--xz')) {
       const [bx0, bz0, bx1, bz1] = truth.room.bbox;
       const [cu, cv] = planToRoom(truth.room.back, truth.camera.plan.at[0] - bx0, truth.camera.plan.at[1] - bz0, bx1 - bx0, bz1 - bz0);
@@ -125,5 +142,6 @@ for (const w of readdirSync(root).sort()) {
   }
 }
 for (const r of perPhoto) console.log(`${r.id.padEnd(34)} floorPos ${String(r.pos).padEnd(6)} relEye ${r.rel} piece ${r.piece}`);
-const nn = (a: Array<number | null>): number[] => a.filter((x): x is number => x !== null && !Number.isNaN(x));
+
+console.log(`mean over pieces ${(all.reduce((a, b) => a + b, 0) / all.length).toFixed(3)} mean of photo medians ${(nn(perPhoto.map((r) => r.pos)).reduce((a, b) => a + b, 0) / nn(perPhoto.map((r) => r.pos)).length).toFixed(3)}`);
 console.log(`median of photo medians: floorPos ${median(nn(perPhoto.map((r) => r.pos)))} relEye ${median(nn(perPhoto.map((r) => r.rel)))} piece ${median(nn(perPhoto.map((r) => r.piece)))}  | median over pieces ${median(all)} (n=${all.length})`);

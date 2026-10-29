@@ -53,6 +53,14 @@ describe('vanishing-point camera', () => {
     }
   });
 
+  it('a wide lens seen almost square on reads closer to its true angle with the default prior than with a full-weight one', () => {
+    const segs = segmentsOf(95, 4, 3);
+    const strong = solveManhattan(segs, 640, 480, { fovPriorWeight: 1 }) as ManhattanCamera;
+    const dflt = solveManhattan(segs, 640, 480) as ManhattanCamera;
+    expect(Math.abs(dflt.fovDeg - 95)).toBeLessThanOrEqual(Math.abs(strong.fovDeg - 95));
+    expect(dflt.fovDeg).toBeGreaterThan(80);
+  });
+
   it('refuses too few lines', () => {
     expect(solveManhattan(segmentsOf(70, 0, 0).slice(0, 4), 640, 480)).toBeNull();
   });
