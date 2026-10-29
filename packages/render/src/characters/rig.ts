@@ -13,7 +13,7 @@ import { LocomotionMachine, type ActionName, type ActorInput, type ClipInfo, typ
 import { applyLook, LookController, solveTwoBone, type LookState } from './ik';
 import { disposeModelInstance } from '../geometry/model-loader';
 import { buildProp, type Prop } from './props';
-import { airPoseOf, landKeep, PELVIS_ABOVE_SEAT, seatBlendOf } from './motion';
+import { airPoseOf, ArmSpring, jumpArmTarget, jumpClipPhase, landKeep, PELVIS_ABOVE_SEAT, seatBlendOf } from './motion';
 
 /** Foot of a footstep event. */
 export type Foot = 'L' | 'R';
@@ -125,6 +125,8 @@ export class CharacterRig {
   private landSide = 1;
   private footPhase = -1;
   private airBlend = 0;
+  private readonly armSpring = new ArmSpring();
+  private clipPhase = 0;
   private strokeAmp = 0;
   private strokePhase = 0;
   private readonly meshes: Mesh[] = [];
@@ -380,6 +382,12 @@ export class CharacterRig {
     if (this.current) {
       this.timeScale += (plan.timeScale - this.timeScale) * Math.min(1, step * 10);
       this.current.timeScale = plan.loop && plan.state === 'loco' ? this.timeScale : plan.timeScale;
+      // The jump clip plays once through the arc (take-off, apex, touch-down) at the pace of the physics, not wall time.
+      if (this.currentName === 'jump_air' && !this.input.grounded && (plan.state === 'jump' || plan.state === 'air')) {
+        this.clipPhase = jumpClipPhase(this.input.vy, this.peakUp, this.clipPhase);
+        this.current.timeScale = 0;
+        this.current.time = Math.min(0.999, this.clipPhase) * this.current.getClip().duration;
+      }
     }
     this.restoreClean();
     this.mixer.update(step);
@@ -433,6 +441,7 @@ export class CharacterRig {
     if (!inp.grounded) {
       if (this.wasGrounded) {
         this.airT = 0;
+        this.clipPhase = 0;
         this.peakUp = 0;
         this.minVy = 0;
         this.kick = 0;
@@ -607,25 +616,23 @@ export class CharacterRig {
    * bring both upper arms in towards the body by up to 44 degrees, eased in and out, as a person jumping does.
    */
   private relaxAirArms(state: string, dt: number): void {
-    const want = state === 'jump' || state === 'air' || state === 'fall' ? 1 : 0;
-    this.airBlend += (want - this.airBlend) * Math.min(1, dt * 10);
+    const air = state === 'jump' || state === 'air' || state === 'fall';
     const lo = this.bones.lUpper;
     const ro = this.bones.rUpper;
-    if (this.airBlend < 0.02 || !lo || !ro) return;
-    const swing = this.airArms * this.airBlend;
-    const k = MathUtils.degToRad(state === 'fall' ? 44 : 32) * this.airBlend;
+    // One spring follows the lively jump pose (and its way back down on landing): no pose is ever switched, only chased.
+    const o = this.armSpring.step(jumpArmTarget(air, this.input.vy, this.peakUp, this.airT), dt, air ? 13 : 9);
+    this.airBlend = Math.max(Math.abs(o.tuck), Math.abs(o.swing)) > 1e-3 ? 1 : 0;
+    if (this.airBlend === 0 || !lo || !ro) return;
     this.root.updateWorldMatrix(true, true);
     this.model.getWorldQuaternion(_qm);
     for (const [bone, sign] of [[lo, -1], [ro, 1]] as const) {
       const parent = bone.parent;
       if (!parent) continue;
       parent.getWorldQuaternion(_qp);
-      bone.quaternion.copy(armRelaxed(bone.quaternion, _qp, _qm, sign * k));
-      if (Math.abs(swing) > 1e-3) {
-        bone.updateWorldMatrix(false, false);
-        parent.getWorldQuaternion(_qp);
-        bone.quaternion.copy(boneTurned(bone.quaternion, _qp, _qm, _xAxis, -swing));
-      }
+      bone.quaternion.copy(armRelaxed(bone.quaternion, _qp, _qm, sign * o.tuck));
+      bone.updateWorldMatrix(false, false);
+      parent.getWorldQuaternion(_qp);
+      bone.quaternion.copy(boneTurned(bone.quaternion, _qp, _qm, _xAxis, -o.swing));
     }
   }
 

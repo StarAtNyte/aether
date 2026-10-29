@@ -76,3 +76,65 @@ export const JOINT_RANGE = {
   neckYaw: 80 * DEG,
   neckPitch: 55 * DEG,
 } as const;
+
+/** Arm pose of a lively jump: `swing` shoulder flexion (radians, positive forward and up), `tuck` how far the upper arms are brought in from the authored out-stretched pose. */
+export interface ArmTarget {
+  swing: number;
+  tuck: number;
+}
+
+/**
+ * Where the arms want to be in a jump: wound back for the push-off, thrown forward and up on take-off, held high while
+ * rising, then opened out for balance while falling, and down at the sides once on the ground. Continuous in `t`, `vy`
+ * and `peak` (no branch jumps), so a spring following it never snaps.
+ */
+export function jumpArmTarget(airborne: boolean, vy: number, peak: number, t: number): ArmTarget {
+  if (!airborne) return { swing: 0, tuck: 0 };
+  const up = Math.max(3, peak);
+  const wind = 1 - smoothstep(0, 0.1, t);
+  const throwUp = smoothstep(0.02, 0.3, t);
+  // 0 while rising at full speed, 1 at the apex, and on to 2 as the fall speeds up.
+  const arc = clamp(1 - vy / up, 0, 3);
+  const fall = smoothstep(0.7, 1.4, arc);
+  const swing = (-18 * wind + 72 * throwUp - 52 * fall) * DEG;
+  const tuck = (30 + 4 * smoothstep(0, 1, arc) - 14 * fall) * DEG;
+  return { swing, tuck };
+}
+
+/** Critically damped follower: moves towards a target with no overshoot and no jump, whatever the target does. */
+export class ArmSpring {
+  swing = 0;
+  tuck = 0;
+  private vs = 0;
+  private vt = 0;
+
+  /** `omega` stiffness (rad/s): about 12 settles in 0.3 s. */
+  step(target: ArmTarget, dt: number, omega = 12): ArmTarget {
+    this.swing = follow(this.swing, target.swing, omega, dt, (v) => (this.vs = v), this.vs);
+    this.tuck = follow(this.tuck, target.tuck, omega, dt, (v) => (this.vt = v), this.vt);
+    return { swing: this.swing, tuck: this.tuck };
+  }
+
+  get speed(): number {
+    return Math.hypot(this.vs, this.vt);
+  }
+}
+
+function follow(x: number, target: number, omega: number, dt: number, setV: (v: number) => void, v: number): number {
+  const d = Math.min(dt, 0.05);
+  const e = Math.exp(-omega * d);
+  const dx = x - target;
+  const tmp = (v + omega * dx) * d;
+  setV((v - omega * tmp) * e);
+  return target + (dx + tmp) * e;
+}
+
+/**
+ * Position in the jump clip (0..1) from the physics: 0 at take-off, 0.5 at the apex, 1 on reaching the ground. Never
+ * runs backwards (`prev`), so the clip plays once through the arc whatever the jump height or duration.
+ */
+export function jumpClipPhase(vy: number, peak: number, prev: number): number {
+  const up = Math.max(3, peak);
+  const p = clamp(0.5 * (1 - vy / up), 0, 1);
+  return Math.max(prev, p);
+}

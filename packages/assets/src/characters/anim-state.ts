@@ -282,7 +282,8 @@ export class LocomotionMachine {
       if (this.state !== 'jump' && (input.vy < FALL_VY || this.airTime > FALL_AFTER) && input.vy < -0.5) this.state = this.has('fall') ? 'fall' : 'air';
       if (this.state === 'loco' || this.state === 'crouch' || this.state === 'talk' || this.state === 'sit' || this.state === 'sit_down' || this.state === 'stand_up') this.state = input.vy > 0 ? 'air' : this.has('fall') ? 'fall' : 'air';
       const c = this.state === 'fall' ? 'fall' : 'jump_air';
-      return this.finish(this.has(c) ? c : 'idle', 1, this.state !== 'jump', 0.12, prevState);
+      // Played once and held (a looping fall pops at the wrap); eased 0.18 s in so the run's arm swing is not cut.
+      return this.finish(this.has(c) ? c : 'idle', 1, false, 0.18, prevState);
     }
     if (!this.wasGrounded) {
       this.wasGrounded = true;
@@ -293,7 +294,7 @@ export class LocomotionMachine {
       this.airTime = 0;
     }
     if (this.state === 'land') {
-      if (this.stateTime < this.dur('land') * 0.9 && !(moving && input.speed > 2.2)) return this.finish('land', 1, false, 0.08, prevState);
+      if (this.stateTime < this.dur('land') * 0.9 && !(moving && input.speed > 2.2)) return this.finish('land', 1, false, 0.14, prevState);
       this.state = 'loco';
     }
     this.airTime = 0;
