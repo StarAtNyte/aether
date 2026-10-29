@@ -62,6 +62,8 @@ function aliasesOf(e: CatalogEntry): string[] {
 
 interface Candidate {
   entry: CatalogEntry;
+  /** Wall models: pivot height above the floor (ceiling models 0); not part of the catalog schema, so it is read from the raw entry. */
+  mountY?: number;
   /** Directory the entry's library files live in (`assets/lib`, or an import record). */
   dir: string;
   licence: HubLicence;
@@ -74,6 +76,11 @@ interface Candidate {
 }
 
 const DROP = { licence: 0, kind: 0, bytes: 0, noThumb: 0, noFile: 0, characters: 0, empty: 0, dup: 0 };
+
+const mountOf = (raw: unknown): { mountY?: number } => {
+  const y = (raw as { mountY?: unknown }).mountY;
+  return typeof y === 'number' && Number.isFinite(y) ? { mountY: y } : {};
+};
 
 function candidates(max: number): Candidate[] {
   const cat = readJson(join(ROOT, 'assets', 'catalog.json')) as Catalog;
@@ -100,7 +107,7 @@ function candidates(max: number): Candidate[] {
       source = { name: `NVIDIA SimReady Central, Hugging Face dataset ${m[1]}`, url: p?.page ?? pack.url, dataset: m[1] as string, revision: m[2] as string, path: `${m[3]}/${p?.usd ?? ''}`.replace(/\/$/, '') };
       converted = 'Converted by Aether from OpenUSD to GLB (world transforms baked, triangulated, welded, Z-up to Y-up, metres), reduced in triangles and textures and compressed (meshopt). Modified from the source package; not NVIDIA-validated.';
     }
-    out.push({ entry: e, dir: LIB, licence: pack.licence as HubLicence, author, source, converted });
+    out.push({ entry: e, ...mountOf(raw), dir: LIB, licence: pack.licence as HubLicence, author, source, converted });
   }
   // Bulk SimReady imports (`assets:simready -- bulk`): one folder per accepted model under the bulk output.
   const known = new Set(out.map((c) => c.entry.id));
@@ -114,7 +121,7 @@ function candidates(max: number): Candidate[] {
       if (known.has(e.id)) { DROP.dup++; continue; }
       if (e.bytes > max) { DROP.bytes++; continue; }
       known.add(e.id);
-      out.push({ entry: e, dir: join(BULK_OUT, d, 'lib'), licence: r.licence, author: r.author, source: r.source, converted: r.converted, provenance: r.provenance });
+      out.push({ entry: e, ...mountOf(existsSync(join(BULK_OUT, d, 'entry.json')) ? readJson(join(BULK_OUT, d, 'entry.json')) : r.entry), dir: join(BULK_OUT, d, 'lib'), licence: r.licence, author: r.author, source: r.source, converted: r.converted, provenance: r.provenance });
     }
   }
   // Imports of the local server that the library does not hold yet (they need a thumbnail to be listed).
@@ -173,6 +180,8 @@ function stage(c: Candidate, dest: string): HubRow {
     converted: c.converted,
     modified: true,
     placement: e.placement,
+    // Wall models: the height of the pivot (their back-centre mount point) above the floor; ceiling models: 0 (pivot at the top).
+    ...(c.mountY !== undefined ? { mountY: c.mountY } : {}),
     facing: e.facing,
     collider: e.collider,
     ...(e.anims && e.anims.clips.length > 0 ? { animated: true } : {}),
@@ -376,7 +385,8 @@ async function build(): Promise<void> {
   const cands = candidates(max);
   const rows = cands.map((c) => stage(c, dest)).sort((a, b) => a.id.localeCompare(b.id));
   const index = HubIndex.parse({ version: 1, dataset: cfg.dataset, generated: new Date().toISOString().slice(0, 10), count: rows.length, rows });
-  writeFileSync(join(dest, 'index.json'), `${JSON.stringify(index, null, 1)}\n`);
+  // The schema does not know `mountY` yet (it would strip it): the file keeps the rows as staged.
+  writeFileSync(join(dest, 'index.json'), `${JSON.stringify({ ...index, rows }, null, 1)}\n`);
   const min = toMinIndex(index);
   HubMinIndex.parse(min);
   writeFileSync(join(dest, 'index.min.json'), JSON.stringify(min));

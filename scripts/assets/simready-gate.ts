@@ -77,6 +77,25 @@ export async function gateModel(file: string, o: { budget: number; size: [number
   let missingUv = 0;
   let prims = 0;
   const nodes = doc.getRoot().listNodes().filter((n) => n.getMesh());
+  // The signed volume of an open mesh depends on the origin (wall models have their pivot at the mount point): sum about the bounding-box centre.
+  const lo = [Infinity, Infinity, Infinity];
+  const hi = [-Infinity, -Infinity, -Infinity];
+  for (const n of nodes) {
+    const m = n.getWorldMatrix();
+    for (const p of n.getMesh()!.listPrimitives()) {
+      const pos = p.getAttribute('POSITION');
+      if (!pos) continue;
+      for (let i = 0; i < pos.getCount(); i++) {
+        const q = pos.getElement(i, [0, 0, 0]);
+        for (let k = 0; k < 3; k++) {
+          const v = m[k]! * q[0]! + m[4 + k]! * q[1]! + m[8 + k]! * q[2]! + m[12 + k]!;
+          if (v < lo[k]!) lo[k] = v;
+          if (v > hi[k]!) hi[k] = v;
+        }
+      }
+    }
+  }
+  const ctr = lo.map((v, k) => (Number.isFinite(v) ? (v + hi[k]!) / 2 : 0));
   for (const n of nodes) {
     const m = n.getWorldMatrix();
     for (const p of n.getMesh()!.listPrimitives()) {
@@ -92,9 +111,9 @@ export async function gateModel(file: string, o: { budget: number; size: [number
       const c = [0, 0, 0];
       const get = (out: number[], i: number): void => {
         const q = pos.getElement(i, [0, 0, 0]);
-        out[0] = m[0]! * q[0]! + m[4]! * q[1]! + m[8]! * q[2]! + m[12]!;
-        out[1] = m[1]! * q[0]! + m[5]! * q[1]! + m[9]! * q[2]! + m[13]!;
-        out[2] = m[2]! * q[0]! + m[6]! * q[1]! + m[10]! * q[2]! + m[14]!;
+        out[0] = m[0]! * q[0]! + m[4]! * q[1]! + m[8]! * q[2]! + m[12]! - ctr[0]!;
+        out[1] = m[1]! * q[0]! + m[5]! * q[1]! + m[9]! * q[2]! + m[13]! - ctr[1]!;
+        out[2] = m[2]! * q[0]! + m[6]! * q[1]! + m[10]! * q[2]! + m[14]! - ctr[2]!;
       };
       for (let t = 0; t + 2 < count; t += 3) {
         get(a, idx ? idx.getScalar(t) : t);

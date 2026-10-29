@@ -575,7 +575,9 @@ export function needsFrontFix(r: Pick<Rec, 'id' | 'type' | 'status' | 'front' | 
   if (v) {
     const entryFile = join(OUT, r.id, 'entry.json');
     const placed = existsSync(entryFile) ? (JSON.parse(readFileSync(entryFile, 'utf8')) as { placement?: string }).placement : undefined;
-    return (v.rot % 360) !== ((r.front?.rot ?? 0) % 360) || (placed !== undefined && placed !== placeOf(v.mounting));
+    // A wall or ceiling model also needs its pivot at the mount point (the entry records `mountY`).
+    const pivoted = (v.mounting !== 'wall' && v.mounting !== 'ceiling') || !existsSync(entryFile) || (JSON.parse(readFileSync(entryFile, 'utf8')) as { mountY?: number }).mountY !== undefined;
+    return (v.rot % 360) !== ((r.front?.rot ?? 0) % 360) || (placed !== undefined && placed !== placeOf(v.mounting)) || !pivoted;
   }
   if ((r.fixRev ?? 0) >= FRONT_FIX_REV) return false;
   if (FRONT_OVERRIDES[r.id] !== undefined) return true;

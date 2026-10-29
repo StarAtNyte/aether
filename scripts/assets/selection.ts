@@ -29,6 +29,8 @@ export interface ItemOpts {
   rot?: number;
   /** Drop the top-level nodes of the source scene whose name matches this regular expression (files that lay variants side by side). */
   omit?: string;
+  /** Pivot at the back-centre mount point of a wall or ceiling model (see `mountSpec`). */
+  mount?: { kind: 'wall' | 'ceiling'; anchor: number; y: number };
 }
 
 /** `[source file name without extension, id (default: kebab of the file), options]`. */

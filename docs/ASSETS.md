@@ -545,6 +545,13 @@ npm run assets:simready -- bulk --reprocess=front     # convert again only the m
   from what they were built with, regenerates thumbnails, hashes and embeddings, and publishes the changed models to the dataset in batches
   and re-pins `assets/hub.json`. Model files of hub assets never go to git; the 28 library props live in `assets/lib/` and are rebuilt
   with `build.ts --simready` when the check turns one.
+- **Mount pivot.** A model the check marks `wall` has its pivot at its back-centre mount point (the front is +Z, so the back is the minimum Z)
+  instead of the floor-centre, and the entry (and the hub record) carries `mountY`, the height above the floor that point is mounted at, from the
+  table `mountSpec` in `front-overrides.ts` by id and type: basin rim 0.85 m (pivot at 85 % of the model's height), urinal 0.55, wall toilet 0.1,
+  signs, frames and mirrors 1.5 (centre), lamps 1.8, screens and hand dryers 1.2, sockets 0.3, shelves, cabinets, racks and holders 1.4,
+  others 1.4; a piece over 1.6 m tall keeps its base at the floor (`mountY` 0). A `ceiling` model's pivot is its top-centre and `mountY` is 0.
+  A consumer that snaps a wall model to a wall places the pivot at `mountY`. `bulk --reprocess=front` converts again every wall or ceiling
+  model whose entry has no `mountY`. The dataset schema (`hub.ts`) does not list the field yet; the index keeps it in the rows as staged.
 - **One publisher at a time.** Publishing and reprocessing take `<bulk dir>/publish.lock` (the owner's pid; a lock whose process is gone is
   taken over), so two runs never write the shared staging folder or the dataset together.
 

@@ -13,7 +13,7 @@
  */
 import { mergeIntoCatalog } from './creatures';
 import { BACKED_TYPES, FRONT_OVERRIDES, backedFront } from './front';
-import { loadFrontOverrides, placeOf } from './front-overrides';
+import { loadFrontOverrides, mountSpec, placeOf } from './front-overrides';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join, relative, resolve } from 'node:path';
@@ -90,7 +90,7 @@ let SIMPLIFY_ERROR = 0.05;
 let SIMPLIFY_AGGRESSIVE = false;
 
 /** Read, normalise and (optionally) simplify one source model. */
-async function prepare(nio: NodeIO, path: string, pack: PackSel, opts: NonNullable<ItemSel[2]>, lodRatio: number | null, keepTextures = false): Promise<{ doc: Document; tris: number; size: [number, number, number]; animated: boolean }> {
+async function prepare(nio: NodeIO, path: string, pack: PackSel, opts: NonNullable<ItemSel[2]>, lodRatio: number | null, keepTextures = false): Promise<{ doc: Document; tris: number; size: [number, number, number]; animated: boolean; mountY?: number }> {
   const doc = await nio.read(path);
   for (const tex of doc.getRoot().listTextures()) {
     const name = basename(tex.getURI());
@@ -132,7 +132,21 @@ async function prepare(nio: NodeIO, path: string, pack: PackSel, opts: NonNullab
   let scale = pack.scale;
   if (opts.h !== undefined && sy > 1e-6) scale = opts.h / sy;
   else if (opts.w !== undefined && Math.max(sx, sz) > 1e-6) scale = opts.w / Math.max(sx, sz);
-  const offset: [number, number, number] = [-((b.min[0] + b.max[0]) / 2) * scale, -b.min[1] * scale, -((b.min[2] + b.max[2]) / 2) * scale];
+  let offset: [number, number, number] = [-((b.min[0] + b.max[0]) / 2) * scale, -b.min[1] * scale, -((b.min[2] + b.max[2]) / 2) * scale];
+  // Wall and ceiling models: the pivot is the back-centre mount point (the front is +Z, so the back is the minimum Z), not the floor.
+  let mountY: number | undefined;
+  if (opts.mount) {
+    const m = opts.mount;
+    if (m.kind === 'ceiling') {
+      offset = [offset[0], -b.max[1] * scale, offset[2]];
+      mountY = 0;
+    } else {
+      // A tall piece (a full-height unit) keeps its base at the mount height.
+      const tall = sy * scale > 1.6;
+      offset = [offset[0], -(b.min[1] + (tall ? 0 : m.anchor) * sy) * scale, -b.min[2] * scale];
+      mountY = tall ? 0 : m.y;
+    }
+  }
   const animated = isAnimated(doc);
   const flip = facesBackward(opts.cat ?? pack.category);
   let tris = animated ? normaliseAnimated(doc, scale, offset, flip) : normaliseAndMerge(doc, scale, offset, flip);
@@ -145,7 +159,13 @@ async function prepare(nio: NodeIO, path: string, pack: PackSel, opts: NonNullab
     }
   }
   const r = (v: number): number => Math.round(v * scale * 1000) / 1000;
-  return { doc, tris, size: [r(sx), r(sy), r(sz)], animated };
+  return { doc, tris, size: [r(sx), r(sy), r(sz)], animated, ...(mountY !== undefined ? { mountY } : {}) };
+}
+
+/** The pivot rule of a wall or ceiling model as a row option. */
+function mountOpt(row: { readonly [i: number]: unknown }, mounting: import('./front-overrides').Mounting): { mount?: { kind: 'wall' | 'ceiling'; anchor: number; y: number } } {
+  const m = mountSpec(String(row[1]), String(row[2]), mounting);
+  return m ? { mount: m } : {};
 }
 
 /** Short, descriptive ids for the HDR skies (Poly Haven names are long). */
@@ -332,6 +352,7 @@ async function buildModel(nio: NodeIO, pack: PackSel, item: ItemSel, srcPath: st
     lods,
     collider: colliderFor(kind, positions, hullPoints),
     placement: o.place ?? 'floor',
+    ...(main.mountY !== undefined ? ({ mountY: main.mountY } as object) : {}),
     facing: facesBackward(category) ? '-z' : '+z',
     source: relative(SOURCE_DIR, srcPath),
   };
@@ -590,11 +611,11 @@ async function buildInteriorModel(nio: NodeIO, row: InteriorRow, rs: RowSource):
   const paint = RECOLOUR_TYPES.has(type) && !!lead;
   const pack: PackSel = { pack: rs.pack, scale: 1, style: 'realistic', category, collider: o.collider ?? 'box', items: [] };
   TEXTURES = tierTextures(`main${side}`);
-  const built = await buildModel(nio, pack, [phId, id, { name, cat: category, tags: `${type} ${o.tags ?? ''} ${styles}`, ...(o.place ? { place: o.place } : {}), ...(o.collider ? { collider: o.collider } : {}), ...(o.h ? { h: o.h } : {}), ...(o.rot ? { rot: o.rot } : {}), ...(o.omit ? { omit: o.omit } : {}), ...(paint ? { paint: true } : {}) }], rs.src, rs.archive, rs.authors, { budget: budgetTris, lod: 0.4 });
+  const built = await buildModel(nio, pack, [phId, id, { name, cat: category, tags: `${type} ${o.tags ?? ''} ${styles}`, ...(o.place ? { place: o.place } : {}), ...(o.collider ? { collider: o.collider } : {}), ...(o.h ? { h: o.h } : {}), ...(o.rot ? { rot: o.rot } : {}), ...(o.omit ? { omit: o.omit } : {}), ...(o.mount ? { mount: o.mount } : {}), ...(paint ? { paint: true } : {}) }], rs.src, rs.archive, rs.authors, { budget: budgetTris, lod: 0.4 });
   TEXTURES = tierTextures('lite');
   // The light copy: a quarter of the main budget at most, 256 px textures.
-  const probe = await prepare(nio, rs.src, pack, { ...(o.h ? { h: o.h } : {}), ...(o.rot ? { rot: o.rot } : {}), ...(o.omit ? { omit: o.omit } : {}), ...(paint ? { paint: true } : {}) }, null);
-  const lite = probe.tris > budgetTris / 4 ? await prepare(nio, rs.src, pack, { ...(o.h ? { h: o.h } : {}), ...(o.rot ? { rot: o.rot } : {}), ...(o.omit ? { omit: o.omit } : {}), ...(paint ? { paint: true } : {}) }, budgetTris / 4 / probe.tris, true) : probe;
+  const probe = await prepare(nio, rs.src, pack, { ...(o.h ? { h: o.h } : {}), ...(o.rot ? { rot: o.rot } : {}), ...(o.omit ? { omit: o.omit } : {}), ...(o.mount ? { mount: o.mount } : {}), ...(paint ? { paint: true } : {}) }, null);
+  const lite = probe.tris > budgetTris / 4 ? await prepare(nio, rs.src, pack, { ...(o.h ? { h: o.h } : {}), ...(o.rot ? { rot: o.rot } : {}), ...(o.omit ? { omit: o.omit } : {}), ...(o.mount ? { mount: o.mount } : {}), ...(paint ? { paint: true } : {}) }, budgetTris / 4 / probe.tris, true) : probe;
   const liteFile = writeLib(rs.dir, id, '.lite', 'glb', await encode(nio, lite.doc));
   // buildModel writes under `m/`, which a full rebuild clears: move the interior files to their own folder.
   const moved = built.files.map((x) => relocate(x, rs.dir));
@@ -707,7 +728,8 @@ async function buildSimready(): Promise<void> {
   for (const item of SIMREADY) {
     const seen = loadFrontOverrides()[item.row[1]];
     // The vision check's front and mounting (simready-fronts.json) replace the row's own.
-    const row: typeof item.row = seen ? [item.row[0], item.row[1], item.row[2], item.row[3], item.row[4], item.row[5], { ...(item.row[6] ?? {}), rot: seen.rot % 360, place: placeOf(seen.mounting) }] : item.row;
+    const row0 = item.row;
+    const row: typeof item.row = seen ? [item.row[0], item.row[1], item.row[2], item.row[3], item.row[4], item.row[5], { ...(item.row[6] ?? {}), rot: seen.rot % 360, place: placeOf(seen.mounting), ...mountOpt(row0, seen.mounting) }] : item.row;
     const id = row[1];
     if (only && !only.includes(id)) continue;
     const pkg = sources.simready?.packages.find((p) => p.id === item.source);
@@ -918,7 +940,7 @@ async function buildImportOne(jobPath: string): Promise<void> {
     else if (job.bulk.symmetric) front = { rot: null, sure: true, why: 'symmetric' };
     else if (asp >= 1.25 && dz > dx) front = { rot: 270, sure: true, why: `long side along Z (${asp.toFixed(2)})` };
     else front = { rot: null, sure: false, why: asp >= 1.25 ? 'long side along X: front on +Z or -Z' : 'near square' };
-    row = [job.row[0], job.row[1], job.row[2], job.row[3], job.row[4], job.row[5], { ...o, tris: budgetFor(longest), ...(front.rot ? { rot: front.rot } : {}), ...(seen ? { place: placeOf(seen.mounting) } : {}) }];
+    row = [job.row[0], job.row[1], job.row[2], job.row[3], job.row[4], job.row[5], { ...o, tris: budgetFor(longest), ...(front.rot ? { rot: front.rot } : {}), ...(seen ? { place: placeOf(seen.mounting), ...mountOpt(job.row, seen.mounting) } : {}) }];
   } else row = [job.row[0], job.row[1], job.row[2], job.row[3], job.row[4], job.row[5], { ...o, tris: Math.min(o.tris ?? 20000, longest < 0.6 ? 6000 : longest < 1.5 ? 12000 : 20000) }];
   const built = await buildInteriorModel(nio, row, { src, texDir: srcDir, authors: [job.author], archive: job.archive, pack: job.pack, licence: job.licence, cacheKey: `import-${id}`, dir: 's' });
   writeFileSync(join(job.work, 'result.json'), `${JSON.stringify({ entry: built.entry, files: built.asset.files, ...(front ? { front } : {}), source: { size: [dx, sb.max[1] - sb.min[1], dz], trianglesIn: (JSON.parse(readFileSync(join(conv, 'report.json'), 'utf8')) as { triangles_in?: number }).triangles_in ?? null } })}\n`);

@@ -23,6 +23,8 @@ export interface InteriorOpts {
   tags?: string;
   /** Target height in metres for models whose source scale is off. */
   h?: number;
+  /** Pivot at the back-centre mount point of a wall or ceiling model (see `mountSpec`). */
+  mount?: { kind: 'wall' | 'ceiling'; anchor: number; y: number };
 }
 export type InteriorRow = readonly [string, string, string, AssetCategory, string, string, InteriorOpts?];
 
