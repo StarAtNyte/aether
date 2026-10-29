@@ -45,11 +45,28 @@ export function positionLine(label: string, s: PositionStat | null): string {
  * the self-test photos: 0.2 to 0.35 m at 3 to 5 m), the unseen half of a piece adds to it, and a position taken in the camera frame
  * (side walls not both found) or from a wide lens is less sure.
  */
-export function positionSigma(rangeM: number, opt: { roomFrame?: boolean; weakFov?: boolean } = {}): number {
+export function positionSigma(rangeM: number, opt: { roomFrame?: boolean; weakFov?: boolean; fovRange?: readonly [number, number] } = {}): number {
   const base = 0.08 + 0.07 * Math.max(0, rangeM);
   const frame = opt.roomFrame === false ? 1.5 : 1;
-  const fov = opt.weakFov ? 1.6 : 1;
-  return r2(base * frame * fov);
+  // A weak field of view moves a piece along the viewing direction only: it is added in quadrature (a lens that cannot be read from the
+  // lines is the largest single error on the self-test photos), not multiplied into the sideways part.
+  const lens = opt.weakFov ? fovDepthSigma(rangeM, opt.fovRange ?? [60, 90]) : 0;
+  return r2(Math.hypot(base * frame, lens));
+}
+
+/**
+ * Depth along the viewing direction depends on the assumed lens: the network's depth is divided by tan(fov/2) / tan(30 degrees), so
+ * the distance of everything scales with 1 / tan(fov/2) while the sideways positions do not. Metres of one standard deviation
+ * for a piece at `rangeM`, from the plausible field-of-view range (half of the relative spread of 1 / tan(fov/2), times 0.6).
+ */
+export function fovDepthSigma(rangeM: number, fovRange: readonly [number, number]): number {
+  const lo = Math.min(fovRange[0], fovRange[1]);
+  const hi = Math.max(fovRange[0], fovRange[1]);
+  const t = (f: number): number => 1 / Math.tan((Math.min(150, Math.max(10, f)) * Math.PI) / 360);
+  const a = t(hi);
+  const b = t(lo);
+  const half = (b - a) / (a + b);
+  return Math.max(0, rangeM) * half * 0.6;
 }
 
 /** "about 0.4 m (one sigma)" style text for the plan table. */

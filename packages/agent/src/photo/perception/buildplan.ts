@@ -279,7 +279,7 @@ export function makeBuildPlan(inp: PlanInput): BuildPlan {
     const alt = [po.label, ...(po.labelAlternatives ?? []).filter((a) => a.p >= 0.12).map((a) => a.label)];
     if (!pl || pl.samples < 12) { row.action = it.entities.length > 0 ? 'keep' : 'drop'; row.reason = it.entities.length > 0 ? '' : 'no depth under the mask: the position is unknown (place it by hand if it is real)'; row.entity = it.entities[0] ?? null; continue; }
     const mount0: PlanMount = pl.kind;
-    row.sigma = positionSigma(pl.range, { roomFrame: pl.centre.frame === 'room' });
+    row.sigma = positionSigma(pl.range, { roomFrame: pl.centre.frame === 'room', ...(report.camera?.fovSource === 'weak' ? { weakFov: true, fovRange: report.camera.fovRange } : {}) });
     const res = resolveKind([it.kind, ...alt], mount0);
     row.kind = res.kind;
     // World centre of the visible surface.
