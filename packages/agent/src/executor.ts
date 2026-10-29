@@ -4,7 +4,7 @@
  * All model arguments are untrusted: they are size-checked and zod-validated
  * here, and patches are validated again by the host's `applyPatches`.
  */
-import { describeModel, describeSimreadyHit, findModels, headNoun, lacksNoun, loadCatalog, searchAssets, searchSimready } from '@aether/assets';
+import { describeModel, describeSimreadyHit, findModels, headNoun, lacksNoun, loadCatalog, searchAssets, searchSimready, HUB_FIRST, HUB_SKIP_TEXT, isStructuralQuery, pickHubFirst, withHubTimeout } from '@aether/assets';
 import { applyArchOps, describePartLine, emptiesWorld, emptyWorldRefusal, findCrafted, partInfo, runDesignTool, type DesignToolName } from '@aether/arch';
 import { GeneratorDef, ScriptDef, applyPatches, carryPatches, characterPatches, hasOwn, isPlainObject, type CarriedDependent, type Patch, type PatchError, type WorldDoc } from '@aether/core';
 import { summarizeWorldForModel } from './world-text';
@@ -20,7 +20,7 @@ import { makeRealistic } from './providers/mock/realistic';
 import { errorMessage } from './providers/errors';
 import { TOOL_LIMITS, ToolInputs, isAgentTool, isLevelToolName } from './tools';
 import { makeTextureTool } from './textures';
-import type { AgentEvent, AgentHost, AgentOptions, Provider, UsageTotals } from './types';
+import type { AgentEvent, AgentHost, AgentOptions, HubModelHit, Provider, UsageTotals } from './types';
 
 /** Result of one tool execution. */
 export interface ToolOutcome {
@@ -443,26 +443,43 @@ function craftedLines(what: string): string[] {
   return out;
 }
 
-/** find_model: the bundled library and crafted parts first, then the asset hub's models the library does not hold. */
+/**
+ * find_model with the hub-first policy (docs/ASSETS.md, "Lookup order"). A prop (furniture, appliance, tool, vehicle,
+ * kitchenware, equipment, decor) is looked up in the asset hub first and used when the match passes the HUB_FIRST threshold
+ * and its size is plausible; otherwise the bundled library and crafted parts answer, then the generators. Structural parts
+ * never come from the hub. The hub is given HUB_FIRST.timeoutMs; late, private or offline it is skipped silently. The answer
+ * ends with a "Source" line saying which source it used.
+ */
 async function findModelTool(ctx: ExecutorContext, input: z.infer<typeof ToolInputs.find_model>): Promise<ToolOutcome> {
   const base = await findModelCore(input);
-  if (!ctx.hubSearch || !input.what || base.isError) return base;
-  let note = '';
+  if (!input.what || base.isError) return base;
+  const fallback = (why: string): string => `Source: bundled library and crafted parts (hub skipped: ${why}).`;
+  const done = (first: string, rest: string, source: string): ToolOutcome => ({ ...base, content: clip(`${first}${base.content}${rest}\n${source}`) });
+  if (isStructuralQuery(input.what)) return done('', '', fallback(HUB_SKIP_TEXT.structural));
+  const hubSearch = ctx.hubSearch;
+  if (!hubSearch) return base;
   try {
     const catalog = await loadCatalog();
     const have = new Set(catalog.entries.map((e) => e.id));
-    const r = await ctx.hubSearch(input.what, { limit: input.limit + 4, ...(input.look === 'realistic' ? { style: 'realistic' as const } : input.look === 'stylised' || input.look === 'low-poly' ? { style: 'stylized' as const } : {}), ...(ctx.signal ? { signal: ctx.signal } : {}) });
-    if (r.ok) {
-      const hits = r.hits.filter((h) => !have.has(h.id)).slice(0, input.limit);
-      if (hits.length > 0) {
-        const lines = hits.map((h) => `${h.id} — ${h.name} [${h.category}, ${h.style}] hub, ${h.size.map((v) => Math.round(v * 100) / 100).join('x')} m, ${h.triangles} triangles, ${(h.bytes / 1000).toFixed(0)} KB, ${h.licence}, by ${h.author.slice(0, 50)}`);
-        note = `\nHub models (Aether asset hub, not in the bundled library; load with import_asset {"query":"<name>","hub_id":"<id>"} before placing; the credit is added automatically):\n${lines.join('\n')}`;
-      }
+    const what = input.what;
+    const r = await withHubTimeout((signal) => hubSearch(what, { limit: input.limit + 4, ...(input.look === 'realistic' ? { style: 'realistic' as const } : input.look === 'stylised' || input.look === 'low-poly' ? { style: 'stylized' as const } : {}), signal }), HUB_FIRST.timeoutMs, ctx.signal);
+    const hits = r && r.ok ? r.hits.filter((h) => !have.has(h.id)) : null;
+    const verdict = pickHubFirst(what, hits, searchAssets(catalog, { text: what, limit: 5 }).map((h) => h.entry.size));
+    const others = (hits ?? []).filter((h) => !(verdict.use && h.id === verdict.hit.id)).slice(0, input.limit);
+    const rest = others.length > 0 ? `\nHub models (Aether asset hub, not in the bundled library; load with import_asset {"query":"<name>","hub_id":"<id>"} before placing; the credit is added automatically):\n${others.map(hubLine).join('\n')}` : '';
+    if (verdict.use) {
+      const h = verdict.hit as HubModelHit;
+      return done(`Hub-first match (Aether asset hub, confidence ${verdict.confidence.toFixed(2)}, size plausible), preferred for this real-world prop: ${hubLine(h)}\n  import_asset {"query":"${what.slice(0, 60)}","hub_id":"${h.id}"} loads it (hash-checked, credit recorded); the bundled library answer below is the fallback.\n`, rest, 'Source: Aether asset hub (hub-first match above the threshold).');
     }
+    return done('', rest, fallback(HUB_SKIP_TEXT[verdict.reason]));
   } catch {
     /* the hub is optional: the library answer stands */
+    return done('', '', fallback(HUB_SKIP_TEXT['hub-unavailable']));
   }
-  return note ? { ...base, content: clip(`${base.content}${note}`) } : base;
+}
+
+function hubLine(h: HubModelHit): string {
+  return `${h.id} — ${h.name} [${h.category}, ${h.style}] hub, ${h.size.map((v) => Math.round(v * 100) / 100).join('x')} m, ${h.triangles} triangles, ${(h.bytes / 1000).toFixed(0)} KB, ${h.licence}, by ${h.author.slice(0, 50)}`;
 }
 
 async function findModelCore(input: z.infer<typeof ToolInputs.find_model>): Promise<ToolOutcome> {

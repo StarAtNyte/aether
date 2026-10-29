@@ -1288,7 +1288,7 @@ export class Studio {
       const { hubClient } = await import('../assets/hub');
       const r = await (await hubClient()).search(query, { limit: o.limit, ...(o.style ? { style: o.style } : {}), ...(o.maxBytes !== undefined ? { maxBytes: o.maxBytes } : {}) });
       if (!r.ok) return r;
-      return { ok: true, total: r.total, hits: r.hits.map(({ item }) => ({ id: item.id, name: item.name, category: item.category, style: item.style, size: item.size, triangles: item.triangles, bytes: item.bytes, licence: item.licence, author: item.author })) };
+      return { ok: true, total: r.total, hits: r.hits.map(({ item, score }) => ({ score, id: item.id, name: item.name, category: item.category, style: item.style, size: item.size, triangles: item.triangles, bytes: item.bytes, licence: item.licence, author: item.author })) };
     };
   }
 

@@ -413,6 +413,7 @@ See [Eyes](#query_level-1).
 ### `find_model`
 
 - **Hub models.** When the host provides `AgentOptions.hubSearch`, the answer ends with the Aether asset hub's matches that the bundled library does not hold, marked "hub" with size, triangles, bytes, licence and author, and the `import_asset {query, hub_id}` call that loads one. The hub is optional: offline, not public yet or blocked, the line is simply absent.
+- **Hub-first for props.** For furniture, appliances, tools, vehicles, kitchenware, equipment and decor the hub is asked first (3 s); a match with confidence >= 0.7 and a plausible size (thresholds in `HUB_FIRST`, `packages/assets/src/hub-policy.ts`) is printed first as "Hub-first match" with the `import_asset {query, hub_id}` call, and the library answer follows as the fallback. Structural queries (wall, door, window, stairs, roof, floor...) skip the hub. The answer ends with a `Source:` line (hub, or library and crafted parts and why the hub was skipped); say it in the message. Order: [ASSETS.md](ASSETS.md#lookup-order-hub-first-for-props).
 
 - **What it does.** Ranks the real-size, photographed models of the library (`@aether/assets` `findModels`) by what the
   piece is, the design style or biome, the colour and the size wanted. Interiors: sofas, armchairs, chairs, tables, beds,

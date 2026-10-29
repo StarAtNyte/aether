@@ -437,6 +437,28 @@ world can search for a model and load it lazily without the local server. The pi
   `cas-bridge.xethub.hf.co`): `connect-src` for the index and models, `img-src` for thumbnails, nothing else (no scripts, workers or
   frames). The player and exported games get no such hosts.
 
+### Lookup order (hub-first for props)
+
+Read from the code before the change: `find_model` listed crafted parts and bundled-library models first and appended hub models
+after them (the model chose); `import_asset` (SimReady Central, or `hub_id` for the hub) ran only when the model called it; the
+generators (`write_generator`, crafted `furn-*` parts) came when nothing matched; the offline planner never touches the hub (the
+studio passes `hubSearch` only to the live agent); the generation brief only names parts and models.
+
+Now, for a real-world prop (furniture, appliance, tool, vehicle, kitchenware, equipment, decor):
+
+1. **Asset hub**, if a match passes the thresholds in `packages/assets/src/hub-policy.ts` (`HUB_FIRST`, one place): confidence
+   at least 0.7 (1 = every query word is a name word, 0.73 a tag, 0.33 a prefix match) AND the longest side is plausible (a
+   typical-size table for common props, else 0.4 to 2.5 times the bundled catalog's size for the same words; never under 3 cm or over
+   30 m, so a 0.1 m "desk" is rejected). The match is the library ranker's (name, alias, tag, synonym), normalised: the CLIP image
+   embeddings have no text tower in the browser (64 MB), so they serve `similar()` only.
+2. **Bundled library**, then **crafted parts**, then the **generator**.
+
+Structural parts (walls, doors, windows, stairs, roofs, floors, ceilings, foundations, facades, beams...) never come from the hub:
+the hub is not even asked. The hub gets 3 s (`HUB_FIRST.timeoutMs`); unreachable, private, slow or throwing, it is skipped silently
+and the offline planner is unaffected. Every `find_model` answer ends with `Source: ...` (hub, or library and crafted parts with
+the reason the hub was skipped) so the judge and the chat can say which was used. A hub model keeps the hash check, credit line and
+embedding in exports as before.
+
 ## Bulk import (SimReady to the hub dataset)
 
 `npm run assets:simready -- bulk` converts a curated slice of SimReady Central and publishes it to the hub dataset

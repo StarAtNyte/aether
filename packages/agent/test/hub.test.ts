@@ -41,7 +41,8 @@ describe('find_model with the asset hub', () => {
     for (const hubSearch of [async (): Promise<HubSearchResult> => ({ ok: false, reason: 'The asset hub is not public yet.' }), async (): Promise<HubSearchResult> => { throw new Error('boom'); }]) {
       const out = await executeTool(ctx({ hubSearch }), 'find_model', { what: 'sofa' });
       expect(out.isError).toBe(false);
-      expect(out.content).toBe(plain.content);
+      expect(out.content.startsWith(plain.content)).toBe(true);
+      expect(out.content).toMatch(/Source: bundled library and crafted parts \(hub skipped: /);
     }
   });
 
@@ -50,6 +51,45 @@ describe('find_model with the asset hub', () => {
     const hubSearch = vi.fn(async (_q: string, _o: { limit: number; style?: string }): Promise<HubSearchResult> => ({ ok: true, total: 0, hits: [] }));
     await executeTool(ctx({ hubSearch }), 'find_model', { what: 'chair', look: 'realistic' });
     expect(hubSearch.mock.calls[0]![1].style).toBe('realistic');
+  });
+});
+
+describe('find_model hub-first', () => {
+  const desk = { ...HIT, id: 'hub-only-desk', name: 'Desk', category: 'furniture', size: [1.4, 0.75, 0.7] as [number, number, number], score: 30 };
+  it('puts an accepted hub match first and names the source', async () => {
+    await loadCatalog();
+    const out = await executeTool(ctx({ hubSearch: async () => ({ ok: true, total: 1, hits: [desk] }) }), 'find_model', { what: 'desk' });
+    expect(out.content.startsWith('Hub-first match')).toBe(true);
+    expect(out.content).toContain('hub_id":"hub-only-desk"');
+    expect(out.content).toMatch(/Source: Aether asset hub/);
+  });
+  it('falls back below the threshold and for an implausible size', async () => {
+    await loadCatalog();
+    for (const h of [{ ...desk, score: 8 }, { ...desk, size: [0.1, 0.05, 0.05] as [number, number, number] }]) {
+      const out = await executeTool(ctx({ hubSearch: async () => ({ ok: true, total: 1, hits: [h] }) }), 'find_model', { what: 'desk' });
+      expect(out.content).not.toMatch(/^Hub-first/);
+      expect(out.content).toMatch(/Source: bundled library and crafted parts \(hub skipped: /);
+    }
+  });
+  it('never asks the hub for structural parts', async () => {
+    await loadCatalog();
+    const hubSearch = vi.fn(async (): Promise<HubSearchResult> => ({ ok: true, total: 1, hits: [desk] }));
+    const out = await executeTool(ctx({ hubSearch }), 'find_model', { what: 'door' });
+    expect(hubSearch).not.toHaveBeenCalled();
+    expect(out.content).toMatch(/structural/);
+  });
+  it('skips a hub that never answers within the timeout', async () => {
+    await loadCatalog();
+    vi.useFakeTimers();
+    try {
+      const p = executeTool(ctx({ hubSearch: () => new Promise<HubSearchResult>(() => undefined) }), 'find_model', { what: 'desk' });
+      await vi.advanceTimersByTimeAsync(3100);
+      const out = await p;
+      expect(out.isError).toBe(false);
+      expect(out.content).toMatch(/hub skipped: the hub was not reachable in time/);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

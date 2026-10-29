@@ -542,6 +542,8 @@ export interface HubModelHit {
   bytes: number;
   licence: string;
   author: string;
+  /** The ranker's raw score for the query (hub-first confidence is derived from it). */
+  score?: number;
 }
 /** Result of {@link AgentOptions.hubSearch}. */
 export type HubSearchResult = { ok: true; hits: HubModelHit[]; total: number } | { ok: false; reason: string };

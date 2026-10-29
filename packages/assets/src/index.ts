@@ -13,6 +13,7 @@ export * from './schema';
 export { SYNONYM_GROUPS, synonymsOf, canonicalTags } from './synonyms';
 export { searchAssets, bestAsset, tokenize, type AssetQuery, type AssetHit } from './search';
 export { headNoun, lacksNoun, findModels, pickModel, resolveType, interiorTypes, describeModel, KIND_MODELS, AUTO_MODEL_KINDS, type ModelHit, type ModelQuery } from './interior';
+export { HUB_FIRST, HUB_PROP_CATEGORIES, HUB_SKIP_TEXT, STRUCTURAL_RE, isStructuralQuery, hubConfidence, plausibleRange, pickHubFirst, withHubTimeout, type HubFirstHit, type HubFirstVerdict, type HubFirstSkip } from './hub-policy';
 export { selectLod, lodDistances, screenFraction, LOD_SCREEN_FRACTIONS } from './lod';
 export { loadCatalog, getCatalog, setCatalog, catalogEntry, libraryUrl, libraryPathOf, isLibraryRemoteUrl, setLibraryRemote } from './registry';
 export {
