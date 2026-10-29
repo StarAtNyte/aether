@@ -161,3 +161,15 @@ describe('catalog base path', () => {
     for (const base of ['assets/lib/', '/a/../lib/', '/./lib/', '//other.example/lib/', 'https://other.example/lib/', '/a b/', '/assets/lib']) expect(Catalog.safeParse({ ...catalog, base }).success, base).toBe(false);
   });
 });
+
+describe('catalog mountY', () => {
+  const entry = JSON.parse(readFileSync(join(ROOT, 'assets', 'catalog.json'), 'utf8')).entries.find((e: { placement: string }) => e.placement === 'wall') as Record<string, unknown>;
+  const parse = (e: unknown): boolean => Catalog.shape.entries.element.safeParse(e).success;
+  it('is optional, within 0..4 m, and entries without it still parse', () => {
+    expect(parse(entry)).toBe(true);
+    expect(parse({ ...entry, mountY: 0.85 })).toBe(true);
+    expect(parse({ ...entry, mountY: 0 })).toBe(true);
+    expect(parse({ ...entry, mountY: -0.1 })).toBe(false);
+    expect(parse({ ...entry, mountY: 4.5 })).toBe(false);
+  });
+});

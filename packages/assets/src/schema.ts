@@ -115,6 +115,11 @@ export const CatalogEntry = z.object({
   collider: CatalogCollider,
   placement: AssetPlacement,
   /**
+   * Wall models: height in metres of the pivot (the back-centre mount point) above the floor; ceiling models: 0 (the pivot is the
+   * top-centre). Absent on floor and surface models and on wall models converted before the pivot moved (their pivot is the floor-centre).
+   */
+  mountY: z.number().min(0).max(4).optional(),
+  /**
    * Direction the model's front points. Props face +Z (like the parametric
    * furniture); things that move — characters, animals, vehicles — face −Z,
    * the engine's forward axis, so behaviors walk and drive them head first.

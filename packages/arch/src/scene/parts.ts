@@ -215,7 +215,7 @@ export interface ItemSpec {
   /** Real light source (ceiling fittings). */
   light?: Partial<LightSpec>;
   /** Library model shown instead of the generator (`size` is then its real size). */
-  asset?: { id: string; size: [number, number, number]; fitSize?: number; /** Recolour of the model's paint material (#rrggbb). */ tint?: string };
+  asset?: { id: string; size: [number, number, number]; fitSize?: number; /** Pivot is the mount point (`CatalogEntry.mountY`): `pos[1]` is then the pivot height. */ mountY?: number; /** Recolour of the model's paint material (#rrggbb). */ tint?: string };
 }
 
 /** Turn an {@link ItemSpec} into an `add`-ready entity tagged `placed`. */
@@ -235,7 +235,7 @@ export function itemEntity(spec: ItemSpec): EntityInput {
     footprint: [],
     name: spec.name ?? titleCase(def.kind),
     ...(spec.light ? { light: spec.light } : {}),
-    ...(spec.asset ? { asset: spec.asset.id, ...(spec.asset.fitSize !== undefined ? { assetFit: spec.asset.fitSize } : {}) } : {}),
+    ...(spec.asset ? { asset: spec.asset.id, ...(spec.asset.fitSize !== undefined ? { assetFit: spec.asset.fitSize } : {}), ...(spec.asset.mountY !== undefined ? { assetMountY: spec.asset.mountY } : {}) } : {}),
   };
   const e = placedEntity(placed, spec.id, spec.levelId, spec.room, spec.level, true);
   e.tags = [...new Set([...(e.tags ?? []), 'placed'])];

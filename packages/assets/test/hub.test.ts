@@ -237,3 +237,29 @@ describe('meshopt hub models pass the GLB validator', () => {
     expect(bad3).toMatchObject({ ok: false });
   });
 });
+
+describe('hub mount height', () => {
+  const WALL = row('wall-sink', 'Wall sink', { tags: ['sink'] });
+  const MOUNTED = toMinIndex(HubIndex.parse({ version: 1, dataset: 'StarAtNyte1/aether-assets', generated: '2026-10-28', count: 2, rows: [{ ...WALL, placement: 'wall', mountY: 0.85 }, ROWS[0]] }));
+  it('keeps a 15-column index (the pinned public one) readable and byte-identical', () => {
+    expect(MIN.columns).toHaveLength(15);
+    expect(MIN.rows.every((r) => r.length === 15)).toBe(true);
+    expect(items().every((i) => i.mountY === undefined)).toBe(true);
+  });
+  it('adds a 16th column only when a row has a mount height, and reads both row shapes', () => {
+    expect(MOUNTED.columns.at(-1)).toBe('mountY');
+    const parsed = HubMinIndex.parse(JSON.parse(JSON.stringify(MOUNTED)));
+    const got = hubItems(parsed);
+    expect(got.find((i) => i.id === 'wall-sink')!.mountY).toBe(0.85);
+    expect(got.find((i) => i.id === ROWS[0]!.id)!.mountY).toBeUndefined();
+  });
+  it('can leave the column out for an index that predates it', () => {
+    const old = toMinIndex(HubIndex.parse({ version: 1, dataset: 'StarAtNyte1/aether-assets', generated: '2026-10-28', count: 1, rows: [{ ...WALL, placement: 'wall', mountY: 0.85 }] }), { mountY: false });
+    expect(old.columns).toHaveLength(15);
+    expect(old.rows[0]).toHaveLength(15);
+  });
+  it('refuses a mount height outside 0..4 m', () => {
+    expect(HubRow.safeParse({ ...WALL, mountY: 5 }).success).toBe(false);
+    expect(HubMinIndex.safeParse({ ...MOUNTED, rows: [[...MOUNTED.rows[0]!.slice(0, 15), 9]] }).success).toBe(false);
+  });
+});

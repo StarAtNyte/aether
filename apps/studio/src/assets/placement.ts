@@ -10,6 +10,8 @@ export interface PlaceableAsset {
   size: Readonly<Vec3>;
   placement: 'floor' | 'wall' | 'ceiling' | 'surface';
   facing: '+z' | '-z';
+  /** Wall models whose pivot is the back-centre mount point: its height above the floor (ceiling models 0, pivot at the top). */
+  mountY?: number;
 }
 
 /** Inputs: the surface hit under the cursor (if any), the cursor ray and the camera. */
@@ -20,6 +22,8 @@ export interface PlacementInput {
   asset: PlaceableAsset;
   /** Floor height under a point (walls and ceilings drop floor items onto it). Default 0. */
   floorAt?: (x: number, z: number) => number;
+  /** Overrides the mount height of a wall model that has a mount pivot (metres above the floor). */
+  mountHeight?: number;
 }
 
 /** Result: position (base of the asset), yaw in degrees and what it snapped to. */
@@ -70,6 +74,7 @@ export function placeAsset(input: PlacementInput): Placement {
   const [hx, hy, hz] = hit.point;
   if (ny > 0.6) return out([hx, hy, hz], toCamera(hit.point), 'surface');
   if (ny < -0.6) {
+    if (asset.placement === 'ceiling' && asset.mountY !== undefined) return out([hx, hy, hz], toCamera(hit.point), 'ceiling');
     if (asset.placement === 'ceiling') return out([hx, hy - asset.size[1], hz], toCamera(hit.point), 'ceiling');
     return out([hx, floorAt(hx, hz), hz], toCamera(hit.point), 'surface');
   }
@@ -78,6 +83,12 @@ export function placeAsset(input: PlacementInput): Placement {
   const ux = nx / len;
   const uz = nz / len;
   const yaw = yawToward(ux, uz, asset.facing);
+  if (asset.placement === 'wall' && asset.mountY !== undefined) {
+    // The pivot is the back-centre mount point: the back sits on the wall and the pivot at the mount height above the floor.
+    const floor = floorAt(hx, hz);
+    const h = input.mountHeight !== undefined && Number.isFinite(input.mountHeight) ? Math.min(4, Math.max(0, input.mountHeight)) : asset.mountY;
+    return out([hx + ux * WALL_GAP, floor + h, hz + uz * WALL_GAP], yaw, 'wall');
+  }
   if (asset.placement === 'wall') {
     // Depth along the normal is the asset's local Z extent (front faces out).
     const half = asset.size[2] / 2 + WALL_GAP;

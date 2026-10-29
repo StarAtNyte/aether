@@ -184,7 +184,7 @@ export class AssetController {
     const info = assetInfo(id);
     const sim = this.host.simulation;
     if (!info || !sim) return null;
-    const asset = { size: info.size, placement: info.entry?.placement ?? (info.kind === 'image' ? 'wall' : 'floor'), facing: info.entry?.facing ?? '+z' } as const;
+    const asset = { size: info.size, placement: info.entry?.placement ?? (info.kind === 'image' ? 'wall' : 'floor'), facing: info.entry?.facing ?? '+z', ...(info.entry?.mountY !== undefined ? { mountY: info.entry.mountY } : {}) } as const;
     const cam = sim.renderer.camera.position;
     const camera: Vec3 = [cam.x, cam.y, cam.z];
     const at = ndc ?? { x: 0, y: -0.15 };

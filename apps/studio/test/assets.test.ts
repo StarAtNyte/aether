@@ -228,4 +228,23 @@ describe('asset controller', () => {
     c.dispose();
     c2.dispose();
   });
+
+  it('puts a wall model with a mount pivot at its mount height, its back on the wall', () => {
+    const sink = { size: [0.6, 0.3, 0.45], placement: 'wall', facing: '+z', mountY: 0.85 } as const;
+    const hit = { point: [3, 1.2, 0], normal: [-1, 0, 0] } as const;
+    const base = { hit, ray: { origin: [0, 1.6, 0], direction: [1, 0, 0] }, camera: [0, 1.6, 0], asset: sink } as const;
+    const p = placeAsset({ ...base, floorAt: () => 0.1 });
+    expect(p.snapped).toBe('wall');
+    expect(p.position[1]).toBeCloseTo(0.95, 2);
+    expect(p.position[0]).toBeCloseTo(2.98, 2);
+    expect(placeAsset({ ...base, mountHeight: 1.5 }).position[1]).toBe(1.5);
+    // Without mountY the old rule (centre of the model at the cursor) stands.
+    expect(placeAsset({ ...base, asset: { size: sink.size, placement: 'wall', facing: '+z' } }).position[1]).toBeCloseTo(1.05, 2);
+  });
+
+  it('hangs a ceiling model with a mount pivot at the ceiling it hits', () => {
+    const lamp = { size: [0.4, 0.5, 0.4], placement: 'ceiling', facing: '+z', mountY: 0 } as const;
+    const p = placeAsset({ hit: { point: [1, 2.8, 1], normal: [0, -1, 0] }, ray: { origin: [0, 1.6, 0], direction: [0, 1, 0] }, camera: [0, 1.6, 0], asset: lamp });
+    expect(p.position[1]).toBe(2.8);
+  });
 });

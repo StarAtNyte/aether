@@ -306,7 +306,7 @@ export function placeItem(world: WorldDoc, buildingRef: string | undefined, spec
   }
   if (!kindWanted && !assetId) return fail(`say what to place: kind is one of ${partKinds().join(', ')} (or a model id)`);
   let def = kindWanted ? furnitureByKind(kindWanted) : undefined;
-  let assetInfo: { id: string; size: [number, number, number]; fitSize?: number; placement?: string; tint?: string } | undefined;
+  let assetInfo: { id: string; size: [number, number, number]; fitSize?: number; placement?: string; mountY?: number; tint?: string } | undefined;
   if (assetId) {
     if (typeof assetId !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,80}$/i.test(assetId)) return fail('asset must be a library model id (see find_model)');
     const entry = catalogEntry(assetId);
@@ -314,7 +314,7 @@ export function placeItem(world: WorldDoc, buildingRef: string | undefined, spec
     const imported = !entry && isUserAssetId(assetId) && libraryAssetInfo(assetId)?.kind === 'model';
     const size = entry || imported ? assetShapeSize({ id: assetId }) : null;
     if ((!entry && !imported) || !size) return fail(`unknown library model "${assetId.slice(0, 60)}": find ids with find_model`);
-    assetInfo = { id: assetId, size, ...(entry?.placement ? { placement: entry.placement } : {}) };
+    assetInfo = { id: assetId, size, ...(entry?.placement ? { placement: entry.placement } : {}), ...(entry?.mountY !== undefined ? { mountY: entry.mountY } : {}) };
     // An explicit colour recolours upholstery and painted models (their main material is named "paint").
     const asked = spec.params?.['color'];
     if (entry?.interior?.paint && typeof asked === 'string' && /^#[0-9a-f]{6}$/i.test(asked)) assetInfo.tint = asked;
@@ -374,16 +374,21 @@ export function placeItem(world: WorldDoc, buildingRef: string | undefined, spec
     if ('error' in r) return fail(r.error);
     const wall = r.wall as SceneWall;
     const t = r.t as number;
-    const y = spec.y !== undefined ? spec.y : defaultWallBottom(def.kind, size[1], room.ceiling);
-    if (!isNum(y, 50) || y < 0 || y + size[1] > room.ceiling + 0.02) return fail(`y must keep the piece between the floor and the ceiling: bottom from 0 to ${cmr(room.ceiling - size[1]).toFixed(2)} m for a ${cmr(size[1]).toFixed(2)} m tall ${def.kind}`);
+    // A library model whose pivot is its back-centre mount point sits at its mount height (`y` given overrides the pivot height).
+    const pivoted = assetInfo?.mountY !== undefined && assetInfo.placement === 'wall';
+    const y = spec.y !== undefined ? spec.y : pivoted ? (assetInfo?.mountY as number) : defaultWallBottom(def.kind, size[1], room.ceiling);
+    if (pivoted && (!isNum(y, 50) || y < 0 || y > room.ceiling)) return fail(`y is the height of the model's mount point above the floor: from 0 to ${cmr(room.ceiling).toFixed(2)} m`);
+    if (!pivoted && (!isNum(y, 50) || y < 0 || y + size[1] > room.ceiling + 0.02)) return fail(`y must keep the piece between the floor and the ceiling: bottom from 0 to ${cmr(room.ceiling - size[1]).toFixed(2)} m for a ${cmr(size[1]).toFixed(2)} m tall ${def.kind}`);
     const pose = hungPose(wall, t);
     pos = [mm(pose.x), mm(y), mm(pose.z)];
     yaw = pose.yaw;
-    const mspec: MountSpec = { kind: def.kind, t, width: size[0], y0: y, y1: y + size[1] };
+    // The span a pivoted model covers is not recorded (the pivot sits part-way up it): its height centred on the pivot, kept above the floor.
+    const y0 = pivoted ? Math.max(0, y - size[1] / 2) : y;
+    const mspec: MountSpec = { kind: def.kind, t, width: size[0], y0, y1: y0 + size[1] };
     const hits = collisions(mspec, wallBlockers(scene, room, wall), undefined, 0.005);
     if (hits.length > 0) {
       const what = hits.map((h) => (h.kind === 'door' || h.kind === 'window' ? `${h.kind} ${h.ref ?? ''} (t ${cmr(h.t0).toFixed(2)}..${cmr(h.t1).toFixed(2)})` : h.kind === 'corner' ? 'the wall end' : `${h.kind} ${h.ref ?? ''}`)).join(', ');
-      return fail(`${def.kind} at t=${cmr(t).toFixed(2)} (${cmr(t - size[0] / 2).toFixed(2)}..${cmr(t + size[0] / 2).toFixed(2)}, y ${cmr(y).toFixed(2)}..${cmr(y + size[1]).toFixed(2)}) would overlap ${what} on the ${wall.compass} wall of ${room.key}. ${suggestWallSpot(scene, room, wall, mspec, new Set())}.`);
+      return fail(`${def.kind} at t=${cmr(t).toFixed(2)} (${cmr(t - size[0] / 2).toFixed(2)}..${cmr(t + size[0] / 2).toFixed(2)}, y ${cmr(y0).toFixed(2)}..${cmr(y0 + size[1]).toFixed(2)}) would overlap ${what} on the ${wall.compass} wall of ${room.key}. ${suggestWallSpot(scene, room, wall, mspec, new Set())}.`);
     }
     return finishPlace(world, b.id, scene, room, def, assetInfo, params, notes, entityId, spec, pos, yaw, levelId);
   }
@@ -391,6 +396,7 @@ export function placeItem(world: WorldDoc, buildingRef: string | undefined, spec
     if (!spec.at || !isNum(spec.at[0]) || !isNum(spec.at[1])) return fail(`${def.kind} hangs from the ceiling: give at [x, z] inside ${room.key} (x ${cmr(room.bbox[0])}..${cmr(room.bbox[2])}, z ${cmr(room.bbox[1])}..${cmr(room.bbox[3])})`);
     pos = [mm(spec.at[0]), mm(room.ceiling), mm(spec.at[1])];
     yaw = spec.yaw !== undefined ? normYaw(spec.yaw) : 0;
+    // A ceiling model with a mount pivot has it at the top: the entity sits at the ceiling itself (see placedEntity).
     return finishPlace(world, b.id, scene, room, def, assetInfo, params, notes, entityId, spec, pos, yaw, levelId);
   }
   if (mount === 'surface') return fail(`${def.kind} stands on another piece: give on (the id of the table or cabinet)`);
@@ -425,7 +431,7 @@ function finishPlace(
   scene: Scene,
   room: SceneRoom,
   def: NonNullable<ReturnType<typeof furnitureByKind>>,
-  assetInfo: { id: string; size: [number, number, number]; fitSize?: number; tint?: string } | undefined,
+  assetInfo: { id: string; size: [number, number, number]; fitSize?: number; mountY?: number; tint?: string } | undefined,
   params: Record<string, Json>,
   notes: string[],
   entityId: EntityId,
@@ -444,7 +450,7 @@ function finishPlace(
     levelId,
     level: room.level,
     ...(spec.name ? { name: spec.name.slice(0, 80) } : {}),
-    ...(assetInfo ? { asset: { id: assetInfo.id, size: assetInfo.size, ...(assetInfo.fitSize !== undefined ? { fitSize: assetInfo.fitSize } : {}), ...(assetInfo.tint ? { tint: assetInfo.tint } : {}) } } : {}),
+    ...(assetInfo ? { asset: { id: assetInfo.id, size: assetInfo.size, ...(assetInfo.fitSize !== undefined ? { fitSize: assetInfo.fitSize } : {}), ...(assetInfo.mountY !== undefined ? { mountY: assetInfo.mountY } : {}), ...(assetInfo.tint ? { tint: assetInfo.tint } : {}) } } : {}),
     ...(def.kind === 'pendant' || def.kind === 'ceiling-light' ? { light: fittingLight(Math.hypot(room.bbox[2] - room.bbox[0], room.bbox[3] - room.bbox[1]) * 1.1) } : {}),
   });
   const parsed = Entity.safeParse(ent);

@@ -79,6 +79,8 @@ export interface Placed {
   asset?: string;
   /** A library model resized to this largest dimension (metres). */
   assetFit?: number;
+  /** The library model's pivot is its mount point (wall: back-centre at this height above the floor; ceiling: top-centre), so `y` is the pivot, not the base. */
+  assetMountY?: number;
   /** Wall pieces: the edge they hang on and their centre along it. */
   wall?: { edge: number; t: number };
 }

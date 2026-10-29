@@ -1357,8 +1357,8 @@ export function placedEntity(p: Placed, id: string, parent: string, room: string
     id,
     parent,
     name: p.name,
-    // Library models stand on their base: a ceiling model hangs below the fixing point by its height.
-    transform: { position: [round(p.x), round(p.asset && def?.mount === 'ceiling' ? p.y - p.size[1] : p.y), round(p.z)], rotation: [0, round(p.yaw, 100), 0] },
+    // Library models stand on their base: a ceiling model hangs below the fixing point by its height (unless its pivot is already its top).
+    transform: { position: [round(p.x), round(p.asset && def?.mount === 'ceiling' && p.assetMountY === undefined ? p.y - p.size[1] : p.y), round(p.z)], rotation: [0, round(p.yaw, 100), 0] },
     shape: p.asset
       ? { kind: 'asset', id: p.asset, ...(p.assetFit !== undefined ? { fitSize: p.assetFit } : {}), fallback: { kind: 'procedural', generator: p.generator, params: p.params, seed: (hashId(id) % 100000) + level } }
       : { kind: 'procedural', generator: p.generator, params: p.params, seed: (hashId(id) % 100000) + level },

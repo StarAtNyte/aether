@@ -88,6 +88,8 @@ export const HubRow = z.object({
   /** CC BY 4.0 section 3(a)(1)(B): the notice that the material was modified. */
   modified: z.boolean(),
   placement: AssetPlacement,
+  /** Wall models: height of the pivot (back-centre mount point) above the floor; ceiling models 0. See `CatalogEntry.mountY`. */
+  mountY: z.number().min(0).max(4).optional(),
   facing: z.enum(['+z', '-z']),
   collider: CatalogCollider,
   animated: z.boolean().optional(),
@@ -115,7 +117,7 @@ export type HubIndex = z.infer<typeof HubIndex>;
  * `tags` space-joined and `licence` / `author` / `source` indexes into the tables.
  */
 export const HUB_MIN_COLUMNS = ['id', 'name', 'aliases', 'tags', 'category', 'style', 'w', 'h', 'd', 'triangles', 'bytes', 'licence', 'author', 'source', 'sha256'] as const;
-export const HubMinRow = z.tuple([
+const minRowColumns = [
   AssetId,
   z.string().min(1).max(60),
   z.string().max(400),
@@ -131,17 +133,21 @@ export const HubMinRow = z.tuple([
   z.number().int().min(0).max(4000),
   z.number().int().min(0).max(4000),
   Sha,
-]);
-export type HubMinRow = z.infer<typeof HubMinRow>;
+] as const;
+export const HubMinRow = z.tuple(minRowColumns);
+/** The same row with the pivot's mount height (`mountY`, metres above the floor) as a 16th column. */
+export const HubMinRowMounted = z.tuple([...minRowColumns, z.number().min(0).max(4)]);
+export type HubMinRow = z.infer<typeof HubMinRow> | z.infer<typeof HubMinRowMounted>;
 export const HubMinIndex = z.object({
   version: z.literal(1),
   dataset: z.string().regex(HUB_DATASET_RE),
   count: z.number().int().min(0),
-  columns: z.array(z.string()).length(HUB_MIN_COLUMNS.length),
+  // The pinned public index has the 15 columns; an index that records the mount height adds a 16th, `mountY` (rows may mix both).
+  columns: z.array(z.string()).min(HUB_MIN_COLUMNS.length).max(HUB_MIN_COLUMNS.length + 1),
   licences: z.array(HubLicence).max(2),
   authors: z.array(z.string().max(400)).max(4000),
   sources: z.array(z.string().max(160)).max(4000),
-  rows: z.array(HubMinRow).max(5000),
+  rows: z.array(z.union([HubMinRow, HubMinRowMounted])).max(5000),
 });
 export type HubMinIndex = z.infer<typeof HubMinIndex>;
 
@@ -170,8 +176,11 @@ export function hubCreditText(a: { name: string; author: string; licence: HubLic
   return `"${a.name}" by ${a.author.slice(0, keep)}… (${a.source.slice(0, 40)}), ${tail}`.slice(0, 200);
 }
 
-/** The min index of a full index (the exporter writes this; the tests check the two agree). */
-export function toMinIndex(index: HubIndex): HubMinIndex {
+/**
+ * The min index of a full index (the exporter writes this; the tests check the two agree). `mountY: false` leaves the mount-height
+ * column out: the 15-column form of the index published before the column existed.
+ */
+export function toMinIndex(index: HubIndex, o: { mountY?: boolean } = {}): HubMinIndex {
   const authors: string[] = [];
   const sources: string[] = [];
   const at = (list: string[], v: string): number => {
@@ -180,7 +189,8 @@ export function toMinIndex(index: HubIndex): HubMinIndex {
     list.push(v);
     return list.length - 1;
   };
-  const rows = index.rows.map((r): HubMinRow => [
+  const rows = index.rows.map((r): HubMinRow => {
+    const base: z.infer<typeof HubMinRow> = [
     r.id,
     r.name,
     r.aliases.join(' '),
@@ -196,8 +206,12 @@ export function toMinIndex(index: HubIndex): HubMinIndex {
     at(authors, r.author),
     at(sources, r.source.name),
     r.files.main.sha256,
-  ]);
-  return { version: 1, dataset: index.dataset, count: rows.length, columns: [...HUB_MIN_COLUMNS], licences: ['CC0-1.0', 'CC-BY-4.0'], authors, sources, rows };
+    ];
+    return o.mountY !== false && r.mountY !== undefined ? [...base, r.mountY] : base;
+  });
+  // The `mountY` column is added only when some row has one, so an index without any stays byte-compatible with older clients.
+  const mounted = rows.some((r) => r.length > HUB_MIN_COLUMNS.length);
+  return { version: 1, dataset: index.dataset, count: rows.length, columns: mounted ? [...HUB_MIN_COLUMNS, 'mountY'] : [...HUB_MIN_COLUMNS], licences: ['CC0-1.0', 'CC-BY-4.0'], authors, sources, rows };
 }
 
 /** A min row as the object the studio and the agent work with. */
@@ -216,6 +230,8 @@ export interface HubItem {
   source: string;
   sha256: string;
   credit: string;
+  /** Pivot height above the floor of a wall model (ceiling 0) when the index records it. */
+  mountY?: number;
 }
 
 export function hubItems(min: HubMinIndex): HubItem[] {
@@ -238,6 +254,7 @@ export function hubItems(min: HubMinIndex): HubItem[] {
       source,
       sha256: r[14],
       credit: '',
+      ...(typeof r[15] === 'number' ? { mountY: r[15] } : {}),
     };
     // Whether the work was modified is true for every hub file (converted and reduced); the credit says so.
     item.credit = hubCreditText({ name: item.name, author, licence, source: hubSourceLabel(source), modified: true });

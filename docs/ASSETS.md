@@ -551,7 +551,12 @@ npm run assets:simready -- bulk --reprocess=front     # convert again only the m
   signs, frames and mirrors 1.5 (centre), lamps 1.8, screens and hand dryers 1.2, sockets 0.3, shelves, cabinets, racks and holders 1.4,
   others 1.4; a piece over 1.6 m tall keeps its base at the floor (`mountY` 0). A `ceiling` model's pivot is its top-centre and `mountY` is 0.
   A consumer that snaps a wall model to a wall places the pivot at `mountY`. `bulk --reprocess=front` converts again every wall or ceiling
-  model whose entry has no `mountY`. The dataset schema (`hub.ts`) does not list the field yet; the index keeps it in the rows as staged.
+  model whose entry has no `mountY`. `CatalogEntry.mountY` and `HubRow.mountY` carry it (0..4 m, optional). The min index adds it as a 16th column (`columns` then ends in
+  `mountY`) only when a row has one; the pinned public index still has 15 columns and reads unchanged (`HubItem.mountY` is then absent).
+  Consumers: the studio drop (`placeAsset`) puts the pivot at floor + `mountY` (a `mountHeight` overrides it) with the back on the wall, and a
+  ceiling model at the ceiling it hits; the agent's `place_items` with a wall model puts the entity at `mountY` (a given `y` is then the height of
+  the mount point, not the bottom) and a ceiling model at the ceiling. An entry without `mountY` keeps the old rule (`y` is the bottom).
+  A hub model imported into a project is normalised to a base-on-floor pivot, so it is placed as a floor piece.
 - **One publisher at a time.** Publishing and reprocessing take `<bulk dir>/publish.lock` (the owner's pid; a lock whose process is gone is
   taken over), so two runs never write the shared staging folder or the dataset together.
 

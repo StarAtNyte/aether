@@ -385,8 +385,7 @@ async function build(): Promise<void> {
   const cands = candidates(max);
   const rows = cands.map((c) => stage(c, dest)).sort((a, b) => a.id.localeCompare(b.id));
   const index = HubIndex.parse({ version: 1, dataset: cfg.dataset, generated: new Date().toISOString().slice(0, 10), count: rows.length, rows });
-  // The schema does not know `mountY` yet (it would strip it): the file keeps the rows as staged.
-  writeFileSync(join(dest, 'index.json'), `${JSON.stringify({ ...index, rows }, null, 1)}\n`);
+  writeFileSync(join(dest, 'index.json'), `${JSON.stringify(index, null, 1)}\n`);
   const min = toMinIndex(index);
   HubMinIndex.parse(min);
   writeFileSync(join(dest, 'index.min.json'), JSON.stringify(min));
@@ -410,7 +409,9 @@ async function verify(): Promise<void> {
   const err = (m: string): void => void (errors.length < 40 && errors.push(m));
   const index = HubIndex.parse(readJson(join(dest, 'index.json')));
   const min = HubMinIndex.parse(readJson(join(dest, 'index.min.json')));
-  if (JSON.stringify(min) !== JSON.stringify(toMinIndex(index))) err('index.min.json differs from index.json');
+  // The published index may predate the `mountY` column: either form of the min index is consistent with the full one.
+  const same = JSON.stringify(min) === JSON.stringify(toMinIndex(index)) || JSON.stringify(min) === JSON.stringify(toMinIndex(index, { mountY: false }));
+  if (!same) err('index.min.json differs from index.json');
   const known = new Set(['index.json', 'index.min.json', 'embeddings.bin', 'embeddings.json', 'README.md', 'credits.csv']);
   const ids = new Set<string>();
   let total = 0;

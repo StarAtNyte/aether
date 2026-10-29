@@ -4,7 +4,7 @@
  */
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { applyPatches, createWorld, type Entity, type WorldDoc } from '@aether/core';
-import { catalogEntry, loadCatalog, setCatalog } from '@aether/assets';
+import { catalogEntry, getCatalog, loadCatalog, setCatalog } from '@aether/assets';
 import { runDesignTool } from '../src/index';
 
 const PLAN = {
@@ -87,5 +87,38 @@ describe('place_items with library models', () => {
     expect(first.ok).toBe(true);
     const second = place(first.world, [{ kind: 'model:sofa-02', room: 'living', at: [2.6, 2], id: 'b' }]);
     expect(second.text).toMatch(/refused|overlap/i);
+  });
+});
+
+describe('wall and ceiling models with a mount pivot', () => {
+  const withMount = (id: string, mountY: number | undefined): void => {
+    const cat = JSON.parse(JSON.stringify(getCatalog())) as { entries: Array<{ id: string; mountY?: number }> };
+    const e = cat.entries.find((x) => x.id === id)!;
+    if (mountY === undefined) delete e.mountY;
+    else e.mountY = mountY;
+    setCatalog(cat);
+  };
+  afterEach(() => withMount('wall-lamp', undefined));
+
+  it('puts a wall model at its mount height', () => {
+    withMount('wall-lamp', 1.8);
+    const r = place(shell(), [{ kind: 'model:wall-lamp', room: 'living', wall: 'west', t: 2, id: 'lamp' }]);
+    expect(r.ok, r.text).toBe(true);
+    const e = pieces(r.world).find((x) => x.id.endsWith('lamp'))!;
+    expect(e.transform?.position?.[1]).toBeCloseTo(1.8, 2);
+  });
+
+  it('takes a given y as the height of the mount point', () => {
+    withMount('wall-lamp', 1.8);
+    const r = place(shell(), [{ kind: 'model:wall-lamp', room: 'living', wall: 'west', t: 2, y: 0.85, id: 'lamp' }]);
+    expect(r.ok, r.text).toBe(true);
+    expect(pieces(r.world).find((x) => x.id.endsWith('lamp'))!.transform?.position?.[1]).toBeCloseTo(0.85, 2);
+  });
+
+  it('keeps the old rule (a bottom height) for a wall model without mountY', () => {
+    withMount('wall-lamp', undefined);
+    const r = place(shell(), [{ kind: 'model:wall-lamp', room: 'living', wall: 'west', t: 2, y: 1.2, id: 'lamp' }]);
+    expect(r.ok, r.text).toBe(true);
+    expect(pieces(r.world).find((x) => x.id.endsWith('lamp'))!.transform?.position?.[1]).toBeCloseTo(1.2, 2);
   });
 });
