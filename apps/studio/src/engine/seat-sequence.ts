@@ -56,7 +56,7 @@ export class SeatSequence {
     readonly pose: SeatPose,
     private readonly from: Readonly<Vec3>,
     /** Where the stand-up ends (default: the pose's approach point). */
-    private readonly exit: Readonly<Vec3> = pose.stand,
+    private exit: Readonly<Vec3> = pose.stand,
   ) {
     const dist = Math.hypot(pose.stand[0] - from[0], pose.stand[2] - from[2]);
     this.walk = Math.min(APPROACH_MAX, dist / APPROACH_SPEED);
@@ -82,6 +82,16 @@ export class SeatSequence {
     if (this.phase === 'seated') this.begin();
     else if (this.phase === 'down') this.pendingStand = true;
     else if (this.phase === 'approach' || this.phase === 'turn') this.phase = 'done';
+  }
+
+  /** Where the stand-up ends (chosen at stand-up time from what is free around the seat). */
+  setExit(p: Readonly<Vec3>): void {
+    this.exit = p;
+  }
+
+  /** Where the stand-up ends. */
+  get exitPoint(): Vec3 {
+    return [this.exit[0], this.exit[1], this.exit[2]];
   }
 
   private pendingStand = false;

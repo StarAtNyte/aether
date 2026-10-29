@@ -45,6 +45,7 @@ import type { VoxelHudState } from '../voxel/hudState';
 import { nextFrame } from '../lib/frame';
 import { PlayInteraction, seatPose, SEATED_EYE, type InteractPrompt, type SeatPose } from './interaction';
 import { SeatSequence, type SeatFrame } from './seat-sequence';
+import { exitCandidates, nearestFree, pickExit, seatTopFromHits, StuckWatch } from './seat-geometry';
 import { FeelOverlay } from './feelOverlay';
 import { footstepEffect, landingIntensity } from './feel';
 
@@ -267,6 +268,7 @@ export class Simulation {
   /** Aim-and-use controller of the running session (drawers, doors, taps, props to carry). */
   private interaction: PlayInteraction | null = null;
   /** The player sits on a piece of furniture (capsule disabled, eye lowered, movement locked until they stand). */
+  private readonly stuck = new StuckWatch();
   private sitting: { id: EntityId; pose: SeatPose; seq: SeatSequence; frame: SeatFrame } | null = null;
   private readonly interactionKeys = (e: KeyboardEvent): void => this.onInteractionKey(e);
   private readonly interactionClick = (e: PointerEvent): void => {
@@ -1180,8 +1182,16 @@ export class Simulation {
     const wx = b ? b.max[0] - b.min[0] : 1;
     const wz = b ? b.max[2] - b.min[2] : 0.8;
     const dims = { width: quarter ? wz : wx, depth: quarter ? wx : wz, height: b ? b.max[1] - b.min[1] : 0 };
-    const pose = seatPose(kind, [t.position[0], t.position[1], t.position[2]], yaw, character.position, dims);
+    // The floor under the piece is the bottom of its bounds (an origin at the middle would seat the player in the base).
+    const floorY = b && b.min[1] < t.position[1] + 0.05 ? Math.min(t.position[1], b.min[1]) : t.position[1];
+    const pose = seatPose(kind, [t.position[0], floorY, t.position[2]], yaw, character.position, dims);
     if (!pose) return false;
+    // The real cushion top: drop a probe on the pelvis column from above the piece and take where it meets the seat.
+    const probeTop = (b ? b.max[1] : floorY + 1.2) + 0.1;
+    const hits = s.pw.raycastAll([pose.floor[0], probeTop, pose.floor[2]], [0, -1, 0], probeTop - floorY + 0.2, 10).filter((h) => h.id === id);
+    const top = seatTopFromHits(hits.map((h) => h.point[1]), floorY, pose.top);
+    pose.top = top;
+    pose.feet = [pose.feet[0], floorY + top, pose.feet[2]];
     // The capsule is out of the world for the whole sitting: it cannot climb the furniture. The body is placed by the sequence.
     const from = character.position;
     character.setEnabled(false);
@@ -1194,7 +1204,23 @@ export class Simulation {
 
   /** Stand up in front of the seat (the body rises and steps out; the capsule returns when it has). */
   standUp(): void {
-    this.sitting?.seq.standUp();
+    const sit = this.sitting;
+    if (!sit) return;
+    if (sit.seq.canStand) sit.seq.setExit(this.freeExit(sit.pose));
+    sit.seq.standUp();
+  }
+
+  /** A standing point beside the seat where the capsule fits: the front first, then the sides, then behind. */
+  private freeExit(pose: SeatPose): Vec3 {
+    const pw = this.session?.pw;
+    if (!pw) return pose.stand;
+    const free = (p: Vec3): boolean => pw.capsuleFree(p, PLAYER_CAPSULE.radius, PLAYER_CAPSULE.height, 0.1);
+    const fx = pose.stand[0] - pose.floor[0];
+    const fz = pose.stand[2] - pose.floor[2];
+    const floorY = pose.floor[1];
+    const first: Vec3 = [pose.stand[0], floorY + 0.02, pose.stand[2]];
+    if (free(first)) return first;
+    return pickExit(exitCandidates(pose.floor, fx, fz, floorY), free) ?? nearestFree(first, free, 2.5, 1) ?? pose.stand;
   }
 
   /** Advance the sit-down or stand-up: body placement for the avatar, camera height and the end of the sitting. */
@@ -1214,7 +1240,10 @@ export class Simulation {
       this.sitting = null;
       this.renderer.setEyeHeight(1.6);
       if (c) {
-        c.teleport(sit.pose.stand);
+        // Collision comes back only where the capsule is clear; otherwise lift or nudge out first.
+        const at = sit.seq.exitPoint;
+        const free = (p: Vec3): boolean => s.pw.capsuleFree(p, PLAYER_CAPSULE.radius, PLAYER_CAPSULE.height, 0.1);
+        c.teleport(free(at) ? at : (nearestFree(at, free, 2.5, 1) ?? at));
         c.setEnabled(true);
       }
     }
@@ -1565,6 +1594,16 @@ export class Simulation {
         const sneak = input.keys.has('ShiftLeft') || input.keys.has('ShiftRight');
         this.sneaking = sneak;
         character.move({ forward: input.forward, right: input.right, jump: input.jump, yawDeg: input.pointerYawDeg }, FIXED_DT, sneak ? speed * 0.5 : speed, jump);
+        // Pushing for a second without getting anywhere (wedged in furniture, on a table edge): nudge to the nearest free ground.
+        const at = character.position;
+        if (this.stuck.update(at[0], at[2], Math.abs(input.forward) > 0.4 || Math.abs(input.right) > 0.4, FIXED_DT)) {
+          const free = (p: Vec3): boolean => pw.capsuleFree(p, PLAYER_CAPSULE.radius, PLAYER_CAPSULE.height, 0.1);
+          // Only when the capsule overlaps something: a player merely pushing on a wall is not stuck.
+          if (!free(at)) {
+            const out = nearestFree(at, free, 2, 1);
+            if (out) character.teleport(out);
+          }
+        }
         if (character.position[1] < PLAYER_KILL_Y) character.teleport(s.world.player.spawn);
         this.watchLanding(character, input.jump);
       }
