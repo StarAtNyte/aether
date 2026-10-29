@@ -237,6 +237,8 @@ interface Report {
   photo: string;
   source: string;
   calls: number;
+  /** Tokens of the whole run (input includes cached), to price a live run. */
+  tokens?: { input: number; output: number; cached: number };
   ms: number;
   judges: number;
   /** How the photo was read (the reads, the consensus and the checklist it gave). */
@@ -310,7 +312,7 @@ async function runPhoto(args: Args, live: Provider | null): Promise<Report> {
     } else if (e.type === 'error') {
       report.errors.push(e.text);
       console.log(`  [${args.photo}] ERROR ${e.text.slice(0, 300)}`);
-    } else if (e.type === 'done') report.calls = e.usage.calls;
+    } else if (e.type === 'done') { report.calls = e.usage.calls; report.tokens = { input: e.usage.inputTokens, output: e.usage.outputTokens, cached: e.usage.cachedInputTokens ?? 0 }; }
   }
   report.ms = Math.round(performance.now() - t0);
   const room = readScene(host.getWorld(), 'room-photo')?.rooms[0];

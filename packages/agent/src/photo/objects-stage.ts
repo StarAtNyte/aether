@@ -111,6 +111,9 @@ export interface RoundResult {
   anchored?: string[];
 }
 
+/** `AETHER_ANCHOR_RESTORE=off` keeps pieces where the model moved them (before/after runs). */
+const anchorRestoreOff = (): boolean => typeof process !== 'undefined' && process.env['AETHER_ANCHOR_RESTORE'] === 'off';
+
 const aborted = (s?: AbortSignal): void => {
   if (s?.aborted) throw new Error('aborted');
 };
@@ -522,7 +525,7 @@ export class ObjectStage {
 
   /** Put pieces that drifted from the measured pose without a better measured overlap back at it; returns the object labels. */
   private restoreAnchored(skip: readonly string[]): string[] {
-    if (this.anchors.size === 0 || !this.measured) return [];
+    if (this.anchors.size === 0 || !this.measured || anchorRestoreOff()) return [];
     const cur = this.deps.getWorld();
     const poses = posesOf(cur);
     const rowOf = new Map(this.measured.rows.map((r) => [r.id, r]));
