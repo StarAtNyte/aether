@@ -14,7 +14,7 @@ import type { AgentEvent, AgentHost, ContentBlock, PhotoObjectView } from '../ty
 import { cropBox } from './closer';
 import { DifferenceLedger } from './differences';
 import { padBox } from './kit';
-import { posesOf, type Anchor } from './placement-gate';
+import { driftOf, posesOf, type Anchor } from './placement-gate';
 import {
   ASPECTS,
   INVENTORY_SEED,
@@ -46,6 +46,7 @@ import {
 } from './objects';
 import { autoLink, boxSignature, builtPiecesText, evidenceMap, knownEntityIds, projectBuilt, projectedBox, repairEvidence, residualLine, residualOf, suggestCorrection, type Projection } from './objects-evidence';
 import { restorePatches } from './revert';
+import { positionLine, restoreToAnchor, summarisePositions, type PositionStat } from './position-track';
 import type { compareObjects as CompareFn, Measured } from './objects-measure';
 import type { Raster } from './score';
 
@@ -105,6 +106,9 @@ export interface RoundResult {
   calls: number;
   /** The measured comparison of this round (absent without a perception report). */
   measured?: Measured['counts'] & { surfaces: Array<{ surface: string; deltaE: number | null }> };
+  /** Distance of the linked pieces from the pose the measurements gave them (metres), and the pieces put back at that pose this round. */
+  position?: PositionStat;
+  anchored?: string[];
 }
 
 const aborted = (s?: AbortSignal): void => {
@@ -145,15 +149,27 @@ export class ObjectStage {
 
   /** The pose the measurements gave each linked piece (entity id -> anchor): the default the model needs a reason to leave. */
   anchors = new Map<string, Anchor>();
+  /** The documents of the anchored pieces at the measured pose, the measured mask IoU of each object at that pose, and how often each was put back. */
+  private anchorDocs = new Map<string, Entity>();
+  private iouAtAnchor = new Map<string, number>();
+  private anchorRestores = new Map<string, number>();
+  private anchorNotes = new Map<string, string>();
 
   /** Fix the anchors at the poses the first build from the measurements left (linked pieces only). */
   setAnchors(world: WorldDoc): number {
     this.anchors.clear();
+    this.anchorDocs.clear();
+    this.iouAtAnchor.clear();
+    this.anchorRestores.clear();
+    this.anchorNotes.clear();
     const poses = posesOf(world);
     for (const r of this.ledger.list()) {
       for (const e of r.item.entities) {
         const p = poses.get(e);
-        if (p && r.item.measured?.id) this.anchors.set(e, { itemId: r.item.id, label: r.item.label || r.item.kind, pos: p.pos, size: p.size, yaw: p.yaw });
+        if (p && r.item.measured?.id) {
+          this.anchors.set(e, { itemId: r.item.id, label: r.item.label || r.item.kind, pos: p.pos, size: p.size, yaw: p.yaw });
+          if (world.entities[e]) this.anchorDocs.set(e, JSON.parse(JSON.stringify(world.entities[e])) as Entity);
+        }
       }
     }
     return this.anchors.size;
@@ -246,6 +262,15 @@ export class ObjectStage {
     if (!this.measured) return;
     for (const m of this.measured.rows) {
       const bits = [`measured: ${m.verdict}${m.iou !== null ? `, mask IoU ${m.iou}` : ''}${m.deltaE !== null ? `, colour deltaE ${m.deltaE}` : ''}${m.hint ? `. ${m.hint}` : ''}`];
+      // position in metres: from the mask base on the floor (raster comparison) and from the pose the measurements gave the piece
+      const off: string[] = [];
+      if (m.offsetM !== null) off.push(`${m.offsetM} m between the built base and the photo mask's base on the floor`);
+      const poses = posesOf(this.deps.getWorld());
+      const drift = [...this.anchors.entries()].filter(([, a]) => a.itemId === m.id).map(([e, a]) => { const p = poses.get(e); return p ? driftOf(p, a).m : null; }).filter((x): x is number => x !== null);
+      if (drift.length > 0) off.push(`${Math.round(Math.max(...drift) * 100) / 100} m from the pose the measurements gave it`);
+      if (off.length > 0) bits.push(`Position error: ${off.join('; ')} (a piece more than 0.4 m off does not pass position, however it looks).`);
+      const note = this.anchorNotes.get(m.id);
+      if (note) bits.push(note);
       const like = this.likeLines.get(m.id);
       if (like) bits.push(like);
       const prev = this.evidence.get(m.id) ?? '';
@@ -347,6 +372,15 @@ export class ObjectStage {
     if (this.measured) {
       const m = this.measured;
       yield { type: 'photo', phase: 'round', round: inp.round, text: `${m.line} ${this.coverageLine()}`, measured: { rows: m.rows.map((x) => ({ id: x.id, label: x.label, perceivedId: x.perceivedId, verdict: x.verdict, iou: x.iou, deltaE: x.deltaE, offsetM: x.offsetM, sizeRatio: x.sizeRatio, ...(x.linked ? { linked: x.linked } : {}) })), surfaces: m.surfaces.map((x) => ({ surface: x.surface, deltaE: x.deltaE, ...(x.rawDeltaE !== undefined ? { rawDeltaE: x.rawDeltaE } : {}) })), counts: { ...m.counts }, coverage: this.coverage() } };
+      // the measured mask overlap of each object while its pieces still stand at the measured pose
+      {
+        const poses = posesOf(inp.world);
+        for (const row of m.rows) {
+          if (row.iou === null || this.iouAtAnchor.has(row.id)) continue;
+          const mine = [...this.anchors.entries()].filter(([, a]) => a.itemId === row.id);
+          if (mine.length > 0 && mine.every(([e, a]) => { const p = poses.get(e); return p ? driftOf(p, a).m < 0.05 : false; })) this.iouAtAnchor.set(row.id, row.iou);
+        }
+      }
       this.mergeMeasured();
       const openIds = ledger.list().filter((r) => openAspects(r).length > 0).map((r) => r.item.id);
       const verdictOf = new Map(this.measured.rows.map((m) => [m.id, m.verdict]));
@@ -425,6 +459,8 @@ export class ObjectStage {
       } else worse.push(...linked);
     }
     this.lastReverted = reverted.map((id) => (ledger.get(id) as ObjectRec).item.label);
+    // Pieces far from the pose the measurements gave them, with no gain in the measured overlap, go back to it (reported, undoable).
+    const anchored = this.restoreAnchored(reverted);
     // The failing aspects are differences of the ledger; the passing ones close theirs.
     if (inp.diffs) for (const id of judged) this.syncDifferences(ledger.get(id) as ObjectRec, inp.diffs);
     // The layout relations that involve a judged object.
@@ -464,15 +500,54 @@ export class ObjectStage {
     }
     this.calls += calls;
     ledger.noteRound(inp.round);
-    const result: RoundResult = { judged: judged.length, full: sel.full, gain: ledger.openCount() < openBefore, reverted, worse, calls, ...this.measuredSummary() };
+    const position = this.positionStat(after);
+    const result: RoundResult = { judged: judged.length, full: sel.full, gain: ledger.openCount() < openBefore, reverted, worse, calls, ...this.measuredSummary(), ...(position ? { position } : {}), ...(anchored.length > 0 ? { anchored } : {}) };
     yield {
       type: 'photo',
       phase: 'round',
       round: inp.round,
-      text: `Objects: judged ${judged.length}${sel.full ? ' (all)' : ` (${sel.changed.length} changed plus neighbours)`}; ${ledger.passingObjects()} of ${ledger.size} objects have nothing off (${countsLine(ledger)}); ${ledger.openCount()} aspect${ledger.openCount() === 1 ? '' : 's'} open${ledger.waivedCount() > 0 ? `, ${ledger.waivedCount()} object${ledger.waivedCount() === 1 ? '' : 's'} waived (not passes; ${ledger.failingCount()} aspects off in all)` : ''}; ${this.budgetLine()}${reverted.length > 0 ? `; put back to their best: ${reverted.join(', ')}` : ''}${worse.length > 0 ? `; got worse with no piece to put back: ${worse.join(', ')}` : ''}.`,
+      text: `Objects: judged ${judged.length}${sel.full ? ' (all)' : ` (${sel.changed.length} changed plus neighbours)`}; ${ledger.passingObjects()} of ${ledger.size} objects have nothing off (${countsLine(ledger)}); ${ledger.openCount()} aspect${ledger.openCount() === 1 ? '' : 's'} open${ledger.waivedCount() > 0 ? `, ${ledger.waivedCount()} object${ledger.waivedCount() === 1 ? '' : 's'} waived (not passes; ${ledger.failingCount()} aspects off in all)` : ''}; ${this.budgetLine()}${reverted.length > 0 ? `; put back to their best: ${reverted.join(', ')}` : ''}${worse.length > 0 ? `; got worse with no piece to put back: ${worse.join(', ')}` : ''}${anchored.length > 0 ? `; put back at the measured pose (far from it, no better overlap): ${anchored.join(', ')}` : ''}${position ? `; ${positionLine('position against the measurements', position)}` : ''}.`,
       objects: this.views(),
     };
     return result;
+  }
+
+  /** Distance (metres on the floor) of every anchored piece from its measured pose in the given world. */
+  positionStat(world: WorldDoc): PositionStat | null {
+    const poses = posesOf(world);
+    const d: number[] = [];
+    for (const [e, a] of this.anchors) { const p = poses.get(e); if (p) d.push(driftOf(p, a).m); }
+    return summarisePositions(d);
+  }
+
+  /** Put pieces that drifted from the measured pose without a better measured overlap back at it; returns the object labels. */
+  private restoreAnchored(skip: readonly string[]): string[] {
+    if (this.anchors.size === 0 || !this.measured) return [];
+    const cur = this.deps.getWorld();
+    const poses = posesOf(cur);
+    const rowOf = new Map(this.measured.rows.map((r) => [r.id, r]));
+    const pick = new Map<string, { ents: string[]; why: string }>();
+    for (const [e, a] of this.anchors) {
+      const p = poses.get(e);
+      if (!p || !this.anchorDocs.has(e) || skip.includes(a.itemId)) continue;
+      const dec = restoreToAnchor({ driftM: driftOf(p, a).m, iouNow: rowOf.get(a.itemId)?.iou ?? null, iouAtAnchor: this.iouAtAnchor.get(a.itemId) ?? null, restores: this.anchorRestores.get(a.itemId) ?? 0 });
+      if (!dec.restore) continue;
+      const got = pick.get(a.itemId) ?? { ents: [], why: dec.why };
+      got.ents.push(e);
+      pick.set(a.itemId, got);
+    }
+    if (pick.size === 0) return [];
+    const ents: Record<string, Entity> = { ...cur.entities };
+    for (const { ents: list } of pick.values()) for (const e of list) ents[e] = this.anchorDocs.get(e) as Entity;
+    const patches = restorePatches(cur, { ...cur, entities: ents } as WorldDoc);
+    if (patches.length === 0 || this.deps.applyPatches(patches, `Put ${pick.size} piece${pick.size === 1 ? '' : 's'} back at the measured pose`).errors.length > 0) return [];
+    const labels: string[] = [];
+    for (const [id, v] of pick) {
+      this.anchorRestores.set(id, (this.anchorRestores.get(id) ?? 0) + 1);
+      labels.push(this.ledger.get(id)?.item.label ?? id);
+      this.anchorNotes.set(id, `Put back at the measured pose: ${v.why}. Move it again only with a reason that cites the photo.`);
+    }
+    return labels;
   }
 
   /** The linked pieces of every object as documents, to tell after an edit which objects it touched. */

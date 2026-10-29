@@ -17,6 +17,7 @@ import type { AgentEvent, ContentBlock, ToolDef } from '../../types';
 import type { CompleteFn, InventoryItem } from '../objects';
 import { COLOUR_PARAMS } from './tool';
 import { placementGateOn } from '../placement-gate';
+import { positionSigma, sigmaText } from '../position-track';
 import type { PerceivedObject, PerceptionReport } from './perceive';
 
 export const BUILD_PLAN_TOOL_NAME = 'review_build_plan';
@@ -75,6 +76,8 @@ export interface PlanRow {
   /** Set after the batch: the pieces built for it. */
   built: string[];
   refused: string;
+  /** One standard deviation of the measured floor position (metres), from the range and the frame; null: not measured. */
+  sigma: number | null;
 }
 
 export interface SurfacePlan {
@@ -212,7 +215,7 @@ const boxAt = (x: number, z: number, ex: number, ez: number): Box2 => ({ x0: x -
 const blank = (n: number, it: InventoryItem, po: PerceivedObject): PlanRow => ({
   n, itemId: it.id, perceivedId: po.id, label: it.label.replace(/ \(found by measurement\)$/, ''), alternatives: (po.labelAlternatives ?? []).map((a) => a.label).filter((l) => l !== po.label).slice(0, 3),
   action: 'place', entity: null, kind: null, model: null, candidates: [], mount: 'floor', at: null, wall: null, on: null, offset: null, y: null, fit: null, yaw: null, faces: null, opening: null,
-  hex: null, finish: '', handle: `bp-${slug(po.id)}`, notes: [], reason: '', decision: 'default', built: [], refused: '',
+  hex: null, finish: '', handle: `bp-${slug(po.id)}`, notes: [], reason: '', decision: 'default', built: [], refused: '', sigma: null,
 });
 
 interface SceneBits { id: string; kind: string; mount: string; pos: [number, number, number]; yaw: number; size: [number, number, number]; box: Box2; wall?: { compass: string; t: number } | undefined }
@@ -276,6 +279,7 @@ export function makeBuildPlan(inp: PlanInput): BuildPlan {
     const alt = [po.label, ...(po.labelAlternatives ?? []).filter((a) => a.p >= 0.12).map((a) => a.label)];
     if (!pl || pl.samples < 12) { row.action = it.entities.length > 0 ? 'keep' : 'drop'; row.reason = it.entities.length > 0 ? '' : 'no depth under the mask: the position is unknown (place it by hand if it is real)'; row.entity = it.entities[0] ?? null; continue; }
     const mount0: PlanMount = pl.kind;
+    row.sigma = positionSigma(pl.range, { roomFrame: pl.centre.frame === 'room' });
     const res = resolveKind([it.kind, ...alt], mount0);
     row.kind = res.kind;
     // World centre of the visible surface.
@@ -556,7 +560,7 @@ export function surfaceOps(report: PerceptionReport, rooms: PlanInput['rooms']):
 const whereOf = (r: PlanRow): string => {
   if (r.on) return `on ${r.on}${r.offset ? ` (${r.offset[0]}, ${r.offset[1]})` : ''}`;
   if (r.wall) return `${r.mount === 'wall' ? 'hung on' : 'against'} ${r.wall.compass} wall t ${r.wall.t}${r.mount === 'wall' && r.y !== null ? `, bottom ${r.y} m` : r.wall.gap > 0 ? `, gap ${r.wall.gap}` : ''}`;
-  if (r.at) return `at (${r.at[0]}, ${r.at[1]})${r.yaw !== null ? ` yaw ${r.yaw}` : ''}${r.faces ? ` facing (${r.faces[0]}, ${r.faces[1]})` : ''}`;
+  if (r.at) return `at (${r.at[0]}, ${r.at[1]})${r.sigma !== null ? ` ${sigmaText(r.sigma)}` : ''}${r.yaw !== null ? ` yaw ${r.yaw}` : ''}${r.faces ? ` facing (${r.faces[0]}, ${r.faces[1]})` : ''}`;
   return '';
 };
 
