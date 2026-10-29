@@ -44,18 +44,41 @@ export function editorPrefetchFiles(bundle: Record<string, Chunk>, pageEntry: (c
   return { js, css };
 }
 
+/** Name of the small classic script that starts the editor's downloads on an editor URL. */
+export const EDITOR_BOOT = 'editor-boot.js';
+
+/** Editor routes (`#/new`, `#/new/<template>`, `#/p/<id>`) in the form the boot script tests. */
+const BOOT_ROUTE = '/^#\\/(?:new(?:\\/([a-z0-9-]{1,80}))?(?:[?]|$)|p\\/)/';
+
+/**
+ * Source of the boot script (pure; exported for tests). On a cold open of an editor URL the editor route is
+ * otherwise discovered only after the home bundle has run (entry, then the route chunk, then its imports: three
+ * serial round trips on a slow link). This script runs while the entry is still downloading, so it
+ *   - links every file of the editor's static closure as `modulepreload` (all in parallel, one round trip), and
+ *   - for a template, starts its world JSON fetch now and hands the response to `loadTemplateWorld` through
+ *     `window.__aetherEarly` (taken once; a failed or missing early fetch falls back to a normal one).
+ * The tag is the first thing in `<head>`, so its request goes out before the home page's own files. It never runs on the home page (any other hash), so the home page's own budget is untouched.
+ */
+export function editorBootSource(js: readonly string[]): string {
+  return `(function(){var m=${BOOT_ROUTE}.exec(location.hash);if(!m)return;var b=document.currentScript&&document.currentScript.src||location.href,f=${JSON.stringify(js)},h=document.head,i,l;for(i=0;i<f.length;i++){l=document.createElement('link');l.rel='modulepreload';l.href=new URL(f[i],b).href;h.appendChild(l)}if(m[1]&&window.fetch){var u=new URL('templates/worlds/'+m[1]+'.json',b).pathname;var e=window.__aetherEarly=window.__aetherEarly||{};e[u]=fetch(u,{headers:{accept:'application/json'}})}})();\n`;
+}
+
 /** The plugin (studio build only). */
 export function editorPrefetch() {
   return {
     name: 'aether-editor-prefetch',
     apply: 'build' as const,
-    generateBundle(this: { emitFile(f: { type: 'asset'; fileName: string; source: string }): void }, _options: unknown, bundle: Record<string, Chunk>): void {
+    enforce: 'post' as const,
+    generateBundle: { order: 'post' as const, handler(this: { emitFile(f: { type: 'asset'; fileName: string; source: string }): void }, _options: unknown, bundle: Record<string, Chunk>): void {
       const files = editorPrefetchFiles(
         bundle,
         (c) => c.isEntry === true && !/play/.test(`${c.facadeModuleId ?? ''} ${c.fileName}`),
         (c) => /[\\/]src[\\/]editor[\\/]EditorRoute\.tsx$/.test(c.facadeModuleId ?? ''),
       );
       this.emitFile({ type: 'asset', fileName: EDITOR_PREFETCH, source: `${JSON.stringify({ version: 1, ...files })}\n` });
-    },
+      this.emitFile({ type: 'asset', fileName: EDITOR_BOOT, source: editorBootSource(files.js) });
+      const page = bundle['index.html'] as unknown as { source?: string } | undefined;
+      if (typeof page?.source === 'string' && !page.source.includes(EDITOR_BOOT)) page.source = page.source.replace(/<head>/, `<head>\n    <script src="./${EDITOR_BOOT}" async></script>`);
+    } },
   };
 }

@@ -76,12 +76,26 @@ export async function readCapped(res: Response, maxBytes: number): Promise<Uint8
 }
 
 /**
+ * `fetch`, but a world fetch the page's boot script (scripts/vite/editor-prefetch.ts) already started for this URL is
+ * used once instead of starting a second request: the download then overlaps the editor's JavaScript.
+ */
+function fetchWithEarly(url: string, init: { signal: AbortSignal; headers?: Record<string, string> }): Promise<Response> {
+  const early = (globalThis as { __aetherEarly?: Record<string, Promise<Response> | undefined> }).__aetherEarly;
+  const hit = early?.[url];
+  if (early && hit) {
+    delete early[url];
+    return hit.catch(() => fetch(url, init));
+  }
+  return fetch(url, init);
+}
+
+/**
  * Fetch and validate a template's saved world. Never throws: failures
  * (unknown slug, network, timeout, oversize, invalid JSON or world) come
  * back as `{ ok: false, error }` so the caller can fall back to building the
  * world from its prompt.
  */
-export async function loadTemplateWorld(slug: string, fetchImpl: FetchLike = (u, i) => fetch(u, i), timeoutMs = TEMPLATE_FETCH_TIMEOUT_MS): Promise<ImportResult> {
+export async function loadTemplateWorld(slug: string, fetchImpl: FetchLike = fetchWithEarly, timeoutMs = TEMPLATE_FETCH_TIMEOUT_MS): Promise<ImportResult> {
   if (typeof slug !== 'string' || !SLUG.test(slug)) return { ok: false, error: 'Unknown template.' };
   return withDeadline(timeoutMs, async (signal): Promise<ImportResult> => {
     const got = await fetchCapped(templateWorldUrl(slug), MAX_IMPORT_BYTES, 'application/json', fetchImpl, signal);

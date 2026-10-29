@@ -44,11 +44,13 @@ export function templateChat(t: WorldTemplate): ChatEntry[] {
 export async function createFromTemplate(repo: ProjectRepo, slug: string, fetchImpl?: FetchLike): Promise<RepoResult<ProjectMeta>> {
   const t = templateBySlug(slug);
   if (!t) return { ok: false, error: 'Unknown template.' };
+  // The card picture downloads beside the world, not after the project is created.
+  const thumbP = loadTemplateThumbnail(t.slug, fetchImpl);
   const saved = await loadTemplateWorld(t.slug, fetchImpl);
   if (saved.ok) {
     const r = await repo.create({ world: saved.world, name: t.title, template: t.slug, chat: templateChat(t) });
     if (r.ok) {
-      const thumb = await loadTemplateThumbnail(t.slug, fetchImpl);
+      const thumb = await thumbP;
       if (thumb) await repo.setThumbnail(r.value.id, thumb);
     }
     return r;

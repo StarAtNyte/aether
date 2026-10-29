@@ -104,6 +104,9 @@ export default defineConfig(async ({ command }) => {
             // the shared core stays in the eager three chunk, the WebGL renderer goes to a lazy one.
             { name: 'three', test: /[\\/]node_modules[\\/]three[\\/]build[\\/]three\.core\.js/, priority: 45 },
             { name: 'three-webgl', test: /[\\/]node_modules[\\/]three[\\/]build[\\/]three\.module\.js/, priority: 40 },
+            // The glTF exporter's texture helper (WebGLTextureUtils, dynamic import) pulls in the WebGL renderer: its own lazy chunk,
+            // so the eager three chunk does not import the 350 kB three-webgl chunk just because both sat in one group.
+            { name: 'three-export-utils', test: /[\\/]node_modules[\\/]three[\\/]examples[\\/]jsm[\\/]utils[\\/]WebGLTextureUtils/, priority: 42 },
             // three's exporters (glTF export, on demand) stay out of every group: they get their own lazy chunk.
             { name: 'three', test: /[\\/]node_modules[\\/]three[\\/](?!examples[\\/]jsm[\\/]exporters[\\/])/, priority: 30 },
             { name: 'rapier', test: /[\\/]node_modules[\\/]@dimforge[\\/]rapier3d-compat[\\/]/, priority: 30 },
