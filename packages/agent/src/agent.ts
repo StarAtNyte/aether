@@ -738,7 +738,10 @@ export class WorldAgent {
     const cfg: ReviewOptions | undefined = this.opts.review;
     if (!cfg) return;
     const world0 = host.getWorld();
-    if (world0 === startWorld) return;
+    if (world0 === startWorld) {
+      yield { type: 'status', text: 'Review skipped: the run changed nothing to review.' };
+      return;
+    }
     const rounds = cfg.maxRounds === undefined || !Number.isFinite(cfg.maxRounds) ? REVIEW_ROUND_CEILING : Math.max(1, Math.min(REVIEW_ROUND_CEILING, Math.floor(cfg.maxRounds)));
     const unlimited = cfg.maxRounds === undefined || !Number.isFinite(cfg.maxRounds);
     const maxViews = Math.max(1, Math.min(MAX_REVIEW_VIEWS, Math.floor(cfg.maxViews ?? 6)));
@@ -764,7 +767,10 @@ export class WorldAgent {
         const lvl = this.opts.levelTools ? await raceAbort(levelSnapshot(this.opts.levelTools, world, { maxViews, withViews }), signal) : null;
         // A world made of free pieces with no plan and nothing to measure is still compared with its brief.
         const snapped = lvl ?? (this.briefState ? richnessSnapshot(world, { maxViews, withViews }) : null);
-        if (!snapped) return;
+        if (!snapped) {
+          yield { type: 'status', text: 'Review skipped: nothing to measure here (no building, no level snapshot, no brief to compare with).' };
+          return;
+        }
         snap = snapped;
       }
       // Findings seen unchanged twice are folded into one unresolved line (the tracker keeps the original keys).
