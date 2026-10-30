@@ -15,7 +15,7 @@ import { withProbe } from './probe-cache';
 
 /** One problem found in a level. */
 export interface LevelFinding {
-  code: 'spawn' | 'no_win' | 'unreachable_required' | 'unreachable_optional' | 'first_reward_far' | 'unmeasured' | 'floating';
+  code: 'spawn' | 'no_win' | 'unreachable_required' | 'unreachable_optional' | 'unreachable_target' | 'first_reward_far' | 'unmeasured' | 'floating';
   severity: 'error' | 'warning' | 'info';
   message: string;
   /** Entities involved (ids). */
@@ -118,14 +118,49 @@ function hasGameplay(world: WorldDoc, derived: boolean): boolean {
   return false;
 }
 
+/** A thing a visitor to a free-roam world should be able to walk to: the drivable car, and the street, plaza, stair and quay pieces. */
+interface RoamTarget {
+  id: string;
+  label: string;
+  position: Vec3;
+  drivable: boolean;
+}
+
+const ROAM_TAGS = ['roads', 'road', 'street', 'plaza', 'stairs', 'quay', 'promenade'];
+
+/**
+ * The walk checks of a world with no game in it: its drivable vehicles and walkable-surface entities, when there are at least
+ * 12 entities (a place, not a prop). Empty for anything else, so a plain scene is still "not a level".
+ */
+function roamTargets(world: WorldDoc): RoamTarget[] {
+  const out: RoamTarget[] = [];
+  let n = 0;
+  for (const id in world.entities) {
+    const e = world.entities[id] as Entity;
+    if (e.template) continue;
+    n++;
+    if (out.length >= 24) continue;
+    const drivable = e.behaviors.some((b) => b.enabled && b.type === 'vehicle');
+    const walkable = e.tags.some((t) => ROAM_TAGS.includes(t.toLowerCase()));
+    if (!drivable && !walkable) continue;
+    const p = e.transform.position;
+    out.push({ id, label: drivable ? `the drivable vehicle ${e.name}` : e.name || id, position: [p[0], p[1], p[2]], drivable });
+  }
+  return n >= 12 ? out : [];
+}
+
 /** Review a game or outdoor level. Never throws for odd documents. */
 export async function reviewLevel(world: WorldDoc): Promise<LevelReview> {
   const findings: LevelFinding[] = [];
   const goals = deriveGoals(world);
-  if (!hasGameplay(world, goals.objectives.length > 0 || goals.winDefined)) return { applicable: false, findings: [], poses: [], score: 100 };
+  const gameplay = hasGameplay(world, goals.objectives.length > 0 || goals.winDefined);
+  const targets = gameplay ? [] : roamTargets(world);
+  if (!gameplay && targets.length === 0) return { applicable: false, findings: [], poses: [], score: 100 };
   const spawn = world.player.spawn;
   const why = unsupportedReason(world);
-  if (!goals.winDefined && goals.objectives.length > 0) {
+  if (!gameplay) {
+    // A place to walk around in (a town, a plaza, a campus): nothing to win, but the player must be able to stand, walk and get to the things in it.
+  } else if (!goals.winDefined && goals.objectives.length > 0) {
     findings.push({ code: 'no_win', severity: 'error', message: 'nothing in this level ends the game: there are objectives but no goal and no winning rule', entities: [], fix: 'place a goal with place_level_items (role "goal") or add a win rule (addRule with a win action)' });
   } else if (!goals.winDefined) {
     findings.push({ code: 'no_win', severity: 'error', message: 'the level has no goal, pickup or winning rule: there is nothing to play yet', entities: [], fix: 'place pickups and a goal with place_level_items and add a win rule' });
@@ -137,6 +172,19 @@ export async function reviewLevel(world: WorldDoc): Promise<LevelReview> {
       if (!probe.ok) {
         findings.push({ code: 'spawn', severity: 'error', message: probe.problem || 'the player has nowhere to stand at the spawn point', entities: [], at: [spawn[0], spawn[1], spawn[2]], fix: 'move player.spawn to open ground (query_level ground and clearance tell where)' });
         return;
+      }
+      for (const t of targets) {
+        const a = probe.reachFrom(t.position);
+        if (!a || a.reachable) continue;
+        const near = a.nearest ? ` The nearest standable spot is ${a.nearest.map(r1).join(', ')}.` : '';
+        findings.push({
+          code: 'unreachable_target',
+          severity: t.drivable ? 'error' : 'warning',
+          message: `${t.label} at ${t.position.map(r1).join(', ')} cannot be reached on foot from the spawn: ${a.reason}.${near}`,
+          entities: [t.id],
+          at: t.position,
+          fix: t.drivable ? 'put the car on a road within a short walk of the spawn (place_level_items {id,x,z} snaps it onto the surface), and make sure the road and the way to it are solid ground' : 'make the way there solid ground (a street, stairs or ramp with a collider) or move the spawn onto the connected ground',
+        });
       }
       const all = probe.objectives();
       for (const o of all) {
