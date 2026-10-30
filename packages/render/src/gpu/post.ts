@@ -155,11 +155,12 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
     const prepass = needsPrePass(effects);
     const sun = effects.shafts && opts.sun?.castShadow ? opts.sun : null;
     const contactLight = effects.contact && opts.contactLight?.castShadow ? opts.contactLight : null;
-    const [three, tsl, bloomMod, gtao, ssgiMod, traaMod, ssrMod, godMod, blendMod, dofMod, caMod, sssMod] = await Promise.all([
+    const [three, tsl, bloomMod, gtao, denoiseMod, ssgiMod, traaMod, ssrMod, godMod, blendMod, dofMod, caMod, sssMod] = await Promise.all([
       import('three/webgpu'),
       import('three/tsl'),
       import('three/addons/tsl/display/BloomNode.js'),
       effects.ao ? import('three/addons/tsl/display/GTAONode.js') : Promise.resolve(null),
+      effects.ao && !effects.taa ? import('three/addons/tsl/display/DenoiseNode.js') : Promise.resolve(null),
       effects.gi ? import('three/addons/tsl/display/SSGINode.js') : Promise.resolve(null),
       effects.taa ? import('three/addons/tsl/display/TRAANode.js') : Promise.resolve(null),
       effects.ssr ? import('three/addons/tsl/display/SSRNode.js') : Promise.resolve(null),
@@ -236,7 +237,13 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
         if (t.samples !== undefined && Number.isFinite(t.samples)) aoPass.samples.value = Math.max(4, Math.min(48, Math.round(t.samples)));
         if (t.thickness !== undefined && Number.isFinite(t.thickness)) aoPass.thickness.value = Math.max(0.05, Math.min(8, t.thickness));
       };
-      aoValue = aoPass.getTextureNode().sample(screenUV).r as unknown as Value;
+      if (denoiseMod) {
+        // Without temporal AA the occlusion is resolved in the frame: a depth- and normal-aware blur takes the noise out (nothing crawls).
+        const denoised = denoiseMod.denoise(aoPass.getTextureNode(), prePassDepth, prePassNormal, camera);
+        denoised.index.value = 0;
+        denoised.radius.value = 4;
+        aoValue = (denoised as unknown as { r: Value }).r;
+      } else aoValue = aoPass.getTextureNode().sample(screenUV).r as unknown as Value;
       disposables.push(aoPass);
     }
     // Screen-space contact shadows: a short march toward the sun through the pre-pass depth, multiplied into the

@@ -41,7 +41,7 @@ describe('qualityPlan', () => {
     expect(low.effects.composite).toBe(false);
     const high = qualityPlan('realtime', b, false, 'high');
     expect(high.post).toBe('studio');
-    expect(high.effects.ao && high.effects.taa).toBe(true);
+    expect(high.effects.ao && !high.effects.taa && !high.effects.grain).toBe(true);
     expect(high.accumulateFrames).toBe(TIER_ACCUMULATE_FRAMES);
     expect(high.shadowRadius).toBe(TIER_SHADOW_RADIUS);
     expect(high.adaptiveResolution).toBe(true);

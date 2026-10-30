@@ -65,9 +65,11 @@ export function effectsOf(tier: RenderTier): PostEffects {
     case 'low':
       return NONE;
     case 'medium':
-      return { ...NONE, composite: true, grain: true };
+      return { ...NONE, composite: true };
     case 'high':
-      return { ...NONE, composite: true, ao: true, taa: true, contact: true, grain: true };
+      // No temporal AA and no grain while interactive: MSAA keeps edges steady, the AO is denoised in the same frame, and nothing
+      // shimmers or crawls when the camera moves. Temporal AA, grain and the rest belong to ultra and to stills.
+      return { ...NONE, composite: true, ao: true, contact: true };
     case 'ultra':
       return { ...NONE, composite: true, ao: true, taa: true, contact: true, ssr: true, shafts: true, halation: true, aberration: true, grain: true };
   }

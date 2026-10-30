@@ -29,11 +29,12 @@ describe('tiers', () => {
     expect(counts).toEqual([...counts].sort((a, b) => a - b));
     expect(new Set(counts).size).toBe(counts.length);
   });
-  it('low draws directly, medium is one composite pass, high adds AO and temporal AA, ultra the rest', () => {
+  it('low draws directly, medium is one composite pass, high adds denoised AO and contact shadows (no temporal AA, no grain), ultra the rest', () => {
     expect(effectsOf('low').composite).toBe(false);
     expect(needsPrePass(effectsOf('medium'))).toBe(false);
     expect(effectsOf('medium').composite).toBe(true);
-    expect(effectsOf('high').ao && effectsOf('high').taa).toBe(true);
+    expect(effectsOf('high').ao && !effectsOf('high').taa && !effectsOf('high').grain).toBe(true);
+    expect(effectsOf('ultra').taa && effectsOf('ultra').grain).toBe(true);
     expect(RENDER_TIERS.some((t) => effectsOf(t).gi)).toBe(false);
     expect(needsPrePass(effectsOf('high'))).toBe(true);
     const u = effectsOf('ultra');
