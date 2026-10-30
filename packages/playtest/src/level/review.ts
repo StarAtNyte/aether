@@ -15,7 +15,7 @@ import { withProbe } from './probe-cache';
 
 /** One problem found in a level. */
 export interface LevelFinding {
-  code: 'spawn' | 'no_win' | 'unreachable_required' | 'unreachable_optional' | 'unreachable_target' | 'first_reward_far' | 'unmeasured' | 'floating';
+  code: 'spawn' | 'box_terrain' | 'no_win' | 'unreachable_required' | 'unreachable_optional' | 'unreachable_target' | 'first_reward_far' | 'unmeasured' | 'floating';
   severity: 'error' | 'warning' | 'info';
   message: string;
   /** Entities involved (ids). */
@@ -149,15 +149,38 @@ function roamTargets(world: WorldDoc): RoamTarget[] {
   return n >= 12 ? out : [];
 }
 
+/** Terrain or land entities made by a custom generator that asks for the default box collider: a flat slab, not the surface. */
+function boxTerrain(world: WorldDoc): string[] {
+  const out: string[] = [];
+  for (const id in world.entities) {
+    const e = world.entities[id] as Entity;
+    if (e.template || e.shape.kind !== 'procedural' || !e.tags.some((t) => t === 'terrain' || t === 'land')) continue;
+    const gen = Object.hasOwn(world.generators, e.shape.generator) ? world.generators[e.shape.generator] : undefined;
+    if (!gen) continue;
+    if (/autoColliders\(\s*(['"]box['"])?\s*\)/.test(gen.source) && !/api\.collider\(/.test(gen.source)) out.push(id);
+  }
+  return out;
+}
+
 /** Review a game or outdoor level. Never throws for odd documents. */
 export async function reviewLevel(world: WorldDoc): Promise<LevelReview> {
   const findings: LevelFinding[] = [];
   const goals = deriveGoals(world);
   const gameplay = hasGameplay(world, goals.objectives.length > 0 || goals.winDefined);
   const targets = gameplay ? [] : roamTargets(world);
-  if (!gameplay && targets.length === 0) return { applicable: false, findings: [], poses: [], score: 100 };
+  if (!gameplay && targets.length === 0 && boxTerrain(world).length === 0) return { applicable: false, findings: [], poses: [], score: 100 };
   const spawn = world.player.spawn;
   const why = unsupportedReason(world);
+  const boxed = gameplay ? [] : boxTerrain(world);
+  for (const id of boxed) {
+    findings.push({
+      code: 'box_terrain',
+      severity: 'error',
+      message: `${world.entities[id]?.name ?? id} (${id}) is terrain or land whose generator collides as one box (autoColliders with the default or "box"): the player stands on, or is buried in, a flat slab at its highest point, never on its real surface`,
+      entities: [id],
+      fix: `edit the generator "${(world.entities[id]?.shape as { generator?: string }).generator ?? ''}": call api.autoColliders("trimesh") so it collides with the surface it draws`,
+    });
+  }
   if (!gameplay) {
     // A place to walk around in (a town, a plaza, a campus): nothing to win, but the player must be able to stand, walk and get to the things in it.
   } else if (!goals.winDefined && goals.objectives.length > 0) {

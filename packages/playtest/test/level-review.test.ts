@@ -33,6 +33,16 @@ describe('reviewLevel', () => {
     expect(good.findings.filter((x) => x.severity !== 'info')).toEqual([]);
   }, 60_000);
 
+  it('names terrain that collides as one box, with the one-line fix in the generator', async () => {
+    const terrain = slab('ground', [0, -0.25, 0], [30, 0.5, 12], { tags: ['terrain', 'land'], shape: { kind: 'procedural', generator: 'hills', params: {} } as never });
+    const props = Array.from({ length: 12 }, (_, i) => slab(`prop-${i}`, [-8 + i * 1.5, 0.5, 6], [0.6, 1, 0.6]));
+    const world = gameWorld([terrain, ...props], { generators: { hills: { id: 'hills', description: 'hills', params: {}, source: "api.add(api.box(30,1,12),{});\napi.autoColliders('box');\nreturn api.build();" } } as never }, [0, 0.5, 0]);
+    const r = await reviewLevel(world);
+    const f = r.findings.find((x) => x.code === 'box_terrain');
+    expect(f?.severity).toBe('error');
+    expect(f?.fix).toContain('trimesh');
+  }, 60_000);
+
   it('finds an objective nobody can reach, with the gap, a fix and a camera on the spot', async () => {
     const world = gameWorld(
       [slab('floor', [0, -0.25, 0], [20, 0.5, 20]), slab('tower', [40, 5, 0], [6, 10, 6]), coin('c-near', [3, 1, 0]), goalAt('exit', [40, 11.5, 0])],
