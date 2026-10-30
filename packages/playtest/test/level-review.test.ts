@@ -19,15 +19,16 @@ describe('reviewLevel', () => {
     expect((await reviewLevel(createWorld())).applicable).toBe(false);
   });
 
-  it('walk-checks a free-roam place: a drivable car on an island is an error, one on the street is clean', async () => {
+  it('walk-checks a free-roam place: a plaza cut off on an island is an error, a car on the street is clean', async () => {
     const props = Array.from({ length: 12 }, (_, i) => slab(`prop-${i}`, [-8 + i * 1.5, 0.5, 6], [0.6, 1, 0.6]));
     const car = (at: [number, number, number]) => slab('car', at, [2, 1, 4], { name: 'Sports car', behaviors: [{ type: 'vehicle', params: {} }] });
-    const base = [slab('floor', [0, -0.25, 0], [30, 0.5, 12], { tags: ['roads'] }), slab('island', [60, -0.25, 0], [10, 0.5, 10]), ...props];
-    const bad = await reviewLevel(gameWorld([...base, car([60, 0.5, 0])], {}, [0, 0.5, 0]));
+    const base = [slab('floor', [0, -0.25, 0], [30, 0.5, 12], { tags: ['roads'] }), ...props];
+    const island = slab('island', [60, 0.5, 0], [10, 1, 10], { name: 'Praca', tags: ['plaza'] });
+    const bad = await reviewLevel(gameWorld([...base, island], { environment: { ground: null } as never }, [0, 0.5, 0]));
     expect(bad.applicable).toBe(true);
     const f = bad.findings.find((x) => x.code === 'unreachable_target');
     expect(f?.severity).toBe('error');
-    expect(f?.entities).toEqual(['car']);
+    expect(f?.entities).toEqual(['island']);
     expect(bad.findings.some((x) => x.code === 'no_win')).toBe(false);
     const good = await reviewLevel(gameWorld([...base, car([6, 0.5, 0])], {}, [0, 0.5, 0]));
     expect(good.findings.filter((x) => x.severity !== 'info')).toEqual([]);

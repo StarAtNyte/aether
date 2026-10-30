@@ -10,7 +10,7 @@ import { entityBounds, type Aabb } from '@aether/physics';
 import { floatingText, groundingOf } from './grounding';
 import type { Entity, Vec3, WorldDoc } from '@aether/core';
 import { deriveGoals } from '../goals';
-import { unsupportedReason } from '../agent';
+import { roamTargets, unsupportedReason } from '../agent';
 import { withProbe } from './probe-cache';
 
 /** One problem found in a level. */
@@ -118,35 +118,14 @@ function hasGameplay(world: WorldDoc, derived: boolean): boolean {
   return false;
 }
 
-/** A thing a visitor to a free-roam world should be able to walk to: the drivable car, and the street, plaza, stair and quay pieces. */
-interface RoamTarget {
-  id: string;
-  label: string;
-  position: Vec3;
-  drivable: boolean;
-}
-
-const ROAM_TAGS = ['roads', 'road', 'street', 'plaza', 'stairs', 'quay', 'promenade'];
-
-/**
- * The walk checks of a world with no game in it: its drivable vehicles and walkable-surface entities, when there are at least
- * 12 entities (a place, not a prop). Empty for anything else, so a plain scene is still "not a level".
- */
-function roamTargets(world: WorldDoc): RoamTarget[] {
-  const out: RoamTarget[] = [];
-  let n = 0;
-  for (const id in world.entities) {
-    const e = world.entities[id] as Entity;
-    if (e.template) continue;
-    n++;
-    if (out.length >= 24) continue;
-    const drivable = e.behaviors.some((b) => b.enabled && b.type === 'vehicle');
-    const walkable = e.tags.some((t) => ROAM_TAGS.includes(t.toLowerCase()));
-    if (!drivable && !walkable) continue;
-    const p = e.transform.position;
-    out.push({ id, label: drivable ? `the drivable vehicle ${e.name}` : e.name || id, position: [p[0], p[1], p[2]], drivable });
-  }
-  return n >= 12 ? out : [];
+/** The one-line fix for a box-collider terrain, with the corrected generator source in full when it is short enough to send back to write_generator as it stands. */
+function boxFix(world: WorldDoc, id: string): string {
+  const gid = (world.entities[id]?.shape as { generator?: string }).generator ?? '';
+  const gen = Object.hasOwn(world.generators, gid) ? world.generators[gid] : undefined;
+  const head = `edit the generator "${gid}": call api.autoColliders("trimesh") so it collides with the surface it draws`;
+  if (!gen || gen.source.length > 6000) return head;
+  const fixed = gen.source.replace(/autoColliders\(\s*(['"]box['"])?\s*\)/, 'autoColliders("trimesh")');
+  return `${head}. Call write_generator with id "${gid}" and exactly this source (only that call changed):\n${fixed}`;
 }
 
 /** Terrain or land entities made by a custom generator that asks for the default box collider: a flat slab, not the surface. */
@@ -178,7 +157,7 @@ export async function reviewLevel(world: WorldDoc): Promise<LevelReview> {
       severity: 'error',
       message: `${world.entities[id]?.name ?? id} (${id}) is terrain or land whose generator collides as one box (autoColliders with the default or "box"): the player stands on, or is buried in, a flat slab at its highest point, never on its real surface`,
       entities: [id],
-      fix: `edit the generator "${(world.entities[id]?.shape as { generator?: string }).generator ?? ''}": call api.autoColliders("trimesh") so it collides with the surface it draws`,
+      fix: boxFix(world, id),
     });
   }
   if (!gameplay) {

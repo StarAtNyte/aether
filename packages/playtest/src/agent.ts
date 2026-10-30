@@ -557,7 +557,8 @@ class Bot {
     }
     for (let i = 0; i < 90 && !this.session.over; i++) this.session.tick({ forward: 0, right: 0, jump: false, yawDeg: 0 });
     const landed = this.session.position;
-    const objectivePoints = this.goals.objectives.map((o) => o.position);
+    // A free-roam place has no objectives: map the whole of it (streets, plazas, the car), not just the spawn's surroundings.
+    const objectivePoints = this.goals.objectives.length > 0 ? this.goals.objectives.map((o) => o.position) : roamTargets(this.world).map((t) => t.position);
     const doorPoints = this.goals.doors.map((d) => d.center);
     this.note = 'mapping the level';
     const threatPoints: Vec3[] = this.threats ? this.threats.list.map((t) => [t.x, t.y, t.z] as Vec3) : [];
@@ -2227,6 +2228,37 @@ export interface LevelProbe {
   /** Whether the player can stand within reach of a point, and if not why not. */
   reachFrom: (pos: Readonly<Vec3>) => LevelReachAnswer | null;
   dispose: () => void;
+}
+
+/** A thing a visitor to a free-roam world should be able to walk to: the drivable car, and the street, plaza, stair and quay pieces. */
+export interface RoamTarget {
+  id: string;
+  label: string;
+  position: Vec3;
+  drivable: boolean;
+}
+
+const ROAM_TAGS = ['roads', 'road', 'street', 'plaza', 'stairs', 'quay', 'promenade'];
+
+/**
+ * The walk checks of a world with no game in it: its drivable vehicles and walkable-surface entities, when there are at least
+ * 12 entities (a place, not a prop). Empty for anything else, so a plain scene is still "not a level".
+ */
+export function roamTargets(world: WorldDoc): RoamTarget[] {
+  const out: RoamTarget[] = [];
+  let n = 0;
+  for (const id in world.entities) {
+    const e = world.entities[id] as Entity;
+    if (e.template) continue;
+    n++;
+    if (out.length >= 24) continue;
+    const drivable = e.behaviors.some((b) => b.enabled && b.type === 'vehicle');
+    const walkable = e.tags.some((t) => ROAM_TAGS.includes(t.toLowerCase()));
+    if (!drivable && !walkable) continue;
+    const p = e.transform.position;
+    out.push({ id, label: drivable ? `the drivable vehicle ${e.name}` : e.name || id, position: [p[0], p[1], p[2]], drivable });
+  }
+  return n >= 12 ? out : [];
 }
 
 /** Build the walking map of a game for reach questions. The caller disposes it. */
