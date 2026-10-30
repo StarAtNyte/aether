@@ -56,8 +56,8 @@ const EFFECT_LABELS: Readonly<Record<EffectSetting, [string, string]>> = {
 /** Effects each tier runs by default (mirrors the renderer's tier table; used to show the state of the switches). */
 export const TIER_EFFECTS: Readonly<Record<Exclude<RenderTierSetting, 'auto'>, readonly EffectSetting[]>> = {
   low: [],
-  medium: ['grain'],
-  high: ['ao', 'taa', 'contact', 'grain'],
+  medium: [],
+  high: ['ao', 'contact'],
   ultra: ['ao', 'taa', 'contact', 'ssr', 'shafts', 'halation', 'aberration', 'grain'],
 };
 
