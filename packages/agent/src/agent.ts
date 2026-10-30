@@ -765,8 +765,8 @@ export class WorldAgent {
       // No building: a game or outdoor level is reviewed with the level tools, when the host has them.
       if (snap.buildings.length === 0) {
         const lvl = this.opts.levelTools ? await raceAbort(levelSnapshot(this.opts.levelTools, world, { maxViews, withViews }), signal) : null;
-        // A world made of free pieces with no plan and nothing to measure is still compared with its brief.
-        const snapped = lvl ?? (this.briefState ? richnessSnapshot(world, { maxViews, withViews }) : null);
+        // A world made of free pieces with no plan and nothing to measure is still compared with its brief, or, with no brief (a refine run), judged by eye from the renders.
+        const snapped = lvl ?? (this.briefState || withViews ? richnessSnapshot(world, { maxViews, withViews }) : null);
         if (!snapped) {
           yield { type: 'status', text: 'Review skipped: nothing to measure here (no building, no level snapshot, no brief to compare with).' };
           return;

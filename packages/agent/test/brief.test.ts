@@ -238,6 +238,28 @@ describe('richness review of a world made of free pieces', () => {
   });
 });
 
+describe('review of a free-pieces world without a brief (a refine run)', () => {
+  it('judges the world by eye from the renders instead of skipping the review', async () => {
+    const add = (id: string, x: number, z: number) => ({ op: 'add', entity: { id, name: id, transform: { position: [x, 0.5, z] } } });
+    const provider = scripted(null, [
+      () => [call('apply_patches', { patches: [add('house-1', -6, -6), add('house-2', 6, 6)], message: 'two houses' })],
+      () => [finish('built')],
+      () => [finish('looks right')],
+    ]);
+    const asked: string[] = [];
+    const host = Object.assign(new MemoryHost(), {
+      captureReview: async (views: ReadonlyArray<{ name: string }>) => {
+        asked.push(...views.map((v) => v.name));
+        return views.map((v) => ({ name: v.name, dataUrl: PNG }));
+      },
+    });
+    const events = await collect(new WorldAgent({ provider, catalogs: TEST_CATALOGS, maxTurns: 12, review: { vision: true } }).run('make a village', host, { intent: 'new' }));
+    expect(asked).toEqual(expect.arrayContaining(['overview', 'eye-near']));
+    expect(events.some((e) => e.type === 'review' && e.phase === 'checking')).toBe(true);
+    expect(events.some((e) => e.type === 'status' && /Review skipped/.test(e.text))).toBe(false);
+  });
+});
+
 describe('brief helpers', () => {
   it('rejects a brief without elements and names the problem', () => {
     const r = parseBrief({ ...brief(), elements: [] });
