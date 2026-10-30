@@ -3,15 +3,16 @@
  * brief step, then renders an overview and eye-height stills with the software renderer and writes the counts.
  *
  *   npx tsx scripts/brief-probe.ts --id=cinema --prompt="make a cinema hall" --brief=on --out=probe-out/brief
- *   options: --backend=claude-code|codex --effort=low|medium|high --rounds=N --turns=N --tool-calls=N --keep=<dir> (default ~/.local/share/aether/gen-worlds; the run is copied to <dir>/<id>/)
+ *   options: --backend=claude-code|codex --effort=low|medium|high --rounds=N --turns=N --tool-calls=N --gpu=1 --from=<template slug> --keep=<dir> (default ~/.local/share/aether/gen-worlds; the run is copied to <dir>/<id>/)
  *
  * Single runs are noisy: read the counts as one sample, not a measurement.
  */
+import { readFileSync } from 'node:fs';
 import { cp, mkdir, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { performance } from 'node:perf_hooks';
 import { join, resolve } from 'node:path';
-import type { Entity, PatchResult, WorldDoc } from '@aether/core';
+import { createWorld, type Entity, type PatchResult, type WorldDoc } from '@aether/core';
 import { REVIEW_ASPECT, WorldAgent, richnessEvidence, type AgentEvent, type LevelToolRunner, type Provider, type ReviewViewRequest } from '@aether/agent';
 import { initScripting } from '@aether/logic';
 import { initPhysics } from '@aether/physics';
@@ -31,6 +32,8 @@ const effort = (arg('effort', 'low') as 'low' | 'medium' | 'high');
 const rounds = Number(arg('rounds', '4'));
 // --gpu=1: the review views come from the studio's own renderer on the integrated GPU (what the model sees in the app) instead of the flat software one.
 const useGpu = arg('gpu', '0') === '1';
+// --from=<slug>: refine the bundled template world of that name (a chat edit over an existing world) instead of building a new one.
+const from = arg('from');
 const out = resolve(arg('out', 'probe-out/brief') as string, `${id}-${withBrief ? 'after' : 'before'}`);
 
 const levelTools: LevelToolRunner = async (world, name, input) => {
@@ -99,11 +102,12 @@ async function main(): Promise<void> {
     }
   }
   const gpuRoom: GpuRoom | null = useGpu ? await GpuRoom.open({}) : null;
-  const host = new Host(sandbox);
+  const initial = from ? (createWorld((JSON.parse(readFileSync(resolve(`apps/studio/public/templates/worlds/${from}.json`), 'utf8')) as { world: WorldDoc }).world) as WorldDoc) : undefined;
+  const host = new Host(sandbox, initial);
   const events: AgentEvent[] = [];
   const t0 = performance.now();
   const agent = new WorldAgent({ provider, catalogs: CATALOGS, resolveGenerator: loadLibraryGenerator, maxRepairs: 2, maxTurns: Number(arg('turns', '40')), maxToolCalls: Number(arg('tool-calls', '300')), levelTools, textures: { images: null }, review: { vision: true, maxViews: 6, stallRounds: 3, maxRounds: rounds }, ...(withBrief ? { brief: {} } : {}) });
-  for await (const ev of agent.run(prompt, host, { intent: 'new' })) {
+  for await (const ev of agent.run(prompt, host, { intent: from ? 'refine' : 'new' })) {
     events.push(ev);
     if (ev.type === 'status' || ev.type === 'brief' || ev.type === 'review') console.log(`[${Math.round((performance.now() - t0) / 1000)}s] ${ev.type}${'phase' in ev ? `:${ev.phase}` : ''} ${'text' in ev ? ev.text.slice(0, 120) : ''}`);
   }
