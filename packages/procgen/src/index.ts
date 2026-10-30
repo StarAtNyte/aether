@@ -27,6 +27,7 @@ export { archToOutput } from './generators/arch';
 export { primitiveOutput, fallbackOutput, validateOutput } from './output';
 export { resolveParams } from './params';
 export { GeneratorCache, DEFAULT_CACHE_BYTES, DEFAULT_SEED, generatorCacheKey, outputBytes } from './cache';
+export { worldColliderProvider } from './world-colliders';
 export { PROCGEN_LIMITS } from './limits';
 export { Noise } from './noise';
 export { normalizeHex, mixHex } from './color';

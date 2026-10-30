@@ -36,6 +36,7 @@ import { deriveWalkGoals } from './rooms';
 import { withDoorsOpen } from './doorpose';
 import { checkBuildings } from '@aether/arch';
 import { Session, STEP } from './session';
+import { levelColliders } from './level/colliders';
 import { BODY_SLACK, LineFollower, onStair, stairGuides, stairStretches, type StairGuide } from './stairs';
 import { ThreatWatch, CORE_MARGIN, type ThreatSource } from './threats';
 import {
@@ -519,7 +520,7 @@ class Bot {
     const w = this.world;
     const doorIds = new Set<EntityId>(this.goals.doors.map((d) => d.id));
     const probeDoc = doorIds.size > 0 ? withDoorsOpen(w, this.goals.doors) : w;
-    this.probe = await PhysicsWorld.create(probeDoc, { fixedDt: STEP });
+    this.probe = await PhysicsWorld.create(probeDoc, { fixedDt: STEP, ...levelColliders() });
     const gravity = Math.abs(w.environment.gravity[1]) || 9.81;
     this.params = {
       radius: PLAYER_CAPSULE.radius,

@@ -146,7 +146,7 @@ export interface GeneratorApi {
   /** Add an explicit physics collider. */
   collider(desc: ColliderDesc): void;
   /** Derive compound colliders from the added parts at build time. */
-  autoColliders(mode?: 'box' | 'hull'): void;
+  autoColliders(mode?: 'box' | 'hull' | 'trimesh'): void;
   /** "#rrggbb" → [r, g, b] in 0..1 (sRGB). */
   color(hex: string): [number, number, number];
   /** Mix two colors (sRGB), t in 0..1 → "#rrggbb". */

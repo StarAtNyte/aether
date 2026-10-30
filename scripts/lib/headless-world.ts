@@ -5,10 +5,10 @@
  */
 import { catalogSummary, getCatalog, loadCatalog } from '@aether/assets';
 import { createWorld, History, type GeneratorDef, type PatchResult, type ScriptDef, type WorldDoc } from '@aether/core';
-import type { AgentCatalogs, AgentHost } from '@aether/agent';
+import type { AgentCatalogs, AgentHost, LevelToolRunner } from '@aether/agent';
 import { BEHAVIOR_CATALOG, RULE_DOCS, SCRIPT_API_DTS, createScriptRunner, isScriptingReady } from '@aether/logic';
 import { summarizeReport, verify } from '@aether/physics';
-import { GENERATOR_API_DTS, GENERATOR_EXAMPLES, GENERATOR_LIBRARY, catalog, resolveParams, staticCheckSource, validateOutput, type SandboxRunner } from '@aether/procgen';
+import { GENERATOR_API_DTS, GENERATOR_EXAMPLES, GENERATOR_LIBRARY, catalog, resolveParams, staticCheckSource, validateOutput, worldColliderProvider, type SandboxRunner } from '@aether/procgen';
 import { createVerifyLogic } from '../../apps/studio/src/engine/headlessHost';
 
 /** Headless verification limits (same order of magnitude as the studio). */
@@ -99,3 +99,16 @@ export async function runVerify(world: WorldDoc): Promise<{ report: unknown; sum
   }
 }
 
+
+/**
+ * The agent's level tools for a Node run: the sandbox builds the colliders of the world's custom generators (terrain, streets,
+ * buildings) first, as the studio's renderer does, so reach and grounding are measured on the real shapes and not on placeholder boxes.
+ */
+export function nodeLevelTools(sandbox: SandboxRunner): LevelToolRunner {
+  return async (world, name, input) => {
+    const { runLevelTool } = await import('@aether/playtest/level');
+    const colliders = await worldColliderProvider(world, sandbox);
+    const r = await runLevelTool(world, name, input, { colliders });
+    return { ok: r.ok, text: r.text, patches: r.patches, message: r.message, ...(r.data ? { data: r.data } : {}) };
+  };
+}

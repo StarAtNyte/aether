@@ -51,7 +51,7 @@ import { ArchController } from './arch';
 import { PublishController } from './publish';
 import { createStudioStore, type MemoryState, type StudioMode, type StudioState } from '../state/store';
 import { AgentBridge, agentCatalogs, createOfflinePlanner, resolveLibraryGenerator, verifyOnMainThread, type VerificationRun } from './AgentBridge';
-import { lazyLevelTools } from './levelTools';
+import { levelToolsFor } from './levelTools';
 import type { VerifyTrace } from '@aether/physics';
 import { playUiSound } from '../lib/uiSound';
 import { planMarks } from '../lib/planMarks';
@@ -1202,7 +1202,7 @@ export class Studio {
       // three on a subscription, one on a paid key (still stateless, with the fixed rubric and the relative comparison).
       const photo = primary && promptProfile === 'full' ? { vision: () => chain?.active()?.vision ?? resolved.vision, differences: true, crossCheck: true, harness: true, objects: true, perception: (() => { try { return globalThis.localStorage?.getItem('aether.perception') !== 'off'; } catch { return true; } })(), ...(subscription ? {} : { maxRounds: PHOTO_ROUNDS_METERED, judges: PHOTO_JUDGES_METERED, reads: PHOTO_READS_METERED }) } : { vision: false };
       // The level tools serve the offline planner too: an "onto" move is set down on the surface measured under it.
-      const agent = new WorldAgent({ provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: Number.isFinite(repairs) ? repairs : MAX_REPAIRS, promptProfile, photo, ...(buildAsset ? { buildAsset } : {}), ...(promptProfile === 'full' && primary ? { importAsset: this.assetImporter(entryId), hubSearch: this.hubSearcher() } : {}), ...(promptProfile === 'full' ? { levelTools: lazyLevelTools, textures: { images: primary ? this.ai.imageGenerator() : null } } : {}), ...(promptProfile === 'full' && primary ? { brief: {} } : {}), ...(review ? { review, maxTurns: REVIEW_MAX_TURNS, maxToolCalls: REVIEW_MAX_TOOL_CALLS } : {}) });
+      const agent = new WorldAgent({ provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: Number.isFinite(repairs) ? repairs : MAX_REPAIRS, promptProfile, photo, ...(buildAsset ? { buildAsset } : {}), ...(promptProfile === 'full' && primary ? { importAsset: this.assetImporter(entryId), hubSearch: this.hubSearcher() } : {}), ...(promptProfile === 'full' ? { levelTools: levelToolsFor(() => this.simulation), textures: { images: primary ? this.ai.imageGenerator() : null } } : {}), ...(promptProfile === 'full' && primary ? { brief: {} } : {}), ...(review ? { review, maxTurns: REVIEW_MAX_TURNS, maxToolCalls: REVIEW_MAX_TOOL_CALLS } : {}) });
       session = primary && (resolved.kind === 'local' || resolved.kind === 'bridge') ? (projectSessionKey(this.projectId) ?? undefined) : undefined;
       // The untouched default glade is a placeholder, not something the user made: the first prompt builds a new world.
       const intent = opts.intent ?? (before === this.history.current && st.chat.length === 0 && !this.history.canUndo() && isPristineStarter(before) ? 'new' : 'auto');
@@ -1472,7 +1472,7 @@ export class Studio {
       if (ctx.online) {
         this.store.getState().setAgentStep(`Refining (round ${round + 1} of ${ctx.budget})…`);
         // The same tools as the build (so the same system prompt): the refinement continues the build's conversation.
-        const agent = new WorldAgent({ provider: ctx.provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: 1, promptProfile: ctx.promptProfile, ...(ctx.promptProfile === 'full' ? { levelTools: lazyLevelTools } : {}) });
+        const agent = new WorldAgent({ provider: ctx.provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: 1, promptProfile: ctx.promptProfile, ...(ctx.promptProfile === 'full' ? { levelTools: levelToolsFor(() => this.simulation) } : {}) });
         const history = [...ctx.history, { role: 'user' as const, content: ctx.prompt }, { role: 'assistant' as const, content: 'Built the first version of the world.' }];
         const status = await this.streamRun(agent.run(refineInstruction(report), this.bridge, { signal: ctx.abort.signal, history, ...(ctx.session ? { session: ctx.session } : {}) }), ctx.entryId, ctx.abort, ctx.usage);
         if (status === 'aborted') return 'aborted';

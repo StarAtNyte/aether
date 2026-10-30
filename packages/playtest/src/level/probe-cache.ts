@@ -7,6 +7,7 @@
 import type { WorldDoc } from '@aether/core';
 import { probeLevel, type LevelProbe } from '../agent';
 import { hashWorld } from '../proof';
+import { hasLevelColliders } from './colliders';
 
 /** How long an unused probe is kept (ms). */
 export const PROBE_TTL_MS = 30_000;
@@ -39,7 +40,7 @@ function drop(): void {
  */
 export function withProbe<T>(world: WorldDoc, fn: (probe: LevelProbe) => T | Promise<T>): Promise<T> {
   const run = async (): Promise<T> => {
-    const key = hashWorld(world);
+    const key = `${hashWorld(world)}${hasLevelColliders() ? '+c' : ''}`;
     if (cached && cached.key === key) {
       stats.hits++;
       if (cached.timer) clearTimeout(cached.timer);

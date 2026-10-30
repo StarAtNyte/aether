@@ -18,6 +18,7 @@
  */
 import { PhysicsSpec, findWaterBodies, isWaterEntity, waterAt, worldTransform, type Entity, type EntityId, type Vec3, type WorldDoc } from '@aether/core';
 import { PhysicsWorld, entityBounds, initPhysics, type Aabb } from '@aether/physics';
+import { levelColliders } from './colliders';
 
 /** Hover height (m) above which an object counts as floating; small gaps are mesh and collider slack. */
 export const FLOAT_TOLERANCE = 0.12;
@@ -253,7 +254,7 @@ export function measureGrounding(world: WorldDoc, pw: PhysicsWorld, only?: Reado
 /** {@link measureGrounding} against the drawn surfaces of `world` (builds and frees the physics world itself). */
 export async function groundingOf(world: WorldDoc, only?: ReadonlySet<EntityId>): Promise<GroundingReport> {
   await initPhysics();
-  const pw = await PhysicsWorld.create(surfaceWorld(world), { fixedDt: 1 / 60 });
+  const pw = await PhysicsWorld.create(surfaceWorld(world), { fixedDt: 1 / 60, ...levelColliders() });
   try {
     return measureGrounding(world, pw, only);
   } finally {

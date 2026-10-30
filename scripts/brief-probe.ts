@@ -13,14 +13,14 @@ import { homedir } from 'node:os';
 import { performance } from 'node:perf_hooks';
 import { join, resolve } from 'node:path';
 import { createWorld, type Entity, type PatchResult, type WorldDoc } from '@aether/core';
-import { REVIEW_ASPECT, WorldAgent, richnessEvidence, type AgentEvent, type LevelToolRunner, type Provider, type ReviewViewRequest } from '@aether/agent';
+import { REVIEW_ASPECT, WorldAgent, richnessEvidence, type AgentEvent, type Provider, type ReviewViewRequest } from '@aether/agent';
 import { initScripting } from '@aether/logic';
 import { initPhysics } from '@aether/physics';
 import { loadLibraryGenerator } from '@aether/procgen';
 import { createNodeSandbox } from '@aether/procgen/node';
 import { createHeadlessProvider } from './lib/live-provider';
 import { captureReviewHeadless } from '../apps/cli/src/mcp/review';
-import { CATALOGS, GENERATOR_DRY_RUN_MS, NodeAgentHost } from './lib/headless-world';
+import { CATALOGS, GENERATOR_DRY_RUN_MS, NodeAgentHost, nodeLevelTools } from './lib/headless-world';
 import { GpuRoom } from './lib/gpu-room';
 
 const arg = (n: string, d?: string): string | undefined => process.argv.find((a) => a.startsWith(`--${n}=`))?.slice(n.length + 3) ?? d;
@@ -35,12 +35,6 @@ const useGpu = arg('gpu', '0') === '1';
 // --from=<slug>: refine the bundled template world of that name (a chat edit over an existing world) instead of building a new one.
 const from = arg('from');
 const out = resolve(arg('out', 'probe-out/brief') as string, `${id}-${withBrief ? 'after' : 'before'}`);
-
-const levelTools: LevelToolRunner = async (world, name, input) => {
-  const { runLevelTool } = await import('@aether/playtest/level');
-  const r = await runLevelTool(world, name, input);
-  return { ok: r.ok, text: r.text, patches: r.patches, message: r.message, ...(r.data ? { data: r.data } : {}) };
-};
 
 function kindOf(e: Entity): string {
   return e.shape.kind === 'procedural' ? e.shape.generator : e.shape.kind === 'asset' ? e.shape.id : `${e.shape.kind}:${e.name.toLowerCase().replace(/[\d\W]+/g, ' ').trim()}`;
@@ -106,7 +100,7 @@ async function main(): Promise<void> {
   const host = new Host(sandbox, initial);
   const events: AgentEvent[] = [];
   const t0 = performance.now();
-  const agent = new WorldAgent({ provider, catalogs: CATALOGS, resolveGenerator: loadLibraryGenerator, maxRepairs: 2, maxTurns: Number(arg('turns', '40')), maxToolCalls: Number(arg('tool-calls', '300')), levelTools, textures: { images: null }, review: { vision: true, maxViews: 6, stallRounds: 3, maxRounds: rounds }, ...(withBrief ? { brief: {} } : {}) });
+  const agent = new WorldAgent({ provider, catalogs: CATALOGS, resolveGenerator: loadLibraryGenerator, maxRepairs: 2, maxTurns: Number(arg('turns', '40')), maxToolCalls: Number(arg('tool-calls', '300')), levelTools: nodeLevelTools(sandbox), textures: { images: null }, review: { vision: true, maxViews: 6, stallRounds: 3, maxRounds: rounds }, ...(withBrief ? { brief: {} } : {}) });
   for await (const ev of agent.run(prompt, host, { intent: from ? 'refine' : 'new' })) {
     events.push(ev);
     if (ev.type === 'status' || ev.type === 'brief' || ev.type === 'review') console.log(`[${Math.round((performance.now() - t0) / 1000)}s] ${ev.type}${'phase' in ev ? `:${ev.phase}` : ''} ${'text' in ev ? ev.text.slice(0, 120) : ''}`);

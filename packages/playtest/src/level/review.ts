@@ -179,11 +179,11 @@ export async function reviewLevel(world: WorldDoc): Promise<LevelReview> {
         const near = a.nearest ? ` The nearest standable spot is ${a.nearest.map(r1).join(', ')}.` : '';
         findings.push({
           code: 'unreachable_target',
-          severity: t.drivable ? 'error' : 'warning',
+          severity: 'error',
           message: `${t.label} at ${t.position.map(r1).join(', ')} cannot be reached on foot from the spawn: ${a.reason}.${near}`,
           entities: [t.id],
           at: t.position,
-          fix: t.drivable ? 'put the car on a road within a short walk of the spawn (place_level_items {id,x,z} snaps it onto the surface), and make sure the road and the way to it are solid ground' : 'make the way there solid ground (a street, stairs or ramp with a collider) or move the spawn onto the connected ground',
+          fix: t.drivable ? 'put the car on a road within a short walk of the spawn (place_level_items {id,x,z} snaps it onto the surface), and make sure the road and the way to it are solid ground' : 'make the way there solid ground (a street, stairs or ramp with a collider; a slope over about 45 degrees cannot be walked) or move the spawn onto the connected ground',
         });
       }
       const all = probe.objectives();

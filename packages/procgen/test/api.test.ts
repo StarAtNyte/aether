@@ -59,7 +59,21 @@ describe('createGeneratorApi', () => {
       expect(hull.colliders[0].points.length / 3).toBeLessThanOrEqual(48);
       expect(hull.colliders[0].points.length / 3).toBeGreaterThanOrEqual(12);
     }
-    expect(() => api2.autoColliders('trimesh' as 'box')).toThrow(TypeError);
+    expect(() => api2.autoColliders('mesh' as 'box')).toThrow(TypeError);
+  });
+
+  it('autoColliders("trimesh") follows the surface instead of boxing it', () => {
+    const api = createGeneratorApi(1);
+    api.add(api.heightfield(8, 8, 16, 16, (x) => (x > 0 ? 10 : 0)), {});
+    api.autoColliders('trimesh');
+    const out = api.build({ recenter: false });
+    const c = out.colliders[0];
+    expect(c?.kind).toBe('trimesh');
+    if (c?.kind === 'trimesh') {
+      expect(c.positions.length / 3).toBeGreaterThanOrEqual(64);
+      expect(c.indices.length % 3).toBe(0);
+      expect(Math.max(...c.indices)).toBeLessThan(c.positions.length / 3);
+    }
   });
 
   it('is deterministic per seed (rng, noise, geometry)', () => {

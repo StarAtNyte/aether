@@ -75,7 +75,7 @@ interface GeneratorApi {
 
   add(mesh: MeshHandle, material: MaterialSpec): void;   // add a finished mesh to the object
   collider(desc: ColliderDesc): void;                     // explicit physics collider (prefer boxes/cylinders/hulls)
-  autoColliders(mode?: 'box' | 'hull'): void;             // derive colliders from added meshes (used if you add none)
+  autoColliders(mode?: 'box' | 'hull' | 'trimesh'): void; // derive colliders from added meshes (used if you add none); 'trimesh' = the exact surface: use it for terrain, streets and anything walked on (a box would be a solid slab up to its top)
   color(hex: string): [number, number, number];           // "#rrggbb" -> [r, g, b] in 0..1
   mix(a: string, b: string, t: number): string;           // blend two colors, t in 0..1
   build(): GeneratorOutput;                                // ALWAYS return api.build()

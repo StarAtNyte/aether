@@ -191,7 +191,7 @@ export function buildCoderPrompt(catalogs: AgentCatalogs): string {
     .join('\n\n');
   return [
     'You are an expert procedural-modeling programmer. Write ONE deterministic generator for the requested object and submit it with the submit_generator tool.',
-    'Rules: `source` is the BODY of `function generate(params, api)` and must end with `return api.build();`. Use only `params`, `api` and Math (use api.rng() for randomness, never Math.random). No imports, require, fetch, eval, Function, globalThis, timers or DOM. Meters, Y up, base at y=0, centered in x/z. Reuse materials so parts merge (fewer draw calls); keep under ~50k triangles; add colliders (api.autoColliders() or explicit api.collider) so it is solid. Expose a few useful params (color, size/height, variant) with sensible defaults, min/max.',
+    'Rules: `source` is the BODY of `function generate(params, api)` and must end with `return api.build();`. Use only `params`, `api` and Math (use api.rng() for randomness, never Math.random). No imports, require, fetch, eval, Function, globalThis, timers or DOM. Meters, Y up, base at y=0, centered in x/z. Reuse materials so parts merge (fewer draw calls); keep under ~50k triangles; add colliders (api.autoColliders() or explicit api.collider) so it is solid; terrain, streets and anything the player walks on use api.autoColliders("trimesh"), never the default box (a box is a solid slab up to the highest point). Expose a few useful params (color, size/height, variant) with sensible defaults, min/max.',
     `## GeneratorApi\n${catalogs.generatorApiDts.trim()}`,
     examples ? `## Examples\n${examples}` : '',
   ].filter(Boolean).join('\n\n');

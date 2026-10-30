@@ -7,6 +7,7 @@ import type { EntityId, Vec3, WorldDoc } from '@aether/core';
 import { EMPTY_INPUT, LogicRuntime, type InputState, type ScriptRunner } from '@aether/logic';
 import { CharacterController, PhysicsWorld } from '@aether/physics';
 import { PLAYER_CAPSULE, PLAYER_ID, PlaytestHost } from './host';
+import { levelColliders } from './level/colliders';
 import { TRACE_STRIDE, PLAYTEST_LIMITS, type PlaytestTrace, type TraceEvent } from './types';
 
 /** Fixed step of the studio simulation. */
@@ -63,7 +64,7 @@ export class Session {
 
   /** Build a session for `world` (physics must be loadable; scripts optional). */
   static async create(world: WorldDoc, opts: { trace?: boolean; traceHz?: number; scripts?: ScriptRunner } = {}): Promise<Session> {
-    const pw = await PhysicsWorld.create(world, { fixedDt: STEP });
+    const pw = await PhysicsWorld.create(world, { fixedDt: STEP, ...levelColliders() });
     try {
       return new Session(world, pw, opts.scripts, { trace: opts.trace ?? true, traceHz: opts.traceHz ?? 12 });
     } catch (err) {

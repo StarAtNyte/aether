@@ -171,10 +171,10 @@ export function createGeneratorApi(seed: number, opts: { maxVertices?: number } 
   const parts = new Map<string, PartAccumulator>();
   const pieces: Piece[] = [];
   const colliders: ColliderDesc[] = [];
-  let autoMode: 'box' | 'hull' | null = null;
+  let autoMode: 'box' | 'hull' | 'trimesh' | null = null;
   let totalVertices = 0;
 
-  const deriveColliders = (mode: 'box' | 'hull'): ColliderDesc[] => {
+  const deriveColliders = (mode: 'box' | 'hull' | 'trimesh'): ColliderDesc[] => {
     const scored = pieces.map((p) => {
       const b = computeBounds(p.part.positions, p.start, p.end);
       const vol = Math.max(1e-6, b.max[0] - b.min[0]) * Math.max(1e-6, b.max[1] - b.min[1]) * Math.max(1e-6, b.max[2] - b.min[2]);
@@ -182,7 +182,24 @@ export function createGeneratorApi(seed: number, opts: { maxVertices?: number } 
     });
     scored.sort((a, b) => b.vol - a.vol);
     const out: ColliderDesc[] = [];
+    let trimeshVertices = 0;
     for (const { p, b } of scored.slice(0, 32)) {
+      if (mode === 'trimesh') {
+        // The exact surface (terrain, a stepped street): a box of it would be a solid slab up to its highest point.
+        const n = p.end - p.start;
+        if (n >= 3 && trimeshVertices + n <= PROCGEN_LIMITS.MAX_TRIMESH_VERTICES) {
+          const tri: number[] = [];
+          for (let i = 0; i + 2 < p.part.icount; i += 3) {
+            const a = p.part.indices[i] as number, c = p.part.indices[i + 1] as number, d = p.part.indices[i + 2] as number;
+            if (a >= p.start && a < p.end && c >= p.start && c < p.end && d >= p.start && d < p.end) tri.push(a - p.start, c - p.start, d - p.start);
+          }
+          if (tri.length >= 3) {
+            trimeshVertices += n;
+            out.push({ kind: 'trimesh', positions: p.part.positions.slice(p.start * 3, p.end * 3), indices: Uint32Array.from(tri) });
+            continue;
+          }
+        }
+      }
       if (mode === 'hull') {
         const pts = hullSupportPoints(p.part.positions, p.start, p.end);
         if (pts.length >= 12) {
@@ -269,8 +286,8 @@ export function createGeneratorApi(seed: number, opts: { maxVertices?: number } 
       if (colliders.length >= PROCGEN_LIMITS.MAX_COLLIDERS) throw new RangeError(`collider: at most ${PROCGEN_LIMITS.MAX_COLLIDERS} colliders`);
       colliders.push(parseCollider(desc));
     },
-    autoColliders(mode?: 'box' | 'hull'): void {
-      if (mode !== undefined && mode !== 'box' && mode !== 'hull') throw new TypeError('autoColliders(mode): mode must be "box" or "hull"');
+    autoColliders(mode?: 'box' | 'hull' | 'trimesh'): void {
+      if (mode !== undefined && mode !== 'box' && mode !== 'hull' && mode !== 'trimesh') throw new TypeError('autoColliders(mode): mode must be "box", "hull" or "trimesh"');
       autoMode = mode ?? 'box';
     },
     color: (hex) => requireColor(hex, 'color(hex)'),

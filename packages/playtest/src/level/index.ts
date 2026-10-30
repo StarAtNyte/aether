@@ -16,11 +16,12 @@
  * Every input is validated with zod and bounded; nothing is evaluated.
  */
 import { Entity, carryPatches, dependencyIndex, findWaterBodies, worldTransform, isLifeSpecies, LIFE_SPECIES_IDS, MAX_LIFE_COUNT, planLife, validateWorld, type Patch, type Vec3, type WorldDoc } from '@aether/core';
-import { PhysicsWorld, entityBounds, initPhysics, type Aabb } from '@aether/physics';
+import { PhysicsWorld, entityBounds, initPhysics, type Aabb, type ColliderProvider } from '@aether/physics';
 import { z } from 'zod';
 import { deriveGoals } from '../goals';
 import { unsupportedReason } from '../agent';
 import { withProbe } from './probe-cache';
+import { levelColliders, setLevelColliders } from './colliders';
 import { reviewLevel, type LevelReview } from './review';
 import { floatingText, measureGrounding, shouldRest, subtreeBounds, surfaceWorld } from './grounding';
 
@@ -123,12 +124,15 @@ function issues(error: z.ZodError): string {
 }
 
 /** Run one level tool against `world`. Never throws except for wasm failures. */
-export async function runLevelTool(world: WorldDoc, name: LevelToolName, rawInput: unknown): Promise<LevelToolResult> {
+export async function runLevelTool(world: WorldDoc, name: LevelToolName, rawInput: unknown, opts: { colliders?: ColliderProvider } = {}): Promise<LevelToolResult> {
+  setLevelColliders(opts.colliders);
   try {
     await initPhysics();
     return name === 'query_level' ? await runQuery(world, rawInput) : await runPlace(world, rawInput);
   } catch (e) {
     return refuse(`${name} failed: ${(e instanceof Error ? e.message : String(e)).slice(0, 300)}`);
+  } finally {
+    setLevelColliders(undefined);
   }
 }
 
@@ -148,7 +152,7 @@ class Ground {
   }
 
   static async open(world: WorldDoc): Promise<Ground> {
-    const pw = await PhysicsWorld.create(world, { fixedDt: 1 / 60 });
+    const pw = await PhysicsWorld.create(world, { fixedDt: 1 / 60, ...levelColliders() });
     let top = 20;
     let count = 0;
     for (const id in world.entities) {

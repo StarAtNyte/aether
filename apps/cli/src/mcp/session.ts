@@ -11,7 +11,7 @@ import { WorldAgent, summarizeWorldForModel, type AgentEvent, type AgentHost } f
 import { analyzeRoomPlacements, wallMountIndex } from '@aether/arch';
 import { createWorld, History, inspectUntrusted, resolveSelector, type Entity, type Vec3, type WorldDoc } from '@aether/core';
 import type { VerifyTrace } from '@aether/physics';
-import { loadLibraryGenerator } from '@aether/procgen';
+import { loadLibraryGenerator, worldColliderProvider } from '@aether/procgen';
 import { Engine } from './engine';
 import { ToolError } from './errors';
 import { ProjectDir, safeFileName } from './fsguard';
@@ -233,7 +233,11 @@ export class AetherSession {
     const text = prompt.trim();
     if (text === '' || text.length > MCP_LIMITS.MAX_PROMPT_CHARS) throw new ToolError('invalid_input', `The prompt must be 1-${MCP_LIMITS.MAX_PROMPT_CHARS} characters.`);
     const chosen = await this.provider();
-    const agent = new WorldAgent({ provider: chosen.provider, catalogs: this.engine.catalogs, resolveGenerator: loadLibraryGenerator, maxRepairs: 2, maxTurns: 40, maxToolCalls: 300, review: { maxRounds: 6 }, levelTools: async (world, name, input) => (await import('@aether/playtest/level')).runLevelTool(world, name, input) });
+    const agent = new WorldAgent({ provider: chosen.provider, catalogs: this.engine.catalogs, resolveGenerator: loadLibraryGenerator, maxRepairs: 2, maxTurns: 40, maxToolCalls: 300, review: { maxRounds: 6 }, levelTools: async (world, name, input) => {
+      const { runLevelTool } = await import('@aether/playtest/level');
+      const r = await runLevelTool(world, name, input, { colliders: await worldColliderProvider(world, this.engine.sandbox) });
+      return { ok: r.ok, text: r.text, patches: r.patches, message: r.message, ...(r.data ? { data: r.data } : {}) };
+    } });
     const timeout = AbortSignal.timeout(MCP_LIMITS.AGENT_TIMEOUT_MS);
     const sig = signal ? AbortSignal.any([signal, timeout]) : timeout;
     const out: AgentSummary = { provider: chosen.label, message: '', plan: '', patchesApplied: 0, patchesRejected: 0, rejected: [], repairs: 0, verify: null, errors: [], notes: [], usage: { calls: 0, inputTokens: 0, outputTokens: 0 } };
