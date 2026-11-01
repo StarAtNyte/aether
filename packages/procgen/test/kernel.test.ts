@@ -247,6 +247,18 @@ describe('Mesh transforms', () => {
     expect(() => prim.box(budget(), 1, 1, 1).vertexColor(() => 'not-a-color')).toThrow(TypeError);
   });
 
+  it('warp moves vertices to the mapped point and turns the normals with a bend', () => {
+    // A long thin box bent so its +z face follows z = 0.1 x: the face normals there turn toward −x.
+    const m = prim.box(budget(), 10, 1, 1).warp((x, y, z) => [x, y, z + 0.1 * x]);
+    expect(m.bounds().max[2]).toBeCloseTo(1.0, 5);
+    expectUnitNormals(m.normals);
+    const p = m.positions, n = m.normals;
+    let turned = false;
+    for (let i = 0; i < p.length; i += 3) if ((n[i + 2] as number) > 0.9 && (n[i] as number) < -0.05) turned = true;
+    expect(turned).toBe(true);
+    expect(() => prim.box(budget(), 1, 1, 1).warp(() => [1, 2] as unknown as number[])).toThrow(TypeError);
+  });
+
   it('displace moves along normals and recomputes normals (seams stay smooth)', () => {
     const s = prim.sphere(budget(), 1, 3).displace(() => 0.5);
     const bb = s.bounds();

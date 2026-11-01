@@ -48,6 +48,7 @@ interface MeshHandle {
   rotate(xDeg: number, yDeg: number, zDeg: number): MeshHandle;  // Euler XYZ, about the origin
   scale(x: number, y?: number, z?: number): MeshHandle;           // uniform when y/z omitted
   displace(fn: (x: number, y: number, z: number) => number): MeshHandle;    // push vertices along normals
+  warp(fn: (x: number, y: number, z: number) => number[]): MeshHandle;       // move vertices to [x,y,z]: bend along a curve
   vertexColor(fn: (x: number, y: number, z: number) => string): MeshHandle; // per-vertex "#rrggbb"
   merge(other: MeshHandle): MeshHandle;  // append other's geometry into this mesh
   clone(): MeshHandle;

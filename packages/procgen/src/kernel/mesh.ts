@@ -250,6 +250,23 @@ export class Mesh implements MeshHandle {
     return this.recomputeNormals();
   }
 
+  /**
+   * Move every vertex to fn(x, y, z) → [x, y, z], then recompute normals: bends a straight street or row along a curve, or
+   * warps a whole district to follow a hillside. The map should be smooth and keep orientation (no mirroring).
+   */
+  warp(fn: (x: number, y: number, z: number) => readonly number[]): Mesh {
+    if (typeof fn !== 'function') throw new TypeError('warp(fn): fn must be a function');
+    const p = this.positions;
+    for (let i = 0; i < p.length; i += 3) {
+      const r = fn(p[i] as number, p[i + 1] as number, p[i + 2] as number);
+      if (!r || typeof r !== 'object' || r.length !== 3) throw new TypeError('warp: fn must return [x, y, z]');
+      p[i] = finite(r[0], 'warp: x');
+      p[i + 1] = finite(r[1], 'warp: y');
+      p[i + 2] = finite(r[2], 'warp: z');
+    }
+    return this.recomputeNormals();
+  }
+
   vertexColor(fn: (x: number, y: number, z: number) => string): Mesh {
     if (typeof fn !== 'function') throw new TypeError('vertexColor(fn): fn must be a function');
     const p = this.positions;

@@ -32,7 +32,7 @@ const API_METHODS = [
 ] as const satisfies ReadonlyArray<keyof GeneratorApi>;
 
 /** Methods of MeshHandle exposed to untrusted code (allowlist). */
-const MESH_METHODS = ['translate', 'rotate', 'scale', 'displace', 'vertexColor', 'merge', 'clone', 'bounds'] as const satisfies ReadonlyArray<keyof MeshHandle>;
+const MESH_METHODS = ['translate', 'rotate', 'scale', 'displace', 'warp', 'vertexColor', 'merge', 'clone', 'bounds'] as const satisfies ReadonlyArray<keyof MeshHandle>;
 
 const MAX_IMPORT_DEPTH = 8;
 const MAX_IMPORT_ITEMS = 200_000;

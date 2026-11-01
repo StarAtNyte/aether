@@ -110,6 +110,8 @@ export interface MeshHandle {
   scale(x: number, y?: number, z?: number): MeshHandle;
   /** Move every vertex along its normal by fn(x, y, z) meters, then recompute normals. */
   displace(fn: (x: number, y: number, z: number) => number): MeshHandle;
+  /** Move every vertex to fn(x, y, z) → [x, y, z] (a smooth bend, no mirroring), then recompute normals. */
+  warp(fn: (x: number, y: number, z: number) => readonly number[]): MeshHandle;
   /** Assign a per-vertex color ("#rrggbb") computed from the vertex position. */
   vertexColor(fn: (x: number, y: number, z: number) => string): MeshHandle;
   /** Append another mesh's geometry into this one (the other mesh is unchanged). */

@@ -152,7 +152,7 @@ describe('createNodeSandbox', () => {
     const src = `const keys = Object.keys(api).sort().join(',');
 if (keys !== '${expected}') throw new Error('unexpected api keys ' + keys);
 const m = Object.keys(api.box(1, 1, 1)).sort().join(',');
-if (m !== 'bounds,clone,displace,merge,rotate,scale,translate,vertexColor') throw new Error('unexpected mesh keys ' + m);
+if (m !== 'bounds,clone,displace,merge,rotate,scale,translate,vertexColor,warp') throw new Error('unexpected mesh keys ' + m);
 if (Object.isFrozen(api) !== true) throw new Error('api facade must be frozen');
 ${FINISH}`;
     await expect(sb.run(def(src), {}, 1)).resolves.toBeDefined();
