@@ -101,7 +101,7 @@ async function kepler(page: Page): Promise<void> {
   await sleep(5000);
 }
 
-/** Lisbon Hills: up a street, then into the car and along the quay. */
+/** Lisbon Hills: a walk up a street and along the quay. */
 async function lisbon(page: Page): Promise<void> {
   await open(page, 'lisbon-hills');
   await sleep(3000);
@@ -110,14 +110,6 @@ async function lisbon(page: Page): Promise<void> {
   await hold(page, 'w', 6000);
   await hold(page, 'd', 1200);
   await hold(page, 'w', 5000);
-  const car = await entityPos(page, 'player-car');
-  await place(page, [car[0] - 3, 1, car[2]], car);
-  await sleep(1200);
-  await hold(page, 'w', 1200);
-  await act(page);
-  await sleep(1500);
-  await hold(page, 'w', 5000);
-  await hold(page, 'd', 1500);
   await hold(page, 'w', 4000);
   await sleep(1500);
 }
