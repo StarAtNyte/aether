@@ -14,7 +14,7 @@
  * and the texts. The run itself is `WorldAgent.run` with `hardcore` set; scripts/hardcore.ts drives the passes in Node.
  */
 import type { Entity, Vec3, WorldDoc } from '@aether/core';
-import type { ReviewViewRequest } from './types';
+import type { Provider, ReviewViewRequest } from './types';
 
 /** Luminance percentiles (sRGB display values, 0..255) of a picture or a set of pictures. */
 export interface LumaTargets {
@@ -257,4 +257,26 @@ export function lookCandidates(): Array<Record<string, unknown>> {
     }
   }
   return out;
+}
+
+/**
+ * The pass gate: which of two builds (the hero shots before and after a pass, each one picture) is closer to the references,
+ * judged by the model looking at all three. A pass the judge does not prefer is undone by the caller.
+ */
+export async function judgeCloser(provider: Provider, refs: string, a: string, b: string, signal?: AbortSignal): Promise<{ better: 'A' | 'B'; why: string }> {
+  const res = await provider.complete({
+    role: 'critic',
+    system: 'You are an art director comparing two builds of a 3D place against reference pictures. Be decisive.',
+    messages: [{ role: 'user', content: [
+      { type: 'text', text: 'Image 1: the REFERENCES (the hero views).' }, { type: 'image', dataUrl: refs },
+      { type: 'text', text: 'Image 2: build A (the same views, same order).' }, { type: 'image', dataUrl: a },
+      { type: 'text', text: 'Image 3: build B (the same views, same order).' }, { type: 'image', dataUrl: b },
+      { type: 'text', text: 'Which build, A or B, is closer to the references overall: composition and density of the place, architecture, light and colour, sky, water, planting, and the absence of broken or toy-like things (floating objects, wrong colours, blown-out or murky light)? Answer with JSON only: {"better":"A"|"B","why":"one sentence"}.' },
+    ] }],
+    maxTokens: 300,
+  }, signal);
+  const text = res.content.map((c) => (c.type === 'text' ? c.text : '')).join(' ');
+  const m = /\{[^{}]*"better"\s*:\s*"([AB])"[^{}]*\}/.exec(text);
+  const why = /"why"\s*:\s*"([^"]*)"/.exec(text)?.[1] ?? text.slice(0, 200);
+  return { better: m?.[1] === 'B' ? 'B' : 'A', why };
 }

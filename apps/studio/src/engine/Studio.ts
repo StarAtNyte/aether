@@ -8,7 +8,7 @@ import type { Proof } from '@aether/playtest/proof';
 import { isUserAssetId, worldAssetIds } from '@aether/assets';
 import { History, diffWorlds, getEntity, patchesBetween, type EntityId, type GeneratorDef, type Patch, type WorldDoc } from '@aether/core';
 import { hasBuilding } from '@aether/arch';
-import { EMPTY_MEMORY, OFFLINE_EXAMPLES, WorldAgent, createFallbackProvider, improvementPatches, isAbortError, needsRefinement, refineInstruction, type AgentEvent, type FallbackNotice, type PhotoResumeState, type Provenance, type PromptProfile, type Provider, type QualityFix, type RefineMemory, HARDCORE_PASSES, bibleText, heroShots, heroReferencePrompt, lumaPercentiles, meanTargets, passPrompt, type HardcoreRun, type LumaTargets } from '@aether/agent';
+import { EMPTY_MEMORY, OFFLINE_EXAMPLES, WorldAgent, createFallbackProvider, improvementPatches, isAbortError, needsRefinement, refineInstruction, type AgentEvent, type FallbackNotice, type PhotoResumeState, type Provenance, type PromptProfile, type Provider, type QualityFix, type RefineMemory, HARDCORE_PASSES, bibleText, heroShots, heroReferencePrompt, judgeCloser, lumaPercentiles, meanTargets, passPrompt, type HardcoreRun, type LumaTargets } from '@aether/agent';
 import { createWorkerSandbox, type SandboxRunner } from '@aether/procgen';
 import type { StoreApi } from 'zustand/vanilla';
 import { API, MAX_PROMPT_CHARS, PERSIST_DEBOUNCE_MS } from '../config';
@@ -1665,9 +1665,26 @@ export class Studio {
     }
     const targets = meanTargets(lumas);
     const bible = bibleText(what, shots, targets);
+    // Each pass is kept only when a judge finds the hero shots closer to the references than before it.
+    const judgeWith = this.directorProvider();
+    const refsImage = await this.bridge.composeImages(refs.map((dataUrl) => ({ dataUrl })), { maxSide: 1600 });
+    const heroImage = async (): Promise<string | null> => {
+      const got = await this.bridge.captureReview(shots, { size: 480 }).catch(() => []);
+      return got.length > 0 ? this.bridge.composeImages(got.map((g) => ({ dataUrl: g.dataUrl })), { maxSide: 1600 }) : null;
+    };
     for (const [i, pass] of HARDCORE_PASSES.entries()) {
       if (this.disposed) return;
+      const head = this.history.head;
+      const before = judgeWith && refsImage ? await heroImage() : null;
       await this.send(passPrompt(pass, i, bible), { intent: 'refine', images: refs, hardcore: { bible, shots, ...(targets ? { targets } : {}) }, echo: `Hardcore pass ${i + 1} of ${HARDCORE_PASSES.length}: ${pass.title}` });
+      const after = before && this.history.head !== head ? await heroImage() : null;
+      if (judgeWith && refsImage && before && after) {
+        const verdict = await judgeCloser(judgeWith, refsImage, before, after).catch(() => ({ better: 'B' as const, why: '' }));
+        if (verdict.better === 'A') {
+          while (this.history.head !== head && this.history.canUndo()) this.history.undo();
+          this.store.getState().toast(`Hardcore: undid "${pass.title}", it moved the world away from the references.${verdict.why ? ` ${verdict.why.slice(0, 160)}` : ''}`, 'info', 8);
+        }
+      }
       const last = this.store.getState().chat.at(-1);
       if (last && 'status' in last && last.status === 'aborted') return;
     }

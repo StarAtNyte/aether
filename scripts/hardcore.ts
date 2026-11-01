@@ -16,7 +16,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { createWorld, type PatchResult, type WorldDoc } from '@aether/core';
-import { HARDCORE_PASSES, WorldAgent, bibleText, lookCandidates, lookDistance, pictureColour, type PictureColour, heroShots, lumaPercentiles, meanTargets, passPrompt, heroReferencePrompt as referencePrompt, type AgentEvent, type LumaTargets, type Provider, type ReviewViewRequest } from '@aether/agent';
+import { HARDCORE_PASSES, WorldAgent, bibleText, judgeCloser, lookCandidates, lookDistance, pictureColour, type PictureColour, heroShots, lumaPercentiles, meanTargets, passPrompt, heroReferencePrompt as referencePrompt, type AgentEvent, type LumaTargets, type Provider, type ReviewViewRequest } from '@aether/agent';
 import { initScripting } from '@aether/logic';
 import { initPhysics } from '@aether/physics';
 import { loadLibraryGenerator } from '@aether/procgen';
@@ -63,24 +63,6 @@ async function grid(dataUrls: readonly string[], dir: string, tag: string): Prom
   return `data:image/jpeg;base64,${out.toString('base64')}`;
 }
 
-/** Which of two sets of hero renders is closer to the references, judged by the model looking at all three. */
-async function judge(provider: Provider, refs: string, a: string, b: string): Promise<{ better: 'A' | 'B'; why: string }> {
-  const res = await provider.complete({
-    role: 'critic',
-    system: 'You are an art director comparing two builds of a 3D place against reference pictures. Be decisive.',
-    messages: [{ role: 'user', content: [
-      { type: 'text', text: 'Image 1: the REFERENCES (four views).' }, { type: 'image', dataUrl: refs },
-      { type: 'text', text: 'Image 2: build A (the same four views, same order).' }, { type: 'image', dataUrl: a },
-      { type: 'text', text: 'Image 3: build B (the same four views, same order).' }, { type: 'image', dataUrl: b },
-      { type: 'text', text: 'Which build, A or B, is closer to the references overall: composition and density of the town, architecture, light and colour, sky, water, planting, and the absence of broken or toy-like things (floating objects, wrong colours, blown-out or murky light)? Answer with JSON only: {"better":"A"|"B","why":"one sentence"}.' },
-    ] }],
-    maxTokens: 300,
-  });
-  const text = res.content.map((c) => (c.type === 'text' ? c.text : '')).join(' ');
-  const m = /\{[^{}]*"better"\s*:\s*"([AB])"[^{}]*\}/.exec(text);
-  const why = /"why"\s*:\s*"([^"]*)"/.exec(text)?.[1] ?? text.slice(0, 200);
-  return { better: m?.[1] === 'B' ? 'B' : 'A', why };
-}
 
 async function main(): Promise<void> {
   if (!subject) throw new Error('--subject is required (what the place is, in words)');
@@ -193,7 +175,7 @@ async function main(): Promise<void> {
     }
     // Keep the pass only if the judge finds it closer to the references than the world before it.
     const afterGrid = await grid(await heroRenders(host.getWorld()), out, `after-${k}`);
-    const verdict = arg('gate', '1') === '1' ? await judge(provider, refGrid, beforeGrid, afterGrid).catch((e: unknown) => ({ better: 'B' as const, why: `judge failed (${String(e).slice(0, 80)}), pass kept` })) : { better: 'B' as const, why: 'gate off' };
+    const verdict = arg('gate', '1') === '1' ? await judgeCloser(provider, refGrid, beforeGrid, afterGrid).catch((e: unknown) => ({ better: 'B' as const, why: `judge failed (${String(e).slice(0, 80)}), pass kept` })) : { better: 'B' as const, why: 'gate off' };
     log(`judge: ${verdict.better === 'B' ? 'KEEP' : 'REVERT'} ${pass.id}: ${verdict.why}`);
     if (verdict.better === 'A') host = new Host(sandbox, before);
     await writeFile(join(dir, 'verdict.json'), JSON.stringify(verdict));
