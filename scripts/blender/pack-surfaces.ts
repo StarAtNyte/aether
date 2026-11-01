@@ -32,7 +32,7 @@ const SURFACES: Record<string, { name: string; tile: number; finish: TextureSetD
   cobble: { name: 'granite setts (Blender bake)', tile: 1.0, finish: 'cobble', skins: ['cobble'] },
   'roof-tile': { name: 'Roman clay roof tiles (Blender bake)', tile: 1.0, finish: 'roof-tile', skins: ['roof-tile'] },
   limestone: { name: 'limestone ashlar (Blender bake)', tile: 1.2, finish: 'limestone', skins: ['limestone'] },
-  plaster: { name: 'weathered lime plaster (Blender bake)', tile: 1.5, finish: 'plaster', skins: ['plaster', 'paint'] },
+  plaster: { name: 'weathered lime plaster (Blender bake)', tile: 1.5, finish: 'plaster', skins: ['plaster'] },
   regolith: { name: 'Martian regolith with pebbles (Blender bake)', tile: 1.6, finish: 'soil', skins: ['soil'] },
   concrete: { name: 'cast concrete panels (Blender bake)', tile: 2.0, finish: 'concrete', skins: ['concrete'] },
 };

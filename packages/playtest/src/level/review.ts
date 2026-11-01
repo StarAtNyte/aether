@@ -16,7 +16,7 @@ import { levelSurfaces, type LevelSurfaces } from './colliders';
 
 /** One problem found in a level. */
 export interface LevelFinding {
-  code: 'spawn' | 'box_terrain' | 'flat_surfaces' | 'low_detail' | 'repetition' | 'no_win' | 'unreachable_required' | 'unreachable_optional' | 'unreachable_target' | 'first_reward_far' | 'unmeasured' | 'floating';
+  code: 'spawn' | 'box_terrain' | 'flat_surfaces' | 'low_detail' | 'repetition' | 'no_trim' | 'no_win' | 'unreachable_required' | 'unreachable_optional' | 'unreachable_target' | 'first_reward_far' | 'unmeasured' | 'floating';
   severity: 'error' | 'warning' | 'info';
   message: string;
   /** Entities involved (ids). */
@@ -157,6 +157,8 @@ const DETAIL_MIN_AREA = 600;
 const DETAIL_MIN_TRIS_PER_M2 = 1;
 /** Identical copies of one piece, in one group, from which the repetition is a finding. */
 const REPEAT_MIN = 6;
+/** Words that make an entity a building (for the trim check). */
+const BUILDING_WORDS = ['house', 'home', 'building', 'cottage', 'villa', 'terrace', 'row', 'shop', 'church', 'chapel', 'temple', 'dome', 'habitat', 'tower', 'hall', 'barn', 'cabin', 'station', 'warehouse'];
 const REPEAT_EXEMPT_TAGS = ['terrain', 'land', 'roads', 'road', 'street', 'stairs', 'fence', 'wall', 'water', 'quay', 'promenade'];
 
 /**
@@ -176,6 +178,23 @@ function detailFindingsOf(world: WorldDoc, s: LevelSurfaces | undefined): LevelF
       message: `drawn as bare slabs, with almost no modelled detail: ${bare.map((d) => `"${d.generator}" (${d.trisPerM2.toFixed(1)} triangles per m2, used by ${d.entities.length})`).join(', ')}`,
       entities: bare.flatMap((d) => d.entities).slice(0, 12),
       fix: 'model the small things a real one has: bevel the edges with api.roundedBox(w, h, d, radius) instead of api.box, a cornice and string course, window reveals with sills and lintels, door surrounds and steps, roof eaves and chimneys, balcony rails, downpipes, worn plinths. Add them as extra api.add parts with their own finish, then run query_level review again.',
+    });
+  }
+  // Trim: a building drawn in one or two looks (walls and a roof) has no cornice, sills, lintels, door surrounds or plinth.
+  const building = (id: string): boolean => {
+    const e = world.entities[id];
+    if (!e || e.tags.some((t) => t === 'terrain' || t === 'land' || t === 'hill')) return false;
+    const text = `${e.id} ${e.name} ${e.tags.join(' ')}`.toLowerCase();
+    return BUILDING_WORDS.some((w) => text.includes(w));
+  };
+  const plain = (s.detail ?? []).filter((d) => d.materials !== undefined && d.materials < 3 && d.entities.some(building)).slice(0, 4);
+  if (plain.length > 0) {
+    out.push({
+      code: 'no_trim',
+      severity: 'warning',
+      message: `buildings drawn without trim (one or two looks, walls and roof only): ${plain.map((d) => `"${d.generator}" (${d.materials} look${d.materials === 1 ? '' : 's'}, used by ${d.entities.length})`).join(', ')}`,
+      entities: plain.flatMap((d) => d.entities).slice(0, 12),
+      fix: 'add trim as its own parts in a contrasting finish or colour: a plinth (stone), window sills and lintels, door surrounds, a cornice or string course, eaves and fascia, shutters, balcony rails; weather the lower wall (a darker plinth band). Then run query_level review again.',
     });
   }
   const reps = (s.repeats ?? []).filter((r) => r.count >= REPEAT_MIN && !r.entities.every(exempt)).slice(0, 4);

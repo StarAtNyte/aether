@@ -959,9 +959,10 @@ export const WorldDoc = z.object({
   textures: z.record(TextureId, TextureSetDef).refine((r) => Object.keys(r).length <= 48, 'at most 48 texture sets per world').optional(),
   /**
    * Additive: world-wide texture skins. A part whose finish (or whose preset's finish: dirt draws as soil) matches a key draws that
-   * texture set instead of the procedural maps, in every piece; a piece's own `arch.skins` win. Keys as in `ArchMeta.skins`.
+   * texture set instead of the procedural maps, in every piece; a piece's own `arch.skins` win. Keys as in `ArchMeta.skins`, with an
+   * optional `@generator` that limits the skin to the pieces of one custom generator (`paint@town-row`: the walls, not the tram).
    */
-  skins: z.record(z.string().regex(/^[a-z][a-z-]{1,24}(#[0-9a-f]{6})?$/), TextureRef).refine((r) => Object.keys(r).length <= 24, 'at most 24 world skins').optional(),
+  skins: z.record(z.string().regex(/^[a-z][a-z-]{1,24}(#[0-9a-f]{6})?(@[a-z0-9][a-z0-9_-]{0,63})?$/), TextureRef).refine((r) => Object.keys(r).length <= 24, 'at most 24 world skins').optional(),
 });
 export type WorldDoc = z.infer<typeof WorldDoc>;
 export type WorldDocInput = z.input<typeof WorldDoc>;

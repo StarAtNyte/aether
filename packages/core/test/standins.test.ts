@@ -72,3 +72,11 @@ describe('stand-in lint: parts named after vehicles', () => {
     expect(findStandIns(world).map((s) => s.id)).toEqual(['c']);
   });
 });
+
+describe('world skins', () => {
+  it('accept finish keys, finish#colour and generator-scoped keys, and refuse anything else', () => {
+    const ok = validateWorld({ ...createWorld(), skins: { plaster: { id: 'tex-0123456789ab' }, 'paint#ffffff': { id: 'tex-0123456789ab' }, 'paint@town-row3': { id: 'tex-0123456789ab' } } });
+    expect(ok.ok).toBe(true);
+    expect(validateWorld({ ...createWorld(), skins: { 'Bad Key': { id: 'tex-0123456789ab' } } }).ok).toBe(false);
+  });
+});

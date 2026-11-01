@@ -555,11 +555,37 @@ export class SceneSync {
    */
   /** Texture skins of a piece: the world's own (a finish drawn with a texture set everywhere), with the piece's skins winning. */
   private skinsFor(entity: Entity): Readonly<Record<string, TextureRef>> | undefined {
-    const world = this.current?.skins;
+    const all = this.current?.skins;
     const own = entity.arch?.skins;
-    if (!world) return own;
+    if (!all) return own;
+    const world = this.worldSkins(all, entity.shape.kind === 'procedural' ? entity.shape.generator : '');
     return own ? { ...world, ...own } : world;
   }
+
+  /** The world skins that apply to pieces of one generator (`finish@generator` keys only there), cached per world and generator. */
+  private worldSkins(all: Readonly<Record<string, TextureRef>>, generator: string): Readonly<Record<string, TextureRef>> {
+    if (this.skinCacheOf !== all) {
+      this.skinCacheOf = all;
+      this.skinCache.clear();
+    }
+    let got = this.skinCache.get(generator);
+    if (!got) {
+      const out: Record<string, TextureRef> = {};
+      for (const [k, v] of Object.entries(all)) {
+        const at = k.indexOf('@');
+        if (at < 0) out[k] = v;
+        else if (k.slice(at + 1) === generator) out[k.slice(0, at)] = v;
+      }
+      // A scoped key wins over the same unscoped one.
+      for (const [k, v] of Object.entries(all)) if (k.endsWith(`@${generator}`) && generator !== '') out[k.slice(0, k.indexOf('@'))] = v;
+      got = out;
+      this.skinCache.set(generator, got);
+    }
+    return got;
+  }
+
+  private skinCacheOf: Readonly<Record<string, TextureRef>> | null = null;
+  private readonly skinCache = new Map<string, Readonly<Record<string, TextureRef>>>();
 
   setWorld(world: WorldDoc): Promise<void> {
     if (this.disposed) return RESOLVED;

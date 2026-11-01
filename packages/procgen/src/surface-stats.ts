@@ -69,7 +69,7 @@ export interface SurfaceStats {
   /** Generators whose parts are plain colour, with the entities that use them. */
   generators: Array<{ generator: string; flatArea: number; area: number; entities: string[] }>;
   /** Geometric detail per generator: triangles per m2 of its surface (a bare box is about 0.5 to 2; bevels, trim and relief raise it). */
-  detail: Array<{ generator: string; tris: number; area: number; parts: number; trisPerM2: number; entities: string[] }>;
+  detail: Array<{ generator: string; tris: number; area: number; parts: number; trisPerM2: number; materials: number; entities: string[] }>;
   /** Groups of entities that are the same piece repeated unchanged (same generator, params and size). */
   repeats: Array<{ generator: string; count: number; entities: string[] }>;
 }
@@ -81,7 +81,7 @@ export interface SurfaceStats {
  * maps and are not counted.
  */
 export async function worldSurfaceStats(world: WorldDoc, sandbox: SandboxRunner, cache?: GeneratorCache): Promise<SurfaceStats> {
-  const per = new Map<string, { area: number; flat: number; tris: number; parts: number }>();
+  const per = new Map<string, { area: number; flat: number; tris: number; parts: number; looks: Set<string> }>();
   const same = new Map<string, string[]>();
   const entities: EntitySurface[] = [];
   const byGen = new Map<string, { flatArea: number; area: number; entities: string[] }>();
@@ -95,7 +95,7 @@ export async function worldSurfaceStats(world: WorldDoc, sandbox: SandboxRunner,
     const gen = e.shape.generator;
     let m = per.get(gen);
     if (!m) {
-      m = { area: 0, flat: 0, tris: 0, parts: 0 };
+      m = { area: 0, flat: 0, tris: 0, parts: 0, looks: new Set<string>() };
       try {
         const out = await generate(e.shape, world, { sandbox, ...(cache ? { cache } : {}) });
         for (const p of out.parts) {
@@ -103,6 +103,8 @@ export async function worldSurfaceStats(world: WorldDoc, sandbox: SandboxRunner,
           m.area += a;
           m.tris += p.indices.length / 3;
           m.parts++;
+          // A distinct look: finish or preset with its colour (trim is a second finish or a contrasting colour).
+          m.looks.add(`${p.material.finish ?? p.material.preset ?? ''}|${p.material.texture?.id ?? ''}|${p.material.color ?? ''}`);
           if (surfaceKindOf(p.material, e.material) === 'flat') m.flat += a;
         }
       } catch {
@@ -127,7 +129,7 @@ export async function worldSurfaceStats(world: WorldDoc, sandbox: SandboxRunner,
   entities.sort((x, y) => y.flatArea - x.flatArea);
   const generators = [...byGen.entries()].map(([generator, g]) => ({ generator, ...g })).sort((x, y) => y.flatArea - x.flatArea);
   const detail = [...per.entries()]
-    .map(([generator, m]) => ({ generator, tris: m.tris, area: m.area, parts: m.parts, trisPerM2: m.area > 0 ? m.tris / m.area : 0, entities: byGen.get(generator)?.entities ?? [] }))
+    .map(([generator, m]) => ({ generator, tris: m.tris, area: m.area, parts: m.parts, trisPerM2: m.area > 0 ? m.tris / m.area : 0, materials: m.looks.size, entities: byGen.get(generator)?.entities ?? [] }))
     .filter((d) => d.entities.length > 0)
     .sort((x, y) => y.area * y.entities.length - x.area * x.entities.length);
   const repeats = [...same.entries()].map(([sig, ids]) => ({ generator: sig.split('|')[0] as string, count: ids.length, entities: ids })).filter((r) => r.count >= 2).sort((x, y) => y.count - x.count);

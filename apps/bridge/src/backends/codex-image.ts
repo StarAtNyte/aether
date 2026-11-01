@@ -46,11 +46,14 @@ export interface ImageBackend {
   generate(job: ImageJob, signal?: AbortSignal): Promise<ImageResultBytes>;
 }
 
-/** Features of the text lockdown that stay off here (image generation is the one thing switched on). */
+/**
+ * Features of the text lockdown that stay off here (image generation is the one thing switched on). `code_mode_host` stays on:
+ * Codex 0.16x draws images through it and refuses with it disabled; the shell tools are off and the run is read-only in an empty folder.
+ */
 export const CODEX_IMAGE_DISABLED_FEATURES = [
   'shell_tool', 'unified_exec', 'unified_exec_tty', 'shell_snapshot', 'view_image', 'multi_agent', 'multi_agent_v2',
   'apps', 'plugins', 'remote_plugin', 'plugin_sharing', 'browser_use', 'browser_use_external', 'browser_use_full_cdp_access', 'in_app_browser',
-  'computer_use', 'code_mode_host', 'goals', 'memories', 'hooks', 'tool_suggest', 'sleep_tool', 'skill_search',
+  'computer_use', 'goals', 'memories', 'hooks', 'tool_suggest', 'sleep_tool', 'skill_search',
   'skill_mcp_dependency_install', 'workspace_dependencies', 'realtime_conversation', 'worktrees',
 ] as const;
 

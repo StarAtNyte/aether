@@ -143,4 +143,15 @@ describe('reviewLevel surface gate', () => {
     const open = await reviewLevel(gameWorld([...base, slab('hab-near', [6, 0.5, 0], [4, 1, 4], { name: 'Habitat Beta', tags: ['dome'] })], extra, [0, 0.5, 0]));
     expect(open.findings.some((x) => x.code === 'unreachable_target')).toBe(false);
   }, 60_000);
+
+  it('warns about buildings drawn without trim, not about trimmed ones or non-buildings', async () => {
+    const props = Array.from({ length: 12 }, (_, i) => slab(`prop-${i}`, [-8 + i * 1.5, 0.5, 6], [0.6, 1, 0.6]));
+    const house = slab('row-1', [0, 2, -8], [10, 4, 6], { name: 'Terraced houses', tags: ['house'] });
+    const world = gameWorld([slab('floor', [0, -0.25, 0], [30, 0.5, 12], { tags: ['roads'] }), ...props, house], {}, [0, 0.5, 0]);
+    const base = { area: 5000, flatArea: 0, flatShare: 0, generators: [] };
+    const det = (materials: number, entities: string[]) => ({ ...base, detail: [{ generator: 'town-row', tris: 40000, area: 1000, parts: 6, trisPerM2: 40, materials, entities }] });
+    expect((await runLevelTool(world, 'query_level', { op: 'review' }, { surfaces: det(2, ['row-1']) })).text).toContain('without trim');
+    expect((await runLevelTool(world, 'query_level', { op: 'review' }, { surfaces: det(5, ['row-1']) })).text).not.toContain('without trim');
+    expect((await runLevelTool(world, 'query_level', { op: 'review' }, { surfaces: det(1, ['prop-0']) })).text).not.toContain('without trim');
+  }, 60_000);
 });
