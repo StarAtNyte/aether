@@ -349,8 +349,11 @@ async function generate(browser: Awaited<ReturnType<typeof chromium.launch>>, ba
   rec.ramp(bake0, 2500);
 
   rec.title('Walk through it');
+  // A building has "Walk through"; any other world is entered with Play.
   const walk = page.getByRole('button', { name: 'Walk through' });
-  await click(page, walk, 900);
+  const hasWalk = await walk.first().isVisible({ timeout: 5000 }).catch(() => false);
+  await click(page, hasWalk ? walk : page.locator('button.play-btn'), 900);
+  if (!hasWalk) await page.getByRole('button', { name: /^Start/ }).first().click({ timeout: 4000 }).catch(() => undefined);
   await page.waitForFunction(() => window.__aether?.store.getState().mode === 'play', null, { timeout: 60_000 });
   await cursor(page, false);
   await dwell(page, 1500);
