@@ -5,7 +5,8 @@
  *
  * 1. Every room with an error is furnished again by the layout solver (`furnish_room`), which places pieces by their
  *    relations; the new layout is kept only when that room has fewer errors and the building no more in all.
- * 2. Small decor that still clashes (a book, a plant, a rug, a lamp) is taken out: losing a book is better than a book
+ * 2. A piece poking through a wall is stepped back off it; a floor piece left in the air goes down to its floor.
+ * 3. Small decor that still clashes (a book, a plant, a rug, a lamp) is taken out: losing a book is better than a book
  *    inside a lamp. Furniture that matters (beds, sofas, tables) is never removed here.
  *
  * Pure: it returns the patches and the repaired world; the caller applies the patches through its host.
@@ -92,7 +93,40 @@ export function autoRepairBuildings(world: WorldDoc, maxRooms = 40): AutoRepair 
     }
   }
 
-  // 2. Small decor that still clashes comes out.
+  // 2. A piece poking through a wall steps back off it (by the depth plus 2 cm, in the plan frame: x east, z south), and a
+  //    floor piece left in the air goes down to its floor. Kept only when the building has fewer errors after.
+  const nudges: Patch[] = [];
+  for (const f of errors) {
+    const id = f.entities?.[0];
+    const e = id ? current.entities[id] : undefined;
+    if (!id || !e) continue;
+    const p: [number, number, number] = [e.transform.position[0], e.transform.position[1], e.transform.position[2]];
+    const poke = f.code === 'item_through_wall' ? /pokes ([\d.]+) m through the (north|south|east|west) wall/.exec(f.message) : null;
+    if (poke) {
+      const d = Number(poke[1]) + 0.02;
+      if (!(d > 0 && d < 0.6)) continue;
+      if (poke[2] === 'east') p[0] -= d;
+      else if (poke[2] === 'west') p[0] += d;
+      else if (poke[2] === 'north') p[2] += d;
+      else p[2] -= d;
+    } else if (f.code === 'floating' && /is not supported \(y = /.test(f.message) && Math.abs(p[1]) > 0.03 && Math.abs(p[1]) < 0.6 && decorKind(current, id) === null) p[1] = 0;
+    else continue;
+    nudges.push({ op: 'update', id, set: { transform: { position: [Math.round(p[0] * 1000) / 1000, Math.round(p[1] * 1000) / 1000, Math.round(p[2] * 1000) / 1000] } } } as Patch);
+  }
+  if (nudges.length > 0) {
+    const res = applyPatches(current, nudges);
+    if (res.applied.length > 0) {
+      const next = errorsOf(res.world);
+      if (next.length < errors.length) {
+        patches.push(...res.applied);
+        current = res.world;
+        errors = next;
+        lines.push(`moved ${res.applied.length} piece${res.applied.length === 1 ? '' : 's'} off walls or down to the floor`);
+      }
+    }
+  }
+
+  // 3. Small decor that still clashes comes out.
   const remove = new Set<string>();
   for (const f of errors) {
     if (!f.code || !DECOR_CODES.has(f.code)) continue;

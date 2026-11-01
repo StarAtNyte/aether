@@ -37,4 +37,16 @@ describe('autoRepairBuildings', () => {
     expect(errors(fix.world).length).toBe(fix.after);
     expect(fix.lines.length).toBeGreaterThan(0);
   }, 120_000);
+
+  it('puts a floor piece left in the air back on its floor', () => {
+    const w = apartment();
+    const bed = Object.values(w.entities).find((e) => e.shape.kind === 'procedural' && e.shape.generator === 'furn-bed');
+    if (!bed) throw new Error('fixture');
+    bed.transform.position = [bed.transform.position[0], 0.3, bed.transform.position[2]];
+    const broken = errors(w).length;
+    expect(broken).toBeGreaterThan(0);
+    const fix = autoRepairBuildings(w);
+    expect(fix.after).toBeLessThan(broken);
+    expect(fix.world.entities[bed.id]?.transform.position[1]).toBeCloseTo(0, 3);
+  }, 120_000);
 });
