@@ -23,7 +23,7 @@ const S = H / 720;
 const FONT = process.env['FONT'] ?? ['/usr/share/fonts/truetype/lato/Lato-Semibold.ttf', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'].find((f) => existsSync(f)) ?? '';
 const FONT_BOLD = process.env['FONT_BOLD'] ?? ['/usr/share/fonts/truetype/lato/Lato-Heavy.ttf', FONT].find((f) => existsSync(f)) ?? FONT;
 if (!FONT) throw new Error('no font found; set FONT=/path/to/font.ttf');
-const SCENES = ['villa', 'photo', 'game'];
+const SCENES = (arg('scenes') ?? 'villa,photo,game').split(',').filter(Boolean);
 const tmp = mkdtempSync(join(tmpdir(), 'aether-compose-'));
 
 const probe = (file: string): number => Number(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', file]).toString());
