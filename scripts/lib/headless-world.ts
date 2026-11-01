@@ -8,7 +8,7 @@ import { createWorld, History, type GeneratorDef, type PatchResult, type ScriptD
 import type { AgentCatalogs, AgentHost, LevelToolRunner } from '@aether/agent';
 import { BEHAVIOR_CATALOG, RULE_DOCS, SCRIPT_API_DTS, createScriptRunner, isScriptingReady } from '@aether/logic';
 import { summarizeReport, verify } from '@aether/physics';
-import { GENERATOR_API_DTS, GENERATOR_EXAMPLES, GENERATOR_LIBRARY, catalog, resolveParams, staticCheckSource, validateOutput, worldColliderProvider, type SandboxRunner } from '@aether/procgen';
+import { GENERATOR_API_DTS, GENERATOR_EXAMPLES, GENERATOR_LIBRARY, catalog, resolveParams, staticCheckSource, validateOutput, worldColliderProvider, worldSurfaceStats, type SandboxRunner } from '@aether/procgen';
 import { createVerifyLogic } from '../../apps/studio/src/engine/headlessHost';
 
 /** Headless verification limits (same order of magnitude as the studio). */
@@ -108,7 +108,7 @@ export function nodeLevelTools(sandbox: SandboxRunner): LevelToolRunner {
   return async (world, name, input) => {
     const { runLevelTool } = await import('@aether/playtest/level');
     const colliders = await worldColliderProvider(world, sandbox);
-    const r = await runLevelTool(world, name, input, { colliders });
+    const r = await runLevelTool(world, name, input, { colliders, surfaces: await worldSurfaceStats(world, sandbox) });
     return { ok: r.ok, text: r.text, patches: r.patches, message: r.message, ...(r.data ? { data: r.data } : {}) };
   };
 }

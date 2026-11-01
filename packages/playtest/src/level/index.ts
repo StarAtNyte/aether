@@ -21,7 +21,7 @@ import { z } from 'zod';
 import { deriveGoals } from '../goals';
 import { unsupportedReason } from '../agent';
 import { withProbe } from './probe-cache';
-import { levelColliders, setLevelColliders } from './colliders';
+import { levelColliders, setLevelColliders, setLevelSurfaces, type LevelSurfaces } from './colliders';
 import { reviewLevel, type LevelReview } from './review';
 import { floatingText, measureGrounding, shouldRest, subtreeBounds, surfaceWorld } from './grounding';
 
@@ -124,8 +124,9 @@ function issues(error: z.ZodError): string {
 }
 
 /** Run one level tool against `world`. Never throws except for wasm failures. */
-export async function runLevelTool(world: WorldDoc, name: LevelToolName, rawInput: unknown, opts: { colliders?: ColliderProvider } = {}): Promise<LevelToolResult> {
+export async function runLevelTool(world: WorldDoc, name: LevelToolName, rawInput: unknown, opts: { colliders?: ColliderProvider; surfaces?: LevelSurfaces } = {}): Promise<LevelToolResult> {
   setLevelColliders(opts.colliders);
+  setLevelSurfaces(opts.surfaces);
   try {
     await initPhysics();
     return name === 'query_level' ? await runQuery(world, rawInput) : await runPlace(world, rawInput);
@@ -133,6 +134,7 @@ export async function runLevelTool(world: WorldDoc, name: LevelToolName, rawInpu
     return refuse(`${name} failed: ${(e instanceof Error ? e.message : String(e)).slice(0, 300)}`);
   } finally {
     setLevelColliders(undefined);
+    setLevelSurfaces(undefined);
   }
 }
 

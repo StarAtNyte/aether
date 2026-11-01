@@ -12,10 +12,11 @@ import type { Entity, Vec3, WorldDoc } from '@aether/core';
 import { deriveGoals } from '../goals';
 import { roamTargets, unsupportedReason } from '../agent';
 import { withProbe } from './probe-cache';
+import { levelSurfaces, type LevelSurfaces } from './colliders';
 
 /** One problem found in a level. */
 export interface LevelFinding {
-  code: 'spawn' | 'box_terrain' | 'no_win' | 'unreachable_required' | 'unreachable_optional' | 'unreachable_target' | 'first_reward_far' | 'unmeasured' | 'floating';
+  code: 'spawn' | 'box_terrain' | 'flat_surfaces' | 'no_win' | 'unreachable_required' | 'unreachable_optional' | 'unreachable_target' | 'first_reward_far' | 'unmeasured' | 'floating';
   severity: 'error' | 'warning' | 'info';
   message: string;
   /** Entities involved (ids). */
@@ -128,6 +129,27 @@ function boxFix(world: WorldDoc, id: string): string {
   return `${head}. Call write_generator with id "${gid}" and exactly this source (only that call changed):\n${fixed}`;
 }
 
+/** Least surface (m2) and flat share at which a world reads as a toy: the gate fails it until its surfaces carry real finishes. */
+const FLAT_MIN_AREA = 400;
+const FLAT_MAX_SHARE = 0.5;
+
+/**
+ * The surface gate: most of what the custom generators draw is a plain colour (no finish, texture set or preset), which is the
+ * toy look. An error, so the review loop cannot approve it; the fix names the worst generators and the finishes to use.
+ */
+function flatSurfaceFinding(s: LevelSurfaces | undefined): LevelFinding | null {
+  if (!s || s.area < FLAT_MIN_AREA || s.flatShare <= FLAT_MAX_SHARE) return null;
+  const worst = s.generators.filter((g) => g.flatArea > 0).slice(0, 5);
+  const list = worst.map((g) => `"${g.generator}" (${Math.round(g.flatArea)} m2 flat, used by ${g.entities.length})`).join(', ');
+  return {
+    code: 'flat_surfaces',
+    severity: 'error',
+    message: `${Math.round(s.flatShare * 100)}% of the surface the custom generators draw is a plain colour with no finish or texture, which reads as a toy: ${list}`,
+    entities: worst.flatMap((g) => g.entities).slice(0, 12),
+    fix: 'give every piece a real surface: pass a finish in each api.add(mesh, {finish, color}) call, e.g. plaster / paint for walls, facade for windowed fronts, roof-tile or slate for roofs, cobble / asphalt / gravel for streets and plazas, limestone / stone / brick for masonry, grass / rock / soil with splat for terrain, oak / brushed-metal for trim. Colour stays a tint. Edit the generator with write_generator, then run query_level review again.',
+  };
+}
+
 /** Terrain or land entities made by a custom generator that asks for the default box collider: a flat slab, not the surface. */
 function boxTerrain(world: WorldDoc): string[] {
   const out: string[] = [];
@@ -147,7 +169,8 @@ export async function reviewLevel(world: WorldDoc): Promise<LevelReview> {
   const goals = deriveGoals(world);
   const gameplay = hasGameplay(world, goals.objectives.length > 0 || goals.winDefined);
   const targets = gameplay ? [] : roamTargets(world);
-  if (!gameplay && targets.length === 0 && boxTerrain(world).length === 0) return { applicable: false, findings: [], poses: [], score: 100 };
+  const flat = flatSurfaceFinding(levelSurfaces());
+  if (!gameplay && targets.length === 0 && boxTerrain(world).length === 0 && !flat) return { applicable: false, findings: [], poses: [], score: 100 };
   const spawn = world.player.spawn;
   const why = unsupportedReason(world);
   const boxed = gameplay ? [] : boxTerrain(world);
@@ -160,6 +183,7 @@ export async function reviewLevel(world: WorldDoc): Promise<LevelReview> {
       fix: boxFix(world, id),
     });
   }
+  if (flat) findings.push(flat);
   if (!gameplay) {
     // A place to walk around in (a town, a plaza, a campus): nothing to win, but the player must be able to stand, walk and get to the things in it.
   } else if (!goals.winDefined && goals.objectives.length > 0) {

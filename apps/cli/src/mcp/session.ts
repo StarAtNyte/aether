@@ -11,7 +11,7 @@ import { WorldAgent, summarizeWorldForModel, type AgentEvent, type AgentHost } f
 import { analyzeRoomPlacements, wallMountIndex } from '@aether/arch';
 import { createWorld, History, inspectUntrusted, resolveSelector, type Entity, type Vec3, type WorldDoc } from '@aether/core';
 import type { VerifyTrace } from '@aether/physics';
-import { loadLibraryGenerator, worldColliderProvider } from '@aether/procgen';
+import { loadLibraryGenerator, worldColliderProvider, worldSurfaceStats } from '@aether/procgen';
 import { Engine } from './engine';
 import { ToolError } from './errors';
 import { ProjectDir, safeFileName } from './fsguard';
@@ -235,7 +235,7 @@ export class AetherSession {
     const chosen = await this.provider();
     const agent = new WorldAgent({ provider: chosen.provider, catalogs: this.engine.catalogs, resolveGenerator: loadLibraryGenerator, maxRepairs: 2, maxTurns: 40, maxToolCalls: 300, review: { maxRounds: 6 }, levelTools: async (world, name, input) => {
       const { runLevelTool } = await import('@aether/playtest/level');
-      const r = await runLevelTool(world, name, input, { colliders: await worldColliderProvider(world, this.engine.sandbox) });
+      const r = await runLevelTool(world, name, input, { colliders: await worldColliderProvider(world, this.engine.sandbox), surfaces: await worldSurfaceStats(world, this.engine.sandbox) });
       return { ok: r.ok, text: r.text, patches: r.patches, message: r.message, ...(r.data ? { data: r.data } : {}) };
     } });
     const timeout = AbortSignal.timeout(MCP_LIMITS.AGENT_TIMEOUT_MS);

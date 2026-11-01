@@ -104,3 +104,16 @@ describe('query_level review', () => {
     expect(r.patches).toEqual([]);
   }, 60_000);
 });
+
+describe('reviewLevel surface gate', () => {
+  it('fails a place whose generators draw plain colour and passes one with real finishes', async () => {
+    const props = Array.from({ length: 12 }, (_, i) => slab(`prop-${i}`, [-8 + i * 1.5, 0.5, 6], [0.6, 1, 0.6]));
+    const world = gameWorld([slab('floor', [0, -0.25, 0], [30, 0.5, 12], { tags: ['roads'] }), ...props], {}, [0, 0.5, 0]);
+    const surf = (flatShare: number) => ({ area: 5000, flatArea: 5000 * flatShare, flatShare, generators: [{ generator: 'town', flatArea: 5000 * flatShare, area: 5000, entities: ['floor'] }] });
+    const toy = await runLevelTool(world, 'query_level', { op: 'review' }, { surfaces: surf(0.95) });
+    expect(toy.text).toContain('plain colour');
+    expect(toy.text).toContain('finish');
+    const real = await runLevelTool(world, 'query_level', { op: 'review' }, { surfaces: surf(0.1) });
+    expect(real.text).not.toContain('plain colour');
+  }, 60_000);
+});

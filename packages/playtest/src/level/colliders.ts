@@ -22,3 +22,23 @@ export function levelColliders(): { colliders: ColliderProvider } | Record<strin
 export function hasLevelColliders(): boolean {
   return current !== undefined;
 }
+
+/** What the world's custom generators draw as plain colour (see `worldSurfaceStats`), measured by the host that has the sandbox. */
+export interface LevelSurfaces {
+  area: number;
+  flatArea: number;
+  flatShare: number;
+  generators: Array<{ generator: string; flatArea: number; area: number; entities: string[] }>;
+}
+
+let currentSurfaces: LevelSurfaces | undefined;
+
+/** Set by {@link runLevelTool} around one tool call. */
+export function setLevelSurfaces(surfaces: LevelSurfaces | undefined): void {
+  currentSurfaces = surfaces;
+}
+
+/** The surface measurement of the running tool call, when the host made one. */
+export function levelSurfaces(): LevelSurfaces | undefined {
+  return currentSurfaces;
+}

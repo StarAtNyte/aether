@@ -5,6 +5,7 @@
  */
 import type { LevelToolRunner } from '@aether/agent';
 import type { ColliderProvider } from '@aether/physics';
+import { worldSurfaceStats, type SandboxRunner } from '@aether/procgen';
 
 /** The part of the simulation the tools need: the colliders the renderer built, once it has drawn the latest world. */
 export interface ColliderSource {
@@ -17,12 +18,14 @@ export interface ColliderSource {
  * generators (terrain, streets, buildings) are measured with the colliders the renderer built for them; without one they are
  * placeholder boxes and every reach answer is wrong.
  */
-export function levelToolsFor(source: () => ColliderSource | null): LevelToolRunner {
+export function levelToolsFor(source: () => ColliderSource | null, sandbox: () => SandboxRunner | null = () => null): LevelToolRunner {
   return async (world, name, input) => {
     const sim = source();
     if (sim) await sim.whenSynced().catch(() => undefined);
     const { runLevelTool } = await import('@aether/playtest/level');
-    const r = await runLevelTool(world, name, input, sim ? { colliders: sim.colliders } : {});
+    const sb = sandbox();
+    const surfaces = sb ? await worldSurfaceStats(world, sb).catch(() => undefined) : undefined;
+    const r = await runLevelTool(world, name, input, { ...(sim ? { colliders: sim.colliders } : {}), ...(surfaces ? { surfaces } : {}) });
     return { ok: r.ok, text: r.text, patches: r.patches, message: r.message, ...(r.data ? { data: r.data } : {}) };
   };
 }
