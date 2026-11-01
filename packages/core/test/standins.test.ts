@@ -61,3 +61,14 @@ describe('stand-in lint', () => {
     expect(bad).toEqual([]);
   });
 });
+
+describe('stand-in lint: parts named after vehicles', () => {
+  it('a vehicle bay door or a car park is part of a building, not a vehicle', () => {
+    const world = createWorld({ entities: {
+      d: { id: 'd', name: 'Vehicle bay door', tags: ['door'], shape: { kind: 'primitive', primitive: 'box', size: [0.14, 3.4, 4.2] } },
+      p: { id: 'p', name: 'Car park', shape: { kind: 'primitive', primitive: 'box', size: [20, 0.1, 30] } },
+      c: { id: 'c', name: 'Car', shape: { kind: 'primitive', primitive: 'box', size: [1.8, 1.4, 4.2] } },
+    } });
+    expect(findStandIns(world).map((s) => s.id)).toEqual(['c']);
+  });
+});

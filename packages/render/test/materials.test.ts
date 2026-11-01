@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DoubleSide, FrontSide, MeshStandardMaterial } from 'three';
 import { MaterialPreset } from '@aether/core';
-import { MATERIAL_PRESETS, materialKey, mergeMaterial, resolveMaterial } from '../src/materials/presets';
+import { MATERIAL_PRESETS, materialKey, mergeMaterial, resolveMaterial, skinned } from '../src/materials/presets';
 import { MaterialCache } from '../src/materials/material-cache';
 
 describe('resolveMaterial', () => {
@@ -150,5 +150,19 @@ describe('doubleSided', () => {
     expect(two.doubleSided).toBe(true);
     expect(materialKey(one)).not.toBe(materialKey(two));
     expect(mergeMaterial({ doubleSided: true, finish: 'facade' }, undefined, 3).doubleSided).toBe(true);
+  });
+});
+
+describe('skins', () => {
+  const soil = { id: 'tex-0123456789ab' };
+  it('a preset with a finish behind it takes the skin of that finish (dirt draws as soil)', () => {
+    expect(skinned({ preset: 'dirt', color: '#a85a3a' }, { soil }).texture).toEqual(soil);
+    expect(resolveMaterial(skinned({ preset: 'dirt' }, { soil })).texture?.id).toBe(soil.id);
+  });
+  it('leaves a finish or preset with no skin, and a part that names its own texture, alone', () => {
+    expect(skinned({ preset: 'metal' }, { soil }).texture).toBeUndefined();
+    expect(skinned({ finish: 'plaster' }, { soil }).texture).toBeUndefined();
+    const own = { id: 'tex-ffffffffffff' };
+    expect(skinned({ finish: 'soil', texture: own }, { soil }).texture).toEqual(own);
   });
 });

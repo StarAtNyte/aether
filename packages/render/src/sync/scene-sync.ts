@@ -46,6 +46,7 @@ import {
   type ProceduralShape,
   type ScatterShape,
   type ShapeSpec,
+  type TextureRef,
   type WorldDoc,
 } from '@aether/core';
 import type { GeneratorOutput, GeometrySource, KeyedOutput, MeshPart } from '../types';
@@ -552,6 +553,14 @@ export class SceneSync {
    * returned promise settles when procedural generation started by this call
    * finished (model downloads continue in the background, see {@link whenIdle}).
    */
+  /** Texture skins of a piece: the world's own (a finish drawn with a texture set everywhere), with the piece's skins winning. */
+  private skinsFor(entity: Entity): Readonly<Record<string, TextureRef>> | undefined {
+    const world = this.current?.skins;
+    const own = entity.arch?.skins;
+    if (!world) return own;
+    return own ? { ...world, ...own } : world;
+  }
+
   setWorld(world: WorldDoc): Promise<void> {
     if (this.disposed) return RESOLVED;
     const prev = this.current;
@@ -1561,7 +1570,7 @@ export class SceneSync {
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i] as MeshPart;
       const hasColors = part.colors instanceof Float32Array && part.colors.length > 0;
-      const handle = this.opts.materials.acquire(mergeMaterial(part.material, node.entity.material, parts.length, node.entity.arch?.skins), { hasVertexColors: hasColors, doubleSided: false }, variant);
+      const handle = this.opts.materials.acquire(mergeMaterial(part.material, node.entity.material, parts.length, this.skinsFor(node.entity)), { hasVertexColors: hasColors, doubleSided: false }, variant);
       materials.push(handle.material);
       handles.push({ key: handle.key, hasColors, seeThrough: handle.resolved.transparent && handle.resolved.opacity < SHADOW_OPACITY_MIN, part });
     }
@@ -1569,7 +1578,7 @@ export class SceneSync {
     // One binding per (level, part) mesh; each holds its own material reference.
     for (let m = 0; m < field.meshes.length; m++) {
       const h = handles[m % parts.length] as (typeof handles)[number];
-      const key = m < parts.length ? h.key : this.opts.materials.acquire(mergeMaterial(h.part.material, node.entity.material, parts.length, node.entity.arch?.skins), { hasVertexColors: h.hasColors, doubleSided: false }, variant).key;
+      const key = m < parts.length ? h.key : this.opts.materials.acquire(mergeMaterial(h.part.material, node.entity.material, parts.length, this.skinsFor(node.entity)), { hasVertexColors: h.hasColors, doubleSided: false }, variant).key;
       node.bindings.push({ mesh: field.meshes[m] as InstancedMesh, partMaterial: h.part.material, hasColors: h.hasColors, doubleSided: false, materialKey: key, seeThrough: h.seeThrough, ownedMaterial: null, ...(variant !== this.variant ? { variant } : {}) });
     }
     node.field = field;
@@ -1620,7 +1629,7 @@ export class SceneSync {
     node.partCount = bundle.slots.length;
     for (const slot of bundle.slots) {
       const partMaterial = slotMaterials[slot.slot] ?? {};
-      const handle = this.opts.materials.acquire(mergeMaterial(partMaterial, node.entity.material, node.partCount, node.entity.arch?.skins), { hasVertexColors: bundle.hasColors, doubleSided: false }, this.variant);
+      const handle = this.opts.materials.acquire(mergeMaterial(partMaterial, node.entity.material, node.partCount, this.skinsFor(node.entity)), { hasVertexColors: bundle.hasColors, doubleSided: false }, this.variant);
       const mesh = new Mesh(slot.geometry, handle.material);
       mesh.matrixAutoUpdate = false;
       mesh.name = `${node.id}:slot${slot.slot}`;
@@ -1705,7 +1714,7 @@ export class SceneSync {
         const g = this.opts.geometries.acquire(keyed.key, i, part);
         geometryKey = g.key;
         const hasColors = part.colors instanceof Float32Array && part.colors.length > 0;
-        const handle = this.opts.materials.acquire(mergeMaterial(part.material, withWaterKind(node.entity.material, node.entity), parts.length, node.entity.arch?.skins), { hasVertexColors: hasColors, doubleSided, solid: node.entity.arch?.role === 'wall' }, this.variant);
+        const handle = this.opts.materials.acquire(mergeMaterial(part.material, withWaterKind(node.entity.material, node.entity), parts.length, this.skinsFor(node.entity)), { hasVertexColors: hasColors, doubleSided, solid: node.entity.arch?.role === 'wall' }, this.variant);
         if (instances) {
           const im = new InstancedMesh(g.geometry, handle.material, 0);
           im.instanceMatrix = instances;
@@ -1886,7 +1895,7 @@ export class SceneSync {
     node.entity = { ...node.entity, material };
     node.overridden = true;
     for (const b of node.bindings) {
-      const resolved = resolveMaterial(mergeMaterial(b.partMaterial, material, node.partCount, node.entity.arch?.skins), {
+      const resolved = resolveMaterial(mergeMaterial(b.partMaterial, material, node.partCount, this.skinsFor(node.entity)), {
         hasVertexColors: b.hasColors,
         doubleSided: b.doubleSided,
       });
@@ -1917,7 +1926,7 @@ export class SceneSync {
         b.ownedMaterial = null;
       }
       const handle = this.opts.materials.acquire(
-        mergeMaterial(b.partMaterial, node.entity.material, node.partCount, node.entity.arch?.skins),
+        mergeMaterial(b.partMaterial, node.entity.material, node.partCount, this.skinsFor(node.entity)),
         { hasVertexColors: b.hasColors, doubleSided: b.doubleSided },
         b.variant ?? this.variant,
       );

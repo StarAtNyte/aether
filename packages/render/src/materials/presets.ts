@@ -299,9 +299,11 @@ export function mergeMaterial(part: MaterialSpec | undefined, entity: MaterialSp
  * `finish`. A part that already names a texture keeps it.
  */
 export function skinned(spec: MaterialSpec, skins: Readonly<Record<string, TextureRef>>): MaterialSpec {
-  if (spec.texture || typeof spec.finish !== 'string') return spec;
+  // A preset with a finish behind it (dirt draws as soil, concrete as concrete) is skinned by that finish too.
+  const finish = typeof spec.finish === 'string' ? spec.finish : typeof spec.preset === 'string' && Object.hasOwn(PRESET_DETAIL, spec.preset) ? PRESET_DETAIL[spec.preset] : undefined;
+  if (spec.texture || typeof finish !== 'string') return spec;
   const colour = typeof spec.color === 'string' && HEX.test(spec.color) ? spec.color.slice(1).toLowerCase() : null;
-  const ref = (colour ? skins[`${spec.finish}#${colour}`] : undefined) ?? skins[spec.finish];
+  const ref = (colour ? skins[`${finish}#${colour}`] : undefined) ?? skins[finish];
   return ref ? { ...spec, texture: ref } : spec;
 }
 

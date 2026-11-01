@@ -55,7 +55,7 @@ const SMALL_SPECIES: ReadonlySet<string> = new Set([
   'bird', 'birds', 'duck', 'ducks', 'crow', 'crows', 'gull', 'gulls', 'seagull', 'seagulls', 'hawk', 'hawks', 'eagle', 'parrot', 'sparrow', 'robin', 'owl', 'fish', 'fishes', 'koi', 'trout', 'salmon', 'carp', 'butterfly', 'butterflies', 'bee', 'bees', 'dragonfly',
 ]);
 /** Words that make the name a thing about the animal rather than the animal (a bird house, a fish tank). */
-const NOT_A_BEING: ReadonlySet<string> = new Set(['house', 'houses', 'feeder', 'bath', 'tank', 'cage', 'nest', 'statue', 'sign', 'stall', 'market', 'pond', 'table', 'food', 'net', 'rod', 'bowl', 'box', 'shop', 'tower', 'fountain', 'mobile', 'lamp', 'light', 'mosaic', 'painting', 'mural', 'ring']);
+const NOT_A_BEING: ReadonlySet<string> = new Set(['house', 'houses', 'feeder', 'bath', 'tank', 'cage', 'nest', 'statue', 'sign', 'stall', 'market', 'pond', 'table', 'food', 'net', 'rod', 'bowl', 'box', 'shop', 'tower', 'fountain', 'mobile', 'lamp', 'light', 'mosaic', 'painting', 'mural', 'ring', 'door', 'doors', 'bay', 'garage', 'airlock', 'gate', 'hangar', 'shed', 'ramp', 'park', 'parking']);
 /** Largest extent (m) of a flying or swimming stand-in. */
 const SMALL_BEING = 1.6;
 
@@ -75,7 +75,8 @@ function kindOf(e: Entity): StandInKind | null {
     if (arch === 'predator' || arch === 'prey' || ws.some((w) => ANIMAL_WORDS.has(w))) return 'animal';
     return 'person';
   }
-  if (e.behaviors.some((b) => b.type === 'vehicle') || ws.some((w) => VEHICLE_WORDS.has(w))) return 'vehicle';
+  // "Vehicle bay door", "car park": a part of a building named after vehicles is not one.
+  if (e.behaviors.some((b) => b.type === 'vehicle') || (ws.some((w) => VEHICLE_WORDS.has(w)) && !ws.some((w) => NOT_A_BEING.has(w)))) return 'vehicle';
   if (ws.some((w) => PERSON_WORDS.has(w) && w !== 'player')) return 'person';
   if (ws.some((w) => ANIMAL_WORDS.has(w))) return 'animal';
   return null;
