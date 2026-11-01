@@ -28,6 +28,7 @@ import { AGENT_TOOLS, COMPACT_TOOLS, LEVEL_TOOLS } from './tools';
 import { MAKE_TEXTURE_TOOL } from './textures';
 import { findingKey, findingsText } from '@aether/arch';
 import { autoRepairBuildings } from './auto-repair';
+import { lumaPercentiles, targetEvidenceText, type HardcoreRun, type LumaTargets } from './hardcore';
 import { isBlankFrame, lightEvidenceText, pictureStats, type PictureStats } from './picture-stats';
 import { MAX_REVIEW_VIEWS, RepeatLedger, reviewTurnText, snapshotForReview, StallTracker, stallAskText, type ReviewSnapshot } from './review';
 import { guardVerificationClaim } from './honesty';
@@ -46,6 +47,8 @@ export const COMPACT_LIMITS = Object.freeze({ maxTokens: 1_200, summaryEntities:
 /** Options of a single {@link WorldAgent.run}. */
 export interface RunOptions {
   signal?: AbortSignal;
+  /** Hardcore mode: hero shots, references (in `images`, one per shot) and the art bible the review judges against. */
+  hardcore?: HardcoreRun;
   /** Base64 image data URLs (sketches, references, screenshots); at most 4. */
   images?: string[];
   /** Prior conversation (text is kept; tool traffic and images are dropped). */
@@ -198,6 +201,8 @@ export class WorldAgent {
   private seen: WorldDoc | null = null;
   /** What the user asked for and the pictures they attached (the review compares the renders with them). */
   private reviewAsk: { request: string; images: string[] } = { request: '', images: [] };
+  /** The hardcore run in progress (null for a normal run). */
+  private hardcore: HardcoreRun | null = null;
   /** The brief of the current run (the build's checklist and the richness review's yardstick), with its reference picture. */
   private briefState: BriefStageResult | null = null;
 
@@ -492,6 +497,7 @@ export class WorldAgent {
     this.conversation = messages;
 
     this.reviewAsk = { request, images };
+    this.hardcore = opts.hardcore && opts.hardcore.shots.length > 0 ? opts.hardcore : null;
     const startWorld = host.getWorld();
     let repairs = 0;
     let nudges = 0;
@@ -788,6 +794,8 @@ export class WorldAgent {
         }
         snap = snapped;
       }
+      // Hardcore: every round renders the hero shots, the views the references were drawn for.
+      if (this.hardcore && withViews) snap = { ...snap, views: this.hardcore.shots };
       // Findings seen unchanged twice are folded into one unresolved line (the tracker keeps the original keys).
       snap = { ...snap, findings: repeats.apply(snap.findings) };
       const isLevel = snap.buildings[0] === LEVEL_SUBJECT;
@@ -848,6 +856,27 @@ export class WorldAgent {
           if (!blind) break;
         }
       }
+      // Hardcore: measure each render, then show it beside its reference as one picture (the image cap is four per request).
+      const hc = this.hardcore;
+      const lumaRows: Array<{ name: string; luma: LumaTargets }> = [];
+      if (hc && images.length > 0) {
+        if (hc.targets && host.decodeImage) {
+          for (const im of images) {
+            const px = await raceAbort(host.decodeImage(im.dataUrl, 160), signal).catch(() => null);
+            const luma = px ? lumaPercentiles(px.data) : null;
+            if (luma) lumaRows.push({ name: im.name, luma });
+          }
+        }
+        if (host.composeImages) {
+          for (let i = 0; i < images.length; i++) {
+            const ref = this.reviewAsk.images[i];
+            const im = images[i];
+            if (!ref || !im) continue;
+            const pair = await raceAbort(host.composeImages([{ dataUrl: ref }, { dataUrl: im.dataUrl }], { maxSide: 1600 }), signal).catch(() => null);
+            if (pair) images[i] = { ...im, label: `REFERENCE (left) beside the RENDER (right): ${im.label}`, dataUrl: pair };
+          }
+        }
+      }
       const content: ContentBlock[] = [];
       images.forEach((im, i) => {
         content.push({ type: 'text', text: `Image ${i + 1}: ${im.name}, ${im.label}` }, { type: 'image', dataUrl: im.dataUrl });
@@ -857,7 +886,7 @@ export class WorldAgent {
         // The request, point by point, against the renders (and the user's reference pictures beside them).
         const refs = this.reviewAsk.images.slice(0, 2);
         let shown = 0;
-        for (const [i, ref] of refs.entries()) {
+        for (const [i, ref] of (hc ? [] : refs).entries()) {
           const against = images[Math.min(i, images.length - 1)];
           const pair = against && host.composeImages ? await raceAbort(host.composeImages([{ dataUrl: ref }, { dataUrl: against.dataUrl }], { maxSide: 1400 }), signal).catch(() => null) : null;
           if (pair) content.push({ type: 'text', text: `Image ${images.length + shown + 1}: REFERENCE ${i + 1} from the user (left) beside the RENDER ${against?.name ?? ''} (right)` }, { type: 'image', dataUrl: pair });
@@ -882,6 +911,8 @@ export class WorldAgent {
         if (text) content.push({ type: 'text', text });
       }
       if (blind) content.push({ type: 'text', text: 'EVERY render this round is completely black, also after a second capture. That is not a dark scene: the capture failed, or the camera sits inside an opaque solid, or a generator fails to draw. You cannot judge the look from these. Find the cause (inspect the world, test a different view, check the generators and what encloses the camera) and fix it, then look again. Do not approve this round.' });
+      if (hc?.targets && lumaRows.length > 0) content.push({ type: 'text', text: targetEvidenceText(lumaRows, hc.targets) });
+      if (hc) content.push({ type: 'text', text: hc.bible });
       if (this.briefState) content.push({ type: 'text', text: richnessReviewText(this.briefState.brief, host.getWorld(), round, this.briefState.notes) });
       if (stallAsk) content.push({ type: 'text', text: stallAsk });
       if (shortAsk) content.push({ type: 'text', text: `The checker keeps repeating itself, but your brief's counts are still well short: ${shortAsk.slice(0, 900)}. Build the rest in one call each (shape_land tier, grid, perimeter, wall or along, as the brief says), or say plainly why each stays short, then finish.` });

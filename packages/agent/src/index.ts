@@ -98,3 +98,4 @@ export { BRIEF_TOOL, BRIEF_TOOL_NAME, BriefSchema, REFERENCE_TOOL, briefChecklis
 export { briefStage, lookReference, referencePrompt, type BriefReviewer, type BriefStageResult } from './brief-stage';
 export type { PerceptionReport, PerceivedObject } from './photo/perception/perceive';
 export { PERCEIVE_TOOL_NAME } from './photo/perception/names';
+export { HARDCORE_PASSES, bibleText, heroShots, lumaPercentiles, meanTargets, passPrompt, referencePrompt as heroReferencePrompt, targetEvidenceText, type HardcoreRun, type LumaTargets } from './hardcore';
