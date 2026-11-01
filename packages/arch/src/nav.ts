@@ -478,7 +478,12 @@ export function checkBuilding(world: WorldDoc, buildingId: EntityId, clearance =
   // Seeds per level with how far they may snap to walkable floor: the entrance is found loosely, but the top of a
   // stair must arrive on floor right there (a flight that runs into a wall does not reach the room behind it).
   const pending = new Map<number, Array<{ p: P2; snap: number; stair?: EntityId; link?: StairLink }>>();
-  pending.set(levels[0]?.index ?? 0, [{ p: entrance, snap: 1.5 }]);
+  // In a neighbourhood the spawn is out in the street, not at this house: a visitor comes in through its front door (or
+  // another door to outside), so that door is a way in too.
+  const outer = (levels[0]?.children ?? []).filter((e) => e.arch?.role === 'opening' && (e.name === 'Front door' || / outside$/i.test(e.name)));
+  outer.sort((a, b) => Number(b.name === 'Front door') - Number(a.name === 'Front door'));
+  const front = outer[0];
+  pending.set(levels[0]?.index ?? 0, [{ p: entrance, snap: 1.5 }, ...(front ? [{ p: [front.transform.position[0], front.transform.position[2]] as P2, snap: 1.5 }] : [])]);
 
   for (const L of levels) {
     const rooms = L.children.filter((e) => e.arch?.role === 'room');
