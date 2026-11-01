@@ -723,7 +723,20 @@ function props(L: RoomLayout): void {
     L.onTop('mug', { color: pal.linen }, coffee, coffee.size[0] * 0.2, -0.06, 'Mug');
   }
   const nightstand = first('nightstand');
-  if (nightstand) L.onTop('book', { color: '#556b4f' }, nightstand, -0.1, 0.06, 'Book');
+  if (nightstand) {
+    // The book lies on the part of the top the lamp leaves free, clear of the lamp's base; no room beside it, no book.
+    const t = (nightstand.yaw * Math.PI) / 180;
+    const half = nightstand.size[0] / 2;
+    const bookHalf = 0.12;
+    const lamp = L.placed.find((p) => p.kind === 'table-lamp' && Math.hypot(p.x - nightstand.x, p.z - nightstand.z) < Math.max(half, nightstand.size[2] / 2));
+    if (!lamp) L.onTop('book', { color: '#556b4f' }, nightstand, -0.1, 0.06, 'Book');
+    else {
+      const lampDx = (lamp.x - nightstand.x) * Math.cos(t) - (lamp.z - nightstand.z) * Math.sin(t);
+      const side = lampDx >= 0 ? -1 : 1;
+      const dx = lampDx + side * (Math.max(lamp.size[0], lamp.size[2]) / 2 + bookHalf + 0.02);
+      if (Math.abs(dx) + bookHalf <= half + 0.02) L.onTop('book', { color: '#556b4f' }, nightstand, dx, 0.06, 'Book');
+    }
+  }
   const desk = first('desk');
   if (desk) L.onTop('mug', { color: '#d9d2c3' }, desk, -desk.size[0] / 2 + 0.25, 0.05, 'Mug');
   const island = first('island');
