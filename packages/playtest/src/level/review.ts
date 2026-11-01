@@ -207,7 +207,8 @@ export async function reviewLevel(world: WorldDoc): Promise<LevelReview> {
   const findings: LevelFinding[] = [];
   const goals = deriveGoals(world);
   const gameplay = hasGameplay(world, goals.objectives.length > 0 || goals.winDefined);
-  const targets = gameplay ? [] : roamTargets(world);
+  // A free-roam place checks every walkable piece; a game checks only the homes and rooms a visitor should be able to walk into.
+  const targets = gameplay ? roamTargets(world).filter((t) => t.enterable) : roamTargets(world);
   const flat = flatSurfaceFinding(levelSurfaces());
   const detailFindings = detailFindingsOf(world, levelSurfaces());
   if (!gameplay && targets.length === 0 && boxTerrain(world).length === 0 && !flat && detailFindings.length === 0) return { applicable: false, findings: [], poses: [], score: 100 };
@@ -250,7 +251,7 @@ export async function reviewLevel(world: WorldDoc): Promise<LevelReview> {
           message: `${t.label} at ${t.position.map(r1).join(', ')} cannot be reached on foot from the spawn: ${a.reason}.${near}`,
           entities: [t.id],
           at: t.position,
-          fix: t.drivable ? 'put the car on a road within a short walk of the spawn (place_level_items {id,x,z} snaps it onto the surface), and make sure the road and the way to it are solid ground' : 'make the way there solid ground (a street, stairs or ramp with a collider; a slope over about 45 degrees cannot be walked) or move the spawn onto the connected ground',
+          fix: t.enterable ? 'make it a home you can walk into: a doorway the player fits through (at least 1.2 m wide and 2.2 m high), a floor inside at the doorstep level, and a shell that is not one solid collider (give the generator api.autoColliders("trimesh") or separate wall colliders, never a box over the whole dome); then furnish it and light it' : t.drivable ? 'put the car on a road within a short walk of the spawn (place_level_items {id,x,z} snaps it onto the surface), and make sure the road and the way to it are solid ground' : 'make the way there solid ground (a street, stairs or ramp with a collider; a slope over about 45 degrees cannot be walked) or move the spawn onto the connected ground',
         });
       }
       const all = probe.objectives();

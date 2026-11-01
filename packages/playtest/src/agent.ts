@@ -2236,9 +2236,13 @@ export interface RoamTarget {
   label: string;
   position: Vec3;
   drivable: boolean;
+  /** A home, habitat or room: the player must be able to walk in. */
+  enterable: boolean;
 }
 
-const ROAM_TAGS = ['roads', 'road', 'street', 'plaza', 'stairs', 'quay', 'promenade'];
+/** Tags of a place the player must be able to walk into (the check holds in a game too, where the other roam targets are skipped). */
+export const ENTER_TAGS = ['dome', 'habitat', 'home', 'dwelling', 'interior'];
+const ROAM_TAGS = ['roads', 'road', 'street', 'plaza', 'stairs', 'quay', 'promenade', 'dome', 'habitat', 'home', 'dwelling', 'interior', 'corridor', 'walkway'];
 
 /**
  * The walk checks of a world with no game in it: its drivable vehicles and walkable-surface entities, when there are at least
@@ -2251,12 +2255,12 @@ export function roamTargets(world: WorldDoc): RoamTarget[] {
     const e = world.entities[id] as Entity;
     if (e.template) continue;
     n++;
-    if (out.length >= 24) continue;
+    if (out.length >= 40) continue;
     const drivable = e.behaviors.some((b) => b.enabled && b.type === 'vehicle');
     const walkable = e.tags.some((t) => ROAM_TAGS.includes(t.toLowerCase()));
     if (!drivable && !walkable) continue;
     const p = e.transform.position;
-    out.push({ id, label: drivable ? `the drivable vehicle ${e.name}` : e.name || id, position: [p[0], p[1], p[2]], drivable });
+    out.push({ id, label: drivable ? `the drivable vehicle ${e.name}` : e.name || id, position: [p[0], p[1], p[2]], drivable, enterable: e.tags.some((t) => ENTER_TAGS.includes(t.toLowerCase())) });
   }
   return n >= 12 ? out : [];
 }

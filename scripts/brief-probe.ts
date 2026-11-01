@@ -3,7 +3,7 @@
  * brief step, then renders an overview and eye-height stills with the software renderer and writes the counts.
  *
  *   npx tsx scripts/brief-probe.ts --id=cinema --prompt="make a cinema hall" --brief=on --out=probe-out/brief
- *   options: --backend=claude-code|codex --effort=low|medium|high --rounds=N --turns=N --tool-calls=N --gpu=1 --from=<template slug> --keep=<dir> (default ~/.local/share/aether/gen-worlds; the run is copied to <dir>/<id>/)
+ *   options: --backend=claude-code|codex --effort=low|medium|high --rounds=N --turns=N --tool-calls=N --gpu=1 --from=<template slug or world .json path> --keep=<dir> (default ~/.local/share/aether/gen-worlds; the run is copied to <dir>/<id>/)
  *
  * Single runs are noisy: read the counts as one sample, not a measurement.
  */
@@ -96,7 +96,9 @@ async function main(): Promise<void> {
     }
   }
   const gpuRoom: GpuRoom | null = useGpu ? await GpuRoom.open({}) : null;
-  const initial = from ? (createWorld((JSON.parse(readFileSync(resolve(`apps/studio/public/templates/worlds/${from}.json`), 'utf8')) as { world: WorldDoc }).world) as WorldDoc) : undefined;
+  // A slug of a bundled template, or the path of a world file (a saved world or the bare world a probe run wrote).
+  const fromRaw = from ? (JSON.parse(readFileSync(from.endsWith('.json') ? resolve(from) : resolve(`apps/studio/public/templates/worlds/${from}.json`), 'utf8')) as { world?: WorldDoc } & Record<string, unknown>) : undefined;
+  const initial = fromRaw ? (createWorld((fromRaw.world ?? fromRaw) as WorldDoc) as WorldDoc) : undefined;
   const host = new Host(sandbox, initial);
   const events: AgentEvent[] = [];
   const t0 = performance.now();

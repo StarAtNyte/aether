@@ -130,4 +130,17 @@ describe('reviewLevel surface gate', () => {
     expect(good.text).not.toContain('bare slabs');
     expect(good.text).not.toContain('repeated unchanged');
   }, 60_000);
+
+  it('a game also checks that every home or dome can be walked into', async () => {
+    const props = Array.from({ length: 12 }, (_, i) => slab(`prop-${i}`, [-8 + i * 1.5, 0.5, 6], [0.6, 1, 0.6]));
+    const base = [slab('floor', [0, -0.25, 0], [30, 0.5, 12]), ...props, coin('c', [3, 1, 0]), goalAt('exit', [10, 1, 0])];
+    const extra = { rules: [winAt(1)], state: { score: 0 }, environment: { ground: null } as never };
+    const shut = await reviewLevel(gameWorld([...base, slab('hab-far', [60, 0.5, 0], [10, 1, 10], { name: 'Habitat Alpha', tags: ['dome'] })], extra, [0, 0.5, 0]));
+    const f = shut.findings.find((x) => x.code === 'unreachable_target');
+    expect(f?.severity).toBe('error');
+    expect(f?.entities).toEqual(['hab-far']);
+    expect(f?.fix).toContain('doorway');
+    const open = await reviewLevel(gameWorld([...base, slab('hab-near', [6, 0.5, 0], [4, 1, 4], { name: 'Habitat Beta', tags: ['dome'] })], extra, [0, 0.5, 0]));
+    expect(open.findings.some((x) => x.code === 'unreachable_target')).toBe(false);
+  }, 60_000);
 });
