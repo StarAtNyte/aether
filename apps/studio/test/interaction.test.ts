@@ -29,6 +29,7 @@ function world(): WorldDoc {
       child: { id: 'child', name: 'Kitchen door', parent: 'piece' },
       sofa: { id: 'sofa', name: 'Sofa', interact: { kind: 'seat', label: 'sofa' } },
       plain: { id: 'plain', name: 'Plain wall' },
+      lever: { id: 'lever', name: 'Array 1 switch', behaviors: [{ type: 'toggle', params: { startOn: false } }] },
     },
   });
 }
@@ -41,6 +42,14 @@ describe('interaction decisions', () => {
     expect(usableEntity(w, 'plain')).toBeNull();
     expect(usableEntity(w, null)).toBeNull();
     expect(usableEntity(w, 'missing')).toBeNull();
+  });
+
+  it('a toggle behavior makes the entity usable by hand without an interact spec', () => {
+    expect(usableEntity(w, 'lever')?.id).toBe('lever');
+    const lever = w.entities['lever'];
+    if (!lever) throw new Error('fixture');
+    expect(promptFor(lever, {}, 1, false)?.text).toBe('E · Turn on array 1 switch');
+    expect(promptFor(lever, { on: true }, 1, false)?.text).toBe('E · Turn off array 1 switch');
   });
 
   it('words the prompt from the state', () => {

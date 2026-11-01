@@ -13,7 +13,7 @@
  * The decisions are pure functions (unit-tested); the controller only reads the
  * physics world, applies velocities and reports the prompt.
  */
-import type { Entity, EntityId, InteractSpec, Vec3, WorldDoc } from '@aether/core';
+import { interactOf, type Entity, type EntityId, type InteractSpec, type Vec3, type WorldDoc } from '@aether/core';
 
 /** Default reach of a use (metres from the eye). */
 export const DEFAULT_REACH = 2.4;
@@ -152,9 +152,9 @@ export function usableEntity(world: WorldDoc, hitId: EntityId | null): Entity | 
   if (hitId === null) return null;
   const e = world.entities[hitId];
   if (!e) return null;
-  if (e.interact) return e;
+  if (interactOf(e)) return e;
   const parent = e.parent !== null ? world.entities[e.parent] : undefined;
-  return parent?.interact ? parent : null;
+  return parent && interactOf(parent) ? parent : null;
 }
 
 /** Verb and noun for an interactable in its current state. */
@@ -175,7 +175,7 @@ export function describeInteraction(spec: InteractSpec, name: string, state: Rea
 
 /** The prompt for an aimed entity (null when it is out of reach). */
 export function promptFor(entity: Entity, state: Readonly<Record<string, unknown>>, distance: number, carried: boolean): InteractPrompt | null {
-  const spec = entity.interact;
+  const spec = interactOf(entity);
   if (!spec) return null;
   if (distance > (spec.reach ?? DEFAULT_REACH)) return null;
   const { verb, noun } = describeInteraction(spec, entity.name, state, carried);
@@ -290,7 +290,8 @@ export class PlayInteraction {
     if (!a) return false;
     const { target, distance } = this.cast(a);
     if (!target || !promptFor(target, this.session.entityState(target.id), distance, false)) return false;
-    if (target.interact?.kind === 'pickup') {
+    const kind = interactOf(target)?.kind;
+    if (kind === 'pickup') {
       if (!this.session.isDynamic(target.id)) {
         this.events.toast('Too heavy to lift');
         return true;
@@ -299,7 +300,7 @@ export class PlayInteraction {
       this.events.sound('pickup');
       return true;
     }
-    if (target.interact?.kind === 'seat') {
+    if (kind === 'seat') {
       if (!this.session.sit(target.id)) this.events.toast('Nowhere to sit there');
       return true;
     }

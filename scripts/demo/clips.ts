@@ -27,13 +27,19 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 /** Yaw (degrees, 0 faces -Z, positive turns left) that looks from `from` toward `to` on the ground plane. */
 const yawTo = (from: Vec3, to: Vec3): number => (Math.atan2(-(to[0] - from[0]), -(to[2] - from[2])) * 180) / Math.PI;
 
+/** Stand at `feet` looking at `look`: yaw toward it and pitch up or down to the point from an eye 1.6 m above the feet. */
 async function place(page: Page, feet: Vec3, look: Vec3): Promise<void> {
   const yaw = yawTo(feet, look);
-  await page.evaluate(([f, y]) => (window as unknown as { __aether: { simulation: { placePlayer(f: number[], y: number): boolean } } }).__aether.simulation.placePlayer(f as number[], y as number), [feet, yaw] as const);
+  const pitch = (Math.atan2(look[1] - (feet[1] + 1.6), Math.hypot(look[0] - feet[0], look[2] - feet[2])) * 180) / Math.PI;
+  await page.evaluate(([f, y, pi]) => (window as unknown as { __aether: { simulation: { placePlayer(f: number[], y: number, p: number): boolean } } }).__aether.simulation.placePlayer(f as number[], y as number, pi as number), [feet, yaw, pitch] as const);
 }
 
 async function act(page: Page): Promise<void> {
   await page.evaluate(() => (window as unknown as { __aether: { simulation: { tapVirtual(c: string): void } } }).__aether.simulation.tapVirtual('KeyE'));
+}
+
+async function view(page: Page, v: 'follow' | 'firstPerson'): Promise<void> {
+  await page.evaluate((x) => (window as unknown as { __aether: { simulation: { setCameraView(v: string): void } } }).__aether.simulation.setCameraView(x), v);
 }
 
 async function hold(page: Page, key: string, ms: number): Promise<void> {
@@ -70,27 +76,29 @@ async function kepler(page: Page): Promise<void> {
   await play(page);
   await sleep(3000);
   await hold(page, 'w', 3500);
+  // The crosshair has to be on the switch, so the three switches are used from the player's own eyes.
+  await view(page, 'firstPerson');
   for (const id of ['sw-1', 'sw-2', 'sw-3']) {
     const p = await entityPos(page, id);
-    const feet: Vec3 = [p[0] - 3, 1, p[2]];
+    const feet: Vec3 = [p[0] - 1.4, p[1] - 0.8, p[2]];
     await place(page, feet, p);
-    await sleep(900);
-    await hold(page, 'w', 1300);
+    await sleep(1200);
     await act(page);
-    await sleep(2200);
+    await sleep(2800);
   }
   await sleep(2500);
+  await view(page, 'follow');
   const cc = await entityPos(page, 'comms-console');
   const dome = await entityPos(page, 'dome-command');
   await place(page, [dome[0] + 14, 1, dome[2]], dome);
   await sleep(800);
   await hold(page, 'w', 3600);
   await sleep(600);
-  await place(page, [cc[0] + 2.5, 1, cc[2]], cc);
-  await sleep(900);
-  await hold(page, 'w', 900);
+  await view(page, 'firstPerson');
+  await place(page, [cc[0] + 1.5, cc[1] - 0.68, cc[2]], cc);
+  await sleep(1200);
   await act(page);
-  await sleep(4500);
+  await sleep(5000);
 }
 
 /** Lisbon Hills: up a street, then into the car and along the quay. */

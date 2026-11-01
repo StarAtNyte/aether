@@ -5,6 +5,7 @@
  */
 import './zod-config';
 export * from './schema';
+export { interactOf } from './interact';
 
 export { LIMITS, type Limits } from './limits';
 export { isAllowedModelUrl, MODEL_URL_HTTPS_HOSTS, MAX_MODEL_URL_LENGTH } from './urls';
