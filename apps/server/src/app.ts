@@ -165,6 +165,15 @@ export function createApp(config: ServerConfig, deps: AppDeps = {}): Hono<AppEnv
   app.get('/api/health', (c) =>
     c.json({ ok: true, mode: llm ? 'live' : 'mock', providers: [...providers], byok: false, local: local !== null, imageTo3d: config.imageTo3d !== null, assetImport: config.assetImport.enabled, ...(instance ? { instance } : {}) }, 200),
   );
+  // Uncaught errors the studio reports (one scrubbed line each, through the rate limit): what breaks for visitors reaches the operator's log.
+  app.use('/api/errors', jsonBodyLimit(4096));
+  app.post('/api/errors', async (c) => {
+    const body = (await c.req.json().catch(() => null)) as { kind?: unknown; message?: unknown; page?: unknown } | null;
+    const message = typeof body?.message === 'string' ? body.message.trim() : '';
+    if (message === '') return fail(c, 400, 'bad-request', 'A message is required.');
+    logger.warn('client error', { kind: body?.kind === 'rejection' ? 'rejection' : 'error', message: scrub(message, [], 300), page: typeof body?.page === 'string' ? scrub(body.page, [], 120) : '' });
+    return c.body(null, 204);
+  });
   if (local) {
     registerLocalRoutes(app, {
       local,

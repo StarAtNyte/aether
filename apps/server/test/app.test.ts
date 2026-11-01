@@ -204,3 +204,18 @@ describe('static studio hosting', () => {
     }
   });
 });
+
+describe('POST /api/errors', () => {
+  it('logs one scrubbed line per client error and refuses an empty one', async () => {
+    const lines: string[] = [];
+    const logger = createLogger({ level: 'debug', sink: (l) => lines.push(l), secrets: [] });
+    const app = makeApp(makeConfig(), { logger });
+    const res = await app.request('/api/errors', jsonInit('POST', { kind: 'rejection', message: 'TypeError: x is undefined', page: '#/editor' }));
+    expect(res.status).toBe(204);
+    const line = lines.find((l) => l.includes('client error')) ?? '';
+    expect(line).toContain('TypeError: x is undefined');
+    expect(line).toContain('rejection');
+    expect((await app.request('/api/errors', jsonInit('POST', { message: '' }))).status).toBe(400);
+    expect((await app.request('/api/errors', jsonInit('POST', { message: 'x'.repeat(5000) }))).status).toBe(413);
+  });
+});

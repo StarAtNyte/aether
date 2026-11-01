@@ -17,6 +17,8 @@ export interface GlobalErrorOptions {
   /** Smallest gap between toasts (ms). */
   toastEveryMs?: number;
   capacity?: number;
+  /** Send each new error somewhere the operator sees it (the server's log); called once per distinct error. */
+  report?: (e: CaughtError) => void;
 }
 
 /** Noise the browser raises that is not a defect: cancelled work and the harmless resize-observer notice. */
@@ -46,7 +48,13 @@ export function installGlobalErrorReporting(target: GlobalErrorTarget, opts: Glo
     if (seen.has(key)) return;
     if (seen.size > 200) seen.clear();
     seen.add(key);
-    ring.push({ at: now(), kind, message: text });
+    const entry: CaughtError = { at: now(), kind, message: text };
+    ring.push(entry);
+    try {
+      opts.report?.(entry);
+    } catch {
+      /* reporting must never throw from the error handler */
+    }
     if (ring.length > capacity) ring.shift();
     log(`[aether] uncaught ${kind}`, reason);
     const t = now();
@@ -59,5 +67,25 @@ export function installGlobalErrorReporting(target: GlobalErrorTarget, opts: Glo
   return {
     recent: () => ring.slice(),
     dispose() { target.removeEventListener('error', onError as never); target.removeEventListener('unhandledrejection', onRejection as never); },
+  };
+}
+
+/**
+ * A reporter that posts errors to the Aether server's `/api/errors`, when this page is served by one (a static host has no
+ * `/api`: the health probe fails once and nothing is sent). At most `max` reports per page load.
+ */
+export function serverErrorReporter(opts: { fetch?: typeof fetch; max?: number; page?: () => string } = {}): (e: CaughtError) => void {
+  const f = opts.fetch ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
+  const max = opts.max ?? 10;
+  let sent = 0;
+  let server: Promise<boolean> | null = null;
+  return (e) => {
+    if (sent >= max) return;
+    sent++;
+    server ??= f('/api/health').then((r) => r.ok, () => false);
+    void server.then((ok) => {
+      if (!ok) return;
+      return f('/api/errors', { method: 'POST', keepalive: true, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: e.kind, message: e.message, page: opts.page?.() ?? '' }) }).then(() => undefined, () => undefined);
+    });
   };
 }
