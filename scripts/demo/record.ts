@@ -83,7 +83,8 @@ const idle = (page: Page, ms = 240_000): Promise<unknown> =>
 
 /** Wait for the editor to be fully up (renderer attached, scene loaded, agent idle). */
 async function editorReady(page: Page): Promise<void> {
-  await page.waitForFunction(() => { const a = window.__aether; const s = a?.store.getState(); return !!a && a.simulation !== null && s?.loading === null && !s.agentBusy; }, null, { timeout: 240_000, polling: 250 });
+  // A live AI keeps building for many minutes: the editor is ready when the scene is up, the agent may still be busy.
+  await page.waitForFunction((busyOk) => { const a = window.__aether; const s = a?.store.getState(); return !!a && a.simulation !== null && s?.loading === null && (!s.agentBusy || busyOk); }, LIVE, { timeout: 240_000, polling: 250 });
   await synced(page);
 }
 

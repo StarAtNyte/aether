@@ -52,7 +52,12 @@ export function registerLlmRoutes(app: Hono<AppEnv>, deps: LlmRouteDeps): void {
     const body = await readJsonBody(c, { maxStringLength: LLM_LIMITS.MAX_IMAGE_DATA_URL + 64, maxNodes: 200_000, maxDepth: 64 });
     if (!body.ok) return body.response;
     const parsed = CompletionRequestSchema.safeParse(body.value);
-    if (!parsed.success) return fail(c, 400, 'invalid-request', 'The completion request is invalid.', zodToIssues(parsed.error.issues));
+    if (!parsed.success) {
+      const issues = zodToIssues(parsed.error.issues);
+      // Where the request broke a limit (paths and limit messages only, never content): a refused agent request is a defect to fix.
+      deps.logger.warn('invalid completion request', { issues: issues.slice(0, 5).map((i) => `${i.path}: ${i.message}`.slice(0, 160)).join(' | ') });
+      return fail(c, 400, 'invalid-request', 'The completion request is invalid.', issues);
+    }
 
     const model = llm.models[parsed.data.role];
     const upstreamReq: CompletionRequest = {
