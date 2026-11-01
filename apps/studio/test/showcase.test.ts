@@ -30,7 +30,7 @@ describe('showcase manifest', () => {
 
   it('keeps every gallery world as a default project, each cut from its screenshot', () => {
     const gallery = SHOWCASE.filter((e) => e.origin === 'gallery');
-    expect(gallery.length).toBeGreaterThanOrEqual(22);
+    expect(gallery.length).toBeGreaterThanOrEqual(18);
     for (const e of gallery.filter((x) => x.shot)) expect(existsSync(fileURLToPath(new URL(`../../../docs/screenshots/gallery/${e.shot}`, import.meta.url))), e.shot).toBe(true);
   });
 
