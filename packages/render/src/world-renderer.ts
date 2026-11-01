@@ -5240,7 +5240,8 @@ export class WorldRenderer {
       cam.zoom = 1;
       cam.near = 0.05;
       // A camera far from the world (the overview of a large place) needs a far plane that reaches it: a fixed 400 m drew black.
-      cam.far = Math.min(6000, Math.max(400, Math.hypot(pose.target[0] - pose.position[0], pose.target[1] - pose.position[1], pose.target[2] - pose.position[2]) * 2.5));
+      // It also never cuts the camera-centred sky dome (as the live camera's never does), or the sky behind a big world is black.
+      cam.far = Math.min(6000, Math.max(SKY_RADIUS * 2.5, Math.hypot(pose.target[0] - pose.position[0], pose.target[1] - pose.position[1], pose.target[2] - pose.position[2]) * 2.5));
       cam.position.set(pose.position[0], pose.position[1], pose.position[2]);
       cam.up.set(pose.up[0], pose.up[1], pose.up[2]);
       cam.lookAt(pose.target[0], pose.target[1], pose.target[2]);

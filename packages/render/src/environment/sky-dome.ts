@@ -35,6 +35,8 @@ import { CloudLayer } from './clouds';
 
 /** Dome radius in meters (camera far plane must exceed it). */
 export const SKY_RADIUS = 900;
+/** Largest growth of the dome with the camera's far plane (900 m → 2 km). */
+export const SKY_MAX_SCALE = 2.25;
 const STAR_COUNT = 1800;
 /** Share of the fog color mixed into the dome's horizon band. */
 const HORIZON_FOG_BLEND = 0.85;
@@ -246,9 +248,15 @@ export class SkyDome {
     return tex;
   }
 
-  /** Keep the dome centered on the camera and the disc facing it (allocation-free). */
+  /**
+   * Keep the dome centered on the camera and the disc facing it (allocation-free). The dome grows with the camera's far plane
+   * (up to {@link SKY_MAX_SCALE}×), so a big world's far hills stay inside the sky instead of cutting black holes in it.
+   */
   update(camera: Camera): void {
     this.group.position.copy(camera.position);
+    const far = (camera as Camera & { far?: number }).far;
+    const scale = typeof far === 'number' && Number.isFinite(far) ? Math.min(SKY_MAX_SCALE, Math.max(1, (far * 0.9) / SKY_RADIUS)) : 1;
+    if (this.group.scale.x !== scale) this.group.scale.setScalar(scale);
     _sun.copy(this.sunDir).multiplyScalar(SKY_RADIUS * 0.92);
     this.bodies.position.copy(_sun);
     this.bodies.lookAt(camera.position);
