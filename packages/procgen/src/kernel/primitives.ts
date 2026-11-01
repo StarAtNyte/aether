@@ -343,8 +343,10 @@ export function plane(budget: VertexBudget, w: number, d: number, segX?: number,
 /**
  * Regular grid in XZ (cols × rows cells) with y from `heights` (row-major over
  * z then x: index iz * (cols + 1) + ix) or 0. Normals from central differences.
+ * UVs span 0..1 over the grid, or with `metreUvs` run in metres (u = x, v = −z), which is what a photographed finish
+ * expects: its tiles are sized in metres, so a 200 m street keeps square cobbles.
  */
-export function gridMesh(budget: VertexBudget, cols: number, rows: number, width: number, depth: number, heights: Float64Array | null): Mesh {
+export function gridMesh(budget: VertexBudget, cols: number, rows: number, width: number, depth: number, heights: Float64Array | null, metreUvs = false): Mesh {
   const b = new MeshBuilder((cols + 1) * (rows + 1), cols * rows * 6);
   const dx = width / cols;
   const dz = depth / rows;
@@ -363,7 +365,7 @@ export function gridMesh(budget: VertexBudget, cols: number, rows: number, width
         ny = 1 / l;
         nz = -sz / l;
       }
-      b.vertex(-width / 2 + ix * dx, y, -depth / 2 + iz * dz, nx, ny, nz, ix / cols, 1 - iz / rows);
+      b.vertex(-width / 2 + ix * dx, y, -depth / 2 + iz * dz, nx, ny, nz, metreUvs ? -width / 2 + ix * dx : ix / cols, metreUvs ? depth / 2 - iz * dz : 1 - iz / rows);
     }
   }
   for (let iz = 0; iz < rows; iz++) {
@@ -400,7 +402,8 @@ export function heightfield(
       heights[iz * (c + 1) + ix] = Math.max(-KERNEL_LIMITS.MAX_DIMENSION, Math.min(KERNEL_LIMITS.MAX_DIMENSION, y));
     }
   }
-  return gridMesh(budget, c, r, w, d, heights);
+  // Heightfields are ground (streets, terraces, terrain patches): metre UVs so finishes tile at their real size.
+  return gridMesh(budget, c, r, w, d, heights, true);
 }
 
 /** Polygon (XY plane) extruded along Z, centered (z ∈ [-depth/2, depth/2]), with caps. */
