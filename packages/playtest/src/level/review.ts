@@ -98,6 +98,8 @@ function solidExtent(world: WorldDoc): { min: Vec3; max: Vec3 } | null {
     if (!b || !Number.isFinite(b.max[0] + b.min[0] + b.max[2] + b.min[2])) continue;
     // A 400 m ground slab does not describe the level.
     if (b.max[0] - b.min[0] > 600 || b.max[2] - b.min[2] > 600) continue;
+    // Nor does a landscape: a 560 m terrain would put the overview camera half a kilometre away, over the built place that is the subject.
+    if ((e.tags.includes('terrain') || e.tags.includes('land') || e.tags.includes('hill')) && (b.max[0] - b.min[0] > 150 || b.max[2] - b.min[2] > 150)) continue;
     minX = Math.min(minX, b.min[0]);
     maxX = Math.max(maxX, b.max[0]);
     minY = Math.min(minY, b.min[1]);
@@ -289,7 +291,7 @@ export async function reviewLevel(world: WorldDoc): Promise<LevelReview> {
     const cy = Math.max(0, (ext.min[1] + ext.max[1]) / 2);
     poses.push({ name: 'overview', label: 'the whole level from above and in front', position: [r1(cx), r1(cy + size * 0.75), r1(cz + size * 0.8)], target: [r1(cx), r1(cy), r1(cz)], fov: 55 });
   }
-  poses.push({ name: 'player-view', label: "the player's first view from the spawn", position: [r1(spawn[0]), r1(spawn[1] + 2.2), r1(spawn[2] + 5)], target: [r1(spawn[0]), r1(spawn[1] + 1.6), r1(spawn[2] - 14)], fov: 70 });
+  poses.push({ name: 'player-view', label: "the player's first view from the spawn", position: [r1(spawn[0]), r1(spawn[1] + 1.8), r1(spawn[2] + 0.4)], target: [r1(spawn[0]), r1(spawn[1] + 1.6), r1(spawn[2] - 14)], fov: 70 });
   const worst = findings.find((f) => f.at !== undefined && f.severity !== 'info');
   if (worst?.at) {
     const [x, y, z] = worst.at;

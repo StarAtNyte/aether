@@ -142,3 +142,36 @@ describe('the loop on a level', () => {
     expect(calls).toEqual(['query_level:review']);
   });
 });
+
+describe('the loop with blank renders', () => {
+  const clean: LevelToolRunner = async (_w, _n, input) => ((input as { op?: string }).op === 'review' ? review([]) : { ok: true, text: '', patches: [], message: '' });
+
+  it('retries a capture that came back black and does not approve on renders that stay black', async () => {
+    const script: CompletionResponse[] = [turn(call('apply_patches', { patches: [gem('gem-near', 3)], message: 'Gem' }), call('finish', { message: 'Built.' }))];
+    for (let i = 0; i < 8; i++) script.push(turn(call('finish', { message: 'Looks fine.' })));
+    const provider = new Scripted(script);
+    const host = new MemoryHost(createWorld());
+    let captures = 0;
+    (host as AgentHost).captureReview = async (views) => {
+      captures++;
+      return views.map((v) => ({ name: v.name, dataUrl: 'data:image/png;base64,iVBORw0KGgo=' }));
+    };
+    (host as AgentHost).decodeImage = async () => ({ width: 2, height: 2, data: new Uint8ClampedArray(16).map((_, i) => (i % 4 === 3 ? 255 : 0)) });
+    const agent = new WorldAgent({ provider, catalogs: TEST_CATALOGS, levelTools: clean, review: { vision: true, maxRounds: 3, stallRounds: 3 } });
+    const events = await collect(agent.run('a gem hunt', host));
+    const phases = events.filter((e) => e.type === 'review').map((e) => (e as { phase: string }).phase);
+    expect(phases).not.toContain('approved');
+    expect(captures).toBeGreaterThanOrEqual(2);
+    expect(JSON.stringify(provider.requests.map((r) => r.messages))).toContain('EVERY render this round is completely black');
+  });
+
+  it('approves as before when the renders have something in them', async () => {
+    const provider = new Scripted([turn(call('apply_patches', { patches: [gem('gem-near', 3)], message: 'Gem' }), call('finish', { message: 'Built.' })), turn(call('finish', { message: 'Looks fine.' }))]);
+    const host = new MemoryHost(createWorld());
+    (host as AgentHost).captureReview = async (views) => views.map((v) => ({ name: v.name, dataUrl: 'data:image/png;base64,iVBORw0KGgo=' }));
+    (host as AgentHost).decodeImage = async () => ({ width: 2, height: 2, data: new Uint8ClampedArray(16).fill(120) });
+    const agent = new WorldAgent({ provider, catalogs: TEST_CATALOGS, levelTools: clean, review: { vision: true, maxRounds: 4, stallRounds: 3 } });
+    const events = await collect(agent.run('a gem hunt', host));
+    expect(events.filter((e) => e.type === 'review').map((e) => (e as { phase: string }).phase)).toContain('approved');
+  });
+});

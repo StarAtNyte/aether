@@ -27,7 +27,7 @@ import { errorMessage, isAbortError } from './providers/errors';
 import { AGENT_TOOLS, COMPACT_TOOLS, LEVEL_TOOLS } from './tools';
 import { MAKE_TEXTURE_TOOL } from './textures';
 import { findingKey, findingsText } from '@aether/arch';
-import { lightEvidenceText, pictureStats, type PictureStats } from './picture-stats';
+import { isBlankFrame, lightEvidenceText, pictureStats, type PictureStats } from './picture-stats';
 import { MAX_REVIEW_VIEWS, RepeatLedger, reviewTurnText, snapshotForReview, StallTracker, stallAskText, type ReviewSnapshot } from './review';
 import { guardVerificationClaim } from './honesty';
 import { DIFFERENCES_TOOL, DIFFERENCES_TOOL_NAME, DifferenceLedger, differenceViews } from './photo/differences';
@@ -810,16 +810,27 @@ export class WorldAgent {
       }
       if (snap.findings.length > 0) yield { type: 'review', round, phase: 'found', text: `Found ${snap.findings.length}: ${snap.findings.slice(0, 3).map((f) => f.message).join('; ').slice(0, 280)}`, score: snap.score, findings: snap.findings.length };
       // Renders with numbered marks (the host draws them); a failed capture only costs the images.
-      const images: Array<{ name: string; label: string; dataUrl: string }> = [];
+      let images: Array<{ name: string; label: string; dataUrl: string }> = [];
+      // Every render of this round is black edge to edge: the capture failed, or a camera sits inside a solid. Such a round proves nothing.
+      let blind = false;
       if (withViews && snap.views.length > 0 && host.captureReview) {
-        try {
-          const got = await raceAbort(host.captureReview(snap.views, signal ? { signal } : {}), signal);
-          for (const g of got) {
-            const v = snap.views.find((x) => x.name === g.name);
-            if (v && isImageDataUrl(g.dataUrl) && images.length < Math.min(MAX_REVIEW_VIEWS, CONTEXT_LIMITS.MAX_IMAGES)) images.push({ name: g.name, label: v.label, dataUrl: g.dataUrl });
+        for (let attempt = 0; attempt < 2; attempt++) {
+          images = [];
+          try {
+            const got = await raceAbort(host.captureReview(snap.views, signal ? { signal } : {}), signal);
+            for (const g of got) {
+              const v = snap.views.find((x) => x.name === g.name);
+              if (v && isImageDataUrl(g.dataUrl) && images.length < Math.min(MAX_REVIEW_VIEWS, CONTEXT_LIMITS.MAX_IMAGES)) images.push({ name: g.name, label: v.label, dataUrl: g.dataUrl });
+            }
+          } catch (e) {
+            if (signal?.aborted) throw e;
           }
-        } catch (e) {
-          if (signal?.aborted) throw e;
+          blind = false;
+          if (images.length > 0 && host.decodeImage) {
+            const stats = await Promise.all(images.map((im) => raceAbort(host.decodeImage!(im.dataUrl, 64), signal).then((px) => (px ? pictureStats(px.data) : null)).catch(() => null)));
+            blind = stats.every((st) => st !== null && isBlankFrame(st));
+          }
+          if (!blind) break;
         }
       }
       const content: ContentBlock[] = [];
@@ -855,6 +866,7 @@ export class WorldAgent {
         const text = lightEvidenceText(rows, intent ? `${intent.key ?? 'moderate'}${intent.text ? ` (${intent.text})` : ''}` : null, intent?.key);
         if (text) content.push({ type: 'text', text });
       }
+      if (blind) content.push({ type: 'text', text: 'EVERY render this round is completely black, also after a second capture. That is not a dark scene: the capture failed, or the camera sits inside an opaque solid, or a generator fails to draw. You cannot judge the look from these. Find the cause (inspect the world, test a different view, check the generators and what encloses the camera) and fix it, then look again. Do not approve this round.' });
       if (this.briefState) content.push({ type: 'text', text: richnessReviewText(this.briefState.brief, host.getWorld(), round, this.briefState.notes) });
       if (stallAsk) content.push({ type: 'text', text: stallAsk });
       if (shortAsk) content.push({ type: 'text', text: `The checker keeps repeating itself, but your brief's counts are still well short: ${shortAsk.slice(0, 900)}. Build the rest in one call each (shape_land tier, grid, perimeter, wall or along, as the brief says), or say plainly why each stays short, then finish.` });
@@ -976,6 +988,10 @@ export class WorldAgent {
           pushedBack.add(short.key);
           tracker.forgive();
           pushUserText(messages, `You approved, but your brief's counts are still well short: ${short.text.slice(0, 900)}. Build the rest now in one call each (shape_land tier, grid, perimeter, wall or along, as the brief says), then look again. Call finish only when the checklist is met, or say plainly for each short element why it stays short.`);
+          continue;
+        }
+        if (errors.length === 0 && blind) {
+          pushUserText(messages, 'You approved, but every render of this round was black, so nothing was judged. Find why the renders are black and fix it, then look again.');
           continue;
         }
         if (errors.length === 0) {

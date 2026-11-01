@@ -44,3 +44,8 @@ export function lightEvidenceText(rows: ReadonlyArray<{ name: string; stats: Pic
     : [];
   return `Picture histograms (advisory, measured on the images above; you judge by looking; windows and lamp shades legitimately clip, a dim venue legitimately has dark corners). Lighting intent: ${intent ?? 'not stated (set one with tune_look {intent})'}.\n${lines.join('\n')}${flags.length ? `\n${flags.join('\n')}` : ''}`;
 }
+
+/** A frame with nothing in it: black from edge to edge (a capture that failed or a camera inside a solid), not a dark scene. */
+export function isBlankFrame(s: PictureStats): boolean {
+  return s.mean < 1.5 && s.crushed > 0.995;
+}
