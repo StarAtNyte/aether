@@ -27,6 +27,7 @@ import { errorMessage, isAbortError } from './providers/errors';
 import { AGENT_TOOLS, COMPACT_TOOLS, LEVEL_TOOLS } from './tools';
 import { MAKE_TEXTURE_TOOL } from './textures';
 import { findingKey, findingsText } from '@aether/arch';
+import { autoRepairBuildings } from './auto-repair';
 import { isBlankFrame, lightEvidenceText, pictureStats, type PictureStats } from './picture-stats';
 import { MAX_REVIEW_VIEWS, RepeatLedger, reviewTurnText, snapshotForReview, StallTracker, stallAskText, type ReviewSnapshot } from './review';
 import { guardVerificationClaim } from './honesty';
@@ -757,11 +758,25 @@ export class WorldAgent {
     let before: WorldDoc | null = startWorld;
     for (let round = 1; round <= rounds; round++) {
       if (signal?.aborted) throw new Error('aborted');
-      const world = host.getWorld();
+      let world = host.getWorld();
       // The offline planner is only a labelled fallback: it does not review.
       if (this.opts.provider.name === 'mock') return;
       const withViews = (typeof cfg.vision === 'function' ? cfg.vision() : cfg.vision === true) && typeof host.captureReview === 'function';
       let snap: ReviewSnapshot = snapshotForReview(world, before, { maxViews, withViews });
+      // Mechanical faults (furniture clashing, poking through walls, floating) are repaired with the product's own tools before the
+      // model looks: rooms furnished again by the layout solver where that helps, clashing decor taken out. The model's turns go
+      // to what needs judgement.
+      if (snap.buildings.length > 0 && snap.findings.some((f) => f.severity === 'error')) {
+        const fix = autoRepairBuildings(world);
+        if (fix.patches.length > 0) {
+          const res = host.applyPatches(fix.patches, `Automatic repair: ${fix.lines.slice(0, 4).join('; ')}`.slice(0, 200));
+          if (res.applied.length > 0) {
+            yield { type: 'review', round, phase: 'fixing', text: `Repaired automatically: ${fix.lines.slice(0, 3).join('; ')} (${fix.before} → ${fix.after} errors).`.slice(0, 400) };
+            world = host.getWorld();
+            snap = snapshotForReview(world, before, { maxViews, withViews });
+          }
+        }
+      }
       // No building: a game or outdoor level is reviewed with the level tools, when the host has them.
       if (snap.buildings.length === 0) {
         const lvl = this.opts.levelTools ? await raceAbort(levelSnapshot(this.opts.levelTools, world, { maxViews, withViews }), signal) : null;

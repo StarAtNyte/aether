@@ -31,7 +31,7 @@ interface MaterialSpec {
   emissiveIntensity?: number;  // 0..50 (1-4 looks good with bloom)
   opacity?: number;            // 0..1
   flatShading?: boolean;       // faceted low-poly look
-  doubleSided?: boolean;       // draw both faces: set it on the shell of anything a person walks INTO (dome, tent, greenhouse, glass room), or the inside of the shell is invisible
+  doubleSided?: boolean;       // both faces: shells people walk into
   vertexColors?: boolean;      // set automatically when the mesh has vertexColor()
 }
 
@@ -62,7 +62,7 @@ interface GeneratorApi {
   fbm2(x: number, y: number, octaves?: number): number; // fractal noise in ~[-1, 1]
 
   box(w: number, h: number, d: number): MeshHandle;
-  roundedBox(w: number, h: number, d: number, r: number, segments?: number): MeshHandle; // bevelled edges of radius r (segments 1..6, default 2): walls, plinths, trim, steps, furniture; a bevel catches the light a hard box edge cannot
+  roundedBox(w: number, h: number, d: number, r: number, segments?: number): MeshHandle; // box with bevelled edges (radius r)
   sphere(r: number, detail?: number): MeshHandle;                          // detail 0..6 (default 2)
   cylinder(rTop: number, rBottom: number, h: number, segments?: number): MeshHandle; // along Y, capped
   cone(r: number, h: number, segments?: number): MeshHandle;               // apex up

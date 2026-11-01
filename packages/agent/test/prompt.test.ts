@@ -54,7 +54,8 @@ describe('system prompt', () => {
     // 15.6k -> 15.7k once shape_land and the room dressing sit in the prompt together.
     // 15.7k -> 15.8k for the mound generator plus the continued-conversation (<scene_changes>) and world-title lines (~50 tokens).
     // 15.8k -> 15.9k for set_facade (the front of a building) in the architecture tools.
-    expect(prompt.length / 4).toBeLessThan(15_900);
+    // 15.9k -> 16k for roundedBox (bevelled edges) and doubleSided shells in the generator API.
+    expect(prompt.length / 4).toBeLessThan(16_000);
     expect(buildSystemPrompt(REAL)).toBe(prompt);
     expect(prompt).not.toMatch(/\d{4}-\d{2}-\d{2}T/); // no timestamps (cache-stable)
   });
