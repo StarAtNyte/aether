@@ -168,6 +168,7 @@ export const TopBar = memo(function TopBar({ layout }: { layout: LayoutMode }): 
     { id: 'top', label: 'Top view', icon: 'viewTop', shortcut: '2', onSelect: () => studio.viewPreset('top') },
     { id: 'front', label: 'Front view', icon: 'square', shortcut: '3', onSelect: () => studio.viewPreset('front') },
     { id: 'tour', label: 'Cinematic tour', icon: 'film', disabled: playing, onSelect: () => studio.tour() },
+    { id: 'hardcore', label: 'Hardcore mode…', icon: 'sparkles', disabled: playing || agentBusy, onSelect: () => void studio.hardcoreMode() },
     { id: 'focus', label: 'Focus selection', icon: 'focus', shortcut: 'F', disabled: selection.length === 0, onSelect: () => selection[0] && studio.focus(selection[0]) },
     { kind: 'separator', id: 's-v' },
     { kind: 'heading', id: 'h-ov', label: 'Overlays' },

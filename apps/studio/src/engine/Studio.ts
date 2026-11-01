@@ -8,7 +8,7 @@ import type { Proof } from '@aether/playtest/proof';
 import { isUserAssetId, worldAssetIds } from '@aether/assets';
 import { History, diffWorlds, getEntity, patchesBetween, type EntityId, type GeneratorDef, type Patch, type WorldDoc } from '@aether/core';
 import { hasBuilding } from '@aether/arch';
-import { EMPTY_MEMORY, OFFLINE_EXAMPLES, WorldAgent, createFallbackProvider, improvementPatches, isAbortError, needsRefinement, refineInstruction, type AgentEvent, type FallbackNotice, type PhotoResumeState, type Provenance, type PromptProfile, type Provider, type QualityFix, type RefineMemory } from '@aether/agent';
+import { EMPTY_MEMORY, OFFLINE_EXAMPLES, WorldAgent, createFallbackProvider, improvementPatches, isAbortError, needsRefinement, refineInstruction, type AgentEvent, type FallbackNotice, type PhotoResumeState, type Provenance, type PromptProfile, type Provider, type QualityFix, type RefineMemory, HARDCORE_PASSES, bibleText, heroShots, heroReferencePrompt, lumaPercentiles, meanTargets, passPrompt, type HardcoreRun, type LumaTargets } from '@aether/agent';
 import { createWorkerSandbox, type SandboxRunner } from '@aether/procgen';
 import type { StoreApi } from 'zustand/vanilla';
 import { API, MAX_PROMPT_CHARS, PERSIST_DEBOUNCE_MS } from '../config';
@@ -149,6 +149,8 @@ export interface SendOptions {
   resumePlay?: boolean;
   /** What the chat shows as the user's message when it differs from the prompt (an answer to a question). */
   echo?: string;
+  /** Hardcore mode: the hero shots, references (in `images`) and art bible this pass is judged against. */
+  hardcore?: HardcoreRun;
 }
 
 /** What the player is told when the renderer gives something up to keep frames smooth (automatic quality only). */
@@ -1209,7 +1211,7 @@ export class Studio {
       session = primary && (resolved.kind === 'local' || resolved.kind === 'bridge') ? (projectSessionKey(this.projectId) ?? undefined) : undefined;
       // The untouched default glade is a placeholder, not something the user made: the first prompt builds a new world.
       const intent = opts.intent ?? (before === this.history.current && st.chat.length === 0 && !this.history.canUndo() && isPristineStarter(before) ? 'new' : 'auto');
-      const runOpts = { signal: abort.signal, history, selection: st.selection, memory: this.refineMemory, heading: this.sim?.cameraHeading() ?? 0, intent, ...(images.length > 0 ? { images } : {}), ...(opts.photo || opts.continuePhoto ? { photo: opts.photo ?? ('recreate' as const) } : {}), ...(images.length > 0 ? { photoPermission: 'The user attached this photo and asked for it to be rebuilt as a room in their project; no further terms were stated.' } : {}), ...(opts.continuePhoto && this.photoResume ? { photoResume: this.photoResume } : {}), ...(session ? { session } : {}), steer: () => this.store.getState().takeQueued(), ...(primary && promptProfile === 'full' && prefs.reviewPlan ? { reviewBrief: () => new Promise<{ brief?: unknown; notes?: string } | null>((resolve) => { this.briefAnswer = resolve; }) } : {}) } as const;
+      const runOpts = { signal: abort.signal, history, selection: st.selection, memory: this.refineMemory, heading: this.sim?.cameraHeading() ?? 0, intent, ...(images.length > 0 ? { images } : {}), ...(opts.hardcore ? { hardcore: opts.hardcore } : {}), ...(opts.photo || opts.continuePhoto ? { photo: opts.photo ?? ('recreate' as const) } : {}), ...(images.length > 0 ? { photoPermission: 'The user attached this photo and asked for it to be rebuilt as a room in their project; no further terms were stated.' } : {}), ...(opts.continuePhoto && this.photoResume ? { photoResume: this.photoResume } : {}), ...(session ? { session } : {}), steer: () => this.store.getState().takeQueued(), ...(primary && promptProfile === 'full' && prefs.reviewPlan ? { reviewBrief: () => new Promise<{ brief?: unknown; notes?: string } | null>((resolve) => { this.briefAnswer = resolve; }) } : {}) } as const;
       this.localEdit = null;
       status = await this.streamRun(agent.run(text, this.bridge, runOpts), entryId, abort, usage);
       // A targeted edit ("move the shrine", "make the sofa green") is not followed by scene-wide polishing: the quality
@@ -1628,6 +1630,47 @@ export class Studio {
       window.removeEventListener('keydown', onKey, true);
       this.store.getState().setTouring(false);
     }, 250);
+  }
+
+  /**
+   * Hardcore mode: refine the current world to match reference pictures. Hero shots are derived from the world, one reference
+   * per shot is drawn by the connected image model, luminance targets are measured from the references, and six specialist
+   * passes run in the chat one after another, each reviewed against the references side by side. Needs an image model
+   * (Codex with a ChatGPT login, or an image API key) and a live AI.
+   */
+  async hardcoreMode(subject?: string): Promise<void> {
+    const st = this.store.getState();
+    const world = this.history.current;
+    if (st.agentBusy) { st.toast('The assistant is busy. Wait for it, or stop it, then start hardcore mode.', 'info', 5); return; }
+    const shots = heroShots(world);
+    if (shots.length === 0) { st.toast('Build something first: hardcore mode refines a world to match references.', 'info', 5); return; }
+    const images = this.ai.imageGenerator();
+    if (!images) { st.toast('Hardcore mode draws its references with an image model: connect Codex (ChatGPT login) or an image API key in Settings, AI connection.', 'error', 8); return; }
+    const what = (subject ?? (world.description || world.name)).trim().slice(0, 400);
+    st.toast(`Hardcore mode: drawing ${shots.length} reference pictures…`, 'info', 6);
+    const refs: string[] = [];
+    for (const shot of shots) {
+      try {
+        const got = await images.generate({ prompt: heroReferencePrompt(what, shot), size: 1024 });
+        refs.push(got.dataUrl);
+      } catch (err) {
+        { st.toast(`Could not draw the references: ${errorMessage(err).slice(0, 160)}`, 'error', 8); return; }
+      }
+    }
+    const lumas: LumaTargets[] = [];
+    for (const r of refs) {
+      const px = await this.bridge.decodeImage(r, 256).catch(() => null);
+      const l = px ? lumaPercentiles(px.data) : null;
+      if (l) lumas.push(l);
+    }
+    const targets = meanTargets(lumas);
+    const bible = bibleText(what, shots, targets);
+    for (const [i, pass] of HARDCORE_PASSES.entries()) {
+      if (this.disposed) return;
+      await this.send(passPrompt(pass, i, bible), { intent: 'refine', images: refs, hardcore: { bible, shots, ...(targets ? { targets } : {}) }, echo: `Hardcore pass ${i + 1} of ${HARDCORE_PASSES.length}: ${pass.title}` });
+      const last = this.store.getState().chat.at(-1);
+      if (last && 'status' in last && last.status === 'aborted') return;
+    }
   }
 
   /** Editor camera presets ('reset' re-frames the whole world). */

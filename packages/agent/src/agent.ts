@@ -377,7 +377,7 @@ export class WorldAgent {
     // Library furniture and models are resolved by name: the catalog must be in before anything is planned.
     await loadCatalog().catch(() => undefined);
     // A picture of a room with a prompt about it: rebuild THAT room from the photo (never a preset room).
-    const photoMode = opts.photo ?? 'auto';
+    const photoMode = opts.hardcore ? 'off' : (opts.photo ?? 'auto');
     // The room-from-photo pipeline is large and rarely used: loaded on demand so it stays out of the first-load bundle.
     const photoPipeline = photoMode !== 'off' && (this.opts.photo !== undefined || photoMode === 'recreate') && images[0] !== undefined ? await import('./photo/pipeline') : undefined;
     if (photoPipeline && photoPipeline.isRoomPhotoRequest(request, images.length, photoMode === 'recreate') && images[0] !== undefined) {

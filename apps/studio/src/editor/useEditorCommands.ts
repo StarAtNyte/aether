@@ -34,6 +34,7 @@ export function useEditorCommands(projects: readonly ProjectMeta[]): Command[] {
         st().showLeftView('agent');
         requestAnimationFrame(() => document.getElementById('prompt-input')?.focus());
       } },
+      { id: 'hardcore', title: 'Hardcore mode: refine to match reference pictures', group: 'Actions', icon: 'sparkles', keywords: 'references look development art bible beautiful passes', run: () => void studio.hardcoreMode() },
       { id: 'undo', title: 'Undo', group: 'Actions', icon: 'undo', shortcut: shortcut('Mod+Z'), run: () => studio.undo() },
       { id: 'redo', title: 'Redo', group: 'Actions', icon: 'redo', shortcut: shortcut('Mod+Shift+Z'), run: () => studio.redo() },
       { id: 'checks', title: 'Run physics checks', group: 'Actions', icon: 'shield', run: () => {
