@@ -8,6 +8,7 @@ import { compileGenerator, errorMessage, runCompiled } from '../../src/sandbox/r
 
 const scope = globalThis as unknown as LockableScope & Record<string, unknown>;
 const out = process.stdout;
+const exit = process.exit.bind(process);
 scope.postMessage = () => undefined;
 scope.addEventListener = () => undefined;
 
@@ -57,4 +58,5 @@ attempt('intrinsicsKept', `const m = new Map([[1, Math.max(1, 2)]]); if (JSON.st
 results.pollutedAfter = String(({} as Record<string, unknown>).polluted);
 results.fetchType = typeof scope.fetch;
 results.functionGlobal = typeof scope.Function;
-out.write(JSON.stringify(results));
+// Exit once the result is flushed: the lockdown removed WebAssembly from this process, and Node 22's lazily loaded fetch internals would otherwise fail at shutdown.
+out.write(JSON.stringify(results), () => exit(0));
