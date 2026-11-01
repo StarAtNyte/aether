@@ -50,6 +50,38 @@ function rgba(input: Buffer, side: number): { width: number; height: number; dat
 const fromDataUrl = (d: string): Buffer => Buffer.from(d.split(',')[1] ?? '', 'base64');
 const jpegDataUrl = (b: Buffer, side: number): string => `data:image/jpeg;base64,${execFileSync('convert', ['-', '-resize', `${side}x${side}>`, '-quality', '86', 'jpeg:-'], { input: b, maxBuffer: 64 << 20 }).toString('base64')}`;
 
+
+/** One picture of several (2 x 2 grid) as a JPEG data URL. */
+async function grid(dataUrls: readonly string[], dir: string, tag: string): Promise<string> {
+  const files: string[] = [];
+  for (const [i, d] of dataUrls.entries()) {
+    const f = join(dir, `.${tag}-${i}.jpg`);
+    await writeFile(f, execFileSync('convert', ['-', '-resize', '640x360^', '-gravity', 'center', '-extent', '640x360', 'jpeg:-'], { input: fromDataUrl(d), maxBuffer: 64 << 20 }));
+    files.push(f);
+  }
+  const out = execFileSync('montage', [...files, '-tile', '2x', '-geometry', '+2+2', '-quality', '85', 'jpeg:-'], { maxBuffer: 64 << 20 });
+  return `data:image/jpeg;base64,${out.toString('base64')}`;
+}
+
+/** Which of two sets of hero renders is closer to the references, judged by the model looking at all three. */
+async function judge(provider: Provider, refs: string, a: string, b: string): Promise<{ better: 'A' | 'B'; why: string }> {
+  const res = await provider.complete({
+    role: 'critic',
+    system: 'You are an art director comparing two builds of a 3D place against reference pictures. Be decisive.',
+    messages: [{ role: 'user', content: [
+      { type: 'text', text: 'Image 1: the REFERENCES (four views).' }, { type: 'image', dataUrl: refs },
+      { type: 'text', text: 'Image 2: build A (the same four views, same order).' }, { type: 'image', dataUrl: a },
+      { type: 'text', text: 'Image 3: build B (the same four views, same order).' }, { type: 'image', dataUrl: b },
+      { type: 'text', text: 'Which build, A or B, is closer to the references overall: composition and density of the town, architecture, light and colour, sky, water, planting, and the absence of broken or toy-like things (floating objects, wrong colours, blown-out or murky light)? Answer with JSON only: {"better":"A"|"B","why":"one sentence"}.' },
+    ] }],
+    maxTokens: 300,
+  });
+  const text = res.content.map((c) => (c.type === 'text' ? c.text : '')).join(' ');
+  const m = /\{[^{}]*"better"\s*:\s*"([AB])"[^{}]*\}/.exec(text);
+  const why = /"why"\s*:\s*"([^"]*)"/.exec(text)?.[1] ?? text.slice(0, 200);
+  return { better: m?.[1] === 'B' ? 'B' : 'A', why };
+}
+
 async function main(): Promise<void> {
   if (!subject) throw new Error('--subject is required (what the place is, in words)');
   await mkdir(out, { recursive: true });
@@ -79,7 +111,7 @@ async function main(): Promise<void> {
     }
   }
   const raw = JSON.parse(readFileSync(from.endsWith('.json') ? resolve(from) : resolve(`apps/studio/public/templates/worlds/${from}.json`), 'utf8')) as { world?: WorldDoc };
-  const host = new Host(sandbox, createWorld((raw.world ?? raw) as WorldDoc) as WorldDoc);
+  let host = new Host(sandbox, createWorld((raw.world ?? raw) as WorldDoc) as WorldDoc);
   const shots = heroShots(host.getWorld());
   if (shots.length === 0) throw new Error('no hero shots: the world has no built content');
   log(`hero shots: ${shots.map((s) => s.name).join(', ')}`);
@@ -109,7 +141,14 @@ async function main(): Promise<void> {
   await writeFile(join(out, 'art-bible.txt'), bible);
   log(bible);
 
+  const refGrid = await grid(refs, out, 'refs');
+  const heroRenders = async (w: WorldDoc): Promise<string[]> => {
+    await gpu.load(w);
+    return (await gpu.capture(shots.map((s) => ({ ...s.pose, hideTops: false })), { width: 960, height: 540 })).filter((d): d is string => typeof d === 'string');
+  };
   for (const [k, id] of passIds.entries()) {
+    const before = host.getWorld();
+    const beforeGrid = await grid(await heroRenders(before), out, `before-${k}`);
     const pi = HARDCORE_PASSES.findIndex((p) => p.id === id);
     const pass = HARDCORE_PASSES[pi];
     if (!pass) throw new Error(`unknown pass ${id}`);
@@ -152,6 +191,13 @@ async function main(): Promise<void> {
       await writeFile(f, fromDataUrl(r));
       files.push(f);
     }
+    // Keep the pass only if the judge finds it closer to the references than the world before it.
+    const afterGrid = await grid(await heroRenders(host.getWorld()), out, `after-${k}`);
+    const verdict = arg('gate', '1') === '1' ? await judge(provider, refGrid, beforeGrid, afterGrid).catch((e: unknown) => ({ better: 'B' as const, why: `judge failed (${String(e).slice(0, 80)}), pass kept` })) : { better: 'B' as const, why: 'gate off' };
+    log(`judge: ${verdict.better === 'B' ? 'KEEP' : 'REVERT'} ${pass.id}: ${verdict.why}`);
+    if (verdict.better === 'A') host = new Host(sandbox, before);
+    await writeFile(join(dir, 'verdict.json'), JSON.stringify(verdict));
+    await writeFile(join(out, 'best-world.json'), JSON.stringify({ format: 'aether-world', version: 1, world: host.getWorld() }));
     const last = events.filter((e) => e.type === 'message').at(-1);
     await writeFile(join(dir, 'summary.json'), JSON.stringify({ pass: pass.id, seconds: Math.round((Date.now() - t0) / 1000), reviewEnd: (events.filter((e) => e.type === 'review').at(-1) as { phase?: string } | undefined)?.phase ?? 'none', final: last }, null, 1));
     log(`pass ${pass.id} done in ${Math.round((Date.now() - t0) / 1000)} s → ${dir}`);
