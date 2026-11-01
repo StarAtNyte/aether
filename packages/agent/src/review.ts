@@ -139,10 +139,14 @@ export interface ReviewSnapshot {
 }
 
 /** Check the buildings of `world` and plan the views of a round. */
+/** Most buildings one review measures. */
+const MAX_REVIEWED_BUILDINGS = 16;
+
 export function snapshotForReview(world: WorldDoc, before: WorldDoc | null, opts: { maxViews: number; withViews: boolean }): ReviewSnapshot {
   const buildings = buildingIdsOf(world);
   const findings: Finding[] = [];
-  for (const b of buildings.slice(0, 4)) findings.push(...reviewFindings(world, b));
+  // Every building is checked (a neighbourhood has ten houses, not four); the renders go to the worst one.
+  for (const b of buildings.slice(0, MAX_REVIEWED_BUILDINGS)) findings.push(...reviewFindings(world, b));
   const bodiless = bodilessPeople(world);
   if (bodiless.length > 0) {
     findings.push({
@@ -153,7 +157,7 @@ export function snapshotForReview(world: WorldDoc, before: WorldDoc | null, opts
       fix: 'Update each with character {wardrobe, gender?, age?} (a rigged, animated person replaces the shape; the shape stays the collider).',
     });
   }
-  const worst = buildings.slice(0, 4).sort((a, b) => countFor(findings, world, b) - countFor(findings, world, a))[0];
+  const worst = buildings.slice(0, MAX_REVIEWED_BUILDINGS).sort((a, b) => countFor(findings, world, b) - countFor(findings, world, a))[0];
   const views: ReviewViewRequest[] = [];
   let legend = '';
   let advice = '';
