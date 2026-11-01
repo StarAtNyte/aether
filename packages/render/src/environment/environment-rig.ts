@@ -62,8 +62,8 @@ export const HEMI_SHARE_WITH_IBL = 0.6;
 export const AUTO_HDRI: Readonly<Record<string, string>> = Object.freeze({
   day: 'sky-partly-cloudy',
   overcast: 'sky-partly-cloudy',
-  dawn: 'sky-venice-sunset',
-  sunset: 'sky-venice-sunset',
+  dawn: 'sky-golden-sunset',
+  sunset: 'sky-golden-sunset',
   night: 'sky-moonlit',
   studio: 'sky-photo-studio',
 });
