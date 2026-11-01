@@ -11,16 +11,18 @@ import { z } from 'zod';
 
 /** Hard limits for a single completion request. */
 export const LLM_LIMITS = Object.freeze({
-  MAX_SYSTEM_CHARS: 60_000,
-  MAX_MESSAGES: 60,
-  MAX_BLOCKS_PER_MESSAGE: 64,
-  MAX_TEXT_CHARS: 200_000,
+  // Kept in step with the agent's own wire limits (packages/agent/src/wire.ts): a request the agent builds must never be refused
+  // here, or the studio falls back to the offline planner on a live server.
+  MAX_SYSTEM_CHARS: 200_000,
+  MAX_MESSAGES: 200,
+  MAX_BLOCKS_PER_MESSAGE: 200,
+  MAX_TEXT_CHARS: 400_000,
   MAX_IMAGES: 4,
   /** Maximum length of one image data URL (characters ≈ bytes). */
   MAX_IMAGE_DATA_URL: 1_500_000,
-  MAX_TOOLS: 16,
-  MAX_TOOL_DESCRIPTION: 4_000,
-  MAX_TOOL_SCHEMA_CHARS: 32_000,
+  MAX_TOOLS: 32,
+  MAX_TOOL_DESCRIPTION: 16_000,
+  MAX_TOOL_SCHEMA_CHARS: 64_000,
 });
 
 /** Allowed image MIME types inside data URLs. */

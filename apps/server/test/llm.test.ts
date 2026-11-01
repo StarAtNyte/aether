@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { createLogger } from '../src/logger';
 import { mapUpstreamError, upstreamStatusOf } from '../src/llm/errors';
+import { LLM_LIMITS } from '../src/llm/schema';
 import { PNG_DATA_URL, TEST_MODELS, cleanupDirs, completionBody, fakeProvider, jsonInit, live, makeApp, makeConfig, okProvider } from './helpers';
 
 afterAll(cleanupDirs);
@@ -32,12 +33,12 @@ describe('POST /api/llm — validation', () => {
 
   it('rejects a bad role', () => expectInvalid(completionBody({ role: 'admin' })));
   it('rejects unknown keys', () => expectInvalid(completionBody({ apiKey: 'x' })));
-  it('rejects an oversized system prompt', () => expectInvalid(completionBody({ system: 'x'.repeat(60_001) })));
+  it('rejects an oversized system prompt', () => expectInvalid(completionBody({ system: 'x'.repeat(LLM_LIMITS.MAX_SYSTEM_CHARS + 1) })));
   it('rejects too many messages', () =>
-    expectInvalid(completionBody({ messages: Array.from({ length: 61 }, () => ({ role: 'user', content: 'x' })) })));
+    expectInvalid(completionBody({ messages: Array.from({ length: LLM_LIMITS.MAX_MESSAGES + 1 }, () => ({ role: 'user', content: 'x' })) })));
   it('rejects empty messages', () => expectInvalid(completionBody({ messages: [] })));
   it('rejects too many tools', () =>
-    expectInvalid(completionBody({ tools: Array.from({ length: 17 }, (_, i) => ({ name: `t${i}`, description: '', inputSchema: {} })) })));
+    expectInvalid(completionBody({ tools: Array.from({ length: LLM_LIMITS.MAX_TOOLS + 1 }, (_, i) => ({ name: `t${i}`, description: '', inputSchema: {} })) })));
   it('rejects duplicate tool names', () =>
     expectInvalid(completionBody({ tools: [0, 1].map(() => ({ name: 'dup', description: '', inputSchema: {} })) })));
 

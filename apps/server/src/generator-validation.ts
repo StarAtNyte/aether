@@ -13,7 +13,6 @@
  * by default (`AETHER_VALIDATE_GENERATORS`). Browsers always run generators in
  * their own Worker sandbox regardless.
  */
-import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Worker } from 'node:worker_threads';
 import type { GeneratorDef } from '@aether/core';
@@ -118,13 +117,13 @@ export class GeneratorValidationPool {
       };
       let worker: Worker;
       try {
-        const require = createRequire(import.meta.url);
         worker = new Worker(BOOTSTRAP, {
           eval: true,
           execArgv: [],
           resourceLimits: this.limits,
           workerData: {
-            tsxApi: pathToFileURL(require.resolve('tsx/esm/api')).href,
+            // ESM resolution: require.resolve picks tsx's CJS entry, which imports a file newer tsx no longer ships.
+            tsxApi: import.meta.resolve('tsx/esm/api'),
             entry: pathToFileURL(fileURLToPath(new URL('./generator-worker.ts', import.meta.url))).href,
           },
         });
