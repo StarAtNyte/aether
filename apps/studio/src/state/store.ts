@@ -356,6 +356,8 @@ export interface StudioState {
   /** What the crosshair is on and can use in play mode (null when nothing). */
   interact: InteractPrompt | null;
   cameraView: CameraView;
+  /** A cinematic fly-through is playing in the editor (the viewport hides its tools). */
+  touring: boolean;
   toasts: Toast[];
   settings: StudioSettings;
   settingsOpen: boolean;
@@ -428,6 +430,7 @@ export interface StudioState {
   setInteract(prompt: InteractPrompt | null): void;
   setVoxelHud(v: VoxelHudState | null): void;
   setCameraView(v: CameraView): void;
+  setTouring(on: boolean): void;
   toast(text: string, kind?: Toast['kind'], duration?: number, action?: Toast['action']): number;
   dismissToast(id: number): void;
   updateSettings(patch: Partial<StudioSettings>): void;
@@ -567,6 +570,7 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     voxelHud: null,
     interact: null,
     cameraView: 'orbit',
+    touring: false,
     toasts: [],
     settings: init.settings ? { ...init.settings } : { ...DEFAULT_SETTINGS },
     settingsOpen: false,
@@ -668,6 +672,7 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     setVoxelHud: (v) => set({ voxelHud: v }),
     setInteract: (p) => set((s) => (s.interact === p ? s : { interact: p })),
     setCameraView: (cameraView) => set({ cameraView }),
+    setTouring: (touring) => set((st) => (st.touring === touring ? st : { touring })),
     toast: (text, kind = 'info', duration = 3, action) => {
       const id = nextToastId++;
       const d = Number.isFinite(duration) ? Math.min(Math.max(duration, 1), 30) : 3;

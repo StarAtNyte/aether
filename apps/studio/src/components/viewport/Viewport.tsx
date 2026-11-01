@@ -74,8 +74,9 @@ const CameraPresets = memo(function CameraPresets(): ReactElement {
 const TourButton = memo(function TourButton(): ReactElement {
   const studio = useStudio();
   return (
-    <button type="button" className="vp-btn" aria-label="Fly through the world" data-tip="Fly through (move the camera to stop)" onClick={() => studio.tour()}>
-      <Icon name="camera" />
+    <button type="button" className="vp-btn vp-btn--label" aria-label="Fly through the world" data-tip="Cinematic fly-through (move the mouse or press Esc to stop)" onClick={() => studio.tour()}>
+      <Icon name="film" />
+      <span>Tour</span>
     </button>
   );
 });
@@ -311,6 +312,7 @@ export const Viewport = memo(function Viewport(): ReactElement {
   const voxelUi = useUI((s) => s.voxelHud?.inventoryOpen === true || s.voxelHud?.dead === true);
   const photo = useUI((s) => s.arch.photo && s.mode === 'play');
   const planOpen = useUI((s) => s.arch.plan && s.arch.building !== null && s.mode === 'edit');
+  const touring = useUI((s) => s.touring);
   const viewer = useUI((s) => s.viewer);
   // Entering play: a short iris opens the viewport (CSS; skipped with reduced motion).
   const [entering, setEntering] = useState(false);
@@ -345,7 +347,7 @@ export const Viewport = memo(function Viewport(): ReactElement {
   const ready = !loading && !fatal;
   return (
     <section
-      className={`viewport${playing ? ' is-playing' : ''}${entering ? ' is-entering' : ''}${dropping ? ' is-dropping' : ''}${photo ? ' is-photo' : ''}${planOpen ? ' is-plan' : ''}`}
+      className={`viewport${playing ? ' is-playing' : ''}${entering ? ' is-entering' : ''}${dropping ? ' is-dropping' : ''}${photo ? ' is-photo' : ''}${planOpen ? ' is-plan' : ''}${touring ? ' is-touring' : ''}`}
       aria-label="Viewport"
       onDragOver={(e) => {
         const types = [...e.dataTransfer.types];

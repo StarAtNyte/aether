@@ -523,7 +523,10 @@ export class Studio {
       });
       // Only the first renderer flies in; a replacement (recovery, backend switch) just frames the world.
       performance.mark('aether:frameworld-start');
+      const firstAttach = this.attachCount === 0;
       await sim.frameWorld(this.attachCount++ === 0 ? { flyIn: true } : {});
+      // A link with ?tour=1 (a shared world, a gallery showcase) opens straight into the cinematic fly-through.
+      if (firstAttach && typeof location !== 'undefined' && new URLSearchParams(location.search).get('tour') === '1') window.setTimeout(() => this.tour(), 1500);
       performance.mark('aether:frameworld-end');
       // The poster stays up until the renderer has presented a frame (programs may still be linking): never an empty canvas.
       for (let waited = 0; sim.renderer.frameCount === 0 && waited < FIRST_DRAW_WAIT_MS && gen === this.attachGen && !this.disposed; waited += 50) await new Promise<void>((r) => setTimeout(r, 50));
@@ -1607,8 +1610,24 @@ export class Studio {
 
   /** Cinematic fly-through of the world (edit mode); any camera input stops it. */
   tour(): void {
-    if (!this.sim || this.sim.mode === 'play') return;
-    if (!this.sim.tour()) this.store.getState().toast('Add something to the world first.', 'info', 3);
+    const sim = this.sim;
+    if (!sim || sim.mode === 'play') return;
+    if (!sim.tour()) {
+      this.store.getState().toast('Add something to the world first.', 'info', 3);
+      return;
+    }
+    // Cinema view while it plays: the viewport hides its tools until the tour ends (a pointer, the wheel or Esc stops it).
+    this.store.getState().setTouring(true);
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') sim.renderer.stopTour();
+    };
+    window.addEventListener('keydown', onKey, true);
+    const watch = window.setInterval(() => {
+      if (sim.renderer.touring && !this.disposed && this.sim === sim) return;
+      window.clearInterval(watch);
+      window.removeEventListener('keydown', onKey, true);
+      this.store.getState().setTouring(false);
+    }, 250);
   }
 
   /** Editor camera presets ('reset' re-frames the whole world). */
