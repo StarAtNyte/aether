@@ -5247,8 +5247,10 @@ export class WorldRenderer {
       cam.updateProjectionMatrix();
       cam.updateMatrixWorld();
     };
-    const out: string[] = [];
-    try {
+    // Pipelines and materials the poses need compile on their first draw and that frame can come out blank (a new generator, a
+    // camera that sees a new surface): the poses are drawn once to prime them and the frames of that pass are dropped.
+    const pass = async (): Promise<string[]> => {
+      const out: string[] = [];
       for (const pose of list) {
         if (!this.asyncCaptureFailed) {
           try {
@@ -5286,6 +5288,10 @@ export class WorldRenderer {
         );
       }
       return out;
+    };
+    try {
+      await pass();
+      return await pass();
     } finally {
       restore();
       this.needsDraw = true;
