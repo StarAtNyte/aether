@@ -31,6 +31,7 @@ interface MaterialSpec {
   emissiveIntensity?: number;  // 0..50 (1-4 looks good with bloom)
   opacity?: number;            // 0..1
   flatShading?: boolean;       // faceted low-poly look
+  doubleSided?: boolean;       // draw both faces: set it on the shell of anything a person walks INTO (dome, tent, greenhouse, glass room), or the inside of the shell is invisible
   vertexColors?: boolean;      // set automatically when the mesh has vertexColor()
 }
 

@@ -141,3 +141,14 @@ describe('MaterialCache', () => {
     expect(cache.size).toBe(0);
   });
 });
+
+describe('doubleSided', () => {
+  it('a part that asks for both faces is drawn two-sided and keyed apart from a one-sided one', () => {
+    const one = resolveMaterial({ preset: 'glass' });
+    const two = resolveMaterial({ preset: 'glass', doubleSided: true });
+    expect(one.doubleSided).toBe(false);
+    expect(two.doubleSided).toBe(true);
+    expect(materialKey(one)).not.toBe(materialKey(two));
+    expect(mergeMaterial({ doubleSided: true, finish: 'facade' }, undefined, 3).doubleSided).toBe(true);
+  });
+});

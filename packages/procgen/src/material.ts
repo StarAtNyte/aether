@@ -63,6 +63,8 @@ export function sanitizeMaterial(input: unknown): MaterialSpec {
   if (opacity !== undefined) out.opacity = clampNumber(opacity, 0, 1, 'opacity');
   const flat = read('flatShading');
   if (flat !== undefined) out.flatShading = bool(flat, 'flatShading');
+  const two = read('doubleSided');
+  if (two !== undefined) out.doubleSided = bool(two, 'doubleSided');
   const vc = read('vertexColors');
   if (vc !== undefined) out.vertexColors = bool(vc, 'vertexColors');
   const splat = read('splat');

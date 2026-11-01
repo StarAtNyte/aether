@@ -132,6 +132,8 @@ export const MaterialSpec = z.object({
   emissiveIntensity: z.number().min(0).max(50).optional(),
   opacity: z.number().min(0).max(1).optional(),
   flatShading: z.boolean().optional(),
+  /** Additive: draw both faces of the part, so a shell (a dome, a tent, a greenhouse, a glass wall) is visible from inside as well as outside. */
+  doubleSided: z.boolean().optional(),
   /** Use per-vertex colors produced by a procedural generator. */
   vertexColors: z.boolean().optional(),
   /**
