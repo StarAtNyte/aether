@@ -27,7 +27,7 @@ import { prepareRun } from './sandbox/worker-sandbox';
 
 /** Methods of GeneratorApi exposed to untrusted code (allowlist). */
 const API_METHODS = [
-  'rng', 'noise2', 'noise3', 'fbm2', 'box', 'sphere', 'cylinder', 'cone', 'torus', 'capsule', 'plane', 'lathe', 'extrude',
+  'rng', 'noise2', 'noise3', 'fbm2', 'box', 'roundedBox', 'sphere', 'cylinder', 'cone', 'torus', 'capsule', 'plane', 'lathe', 'extrude',
   'tube', 'heightfield', 'icosphereRock', 'add', 'collider', 'autoColliders', 'color', 'mix',
 ] as const satisfies ReadonlyArray<keyof GeneratorApi>;
 

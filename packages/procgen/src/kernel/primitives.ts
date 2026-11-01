@@ -104,6 +104,61 @@ export function box(budget: VertexBudget, w: number, h: number, d: number): Mesh
 }
 
 /**
+ * Box centered on the origin with rounded (bevelled) edges and corners of radius `r`: the soft edge that catches the light, which a
+ * plain box lacks. `segments` rounds each edge in that many steps (default 2). Smooth normals across the bevel, hard faces on the flats.
+ */
+export function roundedBox(budget: VertexBudget, w: number, h: number, d: number, r: number, segments = 2): Mesh {
+  const hx = dim(w, 'roundedBox(w)') / 2, hy = dim(h, 'roundedBox(h)') / 2, hz = dim(d, 'roundedBox(d)') / 2;
+  const rad = Math.min(Math.max(finite(r, 'roundedBox(r)'), 0), Math.min(hx, hy, hz) * 0.999);
+  const n = Math.max(1, Math.min(6, Math.round(finite(segments, 'roundedBox(segments)'))));
+  const half: Vec3 = [hx, hy, hz];
+  const inner: Vec3 = [hx - rad, hy - rad, hz - rad];
+  const faces: ReadonlyArray<readonly [Vec3, Vec3, Vec3]> = [
+    [[1, 0, 0], [0, 0, -1], [0, 1, 0]],
+    [[-1, 0, 0], [0, 0, 1], [0, 1, 0]],
+    [[0, 1, 0], [1, 0, 0], [0, 0, -1]],
+    [[0, -1, 0], [1, 0, 0], [0, 0, 1]],
+    [[0, 0, 1], [1, 0, 0], [0, 1, 0]],
+    [[0, 0, -1], [-1, 0, 0], [0, 1, 0]],
+  ];
+  const ext = (axis: Vec3, v: Vec3): number => Math.abs(axis[0]) * v[0] + Math.abs(axis[1]) * v[1] + Math.abs(axis[2]) * v[2];
+  /** Coordinates along one face axis: the bevel zone at each end in `n` steps, one span across the flat middle. */
+  const coords = (H: number, Hi: number): number[] => {
+    const c: number[] = [];
+    for (let k = 0; k <= n; k++) c.push(-H + ((H - Hi) * k) / n);
+    for (let k = 0; k <= n; k++) c.push(Hi + ((H - Hi) * k) / n);
+    return c;
+  };
+  const b = new MeshBuilder(6 * (2 * n + 2) * (2 * n + 2), 6 * 6 * (2 * n + 1) * (2 * n + 1));
+  for (const [nrm, u, v] of faces) {
+    const hn = ext(nrm, half), hu = ext(u, half), hv = ext(v, half);
+    const iu = ext(u, inner), iv = ext(v, inner);
+    const cu = coords(hu, iu), cv = coords(hv, iv);
+    const cols = cu.length;
+    const base = b.vcount;
+    for (let j = 0; j < cv.length; j++) {
+      for (let i = 0; i < cols; i++) {
+        const su = cu[i] as number, sv = cv[j] as number;
+        // The point on the flat face, the nearest point of the inner box, and the offset between them.
+        const px = nrm[0] * hn + u[0] * su + v[0] * sv, py = nrm[1] * hn + u[1] * su + v[1] * sv, pz = nrm[2] * hn + u[2] * su + v[2] * sv;
+        const qx = Math.max(-inner[0], Math.min(inner[0], px)), qy = Math.max(-inner[1], Math.min(inner[1], py)), qz = Math.max(-inner[2], Math.min(inner[2], pz));
+        let dx = px - qx, dy = py - qy, dz = pz - qz;
+        const len = Math.hypot(dx, dy, dz) || 1;
+        dx /= len; dy /= len; dz /= len;
+        b.vertex(qx + dx * rad, qy + dy * rad, qz + dz * rad, dx, dy, dz, (su / hu + 1) / 2, (sv / hv + 1) / 2);
+      }
+    }
+    for (let j = 0; j + 1 < cv.length; j++) {
+      for (let i = 0; i + 1 < cols; i++) {
+        const a = base + j * cols + i;
+        b.quad(a, a + 1, a + cols + 1, a + cols);
+      }
+    }
+  }
+  return b.build(budget);
+}
+
+/**
  * Surface of revolution around +Y. `profile` holds [radius, y] pairs; repeat a
  * point to get a sharp crease. Descending profiles are reversed so faces
  * always point outward.

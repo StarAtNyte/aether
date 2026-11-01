@@ -61,6 +61,7 @@ interface GeneratorApi {
   fbm2(x: number, y: number, octaves?: number): number; // fractal noise in ~[-1, 1]
 
   box(w: number, h: number, d: number): MeshHandle;
+  roundedBox(w: number, h: number, d: number, r: number, segments?: number): MeshHandle; // bevelled edges of radius r (segments 1..6, default 2): walls, plinths, trim, steps, furniture; a bevel catches the light a hard box edge cannot
   sphere(r: number, detail?: number): MeshHandle;                          // detail 0..6 (default 2)
   cylinder(rTop: number, rBottom: number, h: number, segments?: number): MeshHandle; // along Y, capped
   cone(r: number, h: number, segments?: number): MeshHandle;               // apex up

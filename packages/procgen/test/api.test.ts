@@ -170,4 +170,21 @@ describe('resolveParams', () => {
     expect(resolveParams(spec, null as never)).toEqual(resolveParams(spec, {}));
     expect(resolveParams(spec, [] as never)).toEqual(resolveParams(spec, {}));
   });
+
+  it('roundedBox keeps the box extent, bevels the corners and has smooth unit normals', () => {
+    const api = createGeneratorApi(1);
+    const m = api.roundedBox(4, 2, 3, 0.3, 2);
+    const out = (() => { api.add(m, { color: '#ffffff' }); return api.build(); })();
+    const p = out.parts[0]!;
+    const xs = Array.from({ length: p.positions.length / 3 }, (_, i) => p.positions[i * 3] as number);
+    expect(Math.max(...xs)).toBeCloseTo(2, 5);
+    expect(Math.min(...xs)).toBeCloseTo(-2, 5);
+    // The corner of a plain box is at (2, 1, 1.5); a rounded one stays inside it.
+    for (let i = 0; i < p.positions.length; i += 3) {
+      const d = Math.hypot(Math.max(0, Math.abs(p.positions[i] as number) - 1.7), Math.max(0, Math.abs((p.positions[i + 1] as number) - 1) - 0.7), Math.max(0, Math.abs(p.positions[i + 2] as number) - 1.2));
+      expect(d).toBeLessThanOrEqual(0.3 + 1e-6);
+    }
+    for (let i = 0; i < p.normals.length; i += 3) expect(Math.hypot(p.normals[i] as number, p.normals[i + 1] as number, p.normals[i + 2] as number)).toBeCloseTo(1, 5);
+    expect(p.indices.length).toBeGreaterThan(36);
+  });
 });

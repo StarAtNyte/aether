@@ -16,7 +16,7 @@ import { levelSurfaces, type LevelSurfaces } from './colliders';
 
 /** One problem found in a level. */
 export interface LevelFinding {
-  code: 'spawn' | 'box_terrain' | 'flat_surfaces' | 'no_win' | 'unreachable_required' | 'unreachable_optional' | 'unreachable_target' | 'first_reward_far' | 'unmeasured' | 'floating';
+  code: 'spawn' | 'box_terrain' | 'flat_surfaces' | 'low_detail' | 'repetition' | 'no_win' | 'unreachable_required' | 'unreachable_optional' | 'unreachable_target' | 'first_reward_far' | 'unmeasured' | 'floating';
   severity: 'error' | 'warning' | 'info';
   message: string;
   /** Entities involved (ids). */
@@ -150,6 +150,45 @@ function flatSurfaceFinding(s: LevelSurfaces | undefined): LevelFinding | null {
   };
 }
 
+/** Surface (m2 across all its entities) below which a generator's detail is not worth a finding, and the triangle density that reads as bare slabs. */
+const DETAIL_MIN_AREA = 600;
+const DETAIL_MIN_TRIS_PER_M2 = 1;
+/** Identical copies of one piece, in one group, from which the repetition is a finding. */
+const REPEAT_MIN = 6;
+const REPEAT_EXEMPT_TAGS = ['terrain', 'land', 'roads', 'road', 'street', 'stairs', 'fence', 'wall', 'water', 'quay', 'promenade'];
+
+/**
+ * The detail pass: a generator drawn as bare slabs (no bevels, trim, cornices, reveals or relief, so few triangles per m2) and the
+ * same piece repeated unchanged many times are what make a place read as made from a kit. Warnings: the loop pushes each back once
+ * and the agent may say why it stands.
+ */
+function detailFindingsOf(world: WorldDoc, s: LevelSurfaces | undefined): LevelFinding[] {
+  const out: LevelFinding[] = [];
+  if (!s) return out;
+  const exempt = (id: string): boolean => (world.entities[id]?.tags ?? []).some((t) => REPEAT_EXEMPT_TAGS.includes(t.toLowerCase()));
+  const bare = (s.detail ?? []).filter((d) => d.trisPerM2 < DETAIL_MIN_TRIS_PER_M2 && d.area * d.entities.length >= DETAIL_MIN_AREA && !d.entities.every(exempt)).slice(0, 4);
+  if (bare.length > 0) {
+    out.push({
+      code: 'low_detail',
+      severity: 'warning',
+      message: `drawn as bare slabs, with almost no modelled detail: ${bare.map((d) => `"${d.generator}" (${d.trisPerM2.toFixed(1)} triangles per m2, used by ${d.entities.length})`).join(', ')}`,
+      entities: bare.flatMap((d) => d.entities).slice(0, 12),
+      fix: 'model the small things a real one has: bevel the edges with api.roundedBox(w, h, d, radius) instead of api.box, a cornice and string course, window reveals with sills and lintels, door surrounds and steps, roof eaves and chimneys, balcony rails, downpipes, worn plinths. Add them as extra api.add parts with their own finish, then run query_level review again.',
+    });
+  }
+  const reps = (s.repeats ?? []).filter((r) => r.count >= REPEAT_MIN && !r.entities.every(exempt)).slice(0, 4);
+  if (reps.length > 0) {
+    out.push({
+      code: 'repetition',
+      severity: 'warning',
+      message: `the same piece repeated unchanged: ${reps.map((r) => `"${r.generator}" x${r.count}`).join(', ')}`,
+      entities: reps.flatMap((r) => r.entities).slice(0, 12),
+      fix: 'vary the copies: different params (size, colour, variant), a random yaw and scale between 0.9 and 1.15, a different library model for some, and leave gaps; a row of identical pieces reads as a kit.',
+    });
+  }
+  return out;
+}
+
 /** Terrain or land entities made by a custom generator that asks for the default box collider: a flat slab, not the surface. */
 function boxTerrain(world: WorldDoc): string[] {
   const out: string[] = [];
@@ -170,7 +209,8 @@ export async function reviewLevel(world: WorldDoc): Promise<LevelReview> {
   const gameplay = hasGameplay(world, goals.objectives.length > 0 || goals.winDefined);
   const targets = gameplay ? [] : roamTargets(world);
   const flat = flatSurfaceFinding(levelSurfaces());
-  if (!gameplay && targets.length === 0 && boxTerrain(world).length === 0 && !flat) return { applicable: false, findings: [], poses: [], score: 100 };
+  const detailFindings = detailFindingsOf(world, levelSurfaces());
+  if (!gameplay && targets.length === 0 && boxTerrain(world).length === 0 && !flat && detailFindings.length === 0) return { applicable: false, findings: [], poses: [], score: 100 };
   const spawn = world.player.spawn;
   const why = unsupportedReason(world);
   const boxed = gameplay ? [] : boxTerrain(world);
@@ -184,6 +224,7 @@ export async function reviewLevel(world: WorldDoc): Promise<LevelReview> {
     });
   }
   if (flat) findings.push(flat);
+  findings.push(...detailFindings);
   if (!gameplay) {
     // A place to walk around in (a town, a plaza, a campus): nothing to win, but the player must be able to stand, walk and get to the things in it.
   } else if (!goals.winDefined && goals.objectives.length > 0) {

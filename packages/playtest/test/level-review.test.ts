@@ -116,4 +116,18 @@ describe('reviewLevel surface gate', () => {
     const real = await runLevelTool(world, 'query_level', { op: 'review' }, { surfaces: surf(0.1) });
     expect(real.text).not.toContain('plain colour');
   }, 60_000);
+
+  it('warns about bare slabs and unchanged repeats, and not about detailed or varied pieces', async () => {
+    const props = Array.from({ length: 12 }, (_, i) => slab(`prop-${i}`, [-8 + i * 1.5, 0.5, 6], [0.6, 1, 0.6]));
+    const world = gameWorld([slab('floor', [0, -0.25, 0], [30, 0.5, 12], { tags: ['roads'] }), ...props], {}, [0, 0.5, 0]);
+    const base = { area: 5000, flatArea: 0, flatShare: 0, generators: [] };
+    const ids = props.map((p) => p.id);
+    const bad = await runLevelTool(world, 'query_level', { op: 'review' }, { surfaces: { ...base, detail: [{ generator: 'town', tris: 800, area: 1000, parts: 4, trisPerM2: 0.8, entities: ids }], repeats: [{ generator: 'town', count: 9, entities: ids }] } });
+    expect(bad.text).toContain('bare slabs');
+    expect(bad.text).toContain('roundedBox');
+    expect(bad.text).toContain('repeated unchanged');
+    const good = await runLevelTool(world, 'query_level', { op: 'review' }, { surfaces: { ...base, detail: [{ generator: 'town', tris: 20000, area: 1000, parts: 30, trisPerM2: 20, entities: ids }], repeats: [{ generator: 'town', count: 2, entities: ids.slice(0, 2) }] } });
+    expect(good.text).not.toContain('bare slabs');
+    expect(good.text).not.toContain('repeated unchanged');
+  }, 60_000);
 });

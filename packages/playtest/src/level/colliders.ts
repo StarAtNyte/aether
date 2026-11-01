@@ -29,6 +29,10 @@ export interface LevelSurfaces {
   flatArea: number;
   flatShare: number;
   generators: Array<{ generator: string; flatArea: number; area: number; entities: string[] }>;
+  /** Triangles per m2 of each generator's surface (geometric detail). */
+  detail?: Array<{ generator: string; tris: number; area: number; parts: number; trisPerM2: number; entities: string[] }>;
+  /** Groups of entities that are the same piece repeated unchanged. */
+  repeats?: Array<{ generator: string; count: number; entities: string[] }>;
 }
 
 let currentSurfaces: LevelSurfaces | undefined;

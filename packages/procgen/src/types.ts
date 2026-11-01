@@ -130,6 +130,8 @@ export interface GeneratorApi {
   noise3(x: number, y: number, z: number): number;
   fbm2(x: number, y: number, octaves?: number): number;
   box(w: number, h: number, d: number): MeshHandle;
+  /** Box with rounded (bevelled) edges of radius r (segments per edge, default 2): use it for walls, plinths, trim, steps, furniture. */
+  roundedBox(w: number, h: number, d: number, r: number, segments?: number): MeshHandle;
   sphere(r: number, detail?: number): MeshHandle;
   cylinder(rTop: number, rBottom: number, h: number, segments?: number): MeshHandle;
   cone(r: number, h: number, segments?: number): MeshHandle;

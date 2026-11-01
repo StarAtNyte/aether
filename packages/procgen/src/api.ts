@@ -41,6 +41,7 @@ export interface BuildOptions {
 export interface InternalApi extends GeneratorApi {
   readonly noise: Noise;
   box(w: number, h: number, d: number): Mesh;
+  roundedBox(w: number, h: number, d: number, r: number, segments?: number): Mesh;
   sphere(r: number, detail?: number): Mesh;
   cylinder(rTop: number, rBottom: number, h: number, segments?: number): Mesh;
   cone(r: number, h: number, segments?: number): Mesh;
@@ -227,6 +228,7 @@ export function createGeneratorApi(seed: number, opts: { maxVertices?: number } 
     fbm2: (x, y, octaves) => noise.fbm2(finite(x, 'fbm2(x)'), finite(y, 'fbm2(y)'), octaves === undefined ? 4 : finite(octaves, 'fbm2(octaves)')),
     range: (min, max) => min + (max - min) * random(),
     box: (w, h, d) => prim.box(budget, w, h, d),
+    roundedBox: (w, h, d, r, segments) => prim.roundedBox(budget, w, h, d, r, segments ?? 2),
     sphere: (r, detail) => prim.sphere(budget, r, detail),
     cylinder: (rTop, rBottom, h, segs) => prim.cylinder(budget, rTop, rBottom, h, segs),
     cone: (r, h, segs) => prim.cone(budget, r, h, segs),
