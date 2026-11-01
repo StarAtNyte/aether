@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { createWorld, type WorldDoc } from '@aether/core';
-import { HARDCORE_PASSES, bibleText, heroShots, lumaPercentiles, meanTargets, passPrompt, referencePrompt, targetEvidenceText } from '../src/hardcore';
+import { HARDCORE_PASSES, bibleText, heroShots, lookCandidates, lookDistance, lumaPercentiles, meanTargets, passPrompt, pictureColour, referencePrompt, targetEvidenceText } from '../src/hardcore';
 
 const lisbon = (): WorldDoc => createWorld((JSON.parse(readFileSync(fileURLToPath(new URL('../../../apps/studio/public/templates/worlds/lisbon-hills.json', import.meta.url)), 'utf8')) as { world: WorldDoc }).world);
 
@@ -33,5 +33,18 @@ describe('hardcore mode', () => {
     const ev = targetEvidenceText([{ name: 'hero-street', luma: { p02: 60, p10: 90, p50: 160, p90: 200, p98: 240 } }], { p02: 10, p10: 30, p50: 100, p90: 200, p98: 235 });
     expect(ev).toContain('brighter overall');
     expect(ev).toContain('milky');
+  });
+
+  it('scores looks: a render like the references is closer than a washed-out one', () => {
+    const img = (sky: number[], ground: number[]) => {
+      const w = 6, h = 6, px = new Uint8Array(w * h * 4);
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const c = y < 2 ? sky : ground; px.set([c[0]!, c[1]!, c[2]!, 255], (y * w + x) * 4); }
+      return pictureColour(px, w, h)!;
+    };
+    const ref = img([70, 130, 210], [170, 110, 80]);
+    const close = img([80, 135, 200], [160, 105, 85]);
+    const washed = img([235, 235, 240], [200, 190, 180]);
+    expect(lookDistance([close], [ref])).toBeLessThan(lookDistance([washed], [ref]));
+    expect(lookCandidates().length).toBeGreaterThan(9);
   });
 });

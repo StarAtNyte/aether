@@ -15,7 +15,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { createWorld, type PatchResult, type WorldDoc } from '@aether/core';
-import { HARDCORE_PASSES, WorldAgent, bibleText, heroShots, lumaPercentiles, meanTargets, passPrompt, heroReferencePrompt as referencePrompt, type AgentEvent, type LumaTargets, type Provider, type ReviewViewRequest } from '@aether/agent';
+import { HARDCORE_PASSES, WorldAgent, bibleText, lookCandidates, lookDistance, pictureColour, type PictureColour, heroShots, lumaPercentiles, meanTargets, passPrompt, heroReferencePrompt as referencePrompt, type AgentEvent, type LumaTargets, type Provider, type ReviewViewRequest } from '@aether/agent';
 import { initScripting } from '@aether/logic';
 import { initPhysics } from '@aether/physics';
 import { loadLibraryGenerator } from '@aether/procgen';
@@ -114,6 +114,24 @@ async function main(): Promise<void> {
     if (!pass) throw new Error(`unknown pass ${id}`);
     log(`\n=== pass ${k + 1}/${passIds.length}: ${pass.title}`);
     const t0 = Date.now();
+    // The light pass starts from the best of a sweep of skies, sun heights and exposures, scored against the references.
+    if (pass.id === 'light' && arg('sweep', '1') === '1') {
+      const refColour = refs.map((r) => { const px = rgba(fromDataUrl(r), 240); return pictureColour(px.data, px.width, px.height); }).filter((p): p is PictureColour => p !== null);
+      let best: { env: Record<string, unknown>; d: number } | null = null;
+      for (const cand of lookCandidates()) {
+        const w = host.getWorld();
+        await gpu.load({ ...w, environment: { ...w.environment, ...cand } } as WorldDoc);
+        const shotsSmall = await gpu.capture(shots.map((x) => ({ ...x.pose, hideTops: false })), { width: 320, height: 180 });
+        const renders = shotsSmall.flatMap((d) => { if (!d) return []; const px = rgba(fromDataUrl(d), 320); const c = pictureColour(px.data, px.width, px.height); return c ? [c] : []; });
+        const d = lookDistance(renders, refColour);
+        log(`  look ${JSON.stringify(cand)} → ${d.toFixed(0)}`);
+        if (!best || d < best.d) best = { env: cand, d };
+      }
+      if (best) {
+        host.applyPatches([{ op: 'setEnvironment', set: best.env }], 'Look sweep: the sky, sun height and exposure closest to the references');
+        log(`look sweep chose ${JSON.stringify(best.env)} (${best.d.toFixed(0)})`);
+      }
+    }
     const agent = new WorldAgent({ provider, catalogs: CATALOGS, resolveGenerator: loadLibraryGenerator, maxRepairs: 2, maxTurns: Number(arg('turns', '150')), maxToolCalls: Number(arg('tool-calls', '1500')), levelTools: nodeLevelTools(sandbox), textures: { images: null }, review: { vision: true, maxViews: 4, stallRounds: 3, maxRounds: rounds, differences: true } });
     const events: AgentEvent[] = [];
     for await (const ev of agent.run(passPrompt(pass, pi, bible), host, { intent: 'refine', images: refs, hardcore: { bible, shots, ...(targets ? { targets } : {}) } })) {

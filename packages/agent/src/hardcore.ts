@@ -121,6 +121,32 @@ function landmark(world: WorldDoc): Vec3 | null {
 }
 
 /**
+ * The street at eye height: from the end of the longest street piece that is farther from the landmark, looking along the street
+ * (not across it into a wall), raised toward the landmark when it is uphill.
+ */
+function streetShot(world: WorldDoc, mark: Vec3): ReviewViewRequest | null {
+  let best: { a: Vec3; b: Vec3; len: number } | null = null;
+  for (const id in world.entities) {
+    const e = world.entities[id] as Entity;
+    if (e.template || !e.tags.some((t) => ['roads', 'road', 'street'].includes(t))) continue;
+    const p = e.transform.position;
+    const sz = e.shape.kind === 'primitive' ? e.shape.size : null;
+    // A street piece runs along its longer side; a generated street with no size runs along x by convention of its yaw.
+    const yaw = (e.transform.rotation[1] * Math.PI) / 180;
+    const along = sz && sz[2] > sz[0] ? [Math.sin(yaw), 0, Math.cos(yaw)] : [Math.cos(yaw), 0, -Math.sin(yaw)];
+    const half = sz ? Math.max(sz[0], sz[2]) / 2 : 12;
+    const a: Vec3 = [p[0] - (along[0] as number) * half * 0.8, p[1], p[2] - (along[2] as number) * half * 0.8];
+    const b: Vec3 = [p[0] + (along[0] as number) * half * 0.8, p[1], p[2] + (along[2] as number) * half * 0.8];
+    if (!best || half * 2 > best.len) best = { a, b, len: half * 2 };
+  }
+  if (!best) return null;
+  const da = Math.hypot(best.a[0] - mark[0], best.a[2] - mark[2]);
+  const db = Math.hypot(best.b[0] - mark[0], best.b[2] - mark[2]);
+  const [from, to] = da > db ? [best.a, best.b] : [best.b, best.a];
+  return view('hero-street', 'eye height in the street, looking along it toward the landmark', [from[0], from[1] + 1.7, from[2]], [to[0], to[1] + 1.7 + Math.max(0, mark[1] - from[1]) * 0.15, to[2]], 60);
+}
+
+/**
  * The hero shots of a world: an establishing view from outside and above, the place at eye height from the spawn toward the
  * landmark, the landmark itself from part way up, and a low view across the rooftops. Deterministic, so the same shots are judged
  * in every pass.
@@ -140,7 +166,7 @@ export function heroShots(world: WorldDoc): ReviewViewRequest[] {
   const side: Vec3 = [-dir[2], 0, dir[0]];
   return [
     view('hero-establishing', 'establishing view: the whole place from outside and above, the way a postcard frames it', [c[0] + dir[0] * r * 1.35 + side[0] * r * 0.35, c[1] + r * 0.55, c[2] + dir[2] * r * 1.35 + side[2] * r * 0.35], [c[0], c[1], c[2]], 45),
-    view('hero-street', 'eye height from where the visitor arrives, looking toward the landmark', [spawn[0], spawn[1] + 1.7, spawn[2]], [mark[0], Math.max(spawn[1] + 1.7, mark[1] * 0.6 + spawn[1] * 0.4), mark[2]], 60),
+    streetShot(world, mark) ?? view('hero-street', 'eye height from where the visitor arrives, looking toward the landmark', [spawn[0], spawn[1] + 1.7, spawn[2]], [mark[0], Math.max(spawn[1] + 1.7, mark[1] * 0.6 + spawn[1] * 0.4), mark[2]], 60),
     view('hero-landmark', 'the landmark from part way up, with the place falling away below it', [mark[0] + side[0] * r * 0.45 + dir[0] * r * 0.3, mark[1] + r * 0.12, mark[2] + side[2] * r * 0.45 + dir[2] * r * 0.3], [mark[0], mark[1], mark[2]], 50),
     view('hero-rooftops', 'low across the rooftops toward the far side, the light raking across them', [c[0] - side[0] * r * 0.9, c[1] + r * 0.18, c[2] - side[2] * r * 0.9], [c[0] + side[0] * r * 0.5, c[1], c[2] + side[2] * r * 0.5], 55),
   ];
@@ -158,7 +184,7 @@ export function referencePrompt(subject: string, shot: ReviewViewRequest): strin
 
 /** The specialist passes, in order: what each one owns and must leave alone. */
 export const HARDCORE_PASSES: ReadonlyArray<{ id: string; title: string; brief: string }> = [
-  { id: 'massing', title: 'Layout and massing', brief: 'Match the composition of the references: the layout of the place, the heights and grouping of buildings, the landmark, the shape of the land and the skyline. Fix proportions and gaps that make the place read as a grid of boxes. Do not detail yet.' },
+  { id: 'massing', title: 'Layout and massing', brief: 'Match the composition of the references: the layout of the place, the heights and grouping of buildings, the landmark, the shape of the land and the skyline. Fix proportions and gaps that make the place read as a grid of boxes. Where the references show buildings covering ground the world leaves empty (a hillside up to the landmark, a ridge, a shore), extend the built area there with new rows, terraces and winding lanes that follow the contours, and break straight rows with steps, bends and small squares. Do not detail yet.' },
   { id: 'architecture', title: 'Architecture', brief: 'Make the buildings read as the references do: varied widths and heights, real facades (window rhythm, sills, lintels, shutters, balconies, cornices, doors with surrounds, eaves, chimneys), roofs with tiles and overhangs, bevelled edges, each part in its own finish and tint. Rewrite the house generators with write_generator where they are bare.' },
   { id: 'ground', title: 'Ground and streets', brief: 'Make the ground read as the references: streets, stairs, plazas and quays with real surfaces (setts, limestone, asphalt), kerbs and gutters, retaining walls on the terraces, the river edge and the land beyond. Keep every street, stair and plaza reachable on foot.' },
   { id: 'planting', title: 'Planting and dressing', brief: 'Bring the life of the references: trees and shrubs where they stand in the pictures (street trees, gardens, cypress and pines on the slopes), flowers and climbers, street lamps, benches, signs, awnings, laundry, parked vehicles, boats, people. Library models first; vary every repeated piece.' },
@@ -180,4 +206,55 @@ export function bibleText(subject: string, shots: readonly ReviewViewRequest[], 
 /** The prompt of one pass. */
 export function passPrompt(pass: (typeof HARDCORE_PASSES)[number], index: number, bible: string): string {
   return `${bible}\n\nPASS ${index + 1} of ${HARDCORE_PASSES.length}: ${pass.title}. ${pass.brief}`;
+}
+
+/** Colour statistics of a picture: luminance percentiles and the mean colour of its top third (the sky in most shots) and the rest. */
+export interface PictureColour {
+  luma: LumaTargets;
+  top: [number, number, number];
+  rest: [number, number, number];
+}
+
+/** Colour statistics of RGBA pixels laid out `width` x `height`. */
+export function pictureColour(data: ArrayLike<number>, width: number, height: number): PictureColour | null {
+  const luma = lumaPercentiles(data);
+  if (!luma || width <= 0 || height <= 0) return null;
+  const top = [0, 0, 0];
+  const rest = [0, 0, 0];
+  let nt = 0;
+  let nr = 0;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      const acc = y < height / 3 ? top : rest;
+      for (let c = 0; c < 3; c++) acc[c] = (acc[c] as number) + (data[i + c] as number);
+      if (y < height / 3) nt++;
+      else nr++;
+    }
+  }
+  return { luma, top: top.map((v) => v / Math.max(1, nt)) as [number, number, number], rest: rest.map((v) => v / Math.max(1, nr)) as [number, number, number] };
+}
+
+/** How far a set of renders is from the references (lower is closer): luminance spread and the colour of sky and ground. */
+export function lookDistance(renders: readonly PictureColour[], refs: readonly PictureColour[]): number {
+  if (renders.length === 0 || refs.length === 0) return Infinity;
+  const mean = (list: readonly PictureColour[], f: (p: PictureColour) => number): number => list.reduce((s, p) => s + f(p), 0) / list.length;
+  let d = 0;
+  for (const k of ['p02', 'p10', 'p50', 'p90', 'p98'] as const) d += Math.abs(mean(renders, (p) => p.luma[k]) - mean(refs, (p) => p.luma[k]));
+  for (let c = 0; c < 3; c++) {
+    d += 0.8 * Math.abs(mean(renders, (p) => p.top[c] as number) - mean(refs, (p) => p.top[c] as number));
+    d += 0.6 * Math.abs(mean(renders, (p) => p.rest[c] as number) - mean(refs, (p) => p.rest[c] as number));
+  }
+  return d;
+}
+
+/** Environment candidates the look sweep renders before the light pass: sky pictures, sun heights and exposures. */
+export function lookCandidates(): Array<Record<string, unknown>> {
+  const out: Array<Record<string, unknown>> = [];
+  for (const hdri of ['sky-partly-cloudy', 'sky-golden-sunset', 'sky-industrial-sunset']) {
+    for (const timeOfDay of [16.6, 17.4, 18.1]) {
+      for (const exposure of [1.1, 1.4, 1.7]) out.push({ hdri, hdriBackground: true, hdriIntensity: 0.9, sky: hdri === 'sky-partly-cloudy' ? 'day' : 'sunset', timeOfDay, exposure });
+    }
+  }
+  return out;
 }
