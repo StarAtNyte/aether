@@ -8,7 +8,8 @@
  * `--refs` names a folder that has them. 3. Luminance targets are measured from the references and the model writes what they
  * share. 4. Each pass is a refine run whose review renders the hero shots and shows each beside its reference. The world, the
  * hero renders and a contact sheet are written after every pass, so a long run can be followed and resumed (`--from=<pass world>`).
- * Model calls go to the Anthropic API key (scripts/lib/live-provider.ts); images to Codex.
+ * Model calls go to the Anthropic API key (scripts/lib/live-provider.ts), or to the Claude Code / Codex CLI login with
+ * AETHER_ALLOW_CLI=1 (when the key's credits run out); images go to Codex.
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -136,6 +137,7 @@ async function main(): Promise<void> {
     const events: AgentEvent[] = [];
     for await (const ev of agent.run(passPrompt(pass, pi, bible), host, { intent: 'refine', images: refs, hardcore: { bible, shots, ...(targets ? { targets } : {}) } })) {
       events.push(ev);
+      if (ev.type === 'error') log(`ERROR ${ev.text.slice(0, 300)}`);
       if (ev.type === 'status' || ev.type === 'review') log(`[${Math.round((Date.now() - t0) / 1000)}s] ${ev.type}${'phase' in ev ? `:${ev.phase}` : ''} ${'text' in ev ? ev.text.slice(0, 140) : ''}`);
     }
     const dir = join(out, `pass-${k + 1}-${pass.id}`);
