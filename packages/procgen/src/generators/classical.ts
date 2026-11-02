@@ -6,14 +6,16 @@
 import type { MaterialSpec, Vec3 } from '@aether/core';
 import type { InternalApi } from '../api';
 import type { Mesh } from '../kernel/mesh';
+import type { SdfNode } from '../types';
+import type { RGB } from '../color';
 import { boxCollider, cylinderCollider } from '../colliders';
+import { buildCliff } from './cliff';
 import { defineGenerator, glow, pBool, pColor, pInt, pNum, pVariant } from './kit';
 
 // Weathered marble reads as a pale, finely textured stone at building scale (the polished-marble finish is too veiny).
 const marble = (color: string): MaterialSpec => ({ finish: 'plaster', color, roughness: 0.6 });
 const stone = (color: string): MaterialSpec => ({ finish: 'stone', color, roughness: 0.85 });
 const roofTile = (color: string): MaterialSpec => ({ finish: 'roof-tile', color, roughness: 0.8 });
-const rock = (color: string): MaterialSpec => ({ finish: 'rock', color, roughness: 0.92 });
 const BRONZE: MaterialSpec = { finish: 'brass', color: '#8a5a2e', roughness: 0.5, metalness: 0.9 };
 const IRON: MaterialSpec = { finish: 'black-metal', color: '#2a2a2c', roughness: 0.55, metalness: 0.8 };
 
@@ -259,42 +261,20 @@ const aqueduct = defineGenerator({
 
 const cliffFace = defineGenerator({
   id: 'cliff-face',
-  description: 'Cliff face: a tall rock wall with strata, ledges and cracks (limestone, granite or an overhang); backs plateaus, gorges and coasts. Faces +Z.',
+  description: 'Cliff face: a sheer pale limestone wall in strata of varying thickness, with ledges, overhangs, gullies and joints, an uneven top and water-stained streaks (thin-bedded, massive or overhanging); backs plateaus, gorges and coasts. Faces +Z.',
   category: 'terrain',
   params: {
     width: pNum(30, 4, 120, 'width in meters'),
     height: pNum(30, 4, 120, 'height in meters'),
     depth: pNum(8, 2, 40, 'solid thickness behind the face in meters'),
-    color: pColor('#cfc4ad', 'rock colour (pale limestone by default)'),
-    variant: pVariant(2, '0 stratified limestone with ledges, 1 rough granite, 2 overhanging'),
+    color: pColor('#cfc4ad', 'rock colour (pale limestone by default; beds and streaks vary around it)'),
+    variant: pVariant(2, '0 thin-bedded limestone with many ledges, 1 massive jointed limestone with deep gullies, 2 overhanging'),
   },
   run(p, api) {
     const W = p.num('width');
     const H = p.num('height');
     const D = p.num('depth');
-    const v = p.int('variant');
-    const sx = Math.min(36, Math.ceil(W / 1.5));
-    const sy = Math.min(44, Math.ceil(H / 1.5));
-    const face = api.plane(W, H, sx, sy).rotate(90, 0, 0).translate(0, H / 2, 0);
-    const k = Math.min(1, H / 20);
-    face.displace((x, y) => {
-      const n = api.fbm2(x * 0.08, y * 0.08) * 2.2 * k + api.noise2(x * 0.5, y * 0.5) * 0.35;
-      if (v === 0) {
-        // Strata: bands that step in and out, broken by vertical joints.
-        const band = Math.floor(y / 2.6 + api.noise2(x * 0.05, 1) * 0.6);
-        return n * 0.6 + Math.sin(band * 2.7) * 0.7 * k + (api.noise2(x * 0.3, band) > 0.55 ? -0.6 : 0);
-      }
-      if (v === 2) return n + Math.max(0, (y / H - 0.55) * 2.4) * D * 0.25;
-      return n * 1.3;
-    });
-    api.add(face, rock(p.color('color')));
-    api.add(api.box(W, H, D).translate(0, H / 2, -D / 2 - 0.8), rock(p.color('color')));
-    // A few ledges with fallen blocks at the foot.
-    for (let i = 0; i < 6; i++) {
-      const r = api.range(0.6, 1.8) * Math.min(1.5, H / 15);
-      const b = api.icosphereRock(r, 0.5, 1).scale(1.3, 0.7, 1).translate(api.range(-W / 2, W / 2) * 0.9, r * 0.3, api.range(0.6, 2.2));
-      api.add(b, rock(p.color('color')));
-    }
+    buildCliff(api, { width: W, height: H, depth: D, color: p.color('color'), variant: p.int('variant') });
     api.collider(boxCollider(0, H / 2, -D / 2, W, H, D));
     return api.build();
   },
@@ -440,9 +420,61 @@ const awning = defineGenerator({
   },
 });
 
+/** Cell size of the carved figure in metres of its nominal 2 m frame: ≈ 12k triangles for small statues, ≈ 25k for a colossus. */
+const FIGURE_CELL_SMALL = 0.032;
+const FIGURE_CELL_LARGE = 0.022;
+/** Skull centre and crown height of the figures below (nominal 2 m frame, head turned straight ahead). */
+const SKULL: Vec3 = [-0.03, 1.86, -0.03];
+const CROWN_Y = 1.965;
+
+/**
+ * Pose of the carved figure in its nominal 2 m frame (sole y = 0, facing +Z, its right side -X; angles in degrees).
+ * Variant 0 is the Athena type: weight on the right leg, the right fist raised round a tall spear, the left hand
+ * resting on the rim of a great shield standing at her side, a belted peplos with an overfold falling in deep vertical
+ * folds, and a crested Attic helmet carved with the head. Variant 1 is a robed figure with both arms raised.
+ */
+function figureStatuePose(variant: number, seed: number): SdfNode {
+  if (variant === 0) {
+    const [hx, hy, hz] = SKULL;
+    const helmet: SdfNode = {
+      op: 'union', k: 0.012,
+      items: [
+        // the bowl, cut level just above the brow
+        { op: 'intersect', items: [
+          { shape: 'ellipsoid', r: [0.13, 0.13, 0.15], at: [hx, hy + 0.01, hz - 0.006] },
+          { shape: 'box', size: [0.4, 0.2, 0.4], at: [hx, hy + 0.11, hz] },
+        ] },
+        // the brow band and the peak over the forehead
+        { shape: 'ellipsoid', r: [0.118, 0.02, 0.07], at: [hx, hy + 0.018, hz + 0.09], rot: [-14, 0, 0] },
+        // the neck guard flaring at the back, the cheek-piece hinges at the temples
+        { shape: 'ellipsoid', r: [0.115, 0.055, 0.04], at: [hx, hy - 0.015, hz - 0.115], rot: [22, 0, 0] },
+        { shape: 'ellipsoid', r: [0.02, 0.05, 0.04], at: [hx - 0.112, hy - 0.005, hz + 0.02] },
+        { shape: 'ellipsoid', r: [0.02, 0.05, 0.04], at: [hx + 0.112, hy - 0.005, hz + 0.02] },
+        // the crest holder along the ridge
+        { shape: 'box', size: [0.036, 0.05, 0.22], round: 0.012, at: [hx, CROWN_Y + 0.045, hz - 0.01] },
+      ],
+    };
+    const figure: SdfNode = {
+      shape: 'figure', sex: 'f', seed, garment: 'peplos', weight: 'R', hair: 'wavy',
+      hip: { roll: 2.9 }, head: { yaw: 0, pitch: 5 },
+      armR: { wrist: [-0.38, 1.47, 0.08], pole: [-0.5, -1, -0.45], fingers: [0.1, 0.05, 1], dorsal: [-1, 0, 0.1], curl: [72, 77, 52], thumbCurl: 0.9, spread: 0 },
+      armL: { wrist: [0.42, 1.08, 0.04], pole: [0.6, -0.2, -1], fingers: [0.1, -1, 0.1], dorsal: [1, 0, 0], curl: [30, 35, 25] },
+      drape: { mantle: false, belt: true, overfold: true, folds: 18, foldAmp: 0.05, fine: 0.12, wide: 0.02, overAmp: 1.4 },
+    };
+    return { op: 'union', items: [figure, helmet] };
+  }
+  return {
+    shape: 'figure', sex: 'f', seed, garment: 'chiton', weight: 'L', hair: 'wavy',
+    hip: { roll: -2.9 }, head: { yaw: 0, pitch: 0 },
+    armR: { wrist: [-0.3, 2.0, 0.16], pole: [-1, 0, -0.3], fingers: [0, 1, 0.1] },
+    armL: { wrist: [0.3, 2.0, 0.16], pole: [1, 0, -0.3], fingers: [0, 1, 0.1] },
+    drape: { mantle: false, folds: 24, foldAmp: 0.03, wide: 0.015 },
+  };
+}
+
 const figureStatue = defineGenerator({
   id: 'figure-statue',
-  description: 'Standing classical figure statue at any scale (life size to a 30 m colossus): robed goddess with helmet, spear and round shield, or a robed figure with raised arms.',
+  description: 'Carved classical marble figure at any scale (life size to a 30 m colossus) on a moulded pedestal: a helmeted goddess (Athena type) with a raised spear and a great round shield at her side, or a robed figure with raised arms. Weathered, faintly veined marble with gilded accents.',
   category: 'props',
   params: {
     height: pNum(3, 1, 40, 'figure height in meters (feet to crown)'),
@@ -454,47 +486,100 @@ const figureStatue = defineGenerator({
   run(p, api) {
     const H = p.num('height');
     const v = p.int('variant');
-    const mat = marble(p.color('color'));
-    const gold: MaterialSpec = { finish: 'brass', color: p.color('accentColor'), roughness: 0.35, metalness: 0.9 };
+    const s = H / 2; // the figure is carved at a nominal 2 m
+    const color = p.color('color');
+    // Vertex colours carry the weathering; the plaster finish gives the fine grain of the stone.
+    const mat: MaterialSpec = { finish: 'plaster', color, roughness: 0.55, vertexColors: true };
+    const gold: MaterialSpec = { finish: 'brass', color: p.color('accentColor'), roughness: 0.32, metalness: 0.95 };
     const ped = p.bool('pedestal') ? H * 0.16 : 0;
-    // Robe from hem to neck (a peplos): flared hem, cinched waist, full chest, with deep vertical folds that fade upward.
-    const robe = api.lathe([[H * 0.115, 0], [H * 0.11, H * 0.04], [H * 0.095, H * 0.3], [H * 0.075, H * 0.55], [H * 0.07, H * 0.6], [H * 0.088, H * 0.7], [H * 0.1, H * 0.79], [H * 0.06, H * 0.84], [H * 0.028, H * 0.86], [0, H * 0.865]], 36);
-    robe.displace((x, y, z) => {
-      const a = Math.atan2(z, x);
-      const fade = Math.max(0, 1 - y / (H * 0.62));
-      return H * 0.008 * Math.cos(a * 13) * fade + H * 0.003 * Math.cos(a * 29 + y * 3) * fade;
-    });
-    robe.scale(1, 1, 0.72);
-    // A fold of cloth over one shoulder (the himation) breaks the symmetry.
-    const drape = api.tube([[H * 0.085, H * 0.8, H * 0.02], [H * 0.02, H * 0.7, H * 0.075], [-H * 0.07, H * 0.56, H * 0.06], [-H * 0.09, H * 0.42, H * 0.03]], H * 0.022, 8);
-    let fig = robe.merge(drape);
-    fig = fig.merge(api.cylinder(H * 0.026, H * 0.03, H * 0.06, 12).translate(0, H * 0.88, 0));
-    const head = api.sphere(H * 0.058).scale(0.9, 1.08, 1).translate(0, H * 0.935, H * 0.004);
-    fig = fig.merge(head);
-    const arm = (from: Vec3, mid: Vec3, to: Vec3): Mesh => api.tube([from, mid, to], H * 0.024, 8, (t) => 1 - 0.3 * t);
+    const seed = 100 + Math.floor(api.rng() * 1000);
+
+    const fig = api.sdf(figureStatuePose(v, seed), { cell: H >= 6 ? FIGURE_CELL_LARGE : FIGURE_CELL_SMALL, smooth: 1, project: 1 });
+    const y0 = ped - fig.bounds().min[1] * s; // the feet on the pedestal
+    const at = (x: number, y: number, z: number): Vec3 => [x * s, y * s + y0, z * s];
+    fig.scale(s).translate(0, y0, 0);
+    const marbleParts: Mesh[] = [fig];
+    const [hx, , hz] = SKULL;
+
     if (v === 0) {
-      // Helmet with a crest, the spear held high in the right hand, the shield resting at the left side.
-      api.add(api.sphere(H * 0.064).scale(0.95, 0.75, 1.05).translate(0, H * 0.965, -H * 0.004), gold);
-      api.add(api.box(H * 0.012, H * 0.05, H * 0.13).translate(0, H * 1.02, -H * 0.01), gold);
-      fig = fig.merge(arm([H * 0.095, H * 0.8, 0], [H * 0.16, H * 0.86, H * 0.02], [H * 0.17, H * 0.98, H * 0.03]));
-      fig = fig.merge(arm([-H * 0.095, H * 0.8, 0], [-H * 0.15, H * 0.68, H * 0.04], [-H * 0.17, H * 0.58, H * 0.08]));
-      api.add(api.cylinder(H * 0.009, H * 0.009, H * 1.25, 8).translate(H * 0.17, H * 0.6, H * 0.03), { finish: 'brass', color: '#6d5532', roughness: 0.6, metalness: 0.7 });
-      api.add(api.cone(H * 0.022, H * 0.09, 8).translate(H * 0.17, H * 1.27, H * 0.03), gold);
-      const shield = api.lathe([[0, H * 0.035], [H * 0.12, H * 0.025], [H * 0.17, H * 0.008], [H * 0.18, 0], [H * 0.18, -H * 0.012], [0, -H * 0.006]], 32).rotate(90, 0, 0).rotate(0, -35, 0).translate(-H * 0.24, H * 0.36, H * 0.12);
-      api.add(shield, mat);
-      api.add(api.torus(H * 0.175, H * 0.01, 8, 40).rotate(0, -35, 0).translate(-H * 0.24 + Math.sin((-35 * Math.PI) / 180) * H * 0.01, H * 0.36, H * 0.12 + Math.cos((-35 * Math.PI) / 180) * H * 0.01), gold);
+      // Gilded crest sweeping from the brow over the helmet and down the back as a horsehair tail.
+      const crest = api.tube([[0, CROWN_Y + 0.03, 0.12], [0, CROWN_Y + 0.15, 0.05], [0, CROWN_Y + 0.18, -0.07], [0, CROWN_Y + 0.11, -0.19], [0, CROWN_Y - 0.03, -0.25], [0, CROWN_Y - 0.24, -0.24]], 0.06, 10, (t) => 0.5 + 0.6 * Math.sin(Math.PI * Math.min(1, t * 1.4)) - 0.3 * t);
+      crest.scale(0.4, 1, 1).translate(hx, 0, hz - 0.01).scale(s).translate(0, y0, 0);
+      api.add(crest, gold);
+      // Tall spear through the raised fist: bronze shaft, gilded leaf blade and butt spike.
+      const bronze: MaterialSpec = { finish: 'brass', color: '#6d5532', roughness: 0.55, metalness: 0.8 };
+      const sx = -0.338, sz = 0.154;
+      api.add(api.limb(at(sx, 0.02, sz), at(sx, 2.62, sz), 0.017 * s, 0.015 * s, 10), bronze);
+      api.add(api.limb(at(sx, 2.6, sz), at(sx, 2.66, sz), 0.026 * s, 0.026 * s, 10), gold);
+      api.add(api.lathe(([[0, 0], [0.03, 0.04], [0.042, 0.11], [0.03, 0.2], [0, 0.3]] as Array<[number, number]>).map(([r, y]) => [r * s, y * s] as [number, number]), 12).scale(1, 1, 0.45).translate(...at(sx, 2.66, sz)), gold);
+      api.add(api.limb(at(sx, 0.0, sz), at(sx, 0.09, sz), 0.012 * s, 0.02 * s, 8), gold);
+      // A great round shield standing on the pedestal at her left side, its rim under her hand; the face is carved
+      // with a raised ring and a gilded boss, the rim gilded.
+      const R = 0.5;
+      const place = (m: Mesh): Mesh => m.rotate(0, 0, -80).rotate(0, -35, 0).translate(0.52, 0.52, 0.06).scale(s).translate(0, y0, 0);
+      const face = api.lathe([[0, 0.075], [0.18, 0.068], [0.3, 0.05], [0.31, 0.058], [0.33, 0.058], [0.34, 0.045], [0.44, 0.022], [R, 0.004], [R, -0.02], [0.45, -0.03], [0, -0.03]], 48);
+      marbleParts.push(place(face));
+      const rim: Array<[number, number]> = [];
+      for (let i = 0; i <= 10; i++) { const a = (i / 10) * Math.PI * 2; rim.push([R + 0.006 + 0.022 * Math.cos(a), 0.0 + 0.022 * Math.sin(a)]); }
+      api.add(place(api.lathe(rim, 48)), gold);
+      api.add(place(api.lathe([[0, 0.135], [0.03, 0.128], [0.055, 0.105], [0.07, 0.075], [0.07, 0.06], [0, 0.06]], 20)), gold);
     } else {
-      fig = fig.merge(arm([H * 0.095, H * 0.8, 0], [H * 0.17, H * 0.92, H * 0.02], [H * 0.2, H * 1.05, H * 0.03]));
-      fig = fig.merge(arm([-H * 0.095, H * 0.8, 0], [-H * 0.17, H * 0.92, H * 0.02], [-H * 0.2, H * 1.05, H * 0.03]));
+      // A gilded diadem round the head.
+      api.add(api.torus(0.104 * s, 0.013 * s, 8, 28).rotate(90, 0, 0).rotate(-10, 0, 0).translate(...at(0.03, 1.885, -0.028)), gold);
     }
-    api.add(fig.translate(0, ped, 0), mat);
+
+    // Pedestal sized to the whole composition: two steps, a torus base moulding, the die with a raised panel, a cyma
+    // cap and an overhanging cornice.
+    const box = { min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
+    for (const m of marbleParts) {
+      const b = m.bounds();
+      for (let i = 0; i < 3; i++) { box.min[i] = Math.min(box.min[i] as number, b.min[i] as number); box.max[i] = Math.max(box.max[i] as number, b.max[i] as number); }
+    }
+    if (v === 0) { box.min[0] = Math.min(box.min[0] as number, -0.38 * s); }
+    const cx = ((box.min[0] as number) + (box.max[0] as number)) / 2, cz = ((box.min[2] as number) + (box.max[2] as number)) / 2;
+    const w = ((box.max[0] as number) - (box.min[0] as number)) * 1.0 + H * 0.02;
+    const d = Math.max(((box.max[2] as number) - (box.min[2] as number)) * 1.0 + H * 0.02, w * 0.72);
     if (ped > 0) {
-      const ps = marble('#ddd5c6');
-      api.add(api.box(H * 0.42, ped * 0.25, H * 0.42).translate(0, ped * 0.125 - ped, 0).translate(0, ped, 0), ps);
-      api.add(api.box(H * 0.34, ped * 0.6, H * 0.34).translate(0, ped * 0.55, 0), ps);
-      api.add(api.box(H * 0.38, ped * 0.15, H * 0.38).translate(0, ped * 0.925, 0), ps);
+      const tier = (sw: number, y: number, h: number, r: number): Mesh => api.roundedBox(w * sw, h, d * sw, Math.min(r, h * 0.49), 2).translate(cx, y + h / 2, cz);
+      marbleParts.push(
+        tier(1.16, 0, ped * 0.13, ped * 0.01),
+        tier(1.11, ped * 0.13, ped * 0.11, ped * 0.01),
+        tier(1.06, ped * 0.24, ped * 0.07, ped * 0.035),
+        tier(1.03, ped * 0.31, ped * 0.04, ped * 0.012),
+        tier(1, ped * 0.35, ped * 0.43, ped * 0.008),
+        api.roundedBox(w * 0.72, ped * 0.26, d * 1.0 + ped * 0.03, ped * 0.01, 2).translate(cx, ped * 0.565, cz),
+        api.roundedBox(w * 1.0 + ped * 0.03, ped * 0.26, d * 0.62, ped * 0.01, 2).translate(cx, ped * 0.565, cz),
+        tier(1.03, ped * 0.78, ped * 0.04, ped * 0.012),
+        tier(1.06, ped * 0.82, ped * 0.06, ped * 0.028),
+        tier(1.1, ped * 0.88, ped * 0.12, ped * 0.012),
+      );
     }
-    api.collider(boxCollider(0, (ped + H) / 2, 0, Math.max(H * 0.34, H * 0.25), ped + H, H * 0.34));
+
+    // Weathered marble: faint grey veins, rain streaks and grime in the sheltered undersides and near the base.
+    const top = ped + H;
+    const k = 7 / H;
+    const vein: RGB = [0.68, 0.7, 0.74], grime: RGB = [0.72, 0.66, 0.56];
+    for (const m of marbleParts) {
+      m.paintFn((x, y, z, _nx, ny, _nz, out) => {
+        const n = api.noise3(x * k * 0.6 + 13.1, y * k * 0.6, z * k * 0.6) + 0.45 * api.noise3(x * k * 1.7, y * k * 1.7 + 5.3, z * k * 1.7);
+        const veinW = Math.exp(-((n * 9) ** 2)) * 0.55 + Math.exp(-((api.noise3(x * k * 2.3 + 3, y * k * 2.3, z * k * 2.3 - 7) * 14) ** 2)) * 0.25;
+        const streak = Math.max(0, api.noise3(x * k * 3.5, y * k * 0.35 + 2, z * k * 3.5) - 0.1) * 1.6;
+        const low = Math.max(0, 1 - (y - 0) / (top * 0.25));
+        const under = Math.max(0, -ny);
+        const g = Math.min(0.45, streak * 0.16 * (1 - y / top * 0.5) + low * low * 0.22 + under * 0.14);
+        for (let i = 0; i < 3; i++) {
+          let c = 1 - veinW * (1 - (vein[i] as number)) * 0.5;
+          c *= 1 - g * (1 - (grime[i] as number));
+          out[i] = c;
+        }
+      });
+      // The carved figure is its own part: a dense sculpt is drawn as virtual geometry, which suits one continuous
+      // surface, while the shield and the pedestal stay a plain mesh.
+      api.add(m, m === fig ? mat : { ...mat, roughness: 0.6 });
+    }
+
+    const height = top;
+    api.collider(boxCollider(cx, height / 2, cz, Math.max(w * (ped > 0 ? 1.16 : 1), H * 0.25), height, Math.max(d * (ped > 0 ? 1.16 : 1), H * 0.2)));
     return api.build();
   },
 });

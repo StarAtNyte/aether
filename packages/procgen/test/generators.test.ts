@@ -87,6 +87,9 @@ function checkOutput(id: string, out: GeneratorOutput): void {
     expect(tris).toBeLessThanOrEqual(12 * 256 * 256);
   } else if (CARDS.has(id)) {
     expect(tris).toBeLessThan(12_000);
+  } else if (id === 'figure-statue') {
+    // A carved figure (an SDF sculpt: face, hands, drapery folds) with its pedestal, shield and spear.
+    expect(tris).toBeLessThan(32_000);
   } else if (id === 'cloud') {
     // Billowing clouds: smooth puffs (up to ~14 k triangles for a large one), still a handful per world.
     expect(tris).toBeLessThan(14_000);
