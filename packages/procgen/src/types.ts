@@ -120,6 +120,26 @@ export interface MeshHandle {
   bounds(): Bounds;
 }
 
+/** A node of an `api.sdf` tree (plain JSON; validated by the kernel, see `GENERATOR_API_DTS`). */
+export type SdfNode = Record<string, unknown>;
+
+/** Options of `api.sdf`. */
+export interface SdfOptions {
+  /** Cell size in metres (default: longest side of the bounds / resolution). */
+  cell?: number;
+  /** Cells along the longest side of the bounds (default 128, max 512). */
+  resolution?: number;
+  /** Laplacian smoothing passes 0..4 (default 1). */
+  smooth?: number;
+  /** Newton projection passes onto the surface 0..3 (default 1). */
+  project?: number;
+  /** Meshing bounds (default: conservative bounds of the tree). */
+  min?: Vec3;
+  max?: Vec3;
+  /** Added to the distance at every sample (carving, fold noise). Called for every sample: costly. */
+  detail?: (x: number, y: number, z: number) => number;
+}
+
 /**
  * The API surface handed to BOTH built-in and LLM-written generators.
  * Primitives are centered on the origin unless documented otherwise.
@@ -144,6 +164,12 @@ export interface GeneratorApi {
   extrude(shape: Array<[number, number]>, depth: number): MeshHandle;
   tube(path: Vec3[], radius: number, radialSegments?: number): MeshHandle;
   ribbon(path: Vec3[], width: number, widthAt?: (t: number) => number): MeshHandle;
+  /**
+   * Sculpt with signed distance fields: a plain-JSON tree of shapes (sphere, ellipsoid, box, capsule, cone,
+   * cylinder, torus, posed draped `figure`), smooth booleans (union, subtract, intersect) and transforms, meshed
+   * with surface nets (smooth gradient normals, metre UVs). See `SdfNode` in the sandbox API text.
+   */
+  sdf(tree: SdfNode, opts?: SdfOptions): MeshHandle;
   heightfield(cols: number, rows: number, width: number, depth: number, height: (x: number, z: number) => number): MeshHandle;
   icosphereRock(r: number, roughness: number): MeshHandle;
   /** Add a mesh with a material. Parts with equal materials are merged (fewer draw calls). */

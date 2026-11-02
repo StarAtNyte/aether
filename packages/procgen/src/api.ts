@@ -10,7 +10,7 @@
  * - All allocations are charged to a vertex budget; all inputs are validated.
  */
 import { rng as seededRng, stableStringify, type MaterialSpec, type Vec3 } from '@aether/core';
-import type { Bounds, ColliderDesc, GeneratorApi, GeneratorOutput, MeshHandle, MeshPart } from './types';
+import type { Bounds, ColliderDesc, GeneratorApi, GeneratorOutput, MeshHandle, MeshPart, SdfNode, SdfOptions } from './types';
 import { mixHex, requireColor } from './color';
 import { boxCollider, hullSupportPoints, parseCollider, translateCollider } from './colliders';
 import { PROCGEN_LIMITS } from './limits';
@@ -19,6 +19,7 @@ import { Noise } from './noise';
 import { finite, Mesh, MeshBuilder, VertexBudget, computeBounds } from './kernel/mesh';
 import { mat3AlignY } from './kernel/math3';
 import * as prim from './kernel/primitives';
+import { sdfMesh } from './kernel/sdf';
 
 /** Options of {@link InternalApi.build}. */
 export interface BuildOptions {
@@ -52,6 +53,8 @@ export interface InternalApi extends GeneratorApi {
   extrude(shape: Array<[number, number]>, depth: number): Mesh;
   tube(path: Vec3[], radius: number, radialSegments?: number, radiusAt?: (t: number) => number): Mesh;
   ribbon(path: Vec3[], width: number, widthAt?: (t: number) => number): Mesh;
+  /** Mesh a signed-distance tree (see {@link sdfMesh}); `maxTriangles` caps the output (≤ 120k). */
+  sdf(tree: SdfNode, opts?: SdfOptions & { maxTriangles?: number }): Mesh;
   heightfield(cols: number, rows: number, width: number, depth: number, height: (x: number, z: number) => number): Mesh;
   icosphereRock(r: number, roughness: number, detail?: number): Mesh;
   /** Grid in XZ with heights (row-major over z then x, meters); see {@link prim.gridMesh}. */
@@ -240,6 +243,7 @@ export function createGeneratorApi(seed: number, opts: { maxVertices?: number } 
     extrude: (shape, depth) => prim.extrude(budget, shape, depth),
     tube: (path, radius, rs, radiusAt) => prim.tube(budget, path, radius, rs, radiusAt),
     ribbon: (path, width, widthAt) => prim.ribbon(budget, path, width, widthAt),
+    sdf: (tree, opts) => sdfMesh(budget, tree, opts),
     heightfield: (cols, rows, width, depth, height) => prim.heightfield(budget, cols, rows, width, depth, height),
     icosphereRock: (r, roughness, detail) => prim.icosphereRock(budget, noise, random, r, roughness, detail ?? 2),
     grid: (cols, rows, width, depth, heights) => {

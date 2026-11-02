@@ -60,7 +60,9 @@ describe('system prompt', () => {
     // waterFlow) in the generator API.
     // 16.3k -> 17.3k for the classical and Mediterranean pieces (column, temple, balustrade, aqueduct, cliff face, brazier,
     // amphora, banner, awning, cypress, olive, ivy) and the finish field of generator materials.
-    expect(prompt.length / 4).toBeLessThan(17_300);
+    // 17.3k -> 17.9k for api.sdf (signed-distance sculpting: the SdfNode tree and the posed figure node) and the
+    // sculpted-statue generator.
+    expect(prompt.length / 4).toBeLessThan(17_900);
     expect(buildSystemPrompt(REAL)).toBe(prompt);
     expect(prompt).not.toMatch(/\d{4}-\d{2}-\d{2}T/); // no timestamps (cache-stable)
   });

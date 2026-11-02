@@ -28,7 +28,7 @@ import { prepareRun } from './sandbox/worker-sandbox';
 /** Methods of GeneratorApi exposed to untrusted code (allowlist). */
 const API_METHODS = [
   'rng', 'noise2', 'noise3', 'fbm2', 'box', 'roundedBox', 'sphere', 'cylinder', 'cone', 'torus', 'capsule', 'plane', 'lathe', 'extrude',
-  'tube', 'ribbon', 'heightfield', 'icosphereRock', 'add', 'collider', 'autoColliders', 'color', 'mix',
+  'tube', 'ribbon', 'sdf', 'heightfield', 'icosphereRock', 'add', 'collider', 'autoColliders', 'color', 'mix',
 ] as const satisfies ReadonlyArray<keyof GeneratorApi>;
 
 /** Methods of MeshHandle exposed to untrusted code (allowlist). */
@@ -36,6 +36,8 @@ const MESH_METHODS = ['translate', 'rotate', 'scale', 'displace', 'warp', 'verte
 
 const MAX_IMPORT_DEPTH = 8;
 const MAX_IMPORT_ITEMS = 200_000;
+/** Max JSON length of an `api.sdf` tree (it crosses as one string: trees nest deeper than MAX_IMPORT_DEPTH). */
+const MAX_SDF_JSON = 1_000_000;
 
 type AnyFn = (...args: unknown[]) => unknown;
 
@@ -45,6 +47,8 @@ interface Realm {
   makeArray: () => unknown[];
   makeError: (message: string) => unknown;
   parse: (json: string) => unknown;
+  /** The context's own JSON.stringify, captured before generator code runs. */
+  stringify: (v: unknown) => unknown;
   /** Frozen context-realm error thrown when a host failure cannot be translated safely. */
   fallbackError: unknown;
 }
@@ -57,7 +61,9 @@ const REALM_SETUP = `(() => {
   for (const k of ['prepareStackTrace', 'captureStackTrace', 'stackTraceLimit']) {
     try { Object.defineProperty(Error, k, { value: undefined, writable: false, configurable: false }); } catch (e) { /* ignore */ }
   }
+  const stringify = JSON.stringify;
   return {
+    stringify: (v) => stringify(v),
     objectProto: Object.prototype,
     functionProto: Function.prototype,
     makeArray: () => [],
@@ -101,12 +107,12 @@ class Membrane {
    * exhaustion), the pre-allocated frozen context error. The catch itself makes
    * no calls outside a nested try, so no host-realm object can ever escape.
    */
-  exportFn(fn: AnyFn): AnyFn {
+  exportFn(fn: AnyFn, jsonArg0 = false): AnyFn {
     const fallback = this.realm.fallbackError;
     const wrapper = (...args: unknown[]): unknown => {
       try {
         this.items = 0;
-        const hostArgs = args.map((a) => this.importValue(a, 0));
+        const hostArgs = args.map((a, i) => (jsonArg0 && i === 0 ? this.importJson(a) : this.importValue(a, 0)));
         return this.exportValue(fn(...hostArgs), 0);
       } catch (err) {
         let safe = fallback;
@@ -188,6 +194,23 @@ class Membrane {
     return out;
   }
 
+  /**
+   * Context value → host data through one JSON round trip: the context serializes it (its getters run there, under
+   * the timeout) and the host parses the string, so deep trees cross without the per-level import limits.
+   */
+  importJson(v: unknown): unknown {
+    let json: unknown;
+    try {
+      json = this.realm.stringify(v);
+    } catch {
+      // a context error (cycle, BigInt): never rethrow it into the host
+      json = null;
+    }
+    if (typeof json !== 'string') throw new TypeError('expected plain JSON data (objects, arrays, numbers, strings)');
+    if (json.length > MAX_SDF_JSON) throw new RangeError('argument is too large');
+    return JSON.parse(json) as unknown;
+  }
+
   private count(n: number): void {
     this.items += n;
     if (this.items > MAX_IMPORT_ITEMS) throw new RangeError('argument is too large');
@@ -212,7 +235,7 @@ class Membrane {
     const facade = Object.create(this.realm.objectProto) as object;
     for (const name of API_METHODS) {
       const method = api[name] as unknown as AnyFn;
-      Object.defineProperty(facade, name, { value: this.exportFn((...a) => method.apply(api, a)), enumerable: true });
+      Object.defineProperty(facade, name, { value: this.exportFn((...a) => method.apply(api, a), name === 'sdf'), enumerable: true });
     }
     Object.defineProperty(facade, 'seed', { value: api.seed, enumerable: true });
     const build = this.exportFn(() => {

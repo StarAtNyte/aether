@@ -46,6 +46,25 @@ type ColliderDesc =
   | { kind: 'hull'; points: number[]; offset: Vec3 };                       // convex hull of xyz triples
 // Collider coordinates use the same space as your meshes (before api.build() recentering; they move with it).
 
+// api.sdf tree: plain JSON, at most 400 nodes, depth 16. Any node may add at: Vec3, rot: Vec3 (degrees XYZ), scale: number.
+type SdfNode =
+  | { shape: 'sphere'; r: number } | { shape: 'ellipsoid'; r: Vec3 } | { shape: 'box'; size: Vec3; round?: number }
+  | { shape: 'capsule'; a: Vec3; b: Vec3; r: number } | { shape: 'cone'; a: Vec3; b: Vec3; ra: number; rb: number } // round cone a→b
+  | { shape: 'cylinder'; r: number; h: number } | { shape: 'torus'; R: number; r: number }                       // along Y / flat in XZ
+  | { op: 'union' | 'intersect'; items: SdfNode[]; k?: number }  // k > 0: smooth blend radius in m (organic joins)
+  | { op: 'subtract'; a: SdfNode; b: SdfNode; k?: number }       // carve b out of a
+  | FigureNode;
+// Posed, draped classical human 2 m tall (sole y=0, faces +Z, its right side -X); size with scale. Angles in degrees.
+interface FigureNode {
+  shape: 'figure'; sex?: 'f' | 'm'; seed?: number; garment?: 'peplos' | 'chiton' | 'himation' | 'chlamys' | 'nude' | 'lap';
+  weight?: 'R' | 'L';  // standing leg
+  hip?: { roll?: number; yaw?: number; pitch?: number }; chest?: { roll?: number; yaw?: number; pitch?: number }; head?: { yaw?: number; pitch?: number; roll?: number };
+  armR?: Arm; armL?: Arm; freeAnkle?: Vec3; weightAnkle?: Vec3;  // IK targets in figure metres (stride: freeAnkle [-0.14, 0.08, 0.36])
+  kneel?: number; seat?: number;  // kneel 0..1; seat = seat height in m (seated on a block, lap drape)
+  hair?: 'wavy' | 'curly' | 'none'; beard?: boolean; strong?: boolean;
+}
+interface Arm { wrist?: Vec3; pole?: Vec3; fingers?: Vec3; curl?: Vec3 }  // pole: elbow direction; curl: finger joints in degrees. Raised: wrist [-0.27, 2.0, 0.16]
+
 interface MeshHandle {
   translate(x: number, y: number, z: number): MeshHandle;
   rotate(xDeg: number, yDeg: number, zDeg: number): MeshHandle;  // Euler XYZ, about the origin
@@ -77,6 +96,9 @@ interface GeneratorApi {
   extrude(shape: Array<[number, number]>, depth: number): MeshHandle;      // polygon in XY (concave ok), extruded along Z, centered
   tube(path: Vec3[], radius: number, radialSegments?: number): MeshHandle; // pipe along a polyline, capped
   ribbon(path: Vec3[], width: number, widthAt?: (t: number) => number): MeshHandle; // flat strip along a path: u 0..1 across, v metres along (waterfall sheets, roads)
+  sdf(tree: SdfNode, opts?: { resolution?: number; cell?: number; smooth?: number; detail?: (x: number, y: number, z: number) => number }): MeshHandle;
+  // sculpt statues, figures, animals, drapery, rocks: smooth mesh of the tree (resolution = cells on the longest side, default 128,
+  // ≤120k triangles; a figure takes ~1 s). detail(x,y,z) is added to the distance at every sample: carving noise, but slow.
   heightfield(cols: number, rows: number, width: number, depth: number, height: (x: number, z: number) => number): MeshHandle; // grid in XZ
   icosphereRock(r: number, roughness: number): MeshHandle;                 // faceted noisy rock, roughness 0..1
 

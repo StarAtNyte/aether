@@ -9,7 +9,9 @@
  * noise; normals are smooth (area-weighted).
  */
 import type { Noise } from '../noise';
+import type { MaterialSpec, Vec3 } from '@aether/core';
 import { MeshBuilder, type Mesh } from '../kernel/mesh';
+import type { SdfNode } from '../types';
 import type { InternalApi } from '../api';
 import { boxCollider, cylinderCollider } from '../colliders';
 import { mixLinear, type RGB } from '../color';
@@ -262,5 +264,119 @@ const colossus = defineGenerator({
   },
 });
 
+/** Weathered marble: a pale, finely textured stone (the polished-marble finish reads too veiny at this scale). */
+const marble = (color: string): MaterialSpec => ({ finish: 'plaster', color, roughness: 0.6 });
+
+/** Cell size (metres on the nominal 2 m figure) per detail level: ≈ 13k, 27k, 55k, 115k triangles. */
+const SCULPT_CELL = [0.032, 0.022, 0.015, 0.0105] as const;
+
+/**
+ * Poses in the figure's nominal 2 m frame (sole y = 0, facing +Z, its right side -X; angles in degrees), with the
+ * grip of the held spear (from the hand frame) and SDF props that belong to the stone: shield, throne back.
+ */
+function statuePose(variant: number, seed: number, turn: number): { figure: SdfNode; props: SdfNode[]; spear: [Vec3, Vec3] | null } {
+  const fist = [72, 77, 52];
+  if (variant === 1) {
+    // seated goddess on a throne, one hand on the lap, the other raised (sceptre hand)
+    return {
+      figure: {
+        shape: 'figure', sex: 'f', seed, seat: 0.47, hair: 'wavy', chest: { yaw: -8.6 }, head: { yaw: 17 + turn, pitch: 5.7 },
+        armR: { wrist: [-0.14, 0.72, 0.36], pole: [-1, 0, -0.2], fingers: [0.1, -0.3, 1], dorsal: [0, 1, 0] },
+        armL: { wrist: [0.26, 1.28, 0.12], pole: [1, -0.8, -0.3], fingers: [-0.1, 0.05, 1], dorsal: [1, 0, 0.1], curl: fist, thumbCurl: 0.9, spread: 0 },
+      },
+      props: [{ shape: 'box', size: [0.54, 0.62, 0.09], round: 0.025, at: [0, 0.78, -0.235] }], // throne back on the figure's seat block
+      spear: null,
+    };
+  }
+  if (variant === 2) {
+    // striding warrior, spear raised overhead, round shield on the left forearm
+    const shield: SdfNode = {
+      op: 'union', k: 0.02, at: [0.43, 1.15, 0.24], rot: [0, -19, -90],
+      items: [
+        { shape: 'cylinder', r: 0.22, h: 0.022 },
+        { shape: 'torus', R: 0.205, r: 0.018, at: [0, 0.008, 0] },
+        { shape: 'ellipsoid', r: [0.07, 0.035, 0.07], at: [0, 0.012, 0] },
+      ],
+    };
+    return {
+      figure: {
+        shape: 'figure', sex: 'm', seed, garment: 'chiton', weight: 'L', hair: 'curly',
+        hip: { y: 0.94, roll: -2.3 }, chest: { yaw: 20, pitch: 6.9 }, head: { yaw: -17 + turn, pitch: 2.9 },
+        weightAnkle: [0.13, 0.1, -0.38], freeAnkle: [-0.14, 0.08, 0.36],
+        armR: { wrist: [-0.26, 1.7, 0.2], pole: [-1, -0.3, -0.4], fingers: [0, 0.3, 1], dorsal: [-1, 0, 0], curl: fist, thumbCurl: 0.9, spread: 0 },
+        armL: { wrist: [0.34, 1.2, 0.2], pole: [1, -0.6, -0.5], fingers: [0, 1, 0.2], dorsal: [1, 0, 0], curl: [63, 69, 46] },
+        drape: { skirtBottom: 0.58, hemY: 1.05, belt: true, mantle: false, folds: 22, foldAmp: 0.012, legPush: -0.01 },
+      },
+      props: [shield],
+      // along the fist's grip axis, tilted forward and down
+      spear: [[-0.226, 0.4, 0.67], [-0.226, 2.58, 0.02]],
+    };
+  }
+  // standing goddess (Athena type): weight on the right leg, the right arm raised to a tall spear, mantle behind
+  return {
+    figure: {
+      shape: 'figure', sex: 'f', seed, garment: 'peplos', weight: 'R', hair: 'wavy',
+      hip: { roll: 2.9 }, head: { yaw: -14.3 + turn, pitch: 4.6 },
+      armR: { wrist: [-0.38, 1.47, 0.08], pole: [-0.5, -1, -0.45], fingers: [0.1, 0.05, 1], dorsal: [-1, 0, 0.1], curl: fist, thumbCurl: 0.9, spread: 0 },
+      armL: { wrist: [0.27, 0.96, 0.06], pole: [0.5, 0, -1], fingers: [0.15, -1, 0.1], dorsal: [1, 0, 0], curl: [17, 20, 14] },
+      drape: { mantle: true },
+    },
+    props: [],
+    spear: [[-0.338, 0.01, 0.154], [-0.338, 2.35, 0.154]],
+  };
+}
+
+const sculptedStatue = defineGenerator({
+  id: 'sculpted-statue',
+  description:
+    'Carved classical marble statue on a plinth (a sculpted figure: face, hands, hair, folded drapery): standing goddess with spear, seated goddess on a throne, or striding warrior with spear and shield.',
+  category: 'props',
+  params: {
+    height: pNum(2.4, 0.5, 30, 'figure height in meters (sole to crown, without the plinth)'),
+    color: pColor('#ece5d8', 'marble colour'),
+    variant: pVariant(2, '0 standing goddess with raised spear, 1 seated goddess on a throne, 2 striding warrior with spear and shield'),
+    pedestal: pBool(true, 'stand on a stepped plinth'),
+    detail: pInt(2, 1, 4, 'sculpt resolution: 1 ≈ 13k, 2 ≈ 27k, 3 ≈ 55k, 4 ≈ 115k triangles'),
+  },
+  run(p, api) {
+    const H = p.num('height');
+    const variant = p.int('variant');
+    const s = H / 2; // the figure is sculpted at a nominal 2 m
+    const mat = marble(p.color('color'));
+    const pose = statuePose(variant, 100 + Math.floor(api.rng() * 1000), (api.rng() - 0.5) * 10);
+    const tree: SdfNode = pose.props.length ? { op: 'union', items: [pose.figure, ...pose.props] } : pose.figure;
+    const cell = SCULPT_CELL[Math.min(SCULPT_CELL.length, Math.max(1, p.int('detail'))) - 1] as number;
+    const fig = api.sdf(tree, { cell, smooth: 1, project: 1 });
+    const fb = fig.bounds();
+    const ped = p.bool('pedestal') ? H * 0.14 : 0;
+    const y0 = ped - fb.min[1] * s; // sandals on the plinth
+    fig.scale(s).translate(0, y0, 0);
+    api.add(fig, mat);
+    if (pose.spear) {
+      // bronze spear (shaft and leaf blade) through the closed fist
+      const [a, b] = pose.spear;
+      const at = (q: Vec3): Vec3 => [q[0] * s, q[1] * s + y0, q[2] * s];
+      const dir: Vec3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+      const l = Math.hypot(dir[0], dir[1], dir[2]);
+      const tip: Vec3 = [b[0] + (dir[0] / l) * 0.2, b[1] + (dir[1] / l) * 0.2, b[2] + (dir[2] / l) * 0.2];
+      const bronze: MaterialSpec = { finish: 'brass', color: '#6d5532', roughness: 0.55, metalness: 0.8 };
+      api.add(api.limb(at(a), at(b), 0.014 * s, 0.014 * s, 10), bronze);
+      api.add(api.limb(at(b), at(tip), 0.03 * s, 0.002 * s, 10), bronze);
+    }
+    // plinth sized to the figure's footprint: a base step, a die and a cornice
+    const w = Math.max(fb.max[0] - fb.min[0], fb.max[2] - fb.min[2]) * s * 1.08 + H * 0.06;
+    const cx = ((fb.min[0] + fb.max[0]) / 2) * s, cz = ((fb.min[2] + fb.max[2]) / 2) * s;
+    if (ped > 0) {
+      const ps = marble(shade(p.color('color'), -0.06));
+      api.add(api.roundedBox(w * 1.14, ped * 0.22, w * 1.14, ped * 0.03, 2).translate(cx, ped * 0.11, cz), ps);
+      api.add(api.roundedBox(w, ped * 0.62, w, ped * 0.02, 2).translate(cx, ped * 0.53, cz), ps);
+      api.add(api.roundedBox(w * 1.07, ped * 0.16, w * 1.07, ped * 0.03, 2).translate(cx, ped * 0.92, cz), ps);
+    }
+    const top = ped + (fb.max[1] - fb.min[1]) * s;
+    api.collider(boxCollider(cx, top / 2, cz, Math.max(w, (fb.max[0] - fb.min[0]) * s), top, Math.max(w, (fb.max[2] - fb.min[2]) * s)));
+    return api.build();
+  },
+});
+
 /** Sculpture generators in catalog order. */
-export const SCULPTURE_GENERATORS = [colossus];
+export const SCULPTURE_GENERATORS = [colossus, sculptedStatue];

@@ -17,6 +17,8 @@ export type {
   MeshHandle,
   MeshPart,
   SandboxRunner,
+  SdfNode,
+  SdfOptions,
 } from './types';
 
 export { createGeneratorApi, type BuildOptions } from './api';

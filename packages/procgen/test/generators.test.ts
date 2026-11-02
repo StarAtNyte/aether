@@ -7,7 +7,7 @@ import { expectValidPart, sameGeometry, windingMismatch } from './helpers';
 const REQUIRED_IDS = [
   'terrain', 'island', 'mountain', 'tree-pine', 'tree-oak', 'tree-palm', 'bush', 'rock', 'grass-tuft', 'flowers', 'mushroom',
   'house', 'tower', 'wall', 'fence', 'bridge', 'stairs', 'arch', 'ramp', 'lamp-post', 'bench', 'table', 'chair', 'crate',
-  'barrel', 'car', 'boat', 'windmill', 'crystal', 'campfire', 'tent', 'dock', 'cloud', 'statue', 'portal', 'colossus',
+  'barrel', 'car', 'boat', 'windmill', 'crystal', 'campfire', 'tent', 'dock', 'cloud', 'statue', 'portal', 'colossus', 'sculpted-statue',
   // Realistic vegetation (flora.ts).
   'tree-broadleaf', 'tree-umbrella-pine', 'tree-birch', 'tree-spruce', 'shrub', 'fern', 'meadow-grass', 'wildflowers', 'boulder', 'cactus', 'mound', 'hedge',
   // City skyline (skyline.ts).
@@ -18,7 +18,7 @@ const REQUIRED_IDS = [
   'figure-statue', 'column', 'classical-temple', 'balustrade', 'aqueduct', 'cliff-face', 'brazier', 'amphora', 'banner', 'awning', 'tree-cypress', 'tree-olive', 'ivy',
 ];
 /** High-detail sculptures (virtual geometry): up to 786k triangles by design. */
-const SCULPTURES = new Set(['colossus']);
+const SCULPTURES = new Set(['colossus', 'sculpted-statue']);
 const TERRAIN = new Set(['terrain', 'island', 'mountain', 'mound']);
 const TREES = new Set(['tree-pine', 'tree-oak', 'tree-palm']);
 /** Realistic vegetation: foliage cards carry soft (crown-pointing) normals and both faces, so the winding check applies to their bark and rock only; budgets scale with `detail`. */
