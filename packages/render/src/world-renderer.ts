@@ -414,6 +414,8 @@ const _size = new Vector2();
 const _buffer = new Vector2();
 const _savedViewport = new Vector4();
 const _savedScissor = new Vector4();
+/** Metres in front of a hero camera, across its whole frame, that must be clear of solid surfaces. */
+const LENS_CLEAR = 4;
 const _savedCamPos = new Vector3();
 const _savedCamQuat = new Quaternion();
 const _avatarHead = new Vector3();
@@ -5262,6 +5264,70 @@ export class WorldRenderer {
         const o = open(cx, cy, cz);
         if (o > best.o) best = { x: cx, y: cy, z: cz, o };
         if (o >= 0.95) break;
+      }
+      [x, y, z] = [best.x, best.y, best.z];
+    }
+    // Something right at the lens but off the centre line (a rail, a plank, a branch filling the lower half of the frame):
+    // move the camera toward its target, then up, until nothing solid sits within a few metres across the frame.
+    // Unlike the opaque sight test, every drawn surface counts here: alpha-cut leaves and glass at the lens spoil a shot too.
+    const opaque = sceneSightTest(this.sync);
+    const lensRay = new Raycaster();
+    lensRay.layers.enable(BATCHED_LAYER);
+    const lensHits: Intersection[] = [];
+    const sight = (from: Vec3, to: Vec3): number => {
+      let free = opaque(from, to);
+      // A camera standing inside a tree's occluder box enters it at distance 0, which the sight test ignores: the same ray
+      // traced back toward the lens meets the box on its far side.
+      const back = opaque(to, from);
+      const span = Math.hypot(to[0] - from[0], to[1] - from[1], to[2] - from[2]);
+      if (back < span && span - back < free) free = Math.max(0, span - back);
+      const d = new Vector3(to[0] - from[0], to[1] - from[1], to[2] - from[2]);
+      const len = d.length();
+      lensRay.set(new Vector3(from[0], from[1], from[2]), d.normalize());
+      lensRay.near = 0.25;
+      lensRay.far = len;
+      lensHits.length = 0;
+      lensRay.intersectObject(this.sync.root, true, lensHits);
+      for (const h of lensHits) {
+        let shown = true;
+        for (let o: Object3D | null = h.object; o; o = o.parent) if (!o.visible) shown = false;
+        if (!shown || h.object.name === 'edit:components') continue;
+        if (h.distance < free) free = h.distance;
+        break;
+      }
+      lensHits.length = 0;
+      return free;
+    };
+    const fov = ((pose as { fov?: number }).fov ?? 60) * (Math.PI / 180);
+    const near = (px: number, py: number, pz: number): number => {
+      const fx = tx - px, fy = ty - py, fz = tz - pz;
+      const fl = Math.hypot(fx, fy, fz) || 1;
+      const f: Vec3 = [fx / fl, fy / fl, fz / fl];
+      let r: Vec3 = [-f[2], 0, f[0]];
+      const rl = Math.hypot(r[0], r[2]) || 1;
+      r = [r[0] / rl, 0, r[2] / rl];
+      const u: Vec3 = [r[1] * f[2] - r[2] * f[1], r[2] * f[0] - r[0] * f[2], r[0] * f[1] - r[1] * f[0]];
+      const tv = Math.tan(fov / 2) * 0.85, th = tv * 1.5;
+      let blocked = 0;
+      for (const sy of [-1, 0, 1]) for (const sx of [-1, 0, 1]) {
+        const d: Vec3 = [f[0] + r[0] * sx * th + u[0] * sy * tv, f[1] + r[1] * sx * th + u[1] * sy * tv, f[2] + r[2] * sx * th + u[2] * sy * tv];
+        const dl = Math.hypot(d[0], d[1], d[2]);
+        const reach = Math.min(LENS_CLEAR, fl * 0.5);
+        if (sight([px, py, pz], [px + (d[0] / dl) * reach, py + (d[1] / dl) * reach, pz + (d[2] / dl) * reach]) < reach) blocked++;
+      }
+      return blocked;
+    };
+    if (near(x, y, z) > 0) {
+      const fx = tx - x, fy = ty - y, fz = tz - z;
+      let best = { x, y, z, n: near(x, y, z) };
+      search: for (const up of [0, 2, 5]) {
+        for (const t of [0, 0.1, 0.2, 0.3, 0.4]) {
+          const cx = x + fx * t, cz = z + fz * t;
+          const cy = lift(cx, y + fy * t + up, cz);
+          const n = near(cx, cy, cz);
+          if (n < best.n) best = { x: cx, y: cy, z: cz, n };
+          if (n === 0) break search;
+        }
       }
       [x, y, z] = [best.x, best.y, best.z];
     }
