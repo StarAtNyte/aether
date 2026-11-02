@@ -116,7 +116,10 @@ export function createVfxMaterial(blend: 'add' | 'alpha', atlas: DataTexture, u:
   const fadeOut = float(1).sub(smoothstep(float(0.55), float(1), vT));
   const ground = smoothstep(float(0), vSoft, vAbove);
   const lens = smoothstep(float(0.18), float(0.95), vCam);
-  const alpha = shapeAlpha.mul(vC0.w).mul(fadeIn).mul(fadeOut).mul(ground).mul(lens);
+  // A radial falloff to zero at the quad's rim: an atlas cell's faint residue at its border otherwise draws the card's
+  // straight edges, which big sprites (mist, spray, smoke at scale) make plainly visible.
+  const rim = float(1).sub(smoothstep(float(0.72), float(1), length(cuv.sub(vec2(0.5, 0.5))).mul(2)));
+  const alpha = shapeAlpha.mul(vC0.w).mul(fadeIn).mul(fadeOut).mul(ground).mul(lens).mul(rim);
   const rgb = mix(vC0.xyz, vC1, vT);
 
   const m = new MeshBasicNodeMaterial();

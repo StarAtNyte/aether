@@ -302,6 +302,15 @@ export class VfxSystem {
     this.layers.alpha.pool.clear();
   }
 
+  /** Turn the sprites to face `camera` without advancing time (a still drawn from a camera the frame loop has not seen). */
+  face(camera: Camera): void {
+    if (this.disposed) return;
+    camera.updateMatrixWorld();
+    const e = camera.matrixWorld.elements;
+    this.uniforms.right.value.set(e[0] as number, e[1] as number, e[2] as number);
+    this.uniforms.up.value.set(e[4] as number, e[5] as number, e[6] as number);
+  }
+
   /** Advance the effects by `dt` seconds and orient them to `camera`. Zero allocations. */
   update(dt: number, camera: Camera): void {
     if (this.disposed) return;
@@ -362,7 +371,9 @@ export class VfxSystem {
       budget -= n;
       this.spawnOpts.scale = em.scale;
       this.spawnOpts.tint = em.tint;
-      this.spawnOpts.floorY = NO_FLOOR;
+      // The entity's origin is its ground: sprites fade into it (no hard line where a mist card meets the pool) and
+      // `floor` layers (spray, drips, leaves) come to rest on it.
+      this.spawnOpts.floorY = t.matrixWorld.elements[13] ?? NO_FLOOR;
       const baseRate = def.layers[0]?.rate || 1;
       for (let i = 0; i < n; i++) {
         // Spread births over the frame so a steady rate does not pulse at low frame rates.

@@ -5264,6 +5264,7 @@ export class WorldRenderer {
                 aim(pose);
                 this.snapEye();
                 this.prepareBatches(true);
+                this.fx.vfx.face(cam);
                 this.renderer.render(this.scene, cam);
               }, restoreCamera),
             );
@@ -5280,6 +5281,7 @@ export class WorldRenderer {
               aim(pose);
               this.snapEye();
               this.prepareBatches(true);
+              this.fx.vfx.face(cam);
               this.renderer.render(this.scene, cam);
               const image = grab(this.domElement, w, h, mime);
               restoreCamera();
@@ -5367,6 +5369,7 @@ export class WorldRenderer {
           cam.updateProjectionMatrix();
           cam.updateMatrixWorld();
           this.prepareBatches(true);
+          this.fx.vfx.face(cam);
           this.renderer.render(this.scene, cam);
       };
       if (!this.asyncCaptureFailed) {
