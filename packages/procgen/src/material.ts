@@ -3,7 +3,7 @@
  * sandbox worker). Mirrors the `MaterialSpec` schema of @aether/core: unknown
  * keys are dropped, numbers are clamped, colors normalized to "#rrggbb".
  */
-import { MaterialFinish, MaterialPreset, type MaterialSpec } from '@aether/core';
+import { MaterialFinish, MaterialPreset, MaterialShader, MaterialSurface, type MaterialSpec } from '@aether/core';
 import { normalizeHex } from './color';
 
 const PRESETS: ReadonlySet<string> = new Set(MaterialPreset.options);
@@ -21,6 +21,15 @@ function color(v: unknown, what: string): string {
   const hex = normalizeHex(v);
   if (hex === null) throw new TypeError(`material.${what}: expected a "#rrggbb" color`);
   return hex;
+}
+
+/** Validate a nested part with its schema (layer kinds, masks, expression parsing), with the first problem as the message. */
+function nested<T>(schema: { safeParse(v: unknown): { success: true; data: T } | { success: false; error: { issues: Array<{ path: PropertyKey[]; message: string }> } } }, v: unknown, what: string): T {
+  const r = schema.safeParse(v);
+  if (r.success) return r.data;
+  const i = r.error.issues[0];
+  const at = i && i.path.length > 0 ? `.${i.path.map(String).join('.')}` : '';
+  throw new TypeError(`material.${what}${at}: ${i?.message ?? 'invalid'}`);
 }
 
 function bool(v: unknown, what: string): boolean {
@@ -86,5 +95,9 @@ export function sanitizeMaterial(input: unknown): MaterialSpec {
     if (!Array.isArray(flow) || flow.length !== 2) throw new TypeError('material.waterFlow: must be [x, z] in m/s');
     out.waterFlow = [clampNumber(flow[0], -12, 12, 'waterFlow'), clampNumber(flow[1], -12, 12, 'waterFlow')];
   }
+  const surface = read('surface');
+  if (surface !== undefined) out.surface = nested(MaterialSurface, surface, 'surface');
+  const shader = read('shader');
+  if (shader !== undefined) out.shader = nested(MaterialShader, shader, 'shader');
   return out;
 }

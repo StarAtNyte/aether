@@ -36,6 +36,8 @@ interface MaterialSpec {
   vertexColors?: boolean;      // set automatically when the mesh has vertexColor()
   waterKind?: 'pond' | 'stream' | 'river' | 'lake' | 'sea' | 'fall'; // preset 'water': scale class; 'fall' = falling sheet (api.ribbon, v = metres from lip)
   waterFlow?: [number, number]; // current [x, z] m/s for streams and rivers
+  surface?: { layers: SurfaceLayer[]; scale?: number }; // ≤8 weathering layers (moss, grime, edgeWear, cracks ...): see "Surface layers and shaders"
+  shader?: { color?: string; roughness?: string; metalness?: string; emissive?: string; bump?: string; opacity?: string; displace?: string }; // expressions, same section
 }
 
 type ColliderDesc =

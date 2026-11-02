@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { createWorld, type WorldDoc } from '@aether/core';
-import { HARDCORE_PASSES, bibleText, heroShots, lookCandidates, lookDistance, lumaPercentiles, meanTargets, passPrompt, pictureColour, referencePrompt, targetEvidenceText } from '../src/hardcore';
+import { applyPatches, createWorld, type WorldDoc } from '@aether/core';
+import { HARDCORE_PASSES, HARDCORE_SHADER_BUDGET_PATCH, bibleText, heroShots, lookCandidates, lookDistance, lumaPercentiles, meanTargets, passPrompt, pictureColour, referencePrompt, targetEvidenceText } from '../src/hardcore';
 
 const lisbon = (): WorldDoc => createWorld((JSON.parse(readFileSync(fileURLToPath(new URL('../../../apps/studio/public/templates/worlds/lisbon-hills.json', import.meta.url)), 'utf8')) as { world: WorldDoc }).world);
 
@@ -46,5 +46,14 @@ describe('hardcore mode', () => {
     const washed = img([235, 235, 240], [200, 190, 180]);
     expect(lookDistance([close], [ref])).toBeLessThan(lookDistance([washed], [ref]));
     expect(lookCandidates().length).toBeGreaterThan(9);
+  });
+  it('gives the refined world the hero shader budget, keeping the rest of its look, and says so in the detail pass', () => {
+    const w = applyPatches(createWorld({}), [{ op: 'setEnvironment', set: { look: { foliageTint: '#ddeecc' } } }]).world;
+    const r = applyPatches(w, [HARDCORE_SHADER_BUDGET_PATCH]);
+    expect(r.errors).toEqual([]);
+    expect(r.world.environment.look).toMatchObject({ shaderBudget: 'hero', foliageTint: '#ddeecc' });
+    const detail = HARDCORE_PASSES.find((p) => p.id === 'detail')!;
+    expect(detail.brief).toContain('material.surface');
+    expect(detail.brief).toContain('hero shader budget');
   });
 });

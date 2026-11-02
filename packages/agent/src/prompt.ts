@@ -59,7 +59,7 @@ export function renderBehaviorCatalog(behaviors: readonly unknown[]): string {
 const IR = `## World IR
 Units meters/seconds/kg. Y is up. The ground plane is y=0 (environment.ground; null = no ground, e.g. space). Rotations are Euler DEGREES [x,y,z]. Colors "#rrggbb". Entity ids are lowercase slugs ("red-car", "tree-3"), unique.
 Entity = { id, name?, description?, parent?: id|null, attachedTo?: id (belongs to that object without being its child: a shrine's light, goal zone or plinth; set it when you add such a part. Moving or editing the owner carries it along, and an edit of the owner may change it), tags?: string[], transform?: {position:[x,y,z], rotation:[deg,deg,deg], scale:[x,y,z]},
-  shape?: Shape, material?: {preset?, color?, roughness?, metalness?, emissive?, emissiveIntensity?(0..50), opacity?, flatShading?},
+  shape?: Shape, material?: {preset?, color?, roughness?, metalness?, emissive?, emissiveIntensity?(0..50), opacity?, flatShading?, surface?, shader?},
   physics?: {body:"static"|"dynamic"|"kinematic", collider?:"auto"|"box"|"sphere"|"capsule"|"cylinder"|"hull"|"trimesh"|"heightfield"|"none", mass?, density?, friction?(0.6), restitution?(0.1), sensor?, linearDamping?, angularDamping?, gravityScale?, lockRotation?, ccd?, initialVelocity?(m/s), initialAngularVelocity?(RADIANS/s)},
   joint?: {type:"fixed"|"revolute"|"prismatic"|"spherical", target: id|"world", anchor, targetAnchor, axis, limits?:[min,max], motor?:{targetVelocity, targetPosition?, stiffness, damping, maxForce}},
   light?: {type:"point"|"spot"|"directional"|"ambient"|"hemisphere", color, intensity, range, angle, castShadow},
@@ -143,6 +143,11 @@ const GUIDELINES = `## Guidelines
 - A later request may carry <scene_changes> (changes since your last turn) instead of a <world_summary>; query_scene gives details.
 - Title a new world with setMeta (2–4 words).`;
 
+const SHADING = `## Surface layers and shaders (material.surface / .shader, entities and generator parts)
+Plain colours look flat: weather stone, wood, metal, ground, ruins, sci-fi panels and magic with surface layers; use shader expressions for bespoke looks (lava, holograms, force fields, stylised water, animated signs, flags).
+surface = {layers:[{kind, color?, amount? 0..1 (0.5), scale? feature size m, mask?}] (≤8, in order), scale? (multiplies sizes)}; world-space, no UVs. Kinds: tone (patchy colour variation), veins (marble), strata (bedding bands), moss (tops + crevices), snow (up-facing), grime (dirt low and in crevices), streaks (rain stains down walls), edgeWear (light chipped edges), wet (dark, glossy), lichen (speckles), rust, scratches, cracks, glowCracks (emissive lava/magic cracks), runes / pattern (emissive glyphs / grid), pulse (breathing glow, scale = period s), rim (fresnel edge glow), sparkle (glints). mask = {up?/down? 0..1 (min facing), slope?: [minDeg, maxDeg], height?: [minY, maxY], noise? 0..1 patch coverage, invert?}. E.g. {"layers":[{"kind":"grime"},{"kind":"moss","amount":0.6,"mask":{"noise":0.5}},{"kind":"edgeWear"}]}.
+shader = {color?, emissive? (vec3), roughness?, metalness?, opacity?, bump? (height m), displace? (m along the normal)}: expressions ≤600 chars: + - * / ( ), numbers, #rrggbb (vec3), .x .xy .xyz swizzles. Variables: p world pos, o object pos, n normal, uv, t seconds, v toward camera, seed per-object 0..1, base (material colour), vcol (vertex colour), pi. Functions: sin cos abs floor fract sqrt exp sign saturate min max pow clamp mix step smoothstep length dot cross normalize vec2 vec3, noise(p) -1..1, fbm(p, octaves ≤6) -1..1, ridged(p, oct) 0..1, cells(p) voronoi distance 0..~1, cellId(p) 0..1 per cell, hash(x) 0..1; ≤16 noise calls. E.g. lava emissive "#ff4000 * pow(1 - cells(p * 3), 4)", hologram emissive "#40c0ff * pow(1 - abs(dot(n, v)), 3)", flag displace "0.1 * sin(o.x * 4 - t * 3) * o.x". Distinct shaded materials are capped per world (the rest draw plain): reuse looks.`;
+
 const WORKFLOW = `## Workflow and self-verification contract
 1. Think briefly about layout and mechanics, then call apply_patches (large worlds: 2–4 calls grouped by area/concern, ≤400 patches each).
 2. Read every tool result. Fix reported patch errors (by index) before moving on; never repeat a failing patch unchanged.
@@ -177,6 +182,7 @@ export function buildSystemPrompt(catalogs: AgentCatalogs, opts: { level?: boole
     `## Rules\n${catalogs.ruleDocs.trim()}`,
     TESTS,
     GUIDELINES,
+    SHADING,
     WORKFLOW,
     `## Custom generator API (write_generator; source = body of function generate(params, api))\n${catalogs.generatorApiDts.trim()}`,
     `## Custom script API (write_script; source = body of function update(ctx))\n${catalogs.scriptApiDts.trim()}`,

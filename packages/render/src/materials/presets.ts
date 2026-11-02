@@ -5,7 +5,7 @@
  * the material cache key.
  */
 import { FINISHES } from '@aether/arch';
-import { stableStringify, TEXTURE_ID, type MaterialFinish, type MaterialPreset, type MaterialSpec, type TextureRef } from '@aether/core';
+import { stableStringify, TEXTURE_ID, type MaterialFinish, type MaterialPreset, type MaterialShader, type MaterialSpec, type MaterialSurface, type TextureRef } from '@aether/core';
 import type { SurfaceKind } from './surface-textures';
 
 /** Concrete parameters of one material (all fields resolved). */
@@ -41,6 +41,10 @@ export interface ResolvedMaterial {
   foliage: NonNullable<MaterialSpec['foliage']> | null;
   /** Scale and current of a water surface (preset water), null for every other material. */
   water: ResolvedWater | null;
+  /** Procedural weathering layers (see `surface-layers.ts`); absent on every other material, so plain cache keys are unchanged. */
+  layers?: MaterialSurface;
+  /** Shader expressions per channel (see `shader-nodes.ts`); absent on every other material. */
+  shader?: MaterialShader;
 }
 
 /** The water scales a spec can name (see `MaterialSpec.waterKind`). */
@@ -172,6 +176,11 @@ export function resolveMaterial(spec: MaterialSpec | undefined, opts: ResolveOpt
   // A project texture set replaces the finish's maps (opaque finishes only).
   const tex = spec?.texture;
   if (tex && r.finish !== null && !r.transparent && TEXTURE_ID.test(tex.id)) r = { ...r, texture: tex.tile !== undefined ? { id: tex.id, tile: tex.tile } : { id: tex.id } };
+  // Layers and expressions ride on any base look; the keys are only added when set (plain specs keep their cache keys).
+  const layers = spec?.surface;
+  if (layers && typeof layers === 'object' && Array.isArray(layers.layers) && layers.layers.length > 0) r = { ...r, layers };
+  const shader = spec?.shader;
+  if (shader && typeof shader === 'object' && Object.values(shader).some((v) => typeof v === 'string' && v.trim() !== '')) r = { ...r, shader };
   return opts.solid === true && !r.transparent && r.foliage === null ? { ...r, solid: true } : r;
 }
 
@@ -315,6 +324,9 @@ function mergeRaw(part: MaterialSpec | undefined, entity: MaterialSpec | undefin
   const merged: MaterialSpec = styled ? { ...part } : { ...entity, ...part };
   if (entity.opacity !== undefined) merged.opacity = entity.opacity;
   if (entity.flatShading !== undefined) merged.flatShading = entity.flatShading;
+  // Weathering and shader expressions on the entity cover the whole object (moss on every part of a ruin).
+  if (entity.surface !== undefined) merged.surface = entity.surface;
+  if (entity.shader !== undefined) merged.shader = entity.shader;
   return merged;
 }
 

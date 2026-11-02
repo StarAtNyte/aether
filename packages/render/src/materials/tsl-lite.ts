@@ -24,13 +24,14 @@ export interface Nd {
   lessThan(o: Nd | number): Nd;
   greaterThan(o: Nd | number): Nd;
   and(o: Nd): Nd;
-  toVar(): Nd;
   bitAnd(o: Nd | number): Nd;
   shiftRight(o: Nd | number): Nd;
   assign(o: Nd | number): void;
   clone(): Nd;
   addAssign(o: Nd): Nd;
   mulAssign(o: Nd | number): Nd;
+  /** Name a node as a variable of the generated shader (computed once). */
+  toVar(name?: string): Nd;
   x: Nd;
   y: Nd;
   z: Nd;
@@ -82,6 +83,12 @@ export interface Tsl {
   getViewPosition(uv: Nd, depth: Nd, inverseProjection: Nd): Nd;
   perspectiveDepthToViewZ(depth: Nd, near: Nd, far: Nd): Nd;
   mx_noise_float(p: Nd): Nd;
+  dFdx(a: Nd): Nd;
+  dFdy(a: Nd): Nd;
+  cross(a: Nd, b: Nd): Nd;
+  sign(a: Nd): Nd;
+  length(a: Nd): Nd;
+  vertexColor(index?: number): Nd;
   interleavedGradientNoise(p: Nd): Nd;
   distance(a: Nd, b: Nd): Nd;
   viewportDepthTexture(uv: Nd): Nd;
@@ -95,6 +102,13 @@ export interface Tsl {
   positionView: Nd;
   positionLocal: Nd;
   positionGeometry: Nd;
+  normalLocal: Nd;
+  normalWorldGeometry: Nd;
+  modelWorldMatrix: Nd;
+  materialRoughness: Nd;
+  materialMetalness: Nd;
+  materialEmissive: Nd;
+  materialNormal: Nd;
   cameraPosition: Nd;
   cameraNear: Nd;
   cameraFar: Nd;

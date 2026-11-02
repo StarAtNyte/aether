@@ -63,7 +63,8 @@ describe('system prompt', () => {
     // 17.3k -> 17.9k for api.sdf (signed-distance sculpting: the SdfNode tree and the posed figure node) and the
     // sculpted-statue generator.
     // 17.9k -> 18.1k for api.library (start a generator from a built-in's parts) and the sculpt-first guideline.
-    expect(prompt.length / 4).toBeLessThan(18_100);
+    // 18.1k -> 18.7k for material surface layers and shader expressions (the layer kinds, masks and the expression language).
+    expect(prompt.length / 4).toBeLessThan(18_700);
     expect(buildSystemPrompt(REAL)).toBe(prompt);
     expect(prompt).not.toMatch(/\d{4}-\d{2}-\d{2}T/); // no timestamps (cache-stable)
   });

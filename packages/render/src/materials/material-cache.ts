@@ -24,6 +24,9 @@ import { applyWaterfall } from './waterfall';
 import { SURFACE_TILE_METRES } from './surface-textures';
 import type { WaterTier } from './water-params';
 import { SceneBackdrop } from './scene-backdrop';
+import { applyShading, shadedCap, shadeKey, type ShaderBudget } from './shading';
+import type { ShadeTier } from './shader-nodes';
+import { log } from '../log';
 
 /** Ghost preview tint (cyan, translucent). */
 const GHOST_COLOR = new Color('#ece8e0');
@@ -31,6 +34,9 @@ const GHOST_OPACITY = 0.34;
 /** Proof-replay ghost tint (indigo-cyan, readable over any ground). */
 const PROOF_COLOR = new Color('#bdb6a8');
 const PROOF_OPACITY = 0.62;
+
+/** The shading program a material holds (counted against the cap until it is disposed). */
+const SHADE_KEY = 'aetherShadeProgram';
 
 /** Marks the water materials (their look changes with the screen-space reflection mode, see {@link MaterialCache.setReflectiveWater}). */
 export const WATER_KEY = 'aetherWater';
@@ -229,6 +235,12 @@ export class MaterialCache {
   private waterList: readonly Material[] = [];
   private waterListDirty = false;
   private readonly cache = new RefCache<Material>((m) => {
+    const shade = m.userData[SHADE_KEY] as string | undefined;
+    if (shade !== undefined) {
+      const n = (this.shadedPrograms.get(shade) ?? 1) - 1;
+      if (n > 0) this.shadedPrograms.set(shade, n);
+      else this.shadedPrograms.delete(shade);
+    }
     if (m.userData[WATER_SHADER_KEY]) {
       this.waterList = []; // Do not retain a disposed shader when no later water pass requests the list.
       this.waterListDirty = true;
@@ -271,6 +283,23 @@ export class MaterialCache {
   readonly backdrop = new SceneBackdrop();
   /** Standard and high water read {@link backdrop} instead of the frame buffer (set before water materials are created). */
   backdropWater = false;
+
+  /**
+   * How much a `surface` / `shader` material may cost (see `ShadeTier`); the renderer sets it from the render tier and
+   * low-memory mode. Applies to materials created afterwards (the tier is part of their key).
+   */
+  shadeTier: ShadeTier = 'high';
+  /** `hero` (refined worlds) allows the full shaded-program cap of the tier, `normal` half of it (see `shadedCap`). */
+  shaderBudget: ShaderBudget = 'normal';
+  /** Live materials per shading program, to cap the distinct programs a world compiles. */
+  private readonly shadedPrograms = new Map<string, number>();
+  /** Programs already reported (failed or over the cap), so each is logged once. */
+  private readonly shadeWarned = new Set<string>();
+
+  /** Distinct live shading programs (tests and diagnostics). */
+  get shadedProgramCount(): number {
+    return this.shadedPrograms.size;
+  }
 
   /** The live water materials (hidden while the planar mirror is drawn). */
   waterMaterials(): readonly Material[] {
@@ -324,14 +353,41 @@ export class MaterialCache {
   acquire(spec: MaterialSpec | undefined, opts: ResolveOptions = {}, variant: MaterialVariant = 'standard'): MaterialHandle {
     const resolved = resolveMaterial(spec, opts);
     const tier = resolved.water ? this.waterTier : null;
-    const key = materialKey(resolved, variant) + (tier ? `|water:${tier}` : '');
+    const shade = variant === 'ghost' || variant === 'proof' ? null : shadeKey(resolved);
+    const key = materialKey(resolved, variant) + (tier ? `|water:${tier}` : '') + (shade ? `|shade:${this.shadeTier}` : '');
     const material = this.cache.acquire(key, () => {
       const m = createMaterial(resolved, variant, this.surfaces, this.finishes, this.antiTile, this.foliage, this.layeredTerrain, variant === 'standard' ? tier : null, this.mirror, this.groundDetail, this.backdropWater ? this.backdrop : null);
+      if (shade) this.shade(m, resolved, shade);
       if (this.reflectiveWater && m.userData[WATER_KEY] === true) setWaterLook(m, true);
       if (m.userData[WATER_SHADER_KEY]) this.waterListDirty = true;
       return m;
     });
     return { key, material, resolved };
+  }
+
+  /** Attach the surface layers / shader expressions within the program cap; on failure or over the cap the plain look stays. */
+  private shade(m: MeshStandardMaterial, r: ResolvedMaterial, program: string): void {
+    // Water and foliage carry their own shaders (and the foliage colour node its shadow cut-out): they stay as they are.
+    if (m.userData['aetherWaterNodes'] === true || r.foliage !== null) return;
+    const cap = shadedCap(this.shadeTier, this.shaderBudget);
+    if (!this.shadedPrograms.has(program) && this.shadedPrograms.size >= cap) {
+      if (!this.shadeWarned.has(program)) {
+        this.shadeWarned.add(program);
+        log.warn(`materials: more than ${cap} distinct surface/shader materials at tier ${this.shadeTier}; drawing the rest plain`);
+      }
+      return;
+    }
+    try {
+      applyShading(m, r, this.shadeTier);
+    } catch (e) {
+      if (!this.shadeWarned.has(program)) {
+        this.shadeWarned.add(program);
+        log.warn(`materials: surface/shader not applied (${e instanceof Error ? e.message : String(e)}); drawing it plain`);
+      }
+      return;
+    }
+    this.shadedPrograms.set(program, (this.shadedPrograms.get(program) ?? 0) + 1);
+    m.userData[SHADE_KEY] = program;
   }
 
   /** Release one reference; the material is disposed when unused. */
@@ -352,6 +408,7 @@ export class MaterialCache {
   /** Dispose every material and the surface textures. */
   dispose(): void {
     this.cache.clear();
+    this.shadedPrograms.clear();
     this.waterList = [];
     this.waterListDirty = false;
     this.surfaces.dispose();

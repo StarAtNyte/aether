@@ -68,3 +68,22 @@ export { findStandIns, VOXEL_PERSON_ASSET_IDS, CUBE_PET_ASSET_IDS, type StandIn,
 export * from './water-bodies';
 export * from './life';
 export { resolveFeelCue, describeFeel, FEEL_EVENTS, FEEL_EVENT_DOCS, FEEL_TIER_SCALE, type ResolvedCue } from './feel';
+export {
+  parseShaderExpr,
+  parseShaderChannel,
+  shaderChannelError,
+  ShaderExprError,
+  SHADER_CHANNELS,
+  SHADER_LIMITS,
+  SHADER_VARS,
+  SHADER_FUNCTIONS,
+  NOISE_FUNCTIONS,
+  OCTAVE_FUNCTIONS,
+  SURFACE_LAYER_KINDS,
+  MAX_SURFACE_LAYERS,
+  type ShaderExpr,
+  type ShaderType,
+  type ShaderVar,
+  type ShaderChannel,
+  type SurfaceLayerKind,
+} from './shader-lang';

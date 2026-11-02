@@ -8,7 +8,7 @@ import type { Proof } from '@aether/playtest/proof';
 import { isUserAssetId, worldAssetIds } from '@aether/assets';
 import { History, diffWorlds, getEntity, patchesBetween, type EntityId, type GeneratorDef, type Patch, type WorldDoc } from '@aether/core';
 import { hasBuilding } from '@aether/arch';
-import { EMPTY_MEMORY, OFFLINE_EXAMPLES, WorldAgent, createFallbackProvider, improvementPatches, isAbortError, needsRefinement, refineInstruction, type AgentEvent, type FallbackNotice, type PhotoResumeState, type Provenance, type PromptProfile, type Provider, type QualityFix, type RefineMemory, HARDCORE_PASSES, bibleText, heroShots, heroReferencePrompt, judgeCloser, lumaPercentiles, meanTargets, passPrompt, type HardcoreRun, type LumaTargets } from '@aether/agent';
+import { EMPTY_MEMORY, OFFLINE_EXAMPLES, WorldAgent, createFallbackProvider, improvementPatches, isAbortError, needsRefinement, refineInstruction, type AgentEvent, type FallbackNotice, type PhotoResumeState, type Provenance, type PromptProfile, type Provider, type QualityFix, type RefineMemory, HARDCORE_PASSES, HARDCORE_SHADER_BUDGET_PATCH, bibleText, heroShots, heroReferencePrompt, judgeCloser, lumaPercentiles, meanTargets, passPrompt, type HardcoreRun, type LumaTargets } from '@aether/agent';
 import { createWorkerSandbox, type SandboxRunner } from '@aether/procgen';
 import type { StoreApi } from 'zustand/vanilla';
 import { API, MAX_PROMPT_CHARS, PERSIST_DEBOUNCE_MS } from '../config';
@@ -1672,6 +1672,8 @@ export class Studio {
       const got = await this.bridge.captureReview(shots, { size: 480 }).catch(() => []);
       return got.length > 0 ? this.bridge.composeImages(got.map((g) => ({ dataUrl: g.dataUrl })), { maxSide: 1600 }) : null;
     };
+    // A refined world compiles the full shaded-material cap of the render tier.
+    this.history.commit([HARDCORE_SHADER_BUDGET_PATCH], 'Hardcore: hero shader budget', 'agent');
     for (const [i, pass] of HARDCORE_PASSES.entries()) {
       if (this.disposed) return;
       const head = this.history.head;

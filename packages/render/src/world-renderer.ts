@@ -947,6 +947,8 @@ export class WorldRenderer {
     this.materials.groundDetail = richMaterials;
     // The layered terrain blends four photographed surfaces per pixel: also not on software rasterisers.
     this.materials.layeredTerrain = richMaterials;
+    // Surface layers and shader expressions: the cheap subset where the rich finishes are off, otherwise the automatic tier.
+    this.materials.shadeTier = richMaterials ? this.autoTierNow() : 'low';
     // Leaf cards: 2 × 2 variants of 256 px per atlas (128 px in low-memory mode), composed from photographed leaves.
     if (this.lowMemory) this.materials.foliage.configure(256);
     this.materials.foliage.usePhotos(opts.foliageUrl === undefined ? '/foliage/' : opts.foliageUrl);
@@ -2089,8 +2091,10 @@ export class WorldRenderer {
     this.docLook = env.look ?? null;
     this.docExposure = env.exposure ?? 1;
     setFoliageTint(env.look?.foliageTint ?? null);
+    // Applies to materials created afterwards (the entities of this world are built after its environment).
+    this.materials.shaderBudget = env.look?.shaderBudget === 'hero' ? 'hero' : 'normal';
     // The exterior (`surroundings`) is drawn beyond the plot and is not in the light the building bakes: changing only it keeps the baked light.
-    const lightKey = JSON.stringify({ ...env, surroundings: undefined, look: env.look ? { ...env.look, intent: undefined } : undefined });
+    const lightKey = JSON.stringify({ ...env, surroundings: undefined, look: env.look ? { ...env.look, intent: undefined, shaderBudget: undefined } : undefined });
     if (lightKey !== this.lightEnvKey) {
       this.lightEnvKey = lightKey;
       this.lightVolume.invalidate();

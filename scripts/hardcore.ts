@@ -16,7 +16,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { createWorld, type PatchResult, type WorldDoc } from '@aether/core';
-import { HARDCORE_PASSES, WorldAgent, bibleText, judgeCloser, lookCandidates, lookDistance, pictureColour, type PictureColour, heroShots, lumaPercentiles, meanTargets, passPrompt, heroReferencePrompt as referencePrompt, type AgentEvent, type LumaTargets, type Provider, type ReviewViewRequest } from '@aether/agent';
+import { HARDCORE_PASSES, HARDCORE_SHADER_BUDGET_PATCH, WorldAgent, bibleText, judgeCloser, lookCandidates, lookDistance, pictureColour, type PictureColour, heroShots, lumaPercentiles, meanTargets, passPrompt, heroReferencePrompt as referencePrompt, type AgentEvent, type LumaTargets, type Provider, type ReviewViewRequest } from '@aether/agent';
 import { initScripting } from '@aether/logic';
 import { initPhysics } from '@aether/physics';
 import { loadLibraryGenerator } from '@aether/procgen';
@@ -94,6 +94,8 @@ async function main(): Promise<void> {
   }
   const raw = JSON.parse(readFileSync(from.endsWith('.json') ? resolve(from) : resolve(`apps/studio/public/templates/worlds/${from}.json`), 'utf8')) as { world?: WorldDoc };
   let host = new Host(sandbox, createWorld((raw.world ?? raw) as WorldDoc) as WorldDoc);
+  // A refined world compiles the full shaded-material cap of the render tier.
+  host.applyPatches([HARDCORE_SHADER_BUDGET_PATCH], 'Hardcore: hero shader budget');
   const shots = heroShots(host.getWorld());
   if (shots.length === 0) throw new Error('no hero shots: the world has no built content');
   log(`hero shots: ${shots.map((s) => s.name).join(', ')}`);

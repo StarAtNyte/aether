@@ -16,6 +16,7 @@ import { VoxelEdit, VoxelTerrain } from './voxel-schema';
 import { NpcSpec } from './npc-schema';
 import { CharacterSpec } from './character-schema';
 import { EntityVfx, FeelEvent, FeelSpec, VfxPreset } from './feel-schema';
+import { MAX_SURFACE_LAYERS, SHADER_LIMITS, SURFACE_LAYER_KINDS, shaderChannelError, type ShaderChannel } from './shader-lang';
 
 export * from './voxel-schema';
 export * from './feel-schema';
@@ -119,6 +120,64 @@ export const TextureRef = z.object({
 });
 export type TextureRef = z.infer<typeof TextureRef>;
 
+/**
+ * Additive: where a surface layer applies. `up` / `down`: the faces at least this much facing up / down (0..1, the normal's
+ * vertical part); `slope`: faces whose angle from horizontal-up lies in [min, max] degrees; `height`: world y range (m);
+ * `noise`: share 0..1 of the surface covered, in large irregular patches; `invert` flips the whole mask.
+ */
+export const SurfaceMask = z.object({
+  up: z.number().min(0).max(1).optional(),
+  down: z.number().min(0).max(1).optional(),
+  slope: z.tuple([z.number().min(0).max(180), z.number().min(0).max(180)]).optional(),
+  height: z.tuple([z.number().min(-10_000).max(10_000), z.number().min(-10_000).max(10_000)]).optional(),
+  noise: z.number().min(0).max(1).optional(),
+  invert: z.boolean().optional(),
+});
+export type SurfaceMask = z.infer<typeof SurfaceMask>;
+
+/** Additive: one procedural weathering / effect layer of `material.surface` (see the renderer's surface-layers.ts). */
+export const SurfaceLayer = z.object({
+  kind: z.enum(SURFACE_LAYER_KINDS),
+  color: Color.optional(),
+  /** Strength / coverage 0..1 (default 0.5). */
+  amount: z.number().min(0).max(1).optional(),
+  /** Feature size in metres (a pulse's period in seconds); each kind has its own default. */
+  scale: z.number().min(0.005).max(500).optional(),
+  mask: SurfaceMask.optional(),
+});
+export type SurfaceLayer = z.infer<typeof SurfaceLayer>;
+
+/** Additive: layered, world-space procedural weathering; works on any mesh without UVs. `scale` multiplies every layer's size. */
+export const MaterialSurface = z.object({
+  layers: z.array(SurfaceLayer).min(1).max(MAX_SURFACE_LAYERS),
+  scale: z.number().min(0.05).max(20).optional(),
+});
+export type MaterialSurface = z.infer<typeof MaterialSurface>;
+
+const shaderChannel = (channel: ShaderChannel) =>
+  z
+    .string()
+    .max(SHADER_LIMITS.chars)
+    .superRefine((src, ctx) => {
+      const err = shaderChannelError(channel, src);
+      if (err) ctx.addIssue({ code: 'custom', message: err });
+    });
+
+/**
+ * Additive: per-channel shader expressions in the material expression language (see `shader-lang.ts`): `color` / `emissive`
+ * vec3, `roughness` / `metalness` / `opacity` / `bump` (height in metres) / `displace` (metres along the normal) float.
+ */
+export const MaterialShader = z.object({
+  color: shaderChannel('color').optional(),
+  roughness: shaderChannel('roughness').optional(),
+  metalness: shaderChannel('metalness').optional(),
+  emissive: shaderChannel('emissive').optional(),
+  bump: shaderChannel('bump').optional(),
+  opacity: shaderChannel('opacity').optional(),
+  displace: shaderChannel('displace').optional(),
+});
+export type MaterialShader = z.infer<typeof MaterialShader>;
+
 export const MaterialSpec = z.object({
   preset: MaterialPreset.optional(),
   /** Additive: physically based finish with procedural texture maps (see {@link MaterialFinish}). */
@@ -159,6 +218,10 @@ export const MaterialSpec = z.object({
   waterKind: z.enum(['puddle', 'pond', 'stream', 'river', 'lake', 'sea', 'fall']).optional(),
   /** Additive: the current of flowing water as a world-space velocity `[x, z]` in metres per second (rivers, streams). */
   waterFlow: z.tuple([z.number().min(-12).max(12), z.number().min(-12).max(12)]).optional(),
+  /** Additive: layered procedural weathering and effects (moss, grime, edge wear, glowing cracks, rim glow ...), see {@link MaterialSurface}. */
+  surface: MaterialSurface.optional(),
+  /** Additive: per-channel shader expressions (lava, holograms, force fields, flags ...), see {@link MaterialShader}. */
+  shader: MaterialShader.optional(),
 });
 export type MaterialSpec = z.infer<typeof MaterialSpec>;
 
@@ -689,6 +752,11 @@ export const Environment = z.object({
       ambientTint: Color.optional(),
       /** Multiplies the colour of leaf, needle and grass cards (a hex tint; white keeps it). */
       foliageTint: Color.optional(),
+      /**
+       * How many distinct `surface` / `shader` materials the renderer compiles: `normal` (default) half of the render tier's
+       * cap, `hero` all of it (a world refined for its art, e.g. by the hardcore passes). Beyond the cap the rest draw plain.
+       */
+      shaderBudget: z.enum(['normal', 'hero']).optional(),
       /** Strength of the room lamps in the baked interior light, 0 none .. 3 triple (default 1). */
       lampStrength: z.number().min(0).max(3).optional(),
       /** Edge darkening of the picture, 0 none .. 1 strong (default: the grade preset's). */
