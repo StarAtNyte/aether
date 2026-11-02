@@ -24,6 +24,7 @@ type MaterialPreset = ${MaterialPreset.options.map((o) => `'${o}'`).join(' | ')}
 
 interface MaterialSpec {
   preset?: MaterialPreset;
+  finish?: string;             // photographed surface at real scale, tinted by color: 'marble' 'stone' 'rock' 'plaster' 'brick' 'roof-tile' 'concrete' 'oak' 'bark' 'soil' 'sand' 'gravel' 'brass' 'black-metal' 'ceramic' 'fabric' 'tile' (use it: plain colours look flat)
   color?: string;              // "#rrggbb"
   roughness?: number;          // 0..1
   metalness?: number;          // 0..1

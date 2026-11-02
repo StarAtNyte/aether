@@ -58,7 +58,9 @@ describe('system prompt', () => {
     // 16k -> 16.1k for the umbrella pine (Mediterranean scenes) in the catalog and the realistic vegetation list.
     // 16.1k -> 16.3k for ribbon (strips along a path: waterfall sheets, roads) and the water material fields (waterKind,
     // waterFlow) in the generator API.
-    expect(prompt.length / 4).toBeLessThan(16_300);
+    // 16.3k -> 17.3k for the classical and Mediterranean pieces (column, temple, balustrade, aqueduct, cliff face, brazier,
+    // amphora, banner, awning, cypress, olive, ivy) and the finish field of generator materials.
+    expect(prompt.length / 4).toBeLessThan(17_300);
     expect(buildSystemPrompt(REAL)).toBe(prompt);
     expect(prompt).not.toMatch(/\d{4}-\d{2}-\d{2}T/); // no timestamps (cache-stable)
   });

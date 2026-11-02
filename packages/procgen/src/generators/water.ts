@@ -21,7 +21,7 @@ const waterfallSheet = defineGenerator({
     strands: pInt(3, 1, 7, 'separate strands the water splits into (1 = one curtain)'),
     throwSpeed: pNum(1.6, 0, 6, 'horizontal speed leaving the lip (m/s): 0 slides down the face, 3+ leaps clear'),
     color: pColor('#6fa8a2', 'clear water colour at the lip'),
-    variant: pVariant(0, '0 falls down a rock face with a lip, 1 free sheet (pour it off your own cliff, aqueduct or wall)'),
+    variant: pVariant(1, '0 falls down a rock face with a lip, 1 free sheet (pour it off your own cliff, aqueduct or wall)'),
     pool: pBool(true, 'plunge pool at the foot'),
   },
   run(p, api: InternalApi) {

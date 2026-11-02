@@ -14,21 +14,23 @@ const REQUIRED_IDS = [
   'skyline-tower',
   // Falling water (water.ts).
   'waterfall-sheet',
+  // Classical and Mediterranean (classical.ts, flora.ts).
+  'column', 'classical-temple', 'balustrade', 'aqueduct', 'cliff-face', 'brazier', 'amphora', 'banner', 'awning', 'tree-cypress', 'tree-olive', 'ivy',
 ];
 /** High-detail sculptures (virtual geometry): up to 786k triangles by design. */
 const SCULPTURES = new Set(['colossus']);
 const TERRAIN = new Set(['terrain', 'island', 'mountain', 'mound']);
 const TREES = new Set(['tree-pine', 'tree-oak', 'tree-palm']);
 /** Realistic vegetation: foliage cards carry soft (crown-pointing) normals and both faces, so the winding check applies to their bark and rock only; budgets scale with `detail`. */
-const CARDS = new Set(['tree-broadleaf', 'tree-umbrella-pine', 'tree-birch', 'tree-spruce', 'shrub', 'fern', 'meadow-grass', 'wildflowers', 'hedge']);
+const CARDS = new Set(['tree-broadleaf', 'tree-umbrella-pine', 'tree-cypress', 'tree-olive', 'ivy', 'tree-birch', 'tree-spruce', 'shrub', 'fern', 'meadow-grass', 'wildflowers', 'hedge']);
 /** Built structures carry articulation (reveals, frames, courses, corbels) in merged finish parts: a larger budget, still a handful of draws. */
 /**
  * Plants are anchored at their root point (trunk base, the middle of a tuft), not centred on their bounds: the root
  * stays at the entity position whatever the crown does, and the base sits on the ground (a few centimetres of
  * buttress or root flare may reach into it).
  */
-const ROOTED = new Set(['tree-pine', 'tree-oak', 'tree-palm', 'grass-tuft', 'flowers', 'mushroom', 'tree-broadleaf', 'tree-umbrella-pine', 'tree-birch', 'tree-spruce', 'shrub', 'fern', 'meadow-grass', 'wildflowers', 'cactus', 'hedge']);
-const STRUCTURES = new Set(['house', 'tower', 'wall', 'fence', 'bridge', 'stairs', 'arch', 'ramp', 'windmill']);
+const ROOTED = new Set(['tree-pine', 'tree-oak', 'tree-palm', 'grass-tuft', 'flowers', 'mushroom', 'tree-broadleaf', 'tree-umbrella-pine', 'tree-cypress', 'tree-olive', 'tree-birch', 'tree-spruce', 'shrub', 'fern', 'meadow-grass', 'wildflowers', 'cactus', 'hedge']);
+const STRUCTURES = new Set(['house', 'tower', 'wall', 'fence', 'bridge', 'stairs', 'arch', 'ramp', 'windmill', 'classical-temple', 'aqueduct', 'cliff-face']);
 
 function randomParams(spec: Record<string, ParamSpec>, random: () => number): Record<string, Json> {
   const out: Record<string, Json> = {};

@@ -418,6 +418,171 @@ const treeUmbrellaPine = defineGenerator({
 });
 
 // ---------------------------------------------------------------------------
+// Italian cypress and olive (Mediterranean)
+// ---------------------------------------------------------------------------
+
+const treeCypress = defineGenerator({
+  id: 'tree-cypress',
+  description: 'Italian cypress: tall narrow dark-green flame-shaped column, short hidden trunk; plant in rows and clusters.',
+  category: 'nature',
+  params: {
+    height: pNum(14, 4, 30, 'total height in meters'),
+    color: pColor('#2c4426', 'needle color (dark green)'),
+    trunkColor: pColor('#6b5240', 'bark tint'),
+    slenderness: pNum(1, 0.6, 1.6, 'narrower (higher) or fuller (lower)'),
+    detail: pNum(1, 0.3, 2, 'card count multiplier (lower for distant rows)'),
+    variant: pVariant(1, '0 pencil-straight, 1 slightly leaning and tufted'),
+  },
+  run(p, api) {
+    const H = p.num('height');
+    const detail = p.num('detail');
+    const R = (H * 0.075) / p.num('slenderness');
+    const lean = p.int('variant') === 1 ? H * api.range(0.01, 0.03) : 0;
+    const la = api.rng() * Math.PI * 2;
+    const path: Vec3[] = [];
+    for (let i = 0; i <= 6; i++) {
+      const t = i / 6;
+      path.push([Math.cos(la) * lean * t * t, H * 0.7 * t, Math.sin(la) * lean * t * t]);
+    }
+    rootPath(path);
+    const trunkR = H * 0.012;
+    const wood: Mesh = api.tube(path, trunkR, 7, (t) => (t < 0.08 ? 1.3 - t * 4 : 1) * (1 - 0.8 * t));
+    flatBase(wood);
+    paintBark(api, wood, p.color('trunkColor'));
+    barkUvs(wood, 0, 0);
+    api.add(wood, BARK);
+    // A spindle: widest a third of the way up, closing to a pointed tip; clusters stacked up the axis.
+    const clusters: Array<{ c: Vec3; r: number }> = [];
+    const n = 12;
+    for (let k = 0; k < n; k++) {
+      const t = 0.03 + (k / (n - 1)) * 0.93;
+      const w = R * (0.55 + 0.45 * Math.sin(Math.min(1, t / 0.3) * Math.PI * 0.5)) * (1 - Math.pow(Math.max(0, (t - 0.35) / 0.65), 1.6) * 0.85);
+      const at = path[Math.min(path.length - 1, Math.round(t * 6))] as Vec3;
+      clusters.push({ c: [at[0] + api.range(-0.1, 0.1) * R, H * t, at[2] + api.range(-0.1, 0.1) * R], r: Math.max(R * 0.25, w) });
+    }
+    const budget = cardBudget(900 * detail, H * 0.06, Math.min(0.75, Math.max(0.4, 0.32 + H * 0.025)), 1500 * Math.max(0.3, detail));
+    if (budget.count >= 8) {
+      const sheets = new Sheets(budget.count + clusters.length);
+      crownCards(api, sheets, clusters, { c: [path[3]![0], H * 0.5, path[3]![2]], r: [R, H * 0.48, R] }, budget.count, { w: budget.size, h: budget.size }, leafTones(p.color('color')), 0.04, H * 0.04);
+      const leaves = sheets.build(api);
+      if (leaves) api.add(leaves, foliage('needles'));
+    }
+    api.collider(cylinderCollider(0, H / 2, 0, Math.max(trunkR * 1.2, R * 0.6), H));
+    return api.build(ROOTED);
+  },
+});
+
+const treeOlive = defineGenerator({
+  id: 'tree-olive',
+  description: 'Olive tree: gnarled twisting split trunk, low spreading limbs, airy silver-green crown; groves and courtyards.',
+  category: 'nature',
+  params: {
+    height: pNum(6, 2.5, 12, 'total height in meters'),
+    color: pColor('#7f8f5c', 'leaf color (grey-green)'),
+    trunkColor: pColor('#857864', 'bark tint (grey, fissured)'),
+    detail: pNum(1, 0.3, 2, 'card count multiplier'),
+    variant: pVariant(1, '0 young single trunk, 1 ancient split trunk'),
+  },
+  run(p, api) {
+    const H = p.num('height');
+    const detail = p.num('detail');
+    const old = p.int('variant') === 1;
+    const trunkH = H * api.range(0.32, 0.42);
+    const trunkR = H * (old ? 0.06 : 0.035);
+    const stems = old ? 3 : 1;
+    let wood: Mesh | null = null;
+    const clusters: Array<{ c: Vec3; r: number }> = [];
+    const crownR = H * 0.45;
+    for (let s = 0; s < stems; s++) {
+      const a = (s / stems) * Math.PI * 2 + api.rng();
+      const spread = old ? H * 0.12 : H * 0.04;
+      const path: Vec3[] = [];
+      for (let i = 0; i <= 6; i++) {
+        const t = i / 6;
+        // Twisting: the stem winds around its own axis as it leans out.
+        const tw = a + t * 1.8;
+        path.push([Math.cos(a) * spread * t + Math.cos(tw) * trunkR * 0.6 * Math.sin(t * Math.PI), trunkH * t, Math.sin(a) * spread * t + Math.sin(tw) * trunkR * 0.6 * Math.sin(t * Math.PI)]);
+      }
+      if (s === 0) rootPath(path);
+      const r = trunkR / Math.sqrt(stems);
+      const stem = api.tube(path, r, 8, (t) => (t < 0.1 ? 1.5 - t * 5 : 1) * (1 - 0.35 * t));
+      wood = wood ? wood.merge(stem) : stem;
+      const top = path[path.length - 1] as Vec3;
+      const limbs = old ? 2 : 4;
+      for (let k = 0; k < limbs; k++) {
+        const b = a + (k / limbs) * Math.PI * 2 + api.rng() * 0.8;
+        const reach = crownR * api.range(0.5, 0.85);
+        const end: Vec3 = [top[0] + Math.cos(b) * reach, H * api.range(0.62, 0.8), top[2] + Math.sin(b) * reach];
+        wood = limb(api, wood, top, end, r * 0.55, r * 0.15, [0, (end[1] - top[1]) * 0.4, 0]);
+        clusters.push({ c: [end[0], end[1] + H * 0.08, end[2]], r: crownR * api.range(0.35, 0.5) });
+      }
+      clusters.push({ c: [top[0], H * 0.8, top[2]], r: crownR * 0.45 });
+    }
+    flatBase(wood as Mesh);
+    paintBark(api, wood as Mesh, p.color('trunkColor'));
+    barkUvs(wood as Mesh, 0, 0);
+    api.add(wood as Mesh, BARK);
+    const budget = cardBudget(480 * detail, H * 0.12, Math.min(0.75, Math.max(0.4, 0.35 + H * 0.04)), 1000 * Math.max(0.3, detail));
+    if (budget.count >= 8) {
+      const sheets = new Sheets(budget.count + clusters.length);
+      crownCards(api, sheets, clusters, { c: [0, H * 0.72, 0], r: [crownR, H * 0.24, crownR] }, budget.count, { w: budget.size, h: budget.size }, leafTones(p.color('color')), 0.12);
+      const leaves = sheets.build(api);
+      if (leaves) api.add(leaves, foliage('broadleaf'));
+    }
+    api.collider(cylinderCollider(0, trunkH / 2, 0, trunkR * 1.2, trunkH));
+    return api.build(ROOTED);
+  },
+});
+
+const ivy = defineGenerator({
+  id: 'ivy',
+  description: 'Ivy or climbing vine: a leafy mat draped over a wall face (spills from the top, thins toward the ground); place against walls, facing +Z.',
+  category: 'nature',
+  params: {
+    width: pNum(4, 0.5, 20, 'width of the covered patch in meters'),
+    height: pNum(3, 0.5, 15, 'height of the covered patch in meters'),
+    color: pColor('#3f5f2a', 'leaf color'),
+    cover: pNum(0.7, 0.2, 1, 'how much of the patch the leaves cover'),
+    detail: pNum(1, 0.3, 2, 'card count multiplier'),
+    variant: pVariant(2, '0 ivy (dark, dense), 1 vine with flowers (bougainvillea-like), 2 wisteria (hanging lilac)'),
+  },
+  run(p, api) {
+    const W = p.num('width');
+    const H = p.num('height');
+    const v = p.int('variant');
+    const cover = p.num('cover');
+    const count = Math.min(1400, Math.round(W * H * 26 * cover * p.num('detail')));
+    const sheets = new Sheets(count);
+    const tones = leafTones(p.color('color'));
+    const bloom: RGB = v === 1 ? [0.75, 0.08, 0.38] : v === 2 ? [0.62, 0.5, 0.86] : tones.sun;
+    const tmp: RGB = [0, 0, 0];
+    for (let i = 0; i < count; i++) {
+      const x = api.range(-W / 2, W / 2);
+      // Denser at the top (it grows over the wall head and hangs down), ragged at the lower edge.
+      const y = H * (1 - Math.pow(api.rng(), 0.7));
+      const edge = 0.35 + 0.65 * api.noise2(x * 0.7 + 3, y * 0.5);
+      if (api.rng() > cover * (0.4 + 0.6 * edge) * (0.5 + 0.5 * (y / H))) continue;
+      const a = api.range(-Math.PI, Math.PI);
+      const size = api.range(0.22, 0.38);
+      const flower = v > 0 && api.rng() < (v === 2 ? 0.55 : 0.4);
+      const hang = v === 2 ? -1 : 1;
+      const u: Vec3 = [Math.cos(a), Math.sin(a) * 0.4, 0];
+      const up: Vec3 = [-Math.sin(a) * 0.4, hang * Math.abs(Math.cos(a)), api.range(0.25, 0.6)];
+      const l = Math.hypot(up[0], up[1], up[2]);
+      const o: Vec3 = [x, y, api.range(0.02, 0.14)];
+      const base = flower ? bloom : api.rng() < 0.5 ? tones.deep : tones.mid;
+      const hi = flower ? bloom : tones.sun;
+      for (let c = 0; c < 3; c++) tmp[c] = (base[c] as number) * 0.5 + (hi[c] as number) * 0.5;
+      sheets.add(o, u, [up[0] / l, up[1] / l, up[2] / l], size, size, 'bottom', [0, 0.3, 0.95], base, [tmp[0], tmp[1], tmp[2]], flower ? 2 : 0);
+    }
+    const leaves = sheets.build(api);
+    if (leaves) api.add(leaves, foliage(v === 0 ? 'broadleaf' : 'blossom'));
+    else api.add(api.box(W, 0.02, 0.02), foliage('broadleaf'));
+    return api.build();
+  },
+});
+
+// ---------------------------------------------------------------------------
 // Birch
 // ---------------------------------------------------------------------------
 
@@ -1032,4 +1197,4 @@ const hedge = defineGenerator({
   },
 });
 
-export const FLORA_GENERATORS = [treeBroadleaf, treeUmbrellaPine, treeBirch, treeSpruce, shrub, fern, meadowGrass, wildflowers, boulder, cactus, hedge] as const;
+export const FLORA_GENERATORS = [treeBroadleaf, treeUmbrellaPine, treeCypress, treeOlive, ivy, treeBirch, treeSpruce, shrub, fern, meadowGrass, wildflowers, boulder, cactus, hedge] as const;

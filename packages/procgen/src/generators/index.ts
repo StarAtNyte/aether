@@ -12,6 +12,7 @@ import { PROP_GENERATORS } from './props';
 import { VEHICLE_GENERATORS } from './vehicles';
 import { FX_GENERATORS } from './fx';
 import { WATER_GENERATORS } from './water';
+import { CLASSICAL_GENERATORS } from './classical';
 import { SCULPTURE_GENERATORS } from './sculpture';
 import { ARCH_FURNITURE_GENERATORS, ARCH_STRUCTURE_GENERATORS, FURN_PART_GENERATOR } from './arch';
 
@@ -26,6 +27,7 @@ const ALL: readonly BuiltinGenerator[] = [
   ...VEHICLE_GENERATORS,
   ...FX_GENERATORS,
   ...WATER_GENERATORS,
+  ...CLASSICAL_GENERATORS,
 ];
 /**
  * Parametric architecture generators (`./arch`: `arch-*` structure, `furn-*`
