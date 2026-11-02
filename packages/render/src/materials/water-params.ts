@@ -42,7 +42,7 @@ export interface WaterClass {
   followsCurrent: boolean;
 }
 
-/** The six scale classes. */
+/** The scale classes (and falling water). */
 export const WATER_CLASSES: Readonly<Record<WaterKind, WaterClass>> = Object.freeze({
   puddle: { wavelength: 0.45, slope: 0.012, windSlope: 0.02, clarity: 0.12, shallow: '#12171a', deep: '#080b0d', shoreFoam: 0, crestFoam: 0, foamWidth: 0.01, basin: 0.06, detail: 0.15, waveSpeed: 1, refraction: 0.02, followsCurrent: false },
   pond: { wavelength: 1.6, slope: 0.035, windSlope: 0.05, clarity: 1.1, shallow: '#4f7a62', deep: '#1d3a34', shoreFoam: 0.12, crestFoam: 0, foamWidth: 0.02, basin: 1.2, detail: 0.35, waveSpeed: 1, refraction: 0.05, followsCurrent: false },
@@ -50,6 +50,8 @@ export const WATER_CLASSES: Readonly<Record<WaterKind, WaterClass>> = Object.fre
   river: { wavelength: 2.8, slope: 0.1, windSlope: 0.03, clarity: 2.6, shallow: '#6a9c96', deep: '#1f4a4e', shoreFoam: 0.55, crestFoam: 0.08, foamWidth: 0.22, basin: 0.5, detail: 0.75, waveSpeed: 1.25, refraction: 0.07, followsCurrent: true },
   lake: { wavelength: 6, slope: 0.05, windSlope: 0.1, clarity: 4, shallow: '#5f9aa0', deep: '#16405a', shoreFoam: 0.3, crestFoam: 0.1, foamWidth: 0.05, basin: 2.2, detail: 0.5, waveSpeed: 1, refraction: 0.06, followsCurrent: false },
   sea: { wavelength: 22, slope: 0.1, windSlope: 0.12, clarity: 9, shallow: '#4fa3a8', deep: '#0b3550', shoreFoam: 0.8, crestFoam: 0.5, foamWidth: 0.5, basin: 6, detail: 0.45, waveSpeed: 1, refraction: 0.05, followsCurrent: false },
+  // Falling water is drawn by its own shader (`waterfall.ts`); this class only backs the fallback paths.
+  fall: { wavelength: 0.8, slope: 0.12, windSlope: 0.02, clarity: 0.6, shallow: '#cfe4e6', deep: '#5d8c90', shoreFoam: 0.9, crestFoam: 0.6, foamWidth: 0.2, basin: 0.2, detail: 0.6, waveSpeed: 2, refraction: 0.04, followsCurrent: true },
 });
 
 /** Wavelength factors of the four summed waves. */

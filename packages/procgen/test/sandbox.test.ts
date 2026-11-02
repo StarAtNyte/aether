@@ -68,7 +68,7 @@ describe('staticCheckSource', () => {
 describe('GENERATOR_API_DTS', () => {
   it('documents every API and MeshHandle method plus materials and colliders', () => {
     for (const name of ['rng', 'seed', 'noise2', 'noise3', 'fbm2', 'box', 'roundedBox', 'sphere', 'cylinder', 'cone', 'torus', 'capsule', 'plane', 'lathe',
-      'extrude', 'tube', 'heightfield', 'icosphereRock', 'add', 'collider', 'autoColliders', 'color', 'mix', 'build',
+      'extrude', 'tube', 'ribbon', 'heightfield', 'icosphereRock', 'add', 'collider', 'autoColliders', 'color', 'mix', 'build',
       'translate', 'rotate', 'scale', 'displace', 'vertexColor', 'merge', 'clone', 'bounds', 'MaterialSpec', 'ColliderDesc',
       'emissiveIntensity', "'crystal'", 'halfExtents']) {
       expect(GENERATOR_API_DTS, name).toContain(name);
@@ -148,7 +148,7 @@ describe('createNodeSandbox', () => {
   it('exposes exactly the documented api surface to untrusted code', async () => {
     const sb = createNodeSandbox();
     const expected = ['add', 'autoColliders', 'box', 'build', 'capsule', 'collider', 'color', 'cone', 'cylinder', 'extrude', 'fbm2',
-      'heightfield', 'icosphereRock', 'lathe', 'mix', 'noise2', 'noise3', 'plane', 'rng', 'roundedBox', 'seed', 'sphere', 'torus', 'tube'].join(',');
+      'heightfield', 'icosphereRock', 'lathe', 'mix', 'noise2', 'noise3', 'plane', 'ribbon', 'rng', 'roundedBox', 'seed', 'sphere', 'torus', 'tube'].join(',');
     const src = `const keys = Object.keys(api).sort().join(',');
 if (keys !== '${expected}') throw new Error('unexpected api keys ' + keys);
 const m = Object.keys(api.box(1, 1, 1)).sort().join(',');

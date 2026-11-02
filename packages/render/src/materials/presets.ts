@@ -215,10 +215,10 @@ function resolveBase(spec: MaterialSpec | undefined, opts: ResolveOptions): Reso
   };
 }
 
-const WATER_KINDS: ReadonlySet<string> = new Set(['puddle', 'pond', 'stream', 'river', 'lake', 'sea']);
+const WATER_KINDS: ReadonlySet<string> = new Set(['puddle', 'pond', 'stream', 'river', 'lake', 'sea', 'fall']);
 
 /** Default current (m/s) of a water scale when the spec gives none. */
-const DEFAULT_FLOW: Readonly<Record<WaterKind, number>> = Object.freeze({ puddle: 0, pond: 0, stream: 1.1, river: 0.7, lake: 0, sea: 0 });
+const DEFAULT_FLOW: Readonly<Record<WaterKind, number>> = Object.freeze({ puddle: 0, pond: 0, stream: 1.1, river: 0.7, lake: 0, sea: 0, fall: 0 });
 
 function resolveWater(spec: MaterialSpec | undefined): ResolvedWater {
   const kind: WaterKind = typeof spec?.waterKind === 'string' && WATER_KINDS.has(spec.waterKind) ? spec.waterKind : 'lake';

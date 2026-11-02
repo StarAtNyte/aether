@@ -9,6 +9,8 @@ import { normalizeHex } from './color';
 const PRESETS: ReadonlySet<string> = new Set(MaterialPreset.options);
 const FINISHES: ReadonlySet<string> = new Set(MaterialFinish.options);
 const FOLIAGE_KINDS: ReadonlySet<string> = new Set(['broadleaf', 'shrub', 'needles', 'grass', 'fern', 'blossom', 'flower']);
+/** Water scale classes a generator part may name (`preset: 'water'`; `fall` is a falling sheet). */
+const WATER_KINDS: ReadonlySet<string> = new Set(['puddle', 'pond', 'stream', 'river', 'lake', 'sea', 'fall']);
 
 function clampNumber(v: unknown, min: number, max: number, what: string): number {
   if (typeof v !== 'number' || !Number.isFinite(v)) throw new TypeError(`material.${what}: expected a number`);
@@ -73,6 +75,16 @@ export function sanitizeMaterial(input: unknown): MaterialSpec {
   if (foliage !== undefined) {
     if (typeof foliage !== 'string' || !FOLIAGE_KINDS.has(foliage)) throw new TypeError(`material.foliage: must be one of ${[...FOLIAGE_KINDS].join(', ')}`);
     out.foliage = foliage as MaterialSpec['foliage'];
+  }
+  const waterKind = read('waterKind');
+  if (waterKind !== undefined) {
+    if (typeof waterKind !== 'string' || !WATER_KINDS.has(waterKind)) throw new TypeError(`material.waterKind: must be one of ${[...WATER_KINDS].join(', ')}`);
+    out.waterKind = waterKind as MaterialSpec['waterKind'];
+  }
+  const flow = read('waterFlow');
+  if (flow !== undefined) {
+    if (!Array.isArray(flow) || flow.length !== 2) throw new TypeError('material.waterFlow: must be [x, z] in m/s');
+    out.waterFlow = [clampNumber(flow[0], -12, 12, 'waterFlow'), clampNumber(flow[1], -12, 12, 'waterFlow')];
   }
   return out;
 }

@@ -549,6 +549,66 @@ export function tube(
 }
 
 /**
+ * Flat strip along a polyline, `width` wide (tapered by `widthAt(t)`, t ∈ [0, 1] along the path). The strip spans a
+ * horizontal direction across the path (perpendicular to its horizontal heading; a vertical stretch keeps the last
+ * one), so it hangs like a curtain down a drop and lies flat along level ground. UVs: u runs 0..1 across, v is the
+ * distance along the path in metres (waterfall sheets, roads, banners and streams read it).
+ */
+export function ribbon(budget: VertexBudget, pathIn: unknown, width: number, widthAt?: (t: number) => number): Mesh {
+  const raw = readPoints3(pathIn, 'ribbon(path)', KERNEL_LIMITS.MAX_PATH_POINTS);
+  const path: Vec3[] = [];
+  for (const p of raw) {
+    const last = path[path.length - 1];
+    if (!last || Math.hypot(p[0] - last[0], p[1] - last[1], p[2] - last[2]) > 1e-7) path.push(p);
+  }
+  if (path.length < 2) throw new RangeError('ribbon(path): need at least 2 distinct points');
+  const w = dim(width, 'ribbon(width)');
+  const n = path.length;
+  const lengths = new Float64Array(n);
+  for (let i = 1; i < n; i++) {
+    const a = path[i - 1] as Vec3, c = path[i] as Vec3;
+    lengths[i] = (lengths[i - 1] as number) + Math.hypot(c[0] - a[0], c[1] - a[1], c[2] - a[2]);
+  }
+  const total = lengths[n - 1] as number;
+  // The first usable horizontal heading seeds the across direction (a path that is vertical everywhere spans x).
+  let ax = 1, az = 0;
+  for (let i = 0; i + 1 < n; i++) {
+    const a = path[i] as Vec3, c = path[i + 1] as Vec3;
+    const hx = c[0] - a[0], hz = c[2] - a[2], hl = Math.hypot(hx, hz);
+    if (hl > 1e-4) { ax = -hz / hl; az = hx / hl; break; }
+  }
+  const b = new MeshBuilder(n * 2, (n - 1) * 6);
+  for (let i = 0; i < n; i++) {
+    const p = path[i] as Vec3;
+    const a = path[Math.max(0, i - 1)] as Vec3, c = path[Math.min(n - 1, i + 1)] as Vec3;
+    let tx = c[0] - a[0], ty = c[1] - a[1], tz = c[2] - a[2];
+    const tl = Math.hypot(tx, ty, tz) || 1;
+    tx /= tl; ty /= tl; tz /= tl;
+    const hl = Math.hypot(tx, tz);
+    if (hl > 0.08) {
+      let nx = -tz / hl, nz = tx / hl;
+      if (nx * ax + nz * az < 0) { nx = -nx; nz = -nz; }
+      ax = nx; az = nz;
+    }
+    // Normal = across × tangent (faces the side the path turns away from; the strip is usually drawn two-sided).
+    let nx = -az * ty, ny = az * tx - ax * tz, nz = ax * ty;
+    const nl = Math.hypot(nx, ny, nz) || 1;
+    nx /= nl; ny /= nl; nz /= nl;
+    const t = (lengths[i] as number) / total;
+    const hw = (w * (widthAt ? Math.max(0, finite(widthAt(t), 'ribbon width')) : 1)) / 2;
+    const v = lengths[i] as number;
+    b.vertex(p[0] - ax * hw, p[1], p[2] - az * hw, nx, ny, nz, 0, v);
+    b.vertex(p[0] + ax * hw, p[1], p[2] + az * hw, nx, ny, nz, 1, v);
+  }
+  for (let i = 0; i + 1 < n; i++) {
+    const a = i * 2;
+    b.tri(a, a + 1, a + 2);
+    b.tri(a + 1, a + 3, a + 2);
+  }
+  return b.build(budget);
+}
+
+/**
  * Parallel-transport frames along a polyline: per point [tangent, normal,
  * binormal] (9 floats), with binormal = tangent × normal.
  */

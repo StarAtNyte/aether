@@ -33,6 +33,8 @@ interface MaterialSpec {
   flatShading?: boolean;       // faceted low-poly look
   doubleSided?: boolean;       // both faces: shells people walk into
   vertexColors?: boolean;      // set automatically when the mesh has vertexColor()
+  waterKind?: 'pond' | 'stream' | 'river' | 'lake' | 'sea' | 'fall'; // preset 'water': scale class; 'fall' = falling sheet (api.ribbon, v = metres from lip)
+  waterFlow?: [number, number]; // current [x, z] m/s for streams and rivers
 }
 
 type ColliderDesc =
@@ -73,6 +75,7 @@ interface GeneratorApi {
   lathe(profile: Array<[number, number]>, segments?: number): MeshHandle;  // [radius, y] points revolved around Y; repeat a point for a sharp edge
   extrude(shape: Array<[number, number]>, depth: number): MeshHandle;      // polygon in XY (concave ok), extruded along Z, centered
   tube(path: Vec3[], radius: number, radialSegments?: number): MeshHandle; // pipe along a polyline, capped
+  ribbon(path: Vec3[], width: number, widthAt?: (t: number) => number): MeshHandle; // flat strip along a path: u 0..1 across, v metres along (waterfall sheets, roads)
   heightfield(cols: number, rows: number, width: number, depth: number, height: (x: number, z: number) => number): MeshHandle; // grid in XZ
   icosphereRock(r: number, roughness: number): MeshHandle;                 // faceted noisy rock, roughness 0..1
 

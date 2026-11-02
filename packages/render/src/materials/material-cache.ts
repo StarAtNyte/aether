@@ -20,6 +20,7 @@ import { FoliageTextures } from './foliage-textures';
 import { applyFoliageShading } from './foliage-shading';
 import { applyPaintMottle } from './paint-mottle';
 import { applyWater, PlanarReflection, WATER_SHADER_KEY, type WaterShader } from './water';
+import { applyWaterfall } from './waterfall';
 import { SURFACE_TILE_METRES } from './surface-textures';
 import type { WaterTier } from './water-params';
 import { SceneBackdrop } from './scene-backdrop';
@@ -146,7 +147,12 @@ export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, su
     applySplat(m, (id) => finishes.get(id), finishes.stack(SPLAT_LAYERS), groundDetail);
   }
   if (variant === 'foliage') applyWind(m);
-  if (!ghostLike && r.surface === 'water' && r.water && waterTier && surfaces && mirror) {
+  if (!ghostLike && r.surface === 'water' && r.water?.kind === 'fall' && waterTier) {
+    // Falling water: advected streaks, aeration, ragged edges (see `waterfall.ts`).
+    m.emissiveMap = null;
+    applyWaterfall(m);
+    m.userData['aetherWaterNodes'] = true;
+  } else if (!ghostLike && r.surface === 'water' && r.water && waterTier && surfaces && mirror) {
     // The water shader: waves, ripples, depth absorption, refraction, foam (see `water.ts`). It replaces the classic maps.
     m.map = null;
     m.emissiveMap = null;

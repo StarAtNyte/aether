@@ -152,9 +152,11 @@ export const MaterialSpec = z.object({
   /**
    * Additive: the scale of a water surface (preset "water"): `puddle`, `pond`, `stream`, `river`, `lake` or `sea`. It sets
    * the wave length and steepness, the clarity (how deep the eye sees), whether it flows and how much foam it shows.
+   * `fall` is falling water (a waterfall sheet, e.g. `api.ribbon` down a drop with v = metres from the lip): streaks that
+   * speed up as they fall, glassy at the lip, aerated white lower down, ragged translucent edges.
    * Without it the renderer reads the scale from the entity's size and tags.
    */
-  waterKind: z.enum(['puddle', 'pond', 'stream', 'river', 'lake', 'sea']).optional(),
+  waterKind: z.enum(['puddle', 'pond', 'stream', 'river', 'lake', 'sea', 'fall']).optional(),
   /** Additive: the current of flowing water as a world-space velocity `[x, z]` in metres per second (rivers, streams). */
   waterFlow: z.tuple([z.number().min(-12).max(12), z.number().min(-12).max(12)]).optional(),
 });

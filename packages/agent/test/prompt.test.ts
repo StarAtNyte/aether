@@ -56,7 +56,9 @@ describe('system prompt', () => {
     // 15.8k -> 15.9k for set_facade (the front of a building) in the architecture tools.
     // 15.9k -> 16k for roundedBox (bevelled edges) and doubleSided shells in the generator API.
     // 16k -> 16.1k for the umbrella pine (Mediterranean scenes) in the catalog and the realistic vegetation list.
-    expect(prompt.length / 4).toBeLessThan(16_100);
+    // 16.1k -> 16.3k for ribbon (strips along a path: waterfall sheets, roads) and the water material fields (waterKind,
+    // waterFlow) in the generator API.
+    expect(prompt.length / 4).toBeLessThan(16_300);
     expect(buildSystemPrompt(REAL)).toBe(prompt);
     expect(prompt).not.toMatch(/\d{4}-\d{2}-\d{2}T/); // no timestamps (cache-stable)
   });

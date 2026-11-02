@@ -97,7 +97,8 @@ export function partToBufferGeometry(part: MeshPart): BufferGeometry {
   if (!g.getAttribute('normal')) g.computeVertexNormals();
   // Parts with a physically based finish (architecture) carry authored metre UVs (boards along a
   // floor, courses along a wall); everything else gets box-projected metre UVs.
-  const authored = (part.material?.finish !== undefined || part.material?.foliage !== undefined) && part.uvs instanceof Float32Array && part.uvs.length === vertexCount * 2;
+  // Falling water reads its authored UVs too (u across the sheet, v metres down from the lip).
+  const authored = (part.material?.finish !== undefined || part.material?.foliage !== undefined || part.material?.waterKind === 'fall') && part.uvs instanceof Float32Array && part.uvs.length === vertexCount * 2;
   const uvs = authored
     ? (part.uvs as Float32Array)
     : part.material?.splat === true

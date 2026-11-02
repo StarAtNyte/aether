@@ -51,6 +51,7 @@ export interface InternalApi extends GeneratorApi {
   lathe(profile: Array<[number, number]>, segments?: number): Mesh;
   extrude(shape: Array<[number, number]>, depth: number): Mesh;
   tube(path: Vec3[], radius: number, radialSegments?: number, radiusAt?: (t: number) => number): Mesh;
+  ribbon(path: Vec3[], width: number, widthAt?: (t: number) => number): Mesh;
   heightfield(cols: number, rows: number, width: number, depth: number, height: (x: number, z: number) => number): Mesh;
   icosphereRock(r: number, roughness: number, detail?: number): Mesh;
   /** Grid in XZ with heights (row-major over z then x, meters); see {@link prim.gridMesh}. */
@@ -238,6 +239,7 @@ export function createGeneratorApi(seed: number, opts: { maxVertices?: number } 
     lathe: (profile, segs) => prim.lathe(budget, profile, segs),
     extrude: (shape, depth) => prim.extrude(budget, shape, depth),
     tube: (path, radius, rs, radiusAt) => prim.tube(budget, path, radius, rs, radiusAt),
+    ribbon: (path, width, widthAt) => prim.ribbon(budget, path, width, widthAt),
     heightfield: (cols, rows, width, depth, height) => prim.heightfield(budget, cols, rows, width, depth, height),
     icosphereRock: (r, roughness, detail) => prim.icosphereRock(budget, noise, random, r, roughness, detail ?? 2),
     grid: (cols, rows, width, depth, heights) => {

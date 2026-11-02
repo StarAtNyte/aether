@@ -143,6 +143,7 @@ export interface GeneratorApi {
   lathe(profile: Array<[number, number]>, segments?: number): MeshHandle;
   extrude(shape: Array<[number, number]>, depth: number): MeshHandle;
   tube(path: Vec3[], radius: number, radialSegments?: number): MeshHandle;
+  ribbon(path: Vec3[], width: number, widthAt?: (t: number) => number): MeshHandle;
   heightfield(cols: number, rows: number, width: number, depth: number, height: (x: number, z: number) => number): MeshHandle;
   icosphereRock(r: number, roughness: number): MeshHandle;
   /** Add a mesh with a material. Parts with equal materials are merged (fewer draw calls). */

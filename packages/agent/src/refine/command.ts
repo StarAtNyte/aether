@@ -114,7 +114,7 @@ export type Command =
 
 /** Feel events and particle presets (mirrors `@aether/core` FeelEvent / VfxPreset). */
 export type FeelEventName = 'pickup' | 'hit' | 'damage' | 'death' | 'win' | 'checkpoint' | 'jump' | 'land' | 'explosion' | 'launch';
-export type VfxName = 'sparks' | 'dust' | 'sparkle' | 'fire' | 'smoke' | 'magic' | 'explosion' | 'splash' | 'footstep' | 'muzzle' | 'embers' | 'confetti' | 'shockwave';
+export type VfxName = import('@aether/core').VfxPreset;
 
 /** Environment changes in words. */
 export interface EnvIntent {
