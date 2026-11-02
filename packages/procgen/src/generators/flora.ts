@@ -345,6 +345,79 @@ const treeBroadleaf = defineGenerator({
 });
 
 // ---------------------------------------------------------------------------
+// Umbrella pine (stone pine)
+// ---------------------------------------------------------------------------
+
+const treeUmbrellaPine = defineGenerator({
+  id: 'tree-umbrella-pine',
+  description: 'Umbrella pine: tall bare leaning trunk, flat wide needle canopy.',
+  category: 'nature',
+  params: {
+    height: pNum(13, 5, 30, 'total height in meters'),
+    color: pColor('#4f6a2c', 'needle color'),
+    trunkColor: pColor('#7a5a44', 'bark tint (reddish, plated)'),
+    spread: pNum(1, 0.6, 1.6, 'canopy width relative to height'),
+    detail: pNum(1, 0.3, 2, 'card count multiplier (lower for distant groves)'),
+    variant: pVariant(1, '0 young, 1 old and wide'),
+  },
+  run(p, api) {
+    const H = p.num('height');
+    const detail = p.num('detail');
+    const old = p.int('variant') === 1;
+    const trunkH = H * api.range(0.62, 0.72);
+    const trunkR = H * 0.028;
+    // Stone pines lean and bend: the trunk curves once, away from a random side.
+    const la = api.rng() * Math.PI * 2;
+    const lean = H * api.range(0.04, 0.12);
+    const path: Vec3[] = [];
+    for (let i = 0; i <= 7; i++) {
+      const t = i / 7;
+      const off = lean * Math.sin(t * Math.PI * 0.7);
+      path.push([Math.cos(la) * off, trunkH * t, Math.sin(la) * off]);
+    }
+    rootPath(path);
+    const top = path[path.length - 1] as Vec3;
+    let wood: Mesh = api.tube(path, trunkR, 9, (t) => (t < 0.08 ? 1.4 - t * 5 : 1) * (1 - 0.45 * t));
+    const crownR = H * (old ? 0.42 : 0.3) * p.num('spread');
+    const crownV = (H - trunkH) * 0.55;
+    const crownY = top[1] + (H - trunkH) * 0.55;
+    const clusters: Array<{ c: Vec3; r: number }> = [];
+    const limbs = 5 + Math.floor(api.rng() * 3);
+    for (let k = 0; k < limbs; k++) {
+      const a = k * 2.399 + api.rng() * 0.6;
+      const from = path[Math.max(4, path.length - 2 - (k % 3))] as Vec3;
+      const reach = crownR * api.range(0.45, 0.8);
+      const end: Vec3 = [top[0] + Math.cos(a) * reach, crownY - crownV * api.range(0.2, 0.6), top[2] + Math.sin(a) * reach];
+      const r0 = trunkR * 0.6;
+      wood = limb(api, wood, from, end, r0, r0 * 0.3, [0, (end[1] - from[1]) * 0.25, 0]);
+      clusters.push({ c: [end[0], end[1] + crownV * 0.35, end[2]], r: crownR * api.range(0.38, 0.5) });
+      const a2 = a + (api.rng() < 0.5 ? 0.7 : -0.7);
+      const mid: Vec3 = [(from[0] + end[0]) / 2, (from[1] + end[1]) / 2, (from[2] + end[2]) / 2];
+      const tw: Vec3 = [mid[0] + Math.cos(a2) * reach * 0.45, end[1] + crownV * 0.1, mid[2] + Math.sin(a2) * reach * 0.45];
+      wood = limb(api, wood, mid, tw, r0 * 0.45, r0 * 0.12, [0, 0, 0]);
+      clusters.push({ c: [tw[0], tw[1] + crownV * 0.3, tw[2]], r: crownR * api.range(0.3, 0.4) });
+    }
+    clusters.push({ c: [top[0], crownY, top[2]], r: crownR * 0.55 });
+    flatBase(wood);
+    paintBark(api, wood, p.color('trunkColor'));
+    barkUvs(wood, top[0] * 0.5, top[2] * 0.5);
+    api.add(wood, BARK);
+    const budget = cardBudget(560 * detail, H * 0.09, Math.min(0.85, Math.max(0.45, 0.4 + H * 0.035)), 1100 * Math.max(0.3, detail));
+    if (budget.count < 8) {
+      api.collider(cylinderCollider(0, trunkH / 2, 0, trunkR * 1.1, trunkH));
+      return api.build(ROOTED);
+    }
+    const sheets = new Sheets(budget.count + clusters.length);
+    // A flat dome: wide, shallow, its underside nearly level (the umbrella).
+    crownCards(api, sheets, clusters, { c: [top[0], crownY, top[2]], r: [crownR, crownV, crownR] }, budget.count, { w: budget.size, h: budget.size }, leafTones(p.color('color')), 0.08);
+    const leaves = sheets.build(api);
+    if (leaves) api.add(leaves, foliage('needles'));
+    api.collider(cylinderCollider(0, trunkH / 2, 0, trunkR * 1.1, trunkH));
+    return api.build(ROOTED);
+  },
+});
+
+// ---------------------------------------------------------------------------
 // Birch
 // ---------------------------------------------------------------------------
 
@@ -959,4 +1032,4 @@ const hedge = defineGenerator({
   },
 });
 
-export const FLORA_GENERATORS = [treeBroadleaf, treeBirch, treeSpruce, shrub, fern, meadowGrass, wildflowers, boulder, cactus, hedge] as const;
+export const FLORA_GENERATORS = [treeBroadleaf, treeUmbrellaPine, treeBirch, treeSpruce, shrub, fern, meadowGrass, wildflowers, boulder, cactus, hedge] as const;
