@@ -212,6 +212,9 @@ export function stepLabel(name: string, input: unknown, ok: boolean): string {
     case 'bake_light':
       text = 'Baking the interior light';
       break;
+    case 'sculpt':
+      text = typeof i['id'] === 'string' ? `Sculpting ${i['id'].slice(0, 32)}` : 'Sculpting';
+      break;
     case 'tune_feel':
       text = 'Tuning the game feel';
       break;

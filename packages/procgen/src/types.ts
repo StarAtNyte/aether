@@ -170,6 +170,12 @@ export interface GeneratorApi {
    * with surface nets (smooth gradient normals, metre UVs). See `SdfNode` in the sandbox API text.
    */
   sdf(tree: SdfNode, opts?: SdfOptions): MeshHandle;
+  /**
+   * A built-in generator's geometry to sculpt on (warp, displace, merge, then `add`): one entry per material part,
+   * already grounded (base on y = 0, centred in x/z). Built-ins only (not the arch-/furn- building parts); at most 32
+   * per object; the seed derives from this generator's seed; the vertices count against this generator's budget.
+   */
+  library(id: string, params?: Record<string, Json>): Array<{ mesh: MeshHandle; material: MaterialSpec }>;
   heightfield(cols: number, rows: number, width: number, depth: number, height: (x: number, z: number) => number): MeshHandle;
   icosphereRock(r: number, roughness: number): MeshHandle;
   /** Add a mesh with a material. Parts with equal materials are merged (fewer draw calls). */

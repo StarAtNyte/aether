@@ -62,7 +62,8 @@ describe('system prompt', () => {
     // amphora, banner, awning, cypress, olive, ivy) and the finish field of generator materials.
     // 17.3k -> 17.9k for api.sdf (signed-distance sculpting: the SdfNode tree and the posed figure node) and the
     // sculpted-statue generator.
-    expect(prompt.length / 4).toBeLessThan(17_900);
+    // 17.9k -> 18.1k for api.library (start a generator from a built-in's parts) and the sculpt-first guideline.
+    expect(prompt.length / 4).toBeLessThan(18_100);
     expect(buildSystemPrompt(REAL)).toBe(prompt);
     expect(prompt).not.toMatch(/\d{4}-\d{2}-\d{2}T/); // no timestamps (cache-stable)
   });
@@ -91,7 +92,7 @@ describe('system prompt', () => {
 
   it('tool schemas are strict objects with documented properties', () => {
     const names = AGENT_TOOLS.map((t) => t.name);
-    expect(names).toEqual(['apply_patches', 'build_architecture', 'design_plan', 'place_items', 'edit_items', 'query_scene', 'write_generator', 'write_script', 'request_asset', 'search_assets', 'find_model', 'simready_search', 'import_asset', 'inspect', 'run_verification', 'shape_land', 'tune_feel', 'tune_look', 'bake_light', 'finish']);
+    expect(names).toEqual(['apply_patches', 'build_architecture', 'design_plan', 'place_items', 'edit_items', 'query_scene', 'write_generator', 'write_script', 'request_asset', 'search_assets', 'find_model', 'simready_search', 'import_asset', 'inspect', 'run_verification', 'shape_land', 'tune_feel', 'tune_look', 'bake_light', 'sculpt', 'finish']);
     for (const t of AGENT_TOOLS) {
       expect(t.description.length).toBeGreaterThan(20);
       expect(t.inputSchema).toMatchObject({ type: 'object', additionalProperties: false });

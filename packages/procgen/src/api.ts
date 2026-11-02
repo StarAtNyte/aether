@@ -9,7 +9,7 @@
  *   plants keep their root point (trunk base) at the origin instead.
  * - All allocations are charged to a vertex budget; all inputs are validated.
  */
-import { rng as seededRng, stableStringify, type MaterialSpec, type Vec3 } from '@aether/core';
+import { hashString, isPlainObject, rng as seededRng, stableStringify, type Json, type MaterialSpec, type Vec3 } from '@aether/core';
 import type { Bounds, ColliderDesc, GeneratorApi, GeneratorOutput, MeshHandle, MeshPart, SdfNode, SdfOptions } from './types';
 import { mixHex, requireColor } from './color';
 import { boxCollider, hullSupportPoints, parseCollider, translateCollider } from './colliders';
@@ -20,6 +20,8 @@ import { finite, Mesh, MeshBuilder, VertexBudget, computeBounds } from './kernel
 import { mat3AlignY } from './kernel/math3';
 import * as prim from './kernel/primitives';
 import { sdfMesh } from './kernel/sdf';
+import { ARCH_GENERATOR_IDS, getBuiltinGenerator } from './generators/index';
+import { resolveParams } from './params';
 
 /** Options of {@link InternalApi.build}. */
 export interface BuildOptions {
@@ -55,6 +57,7 @@ export interface InternalApi extends GeneratorApi {
   ribbon(path: Vec3[], width: number, widthAt?: (t: number) => number): Mesh;
   /** Mesh a signed-distance tree (see {@link sdfMesh}); `maxTriangles` caps the output (≤ 120k). */
   sdf(tree: SdfNode, opts?: SdfOptions & { maxTriangles?: number }): Mesh;
+  library(id: string, params?: Record<string, Json>): Array<{ mesh: Mesh; material: MaterialSpec }>;
   heightfield(cols: number, rows: number, width: number, depth: number, height: (x: number, z: number) => number): Mesh;
   icosphereRock(r: number, roughness: number, detail?: number): Mesh;
   /** Grid in XZ with heights (row-major over z then x, meters); see {@link prim.gridMesh}. */
@@ -167,12 +170,14 @@ function asMesh(m: unknown, what: string): Mesh {
  * derives from the seed, so the same generator + params + seed always yields
  * identical geometry.
  */
-export function createGeneratorApi(seed: number, opts: { maxVertices?: number } = {}): InternalApi {
+export function createGeneratorApi(seed: number, opts: { maxVertices?: number; /** @internal shared by an api.library run */ budget?: VertexBudget; /** @internal 1 inside api.library */ libraryDepth?: number } = {}): InternalApi {
   const started = now();
   const s = Number.isFinite(seed) ? Math.trunc(seed) : 0;
   const random = seededRng(s);
   const noise = new Noise(seededRng(s ^ 0x5bd1e995));
-  const budget = new VertexBudget(opts.maxVertices ?? PROCGEN_LIMITS.MAX_ALLOCATED_VERTICES);
+  const budget = opts.budget ?? new VertexBudget(opts.maxVertices ?? PROCGEN_LIMITS.MAX_ALLOCATED_VERTICES);
+  const libraryDepth = opts.libraryDepth ?? 0;
+  let libraryCalls = 0;
   const parts = new Map<string, PartAccumulator>();
   const pieces: Piece[] = [];
   const colliders: ColliderDesc[] = [];
@@ -244,6 +249,34 @@ export function createGeneratorApi(seed: number, opts: { maxVertices?: number } 
     tube: (path, radius, rs, radiusAt) => prim.tube(budget, path, radius, rs, radiusAt),
     ribbon: (path, width, widthAt) => prim.ribbon(budget, path, width, widthAt),
     sdf: (tree, opts) => sdfMesh(budget, tree, opts),
+    library(id: string, params?: Record<string, Json>): Array<{ mesh: Mesh; material: MaterialSpec }> {
+      // One level only: a library piece is a built-in, and a built-in never reaches back into the library.
+      if (libraryDepth > 0) throw new Error('library: a library piece cannot call api.library');
+      if (typeof id !== 'string') throw new TypeError('library(id): expected a built-in generator id');
+      if (++libraryCalls > PROCGEN_LIMITS.MAX_LIBRARY_CALLS) throw new RangeError(`library: at most ${PROCGEN_LIMITS.MAX_LIBRARY_CALLS} library pieces per object`);
+      // Building parts are laid out by the architecture tools from a plan, not as a free piece.
+      if (ARCH_GENERATOR_IDS.has(id) || /^(arch|furn)-/.test(id)) throw new Error(`library: "${id.slice(0, 64)}" is a building part; use the architecture tools for it`);
+      const gen = getBuiltinGenerator(id);
+      if (!gen) throw new Error(`library: unknown built-in generator "${id.slice(0, 64)}"`);
+      const raw = (isPlainObject(params) ? params : {}) as Record<string, Json>;
+      let resolved: Record<string, Json>;
+      try {
+        resolved = gen.resolve ? gen.resolve(raw) : resolveParams(gen.params, raw);
+      } catch {
+        resolved = resolveParams(gen.params, raw);
+      }
+      // Derived from the caller's seed, the id and the call order: the same generator yields the same pieces, and a
+      // second api.library('rock') is a different rock.
+      const child = createGeneratorApi(hashString(`${s}|${id}|${libraryCalls}`), { budget, libraryDepth: libraryDepth + 1 });
+      const out = gen.generate(resolved, child);
+      // The copies are charged to the shared budget too, so a piece cannot exceed what the caller may allocate.
+      return out.parts.map((p) => {
+        const n = p.positions.length / 3;
+        const mesh = new Mesh(p.positions.slice(), p.normals.slice(), p.uvs && p.uvs.length === n * 2 ? p.uvs.slice() : new Float32Array(n * 2), p.indices.slice(), p.colors && p.colors.length === n * 3 ? p.colors.slice() : null, budget);
+        if (p.splat && p.splat.length === n * 4) mesh.splat = p.splat.slice();
+        return { mesh, material: { ...p.material } };
+      });
+    },
     heightfield: (cols, rows, width, depth, height) => prim.heightfield(budget, cols, rows, width, depth, height),
     icosphereRock: (r, roughness, detail) => prim.icosphereRock(budget, noise, random, r, roughness, detail ?? 2),
     grid: (cols, rows, width, depth, heights) => {

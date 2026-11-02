@@ -11,7 +11,7 @@ import { WorldAgent, summarizeWorldForModel, type AgentEvent, type AgentHost } f
 import { analyzeRoomPlacements, wallMountIndex } from '@aether/arch';
 import { createWorld, History, inspectUntrusted, resolveSelector, type Entity, type Vec3, type WorldDoc } from '@aether/core';
 import type { VerifyTrace } from '@aether/physics';
-import { loadLibraryGenerator, worldColliderProvider, worldSurfaceStats } from '@aether/procgen';
+import { generate, loadLibraryGenerator, worldColliderProvider, worldSurfaceStats } from '@aether/procgen';
 import { Engine } from './engine';
 import { ToolError } from './errors';
 import { ProjectDir, safeFileName } from './fsguard';
@@ -225,6 +225,7 @@ export class AetherSession {
         return { report: r.report, summary: r.summary, passed: r.passed };
       },
       validateGenerator: (def) => this.engine.validateGenerator(def),
+      generateShape: (shape) => generate(shape, this.history.current, { sandbox: this.engine.sandbox }),
       validateScript: (def) => this.engine.validateScript(def),
     };
   }

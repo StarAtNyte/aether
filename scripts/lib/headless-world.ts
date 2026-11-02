@@ -4,11 +4,11 @@
  * History with Rapier + logic verification and the node generator sandbox.
  */
 import { catalogSummary, getCatalog, loadCatalog } from '@aether/assets';
-import { createWorld, History, type GeneratorDef, type PatchResult, type ScriptDef, type WorldDoc } from '@aether/core';
+import { createWorld, History, type GeneratorDef, type PatchResult, type ProceduralShape, type ScriptDef, type WorldDoc } from '@aether/core';
 import type { AgentCatalogs, AgentHost, LevelToolRunner } from '@aether/agent';
 import { BEHAVIOR_CATALOG, RULE_DOCS, SCRIPT_API_DTS, createScriptRunner, isScriptingReady } from '@aether/logic';
 import { summarizeReport, verify } from '@aether/physics';
-import { GENERATOR_API_DTS, GENERATOR_EXAMPLES, GENERATOR_LIBRARY, catalog, resolveParams, staticCheckSource, validateOutput, worldColliderProvider, worldSurfaceStats, type SandboxRunner } from '@aether/procgen';
+import { GENERATOR_API_DTS, GENERATOR_EXAMPLES, GENERATOR_LIBRARY, catalog, generate, resolveParams, type GeneratorOutput, staticCheckSource, validateOutput, worldColliderProvider, worldSurfaceStats, type SandboxRunner } from '@aether/procgen';
 import { createVerifyLogic } from '../../apps/studio/src/engine/headlessHost';
 
 /** Headless verification limits (same order of magnitude as the studio). */
@@ -56,6 +56,11 @@ export class NodeAgentHost implements AgentHost {
   async verify(world: WorldDoc): Promise<{ report: unknown; summary: string; passed: boolean }> {
     this.verifyRuns++;
     return runVerify(world);
+  }
+
+  /** Geometry of a procedural shape for the agent's `sculpt` tool (custom generators in the node sandbox). */
+  generateShape(shape: ProceduralShape): Promise<GeneratorOutput> {
+    return generate(shape, this.history.current, { sandbox: this.sandbox });
   }
 
   async validateGenerator(def: GeneratorDef): Promise<{ ok: boolean; error?: string }> {

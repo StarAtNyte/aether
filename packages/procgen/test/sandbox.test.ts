@@ -68,7 +68,7 @@ describe('staticCheckSource', () => {
 describe('GENERATOR_API_DTS', () => {
   it('documents every API and MeshHandle method plus materials and colliders', () => {
     for (const name of ['rng', 'seed', 'noise2', 'noise3', 'fbm2', 'box', 'roundedBox', 'sphere', 'cylinder', 'cone', 'torus', 'capsule', 'plane', 'lathe',
-      'extrude', 'tube', 'ribbon', 'sdf', 'SdfNode', 'FigureNode', 'heightfield', 'icosphereRock', 'add', 'collider', 'autoColliders', 'color', 'mix', 'build',
+      'extrude', 'tube', 'ribbon', 'sdf', 'SdfNode', 'FigureNode', 'library', 'heightfield', 'icosphereRock', 'add', 'collider', 'autoColliders', 'color', 'mix', 'build',
       'translate', 'rotate', 'scale', 'displace', 'vertexColor', 'merge', 'clone', 'bounds', 'MaterialSpec', 'ColliderDesc',
       'emissiveIntensity', "'crystal'", 'halfExtents']) {
       expect(GENERATOR_API_DTS, name).toContain(name);
@@ -148,7 +148,7 @@ describe('createNodeSandbox', () => {
   it('exposes exactly the documented api surface to untrusted code', async () => {
     const sb = createNodeSandbox();
     const expected = ['add', 'autoColliders', 'box', 'build', 'capsule', 'collider', 'color', 'cone', 'cylinder', 'extrude', 'fbm2',
-      'heightfield', 'icosphereRock', 'lathe', 'mix', 'noise2', 'noise3', 'plane', 'ribbon', 'rng', 'roundedBox', 'sdf', 'seed', 'sphere', 'torus', 'tube'].join(',');
+      'heightfield', 'icosphereRock', 'lathe', 'library', 'mix', 'noise2', 'noise3', 'plane', 'ribbon', 'rng', 'roundedBox', 'sdf', 'seed', 'sphere', 'torus', 'tube'].join(',');
     const src = `const keys = Object.keys(api).sort().join(',');
 if (keys !== '${expected}') throw new Error('unexpected api keys ' + keys);
 const m = Object.keys(api.box(1, 1, 1)).sort().join(',');
@@ -156,6 +156,21 @@ if (m !== 'bounds,clone,displace,merge,rotate,scale,translate,vertexColor,warp')
 if (Object.isFrozen(api) !== true) throw new Error('api facade must be frozen');
 ${FINISH}`;
     await expect(sb.run(def(src), {}, 1)).resolves.toBeDefined();
+  });
+
+  it('api.library hands a built-in piece to sculpt on, deterministically, and refuses building parts', async () => {
+    const sb = createNodeSandbox({ timeoutMs: 20_000 });
+    const src = `const parts = api.library('column', { variant: 0, height: 4 });
+if (!Array.isArray(parts) || parts.length === 0) throw new Error('no parts');
+for (const p of parts) api.add(p.mesh.displace((x, y, z) => 0.01 * api.noise3(x * 9, y * 9, z * 9)), p.material);
+return api.build();`;
+    const a = await sb.run(def(src), {}, 7);
+    const b = await sb.run(def(src), {}, 7);
+    expect(a.parts.length).toBeGreaterThan(0);
+    expect(a.bounds.max[1] - a.bounds.min[1]).toBeGreaterThan(3.5);
+    expect(Array.from(a.parts[0]!.positions.slice(0, 30))).toEqual(Array.from(b.parts[0]!.positions.slice(0, 30)));
+    await expect(sb.run(def(`api.library('arch-wall'); ${FINISH}`), {}, 1)).rejects.toThrow(/building part/);
+    await expect(sb.run(def(`api.library('nope'); ${FINISH}`), {}, 1)).rejects.toThrow(/unknown built-in/);
   });
 
   it('rejects dangerous sources statically before running', async () => {

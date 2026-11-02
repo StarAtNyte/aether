@@ -13,6 +13,7 @@ import { DESIGN_LIMITS, DesignToolInputs } from '@aether/arch';
 import { FeelEvent, FeelTier, VfxPreset } from '@aether/core';
 import { TuneFeelInput } from './feel-edit';
 import { BAKE_QUALITIES, BakeLightInput } from './bake-edit';
+import { SCULPT_FALLOFFS, SCULPT_LIMITS, SCULPT_MODES, SculptInput } from './sculpt-edit';
 import { LOOK_RESET_KEYS, TuneLookInput } from './look-edit';
 import type { ToolDef } from './types';
 import { MakeTextureInput } from './textures';
@@ -48,7 +49,7 @@ const paramSpecSchema = {
 } as const;
 
 /** Tool names. */
-export type AgentToolName = 'apply_patches' | 'build_architecture' | 'design_plan' | 'place_items' | 'edit_items' | 'query_scene' | 'write_generator' | 'write_script' | 'request_asset' | 'search_assets' | 'find_model' | 'simready_search' | 'import_asset' | 'inspect' | 'run_verification' | 'shape_land' | 'tune_feel' | 'tune_look' | 'bake_light' | 'make_texture' | 'finish';
+export type AgentToolName = 'apply_patches' | 'build_architecture' | 'design_plan' | 'place_items' | 'edit_items' | 'query_scene' | 'write_generator' | 'write_script' | 'request_asset' | 'search_assets' | 'find_model' | 'simready_search' | 'import_asset' | 'inspect' | 'run_verification' | 'shape_land' | 'tune_feel' | 'tune_look' | 'bake_light' | 'sculpt' | 'make_texture' | 'finish';
 
 /** Asset categories accepted by search_assets (mirrors @aether/assets `AssetCategory`). */
 export const ASSET_CATEGORIES = [
@@ -430,6 +431,40 @@ export const AGENT_TOOLS: ToolDef[] = [
     },
   },
   {
+    name: 'sculpt',
+    description:
+      'Finishing touches by hand on one placed object: chipped and worn edges, steps worn hollow, eroded or cracked rock, a carved groove or relief line, a sagging roof or bench, organic irregularity on a library piece that looks machine-perfect. A generated or primitive object is baked to an editable mesh first (its generator is kept, so it can be regenerated); a mesh is edited in place. Strokes in world metres: mode raise | lower (along normal, up to 15% of radius per dab at strength 1), smooth, flatten (to the plane at the first dab), noise; at = a point on the surface, radius, strength 0..1, falloff smooth|linear|constant|sharp, normal (default: the surface normal at `at`), repeat = dabs on the same spot (or passes along the segment), to = end point: dabs along at..to for a groove or worn edge. Up to 64 strokes and 2000 dabs, one undo step. Use inspect or query_scene for positions; small radii (a few cm) for chips, larger for wear. Not for imported models or characters.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        strokes: {
+          type: 'array',
+          minItems: 1,
+          maxItems: SCULPT_LIMITS.MAX_STROKES,
+          items: {
+            type: 'object',
+            properties: {
+              mode: { type: 'string', enum: [...SCULPT_MODES] },
+              at: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 },
+              radius: { type: 'number' },
+              strength: { type: 'number' },
+              falloff: { type: 'string', enum: [...SCULPT_FALLOFFS] },
+              normal: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 },
+              repeat: { type: 'integer', minimum: 1, maximum: SCULPT_LIMITS.MAX_REPEAT },
+              to: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 },
+            },
+            required: ['mode', 'at', 'radius', 'strength'],
+            additionalProperties: false,
+          },
+        },
+        message: { type: 'string' },
+      },
+      required: ['id', 'strokes'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'finish',
     description: 'Call when the world fulfils the request. `message` is shown to the user: one or two sentences on what was built and how to play it. Claim only what you measured or saw (at which view, against which limit), and name what you did not check ("Not checked: ..."). Verification runs automatically afterwards.',
     inputSchema: {
@@ -559,6 +594,7 @@ export const ToolInputs = {
   tune_feel: TuneFeelInput,
   tune_look: TuneLookInput,
   bake_light: BakeLightInput,
+  sculpt: SculptInput,
   make_texture: MakeTextureInput,
   finish: z.object({ message: z.string().max(TOOL_LIMITS.MAX_MESSAGE).default('') }),
 } as const;

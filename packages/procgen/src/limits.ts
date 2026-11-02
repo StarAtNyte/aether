@@ -9,6 +9,8 @@ export const PROCGEN_LIMITS = Object.freeze({
   MAX_ALLOCATED_VERTICES: 4_000_000,
   /** Max indices over all parts of one output. */
   MAX_OUTPUT_INDICES: 12_000_000,
+  /** Max `api.library` pieces one generator run may start from. */
+  MAX_LIBRARY_CALLS: 32,
   /** Max mesh parts (≈ draw calls) per output. */
   MAX_PARTS: 64,
   /** Max colliders per output. */

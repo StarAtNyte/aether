@@ -5,7 +5,8 @@
  * the server proxy and the studio never depend on a vendor API.
  */
 import type { Provenance } from './photo/stages';
-import type { EntityId, GeneratorDef, Patch, PatchError, PatchResult, ScriptDef, TextureSetDef, TextureTier, WorldDoc } from '@aether/core';
+import type { EntityId, GeneratorDef, Patch, PatchError, PatchResult, ProceduralShape, ScriptDef, TextureSetDef, TextureTier, WorldDoc } from '@aether/core';
+import type { GeneratorOutput } from '@aether/procgen';
 import type { TextureContext } from './textures';
 import type { ConversationStore } from './conversation';
 import type { DiffLine } from './refine/describe';
@@ -273,6 +274,11 @@ export interface AgentHost {
    */
   userEdits?(): ReadonlyMap<EntityId, { paths: readonly string[]; age: number }>;
   validateGenerator?(def: GeneratorDef): Promise<{ ok: boolean; error?: string }>;
+  /**
+   * Geometry of a procedural shape as the renderer draws it (custom generators run in the host's sandbox). Used by the
+   * `sculpt` tool to bake a generated object; without it only built-in generators can be baked.
+   */
+  generateShape?(shape: ProceduralShape): Promise<GeneratorOutput>;
   validateScript?(def: ScriptDef): Promise<{ ok: boolean; error?: string }>;
   /**
    * Render the requested review views of the current world with their numbered marks drawn on

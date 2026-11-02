@@ -99,6 +99,9 @@ interface GeneratorApi {
   sdf(tree: SdfNode, opts?: { resolution?: number; cell?: number; smooth?: number; detail?: (x: number, y: number, z: number) => number }): MeshHandle;
   // sculpt statues, figures, animals, drapery, rocks: smooth mesh of the tree (resolution = cells on the longest side, default 128,
   // ≤120k triangles; a figure takes ~1 s). detail(x,y,z) is added to the distance at every sample: carving noise, but slow.
+  library(id: string, params?: Record<string, unknown>): Array<{ mesh: MeshHandle; material: MaterialSpec }>;
+  // a built-in generator's parts (base on y 0) to sculpt on: warp/displace/merge each mesh, then api.add(mesh, material).
+  // Built-ins only (no arch-/furn-), ≤ 32 per object. e.g. weather a column: for (const p of api.library('column', { variant: 0 })) api.add(p.mesh.displace((x, y, z) => 0.01 * api.noise3(x * 9, y * 9, z * 9)), p.material);
   heightfield(cols: number, rows: number, width: number, depth: number, height: (x: number, z: number) => number): MeshHandle; // grid in XZ
   icosphereRock(r: number, roughness: number): MeshHandle;                 // faceted noisy rock, roughness 0..1
 

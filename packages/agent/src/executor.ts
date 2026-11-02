@@ -15,6 +15,8 @@ import { readGroups } from './groups';
 import { landPatches, type LandInput } from './land';
 import { feelPatches, type TuneFeelInput } from './feel-edit';
 import { bakePatches, type BakeLightInput } from './bake-edit';
+import { needsGeneratorOutput, sculptPatches, sculptRefusal, type SculptInput } from './sculpt-edit';
+import { generate, type GeneratorOutput } from '@aether/procgen';
 import { lookPatches, type TuneLookInput } from './look-edit';
 import { makeRealistic } from './providers/mock/realistic';
 import { errorMessage } from './providers/errors';
@@ -388,6 +390,9 @@ async function writeScriptTool(ctx: ExecutorContext, input: z.infer<typeof ToolI
 /** Library skies photographed at a place (a city, a golf course, dunes, a room) rather than a pure sky. */
 const PLACE_SKIES: ReadonlySet<string> = new Set(['sky-venice-sunset', 'sky-moonlit', 'sky-desert-dunes', 'sky-sunny-interior', 'sky-photo-studio', 'sky-starry-night']);
 
+/** What to do when the library lacks a thing: sculpt it, never a near-miss stand-in. */
+const NOT_IN_LIBRARY = 'Sculpt it with write_generator (api.sdf for statues, animals, creatures, drapery, rocks; api.library to start from a built-in generator), then give it finishing touches with sculpt. Never stand a near-miss asset or stacked primitives in for it.';
+
 /** search_assets: ranked library matches as compact JSON lines the model can place directly. */
 async function searchAssetsTool(input: z.infer<typeof ToolInputs.search_assets>): Promise<ToolOutcome> {
   const catalog = await loadCatalog();
@@ -396,13 +401,16 @@ async function searchAssetsTool(input: z.infer<typeof ToolInputs.search_assets>)
   const hits = searchAssets(catalog, { text: input.query, limit: input.limit + 4, ...(input.category ? { category: input.category } : {}) })
     .filter((h) => h.entry.kind !== 'material')
     .slice(0, input.limit);
-  if (hits.length === 0) return { content: `No library asset matches "${input.query.slice(0, 80)}". Use a built-in generator, request_asset, or primitives.`, isError: false, events: [], edited: false };
+  if (hits.length === 0) return { content: `No library asset matches "${input.query.slice(0, 80)}". ${NOT_IN_LIBRARY}`, isError: false, events: [], edited: false };
   const lines = hits.map(({ entry: e }) => {
     const size = e.size.map((v) => Math.round(v * 100) / 100).join('x');
     const extra = [e.kind === 'hdri' ? 'environment: use setEnvironment {"hdri":"' + e.id + '"}' + (PLACE_SKIES.has(e.id) ? ' (a real place is photographed into its lower half and shows past the edge of your terrain: light-only, hdriBackground false, in a big outdoor world)' : '') : e.kind === 'generator' ? `parametric generator: shape {"kind":"procedural","generator":"${e.generator?.id ?? e.id}"}, about ${size} m` : `size ${size} m`, e.placement !== 'floor' ? `goes on ${e.placement}` : '', e.anims && e.anims.clips.length > 0 ? 'animated (idle/walk/run follow movement)' : ''].filter(Boolean).join(', ');
     return `${e.id} — ${e.name} [${e.category}] ${extra}`;
   });
-  return { content: clip(`${lines.join('\n')}\nPlace with shape {"kind":"asset","id":"<id>"} (real size; optional "fitSize" metres).`), isError: false, events: [], edited: false };
+  // Weak matches (found through a synonym or a typo, none named like the query's noun: a bench for a pew) are near-misses.
+  const noun = headNoun(input.query);
+  const weak = !!noun && hits.every((h) => lacksNoun(h.entry, noun));
+  return { content: clip(`${lines.join('\n')}\nPlace with shape {"kind":"asset","id":"<id>"} (real size; optional "fitSize" metres).${weak ? `\nThese are weak matches: if none is the thing asked for, it is not in the library. ${NOT_IN_LIBRARY}` : ''}`), isError: false, events: [], edited: false };
 }
 
 /** simready_search: licence-filtered candidates from NVIDIA SimReady Central. Read-only: nothing is downloaded or imported. */
@@ -497,7 +505,7 @@ async function findModelCore(input: z.infer<typeof ToolInputs.find_model>): Prom
   const same = hits[0]!.entry.interior?.type;
   // Nothing named like the request: say so, so the model does not stand in a different kind of object (a bench for a pew, a tree for a statue).
   const noun = headNoun(input.what);
-  const stand = noun && !craftedBlock && hits.every((h) => lacksNoun(h.entry, noun)) ? `No library model is named "${noun}": the models below are other kinds of object (${[...new Set(hits.slice(0, 3).map((h) => h.entry.name))].join(', ')}). Say so in your notes. Then choose the nearest sensible substitute only if it still reads as a ${noun}, or craft one from primitives (apply_patches) or write_generator. Never stand in a different kind of thing for it (a bench is not a pew, a tree is not a statue, a street lamp is not a rope stanchion).\n` : '';
+  const stand = noun && !craftedBlock && hits.every((h) => lacksNoun(h.entry, noun)) ? `No library model is named "${noun}": the models below are other kinds of object (${[...new Set(hits.slice(0, 3).map((h) => h.entry.name))].join(', ')}). Say so in your notes. Then choose the nearest sensible substitute only if it still reads as a ${noun}; otherwise it is not in the library: ${NOT_IN_LIBRARY} Never stand in a different kind of thing for it (a bench is not a pew, a tree is not a statue, a street lamp is not a rope stanchion).\n` : '';
   return { content: clip(`${craftedBlock}${stand}${craftedBlock ? 'Library models:\n' : ''}${lines.join('\n')}\nPlace with place_items {"kind":"model:<id>","room":...,"fit":[w,h,d]} (the model is scaled within 0.5x to 2x); in a free world shape {"kind":"asset","id":"<id>"}. ${same ? `Other ${same} models exist: ask again with another style or colour.` : ''}`), isError: false, events: [], edited: false };
 }
 
@@ -617,6 +625,33 @@ function bakeLightTool(ctx: ExecutorContext, input: BakeLightInput): ToolOutcome
   return { content: summary, isError: false, events, edited: true };
 }
 
+/**
+ * sculpt: finishing touches on one object, baked to a mesh first when it is generated, committed as one undo step. The
+ * generator runs through the host (custom generators need its sandbox); built-ins run here when the host cannot.
+ */
+async function sculptTool(ctx: ExecutorContext, input: SculptInput): Promise<ToolOutcome> {
+  const world = ctx.host.getWorld();
+  const e = world.entities[input.id];
+  const refused = sculptRefusal(hasOwn(world.entities, input.id) ? e : undefined, input.id);
+  if (refused) return fail(refused);
+  let output: GeneratorOutput | undefined;
+  if (needsGeneratorOutput(e)) {
+    try {
+      output = await raceAbort(ctx.host.generateShape ? ctx.host.generateShape(e.shape) : generate(e.shape, world), ctx.signal);
+    } catch (err) {
+      if (ctx.signal?.aborted) throw err;
+      return fail(`sculpt could not generate "${input.id}" to bake it: ${errorMessage(err).slice(0, 300)}`);
+    }
+  }
+  const res = sculptPatches(ctx.host.getWorld(), input, output);
+  if ('error' in res) return fail(res.error);
+  const message = (input.message ?? `Sculpt ${input.id}`).slice(0, 200);
+  const result = ctx.host.applyPatches(res.patches, message);
+  const events: AgentEvent[] = [{ type: 'patches', patches: result.applied, message, result: { applied: result.applied.length, errors: result.errors } }];
+  if (result.errors.length > 0) return { content: `sculpt could not apply: ${result.errors.slice(0, 4).map((x) => x.message.slice(0, 160)).join('; ')}`, isError: result.applied.length === 0, events, edited: result.applied.length > 0 };
+  return { content: res.summary, isError: false, events, edited: true };
+}
+
 /** Execute one tool call. Never throws except when aborted. */
 export async function executeTool(ctx: ExecutorContext, name: string, rawInput: unknown): Promise<ToolOutcome> {
   if (isLevelToolName(name)) {
@@ -629,7 +664,7 @@ export async function executeTool(ctx: ExecutorContext, name: string, rawInput: 
       return fail(`Tool "${name}" failed: ${errorMessage(e).slice(0, 500)}`);
     }
   }
-  if (!isAgentTool(name)) return fail(`Unknown tool "${name.slice(0, 64)}". Available: apply_patches, shape_land, tune_feel, tune_look, bake_light, build_architecture, design_plan, place_items, edit_items, query_scene, query_level, place_level_items, write_generator, write_script, request_asset, search_assets, find_model, simready_search, import_asset, inspect, run_verification, finish.`);
+  if (!isAgentTool(name)) return fail(`Unknown tool "${name.slice(0, 64)}". Available: apply_patches, shape_land, tune_feel, tune_look, bake_light, sculpt, build_architecture, design_plan, place_items, edit_items, query_scene, query_level, place_level_items, write_generator, write_script, request_asset, search_assets, find_model, simready_search, import_asset, inspect, run_verification, finish.`);
   if (typeof rawInput === 'string') return fail('The tool arguments were not valid JSON. Resend the call with a valid JSON object.');
   if (inputSize(rawInput) > TOOL_LIMITS.MAX_INPUT_CHARS) return fail(`Tool input too large (max ${TOOL_LIMITS.MAX_INPUT_CHARS} characters). Split it into several calls.`);
   try {
@@ -645,6 +680,10 @@ export async function executeTool(ctx: ExecutorContext, name: string, rawInput: 
       case 'bake_light': {
         const p = ToolInputs.bake_light.safeParse(rawInput ?? {});
         return p.success ? bakeLightTool(ctx, p.data) : fail(`Invalid bake_light input: ${issuesText(p.error)}`);
+      }
+      case 'sculpt': {
+        const p = ToolInputs.sculpt.safeParse(rawInput);
+        return p.success ? await sculptTool(ctx, p.data) : fail(`Invalid sculpt input: ${issuesText(p.error)}`);
       }
       case 'tune_look': {
         const p = ToolInputs.tune_look.safeParse(rawInput ?? {});

@@ -8,7 +8,7 @@
  * reports a live model, otherwise the deterministic offline mock.
  */
 import { catalogSummary, getCatalog } from '@aether/assets';
-import { userEditMarks, type EntityId, type GeneratorDef, type History, type PatchResult, type ScriptDef, type TextureSetDef, type TextureTier, type WorldDoc } from '@aether/core';
+import { userEditMarks, type EntityId, type GeneratorDef, type History, type PatchResult, type ProceduralShape, type ScriptDef, type TextureSetDef, type TextureTier, type WorldDoc } from '@aether/core';
 import { webpEncoder, type TextureController } from './textures';
 import { overwrittenEdits, screenLocked, type EditMarks } from './editGuard';
 import { createHttpProvider, createMockProvider, type AgentCatalogs, type AgentHost, type Provider, type ReviewViewRequest } from '@aether/agent';
@@ -17,7 +17,7 @@ import { composeTiles, decodeImageData } from '../ai/decode';
 import { BEHAVIOR_CATALOG, RULE_DOCS, SCRIPT_API_DTS, createScriptRunner, initScripting, isScriptingReady } from '@aether/logic';
 import type { ColliderProvider, TestResult, VerifyReport, VerifyTrace } from '@aether/physics';
 import { summarizeReport } from '@aether/physics/report';
-import { GENERATOR_API_DTS, GENERATOR_EXAMPLES, GENERATOR_LIBRARY, catalog, loadLibraryGenerator, resolveParams, staticCheckSource, validateOutput, type SandboxRunner } from '@aether/procgen';
+import { GENERATOR_API_DTS, GENERATOR_EXAMPLES, GENERATOR_LIBRARY, catalog, generate, loadLibraryGenerator, resolveParams, staticCheckSource, validateOutput, type GeneratorOutput, type SandboxRunner } from '@aether/procgen';
 import { API, GENERATOR_DRY_RUN_MS, HEALTH_TIMEOUT_MS, VERIFY_BUDGET_MS, VERIFY_MAX_SECONDS } from '../config';
 import { errorMessage } from '../lib/log';
 import { createVerifyLogic } from './headlessHost';
@@ -252,6 +252,11 @@ export class AgentBridge implements AgentHost {
 
   async screenshot(): Promise<string | null> {
     return this.simulation ? this.simulation.screenshot() : null;
+  }
+
+  /** Geometry of a procedural shape for the agent's `sculpt` tool (custom generators in the worker sandbox). */
+  generateShape(shape: ProceduralShape): Promise<GeneratorOutput> {
+    return generate(shape, this.history.current, this.sandbox ? { sandbox: this.sandbox } : {});
   }
 
   async validateGenerator(def: GeneratorDef): Promise<{ ok: boolean; error?: string }> {
