@@ -120,9 +120,9 @@ describe('AiConnection', () => {
     expect(sent[0]).toMatchObject({ backend: 'codex', model: 'gpt-6.1-sol' });
     // A model the catalog lists is kept; an effort the model lacks falls back to low.
     const listed = { ...STATUS(true).backends[0], models: [{ id: 'gpt-6.1-sol', label: 'a', efforts: ['low', 'medium'] }, { id: 'gpt-6-luna', label: 'b', efforts: ['low', 'medium'] }] } as BridgeBackendStatus;
-    expect(effectiveBridgeChoice(prefs({ codexModel: 'gpt-6-luna', effort: 'high' }), [listed])).toEqual({ backend: 'codex', model: 'gpt-6-luna', effort: 'low' });
+    expect(effectiveBridgeChoice(prefs({ backend: 'codex', codexModel: 'gpt-6-luna', effort: 'high' }), [listed])).toEqual({ backend: 'codex', model: 'gpt-6-luna', effort: 'low' });
     // No catalog yet (bridge not probed): the saved choice is sent unchanged.
-    expect(effectiveBridgeChoice(prefs({ codexModel: 'gpt-x', effort: 'high' }), [])).toEqual({ backend: 'codex', model: 'gpt-x', effort: 'high' });
+    expect(effectiveBridgeChoice(prefs({ backend: 'codex', codexModel: 'gpt-x', effort: 'high' }), [])).toEqual({ backend: 'codex', model: 'gpt-x', effort: 'high' });
   });
 
   it('reports why a chosen connection is unusable (never silently)', async () => {
@@ -132,7 +132,7 @@ describe('AiConnection', () => {
     expect(ai.resolve(prefs({ mode: 'bridge' }))).toMatchObject({ ready: false, reason: 'the local bridge is not paired' });
     ai.adoptPairing({ url: 'http://127.0.0.1:8790', token: TOKEN });
     await ai.refreshBridge();
-    expect(ai.resolve(prefs({ mode: 'bridge' }))).toMatchObject({ ready: false, reason: 'Codex is not signed in on this computer' });
+    expect(ai.resolve(prefs({ mode: 'bridge', backend: 'codex' }))).toMatchObject({ ready: false, reason: 'Codex is not signed in on this computer' });
     expect(ai.resolve(prefs({ mode: 'server' })).ready).toBe(false);
     expect(ai.resolve(prefs({ mode: 'byok' })).reason).toContain('no Anthropic API key');
     await ai.loadWebLlm(DEFAULT_AI_PREFS.webllmModel);

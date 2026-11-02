@@ -16,7 +16,7 @@ import { createHeadlessProvider as createCliProvider } from '../../apps/bridge/s
 type HeadlessOpts = Parameters<typeof createCliProvider>[1];
 
 const KEY_FILE = join(homedir(), '.config', 'aether', 'anthropic.key');
-const DEFAULT_MODEL = 'claude-sonnet-5-5';
+const DEFAULT_MODEL = 'claude-opus-5-5';
 
 function readKey(): string {
   const env = process.env['AETHER_ANTHROPIC_API_KEY']?.trim();

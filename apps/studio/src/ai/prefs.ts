@@ -40,9 +40,9 @@ const ByokModelId = z.string().regex(BYOK_MODEL_RE).optional().catch(undefined);
 /** zod schema of {@link AiPrefs}. Unknown or invalid fields fall back to defaults. */
 export const AiPrefsSchema = z.object({
   mode: z.enum(AI_MODES).catch('auto'),
-  backend: z.enum(['codex', 'claude-code']).catch('codex'),
+  backend: z.enum(['codex', 'claude-code']).catch('claude-code'),
   codexModel: ModelId.catch('gpt-6.1-sol'),
-  claudeModel: ModelId.catch('sonnet'),
+  claudeModel: ModelId.catch('opus'),
   effort: z.enum(['low', 'medium', 'high']).catch('low'),
   refine: z.number().int().min(0).max(MAX_REFINE).catch(1),
   webllmModel: z.enum(WEBLLM_MODELS.map((m) => m.id) as [string, ...string[]]).catch(WEBLLM_MODELS[0].id),

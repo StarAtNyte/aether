@@ -69,7 +69,7 @@ describe('local AI connection', () => {
     expect(ai.resolve(chosen)).toMatchObject({ kind: 'offline', ready: true });
   });
 
-  it('auto picks Codex on this computer first, then Claude Code, then the bridge', async () => {
+  it('auto picks the preferred backend on this computer first, then the other, then the bridge', async () => {
     let local = LOCAL(true, true);
     const r = router({
       '/api/health': () => json({ ok: true, mode: 'mock', providers: [], byok: true, local: true }),
@@ -79,8 +79,10 @@ describe('local AI connection', () => {
     const ai = new AiConnection({ fetch: r.fetch, session: session(true) });
     await ai.refresh();
     expect(ai.store.getState().local.state).toBe('ready');
-    expect(ai.resolve(prefs({ mode: 'auto' }))).toMatchObject({ kind: 'local', ready: true, worker: true });
-    expect(ai.resolve(prefs({ mode: 'auto' })).label).toContain('Codex');
+    expect(ai.resolve(prefs({ mode: 'auto', backend: 'codex' }))).toMatchObject({ kind: 'local', ready: true, worker: true });
+    expect(ai.resolve(prefs({ mode: 'auto', backend: 'codex' })).label).toContain('Codex');
+    // Claude Code is the default backend: with both signed in, auto takes it.
+    expect(ai.resolve(prefs({ mode: 'auto' })).label).toContain('Claude Code');
 
     local = LOCAL(false, true);
     await ai.refreshLocal();
