@@ -5196,18 +5196,44 @@ export class WorldRenderer {
   }
 
   /**
+   * A camera placed from bounds alone (a hero shot) can sit inside a cliff or under the terrain and draw nothing. Like a
+   * spring arm: a solid surface between the target and the camera, in the camera's end of the line, pulls the camera in front of
+   * it; a camera with no surface anywhere below it is under the ground and is lifted to eye height above the surface there.
+   */
+  private clearPose<P extends { position: Vec3; target: Vec3 }>(pose: P): P {
+    const [tx, ty, tz] = pose.target;
+    let [x, y, z] = pose.position;
+    const dx = x - tx, dy = y - ty, dz = z - tz;
+    const dist = Math.hypot(dx, dy, dz);
+    if (!(dist > 1)) return pose;
+    const hit = this.raycastWorld([tx, ty + 0.5, tz], [dx, dy, dz], dist);
+    if (hit) {
+      const along = Math.hypot(hit.point[0] - tx, hit.point[1] - ty, hit.point[2] - tz);
+      if (along > dist * 0.5) {
+        const back = Math.max(0, along - 1.5) / dist;
+        [x, y, z] = [tx + dx * back, ty + dy * back, tz + dz * back];
+      }
+    }
+    if (!this.raycastWorld([x, y + 0.2, z], [0, -1, 0], 4000)) {
+      const top = this.raycastWorld([x, y + 3000, z], [0, -1, 0], 6000);
+      if (top) y = top.point[1] + 1.7;
+    }
+    return { ...pose, position: [x, y, z] as Vec3 };
+  }
+
+  /**
    * Perspective captures from explicit camera poses (world space), for reviewing interiors: the AI's
    * corner, wall and plan views. Each image is `width`×`height` pixels; the main camera is restored
    * afterwards. Editing decorations are hidden; fog, sky and lights stay as the viewport shows them.
    */
   async capturePoses(
-    poses: ReadonlyArray<{ position: Vec3; target: Vec3; up: Vec3; fov: number }>,
+    poses: ReadonlyArray<{ position: Vec3; target: Vec3; up: Vec3; fov: number; clear?: boolean }>,
     opts: { width?: number; height?: number; mime?: string } = {},
   ): Promise<string[]> {
     await this.waitForPreparation();
     if (this.disposed || this.lost) throw new Error(this.lost ? 'GPU context lost' : 'renderer disposed');
     if (this.captureActive) throw new Error('a capture is running');
-    const list = (Array.isArray(poses) ? poses : []).slice(0, MAX_VIEWS * 2);
+    const list = (Array.isArray(poses) ? poses : []).slice(0, MAX_VIEWS * 2).map((p) => (p.clear ? this.clearPose(p) : p));
     if (list.length === 0) return [];
     const w = captureSize(opts.width, 768);
     const h = captureSize(opts.height, 512);

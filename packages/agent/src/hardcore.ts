@@ -84,7 +84,7 @@ export function targetEvidenceText(rows: ReadonlyArray<{ name: string; luma: Lum
 
 /** A camera at `position` looking at `target`. */
 function view(name: string, label: string, position: Vec3, target: Vec3, fov: number): ReviewViewRequest {
-  return { name, label, kind: 'exterior', pose: { position, target, up: [0, 1, 0], fov }, hideTops: false, aspect: 1.5, marks: [] };
+  return { name, label, kind: 'exterior', pose: { position, target, up: [0, 1, 0], fov, clear: true }, hideTops: false, aspect: 1.5, marks: [] };
 }
 
 /** Bounds of the built content: solid pieces that are not terrain, sky or backdrop. */

@@ -248,7 +248,8 @@ export interface ReviewViewRequest {
   label: string;
   kind: 'corner' | 'wall' | 'plan' | 'exterior';
   /** World-space camera. */
-  pose: { position: [number, number, number]; target: [number, number, number]; up: [number, number, number]; fov: number };
+  /** `clear`: the renderer moves the camera out of solid geometry and up from under the ground before drawing (outdoor shots placed from bounds). */
+  pose: { position: [number, number, number]; target: [number, number, number]; up: [number, number, number]; fov: number; clear?: boolean };
   /** Hide ceilings and roofs for this view (a plan from above). */
   hideTops: boolean;
   /** Image aspect (width / height) the marks were projected for. */
