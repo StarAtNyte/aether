@@ -90,6 +90,11 @@ function checkOutput(id: string, out: GeneratorOutput): void {
   } else if (id === 'figure-statue') {
     // A carved figure (an SDF sculpt: face, hands, drapery folds) with its pedestal, shield and spear.
     expect(tris).toBeLessThan(32_000);
+  } else if (id === 'classical-temple') {
+    // A monumental building: fluted columns, a carved entablature, pediment sculpture, a tiled roof with antefixes
+    // (~52k for a 20 x 34 m Doric peristyle, ~90k at the 40 x 70 m, ten-column extreme), split into parts under 20k each.
+    expect(tris).toBeLessThan(100_000);
+    for (const p of out.parts) expect(p.indices.length / 3).toBeLessThan(20_000);
   } else if (id === 'cloud') {
     // Billowing clouds: smooth puffs (up to ~14 k triangles for a large one), still a handful per world.
     expect(tris).toBeLessThan(14_000);

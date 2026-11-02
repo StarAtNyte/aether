@@ -10,6 +10,7 @@ import type { SdfNode } from '../types';
 import type { RGB } from '../color';
 import { boxCollider, cylinderCollider } from '../colliders';
 import { buildCliff } from './cliff';
+import { buildTemple } from './temple';
 import { defineGenerator, glow, pBool, pColor, pInt, pNum, pVariant } from './kit';
 
 // Weathered marble reads as a pale, finely textured stone at building scale (the polished-marble finish is too veiny).
@@ -73,7 +74,7 @@ const columnGen = defineGenerator({
 
 const temple = defineGenerator({
   id: 'classical-temple',
-  description: 'Greek temple: stepped stylobate, peristyle of columns round a cella, entablature, pediments and tiled roof; tholos and ruin variants.',
+  description: 'Greek temple in white-gold marble: a three-step crepidoma, fluted Doric or Ionic columns with entasis, a full entablature (triglyphs and metopes with gilded shields, or a sculpted Ionic frieze; cornice with mutules or dentils), pediments with a relief sculpture group, gilded acroteria, a tiled roof with antefixes, a cella with porches; tholos and ruin variants.',
   category: 'architecture',
   params: {
     width: pNum(16, 6, 40, 'front width in meters (tholos: diameter)'),
@@ -82,88 +83,20 @@ const temple = defineGenerator({
     columns: pInt(6, 4, 10, 'columns across the front'),
     color: pColor('#ece4d6', 'marble colour'),
     roofColor: pColor('#a8553a', 'roof tile colour'),
+    accentColor: pColor('#c9a24a', 'gilding on the acroteria, frieze shields and pediment figures'),
     variant: pVariant(3, '0 doric, 1 ionic, 2 round tholos, 3 ruined doric (broken columns, no roof)'),
   },
   run(p, api) {
-    const v = p.int('variant');
-    const H = p.num('height');
-    const W = p.num('width');
-    const L = v === 2 ? W : Math.max(p.num('length'), W);
-    const mat = marble(p.color('color'));
-    const step = H * 0.06;
-    const r = H / 11;
-    const order: Order = v === 1 ? 'ionic' : 'doric';
-    const body: Mesh[] = [];
-    const y0 = step * 3;
-    if (v === 2) {
-      // Tholos: round steps, a ring of columns, a round cella, a ring entablature and a conical roof.
-      const R = W / 2;
-      for (let i = 0; i < 3; i++) body.push(api.cylinder(R + (2 - i) * step * 1.4, R + (2 - i) * step * 1.4, step, 40).translate(0, step * (i + 0.5), 0));
-      const n = Math.max(8, Math.round((Math.PI * 2 * (R - r * 1.6)) / (r * 5)));
-      for (let i = 0; i < n; i++) {
-        const a = (i / n) * Math.PI * 2;
-        body.push(column(api, H, r, order, 12).translate(Math.cos(a) * (R - r * 1.6), y0, Math.sin(a) * (R - r * 1.6)));
-      }
-      body.push(api.cylinder(R * 0.62, R * 0.62, H, 28).translate(0, y0 + H / 2, 0));
-      body.push(api.lathe([[R - r * 0.2, y0 + H], [R + r * 0.4, y0 + H + H * 0.1], [R + r * 0.4, y0 + H + H * 0.2], [0, y0 + H + H * 0.2]], 40));
-      for (const m of body) api.add(m, mat);
-      api.add(api.cone(R + r * 0.8, H * 0.55, 32).translate(0, y0 + H * 1.2, 0), roofTile(p.color('roofColor')));
-      api.collider(cylinderCollider(0, y0 / 2, 0, R + step * 2.8, y0));
-      api.collider(cylinderCollider(0, y0 + H / 2, 0, R * 0.62, H));
-      return api.build();
-    }
-    for (let i = 0; i < 3; i++) body.push(api.box(W + (2 - i) * step * 2.8, step, L + (2 - i) * step * 2.8).translate(0, step * (i + 0.5), 0));
-    const inset = r * 1.6;
-    const nF = p.int('columns');
-    const nS = Math.max(nF, Math.round(((L - 2 * inset) / (W - 2 * inset)) * (nF - 1)) + 1);
-    const at: Array<[number, number]> = [];
-    for (let i = 0; i < nF; i++) {
-      const x = -W / 2 + inset + (i / (nF - 1)) * (W - 2 * inset);
-      at.push([x, -L / 2 + inset], [x, L / 2 - inset]);
-    }
-    for (let j = 1; j < nS - 1; j++) {
-      const z = -L / 2 + inset + (j / (nS - 1)) * (L - 2 * inset);
-      at.push([-W / 2 + inset, z], [W / 2 - inset, z]);
-    }
-    const ruin = v === 3;
-    for (const [x, z] of at) {
-      const b = ruin ? (api.rng() < 0.45 ? api.range(0.2, 0.75) : api.rng() < 0.2 ? 0 : 1) : 1;
-      if (b === 0) continue;
-      body.push(column(api, H, r, order, 12, b).translate(x, y0, z));
-    }
-    // Cella with a dark doorway in its front wall.
-    body.push(api.box(W - inset * 4.2, H * (ruin ? 0.5 : 1), L - inset * 5).translate(0, y0 + (H * (ruin ? 0.5 : 1)) / 2, 0));
-    const doorH = H * 0.62;
-    api.add(api.box(W * 0.16, doorH, 0.1).translate(0, y0 + doorH / 2, -(L - inset * 5) / 2 - 0.05), { finish: 'stone', color: '#2b2622', roughness: 0.9 });
-    if (!ruin) {
-      const eH = H * 0.24;
-      body.push(api.box(W - inset * 0.6, eH * 0.45, L - inset * 0.6).translate(0, y0 + H + eH * 0.225, 0));
-      body.push(api.box(W - inset * 0.4, eH * 0.42, L - inset * 0.4).translate(0, y0 + H + eH * 0.66, 0));
-      body.push(api.box(W - inset * 0.1, eH * 0.13, L - inset * 0.1).translate(0, y0 + H + eH * 0.935, 0));
-      // Triglyphs over each column and between, on the front and back friezes.
-      const ty = y0 + H + eH * 0.66;
-      for (const z of [-(L - inset * 0.4) / 2 - 0.03, (L - inset * 0.4) / 2 + 0.03]) {
-        for (let i = 0; i < nF * 2 - 1; i++) {
-          const x = -W / 2 + inset + (i / (nF * 2 - 2)) * (W - 2 * inset);
-          body.push(api.box(r * 1.1, eH * 0.42, 0.08).translate(x, ty, z));
-        }
-      }
-      // Pediments and the roof over them.
-      const pitch = W * 0.13;
-      const gableY = y0 + H + eH;
-      const tri: Array<[number, number]> = [[-W / 2 + inset * 0.05, 0], [W / 2 - inset * 0.05, 0], [0, pitch]];
-      body.push(api.extrude(tri, L - inset * 0.1).translate(0, gableY, 0));
-      const slope = Math.hypot(W / 2, pitch);
-      const ang = (Math.atan2(pitch, W / 2) * 180) / Math.PI;
-      const roof = roofTile(p.color('roofColor'));
-      for (const s of [-1, 1]) {
-        api.add(api.box(slope + 0.5, 0.18, L + 0.3).translate(s * slope / 2, 0, 0).rotate(0, 0, s * -ang).translate(0, gableY + pitch + 0.12, 0), roof);
-      }
-    }
-    for (const m of body) api.add(m, mat);
-    api.collider(boxCollider(0, y0 / 2, 0, W + step * 5.6, y0, L + step * 5.6));
-    api.collider(boxCollider(0, y0 + H / 2, 0, W - inset * 4.2, H, L - inset * 5));
-    for (const [x, z] of at.slice(0, 40)) api.collider(cylinderCollider(x, y0 + H / 2, z, r, H));
+    buildTemple(api, {
+      variant: p.int('variant'),
+      width: p.num('width'),
+      length: p.num('length'),
+      height: p.num('height'),
+      columns: p.int('columns'),
+      color: p.color('color'),
+      roofColor: p.color('roofColor'),
+      accentColor: p.color('accentColor'),
+    });
     return api.build();
   },
 });
