@@ -177,13 +177,17 @@ export function streetPatches(world: WorldDoc, input: StreetInput, seed: number,
       const vFront = hw + pavement + front;
       const cx = s0.x + nx * (vFront + depthFront);
       const cz = s0.z + nz * (vFront + depthFront);
-      // Ground under the corners: the house stands on the lowest so the upper side buries into the slope.
+      // Ground under the corners of the house.
       const corners: number[] = [];
       for (const [dx, dz] of [[-size[0] / 2, -depthBack], [size[0] / 2, -depthBack], [-size[0] / 2, depthFront], [size[0] / 2, depthFront]] as const) {
         corners.push(ground(cx + dx * fz + dz * fx, cz - dx * fx + dz * fz));
       }
+      // On a slope the house stands on the lowest corner with a stone footing that lifts its floor to just under the highest,
+      // so the high side does not bury the ground floor (in half-metre steps, so alike houses still share one instanced mesh).
       const y = Math.min(...corners);
-      houses.push({ gen: 'furn-dwelling', params, x: cx, y, z: cz, yaw });
+      const climb = Math.max(...corners) - y;
+      const footing = climb > 0.6 ? Math.min(6, Math.round((climb - 0.2) * 2) / 2) : 0;
+      houses.push({ gen: 'furn-dwelling', params: footing > 0 ? { ...params, footing } : params, x: cx, y, z: cz, yaw });
       counts[look.type] = (counts[look.type] ?? 0) + 1;
       total++;
       sideCount++;

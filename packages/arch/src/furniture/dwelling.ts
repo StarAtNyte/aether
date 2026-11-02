@@ -506,15 +506,27 @@ function build(p: ParamReader): ReturnType<PartSet['build']> {
     }
   }
 
-  // Door step path.
+  // Door step path. On a footing (a house on a slope) stone steps run from the door down to the ground first, then the path.
   const pathLen = p.num('path');
-  if (pathLen > 0) {
-    const doorOp = ops.find((o) => o.door);
-    if (doorOp) {
-      const loc = new Acc();
-      loc.path.merge(box(-0.55, 0, 0.55, 0.55, 0.05, 0.55 + pathLen));
-      place(loc, doorOp.wall, doorOp.c, 0, 0);
+  const footing = Math.max(0, Math.min(6, p.num('footing')));
+  if (doorOp && (pathLen > 0 || footing > 0.05)) {
+    const loc = new Acc();
+    const rise = 0.18;
+    const tread = 0.3;
+    const n = Math.ceil(footing / rise);
+    for (let i = 0; i < n; i++) {
+      const top = -i * (footing / n);
+      loc.stone.merge(box(-0.65, -footing, 0.05 + i * tread, 0.65, top, 0.05 + (i + 1) * tread));
     }
+    const run = 0.05 + n * tread;
+    if (pathLen > 0) loc.path.merge(box(-0.55, -footing, run, 0.55, -footing + 0.05, run + pathLen));
+    place(loc, doorOp.wall, doorOp.c, 0, 0);
+  }
+  // The footing: the house stands `footing` metres up on a solid stone base whose foot is the origin, so the low side of a
+  // slope shows a masonry base instead of a gap and the high side does not bury the ground floor.
+  if (footing > 0.05) {
+    for (const key of Object.keys(acc) as Array<keyof Acc>) acc[key].translate(0, footing, 0);
+    acc.plinth.merge(box(-L / 2 - 0.08, 0, zb - 0.08, L / 2 + 0.08, footing + 0.03, zfAt(0) + 0.08));
   }
 
   // ---- finish: orient the house, then one mesh per material -----------------------------------------------------
@@ -964,7 +976,7 @@ function loftWindow(acc: Acc, sx: number, hl: number, zc: number, yTop: number, 
 // ---------------------------------------------------------------------------------------------------------------
 
 function measure(p: ParamReader): { size: [number, number, number]; door: [number, number] } {
-  const key = JSON.stringify(['t', p.str('type'), p.num('width'), p.num('depth'), p.int('floors'), p.int('variant'), p.bool('gableFront'), p.str('roofForm'), p.str('roofing'), p.str('chimney'), p.int('dormers'), p.num('path'), p.str('shutters'), p.bool('flowers')]);
+  const key = JSON.stringify(['t', p.str('type'), p.num('width'), p.num('depth'), p.int('floors'), p.int('variant'), p.bool('gableFront'), p.str('roofForm'), p.str('roofing'), p.str('chimney'), p.int('dormers'), p.num('path'), p.num('footing'), p.str('shutters'), p.bool('flowers')]);
   const hit = cache.get(key);
   if (hit) return hit;
   const out = build(p);
@@ -998,7 +1010,7 @@ export const DWELLING: FurnitureDef = {
     'villa', 'machiya', 'japanese townhouse', 'japanese house', 'brick house', 'adobe house', 'pueblo house', 'nordic house', 'scandinavian house', 'wooden house', 'log house', 'thatched cottage', 'fisherman cottage', 'fisherman house',
   ],
   description:
-    'A real dwelling in one cheap mesh (one mesh per material): `type` stone-cottage (rubble limestone, quoins, slate or thatch, dormer, external chimney breast), timber-frame (jettied upper floor, oak frame, plaster infill, tile), mediterranean (whitewash, low terracotta roof, rafter tails, shutters, balcony, window boxes), machiya (Japanese townhouse: dark lattice front, plaster upper floor, lower hisashi eave, hip roof of grey tile), brick-terrace (brick, sash windows, stone steps, slate, chimney stacks, party-wall width), adobe (earth plaster, vigas, canales, a portal on posts, parapet), nordic (board cladding, white trim, gabled porch, metal roof). Real roofs with eaves, verges, soffits, ridge caps; walls with reveals, door surrounds, plinths, gutters. `width` is the frontage along X, `depth` runs back (0 = the type\'s own, varied by `variant`), `floors` 0 = type default, `variant` 0 to 99 changes the proportions, the door bay, the colours, the chimney and the window pattern, `gableFront` turns the gable to the street, `roofing` auto|tile|slate|thatch|metal, `roofForm` auto|gable|hip|flat, `shutters`, `chimney`, `dormers`, `flowers`, `lit` (warm windows after dark), `path` (metres of flagstone path in front of the door), `wallColor` `roofColor` `accentColor` (door and shutters; #000000 = by type). Front (door side) is +Z. Instance many through shape_land street, along or row.',
+    'A real dwelling in one cheap mesh (one mesh per material): `type` stone-cottage (rubble limestone, quoins, slate or thatch, dormer, external chimney breast), timber-frame (jettied upper floor, oak frame, plaster infill, tile), mediterranean (whitewash, low terracotta roof, rafter tails, shutters, balcony, window boxes), machiya (Japanese townhouse: dark lattice front, plaster upper floor, lower hisashi eave, hip roof of grey tile), brick-terrace (brick, sash windows, stone steps, slate, chimney stacks, party-wall width), adobe (earth plaster, vigas, canales, a portal on posts, parapet), nordic (board cladding, white trim, gabled porch, metal roof). Real roofs with eaves, verges, soffits, ridge caps; walls with reveals, door surrounds, plinths, gutters. `width` is the frontage along X, `depth` runs back (0 = the type\'s own, varied by `variant`), `floors` 0 = type default, `variant` 0 to 99 changes the proportions, the door bay, the colours, the chimney and the window pattern, `gableFront` turns the gable to the street, `roofing` auto|tile|slate|thatch|metal, `roofForm` auto|gable|hip|flat, `shutters`, `chimney`, `dormers`, `flowers`, `lit` (warm windows after dark), `path` (metres of flagstone path in front of the door), `footing` (metres of stone base with steps from the door, for a slope), `wallColor` `roofColor` `accentColor` (door and shutters; #000000 = by type). Front (door side) is +Z. Instance many through shape_land street, along or row.',
   params: {
     type: choice([...DWELLING_TYPES], 'stone-cottage', 'regional house type'),
     width: num(0, 0, 18, 'frontage along X in metres; 0 = the type\'s own with variation'),
@@ -1014,6 +1026,7 @@ export const DWELLING: FurnitureDef = {
     flowers: flag(true, 'window boxes and potted plants'),
     lit: flag(false, 'windows glow warmly (evening)'),
     path: num(0, 0, 20, 'metres of flagstone path in front of the door'),
+    footing: num(0, 0, 6, 'metres of stone base under the house, with steps down from the door (a house on a slope: the origin is the foot of the low side)'),
     wallColor: color('#000000', 'wall colour; #000000 = by type'),
     roofColor: color('#000000', 'roof colour; #000000 = by type'),
     accentColor: color('#000000', 'door and shutter colour; #000000 = by type'),
