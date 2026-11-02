@@ -45,8 +45,9 @@ export class GpuRoom {
       // tsx wraps functions in `__name(...)`; a function run in the page by `evaluate` needs it defined there.
       await ctx.addInitScript({ content: 'globalThis.__name = (f) => f;' });
       // AETHER_FULL_QUALITY=1: pin the automatic low-memory mode off (it trips on Chromium's heap signal headless and turns
-      // post-processing, the full water shader and full-size textures off), so a review sees what a visitor's GPU shows.
-      if (process.env['AETHER_FULL_QUALITY'] === '1') await ctx.addInitScript({ content: "try { const k = 'aether.studio.settings.v1'; const s = JSON.parse(localStorage.getItem(k) || '{}'); s.lowMemory = 'off'; localStorage.setItem(k, JSON.stringify(s)); } catch {}" });
+      // post-processing, the full water shader and full-size textures off), so a review sees what a visitor's GPU shows; the render tier is pinned too (AETHER_RENDER_TIER, default high), since a
+      // headless software GPU otherwise gets the low tier, which skips the post chain and with it the world's grade and bloom.
+      if (process.env['AETHER_FULL_QUALITY'] === '1') await ctx.addInitScript({ content: `try { const k = 'aether.studio.settings.v1'; const s = JSON.parse(localStorage.getItem(k) || '{}'); s.lowMemory = 'off'; s.renderTier = ${JSON.stringify(process.env['AETHER_RENDER_TIER'] ?? 'high')}; localStorage.setItem(k, JSON.stringify(s)); } catch {}` });
       // On the integrated GPU the page draws through WebGL2: the machine's only WebGPU adapter is SwiftShader (software), which
       // fails some post passes and ends in a black picture, so it is hidden as the weak-GPU and frame-recorder harnesses do.
       // The stills are drawn by a `nice`d job on a shared machine: the first frame of a heavy world can take longer than the watchdog's
