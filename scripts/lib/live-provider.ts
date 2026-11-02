@@ -31,7 +31,11 @@ function readKey(): string {
 
 /** Same call as the bridge's `createHeadlessProvider`, answered by the Anthropic API unless CLI use is explicitly allowed. */
 export function createHeadlessProvider(backend: BridgeBackendId, opts: NonNullable<HeadlessOpts> & { model?: string; effort?: BridgeEffort } = {}): Provider {
-  if (process.env['AETHER_ALLOW_CLI'] === '1') return createCliProvider(backend, opts);
+  if (process.env['AETHER_ALLOW_CLI'] === '1') {
+    // Long generation turns on a big world can outlast the CLI's default answer window: AETHER_CLI_TIMEOUT_MS widens it.
+    const t = Number(process.env['AETHER_CLI_TIMEOUT_MS']);
+    return createCliProvider(backend, Number.isFinite(t) && t > 0 && !opts.timeoutMs ? { ...opts, timeoutMs: t } : opts);
+  }
   const model = opts.model ?? process.env['AETHER_LIVE_MODEL'] ?? DEFAULT_MODEL;
   const effort = opts.effort === 'low' || opts.effort === 'medium' || opts.effort === 'high' ? opts.effort : 'medium';
   return createAnthropicProvider({
