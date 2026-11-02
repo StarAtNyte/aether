@@ -73,7 +73,7 @@ import { ScatterField, FIELD_MIN_INSTANCES, fieldChunkSize, isFieldLayer } from 
 import { buildChunks, CHUNK_INSTANCES } from '../virtual/field-culler';
 import { createLocalView, localView } from '../virtual/view';
 import { DagClient, type DagClientOptions } from '../virtual/dag-client';
-import { mirror, VirtualGroup, VIRTUAL_MIN_TRIANGLES } from '../virtual/virtual-mesh';
+import { isKitOfPieces, mirror, VirtualGroup, VIRTUAL_MIN_TRIANGLES } from '../virtual/virtual-mesh';
 import { BATCHED_LAYER } from './static-batches';
 import { DEFAULT_FIELD_BUDGET, LodChainCache, lodOutputKey, lodPart, outputRadius, shareDemand, type FieldBudget } from './field-mount';
 import { buildMeshGeometry, previewMeshGeometry, type MeshGeometryBundle } from '../geometry/mesh-asset';
@@ -1754,7 +1754,8 @@ export class SceneSync {
           if (handle.resolved.splat) mesh.renderOrder = TERRAIN_RENDER_ORDER;
           // Large parts (terrain) raycast through a BVH: picking, snapping and camera occlusion stay O(log n).
           accelerateRaycast(mesh);
-          if (this.dags && part.indices.length / 3 >= VIRTUAL_MIN_TRIANGLES) this.virtualize(node, mesh, g.key, part.positions, part.indices);
+          // A kit of small pieces (trims, rails, flowers) would lose whole pieces to cluster LOD: it stays an ordinary mesh.
+          if (this.dags && part.indices.length / 3 >= VIRTUAL_MIN_TRIANGLES && !isKitOfPieces(part.positions, part.indices)) this.virtualize(node, mesh, g.key, part.positions, part.indices);
         }
         node.bindings.push({
           mesh,
