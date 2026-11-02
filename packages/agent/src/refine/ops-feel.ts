@@ -37,6 +37,21 @@ const EVENT_WORDS: ReadonlyArray<[RegExp, readonly FeelEvent[]]> = [
 ];
 
 const VFX_WORDS: ReadonlyArray<[RegExp, VfxPreset]> = [
+  [/\bfireworks?\b/, 'fireworks'],
+  [/\blevel[\s-]*ups?\b/, 'levelup'],
+  [/\bsmoke\s*bombs?\b/, 'smokebomb'],
+  [/\bcoin\s*(?:bursts?|showers?|fountains?|explosions?)\b|\bloot\s+bursts?\b/, 'coins'],
+  [/\bblood\b|\bgore\b/, 'blood'],
+  [/\bdebris\b|\brubble\b/, 'debris'],
+  [/\bshatter\w*\b/, 'glass'],
+  [/\belectric\w*\b|\bzaps?\b|\bsparking\s+wires?\b/, 'electric'],
+  [/\bheal(?:s|ing)?\b/, 'heal'],
+  [/\bpoison\w*\b|\btoxic\b/, 'poison'],
+  [/\bfrost\w*\b|\bfreez\w*\b/, 'frost'],
+  [/\bportals?\b/, 'portal'],
+  [/\bteleport\w*\b/, 'teleport'],
+  [/\bauras?\b/, 'aura'],
+  [/\bhearts?\b/, 'hearts'],
   [/\bconfetti\b/, 'confetti'],
   [/\bshock\s*waves?\b/, 'shockwave'],
   [/\bsparkl(?:e|es|y|ing)\b|\bglitter\b|\btwinkl\w*\b|\bstars?\b/, 'sparkle'],
@@ -52,7 +67,7 @@ const VFX_WORDS: ReadonlyArray<[RegExp, VfxPreset]> = [
 ];
 
 /** Words that make a clause about feel at all. */
-const FEEL_WORD = /\b(?:feel|feels|feeling|punchy|punchier|juicy|juicier|juice|snappy|snappier|impactful|weighty|crunchy|crunchier|satisfying|shake|shakes|shaking|screen\s*shake|camera\s*shake|hit[\s-]*stops?|hit[\s-]*pause|freeze[\s-]*frames?|flash(?:es|ing)?|rumble|vibrat\w*|haptics?|particles?|vfx|effects?|feedback|sparks?|sparkl\w*|confetti|embers?|smoke|fire|flames?|burn\w*|splash(?:es)?|shock\s*waves?|magic|dust|puffs?|floating\s+(?:text|numbers?|score)|damage\s+numbers?)\b/;
+const FEEL_WORD = /\b(?:feel|feels|feeling|punchy|punchier|juicy|juicier|juice|snappy|snappier|impactful|weighty|crunchy|crunchier|satisfying|shake|shakes|shaking|screen\s*shake|camera\s*shake|hit[\s-]*stops?|hit[\s-]*pause|freeze[\s-]*frames?|flash(?:es|ing)?|rumble|vibrat\w*|haptics?|particles?|vfx|effects?|feedback|sparks?|sparkl\w*|confetti|embers?|smoke|fire|flames?|burn\w*|splash(?:es)?|shock\s*waves?|magic|dust|puffs?|fireworks?|level[\s-]*ups?|smoke\s*bombs?|blood|gore|debris|shatter\w*|electric\w*|zaps?|heal(?:s|ing)?|poison\w*|frost\w*|portals?|teleport\w*|auras?|hearts?|floating\s+(?:text|numbers?|score)|damage\s+numbers?)\b/;
 
 const PUNCHY = /\b(?:punchy|punchier|juicy|juicier|snappy|snappier|impactful|weighty|crunchy|crunchier|more\s+(?:impact|juice|intense|dramatic|satisfying)|stronger|harder|meatier|beefier|more\s+feedback)\b/;
 const SUBTLE = /\b(?:subtle|subtler|softer|calmer|gentler|milder|less\s+(?:intense|punchy|juicy|dramatic|impact|feedback)|tone(?:d)?\s+(?:it\s+)?down|calm\s+(?:it\s+)?down)\b/;
