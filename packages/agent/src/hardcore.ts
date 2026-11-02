@@ -168,7 +168,8 @@ export function heroShots(world: WorldDoc): ReviewViewRequest[] {
     view('hero-establishing', 'establishing view: the whole place from outside and above, the way a postcard frames it', [c[0] + dir[0] * r * 1.35 + side[0] * r * 0.35, c[1] + r * 0.55, c[2] + dir[2] * r * 1.35 + side[2] * r * 0.35], [c[0], c[1], c[2]], 45),
     streetShot(world, mark) ?? view('hero-street', 'eye height from where the visitor arrives, looking toward the landmark', [spawn[0], spawn[1] + 1.7, spawn[2]], [mark[0], Math.max(spawn[1] + 1.7, mark[1] * 0.6 + spawn[1] * 0.4), mark[2]], 60),
     view('hero-landmark', 'the landmark from part way up, with the place falling away below it', [mark[0] + side[0] * r * 0.45 + dir[0] * r * 0.3, mark[1] + r * 0.12, mark[2] + side[2] * r * 0.45 + dir[2] * r * 0.3], [mark[0], mark[1], mark[2]], 50),
-    view('hero-rooftops', 'low across the rooftops toward the far side, the light raking across them', [c[0] - side[0] * r * 0.9, c[1] + r * 0.18, c[2] - side[2] * r * 0.9], [c[0] + side[0] * r * 0.5, c[1], c[2] + side[2] * r * 0.5], 55),
+    // Across the rooftops toward the landmark from the side opposite the landmark shot: aimed at the place, never out past its edge.
+    view('hero-rooftops', 'low across the rooftops toward the landmark, the light raking across them', [mark[0] - side[0] * r * 0.85 + dir[0] * r * 0.25, Math.max(mark[1], c[1]) + r * 0.12, mark[2] - side[2] * r * 0.85 + dir[2] * r * 0.25], [mark[0], mark[1], mark[2]], 55),
   ];
 }
 
