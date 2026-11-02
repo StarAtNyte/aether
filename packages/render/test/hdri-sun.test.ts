@@ -4,8 +4,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DataTexture, DataUtils, FloatType, HalfFloatType, RGBAFormat, Scene, Texture } from 'three';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
-import { AUTO_HDRI, EnvironmentRig } from '../src/environment/environment-rig';
-import { clampRadiance, hdriRotationFor, hdriSun, HDRI_SUN_CLAMP, type HdriSource } from '../src/environment/hdri';
+import { AUTO_HDRI, EnvironmentRig, hdriLevelScale } from '../src/environment/environment-rig';
+import { clampRadiance, HDRI_BACKDROP_MIN_WIDTH, HdriController, hdriRotationFor, hdriSkyLevel, hdriSun, HDRI_SUN_CLAMP, type HdriSource } from '../src/environment/hdri';
 import { MaterialCache } from '../src/materials/material-cache';
 import { setCatalog, type CatalogInput } from '@aether/assets';
 import { tick } from './helpers';
@@ -182,5 +182,44 @@ describe('automatic HDRI in the environment rig', () => {
     await tick(10);
     expect(rig.hdri.texture).toBeNull();
     expect(AUTO_HDRI['space']).toBeUndefined();
+  });
+});
+
+describe('hdri sky level and backdrop', () => {
+  it('a uniform sky of radiance 1 has level 1; the lower hemisphere does not count', () => {
+    const t = skyTexture(64, 32, 0, 31, 1, 1);
+    expect(hdriSkyLevel(t)).toBeCloseTo(1, 1);
+    const half = skyTexture(64, 32, 0, 31, 1, 2);
+    const data = half.image.data as Float32Array;
+    // Black below the horizon: the level is unchanged.
+    for (let i = 64 * 16 * 4; i < data.length; i++) data[i] = 0;
+    expect(hdriSkyLevel(half)).toBeCloseTo(2, 1);
+    expect(hdriSkyLevel(new Texture())).toBeNull();
+  });
+
+  it('a bright photographed sky is turned down to the reference level, a dark one is never lifted', () => {
+    expect(hdriLevelScale(null)).toBe(1);
+    expect(hdriLevelScale(0.2)).toBe(1);
+    expect(hdriLevelScale(0.94)).toBeCloseTo(0.5, 6);
+    expect(hdriLevelScale(50)).toBeGreaterThan(0.3);
+    expect(hdriLevelScale(0.74)).toBeLessThan(hdriLevelScale(0.5));
+  });
+
+  it('a narrow map lights the scene but is not the background; a sharp one is', async () => {
+    const make = (w: number): HdriSource => ({ load: () => Promise.resolve(skyTexture(w, w / 2, 1, 1, 50)) });
+    setCatalog(CATALOG);
+    for (const [w, shows] of [[1024, false], [HDRI_BACKDROP_MIN_WIDTH, true]] as const) {
+      const c = new HdriController(make(w), () => undefined);
+      c.set(AUTO_HDRI['day'], { background: true });
+      await tick(10);
+      const scene = new Scene();
+      expect(c.bind(scene, 1)).toBe(true);
+      expect(scene.environment).not.toBeNull();
+      expect(c.showsBackground).toBe(shows);
+      expect(scene.background !== null).toBe(shows);
+      // Every map loses its sun once the sun is read (the sun light casts it), the backdrop too.
+      expect(c.sun).not.toBeNull();
+      c.dispose();
+    }
   });
 });

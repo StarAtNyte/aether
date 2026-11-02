@@ -142,10 +142,30 @@ export function skyRadiance(dx: number, dy: number, dz: number, sx: number, sy: 
 export const SKY_EXPOSURE = 2.1;
 /** Saturation applied around the luminance (single scattering alone is a little washed out). */
 const SKY_SATURATION = 1.28;
+/** Extra saturation toward the zenith (× the view's sine of altitude): a clear sky deepens to a rich blue overhead. */
+const ZENITH_SATURATION = 0.4;
+/**
+ * Strength of the multiple-scattering stand-in on low paths away from the sun: single scattering alone leaves a low
+ * sun's side and back horizon a grey-green (red and green survive the long path, blue does not), where a clear sky is
+ * a pale blue filled by light scattered more than once.
+ */
+const MULTI_SCATTER_FILL = 0.8;
+/** Shift of a low sun's yellow aureole toward gold and peach (display space, low paths toward the sun). */
+const SUN_HORIZON_WARMTH = 0.35;
+
+function clamp01(v: number): number {
+  return Math.max(0, Math.min(1, v));
+}
 
 /** Soft exposure curve: radiance → display value in [0, 1) (linear light, before the sRGB encode). */
 export function exposeSky(v: number, exposure = SKY_EXPOSURE): number {
   return 1 - Math.exp(-Math.max(0, v) * exposure);
+}
+
+/** Cosine between the (unnormalised) view direction and the unit sun direction. */
+function viewSunCos(dx: number, dy: number, dz: number, sx: number, sy: number, sz: number): number {
+  const n = Math.hypot(dx, dy, dz) || 1;
+  return (dx * sx + dy * sy + dz * sz) / n;
 }
 
 /**
@@ -165,6 +185,18 @@ export function skyDisplay(dx: number, dy: number, dz: number, sx: number, sy: n
     if (b < g) b += (g - b) * 0.85 * k;
     r += (g - r) * 0.55 * k * Math.max(0, 1 - Math.max(0, dy) * 3.5);
   }
+  // Toward the sun (mu near 1) the aureole keeps its warmth; low paths elsewhere fill with blue.
+  const mu = viewSunCos(dx, dy, dz, sx, sy, sz);
+  const alt = Math.max(0, dy) / (Math.hypot(dx, dy, dz) || 1);
+  const lowPath = 1 - clamp01(alt / 0.5);
+  const away = 1 - clamp01((mu - 0.2) / 0.7) ** 2;
+  // As the sun reaches the horizon the whole horizon band turns warm (the twilight arch): the blue fill gives way.
+  const fill = MULTI_SCATTER_FILL * away * lowPath * clamp01((sy - 0.035) / 0.175);
+  if (fill > 0) {
+    const m = Math.max(r, g) * 1.15;
+    if (b < m) b += (m - b) * fill;
+    if (r > g * 0.92) r -= (r - g * 0.92) * fill * 0.5;
+  }
   const y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
   if (y <= 1e-9) {
     out[0] = 0;
@@ -177,9 +209,12 @@ export function skyDisplay(dx: number, dy: number, dz: number, sx: number, sy: n
   r = r * k;
   g = g * k;
   b = b * k;
-  r = ye + (r - ye) * SKY_SATURATION;
-  g = ye + (g - ye) * SKY_SATURATION;
-  b = ye + (b - ye) * SKY_SATURATION;
+  const sat = SKY_SATURATION + ZENITH_SATURATION * alt;
+  r = ye + (r - ye) * sat;
+  g = ye + (g - ye) * sat;
+  b = ye + (b - ye) * sat;
+  // A low sun's horizon glows gold and peach, not lemon.
+  if (r > g) g -= (g - b) * SUN_HORIZON_WARMTH * clamp01((mu - 0.5) / 0.45) * lowPath;
   // Skylight fills the shadow side of the colour: dusk is orange and rose, never yellow-green.
   b = Math.max(b, g * 0.34, r * 0.1);
   out[0] = Math.max(0, Math.min(1, r));

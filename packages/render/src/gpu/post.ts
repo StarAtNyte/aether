@@ -14,12 +14,13 @@
  * The AO, reflections, shafts, DOF and TAA read a half-resolution-capable normal / velocity / material
  * pre-pass of the opaque scene, so the effects only cost what they are switched on for.
  */
-import type { Camera, DirectionalLight, PerspectiveCamera, Scene } from 'three';
+import type { Camera, DirectionalLight, PerspectiveCamera, Scene, ToneMapping } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
 import { errorMessage, log } from '../log';
 import { ABERRATION_STRENGTH, GRAIN_AMPLITUDE, effectsKey, needsPrePass, type PostEffects } from './finishing';
 import { NEUTRAL_GRADE, type Grade } from './grade';
 import { createUpsampler, type Upsampler } from './upsample';
+import { installAgxLook } from './agx-look';
 
 /** Post pipeline variant: composite only, or with the opaque pre-pass (AO, TAA, reflections, shafts, DOF). */
 export type PostQuality = 'standard' | 'studio';
@@ -64,6 +65,11 @@ export interface PostPipeline {
   setBloom(strength: number): void;
   /** Apply a colour grade (uniform updates only; no shader rebuild). */
   setGrade(grade: Grade): void;
+  /**
+   * The renderer's tone-mapping constant for AgX with the grade's look (see `agx-look.ts`), or null when it could not be
+   * installed (the plain AgX curve is used then).
+   */
+  readonly agxToneMapping: ToneMapping | null;
   /**
    * Vignette strength (0 = none, default {@link VIGNETTE_STRENGTH}). Tiled
    * captures switch it off and apply {@link vignetteFactor} to the assembled
@@ -173,6 +179,7 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
     const { RenderPipeline, Vector3, UnsignedByteType, HalfFloatType, RGFormat, Color } = three;
     const { pass, screenUV, screenCoordinate, smoothstep, float, uniform, vec2, vec3, vec4, dot, mix, pow, max, min, clamp, mrt, packNormalToRGB, unpackRGBToNormal, normalView, velocity, sample, context, diffuseColor, convertToTexture, renderOutput, interleavedGradientNoise, metalness, roughness } = tsl;
     const { bloom } = bloomMod;
+    const agxLook = installAgxLook(renderer, three, tsl);
     const disposables: Array<{ dispose(): void }> = [];
     // Temporal AA replaces MSAA (its history needs single-sampled targets); without it the scene pass keeps MSAA.
     const variant = (globalThis as { __UPVAR?: string }).__UPVAR ?? 'taau:bilin:cross:hcr:w15';
@@ -419,6 +426,7 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
         upsampler?.setScale(k, Math.max(1, Math.floor(width * k)), Math.max(1, Math.floor(height * k)), width, height);
       },
       quality: prepass ? 'studio' : 'standard',
+      agxToneMapping: agxLook?.toneMapping ?? null,
       effects,
       key: effectsKey(effects),
       render: () => {
@@ -443,6 +451,7 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
         uShadow.value.set(...g.shadowTint);
         uHigh.value.set(...g.highlightTint);
         if (effects.grain) uGrain.value = GRAIN_AMPLITUDE * (g.grain ?? 1);
+        agxLook?.set(g.look ?? 0);
       },
       setVignette: (strength: number) => {
         uVignette.value = Number.isFinite(strength) ? Math.max(0, Math.min(1, strength)) : VIGNETTE_STRENGTH;

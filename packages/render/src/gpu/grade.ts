@@ -25,6 +25,8 @@ export interface Grade {
   balance?: [number, number, number];
   /** Grain amplitude multiplier (default 1). */
   grain?: number;
+  /** Strength of the AgX look (see `agx-look.ts`; default 0 = AgX Base). */
+  look?: number;
 }
 
 /** Neutral grade (identity). */
@@ -68,7 +70,7 @@ export function gradeFor(sky: Pick<SkyState, 'lightColor' | 'zenith' | 'elevatio
  * Layer a named look on a sky-derived grade: the preset's saturation and contrast scale the grade's,
  * its exposure offset and white balance go to the post pass, and the grain follows it.
  */
-export function gradeWithPreset(base: Grade, preset: Pick<GradePreset, 'saturation' | 'contrast' | 'exposureEv' | 'temperature' | 'tint' | 'grain'>): Grade {
+export function gradeWithPreset(base: Grade, preset: Pick<GradePreset, 'saturation' | 'contrast' | 'exposureEv' | 'temperature' | 'tint' | 'grain' | 'look'>): Grade {
   return {
     saturation: base.saturation * preset.saturation,
     contrast: base.contrast * preset.contrast,
@@ -77,5 +79,6 @@ export function gradeWithPreset(base: Grade, preset: Pick<GradePreset, 'saturati
     exposure: (base.exposure ?? 1) * evScale(preset.exposureEv),
     balance: whiteBalance(preset.temperature, preset.tint),
     grain: preset.grain,
+    look: preset.look ?? 0,
   };
 }

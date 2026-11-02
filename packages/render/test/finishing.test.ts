@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { AGX_PUNCHY, agxLookParams } from '../src/gpu/agx-look';
 import {
   autoTier,
   degrade,
@@ -171,5 +172,24 @@ describe('depth of field', () => {
       expect(Number.isFinite(p.focus) && Number.isFinite(p.range) && Number.isFinite(p.bokeh)).toBe(true);
       expect(p.focus).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('AgX look', () => {
+  it('0 is AgX Base, 1 is Blender Punchy, and the look lifts its exposure back', () => {
+    expect(agxLookParams(0)).toEqual({ power: 1, saturation: 1, exposure: 1 });
+    const full = agxLookParams(1);
+    expect(full.power).toBeCloseTo(AGX_PUNCHY.power, 6);
+    expect(full.saturation).toBeCloseTo(AGX_PUNCHY.saturation, 6);
+    expect(full.exposure).toBeGreaterThan(1);
+    expect(agxLookParams(Number.NaN)).toEqual({ power: 1, saturation: 1, exposure: 1 });
+    expect(agxLookParams(9).power).toBeLessThan(1.6);
+  });
+
+  it('sunlit presets carry a stronger look than dim and soft ones', () => {
+    const look = (id: keyof typeof GRADE_PRESETS): number => GRADE_PRESETS[id].look ?? 0;
+    expect(look('golden-hour')).toBeGreaterThan(look('overcast'));
+    expect(look('archviz-daylight')).toBeGreaterThan(look('night'));
+    expect(look('golden-hour')).toBeLessThanOrEqual(1);
   });
 });

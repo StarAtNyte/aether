@@ -271,3 +271,44 @@ describe('sun and moon sprites', () => {
     expect(moonPixels(Number.NaN)).toHaveLength(size * size * 4);
   });
 });
+
+describe('clear low sun (late afternoon)', () => {
+  const at = (sky: 'day' | 'sunset', hour: number) => computeSkyState({ sky, timeOfDay: hour, sunIntensity: 3, ambientIntensity: 0.4 });
+  const hsv = (hex: string): { h: number; s: number } => {
+    const c = new Color(hex);
+    const hsl = { h: 0, s: 0, l: 0 };
+    c.getHSL(hsl);
+    return { h: hsl.h * 360, s: hsl.s };
+  };
+
+  it('a clear day reaches the late afternoon: 17:00 is lower and warmer than 16:00', () => {
+    const four = at('day', 16);
+    const five = at('day', 17);
+    expect(five.hour).toBe(17);
+    expect(five.elevation).toBeLessThan(20);
+    const warm = (hex: string): number => new Color(hex).r - new Color(hex).b;
+    expect(warm(five.lightColor)).toBeGreaterThan(warm(four.lightColor));
+    expect(warm(five.lightColor)).toBeGreaterThan(warm(at('day', 12).lightColor));
+  });
+
+  it('the low sun keys harder and fills less than noon, with a bluer fill', () => {
+    const noon = at('day', 12);
+    const late = at('day', 17);
+    expect(late.lightIntensity / late.envIntensity).toBeGreaterThan((noon.lightIntensity / noon.envIntensity) * 1.25);
+    const fill = new Color(late.hemiSky);
+    expect(fill.b).toBeGreaterThan(fill.r * 1.1);
+  });
+
+  it('the zenith is a deep, saturated blue and the side horizon is not grey-green', () => {
+    const z = hsv(skyKeys(15).zenith.map((v) => Math.pow(v, 1 / 2.2)).reduce((s, v) => s + Math.round(v * 255).toString(16).padStart(2, '0'), '#'));
+    expect(z.h).toBeGreaterThan(200);
+    expect(z.h).toBeLessThan(230);
+    expect(z.s).toBeGreaterThan(0.45);
+    // 90° from a 13° sun, 5° up: blue at least as strong as green (single scattering alone left it yellow-green).
+    const side = skyDisplay(1, Math.tan(rad(5)), 0, ...sunAt(13), 1.6, out());
+    expect(side[2]).toBeGreaterThanOrEqual(side[1]);
+    // Toward the sun the horizon stays warm.
+    const toward = skyDisplay(0, Math.tan(rad(5)), 1, ...sunAt(13), 1.6, out());
+    expect(toward[0]).toBeGreaterThan(toward[2] * 1.3);
+  });
+});

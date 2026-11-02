@@ -4227,7 +4227,8 @@ export class WorldRenderer {
     // Look development: multipliers on the preset (neutral by default).
     const shown: GradePreset = tw.contrast === 1 && tw.saturation === 1 && tw.exposureEv === 0 && tw.temperature === 0 ? preset : { ...preset, contrast: preset.contrast * tw.contrast, saturation: preset.saturation * tw.saturation, exposureEv: preset.exposureEv + tw.exposureEv, temperature: preset.temperature + tw.temperature };
     const post = this.post;
-    this.renderer.toneMapping = post ? (preset.tone === 'agx' ? AgXToneMapping : preset.tone === 'neutral' ? NeutralToneMapping : ACESFilmicToneMapping) : ACESFilmicToneMapping;
+    // AgX takes the preset's look through the post chain's own curve when it is installed (see `gpu/agx-look.ts`).
+    this.renderer.toneMapping = post ? (preset.tone === 'agx' ? (post.agxToneMapping ?? AgXToneMapping) : preset.tone === 'neutral' ? NeutralToneMapping : ACESFilmicToneMapping) : ACESFilmicToneMapping;
     const eye = adaptedLook(this.eyeFactor);
     // A baked light volume occludes the image light itself and tells the exposure how dark the spot is.
     const volume = this.lightVolume.ready;

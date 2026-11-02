@@ -79,13 +79,15 @@ export interface SkyState {
 }
 
 /**
- * Hours each natural preset may use (inclusive). Day/overcast keep the sun
- * at least ~25° high, dawn/sunset keep it ~7–17° above the horizon on the
+ * Hours each natural preset may use (inclusive). Day reaches from early
+ * morning into the late afternoon (sun ~13° up at either end: the warm, raking
+ * light of 17:00 is a clear day's, not only a sunset preset's); overcast keeps
+ * the sun at least ~25° high, dawn/sunset keep it ~7–17° above the horizon on the
  * correct side of noon, night keeps it well below the horizon (the moon is
  * the key light). Outside the window the hour is clamped to the nearest edge.
  */
 export const PRESET_WINDOWS: Readonly<Record<'day' | 'overcast' | 'dawn' | 'sunset', readonly [number, number]>> = Object.freeze({
-  day: [7.6, 16.4],
+  day: [6.7, 17.3],
   overcast: [7.6, 16.4],
   dawn: [6.38, 7],
   sunset: [17, 17.62],
@@ -152,6 +154,8 @@ export const MOON_BEARING = 105;
 const MOON_ELEVATION = 38;
 /** Exponent of the dome's horizon → zenith gradient (lower = the zenith color reaches further down). */
 export const SKY_GRADIENT_POWER = 0.42;
+/** Share of the image light (sky reflections and ambient) taken away under a clear low sun (deeper, cooler shade). */
+export const LOW_SUN_FILL_CUT = 0.25;
 /** Dawn/sunset skies are sampled this many degrees below the light elevation (deeper colors). */
 export const GOLDEN_SKY_DROP = 6;
 
@@ -296,13 +300,19 @@ export function computeSkyState(env: Pick<Environment, 'sky' | 'timeOfDay' | 'su
   const lightDirection: Vec3 = moon ? bearingDirection(MOON_BEARING, MOON_ELEVATION) : direction;
   normalize(lightDirection);
   const glow = 1 - smoothstep(4, 30, skyElevation);
+  // A clear day's low sun (late afternoon, early morning) turns warm before the sunset preset's window begins.
+  const low = preset === 'day' ? 1 - smoothstep(14, 40, elevation) : 0;
+  // A clear low sun: the key rakes in strong and the open shade is lit by the deep blue overhead alone (no grey veil,
+  // a sky dimmer relative to the sun than at noon). Overcast is not a clear sky and keeps its own soft light below.
+  const clearLow = moon ? 0 : golden ? 1 : low;
+  const fillGrey = 0.62 - 0.24 * clearLow;
 
   const state: SkyState = {
     hour,
     elevation,
     lightDirection,
-    lightColor: moon ? '#a9bcff' : golden ? mixHex(keys.sun, '#ffb070', 0.25) : keys.sun,
-    lightIntensity: moon ? moonIntensity(sunIntensity) : sunIntensity * Math.max(0.05, day) * (golden ? 1.15 : 1),
+    lightColor: moon ? '#a9bcff' : golden ? mixHex(keys.sun, '#ffb070', 0.25) : mixHex(keys.sun, '#ffb070', 0.3 * low),
+    lightIntensity: moon ? moonIntensity(sunIntensity) : sunIntensity * Math.max(0.05, day) * (golden ? 1.15 : 1 + 0.15 * low),
     moon,
     zenith: keys.zenith,
     horizon: keys.horizon,
@@ -310,7 +320,7 @@ export function computeSkyState(env: Pick<Environment, 'sky' | 'timeOfDay' | 'su
     sunGlow: keys.sun,
     sunGlowStrength: moon ? 0 : 0.25 + 0.75 * glow,
     // Skylight is bluish but not the zenith's saturated blue: shaded white walls read pale blue-grey.
-    hemiSky: moon ? '#4d5a80' : mixHex(mixHex(keys.zenith, keys.horizon, 0.45), '#dcdad6', 0.62),
+    hemiSky: moon ? '#4d5a80' : mixHex(mixHex(keys.zenith, keys.horizon, 0.45), '#dcdad6', fillGrey),
     hemiGround: moon ? '#1c1f2a' : mixHex('#4a3f2e', keys.sun, 0.12 + 0.2 * glow),
     hemiIntensity: ambient * 2 * (moon ? 0.75 : 0.4 + 0.6 * day),
     stars: smoothstep(-2, -12, elevation),
@@ -320,7 +330,7 @@ export function computeSkyState(env: Pick<Environment, 'sky' | 'timeOfDay' | 'su
     hazeDensity: moon ? 0.5 : 0.4 + 0.25 * glow,
     showGround: true,
     exposure: PRESET_EXPOSURE[preset],
-    envIntensity: moon ? 0.35 : 0.45 + 0.15 * glow,
+    envIntensity: moon ? 0.35 : (0.45 + 0.15 * glow) * (1 - LOW_SUN_FILL_CUT * clearLow),
     preset,
     clouds: moon ? 0.28 : golden ? 0.5 : 0.42,
   };

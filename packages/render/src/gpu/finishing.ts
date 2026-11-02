@@ -152,6 +152,11 @@ export interface GradePreset {
   grain: number;
   /** Multiplier on the bloom strength. */
   bloom: number;
+  /**
+   * Strength of the AgX look (0 = AgX Base, 1 = Blender's "Punchy": deeper mid-tones and the chroma the curve takes
+   * back; see `agx-look.ts`). Ignored by the other curves. Absent = 0.
+   */
+  look?: number;
 }
 
 /** Preset ids. */
@@ -159,11 +164,14 @@ export type GradePresetId = 'archviz-daylight' | 'golden-hour' | 'dusk-interior'
 
 /** The preset table. Frozen. */
 export const GRADE_PRESETS: Readonly<Record<GradePresetId, GradePreset>> = Object.freeze({
-  'archviz-daylight': { id: 'archviz-daylight', tone: 'agx', exposureEv: 0.15, saturation: 1.14, contrast: 1.2, temperature: 0.04, tint: 0, grain: 1, bloom: 0.85 },
-  'golden-hour': { id: 'golden-hour', tone: 'agx', exposureEv: 0.1, saturation: 1.15, contrast: 1.2, temperature: 0.2, tint: 0.02, grain: 1, bloom: 1.1 },
-  'dusk-interior': { id: 'dusk-interior', tone: 'agx', exposureEv: 0.25, saturation: 1.02, contrast: 1.12, temperature: 0.1, tint: -0.02, grain: 1.2, bloom: 1.25 },
-  overcast: { id: 'overcast', tone: 'agx', exposureEv: 0.2, saturation: 1.04, contrast: 1.14, temperature: -0.06, tint: 0, grain: 1, bloom: 0.7 },
-  night: { id: 'night', tone: 'agx', exposureEv: 0.35, saturation: 0.9, contrast: 1.1, temperature: -0.12, tint: 0, grain: 1.5, bloom: 1.3 },
+  // AgX Base under a clear sun is a grey veil (lifted blacks, dull whites, a golden light turned beige): the sunlit looks
+  // take most of Blender's "Punchy" look (and a little less pre-curve saturation, which the look returns); dim and soft
+  // light takes less.
+  'archviz-daylight': { id: 'archviz-daylight', tone: 'agx', exposureEv: 0.15, saturation: 1.1, contrast: 1.14, temperature: 0.04, tint: 0, grain: 1, bloom: 0.85, look: 0.8 },
+  'golden-hour': { id: 'golden-hour', tone: 'agx', exposureEv: 0.15, saturation: 1.12, contrast: 1.14, temperature: 0.2, tint: 0.02, grain: 1, bloom: 1.1, look: 0.9 },
+  'dusk-interior': { id: 'dusk-interior', tone: 'agx', exposureEv: 0.25, saturation: 1.02, contrast: 1.12, temperature: 0.1, tint: -0.02, grain: 1.2, bloom: 1.25, look: 0.4 },
+  overcast: { id: 'overcast', tone: 'agx', exposureEv: 0.2, saturation: 1.04, contrast: 1.14, temperature: -0.06, tint: 0, grain: 1, bloom: 0.7, look: 0.4 },
+  night: { id: 'night', tone: 'agx', exposureEv: 0.35, saturation: 0.9, contrast: 1.1, temperature: -0.12, tint: 0, grain: 1.5, bloom: 1.3, look: 0.3 },
   neutral: { id: 'neutral', tone: 'aces', exposureEv: 0, saturation: 1, contrast: 1, temperature: 0, tint: 0, grain: 0.6, bloom: 1 },
 });
 

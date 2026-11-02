@@ -62,8 +62,10 @@ export const HEMI_SHARE_WITH_IBL = 0.6;
 export const AUTO_HDRI: Readonly<Record<string, string>> = Object.freeze({
   day: 'sky-partly-cloudy',
   overcast: 'sky-partly-cloudy',
-  dawn: 'sky-golden-sunset',
-  sunset: 'sky-golden-sunset',
+  // A clear low-sun sky (deep blue overhead, warm at the horizon): the cloud-covered sunset photograph lit every
+  // golden-hour world with a grey overcast fill.
+  dawn: 'sky-industrial-sunset',
+  sunset: 'sky-industrial-sunset',
   night: 'sky-moonlit',
   studio: 'sky-photo-studio',
 });
@@ -148,6 +150,20 @@ const TERRAIN_FOG_START = 0.5;
 const HDRI_ENV_SCALE = 0.6;
 /** Hemisphere ambient kept while an HDRI lights the scene. */
 const HDRI_HEMI_SCALE = 0.2;
+/**
+ * Sky level ({@link HdriController.level}) the image-light scale above is tuned for: the bundled clear-day sky. A
+ * brighter photograph (a hazy sunset, an overcast deck) is turned down to it, so its shade is not filled to the level
+ * of the sunlit faces; a darker one keeps its own level (a night or desert sky is not lifted).
+ */
+const HDRI_SKY_LEVEL = 0.47;
+/** Lowest share a bright photographed sky's image light is turned down to. */
+const HDRI_LEVEL_FLOOR = 0.35;
+
+/** Image-light multiplier of a photographed sky of `level` (null: unknown, kept as it is). */
+export function hdriLevelScale(level: number | null): number {
+  if (level === null || !(level > 0)) return 1;
+  return Math.max(HDRI_LEVEL_FLOOR, Math.min(1, HDRI_SKY_LEVEL / level));
+}
 
 /** Owns every environment object; add {@link group} to the scene. */
 export class EnvironmentRig {
@@ -471,7 +487,7 @@ export class EnvironmentRig {
    */
   private updateEnvironmentMap(scene: Scene, horizon: string): void {
     // A loaded HDRI owns lighting (and, by default, the background); the analytic sky hides behind it.
-    if (this.hdri.bind(scene, this.state.envIntensity * HDRI_ENV_SCALE)) {
+    if (this.hdri.bind(scene, this.state.envIntensity * HDRI_ENV_SCALE * hdriLevelScale(this.hdri.level))) {
       this.alignHdriSun(scene);
       this.envBase = scene.environmentIntensity;
       scene.environmentIntensity = this.envBase * this.envScale;

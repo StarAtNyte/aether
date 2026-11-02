@@ -127,6 +127,39 @@ export function clampRadiance(tex: Texture, max: number): number {
 }
 
 /**
+ * Brightness of an HDRI's sky as light: the cosine-weighted mean luminance of its upper hemisphere (the irradiance
+ * of an upward-facing surface divided by π), read with rows top first as the loader leaves them. Photographed skies
+ * differ by several times in absolute level (a hazy sunset is brighter than a clear blue sky), so a fixed scale lights
+ * one world flat and another gloomy; the rig scales the image light by this. Null without pixel data.
+ */
+export function hdriSkyLevel(tex: Texture): number | null {
+  const raw = rawOf(tex);
+  if (!raw) return null;
+  const { width, height, data, half } = raw;
+  const rows = Math.floor(height / 2);
+  let sum = 0;
+  let weight = 0;
+  for (let y = 0; y < rows; y++) {
+    const alt = (0.5 - (y + 0.5) / height) * Math.PI;
+    const solid = Math.cos(alt);
+    const w = Math.sin(alt) * solid;
+    let row = 0;
+    for (let x = 0; x < width; x++) {
+      const o = (y * width + x) * 4;
+      const r = half ? DataUtils.fromHalfFloat(data[o] as number) : (data[o] as number);
+      const g = half ? DataUtils.fromHalfFloat(data[o + 1] as number) : (data[o + 1] as number);
+      const b = half ? DataUtils.fromHalfFloat(data[o + 2] as number) : (data[o + 2] as number);
+      row += 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    }
+    sum += row * w;
+    weight += width * solid;
+  }
+  // A texel spans cosα·Δα·Δφ of solid angle and the whole sphere 4π = Σ cosα·Δα·Δφ, twice the upper half's weight, so
+  // ∫ L cosθ dω / π = Σ(L sinα cosα)·Δα·Δφ / π = 2 · sum / weight (1 for a uniform sky of radiance 1).
+  return weight > 0 ? (2 * sum) / weight : null;
+}
+
+/**
  * Rotation about the vertical axis (radians, for `scene.environmentRotation.y`) that moves an HDRI's sun from
  * azimuth `hdriAzimuth` to the direction (`lx`, `lz`) of the sun light. Zero for a vertical light. The
  * rotation turns the image like an object: a right-handed turn by `a` about +y moves azimuth `atan2(z, x)`
@@ -139,8 +172,24 @@ export function hdriRotationFor(hdriAzimuth: number, lx: number, lz: number): nu
   return Math.atan2(Math.sin(turn), Math.cos(turn));
 }
 
-/** Radiance cap applied to an HDRI used only for image-based light (sun removed; the sun light casts the shadows). */
+/**
+ * Radiance cap of every HDRI's texels once its sun has been read. The scene always has a shadow-casting sun light; the
+ * photographed sun left in the map would light every surface a second time through the diffuse image light, from the
+ * same side and without shadows, which fills the shade and flattens the picture (a washed, overcast look).
+ */
 export const HDRI_SUN_CLAMP = 12;
+/**
+ * Narrowest equirectangular map (texels) shown as the background. A 1k photographed sky has under three texels per
+ * degree: magnified seven times across a 60° view it is a smear of clouds with no sun disc. Such a map still lights and
+ * reflects; the analytic sky (which follows the hour and the sun light) is the background instead.
+ */
+export const HDRI_BACKDROP_MIN_WIDTH = 2048;
+
+/** Width (texels) of a texture's image, or 0. */
+function imageWidth(tex: Texture): number {
+  const w = (tex.image as { width?: unknown } | null | undefined)?.width;
+  return typeof w === 'number' && Number.isFinite(w) ? w : 0;
+}
 
 /** The current HDRI binding of a scene. */
 export class HdriController {
@@ -150,8 +199,10 @@ export class HdriController {
   private background = true;
   private intensity = 1;
   private scene: Scene | null = null;
-  private clampSun = false;
+  /** The current request is for light alone (an automatic map: may be parked for reuse). */
+  private lightOnly = false;
   private sunInfo: HdriSun | null = null;
+  private skyLevel: number | null = null;
   /** The loaded map was requested light-only (its sun is clamped away). */
   private texAuto = false;
   /** The current request is for light alone, so it may be served by the library's half-resolution copy. */
@@ -162,7 +213,12 @@ export class HdriController {
    * of GPU objects each time). One map is kept; it is disposed when another map takes its place, when a
    * world HDRI is requested, and with the controller.
    */
-  private parked: { id: string; tex: Texture; sun: HdriSun | null } | null = null;
+  private parked: { id: string; tex: Texture; sun: HdriSun | null; level: number | null } | null = null;
+
+  /** The loaded map's sky brightness as light ({@link hdriSkyLevel}, after its sun was cut down), when its pixels were readable. */
+  get level(): number | null {
+    return this.skyLevel;
+  }
 
   /** The loaded map's sun (azimuth, elevation), when its pixels were readable. */
   get sun(): HdriSun | null {
@@ -209,9 +265,14 @@ export class HdriController {
     return this.tex;
   }
 
-  /** True when the loaded map is also the background (the analytic sky dome hides). */
+  /**
+   * True when the loaded map is also the background (the analytic sky dome hides): asked for, and sharp enough to be
+   * seen (a map of unknown size is trusted).
+   */
   get showsBackground(): boolean {
-    return this.tex !== null && this.background;
+    if (this.tex === null || !this.background) return false;
+    const w = imageWidth(this.tex);
+    return w === 0 || w >= HDRI_BACKDROP_MIN_WIDTH;
   }
 
   /** Last load error (for diagnostics), or null. */
@@ -226,15 +287,15 @@ export class HdriController {
   }
 
   /**
-   * Request `id` (or none). Re-requesting the same id only updates intensity / background. With
-   * `lightOnly` the map is used for image-based light alone: its sun is cut down to the sky's level
-   * after the sun's direction has been read (see {@link clampRadiance}).
+   * Request `id` (or none). Re-requesting the same id only updates intensity / background. Every map's sun is
+   * cut down to the sky's level after its direction has been read (see {@link clampRadiance}, {@link HDRI_SUN_CLAMP});
+   * with `lightOnly` the map is used for image-based light alone and may be fetched at half resolution.
    */
   set(id: string | undefined, opts: { intensity?: number; background?: boolean; lightOnly?: boolean }): void {
     this.intensity = opts.intensity ?? 1;
     this.background = opts.background !== false;
     const lightOnly = opts.lightOnly === true;
-    this.clampSun = lightOnly;
+    this.lightOnly = lightOnly;
     const next = id ?? null;
     // A sky used for light alone is fetched at half resolution; if the same sky becomes the background, fetch it whole.
     const lite = !this.background || lightOnly;
@@ -254,6 +315,7 @@ export class HdriController {
         // The automatic map of this tier comes straight back: no load, no new prefiltering.
         this.tex = this.parked.tex;
         this.sunInfo = this.parked.sun;
+        this.skyLevel = this.parked.level;
         this.texAuto = true;
         this.parked = null;
         this.onChange();
@@ -277,11 +339,12 @@ export class HdriController {
           }
           tex.mapping = EquirectangularReflectionMapping;
           this.sunInfo = hdriSun(tex);
-          if (this.clampSun) clampRadiance(tex, HDRI_SUN_CLAMP);
+          clampRadiance(tex, HDRI_SUN_CLAMP);
+          this.skyLevel = hdriSkyLevel(tex);
           // The loader leaves flipY on; the sun above was read with rows top first. Flip the rows now so the upload sets no flag.
           bakeFlipY(tex);
           this.tex = tex;
-          this.texAuto = this.clampSun;
+          this.texAuto = this.lightOnly;
           this.onChange();
         },
         (e: unknown) => {
@@ -303,7 +366,7 @@ export class HdriController {
     if (!this.tex) return false;
     scene.environment = this.tex;
     scene.environmentIntensity = baseIntensity * this.intensity;
-    scene.background = this.background ? this.tex : null;
+    scene.background = this.showsBackground ? this.tex : null;
     return true;
   }
 
@@ -324,11 +387,12 @@ export class HdriController {
     if (this.tex) {
       if (this.texAuto && previous !== null) {
         this.releaseParked();
-        this.parked = { id: previous, tex: this.tex, sun: this.sunInfo };
+        this.parked = { id: previous, tex: this.tex, sun: this.sunInfo, level: this.skyLevel };
       } else this.tex.dispose();
     }
     this.tex = null;
     this.sunInfo = null;
+    this.skyLevel = null;
     this.texAuto = false;
   }
 
