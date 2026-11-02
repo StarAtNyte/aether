@@ -65,7 +65,7 @@ import { captureMime, captureNeedsResize, pixelsAreBlank, captureSize, MAX_VIEWS
 import { FrameStats } from './view/frame-stats';
 import { gradeFor, gradeWithPreset } from './gpu/grade';
 import { autoTier, degrade, effectsKey, effectsOf, evScale, GRADE_PRESETS, isGradePresetId, presetFor, resolveEffects, type EffectOverrides, type GradePreset, type GradePresetId, type PostEffects, type RenderTier } from './gpu/finishing';
-import { CameraTour, TOUR_SECONDS, tourKeys } from './view/tour';
+import { CameraTour, DRONE_TOUR_RADIUS, TOUR_SECONDS, droneTourKeys, tourKeys, tourSections } from './view/tour';
 import { AdaptiveResolution, MOTION_PROFILES, type MotionProfile } from './view/adaptive-resolution';
 import { MeshBasicNodeMaterial } from 'three/webgpu';
 import { textureWork } from './gpu/task-queue';
@@ -1598,22 +1598,44 @@ export class WorldRenderer {
   /**
    * Fly-through: a cinematic loop around the meaningful content (low passes
    * past focus objects, high reveals), starting and ending at the current
-   * view. Pointer or wheel input on the canvas, or any camera command, stops
+   * view. A large scene (content radius {@link DRONE_TOUR_RADIUS} m or more,
+   * two or more sections) gets a drone tour instead: a reveal, then each
+   * section glided into and orbited close up, with high transits between,
+   * paced by distance (its length follows the scene unless `seconds` is given). Pointer or wheel input on the canvas, or any camera command, stops
    * it. Returns false when there is nothing to tour.
    */
-  startTour(seconds = TOUR_SECONDS): boolean {
+  startTour(seconds?: number): boolean {
     if (this.boundsDirty) this.refresh();
     const f = this.framing;
     if (!f) return false;
+    const items = collectFramingItems(this.sync);
+    const cam = this.perspective.position;
+    // A large scene gets the drone tour: each section revealed, orbited close up and left by a high transit.
+    if (f.radius >= DRONE_TOUR_RADIUS) {
+      const sections = tourSections(items, f.radius);
+      if (sections.length >= 2) {
+        const probe = {
+          ground: (x: number, z: number): number => this.raycastWorld([x, f.center[1] + f.radius * 3 + 500, z], [0, -1, 0], f.radius * 6 + 2000)?.point[1] ?? this.rig.floorY,
+          clear: (a: Vec3, b: Vec3): boolean => {
+            const d = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+            const hit = this.raycastWorld(a, [b[0] - a[0], b[1] - a[1], b[2] - a[2]], d);
+            return !hit || Math.hypot(hit.point[0] - b[0], hit.point[1] - b[1], hit.point[2] - b[2]) < d * 0.25;
+          },
+        };
+        const plan = droneTourKeys({ pos: [cam.x, cam.y, cam.z], target: this.orbitTarget() }, sections, f.center, f.radius, probe);
+        this.rig.startTour(new CameraTour(plan.keys, seconds ?? TOUR_SECONDS, seconds === undefined ? plan.times : undefined));
+        this.needsDraw = true;
+        return true;
+      }
+    }
     const focus: Vec3[] = [];
-    for (const item of collectFramingItems(this.sync)) {
+    for (const item of items) {
       if (focus.length >= 6) break;
       if (item.focus || (item.weight === undefined && (item.max[1] - item.min[1]) > f.radius * 0.08)) focus.push([(item.min[0] + item.max[0]) / 2, item.min[1] + (item.max[1] - item.min[1]) * 0.45, (item.min[2] + item.max[2]) / 2]);
     }
-    const cam = this.perspective.position;
     const target = this.orbitTarget();
     const keys = tourKeys({ pos: [cam.x, cam.y, cam.z], target }, f.center, f.radius, focus, Math.max(0.5, this.rig.floorY));
-    this.rig.startTour(new CameraTour(keys, seconds));
+    this.rig.startTour(new CameraTour(keys, seconds ?? TOUR_SECONDS));
     this.needsDraw = true;
     return true;
   }
@@ -5198,7 +5220,8 @@ export class WorldRenderer {
   /**
    * A camera placed from bounds alone (a hero shot) can sit inside a cliff or under the terrain and draw nothing. Like a
    * spring arm: a solid surface between the target and the camera, in the camera's end of the line, pulls the camera in front of
-   * it; a camera with no surface anywhere below it is under the ground and is lifted to eye height above the surface there.
+   * it; a camera with no surface anywhere below it is under the ground and is lifted to eye height above the surface there; a
+   * camera whose view is stopped short by a wall moves round the target to the first side that sees it.
    */
   private clearPose<P extends { position: Vec3; target: Vec3 }>(pose: P): P {
     const [tx, ty, tz] = pose.target;
@@ -5214,9 +5237,33 @@ export class WorldRenderer {
         [x, y, z] = [tx + dx * back, ty + dy * back, tz + dz * back];
       }
     }
-    if (!this.raycastWorld([x, y + 0.2, z], [0, -1, 0], 4000)) {
-      const top = this.raycastWorld([x, y + 3000, z], [0, -1, 0], 6000);
-      if (top) y = top.point[1] + 1.7;
+    const lift = (px: number, py: number, pz: number): number => {
+      if (this.raycastWorld([px, py + 0.2, pz], [0, -1, 0], 4000)) return py;
+      const top = this.raycastWorld([px, py + 3000, pz], [0, -1, 0], 6000);
+      return top ? top.point[1] + 1.7 : py;
+    };
+    y = lift(x, y, z);
+    // How far the camera sees toward the target before something solid stops the view (1: the whole way).
+    const open = (px: number, py: number, pz: number): number => {
+      const d = Math.hypot(tx - px, ty - py, tz - pz);
+      const h = this.raycastWorld([px, py, pz], [tx - px, ty - py, tz - pz], d);
+      return h ? Math.hypot(h.point[0] - px, h.point[1] - py, h.point[2] - pz) / d : 1;
+    };
+    // A wall right in front of the lens (a street shot facing a terrace): walk round the target at the same distance and height
+    // and take the first side with a clear view, else the side that sees farthest.
+    if (open(x, y, z) < 0.6) {
+      const rx = x - tx, rz = z - tz;
+      let best: { x: number; y: number; z: number; o: number } = { x, y, z, o: open(x, y, z) };
+      for (const deg of [25, -25, 50, -50, 80, -80, 115, -115, 150, -150, 180]) {
+        const a = (deg * Math.PI) / 180;
+        const cx = tx + rx * Math.cos(a) - rz * Math.sin(a);
+        const cz = tz + rx * Math.sin(a) + rz * Math.cos(a);
+        const cy = lift(cx, y, cz);
+        const o = open(cx, cy, cz);
+        if (o > best.o) best = { x: cx, y: cy, z: cz, o };
+        if (o >= 0.95) break;
+      }
+      [x, y, z] = [best.x, best.y, best.z];
     }
     return { ...pose, position: [x, y, z] as Vec3 };
   }

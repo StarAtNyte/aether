@@ -53,11 +53,26 @@ export class CameraTour {
   private readonly data: Float64Array;
   private readonly count: number;
 
-  constructor(keys: readonly TourKey[], duration = TOUR_SECONDS) {
-    this.duration = Math.max(1, Number.isFinite(duration) ? duration : TOUR_SECONDS);
+  /** Seconds at which each key is reached (null: the keys are evenly spaced in time). */
+  private readonly times: Float64Array | null;
+
+  /**
+   * `times` (seconds from the start, one per key, rising) paces the keys: a long transit can take longer than a short
+   * close-up arc. Without it the keys are evenly spaced over `duration`; with it the duration is the last key's time.
+   */
+  constructor(keys: readonly TourKey[], duration = TOUR_SECONDS, times?: readonly number[]) {
+    const timed = times && times.length === keys.length && keys.length >= 2 && times.every((x, i) => Number.isFinite(x) && (i === 0 || x > (times[i - 1] as number)));
+    this.times = timed ? Float64Array.from(times) : null;
+    const total = timed ? (times[times.length - 1] as number) - (times[0] as number) : duration;
+    this.duration = Math.max(1, Number.isFinite(total) ? total : TOUR_SECONDS);
     this.count = keys.length;
     this.data = new Float64Array(keys.length * 6);
     keys.forEach((k, i) => this.data.set([...k.pos, ...k.target], i * 6));
+  }
+
+  /** Total length (s). */
+  get seconds(): number {
+    return this.duration;
   }
 
   /** True until the last key is reached. */
@@ -121,10 +136,126 @@ export class CameraTour {
     io[0] = t;
     // Smooth start and stop over the whole loop.
     io[1] = t * t * (3 - 2 * t);
+    // Timed keys: the eased time picks the segment and the share of it (stored as the key position over the whole loop).
+    const times = this.times;
+    if (times) {
+      const n = this.count;
+      const at = (times[0] as number) + (io[1] as number) * this.duration;
+      let i = 0;
+      while (i < n - 2 && at >= (times[i + 1] as number)) i++;
+      const t0 = times[i] as number;
+      const t1 = times[i + 1] as number;
+      io[1] = (i + Math.min(1, Math.max(0, (at - t0) / (t1 - t0)))) / (n - 1);
+    }
     this.place(camera.position, outTarget);
     if (camera.position.y < (io[3] as number)) camera.position.y = io[3] as number;
     _look.copy(outTarget);
     camera.lookAt(_look);
     return true;
   }
+}
+
+/** One part of a large scene worth a close look: the centre of a cluster of built pieces and its size. */
+export interface TourSection {
+  center: Vec3;
+  /** Half the width of the cluster (m). */
+  size: number;
+  /** How much is there (sum of the pieces' volumes, relative); larger sections come first and get more time. */
+  weight: number;
+}
+
+/** Content radius (m) from which a scene gets the drone tour (sections, close orbits, high transits) instead of one loop. */
+export const DRONE_TOUR_RADIUS = 45;
+
+/**
+ * Sections of a scene from its pieces' boxes: greedy clusters of pieces within `reach` of a cluster's centre, the
+ * heaviest kept (at most `max`). Pieces flatter than 1.5 m (paving, water, ground covers) do not make a section.
+ */
+export function tourSections(items: ReadonlyArray<{ min: Vec3; max: Vec3 }>, radius: number, max = 6): TourSection[] {
+  const reach = Math.max(14, radius * 0.2);
+  const pieces = items
+    .map((b) => ({ c: [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2] as Vec3, h: b.max[1] - b.min[1], w: Math.max(b.max[0] - b.min[0], b.max[2] - b.min[2]), top: b.max[1] }))
+    .filter((p) => p.h > 1.5 && p.w < radius * 1.2 && p.c.every(Number.isFinite))
+    .map((p) => ({ ...p, v: p.h * Math.max(1, p.w) * Math.max(1, p.w) }))
+    .sort((a, b) => b.v - a.v);
+  const clusters: Array<{ sx: number; sy: number; sz: number; n: number; v: number; ext: number; c: Vec3 }> = [];
+  for (const p of pieces) {
+    let home = clusters.find((k) => Math.hypot(k.c[0] - p.c[0], k.c[2] - p.c[2]) < reach);
+    if (!home) {
+      home = { sx: 0, sy: 0, sz: 0, n: 0, v: 0, ext: 0, c: p.c };
+      clusters.push(home);
+    }
+    home.sx += p.c[0] * p.v;
+    home.sy += p.c[1] * p.v;
+    home.sz += p.c[2] * p.v;
+    home.n += p.v;
+    home.v += p.v;
+    home.c = [home.sx / home.n, home.sy / home.n, home.sz / home.n];
+    home.ext = Math.max(home.ext, Math.hypot(home.c[0] - p.c[0], home.c[2] - p.c[2]) + p.w / 2);
+  }
+  return clusters
+    .sort((a, b) => b.v - a.v)
+    .slice(0, max)
+    .map((k) => ({ center: k.c, size: Math.max(6, Math.min(reach * 1.2, k.ext)), weight: k.v }));
+}
+
+/** What the scene answers while the tour is planned: the ground height under a point, and whether a camera at `from` sees `to`. */
+export interface TourProbe {
+  ground(x: number, z: number): number;
+  clear(from: Vec3, to: Vec3): boolean;
+}
+
+/**
+ * A drone tour of a large scene: from the current view it rises to a reveal of the whole place, then for each section
+ * glides in, arcs round it close up (a quarter turn, looking at it) and climbs out high toward the next, and finally returns
+ * to the starting view. Keys keep a drone's clearance over the ground and are raised until they see what they look at.
+ * Returns the keys and the time of each (seconds from the start), so transits move at a drone's pace and close orbits slow.
+ */
+export function droneTourKeys(from: TourKey, sections: readonly TourSection[], center: Vec3, radius: number, probe: TourProbe): { keys: TourKey[]; times: number[] } {
+  const keys: TourKey[] = [from];
+  const times: number[] = [0];
+  let t = 0;
+  let at: Vec3 = from.pos;
+  const settle = (p: Vec3, target: Vec3, clearance: number): Vec3 => {
+    const out: Vec3 = [p[0], Math.max(p[1], probe.ground(p[0], p[2]) + clearance), p[2]];
+    for (let k = 0; k < 6 && !probe.clear(out, target); k++) out[1] += Math.max(4, clearance);
+    return out;
+  };
+  const push = (pos: Vec3, target: Vec3, speed: number, minSeconds: number): void => {
+    const d = Math.hypot(pos[0] - at[0], pos[1] - at[1], pos[2] - at[2]);
+    t += Math.max(minSeconds, d / speed);
+    keys.push({ pos, target });
+    times.push(t);
+    at = pos;
+  };
+  const R = Math.max(10, radius);
+  const cruise = Math.max(9, R * 0.12);
+  // Reveal: up and back from the start toward the whole place.
+  const a0 = Math.atan2(from.pos[0] - center[0], from.pos[2] - center[2]);
+  push(settle([center[0] + Math.sin(a0) * R * 1.25, center[1] + R * 0.55, center[2] + Math.cos(a0) * R * 1.25], center, R * 0.2), center, cruise, 4);
+  // Sections in a short path from the reveal (nearest next).
+  const left = [...sections];
+  while (left.length > 0) {
+    let bi = 0;
+    for (let i = 1; i < left.length; i++) if (Math.hypot(left[i]!.center[0] - at[0], left[i]!.center[2] - at[2]) < Math.hypot(left[bi]!.center[0] - at[0], left[bi]!.center[2] - at[2])) bi = i;
+    const s = left.splice(bi, 1)[0]!;
+    const c = s.center;
+    const look: Vec3 = [c[0], c[1], c[2]];
+    const close = Math.max(7, s.size * 1.25);
+    const lift = Math.max(3, s.size * 0.35);
+    // Come in along the line from where the drone is, then arc a quarter turn round the section.
+    const aIn = Math.atan2(at[0] - c[0], at[2] - c[2]);
+    const turn = Math.PI / 2 * (keys.length % 2 === 0 ? 1 : -1);
+    push(settle([c[0] + Math.sin(aIn) * close * 2.2, c[1] + lift * 2.2, c[2] + Math.cos(aIn) * close * 2.2], look, 6), look, cruise, 3);
+    for (const f of [0, 0.5, 1]) {
+      const a = aIn + turn * f;
+      push(settle([c[0] + Math.sin(a) * close, c[1] + lift, c[2] + Math.cos(a) * close], look, 2.5), look, Math.max(2.5, close * 0.18), 3.5);
+    }
+    // Climb out high, already turning toward what comes next.
+    const next = left.length > 0 ? left[0]!.center : center;
+    const aOut = aIn + turn;
+    push(settle([c[0] + Math.sin(aOut) * close * 2, c[1] + Math.max(lift * 4, R * 0.25), c[2] + Math.cos(aOut) * close * 2], next, R * 0.12), [(c[0] + next[0]) / 2, (c[1] + next[1]) / 2, (c[2] + next[2]) / 2], cruise, 3);
+  }
+  push([...from.pos], [...from.target], cruise, 4);
+  return { keys, times };
 }
