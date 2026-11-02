@@ -188,17 +188,19 @@ export function photoPlan(kind: FoliageKind, c: number, sheet: LeafSheet, varian
   }
   const shrub = kind === 'shrub';
   const base = { x: c * 0.5, y: c * 0.97 };
-  const count = shrub ? 15 + Math.floor(r() * 5) : 12 + Math.floor(r() * 5);
+  // Tree cards carry many small leaves (a card is a leafy spray some 0.5-0.9 m across, its leaves a hand long): a dozen
+  // big leaves per card read as vine leaves blown up to the size of a crown.
+  const count = shrub ? 15 + Math.floor(r() * 5) : 26 + Math.floor(r() * 7);
   const items: DrawOp[] = [];
   for (let i = 0; i < count; i++) {
     const t = r();
     const spread = (r() - 0.5) * 2;
     // Attachment points: along a short twig for trees (fan outward), over an upper oval for shrubs (dense clump).
-    const reach = shrub ? c * (0.12 + 0.42 * Math.sqrt(t)) : c * (0.18 + 0.38 * t);
-    const a = spread * (shrub ? 1.05 : 0.8);
+    const reach = shrub ? c * (0.12 + 0.42 * Math.sqrt(t)) : c * (0.1 + 0.62 * Math.sqrt(t));
+    const a = spread * (shrub ? 1.05 : 0.95);
     let x = base.x + Math.sin(a) * reach * (shrub ? 1.05 : 0.9);
     let y = base.y - Math.cos(a) * reach;
-    let length = c * (shrub ? 0.2 + 0.1 * r() : 0.27 + 0.1 * r());
+    let length = c * (shrub ? 0.2 + 0.1 * r() : 0.15 + 0.07 * r());
     const angle = a * (0.85 + 0.4 * r()) + (r() - 0.5) * 0.5;
     const sprite = pick(sheet, shrub ? (r() < 0.35 ? ['leaf-narrow'] : ['leaf-broad']) : ['leaf-broad'], r);
     // The whole leaf stays inside its cell (a clipped leaf shows a straight cut in the crown).

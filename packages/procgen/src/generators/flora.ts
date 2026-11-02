@@ -23,6 +23,12 @@ import { foliageCellUv, FOLIAGE_CELLS } from '../foliage-pixels';
 
 /** Bark: the photographed bark surface, tinted per vertex. */
 const BARK = { finish: 'bark', vertexColors: true } as const;
+/**
+ * Bark whose colour is the generator's own paint: the finish's photographed surface with a white base, so the vertex
+ * colours (the `trunkColor` tint, fissures, lichen) are the bark's colour instead of being multiplied into the finish's
+ * dark brown (grey olive and oak bark came out a saturated red-brown).
+ */
+const BARK_TINTED = { ...BARK, color: '#ffffff' } as const;
 /** Rock: the photographed rock surface, tinted per vertex. */
 const ROCK = { finish: 'rock', vertexColors: true } as const;
 /** Foliage cards (the renderer cuts the leaves out of each quad). */
@@ -211,8 +217,13 @@ function crownCards(
   const top: RGB = [0, 0, 0];
   const base: RGB = [0, 0, 0];
   for (const cl of clusters) {
+    // Each clump has its own tone (a little warmer or cooler, lighter or darker) and shades itself: its sunward cap is lit,
+    // its underside sits in its own shadow. That is what makes a crown read as clumps of foliage instead of one even blob.
+    const gain = api.range(0.82, 1.12);
+    const hue = api.range(-0.06, 0.06);
     for (let k = 0; k < per; k++) {
       const o = inBall(api, 0.6);
+      const own = o[0] * SUN[0] + o[1] * SUN[1] + o[2] * SUN[2];
       const p: Vec3 = [cl.c[0] + o[0] * cl.r, cl.c[1] + o[1] * cl.r * 0.85, cl.c[2] + o[2] * cl.r];
       const away = unit([(p[0] - crown.c[0]) / crown.r[0], (p[1] - crown.c[1]) / crown.r[1] + 0.12, (p[2] - crown.c[2]) / crown.r[2]]);
       const n = unit([away[0] * 0.8 + o[0] * 0.25, away[1] * 0.8 + o[1] * 0.25 + 0.1, away[2] * 0.8 + o[2] * 0.25]);
@@ -221,9 +232,11 @@ function crownCards(
       const u = unit(cross(v, [api.rng() - 0.5, api.rng() - 0.5 + 0.3, api.rng() - 0.5]));
       const depth = Math.min(1, Math.hypot((p[0] - crown.c[0]) / crown.r[0], (p[1] - crown.c[1]) / crown.r[1], (p[2] - crown.c[2]) / crown.r[2]));
       const facing = Math.max(0, n[0] * SUN[0] + n[1] * SUN[1] + n[2] * SUN[2]);
-      const light = Math.min(1, depth * 0.55 + facing * 0.55 + (api.rng() - 0.5) * 0.25);
-      mixLinear(tones.deep, tones.mid, Math.min(1, light * 1.4), tmp);
+      const light = Math.max(0, Math.min(1, (depth * 0.45 + facing * 0.42 + own * 0.3 + (api.rng() - 0.5) * 0.22) * gain));
+      mixLinear(tones.deep, tones.mid, Math.min(1, light * 1.45), tmp);
       mixLinear(tmp, tones.sun, Math.max(0, light - 0.55) * 1.6, tmp);
+      tmp[0] *= 1 + hue;
+      tmp[2] *= 1 - hue;
       if (api.rng() < warmShare) mixLinear(tmp, tones.warm, 0.3 + api.rng() * 0.3, tmp);
       mixLinear(tones.deep, tmp, 0.7, base);
       mixLinear(tmp, tones.sun, 0.1, top);
@@ -244,6 +257,30 @@ function limb(api: InternalApi, into: Mesh | null, from: Vec3, to: Vec3, r0: num
   const t = api.tube(path, Math.max(0.006, r0), simple ? 4 : 5, (u) => Math.max(0.15, 1 - (1 - r1 / Math.max(1e-4, r0)) * u));
   return into ? into.merge(t) : t;
 }
+
+/** A limb from a to b that kinks twice on the way (olive and oak wood is never straight), merged into `into`. */
+function crookedLimb(api: InternalApi, into: Mesh | null, from: Vec3, to: Vec3, r0: number, r1: number, kink: number, sides = 5): Mesh {
+  const len = Math.hypot(to[0] - from[0], to[1] - from[1], to[2] - from[2]);
+  const path: Vec3[] = [from];
+  for (const t of [0.34, 0.68]) {
+    const j = kink * len;
+    path.push([from[0] + (to[0] - from[0]) * t + (api.rng() - 0.5) * j, from[1] + (to[1] - from[1]) * t + (api.rng() - 0.5) * j * 0.6, from[2] + (to[2] - from[2]) * t + (api.rng() - 0.5) * j]);
+  }
+  path.push(to);
+  // One round of corner cutting, so the kinks bend instead of folding.
+  const smooth: Vec3[] = [from];
+  for (let i = 0; i + 1 < path.length; i++) {
+    const p0 = path[i] as Vec3;
+    const p1 = path[i + 1] as Vec3;
+    smooth.push([p0[0] * 0.75 + p1[0] * 0.25, p0[1] * 0.75 + p1[1] * 0.25, p0[2] * 0.75 + p1[2] * 0.25], [p0[0] * 0.25 + p1[0] * 0.75, p0[1] * 0.25 + p1[1] * 0.75, p0[2] * 0.25 + p1[2] * 0.75]);
+  }
+  smooth.push(to);
+  const t = api.tube(smooth, Math.max(0.006, r0), sides, (u) => Math.max(0.15, 1 - (1 - r1 / Math.max(1e-4, r0)) * u));
+  return into ? into.merge(t) : t;
+}
+
+/** Material of a cypress's inner column: plain, rough, tinted per vertex. */
+const CORE = { vertexColors: true, roughness: 0.95, metalness: 0 } as const;
 
 // ---------------------------------------------------------------------------
 // Broadleaf tree
@@ -277,33 +314,39 @@ const treeBroadleaf = defineGenerator({
     rootPath(path);
     const top = path[path.length - 1] as Vec3;
     let wood: Mesh = api.tube(path, trunkR, 9, (t) => (t < 0.1 ? 1.5 - t * 5 : 1) * (1 - 0.6 * t));
-    // The crown's vertical radius fills the space from the trunk top to the tree's height.
-    const crownV = (H - trunkH) / 1.35;
-    const crownR = crownV * ([0.9, 0.66, 1.2][crownKind] ?? 0.9);
+    // The crown's vertical radius fills the space from the trunk top to the tree's height. Every tree is its own: the
+    // crown's width and depth, its limb count and its lopsidedness (a crown grows toward its light) vary per seed.
+    const crownV = ((H - trunkH) / 1.35) * api.range(0.92, 1.04);
+    const crownR = crownV * ([0.9, 0.66, 1.2][crownKind] ?? 0.9) * api.range(0.88, 1.12);
     const crownSy = crownV / crownR;
     const crownC: Vec3 = [top[0], top[1] + crownV * 0.55, top[2]];
+    const skewA = api.rng() * Math.PI * 2;
+    const skew = crownR * api.range(0.05, 0.2);
     const clusters: Array<{ c: Vec3; r: number }> = [];
-    const limbs = 6 + (crownKind === 2 ? 2 : 0);
+    const limbs = 6 + (crownKind === 2 ? 2 : 0) + Math.floor(api.rng() * 2);
     for (let k = 0; k < limbs; k++) {
       const t = 0.45 + 0.5 * (k / limbs);
       const from = path[Math.min(path.length - 1, Math.round(t * (path.length - 1)))] as Vec3;
       const a = k * 2.399 + api.rng() * 0.5;
-      const reach = crownR * api.range(0.4, 0.72) * (crownKind === 1 ? 0.8 : 1);
-      const rise = crownV * api.range(0.45, 0.95);
+      const reach = crownR * api.range(0.45, 0.78) * (crownKind === 1 ? 0.8 : 1) + skew * Math.cos(a - skewA);
+      const rise = crownV * api.range(0.4, 0.95);
       const end: Vec3 = [from[0] + Math.cos(a) * reach, from[1] + rise, from[2] + Math.sin(a) * reach];
       const r0 = trunkR * 0.55 * (1 - t * 0.3);
-      wood = limb(api, wood, from, end, r0, r0 * 0.3, [0, -reach * 0.1, 0]);
-      clusters.push({ c: end, r: crownR * api.range(0.36, 0.5) });
-      for (let f = 0; f < 2; f++) {
-        const s = 0.55 + f * 0.25;
+      wood = crookedLimb(api, wood, from, end, r0, r0 * 0.3, 0.14);
+      const head = { c: end, r: crownR * api.range(0.3, 0.42) };
+      clusters.push(head);
+      // Side branches fork off along the limb, each ending in its own smaller clump: the crown is built of clumps.
+      for (let f = 0; f < 3; f++) {
+        const s = 0.42 + f * 0.17;
         const o: Vec3 = [from[0] + (end[0] - from[0]) * s, from[1] + (end[1] - from[1]) * s, from[2] + (end[2] - from[2]) * s];
-        const a2 = a + (f === 0 ? 0.9 : -0.9);
-        const tw: Vec3 = [o[0] + Math.cos(a2) * reach * 0.35, o[1] + rise * 0.35, o[2] + Math.sin(a2) * reach * 0.35];
-        wood = limb(api, wood, o, tw, r0 * 0.4, r0 * 0.12, [0, 0, 0]);
-        clusters.push({ c: tw, r: crownR * api.range(0.28, 0.38) });
+        const a2 = a + (f % 2 === 0 ? 1 : -1) * api.range(0.6, 1.2);
+        const out = reach * api.range(0.3, 0.48);
+        const tw: Vec3 = [o[0] + Math.cos(a2) * out, o[1] + rise * api.range(0.2, 0.45), o[2] + Math.sin(a2) * out];
+        wood = limb(api, wood, o, tw, r0 * 0.38, r0 * 0.1, [0, 0, 0], true);
+        clusters.push({ c: tw, r: crownR * api.range(0.22, 0.32) });
       }
     }
-    clusters.push({ c: crownC, r: crownR * 0.62 });
+    clusters.push({ c: crownC, r: crownR * 0.55 });
     const leafShare = p.num('leaf');
     if (leafShare < 0.5) {
       // Winter: the crown is a net of fine twigs forking off every limb tip.
@@ -321,20 +364,35 @@ const treeBroadleaf = defineGenerator({
         }
       }
     }
+    if (leafShare >= 0.5) {
+      // Twigs reach out past the foliage at the crown's edge, so the wood shows where the leaves thin out.
+      for (const cl of clusters) {
+        const dx = cl.c[0] - crownC[0];
+        const dz = cl.c[2] - crownC[2];
+        const out = Math.hypot(dx, dz);
+        if (out < crownR * 0.3 || api.rng() < 0.4) continue;
+        const len = cl.r * api.range(1.0, 1.35);
+        const tip: Vec3 = [cl.c[0] + (dx / out) * len, cl.c[1] + len * api.range(-0.1, 0.35), cl.c[2] + (dz / out) * len];
+        const from: Vec3 = [cl.c[0] - (dx / out) * cl.r * 0.3, cl.c[1] - cl.r * 0.2, cl.c[2] - (dz / out) * cl.r * 0.3];
+        wood = limb(api, wood, from, tip, trunkR * 0.09, trunkR * 0.025, [0, -len * 0.08, 0], true);
+      }
+    }
     flatBase(wood);
     paintBark(api, wood, p.color('trunkColor'));
     barkUvs(wood, top[0] * 0.5, top[2] * 0.5);
-    api.add(wood, BARK);
+    api.add(wood, BARK_TINTED);
 
     const blossoming = p.num('blossom') > 0.5;
-    const budget = cardBudget((blossoming ? 440 : 520) * detail * leafShare, H * 0.1, Math.min(0.85, Math.max(0.45, 0.4 + H * 0.04)), 1000 * Math.max(0.3, detail));
+    const budget = cardBudget((blossoming ? 440 : 460) * detail * leafShare, H * 0.1, Math.min(0.85, Math.max(0.45, 0.4 + H * 0.04)), 1000 * Math.max(0.3, detail));
     const count = budget.count;
     if (count < 8) {
       api.collider(cylinderCollider(0, trunkH / 2, 0, trunkR * 1.1, trunkH));
       return api.build(ROOTED);
     }
     const sheets = new Sheets(count + clusters.length);
-    crownCards(api, sheets, clusters, { c: crownC, r: [crownR, crownR * crownSy, crownR] }, count, { w: budget.size, h: budget.size }, blossoming ? blossomTones(p.color('color')) : leafTones(p.color('color')), blossoming ? 0.12 : 0.1);
+    const tones = blossoming ? blossomTones(p.color('color')) : leafTones(p.color('color'));
+    const crown = { c: crownC, r: [crownR, crownR * crownSy, crownR] as Vec3 };
+    crownCards(api, sheets, clusters, crown, count, { w: budget.size, h: budget.size }, tones, blossoming ? 0.12 : 0.1);
     const leaves = sheets.build(api);
     if (leaves) {
       api.add(leaves, foliage(blossoming ? 'blossom' : 'broadleaf'));
@@ -436,9 +494,14 @@ const treeCypress = defineGenerator({
   run(p, api) {
     const H = p.num('height');
     const detail = p.num('detail');
-    const R = (H * 0.075) / p.num('slenderness');
-    const lean = p.int('variant') === 1 ? H * api.range(0.01, 0.03) : 0;
+    // A flame: widest a quarter to a third of the way up, closing to a pointed tip. Per seed the fullness, the height of
+    // the widest point and the sharpness of the tip vary, and the outline swells into tufts (more on the tufted variant).
+    const R = ((H * 0.075) / p.num('slenderness')) * api.range(0.9, 1.1);
+    const tufted = p.int('variant') === 1;
+    const lean = tufted ? H * api.range(0.01, 0.03) : 0;
     const la = api.rng() * Math.PI * 2;
+    const peak = api.range(0.22, 0.34);
+    const tipPow = api.range(1.6, 2.4);
     const path: Vec3[] = [];
     for (let i = 0; i <= 6; i++) {
       const t = i / 6;
@@ -451,30 +514,118 @@ const treeCypress = defineGenerator({
     paintBark(api, wood, p.color('trunkColor'));
     barkUvs(wood, 0, 0);
     api.add(wood, BARK);
-    // A spindle: widest a third of the way up, closing to a pointed tip; clusters stacked up the axis.
-    const clusters: Array<{ c: Vec3; r: number }> = [];
-    const n = 12;
-    for (let k = 0; k < n; k++) {
-      const t = 0.03 + (k / (n - 1)) * 0.93;
-      const w = R * (0.55 + 0.45 * Math.sin(Math.min(1, t / 0.3) * Math.PI * 0.5)) * (1 - Math.pow(Math.max(0, (t - 0.35) / 0.65), 1.6) * 0.85);
-      const at = path[Math.min(path.length - 1, Math.round(t * 6))] as Vec3;
-      clusters.push({ c: [at[0] + api.range(-0.1, 0.1) * R, H * t, at[2] + api.range(-0.1, 0.1) * R], r: Math.max(R * 0.25, w) });
+    const n = api.noise;
+    const seedX = api.range(0, 50);
+    const tuft = tufted ? 0.2 : 0.12;
+    /** Axis offset at height fraction t (the column follows the trunk's lean). */
+    const axis = (t: number): [number, number] => [Math.cos(la) * lean * Math.min(1, t / 0.7) ** 2, Math.sin(la) * lean * Math.min(1, t / 0.7) ** 2];
+    /** Outline radius at height fraction t and angle a: the flame profile times the tufts. */
+    const profile = (t: number): number => {
+      if (t <= 0 || t >= 1) return 0;
+      const rise = Math.sin(Math.min(1, t / peak) * Math.PI * 0.5) ** 0.55;
+      // Nearly columnar above the widest point, closing over the last quarter to a pointed tip.
+      const fall = t <= peak ? 1 : (1 - ((t - peak) / (1 - peak)) ** tipPow) ** 0.75;
+      return R * rise * fall;
+    };
+    const lumpAt = (t: number, a: number): number => 1 + tuft * n.noise3(Math.cos(a) * 1.3 + seedX, t * H * 0.42, Math.sin(a) * 1.3) + 0.06 * n.noise3(Math.cos(a) * 4 + seedX, t * H * 1.7, Math.sin(a) * 4);
+    const radius = (t: number, a: number): number => profile(t) * lumpAt(t, a);
+    const tones = leafTones(p.color('color'));
+    // The dense inner column: a lumpy spindle in deep shade, so the flame reads solid from every side and the sprays on
+    // it read as its textured surface.
+    const rings = 15;
+    const segs = 9;
+    const core = new MeshBuilder((rings + 1) * (segs + 1) + 2, rings * segs * 6 + segs * 6);
+    const ids: number[][] = [];
+    for (let j = 0; j <= rings; j++) {
+      const t = 0.025 + (j / rings) * 0.94;
+      const [ax, az] = axis(t);
+      const row: number[] = [];
+      for (let k = 0; k <= segs; k++) {
+        const a = (k / segs) * Math.PI * 2;
+        const r = radius(t, a) * 0.8;
+        row.push(core.vertex(ax + Math.cos(a) * r, H * t, az + Math.sin(a) * r, Math.cos(a) * 0.86, 0.5, Math.sin(a) * 0.86, k / segs, t));
+      }
+      ids.push(row);
     }
-    const budget = cardBudget(900 * detail, H * 0.06, Math.min(0.75, Math.max(0.4, 0.32 + H * 0.025)), 1500 * Math.max(0.3, detail));
+    for (let j = 0; j < rings; j++) {
+      for (let k = 0; k < segs; k++) {
+        const a = ids[j]![k]!, b = ids[j]![k + 1]!, c = ids[j + 1]![k + 1]!, d = ids[j + 1]![k]!;
+        core.tri(a, c, b);
+        core.tri(a, d, c);
+      }
+    }
+    const [tx, tz] = axis(1);
+    const tip = core.vertex(tx, H, tz, 0, 1, 0, 0.5, 1);
+    for (let k = 0; k < segs; k++) core.tri(ids[rings]![k]!, tip, ids[rings]![k + 1]!);
+    const coreMesh = api.fromBuilder(core);
+    const shade: RGB = [tones.deep[0] * 0.7, tones.deep[1] * 0.7, tones.deep[2] * 0.7];
+    coreMesh.paintFn((x, y, z, nx, _ny, nz, out) => {
+      const sunward = Math.max(0, nx * SUN[0] + nz * SUN[2]);
+      mixLinear(shade, tones.mid, 0.06 + sunward * 0.18 + (y / H) * 0.08 + 0.05 * n.noise3(x * 3, y * 1.2, z * 3), out);
+    });
+    // The sprays: upright needle sprays standing out of the column all over its surface, base inside, tip out and up
+    // (cypress foliage grows upward). Tinted from the column's own light: the sunward side and the tuft tops are lit, the
+    // folds between tufts and the shadow side are deep.
+    const budget = cardBudget(650 * detail, H * 0.055, Math.min(0.7, Math.max(0.38, 0.3 + H * 0.025)), 1400 * Math.max(0.3, detail));
     if (budget.count >= 8) {
-      const sheets = new Sheets(budget.count + clusters.length);
-      crownCards(api, sheets, clusters, { c: [path[3]![0], H * 0.5, path[3]![2]], r: [R, H * 0.48, R] }, budget.count, { w: budget.size, h: budget.size }, leafTones(p.color('color')), 0.04, H * 0.04);
+      const sheets = new Sheets(budget.count);
+      const tmp: RGB = [0, 0, 0];
+      const baseC: RGB = [0, 0, 0];
+      const topC: RGB = [0, 0, 0];
+      for (let i = 0; i < budget.count; i++) {
+        // Even cover over the surface: a height drawn by the outline's area, an angle at random.
+        let t = 0;
+        for (let k = 0; k < 6; k++) {
+          t = 0.03 + api.rng() * 0.95;
+          if (api.rng() * R < profile(t) + R * 0.15) break;
+        }
+        const a = api.rng() * Math.PI * 2;
+        const r = radius(t, a);
+        const [ax, az] = axis(t);
+        const out: Vec3 = [Math.cos(a), 0, Math.sin(a)];
+        const depth = api.range(0.55, 0.95);
+        const o: Vec3 = [ax + out[0] * r * depth, H * t, az + out[2] * r * depth];
+        const slope = t > peak ? 0.35 : 0.15;
+        const uDir = unit([out[0] * (0.45 + slope) + (api.rng() - 0.5) * 0.3, 1, out[2] * (0.45 + slope) + (api.rng() - 0.5) * 0.3]);
+        const vDir = unit(cross(uDir, out));
+        const nrm = unit([out[0], 0.35 + t * 0.3, out[2]]);
+        const len = budget.size * api.range(0.75, 1.15) * Math.min(1, 0.4 + r / R);
+        const facing = Math.max(0, nrm[0] * SUN[0] + nrm[1] * SUN[1] + nrm[2] * SUN[2]);
+        const lump = lumpAt(t, a);
+        const light = Math.max(0, Math.min(1, facing * 0.6 + (lump - 0.95) * 1.6 + (depth - 0.55) * 0.5 + t * 0.12 + (api.rng() - 0.5) * 0.2));
+        mixLinear(tones.deep, tones.mid, Math.min(1, light * 1.3), tmp);
+        mixLinear(tmp, tones.sun, Math.max(0, light - 0.6) * 1.2, tmp);
+        mixLinear(tones.deep, tmp, 0.45, baseC);
+        mixLinear(tmp, tones.sun, 0.08, topC);
+        // Stay above the ground (the column stands on its root).
+        const low = o[1] - Math.abs(vDir[1]) * len * 0.4;
+        if (low < H * 0.02) o[1] += H * 0.02 - low;
+        sheets.add(o, uDir, vDir, len, len * 0.8, 'left', nrm, baseC, topC, cellOf(api));
+      }
       const leaves = sheets.build(api);
       if (leaves) api.add(leaves, foliage('needles'));
     }
+    api.add(coreMesh, CORE);
     api.collider(cylinderCollider(0, H / 2, 0, Math.max(trunkR * 1.2, R * 0.6), H));
     return api.build(ROOTED);
   },
 });
 
+/**
+ * Olive leaf tones: grey-green above, silver-white beneath. The deep tone stays a cool grey-olive (never black-green),
+ * the sunlit tone is silvery, and the accent is the pale underside the wind turns up.
+ */
+function oliveTones(base: string): { deep: RGB; mid: RGB; sun: RGB; warm: RGB } {
+  const b = lin(base);
+  // The mid tone is the base pulled a third of the way to its own grey: olive foliage is a muted, dusty green.
+  const g = b[0] * 0.3 + b[1] * 0.6 + b[2] * 0.1;
+  const silver = lin(mixHex(base, '#c2c8b4', 0.45));
+  return { deep: [b[0] * 0.26, b[1] * 0.3, b[2] * 0.3], mid: [(b[0] * 0.67 + g * 0.33) * 0.95, (b[1] * 0.67 + g * 0.33) * 0.95, (b[2] * 0.67 + g * 0.33) * 1.0], sun: [silver[0] * 1.05, silver[1] * 1.08, silver[2] * 1.02], warm: lin('#b4baa8') };
+}
+
 const treeOlive = defineGenerator({
   id: 'tree-olive',
-  description: 'Olive tree: gnarled twisting split trunk, low spreading limbs, airy silver-green crown; groves and courtyards.',
+  description: 'Olive tree: gnarled twisting split trunk, low spreading crooked limbs, an open, irregular crown of separate silver-green clumps; groves and courtyards.',
   category: 'nature',
   params: {
     height: pNum(6, 2.5, 12, 'total height in meters'),
@@ -487,47 +638,59 @@ const treeOlive = defineGenerator({
     const H = p.num('height');
     const detail = p.num('detail');
     const old = p.int('variant') === 1;
-    const trunkH = H * api.range(0.32, 0.42);
+    const trunkH = H * api.range(0.3, 0.42);
     const trunkR = H * (old ? 0.06 : 0.035);
-    const stems = old ? 3 : 1;
+    const stems = old ? 2 + Math.floor(api.rng() * 2) : 1;
+    const n = api.noise;
+    const knot = api.range(0, 40);
     let wood: Mesh | null = null;
     const clusters: Array<{ c: Vec3; r: number }> = [];
-    const crownR = H * 0.45;
+    // The crown is wider than tall, lopsided per seed.
+    const crownR = H * api.range(0.4, 0.52);
     for (let s = 0; s < stems; s++) {
       const a = (s / stems) * Math.PI * 2 + api.rng();
-      const spread = old ? H * 0.12 : H * 0.04;
+      const spread = old ? H * 0.12 : H * 0.05;
       const path: Vec3[] = [];
-      for (let i = 0; i <= 6; i++) {
-        const t = i / 6;
-        // Twisting: the stem winds around its own axis as it leans out.
-        const tw = a + t * 1.8;
-        path.push([Math.cos(a) * spread * t + Math.cos(tw) * trunkR * 0.6 * Math.sin(t * Math.PI), trunkH * t, Math.sin(a) * spread * t + Math.sin(tw) * trunkR * 0.6 * Math.sin(t * Math.PI)]);
+      for (let i = 0; i <= 7; i++) {
+        const t = i / 7;
+        // Twisting: the stem winds around its own axis as it leans out, with a kink or two.
+        const tw = a + t * 1.3;
+        const kink = n.noise3(knot + s * 3, t * 2, 0) * trunkR * 0.5;
+        path.push([Math.cos(a) * spread * t + Math.cos(tw) * trunkR * 0.45 * Math.sin(t * Math.PI) + kink, trunkH * t, Math.sin(a) * spread * t + Math.sin(tw) * trunkR * 0.45 * Math.sin(t * Math.PI) - kink * 0.6]);
       }
       if (s === 0) rootPath(path);
       const r = trunkR / Math.sqrt(stems);
-      const stem = api.tube(path, r, 8, (t) => (t < 0.1 ? 1.5 - t * 5 : 1) * (1 - 0.35 * t));
+      // Gnarled: the girth swells and pinches along the stem (burls), flaring wide at the foot.
+      const stem = api.tube(path, r, 9, (t) => (t < 0.12 ? 1.7 - t * 6 : 1) * (1 - 0.3 * t) * (1 + 0.22 * n.noise3(knot + s, t * 6, 1.7)));
       wood = wood ? wood.merge(stem) : stem;
       const top = path[path.length - 1] as Vec3;
-      const limbs = old ? 2 : 4;
+      const limbs = old ? 2 + Math.floor(api.rng() * 2) : 3 + Math.floor(api.rng() * 2);
       for (let k = 0; k < limbs; k++) {
-        const b = a + (k / limbs) * Math.PI * 2 + api.rng() * 0.8;
-        const reach = crownR * api.range(0.5, 0.85);
-        const end: Vec3 = [top[0] + Math.cos(b) * reach, H * api.range(0.62, 0.8), top[2] + Math.sin(b) * reach];
-        wood = limb(api, wood, top, end, r * 0.55, r * 0.15, [0, (end[1] - top[1]) * 0.4, 0]);
-        clusters.push({ c: [end[0], end[1] + H * 0.08, end[2]], r: crownR * api.range(0.35, 0.5) });
+        const b = a + (k / limbs) * Math.PI * 2 + api.rng() * 0.9;
+        const reach = crownR * api.range(0.45, 0.95);
+        const end: Vec3 = [top[0] + Math.cos(b) * reach, H * api.range(0.55, 0.82), top[2] + Math.sin(b) * reach];
+        wood = crookedLimb(api, wood, top, end, r * 0.55, r * 0.14, 0.3, 6);
+        clusters.push({ c: [end[0], end[1] + H * 0.06, end[2]], r: crownR * api.range(0.24, 0.34) });
+        // Each limb forks once more; the fork ends in its own clump, so the crown is a loose cloud of separate clumps.
+        const mid: Vec3 = [(top[0] + end[0]) / 2, (top[1] + end[1]) / 2 + H * 0.03, (top[2] + end[2]) / 2];
+        const b2 = b + (api.rng() < 0.5 ? 1 : -1) * api.range(0.5, 1.1);
+        const fork: Vec3 = [mid[0] + Math.cos(b2) * reach * 0.45, end[1] + H * api.range(0.02, 0.12), mid[2] + Math.sin(b2) * reach * 0.45];
+        wood = crookedLimb(api, wood, mid, fork, r * 0.3, r * 0.08, 0.25, 5);
+        clusters.push({ c: [fork[0], fork[1] + H * 0.05, fork[2]], r: crownR * api.range(0.2, 0.3) });
       }
-      clusters.push({ c: [top[0], H * 0.8, top[2]], r: crownR * 0.45 });
+      clusters.push({ c: [top[0], H * api.range(0.78, 0.86), top[2]], r: crownR * 0.32 });
     }
     flatBase(wood as Mesh);
-    paintBark(api, wood as Mesh, p.color('trunkColor'));
+    // Olive bark is grey and silvery, dark only in its deep fissures.
+    paintBark(api, wood as Mesh, mixHex(p.color('trunkColor'), '#8f8d85', 0.45));
     barkUvs(wood as Mesh, 0, 0);
-    api.add(wood as Mesh, BARK);
-    const budget = cardBudget(480 * detail, H * 0.12, Math.min(0.75, Math.max(0.4, 0.35 + H * 0.04)), 1000 * Math.max(0.3, detail));
+    api.add(wood as Mesh, BARK_TINTED);
+    const budget = cardBudget(460 * detail, H * 0.1, Math.min(0.6, Math.max(0.32, 0.28 + H * 0.035)), 950 * Math.max(0.3, detail));
     if (budget.count >= 8) {
       const sheets = new Sheets(budget.count + clusters.length);
-      crownCards(api, sheets, clusters, { c: [0, H * 0.72, 0], r: [crownR, H * 0.24, crownR] }, budget.count, { w: budget.size, h: budget.size }, leafTones(p.color('color')), 0.12);
+      crownCards(api, sheets, clusters, { c: [0, H * 0.7, 0], r: [crownR, H * 0.25, crownR] }, budget.count, { w: budget.size, h: budget.size }, oliveTones(p.color('color')), 0.16);
       const leaves = sheets.build(api);
-      if (leaves) api.add(leaves, foliage('broadleaf'));
+      if (leaves) api.add(leaves, foliage('shrub'));
     }
     api.collider(cylinderCollider(0, trunkH / 2, 0, trunkR * 1.2, trunkH));
     return api.build(ROOTED);
