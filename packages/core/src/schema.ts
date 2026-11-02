@@ -706,12 +706,12 @@ export const Environment = z.object({
   /**
    * Additive: exterior context beyond the plot, seen through windows and from a cutaway: distant hills that melt into the horizon
    * haze, a tree line and groves of instanced trees, and a patchwork of fields past the lawn. A `preset` sets sensible values
-   * (`meadow`, `countryside` (default), `woodland`, `suburb`, `none`); every other field overrides the preset. Presentation
+   * (`meadow`, `countryside` (default), `woodland`, `suburb`, `alpine` (snow-capped mountains behind conifer hills), `none`); every other field overrides the preset. Presentation
    * only: it never changes the simulation, the physics world, the light volume or the baked lightmap.
    */
   surroundings: z
     .object({
-      preset: z.enum(['none', 'meadow', 'countryside', 'woodland', 'suburb']).optional(),
+      preset: z.enum(['none', 'meadow', 'countryside', 'woodland', 'suburb', 'alpine']).optional(),
       /** Ridge height of the nearer hills in metres (0 = no hills). */
       hills: z.number().min(0).max(200).optional(),
       /** Distance of the nearer hill layer in metres. */
@@ -723,6 +723,10 @@ export const Environment = z.object({
       fields: z.boolean().optional(),
       /** Radius around the origin (metres) kept free of trees. */
       clearRadius: z.number().min(10).max(400).optional(),
+      /** Peak height (metres) of a far mountain range with snow on its summits (0 = none; `alpine` sets 650). */
+      mountains: z.number().min(0).max(2000).optional(),
+      /** Distance of the mountain range in metres. */
+      mountainDistance: z.number().min(600).max(2100).optional(),
       /** Layout seed (the same data always draws the same landscape). */
       seed: z.number().int().min(0).max(1_000_000).optional(),
     })
