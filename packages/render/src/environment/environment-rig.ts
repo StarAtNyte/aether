@@ -476,7 +476,7 @@ export class EnvironmentRig {
     // The field patchwork continues the built-in lawn; a world with its own terrain (no built-in ground) has its own land and
     // water past the plot, and a flat ring of fields drew over its river. Such a world keeps hills and trees, not fields.
     const around = env.surroundings && env.ground === null && env.surroundings.fields === undefined ? { ...env.surroundings, fields: false } : env.surroundings;
-    this.surroundings.apply(around, s, fog?.color);
+    this.surroundings.apply(around, s, fog?.color, s.showGround && env.ground ? { size: env.ground.size, color: resolveMaterial(env.ground.material).color } : null);
     this.updateEnvironmentMap(scene, horizon ?? s.horizon);
   }
 

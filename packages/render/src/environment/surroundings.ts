@@ -32,6 +32,7 @@ import {
 } from 'three';
 import { rng, type Environment } from '@aether/core';
 import type { SkyState } from './sky-state';
+import { applyLandAir, buildRanges, disposeRanges, RangeLook, type RangeSpec } from './mountain-range';
 
 export type Surroundings = NonNullable<Environment['surroundings']>;
 export type SurroundingsPreset = NonNullable<Surroundings['preset']>;
@@ -241,7 +242,11 @@ export function planTrees(s: ResolvedSurroundings): Array<{ x: number; z: number
 export class SurroundingsRig {
   readonly group = new Group();
   private readonly hills = new Group();
-  private mountains: Mesh | null = null;
+  private ranges: Mesh | null = null;
+  private readonly look = new RangeLook();
+  private land: Mesh | null = null;
+  private groundSize: number | null = null;
+  private groundColor: string | null = null;
   private farHills: Mesh | null = null;
   private nearHills: Mesh | null = null;
   private fields: Mesh | null = null;
@@ -264,9 +269,9 @@ export class SurroundingsRig {
     return this.resolved !== null;
   }
 
-  /** Draw calls the rig adds (hills 2, fields 1, trees 1 or 2). */
+  /** Draw calls the rig adds (mountain ranges 0 or 1, hills 1 or 2, fields or land 1, trees 1 or 2). */
   get drawCalls(): number {
-    return this.resolved === null ? 0 : (this.mountains ? 1 : 0) + (this.farHills ? 1 : 0) + (this.nearHills ? 1 : 0) + (this.fields ? 1 : 0) + this.trees.length;
+    return this.resolved === null ? 0 : (this.ranges ? 1 : 0) + (this.farHills ? 1 : 0) + (this.nearHills ? 1 : 0) + (this.fields ? 1 : 0) + (this.land ? 1 : 0) + this.trees.length;
   }
 
   /** Triangles of the instanced trees (all instances). */
@@ -278,14 +283,18 @@ export class SurroundingsRig {
 
   /**
    * Build (or rebuild) from the environment and the sky: geometry only when the data changes, colours when the sky does.
-   * `fogColor` is the horizon haze the far layers melt into.
+   * `fogColor` is the horizon haze the far layers melt into. `ground` is the world's built-in ground (null for a world
+   * with its own terrain): when there is one and no field patchwork, rolling land continues it to the hills.
    */
-  apply(data: Surroundings | undefined, sky: SkyState, fogColor: string | undefined): void {
+  apply(data: Surroundings | undefined, sky: SkyState, fogColor: string | undefined, ground?: { size: number; color?: string } | null): void {
     const r = resolveSurroundings(data);
-    const key = JSON.stringify(r);
+    const groundSize = ground && Number.isFinite(ground.size) ? ground.size : null;
+    this.groundColor = ground?.color ?? null;
+    const key = JSON.stringify([r, groundSize, this.groundColor]);
     if (key !== this.key) {
       this.key = key;
       this.resolved = r;
+      this.groundSize = groundSize;
       this.rebuild();
     }
     this.group.visible = r !== null && sky.preset !== 'space';
@@ -300,7 +309,8 @@ export class SurroundingsRig {
   /** Multiply the brightness of everything the rig draws (see `EnvironmentRig.setExteriorScale`). */
   setBrightness(scale: number): void {
     this.brightness = scale;
-    for (const m of [this.mountains, this.farHills, this.nearHills, this.fields]) (m?.material as MeshBasicMaterial | undefined)?.color.setScalar(scale);
+    for (const m of [this.farHills, this.nearHills, this.fields, this.land]) (m?.material as MeshBasicMaterial | undefined)?.color.setScalar(scale);
+    this.look.setBrightness(scale);
     for (const t of this.trees) (t.material as MeshStandardMaterial).color.setScalar(scale);
   }
 
@@ -310,13 +320,15 @@ export class SurroundingsRig {
   }
 
   private clear(): void {
-    for (const m of [this.mountains, this.farHills, this.nearHills, this.fields]) {
+    for (const m of [this.farHills, this.nearHills, this.fields, this.land]) {
       if (!m) continue;
       m.removeFromParent();
       m.geometry.dispose();
       (m.material as MeshBasicMaterial).dispose();
     }
-    this.mountains = null;
+    if (this.ranges) disposeRanges(this.ranges);
+    this.ranges = null;
+    this.land = null;
     this.farHills = null;
     this.nearHills = null;
     this.fields = null;
@@ -336,17 +348,30 @@ export class SurroundingsRig {
     const r = this.resolved;
     if (!r) return;
     if (r.mountains > 0) {
-      this.mountains = mountainRing(r.seed + 211, r.mountainDistance, r.mountains);
-      this.hills.add(this.mountains);
+      this.ranges = buildRanges(planRanges(r), this.look);
+      if (this.ranges) this.hills.add(this.ranges);
     }
     if (r.hills > 0) {
-      this.farHills = hillRing(r.seed + 101, r.hillDistance * 1.55, r.hills * 1.5, 0);
-      this.nearHills = hillRing(r.seed, r.hillDistance, r.hills, 1);
-      this.hills.add(this.farHills, this.nearHills);
+      // In front of mountains the land itself rises into foothills (a flat hill band there read as a smear across the
+      // mountains' feet).
+      if (r.mountains <= 0 || this.groundSize === null) {
+        if (r.mountains <= 0) {
+          this.farHills = hillRing(r.seed + 101, r.hillDistance * 1.55, r.hills * 1.5, 0);
+          this.hills.add(this.farHills);
+        }
+        this.nearHills = hillRing(r.seed, r.hillDistance, r.hills, 1);
+        this.hills.add(this.nearHills);
+      }
     }
     if (r.fields) {
       this.fields = fieldRing(r.seed + 55);
       this.group.add(this.fields);
+    }
+    const land = this.groundSize !== null && !r.fields ? planLand(r, this.groundSize) : null;
+    if (land) {
+      this.land = landRing(land);
+      applyLandAir(this.land.material as MeshStandardMaterial, this.look);
+      this.group.add(this.land);
     }
     this.setBrightness(this.brightness);
     const plan = planTrees(r);
@@ -369,7 +394,7 @@ export class SurroundingsRig {
         mesh.frustumCulled = false;
         list.forEach((t, i) => {
           _q.setFromAxisAngle(_up, t.yaw);
-          _p.set(t.x, 0, t.z);
+          _p.set(t.x, land ? landHeight(land, t.x, t.z) : 0, t.z);
           _s.set(t.scale, t.scale * (0.9 + (t.tone - 0.85) * 0.5), t.scale);
           _m.compose(_p, _q, _s);
           mesh.setMatrixAt(i, _m);
@@ -391,7 +416,8 @@ export class SurroundingsRig {
     const far = new Color().set('#6a8294').lerp(haze, 0.3).multiplyScalar(0.8 + 0.2 * light);
     const near = new Color().set('#3b5841').lerp(haze, 0.12).multiplyScalar(0.3 + 0.7 * light);
     const foot = haze.clone();
-    this.paintMountains(sky, haze, light);
+    this.lightRanges(sky, haze, light);
+    if (this.land) paintLand(this.land, this.groundColor);
     this.paintHills(this.farHills, far, foot, light, 0.1);
     this.paintHills(this.nearHills, near, foot, light, 0.28);
     if (this.fields) this.paintFields(sky, light, haze);
@@ -414,41 +440,18 @@ export class SurroundingsRig {
     col.needsUpdate = true;
   }
 
-  /** Rock in the air's blue haze, sunlit and shaded faces, snow above a ragged snowline, the foot lost in the haze. */
-  private paintMountains(sky: SkyState, haze: Color, light: number): void {
-    const mesh = this.mountains;
-    if (!mesh) return;
-    const col = mesh.geometry.getAttribute('color') as BufferAttribute;
-    const facing = mesh.geometry.userData['facing'] as Float32Array;
-    const snowline = mesh.geometry.userData['snowline'] as Float32Array;
-    const rows = mesh.geometry.userData['rows'] as number;
-    const sun = _b.set(sky.lightColor);
-    const rock = new Color('#4f5966').lerp(haze, 0.3);
-    const snow = new Color('#f2f5f9').lerp(haze, 0.12);
-    const lit = 0.35 + 0.65 * light;
+  /** Sun, skylight and haze of the mountain ranges (and the air over the land): uniforms only. */
+  private lightRanges(sky: SkyState, haze: Color, light: number): void {
+    if (!this.ranges && !this.land) return;
     const L = sky.lightDirection;
-    const lh = Math.hypot(L[0], L[2]) || 1;
-    const columns = facing.length - 1;
-    for (let i = 0; i < col.count; i++) {
-      const c = Math.floor(i / (rows + 1));
-      const t = (i % (rows + 1)) / rows;
-      // Face normal: toward the viewer (inward), tipped along the ring toward the downhill side of the crest.
-      const a = (c / columns) * Math.PI * 2;
-      const k = facing[c] ?? 0;
-      let nx = -Math.cos(a) + k * Math.sin(a), nz = -Math.sin(a) - k * Math.cos(a);
-      const nl = Math.hypot(nx, nz) || 1;
-      nx /= nl; nz /= nl;
-      const f = Math.max(-1, Math.min(1, (nx * L[0] + nz * L[2]) / lh * 0.8 + L[1] * 0.4));
-      // Faces toward the sun take its colour; the others stay in cool skylight.
-      const shade = (0.62 + 0.38 * Math.max(0, f)) * lit;
-      const onSnow = smooth((snowline[c] ?? 0.6) - 0.04, (snowline[c] ?? 0.6) + 0.04, t);
-      _c.copy(rock).lerp(snow, onSnow).multiplyScalar(shade);
-      if (f > 0) _c.lerp(_a.copy(_c).multiply(sun).multiplyScalar(1.15), 0.35 * f * light);
-      // The foot melts into the haze.
-      _c.lerp(haze, (1 - smooth(0, 0.45, t)) * 0.85);
-      col.setXYZ(i, _c.r, _c.g, _c.b);
-    }
-    col.needsUpdate = true;
+    const look = this.look;
+    look.sunDirection.set(L[0], L[1], L[2]).normalize();
+    // Below the horizon the sun no longer lights the faces; its colour fades out with the daylight.
+    look.sun.set(sky.lightColor).multiplyScalar(1.15 * light * smooth(-4, 6, sky.elevation));
+    look.sky.set(sky.zenith).lerp(_c.set('#ffffff'), 0.45).lerp(haze, 0.25).multiplyScalar(0.25 + 0.4 * light);
+    look.haze.copy(haze);
+    // The air between the viewer and the nearer range: the haze turned toward the deep blue of the sky above.
+    look.air.copy(haze).lerp(_c.set(sky.zenith), 0.4).lerp(_c.set('#8fa6c2'), 0.2);
   }
 
   private paintFields(sky: SkyState, light: number, haze: Color): void {
@@ -517,77 +520,6 @@ function hillRing(seed: number, distance: number, height: number, layer: number)
   return m;
 }
 
-const MOUNTAIN_COLUMNS = 320;
-const MOUNTAIN_ROWS = 12;
-
-/** Ridged peak profile in 0..1 around the circle (sharp crests, deep cols), periodic so the ring closes. */
-function peaks(seed: number, a: number): number {
-  let sum = 0;
-  let amp = 0.6;
-  let norm = 0;
-  for (let o = 0; o < 6; o++) {
-    const r = (3 << o) * 0.3;
-    const n = valueNoise(seed + o * 31, Math.cos(a) * r + 70, Math.sin(a) * r + 70);
-    const ridged = 1 - Math.abs(2 * n - 1);
-    sum += amp * ridged * ridged;
-    norm += amp;
-    amp *= 0.5;
-  }
-  return sum / norm;
-}
-
-/**
- * A far range of snow-capped mountains: rows from below the ground to the crest, leaning back so the faces catch the
- * light, with per-column facing (for sunlit/shaded faces) and a ragged snowline kept for {@link SurroundingsRig} painting.
- */
-function mountainRing(seed: number, distance: number, height: number): Mesh {
-  const C = MOUNTAIN_COLUMNS, R = MOUNTAIN_ROWS;
-  const position = new Float32Array((C + 1) * (R + 1) * 3);
-  const color = new Float32Array((C + 1) * (R + 1) * 3);
-  const facing = new Float32Array(C + 1);
-  const snowline = new Float32Array(C + 1);
-  const index: number[] = [];
-  const crest = (a: number): number => height * (0.14 + 0.86 * Math.pow(peaks(seed, a), 2.2));
-  for (let c = 0; c <= C; c++) {
-    const a = (c / C) * Math.PI * 2;
-    const top = crest(a);
-    // Slope of the crest along the ring: a rising flank faces one way round, a falling one the other.
-    const da = (Math.PI * 2) / C;
-    const slope = (crest(a + da) - crest(a - da)) / (2 * da * distance);
-    facing[c] = Math.max(-3, Math.min(3, slope * 3));
-    // Snow on the upper third, reaching down the gullies and lifting off the steep, wind-cleared faces.
-    const gully = valueNoise(seed + 13, Math.cos(a) * 60 + 5, Math.sin(a) * 60 + 5);
-    snowline[c] = 0.66 + 0.1 * (valueNoise(seed + 9, Math.cos(a) * 9 + 3, Math.sin(a) * 9 + 3) - 0.5) * 2 + 0.14 * (gully - 0.5) + 0.12 * Math.min(1, Math.abs(slope) * 2);
-    for (let r = 0; r <= R; r++) {
-      const t = r / R;
-      const y = -6 + (top + 6) * t;
-      // Faces lean back: the crest stands further out than the foot.
-      const d = distance * (1 + 0.12 * t);
-      position.set([Math.cos(a) * d, y, Math.sin(a) * d], (c * (R + 1) + r) * 3);
-    }
-    if (c < C) {
-      for (let r = 0; r < R; r++) {
-        const k = c * (R + 1) + r;
-        const n = k + R + 1;
-        index.push(k, k + 1, n, k + 1, n + 1, n);
-      }
-    }
-  }
-  const g = new BufferGeometry();
-  g.setAttribute('position', new BufferAttribute(position, 3));
-  g.setAttribute('color', new BufferAttribute(color, 3));
-  g.setIndex(index);
-  g.userData['facing'] = facing;
-  g.userData['snowline'] = snowline;
-  g.userData['rows'] = R;
-  const m = new Mesh(g, new MeshBasicMaterial({ vertexColors: true, side: DoubleSide, depthWrite: true, fog: false }));
-  m.name = 'aether:mountains';
-  m.frustumCulled = false;
-  // Behind the hills, after the sky dome.
-  m.renderOrder = -6.2;
-  return m;
-}
-
 /** A ring of ground patches from the plot's edge to the horizon; the inner edge is transparent so it blends into the lawn. */
 function fieldRing(seed: number): Mesh {
   const verts = (FIELD_SEGMENTS + 1) * (FIELD_RINGS + 1);
@@ -618,4 +550,144 @@ function fieldRing(seed: number): Mesh {
   m.frustumCulled = false;
   m.renderOrder = 1;
   return m;
+}
+
+/** Farthest a range may stand: inside the camera's far plane (2.5 sky radii) with room for its height. */
+export const RANGE_MAX_DISTANCE = 2000;
+
+/**
+ * The mountain ranges of a world with mountains: a far, tall, hazy range whose summits stand over a nearer, lower and
+ * darker one (the foothill ridge in front of both is the near hill ring).
+ */
+export function planRanges(r: ResolvedSurroundings): RangeSpec[] {
+  if (r.mountains <= 0) return [];
+  const near = Math.max(r.hillDistance + 300, Math.min(RANGE_MAX_DISTANCE - 500, r.mountainDistance * 0.85));
+  const far = RANGE_MAX_DISTANCE;
+  return [
+    { seed: r.seed + 307, distance: far, depth: 1800, height: r.mountains * 1.9, feature: 1500, snowline: 0.42, haze: 0.42, order: -6.4, name: 'aether:mountains-far' },
+    { seed: r.seed + 211, distance: near, depth: 1100, height: r.mountains * 0.8, feature: 950, snowline: 0.74, haze: 0.14, order: -6.2, name: 'aether:mountains' },
+  ];
+}
+
+/** Rolling land from the edge of the built-in ground out under the hills. */
+export interface LandPlan {
+  seed: number;
+  /** Radius where the land starts (fading in over the ground). */
+  inner: number;
+  outer: number;
+  /** Height of the rolling relief at full strength (m). */
+  relief: number;
+  /** Alpine pasture, scrub and rock rather than lowland grass. */
+  alpine: boolean;
+}
+
+const LAND_SEGMENTS = 192;
+const LAND_RINGS = 36;
+/** Width (m) of the band over which the land fades in over the built-in ground. */
+const LAND_FADE = 50;
+
+export function planLand(r: ResolvedSurroundings, groundSize: number): LandPlan | null {
+  // Starts just past the edge of the square ground (its corners stay ground; its skirt runs on under the land) and runs
+  // out to the mountains' feet or past the hills.
+  const inner = Math.max(r.clearRadius, groundSize / 2 + 8);
+  const ranges = planRanges(r);
+  const outer = ranges.length > 0 ? Math.min(...ranges.map((g) => g.distance)) - 40 : Math.max(r.hillDistance * 1.6, 500);
+  // A ground that already reaches the hills needs no land.
+  if (inner + LAND_FADE >= outer) return null;
+  return { seed: r.seed + 71, inner, outer, relief: Math.max(4, r.hills * 0.5), alpine: r.mountains > 0 };
+}
+
+function fbm(seed: number, x: number, z: number): number {
+  return valueNoise(seed, x, z) * 0.6 + valueNoise(seed + 1, x * 2.1, z * 2.1) * 0.28 + valueNoise(seed + 2, x * 4.3, z * 4.3) * 0.12;
+}
+
+/** Height of the land at (x, z): flat where it meets the ground, rolling farther out. Never below the ground. */
+export function landHeight(p: LandPlan, x: number, z: number): number {
+  const r = Math.hypot(x, z);
+  const ramp = smooth(p.inner + LAND_FADE * 0.5, p.inner + 240, r);
+  if (ramp <= 0) return 0.05;
+  const broad = fbm(p.seed, x / 260, z / 260);
+  const swell = fbm(p.seed + 5, x / 85, z / 85);
+  // Rolling near the plot, rising into foothills toward the outer edge.
+  const grow = 0.5 + (p.alpine ? 2.2 : 0.8) * smooth(p.inner + 200, p.outer, r);
+  return 0.05 + p.relief * ramp * grow * Math.max(0, smooth(0.25, 0.85, broad) * 0.75 + (swell - 0.35) * 0.45);
+}
+
+/** A polar grid of the land, rings closer together near the plot; colours are painted by {@link paintLand}. */
+function landRing(p: LandPlan): Mesh {
+  const n = LAND_SEGMENTS + 1;
+  const verts = n * (LAND_RINGS + 1);
+  const position = new Float32Array(verts * 3);
+  const color = new Float32Array(verts * 3);
+  const index: number[] = [];
+  for (let j = 0; j <= LAND_RINGS; j++) {
+    const r = p.inner + (p.outer - p.inner) * Math.pow(j / LAND_RINGS, 1.7);
+    for (let i = 0; i <= LAND_SEGMENTS; i++) {
+      const a = (i / LAND_SEGMENTS) * Math.PI * 2;
+      const k = j * n + i;
+      const x = Math.cos(a) * r;
+      const z = Math.sin(a) * r;
+      position.set([x, landHeight(p, x, z), z], k * 3);
+      if (i < LAND_SEGMENTS && j < LAND_RINGS) index.push(k, k + 1, k + n, k + 1, k + n + 1, k + n);
+    }
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(position, 3));
+  g.setAttribute('color', new BufferAttribute(color, 3));
+  g.setIndex(index);
+  g.computeVertexNormals();
+  g.userData['plan'] = p;
+  // Lit by the scene's sun and sky like the ground it continues. Opaque: its inner edge fades to the ground's colour.
+  const material = new MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  const m = new Mesh(g, material);
+  m.name = 'aether:land';
+  m.frustumCulled = false;
+  m.castShadow = false;
+  m.receiveShadow = false;
+  m.renderOrder = 1;
+  return m;
+}
+
+// Saturated greens: a warm low sun turns an olive albedo brown.
+const ALPINE_LAND = ['#3d5e1e', '#4a6b22', '#355419', '#66703a', '#2a4116'];
+const LOWLAND_LAND = ['#46721f', '#57802a', '#3e6420', '#77803c', '#2f4c1a'];
+
+/**
+ * Pasture, scrub and rock: patches 50 to 200 m across, scrub in the hollows, bare rock and scree on the steep and high
+ * ground of alpine land, the far land paler toward the haze.
+ */
+function paintLand(mesh: Mesh, groundColor: string | null): void {
+  const p = mesh.geometry.userData['plan'] as LandPlan;
+  const col = mesh.geometry.getAttribute('color') as BufferAttribute;
+  const pos = mesh.geometry.getAttribute('position');
+  const nor = mesh.geometry.getAttribute('normal');
+  const palette = p.alpine ? ALPINE_LAND : LOWLAND_LAND;
+  const rock = new Color(p.alpine ? '#8b857a' : '#8a8466');
+  const scrub = new Color(palette[4] as string);
+  const forest = new Color(p.alpine ? '#1b2c13' : '#1f3315');
+  const edge = new Color();
+  for (let i = 0; i < col.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    const r = Math.hypot(x, z);
+    const patch = valueNoise(p.seed + 21, x / 120 + 3, z / 120 + 3) * 0.7 + valueNoise(p.seed + 22, x / 45, z / 45) * 0.3;
+    _c.set(palette[Math.min(palette.length - 1, Math.floor(patch * palette.length))] as string);
+    // Hollows hold darker scrub; crests dry out. (`rel`: share of the highest the foothills get.)
+    const rel = y / Math.max(1, p.relief * (p.alpine ? 2.7 : 1.3));
+    _c.lerp(scrub, (1 - smooth(0.05, 0.35, rel)) * 0.35 * smooth(p.inner + 60, p.inner + 200, r));
+    if (p.alpine) {
+      const steep = 1 - nor.getY(i);
+      const bare = smooth(0.08, 0.2, steep + (valueNoise(p.seed + 23, x / 30, z / 30) - 0.5) * 0.08) * 0.75 + smooth(0.7, 1, rel) * 0.35;
+      _c.lerp(rock, Math.min(0.8, bare));
+    }
+    // Woods: dark stands of trees a hundred metres and more across, thinning out on the high ground.
+    const wood = smooth(0.56, 0.68, valueNoise(p.seed + 25, x / 150 + 7, z / 150 + 7)) * (1 - smooth(0.6, 0.9, rel)) * smooth(p.inner + 40, p.inner + 160, r);
+    _c.lerp(forest, wood * 0.85);
+    _c.multiplyScalar(0.88 + 0.24 * valueNoise(p.seed + 24, x / 14, z / 14));
+    // The inner edge takes the ground's colour, so the two meet without a seam.
+    if (groundColor) _c.lerp(edge.set(groundColor), 1 - smooth(p.inner, p.inner + LAND_FADE, r));
+    col.setXYZ(i, _c.r, _c.g, _c.b);
+  }
+  col.needsUpdate = true;
 }
