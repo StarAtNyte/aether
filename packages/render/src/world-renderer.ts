@@ -5321,8 +5321,9 @@ export class WorldRenderer {
     if (near(x, y, z) > 0) {
       const fx = tx - x, fy = ty - y, fz = tz - z;
       let best = { x, y, z, n: near(x, y, z) };
-      search: for (const up of [0, 2, 5]) {
-        for (const t of [0, 0.1, 0.2, 0.3, 0.4]) {
+      // Rise before closing in: walking toward the target ends with the lens against its base.
+      search: for (const t of [0, 0.1, 0.2, 0.3]) {
+        for (const up of [0, 2, 4, 7, 10]) {
           const cx = x + fx * t, cz = z + fz * t;
           const cy = lift(cx, y + fy * t + up, cz);
           const n = near(cx, cy, cz);
