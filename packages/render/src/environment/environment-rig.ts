@@ -457,7 +457,10 @@ export class EnvironmentRig {
     // Only a visible horizon (ground or terrain worlds) blends into the fog; space keeps its black.
     const horizon = fog && (s.showGround || this.fogDistance !== null) ? fog.color : undefined;
     this.sky.apply(s, horizon);
-    this.surroundings.apply(env.surroundings, s, fog?.color);
+    // The field patchwork continues the built-in lawn; a world with its own terrain (no built-in ground) has its own land and
+    // water past the plot, and a flat ring of fields drew over its river. Such a world keeps hills and trees, not fields.
+    const around = env.surroundings && env.ground === null && env.surroundings.fields === undefined ? { ...env.surroundings, fields: false } : env.surroundings;
+    this.surroundings.apply(around, s, fog?.color);
     this.updateEnvironmentMap(scene, horizon ?? s.horizon);
   }
 
