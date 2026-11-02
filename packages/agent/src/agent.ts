@@ -38,6 +38,7 @@ import { CallLedger, budgetNote, stepLabel, compactConversation, drainSteer, gua
 import { briefChecklistText, richnessShortfalls, richnessOnlyTurnText, richnessSnapshot, RICHNESS_SUBJECT, REFERENCE_TOOL, REFERENCE_TOOL_NAME, richnessReviewText } from './brief';
 import { briefStage, lookReference, type BriefReviewer, type BriefStageResult } from './brief-stage';
 import { LEVEL_SUBJECT, levelSnapshot, levelTurnText } from './level-review';
+import { withSunk } from './sunk';
 import type { AgentEvent, AgentHost, AgentOptions, ChatMessage, CompletionResponse, ContentBlock, ReviewOptions, ToolDef, UsageTotals } from './types';
 
 const DEFAULTS = Object.freeze({ maxRepairs: 2, maxTurns: 8, maxToolCalls: 48, maxTokens: 16_000 });
@@ -796,6 +797,8 @@ export class WorldAgent {
       }
       // Hardcore: every round renders the hero shots, the views the references were drawn for.
       if (this.hardcore && withViews) snap = { ...snap, views: this.hardcore.shots };
+      // Pieces sunk into the terrain are checked in every round, whatever else measured the world.
+      snap = withSunk(snap, world);
       // Findings seen unchanged twice are folded into one unresolved line (the tracker keeps the original keys).
       snap = { ...snap, findings: repeats.apply(snap.findings) };
       const isLevel = snap.buildings[0] === LEVEL_SUBJECT;
@@ -1010,7 +1013,7 @@ export class WorldAgent {
       lastEdited = editedThisRound;
       before = world;
       if (!editedThisRound && declared) {
-        const after: ReviewSnapshot = richOnly ? richnessSnapshot(host.getWorld(), { maxViews: 1, withViews: false }) : isLevel && this.opts.levelTools ? ((await raceAbort(levelSnapshot(this.opts.levelTools, host.getWorld(), { maxViews: 1, withViews: false }), signal)) ?? snap) : snapshotForReview(host.getWorld(), null, { maxViews: 1, withViews: false });
+        const after: ReviewSnapshot = withSunk(richOnly ? richnessSnapshot(host.getWorld(), { maxViews: 1, withViews: false }) : isLevel && this.opts.levelTools ? ((await raceAbort(levelSnapshot(this.opts.levelTools, host.getWorld(), { maxViews: 1, withViews: false }), signal)) ?? snap) : snapshotForReview(host.getWorld(), null, { maxViews: 1, withViews: false }), host.getWorld());
         const errors = after.findings.filter((f) => f.severity === 'error');
         // Warnings are real until the model has seen them once more and still leaves them: ask again, once per set.
         const open = after.findings.filter((f) => f.severity === 'warning');

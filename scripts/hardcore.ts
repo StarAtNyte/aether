@@ -16,7 +16,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { createWorld, type PatchResult, type WorldDoc } from '@aether/core';
-import { HARDCORE_PASSES, HARDCORE_SHADER_BUDGET_PATCH, WorldAgent, bibleText, judgeCloser, lookCandidates, lookDistance, pictureColour, type PictureColour, heroShots, lumaPercentiles, meanTargets, passPrompt, heroReferencePrompt as referencePrompt, type AgentEvent, type LumaTargets, type Provider, type ReviewViewRequest } from '@aether/agent';
+import { findSunk, HARDCORE_PASSES, HARDCORE_SHADER_BUDGET_PATCH, WorldAgent, bibleText, judgeCloser, lookCandidates, lookDistance, pictureColour, type PictureColour, heroShots, lumaPercentiles, meanTargets, passPrompt, heroReferencePrompt as referencePrompt, type AgentEvent, type LumaTargets, type Provider, type ReviewViewRequest } from '@aether/agent';
 import { initScripting } from '@aether/logic';
 import { initPhysics } from '@aether/physics';
 import { loadLibraryGenerator } from '@aether/procgen';
@@ -166,6 +166,9 @@ async function main(): Promise<void> {
     const dir = join(out, `pass-${k + 1}-${pass.id}`);
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, 'world.json'), JSON.stringify({ format: 'aether-world', version: 1, world: host.getWorld() }));
+    // Sunk into the ground or hanging over a drop: measured after every pass (the review rounds inside the pass already showed it to the model).
+    const sunk = findSunk(host.getWorld());
+    console.log(sunk.length === 0 ? '  ground check: nothing sunk or over an edge' : `  ground check: ${sunk.length} piece(s) ${sunk.slice(0, 6).map((p) => `${p.id} ${p.kind} ${p.depth.toFixed(1)} m`).join(', ')}`);
     await gpu.load(host.getWorld());
     const renders = await gpu.capture(shots.map((s) => ({ ...s.pose, hideTops: false })), { width: 1600, height: 900 });
     const files: string[] = [];
