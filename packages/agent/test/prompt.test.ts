@@ -31,6 +31,7 @@ describe('system prompt', () => {
   it('teaches IR conventions, patch ops, tests and the verification contract', () => {
     for (const phrase of ['Y is up', 'DEGREES', 'BASE at y=0', 'lowercase slugs', 'self-verification', 'scatter', 'ARRAYS REPLACE', 'noOverlap', 'topples', 'build_architecture', 'SHARE edges', 'navigable', 'design_plan', 'place_items']) expect(prompt).toContain(phrase);
     for (const op of PATCH_OPS) expect(prompt).toContain(`"op":"${op}"`);
+    for (const phrase of ['build every size the request states', 'carried on piers or arches', 'stands clear in front of the face', 'eroded terraces', "region's species", 'golden hour']) expect(prompt).toContain(phrase);
     expect(prompt).toContain(RULE_DOCS.trim().slice(0, 200));
   });
 
@@ -64,7 +65,9 @@ describe('system prompt', () => {
     // sculpted-statue generator.
     // 17.9k -> 18.1k for api.library (start a generator from a built-in's parts) and the sculpt-first guideline.
     // 18.1k -> 18.7k for material surface layers and shader expressions (the layer kinds, masks and the expression language).
-    expect(prompt.length / 4).toBeLessThan(18_700);
+    // 18.7k -> 19k for the scale, structure-over-drops and natural-ground guidelines (requested sizes, stairs on piers, waterfalls
+    // clear of the face, eroded terraces, regional species) and the golden-hour hours of the day sky.
+    expect(prompt.length / 4).toBeLessThan(19_000);
     expect(buildSystemPrompt(REAL)).toBe(prompt);
     expect(prompt).not.toMatch(/\d{4}-\d{2}-\d{2}T/); // no timestamps (cache-stable)
   });
@@ -80,6 +83,7 @@ describe('system prompt', () => {
     expect(c).toContain(GENERATOR_API_DTS.trim().slice(0, 100));
     expect(c).toContain('submit_generator');
     expect(c.length / 4).toBeLessThan(12_000);
+    expect(c).toContain('carried on piers or arches');
   });
 
   it('worked examples apply to an empty world with zero errors', () => {

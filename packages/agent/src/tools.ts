@@ -173,7 +173,7 @@ export const AGENT_TOOLS: ToolDef[] = [
   {
     name: 'write_generator',
     description:
-      'Define a custom procedural geometry generator (only when no built-in generator fits). `source` is the BODY of `function generate(params, api)` using the GeneratorApi and must `return api.build()`. Base at y=0, centered in x/z, meters. The code is statically checked and test-run in a sandbox; errors come back so you can fix it. Then use it with shape {"kind":"procedural","generator":"<id>","params":{...}}.',
+      'Define a custom procedural geometry generator (only when no built-in generator fits). `source` is the BODY of `function generate(params, api)` using the GeneratorApi and must `return api.build()`. Base at y=0, centered in x/z, meters, at the size the request states; stairs and bridges over a drop are slabs on piers or arches, never solid down to y=0. The code is statically checked and test-run in a sandbox; errors come back so you can fix it. Then use it with shape {"kind":"procedural","generator":"<id>","params":{...}}.',
     inputSchema: {
       type: 'object',
       properties: {

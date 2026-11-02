@@ -47,7 +47,8 @@ export interface SunkPiece {
 
 const boundsCache = new Map<string, { min: [number, number, number]; max: [number, number, number] } | null>();
 
-function localBounds(generator: string, params: Record<string, Json>, seed: number): { min: [number, number, number]; max: [number, number, number] } | null {
+/** Local bounds of a built-in generator's output for these params (cached), or null. */
+export function localBounds(generator: string, params: Record<string, Json>, seed: number): { min: [number, number, number]; max: [number, number, number] } | null {
   const key = `${generator}|${seed}|${JSON.stringify(params)}`;
   if (boundsCache.has(key)) return boundsCache.get(key) ?? null;
   let b: { min: [number, number, number]; max: [number, number, number] } | null = null;
@@ -75,7 +76,7 @@ function checked(e: Entity, generator: string, world: WorldDoc): boolean {
 }
 
 /** Footprint and height of a world-defined piece from its params (width, depth, height or floors), or null. */
-function paramBounds(params: Record<string, Json>): { min: [number, number, number]; max: [number, number, number] } | null {
+export function paramBounds(params: Record<string, Json>): { min: [number, number, number]; max: [number, number, number] } | null {
   const num = (k: string): number | null => (typeof params[k] === 'number' && Number.isFinite(params[k]) ? (params[k] as number) : null);
   const w = num('width') ?? num('size') ?? num('length');
   if (w === null || w <= 0) return null;

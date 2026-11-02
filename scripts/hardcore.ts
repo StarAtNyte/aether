@@ -16,7 +16,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { createWorld, type PatchResult, type WorldDoc } from '@aether/core';
-import { findSunk, HARDCORE_PASSES, HARDCORE_SHADER_BUDGET_PATCH, WorldAgent, bibleText, judgeCloser, lookCandidates, lookDistance, pictureColour, type PictureColour, heroShots, lumaPercentiles, meanTargets, passPrompt, heroReferencePrompt as referencePrompt, type AgentEvent, type LumaTargets, type Provider, type ReviewViewRequest } from '@aether/agent';
+import { findBuriedFalls, findSunk, HARDCORE_PASSES, HARDCORE_SHADER_BUDGET_PATCH, WorldAgent, bibleText, judgeCloser, lookCandidates, lookDistance, pictureColour, type PictureColour, heroShots, lumaPercentiles, meanTargets, passPrompt, heroReferencePrompt as referencePrompt, type AgentEvent, type LumaTargets, type Provider, type ReviewViewRequest } from '@aether/agent';
 import { initScripting } from '@aether/logic';
 import { initPhysics } from '@aether/physics';
 import { loadLibraryGenerator } from '@aether/procgen';
@@ -144,12 +144,17 @@ async function main(): Promise<void> {
       let best: { env: Record<string, unknown>; d: number } | null = null;
       for (const cand of lookCandidates()) {
         const w = host.getWorld();
-        await gpu.load({ ...w, environment: { ...w.environment, ...cand } } as WorldDoc);
+        // A null clears the field (the analytic-sky candidates clear the picture sky), as the setEnvironment patch below does.
+        const env: Record<string, unknown> = { ...w.environment, ...cand };
+        for (const k of Object.keys(cand)) if (cand[k] === null) delete env[k];
+        await gpu.load({ ...w, environment: env } as WorldDoc);
         const shotsSmall = await gpu.capture(shots.map((x) => ({ ...x.pose, hideTops: false })), { width: 320, height: 180 });
         const renders = shotsSmall.flatMap((d) => { if (!d) return []; const px = rgba(fromDataUrl(d), 320); const c = pictureColour(px.data, px.width, px.height); return c ? [c] : []; });
         const d = lookDistance(renders, refColour);
         log(`  look ${JSON.stringify(cand)} → ${d.toFixed(0)}`);
-        if (!best || d < best.d) best = { env: cand, d };
+        // The analytic sky is preferred: a sky picture has to be clearly closer (10 %) to win.
+        const score = cand['hdri'] ? d * 1.1 : d;
+        if (!best || score < best.d) best = { env: cand, d: score };
       }
       if (best) {
         host.applyPatches([{ op: 'setEnvironment', set: best.env }], 'Look sweep: the sky, sun height and exposure closest to the references');
@@ -169,6 +174,8 @@ async function main(): Promise<void> {
     // Sunk into the ground or hanging over a drop: measured after every pass (the review rounds inside the pass already showed it to the model).
     const sunk = findSunk(host.getWorld());
     console.log(sunk.length === 0 ? '  ground check: nothing sunk or over an edge' : `  ground check: ${sunk.length} piece(s) ${sunk.slice(0, 6).map((p) => `${p.id} ${p.kind} ${p.depth.toFixed(1)} m`).join(', ')}`);
+    const buried = findBuriedFalls(host.getWorld());
+    if (buried.length > 0) console.log(`  falls check: ${buried.length} buried at the top ${buried.slice(0, 6).map((p) => `${p.id} ${p.hidden.toFixed(1)} m in ${p.inside.join('+')}`).join(', ')}`);
     await gpu.load(host.getWorld());
     const renders = await gpu.capture(shots.map((s) => ({ ...s.pose, hideTops: false })), { width: 1600, height: 900 });
     const files: string[] = [];

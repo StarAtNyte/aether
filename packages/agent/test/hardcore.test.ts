@@ -46,6 +46,8 @@ describe('hardcore mode', () => {
     const washed = img([235, 235, 240], [200, 190, 180]);
     expect(lookDistance([close], [ref])).toBeLessThan(lookDistance([washed], [ref]));
     expect(lookCandidates().length).toBeGreaterThan(9);
+    // The analytic sky comes first and clears any picture sky.
+    expect(lookCandidates()[0]).toMatchObject({ hdri: null, sky: 'day' });
   });
   it('gives the refined world the hero shader budget, keeping the rest of its look, and says so in the detail pass', () => {
     const w = applyPatches(createWorld({}), [{ op: 'setEnvironment', set: { look: { foliageTint: '#ddeecc' } } }]).world;
