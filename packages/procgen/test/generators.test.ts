@@ -15,7 +15,7 @@ const REQUIRED_IDS = [
   // Falling water (water.ts).
   'waterfall-sheet',
   // Classical and Mediterranean (classical.ts, flora.ts).
-  'column', 'classical-temple', 'balustrade', 'aqueduct', 'cliff-face', 'brazier', 'amphora', 'banner', 'awning', 'tree-cypress', 'tree-olive', 'ivy',
+  'figure-statue', 'column', 'classical-temple', 'balustrade', 'aqueduct', 'cliff-face', 'brazier', 'amphora', 'banner', 'awning', 'tree-cypress', 'tree-olive', 'ivy',
 ];
 /** High-detail sculptures (virtual geometry): up to 786k triangles by design. */
 const SCULPTURES = new Set(['colossus']);

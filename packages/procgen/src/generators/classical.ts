@@ -440,4 +440,63 @@ const awning = defineGenerator({
   },
 });
 
-export const CLASSICAL_GENERATORS = [columnGen, temple, balustrade, aqueduct, cliffFace, brazier, amphora, banner, awning] as const;
+const figureStatue = defineGenerator({
+  id: 'figure-statue',
+  description: 'Standing classical figure statue at any scale (life size to a 30 m colossus): robed goddess with helmet, spear and round shield, or a robed figure with raised arms.',
+  category: 'props',
+  params: {
+    height: pNum(3, 1, 40, 'figure height in meters (feet to crown)'),
+    color: pColor('#ece5d8', 'marble colour (#b08d57 for bronze)'),
+    accentColor: pColor('#c9a24a', 'spear tip, shield rim and helmet crest (gilded)'),
+    pedestal: pBool(true, 'stand on a stepped pedestal'),
+    variant: pVariant(1, '0 goddess with helmet, spear and shield, 1 robed figure with raised arms'),
+  },
+  run(p, api) {
+    const H = p.num('height');
+    const v = p.int('variant');
+    const mat = marble(p.color('color'));
+    const gold: MaterialSpec = { finish: 'brass', color: p.color('accentColor'), roughness: 0.35, metalness: 0.9 };
+    const ped = p.bool('pedestal') ? H * 0.16 : 0;
+    // Robe from hem to neck (a peplos): flared hem, cinched waist, full chest, with deep vertical folds that fade upward.
+    const robe = api.lathe([[H * 0.115, 0], [H * 0.11, H * 0.04], [H * 0.095, H * 0.3], [H * 0.075, H * 0.55], [H * 0.07, H * 0.6], [H * 0.088, H * 0.7], [H * 0.1, H * 0.79], [H * 0.06, H * 0.84], [H * 0.028, H * 0.86], [0, H * 0.865]], 36);
+    robe.displace((x, y, z) => {
+      const a = Math.atan2(z, x);
+      const fade = Math.max(0, 1 - y / (H * 0.62));
+      return H * 0.008 * Math.cos(a * 13) * fade + H * 0.003 * Math.cos(a * 29 + y * 3) * fade;
+    });
+    robe.scale(1, 1, 0.72);
+    // A fold of cloth over one shoulder (the himation) breaks the symmetry.
+    const drape = api.tube([[H * 0.085, H * 0.8, H * 0.02], [H * 0.02, H * 0.7, H * 0.075], [-H * 0.07, H * 0.56, H * 0.06], [-H * 0.09, H * 0.42, H * 0.03]], H * 0.022, 8);
+    let fig = robe.merge(drape);
+    fig = fig.merge(api.cylinder(H * 0.026, H * 0.03, H * 0.06, 12).translate(0, H * 0.88, 0));
+    const head = api.sphere(H * 0.058).scale(0.9, 1.08, 1).translate(0, H * 0.935, H * 0.004);
+    fig = fig.merge(head);
+    const arm = (from: Vec3, mid: Vec3, to: Vec3): Mesh => api.tube([from, mid, to], H * 0.024, 8, (t) => 1 - 0.3 * t);
+    if (v === 0) {
+      // Helmet with a crest, the spear held high in the right hand, the shield resting at the left side.
+      api.add(api.sphere(H * 0.064).scale(0.95, 0.75, 1.05).translate(0, H * 0.965, -H * 0.004), gold);
+      api.add(api.box(H * 0.012, H * 0.05, H * 0.13).translate(0, H * 1.02, -H * 0.01), gold);
+      fig = fig.merge(arm([H * 0.095, H * 0.8, 0], [H * 0.16, H * 0.86, H * 0.02], [H * 0.17, H * 0.98, H * 0.03]));
+      fig = fig.merge(arm([-H * 0.095, H * 0.8, 0], [-H * 0.15, H * 0.68, H * 0.04], [-H * 0.17, H * 0.58, H * 0.08]));
+      api.add(api.cylinder(H * 0.009, H * 0.009, H * 1.25, 8).translate(H * 0.17, H * 0.6, H * 0.03), { finish: 'brass', color: '#6d5532', roughness: 0.6, metalness: 0.7 });
+      api.add(api.cone(H * 0.022, H * 0.09, 8).translate(H * 0.17, H * 1.27, H * 0.03), gold);
+      const shield = api.lathe([[0, H * 0.035], [H * 0.12, H * 0.025], [H * 0.17, H * 0.008], [H * 0.18, 0], [H * 0.18, -H * 0.012], [0, -H * 0.006]], 32).rotate(90, 0, 0).rotate(0, -35, 0).translate(-H * 0.24, H * 0.36, H * 0.12);
+      api.add(shield, mat);
+      api.add(api.torus(H * 0.175, H * 0.01, 8, 40).rotate(0, -35, 0).translate(-H * 0.24 + Math.sin((-35 * Math.PI) / 180) * H * 0.01, H * 0.36, H * 0.12 + Math.cos((-35 * Math.PI) / 180) * H * 0.01), gold);
+    } else {
+      fig = fig.merge(arm([H * 0.095, H * 0.8, 0], [H * 0.17, H * 0.92, H * 0.02], [H * 0.2, H * 1.05, H * 0.03]));
+      fig = fig.merge(arm([-H * 0.095, H * 0.8, 0], [-H * 0.17, H * 0.92, H * 0.02], [-H * 0.2, H * 1.05, H * 0.03]));
+    }
+    api.add(fig.translate(0, ped, 0), mat);
+    if (ped > 0) {
+      const ps = marble('#ddd5c6');
+      api.add(api.box(H * 0.42, ped * 0.25, H * 0.42).translate(0, ped * 0.125 - ped, 0).translate(0, ped, 0), ps);
+      api.add(api.box(H * 0.34, ped * 0.6, H * 0.34).translate(0, ped * 0.55, 0), ps);
+      api.add(api.box(H * 0.38, ped * 0.15, H * 0.38).translate(0, ped * 0.925, 0), ps);
+    }
+    api.collider(boxCollider(0, (ped + H) / 2, 0, Math.max(H * 0.34, H * 0.25), ped + H, H * 0.34));
+    return api.build();
+  },
+});
+
+export const CLASSICAL_GENERATORS = [figureStatue, columnGen, temple, balustrade, aqueduct, cliffFace, brazier, amphora, banner, awning] as const;
