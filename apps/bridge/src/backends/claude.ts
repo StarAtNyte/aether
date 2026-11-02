@@ -32,7 +32,7 @@ export const CLAUDE_MODELS = [
   { id: 'fable', label: 'Fable (most capable)', vision: true },
 ] as const;
 /** Default model: fast enough for interactive building. */
-export const CLAUDE_DEFAULT_MODEL = 'sonnet';
+export const CLAUDE_DEFAULT_MODEL = 'opus';
 
 /** Options of {@link createClaudeCodeBackend}. */
 export interface ClaudeBackendOptions {
