@@ -9,6 +9,7 @@ import { TERRAIN_GENERATORS } from './terrain';
 import { ARCHITECTURE_GENERATORS } from './architecture';
 import { SKYLINE_GENERATORS } from './skyline';
 import { PROP_GENERATORS } from './props';
+import { OUTPOST_GENERATORS } from './outpost';
 import { VEHICLE_GENERATORS } from './vehicles';
 import { FX_GENERATORS } from './fx';
 import { WATER_GENERATORS } from './water';
@@ -23,6 +24,7 @@ const ALL: readonly BuiltinGenerator[] = [
   ...ARCHITECTURE_GENERATORS,
   ...SKYLINE_GENERATORS,
   ...PROP_GENERATORS,
+  ...OUTPOST_GENERATORS,
   ...SCULPTURE_GENERATORS,
   ...VEHICLE_GENERATORS,
   ...FX_GENERATORS,

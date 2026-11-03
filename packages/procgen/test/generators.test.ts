@@ -16,6 +16,8 @@ const REQUIRED_IDS = [
   'waterfall-sheet',
   // Classical and Mediterranean (classical.ts, flora.ts).
   'figure-statue', 'column', 'classical-temple', 'balustrade', 'aqueduct', 'cliff-face', 'brazier', 'amphora', 'banner', 'awning', 'tree-cypress', 'tree-olive', 'ivy',
+  // Outpost and industrial props (outpost.ts).
+  'shipping-container', 'sandbag-wall', 'radio-mast',
 ];
 /** High-detail sculptures (virtual geometry): up to 786k triangles by design. */
 const SCULPTURES = new Set(['colossus', 'sculpted-statue']);
@@ -30,6 +32,8 @@ const CARDS = new Set(['tree-broadleaf', 'tree-umbrella-pine', 'tree-cypress', '
  * buttress or root flare may reach into it).
  */
 const ROOTED = new Set(['tree-pine', 'tree-oak', 'tree-palm', 'grass-tuft', 'flowers', 'mushroom', 'tree-broadleaf', 'tree-umbrella-pine', 'tree-cypress', 'tree-olive', 'tree-birch', 'tree-spruce', 'shrub', 'fern', 'meadow-grass', 'wildflowers', 'cactus', 'hedge']);
+/** Large props (a container, a run of sandbags, a mast with its shelter): under 8k triangles, a handful of draws. */
+const BIG_PROPS = new Set(['shipping-container', 'sandbag-wall', 'radio-mast']);
 const STRUCTURES = new Set(['house', 'tower', 'wall', 'fence', 'bridge', 'stairs', 'arch', 'ramp', 'windmill', 'classical-temple', 'aqueduct', 'cliff-face']);
 
 function randomParams(spec: Record<string, ParamSpec>, random: () => number): Record<string, Json> {
@@ -98,6 +102,8 @@ function checkOutput(id: string, out: GeneratorOutput): void {
   } else if (id === 'cloud') {
     // Billowing clouds: smooth puffs (up to ~14 k triangles for a large one), still a handful per world.
     expect(tris).toBeLessThan(14_000);
+  } else if (BIG_PROPS.has(id)) {
+    expect(tris).toBeLessThan(8000);
   } else if (STRUCTURES.has(id)) {
     expect(tris).toBeLessThan(9000);
   } else if (TREES.has(id)) {
