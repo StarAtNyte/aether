@@ -9,6 +9,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { createWorld, type WorldDoc } from '@aether/core';
 import { heroShots } from '@aether/agent';
+import { BlockRegistry, TerrainGenerator } from '@aether/voxel';
 import { GpuRoom } from './lib/gpu-room';
 
 const args = process.argv.slice(2);
@@ -23,7 +24,10 @@ try {
     const path = from.endsWith('.json') ? resolve(from) : resolve(`apps/studio/public/templates/worlds/${from}.json`);
     const raw = JSON.parse(readFileSync(path, 'utf8')) as { world?: WorldDoc };
     const world = createWorld((raw.world ?? raw) as WorldDoc) as WorldDoc;
-    const shots = heroShots(world);
+    // A block world grows its land from a seed: frame the shots on the generated ground, not on a guess.
+    const v = world.voxel;
+    const gen = v ? new TerrainGenerator(v.seed ?? world.seed, v.preset, new BlockRegistry(v.blocks)) : null;
+    const shots = heroShots(world, gen ? { groundAt: (x, z) => gen.groundLevel(Math.floor(x), Math.floor(z)) } : {});
     let imgs: Array<string | null | undefined>;
     if (full) {
       imgs = [];

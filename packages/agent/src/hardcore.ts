@@ -13,7 +13,7 @@
  * This module holds the pieces that do not need a host: the shot list, the reference prompts, the luminance targets, the pass plan
  * and the texts. The run itself is `WorldAgent.run` with `hardcore` set; scripts/hardcore.ts drives the passes in Node.
  */
-import type { Entity, Vec3, WorldDoc } from '@aether/core';
+import { VOXEL_SEA_LEVEL, type Entity, type Vec3, type VoxelEdit, type WorldDoc } from '@aether/core';
 import type { Provider, ReviewViewRequest } from './types';
 
 /** Luminance percentiles (sRGB display values, 0..255) of a picture or a set of pictures. */
@@ -151,13 +151,88 @@ function streetShot(world: WorldDoc, mark: Vec3): ReviewViewRequest | null {
  * landmark, the landmark itself from part way up, and a low view across the rooftops. Deterministic, so the same shots are judged
  * in every pass.
  */
-export function heroShots(world: WorldDoc): ReviewViewRequest[] {
-  const b = contentBounds(world);
+export function heroShots(world: WorldDoc, opts: HeroShotOptions = {}): ReviewViewRequest[] {
+  const block = contentBounds(world) ? null : voxelFrame(world, opts.groundAt ?? (() => VOXEL_SEA_LEVEL + 4));
+  const b = block ?? contentBounds(world);
   if (!b) return [];
   const c: Vec3 = [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2];
   const r = Math.max(20, Math.max(b.max[0] - b.min[0], b.max[2] - b.min[2]) / 2);
-  const spawn = world.player.spawn;
-  const mark = landmark(world) ?? c;
+  const spawn = block?.spawn ?? world.player.spawn;
+  const mark = block?.mark ?? landmark(world) ?? c;
+  const shots = framedShots(world, c, r, spawn, mark);
+  // On generated block land the cameras would otherwise sit inside a hill: keep each one, and what it looks at, above the ground.
+  if (block) {
+    const ground = opts.groundAt ?? (() => VOXEL_SEA_LEVEL + 4);
+    for (const s of shots) {
+      const p = s.pose.position as Vec3;
+      const t = s.pose.target as Vec3;
+      p[1] = Math.max(p[1], ground(p[0], p[2]) + 1.7);
+      t[1] = Math.max(t[1], ground(t[0], t[2]) + 1);
+    }
+  }
+  return shots;
+}
+
+/** How the hero shots of a world are framed. */
+export interface HeroShotOptions {
+  /**
+   * The first free height above the generated land at (x, z), for block worlds whose terrain is not in the document but grown from
+   * a seed (the voxel terrain generator's ground level). Without it the land is taken to lie a few blocks above the sea.
+   */
+  groundAt?: (x: number, z: number) => number;
+}
+
+/** Where a block edit stands, in plan: its anchor corner or centre and, for boxes and lines, the far corner. */
+function editPoints(e: VoxelEdit): Vec3[] {
+  switch (e.shape) {
+    case 'box': case 'line': case 'replace': case 'clear': return [e.from, e.to];
+    case 'sphere': return [e.center];
+    case 'cylinder': return [e.base];
+    case 'stairs': return [e.from];
+    default: return [e.at];
+  }
+}
+
+/** How much a structure counts as the landmark of a block world. */
+const STRUCTURE_RANK: Record<string, number> = { castle: 6, tower: 5, pyramid: 5, arch: 3, house: 2 };
+
+/**
+ * The frame of a block world: its land is generated, not entities, so the bounds come from the spawn and the block edits (the
+ * buildings, bridges and lettering placed on the land), the land height from `groundAt`, and the landmark is the grandest structure.
+ * Null for a world without voxel terrain.
+ */
+function voxelFrame(world: WorldDoc, groundAt: (x: number, z: number) => number): { min: Vec3; max: Vec3; spawn: Vec3; mark: Vec3 | null } | null {
+  const v = world.voxel;
+  if (!v) return null;
+  const s = world.player.spawn;
+  const spawn: Vec3 = [s[0], Math.max(s[1], groundAt(s[0], s[2])), s[2]];
+  const min: Vec3 = [spawn[0], spawn[1], spawn[2]];
+  const max: Vec3 = [spawn[0], spawn[1], spawn[2]];
+  let mark: { p: Vec3; score: number } | null = null;
+  for (const e of v.edits) {
+    const surface = e.anchor === 'surface';
+    for (const q of editPoints(e)) {
+      const p: Vec3 = [q[0], surface ? groundAt(q[0], q[2]) + q[1] : q[1], q[2]];
+      if (!Number.isFinite(p[0] + p[1] + p[2]) || Math.hypot(p[0] - spawn[0], p[2] - spawn[2]) > 160) continue;
+      for (let k = 0; k < 3; k++) {
+        min[k] = Math.min(min[k] as number, p[k] as number);
+        max[k] = Math.max(max[k] as number, p[k] as number);
+      }
+      if (e.shape === 'structure') {
+        const score = (STRUCTURE_RANK[e.structure] ?? 1) * 10 + (e.size === 'large' ? 3 : e.size === 'medium' ? 2 : 1);
+        // Aim at the body of the structure, not its foot.
+        if (!mark || score > mark.score) mark = { p: [p[0], p[1] + (e.size === 'large' ? 8 : 5), p[2]], score };
+      }
+    }
+  }
+  // A world of bare land round the spawn: frame the land a short walk round it.
+  const pad = max[0] - min[0] < 24 && max[2] - min[2] < 24 ? 24 : 0;
+  min[0] -= pad; min[2] -= pad; max[0] += pad; max[2] += pad;
+  return { min, max, spawn, mark: mark?.p ?? (pad ? [spawn[0], spawn[1] + 3, spawn[2]] : null) };
+}
+
+/** The four hero shots round the centre `c` of a place of radius `r`, seen from the side of `spawn`, looking at `mark`. */
+function framedShots(world: WorldDoc, c: Vec3, r: number, spawn: Vec3, mark: Vec3): ReviewViewRequest[] {
   // The establishing view comes from the side the spawn is on, so the place is seen the way a visitor first meets it.
   const sx = spawn[0] - c[0];
   const sz = spawn[2] - c[2];

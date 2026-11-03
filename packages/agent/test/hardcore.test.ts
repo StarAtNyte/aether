@@ -24,6 +24,32 @@ describe('hardcore mode', () => {
     expect(heroShots(createWorld())).toEqual([]);
   });
 
+  it('frames hero shots of a block world from its spawn and block edits, above the generated land', () => {
+    const tpl = (slug: string): WorldDoc => createWorld((JSON.parse(readFileSync(fileURLToPath(new URL(`../../../apps/studio/public/templates/worlds/${slug}.json`, import.meta.url)), 'utf8')) as { world: WorldDoc }).world);
+    // A rolling ground that rises to the east, the way generated land would.
+    const groundAt = (x: number, z: number) => 60 + Math.round(x / 8) + Math.round(Math.sin(z / 10) * 3);
+    for (const slug of ['blockfall', 'survival-world']) {
+      const world = tpl(slug);
+      expect(Object.keys(world.entities)).toEqual([]);
+      const shots = heroShots(world, { groundAt });
+      expect(shots.map((s) => s.name)).toEqual(['hero-establishing', 'hero-street', 'hero-landmark', 'hero-rooftops']);
+      for (const s of shots) {
+        const [x, y, z] = s.pose.position as [number, number, number];
+        const t = s.pose.target as [number, number, number];
+        for (const v of [x, y, z, ...t]) expect(Number.isFinite(v)).toBe(true);
+        expect(y).toBeGreaterThanOrEqual(groundAt(x, z) + 1.7);
+        expect(t[1]).toBeGreaterThanOrEqual(groundAt(t[0], t[2]) + 1);
+        // Every camera stays within reach of the spawn, where the terrain streams in.
+        expect(Math.hypot(x - world.player.spawn[0], z - world.player.spawn[2])).toBeLessThan(120);
+      }
+      // The street shot stands at eye height on the spawn.
+      const sp = world.player.spawn;
+      expect(shots[1]!.pose.position[1]).toBeCloseTo(groundAt(sp[0], sp[2]) + 1.7, 5);
+    }
+    // Without a ground function the land is taken to lie just above the sea, never at y 0.
+    for (const s of heroShots(tpl('survival-world'))) expect(s.pose.position[1]).toBeGreaterThan(40);
+  });
+
   it('writes the reference prompt, the bible, the pass prompts and the target evidence', () => {
     const shots = heroShots(lisbon());
     expect(referencePrompt('a hillside town', shots[0]!)).toContain('establishing');
