@@ -151,7 +151,8 @@ export class CharacterRig {
         this.meshes.push(o);
       }
     });
-    this.root.add(contactShadow());
+    this.blob = contactShadow();
+    this.root.add(this.blob);
     for (const c of opts.clips) this.clips.set(c.name, c);
     this.mixer = new AnimationMixer(opts.scene);
     this.machine = new LocomotionMachine(opts.table);
@@ -273,6 +274,20 @@ export class CharacterRig {
 
   /** Worn gear pieces (helmet, vest ...), each under the bone that carries it. */
   private gear: GearPiece[] = [];
+  /** The contact shadow under the feet. */
+  private blob: Object3D | null = null;
+  /** Detail the small pieces were last shown at (-1: not yet). */
+  private shownDetail = -1;
+
+  /** Far away (detail 0) the small pieces go: shoulder and groin plates and the contact shadow; head and torso gear stay. */
+  private showDetail(detail: number): void {
+    const near = detail > 0;
+    if ((this.shownDetail > 0) === near && this.shownDetail >= 0) return;
+    this.shownDetail = detail;
+    if (this.blob) this.blob.visible = near;
+    if (this.shadowOnly) return;
+    for (const g of this.gear) if (g.bone !== 'head' && g.bone !== 'spine') g.group.visible = near;
+  }
 
   /** Fit the look's gear to this body in its rest pose and hang each piece on its bone (see `gear.ts`). */
   private mountGear(): void {
@@ -398,7 +413,7 @@ export class CharacterRig {
       o.visible = !shadowOnly;
     });
     // Worn gear goes with the body (a helmet would otherwise sit in front of a first-person camera).
-    for (const g of this.gear) g.group.visible = !shadowOnly;
+    for (const g of this.gear) g.group.visible = !shadowOnly && (this.shownDetail !== 0 || g.bone === 'head' || g.bone === 'spine');
   }
 
   /** True while only the shadow is drawn. */
@@ -415,6 +430,7 @@ export class CharacterRig {
    * IK, 0 = mixer only (distant characters).
    */
   update(dt: number, detail: 0 | 1 | 2 = 2): void {
+    this.showDetail(detail);
     if (this.disposed || !(dt > 0)) return;
     const step = Math.min(dt, 0.25);
     if (this.autoMotion && this.tracked) {
