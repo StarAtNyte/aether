@@ -48,7 +48,9 @@ export function localView(camera: PerspectiveCamera, object: Object3D, heightPx:
   out.cz = _cam.z;
   _s.setFromMatrixScale(world);
   const scale = Math.max(Math.abs(_s.x), Math.abs(_s.y), Math.abs(_s.z), 1e-9);
-  out.pixelScale = projectionScale(camera, heightPx) * scale;
+  // projectionScale written out: a double returned from a call V8 does not inline is boxed every frame.
+  const zoom = camera.zoom > 0 ? camera.zoom : 1;
+  out.pixelScale = ((heightPx * zoom) / (2 * Math.tan((camera.fov * Math.PI) / 360))) * scale;
   // Frustum of (projection × view × world): planes come out in object space.
   _vp.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
   _local.multiplyMatrices(_vp, world);

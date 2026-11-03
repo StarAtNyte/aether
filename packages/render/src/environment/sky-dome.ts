@@ -24,6 +24,7 @@ import {
   SRGBColorSpace,
   SphereGeometry,
   Vector3,
+  Matrix4,
   type Camera,
 } from 'three';
 import { rng } from '@aether/core';
@@ -53,6 +54,8 @@ const _c = new Color();
 const _p = new Color();
 const _d = new Vector3();
 const _sun = new Vector3();
+const _origin = new Vector3();
+const _bodyAim = new Matrix4();
 const _neb: [number, number, number] = [0, 0, 0];
 const _phys: [number, number, number] = [0, 0, 0];
 const _fog = new Color();
@@ -123,6 +126,7 @@ export class SkyDome {
     this.stars.frustumCulled = false;
     this.bodies.add(this.rays, this.disc, this.moonDisc);
     this.group.add(this.dome, this.cirrus.mesh, this.clouds.mesh, this.stars, this.bodies);
+    this.placeBodies();
   }
 
   /**
@@ -142,6 +146,7 @@ export class SkyDome {
     }
     _glow.set(state.sunGlow);
     this.sunDir.set(state.lightDirection[0], state.lightDirection[1], state.lightDirection[2]).normalize();
+    this.placeBodies();
     const pos = this.dome.geometry.getAttribute('position');
     const col = this.dome.geometry.getAttribute('color') as BufferAttribute;
     const glow = state.sunGlowStrength;
@@ -257,9 +262,18 @@ export class SkyDome {
     const far = (camera as Camera & { far?: number }).far;
     const scale = typeof far === 'number' && Number.isFinite(far) ? Math.min(SKY_MAX_SCALE, Math.max(1, (far * 0.9) / SKY_RADIUS)) : 1;
     if (this.group.scale.x !== scale) this.group.scale.setScalar(scale);
+  }
+
+  /**
+   * The sun and moon sprites sit on the dome toward the sun and face its centre (the camera). Both depend only on the
+   * sun direction in the dome's frame, so they are placed when it changes, not every frame (Object3D.lookAt per frame
+   * boxed doubles through three's matrix helpers).
+   */
+  private placeBodies(): void {
     _sun.copy(this.sunDir).multiplyScalar(SKY_RADIUS * 0.92);
     this.bodies.position.copy(_sun);
-    this.bodies.lookAt(camera.position);
+    _bodyAim.lookAt(_origin, _sun, this.bodies.up);
+    this.bodies.quaternion.setFromRotationMatrix(_bodyAim);
   }
 
   /** Release GPU resources. */

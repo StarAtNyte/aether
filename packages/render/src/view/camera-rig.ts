@@ -116,27 +116,49 @@ function boomFree(query: OcclusionQuery | null, sink: OcclusionSink | null, from
   _boom.y /= len;
   _boom.z /= len;
   // An orthonormal frame around the boom (world up unless the boom is vertical).
-  _up.set(0, 1, 0);
-  if (Math.abs(_boom.y) > 0.98) _up.set(1, 0, 0);
-  _side.crossVectors(_boom, _up).normalize();
-  _up.crossVectors(_side, _boom).normalize();
+  // Written out: Vector3.normalize hands its length to divideScalar, a double crossing a call that is boxed when
+  // V8 does not inline it.
+  const vertical = Math.abs(_boom.y) > 0.98;
+  // side = boom x up, up = (0, 1, 0) or (1, 0, 0) for a vertical boom.
+  let fx = vertical ? 0 : -_boom.z;
+  let fy = vertical ? _boom.z : 0;
+  let fz = vertical ? -_boom.y : _boom.x;
+  let fl = Math.sqrt(fx * fx + fy * fy + fz * fz);
+  if (!(fl > 0)) fl = 1;
+  fx /= fl;
+  fy /= fl;
+  fz /= fl;
+  _side.x = fx;
+  _side.y = fy;
+  _side.z = fz;
+  // up = side x boom (unit: both are unit and orthogonal).
+  _up.x = fy * _boom.z - fz * _boom.y;
+  _up.y = fz * _boom.x - fx * _boom.z;
+  _up.z = fx * _boom.y - fy * _boom.x;
   probe(query, sink, from, to);
   _free[1] = _free[0]!;
   // Every ring ray gains the same orthogonal offset: (1 - 0.6) * radius.
   // Its length, and therefore its projection factor, is independent of side/up and sign.
-  let along = 0;
+  // A double from the start (not a small integer that later turns into one), so it never needs a heap box.
+  const offset = radius * 0.4;
+  const along = len / Math.max(1e-4, Math.sqrt(len * len + offset * offset));
   for (let i = 0; i < 4; i++) {
     const sx = i < 2 ? (i === 0 ? 1 : -1) : 0;
     const uy = i >= 2 ? (i === 2 ? 1 : -1) : 0;
-    _from.copy(from).addScaledVector(_side, sx * radius * 0.6).addScaledVector(_up, uy * radius * 0.6);
-    _to.copy(to).addScaledVector(_side, sx * radius).addScaledVector(_up, uy * radius);
+    // Field writes, not addScaledVector: a scalar argument to a call that is not inlined is boxed every frame
+    // (the follow and shoulder updates are big enough that V8 stops inlining here).
+    const ox = _side.x * sx * radius + _up.x * uy * radius;
+    const oy = _side.y * sx * radius + _up.y * uy * radius;
+    const oz = _side.z * sx * radius + _up.z * uy * radius;
+    _from.x = from.x + ox * 0.6;
+    _from.y = from.y + oy * 0.6;
+    _from.z = from.z + oz * 0.6;
+    _to.x = to.x + ox;
+    _to.y = to.y + oy;
+    _to.z = to.z + oz;
     probe(query, sink, _from, _to);
     // The offset ray is slightly longer than the boom: measure along the axis.
     if (_free[0] !== Number.POSITIVE_INFINITY) {
-      if (along === 0) {
-        const offset = radius * 0.4;
-        along = len / Math.max(1e-4, Math.sqrt(len * len + offset * offset));
-      }
       const projected = _free[0]! * along;
       if (projected < _free[1]!) _free[1] = projected;
     }
@@ -165,7 +187,16 @@ export class CameraRig {
    * Lowest camera height in orbit mode (ground + clearance), or -Infinity
    * when the world has no ground. Keeps orbiting and fly-tos above ground.
    */
-  floorY = Number.NEGATIVE_INFINITY;
+  get floorY(): number {
+    return this.floor;
+  }
+  set floorY(y: number) {
+    this.floor = y;
+    // A running tour reads its floor from its io slots; written here, not every frame (an unoptimised frame
+    // would box the double it loads from the field).
+    if (this.tour) this.tour.io[3] = y;
+  }
+  private floor = Number.NEGATIVE_INFINITY;
   /** Last first-person eye height (null until the first frame in that mode). */
   private stepY: number | null = null;
   /** Optional obstacle query for the chase camera (see {@link OcclusionQuery}). */
@@ -202,6 +233,7 @@ export class CameraRig {
     if (this.mode !== 'orbit') this.setMode('orbit', null);
     this.focusT = 1;
     this.tour = tour;
+    tour.io[3] = this.floor;
   }
 
   /** Stop a running fly-through where it is (orbiting continues around its current target). */
@@ -287,7 +319,7 @@ export class CameraRig {
     this.fromPos.copy(this.camera.position);
     this.fromTarget.copy(this.controls ? this.controls.target : this.look);
     this.toPos.copy(position);
-    if (this.toPos.y < this.floorY) this.toPos.y = this.floorY;
+    if (this.toPos.y < this.floor) this.toPos.y = this.floor;
     this.toTarget.copy(target);
     const d = Number.isFinite(duration) ? duration : 0;
     this.focusDuration = Math.max(0.01, d);
@@ -306,7 +338,6 @@ export class CameraRig {
   update(dt: number): boolean {
     if (this.tour) {
       this.tour.io[2] = dt;
-      this.tour.io[3] = this.floorY;
       if (this.tour.step(this.camera, this.look)) return true;
       this.stopTour();
     }
@@ -327,8 +358,8 @@ export class CameraRig {
     if (this.mode === 'orbit') {
       if (!this.controls) return false;
       let changed = this.controls.update(dt);
-      if (this.camera.position.y < this.floorY) {
-        this.camera.position.y = this.floorY;
+      if (this.camera.position.y < this.floor) {
+        this.camera.position.y = this.floor;
         this.camera.lookAt(this.controls.target);
         changed = true;
       }
@@ -366,7 +397,7 @@ export class CameraRig {
       // Something solid between the target and the camera (a tree trunk, a wall): move in front of it, fast.
       _lookAt.set(_target.x, _target.y + LOOK_HEIGHT, _target.z);
       _dir.subVectors(_desired, _lookAt);
-      const full = _dir.length();
+      const full = Math.sqrt(_dir.x * _dir.x + _dir.y * _dir.y + _dir.z * _dir.z);
       if (full > 1e-4) boomFree(this.occlusion, this.occlusionSink, _lookAt, _desired, BOOM_RADIUS);
       const free = full > 1e-4 ? _free[1]! : Number.POSITIVE_INFINITY;
       if (free < full) {
@@ -378,14 +409,18 @@ export class CameraRig {
         rate = 14;
       }
     }
-    // Inline exponential damping (same as damp()): no boxed return values per frame.
-    this.camera.position.lerp(_desired, 1 - Math.exp(-rate * Math.max(0, dt)));
+    // Inline exponential damping (same as damp()), written out: no boxed return values or scalar arguments per frame.
+    const pa = 1 - Math.exp(-rate * Math.max(0, dt));
+    const cp = this.camera.position;
+    cp.x += (_desired.x - cp.x) * pa;
+    cp.y += (_desired.y - cp.y) * pa;
+    cp.z += (_desired.z - cp.z) * pa;
     if (occludes) {
       // The eased camera trails the pulled-in point when the player turns into a wall: never let it stay farther
       // out than the boom is free, whatever the smoothing says (the pull-in is instant, the ease-out is not).
       _lookAt.set(_target.x, _target.y + LOOK_HEIGHT, _target.z);
       _dir.subVectors(this.camera.position, _lookAt);
-      const dist = _dir.length();
+      const dist = Math.sqrt(_dir.x * _dir.x + _dir.y * _dir.y + _dir.z * _dir.z);
       if (dist > MIN_FOLLOW_DISTANCE) {
         boomFree(this.occlusion, this.occlusionSink, _lookAt, this.camera.position, BOOM_RADIUS);
         const free = _free[1]!;
@@ -398,8 +433,11 @@ export class CameraRig {
         }
       }
     }
-    _desired.set(_target.x, _target.y + LOOK_HEIGHT, _target.z);
-    this.look.lerp(_desired, 1 - Math.exp(-10 * Math.max(0, dt)));
+    const la = 1 - Math.exp(-10 * Math.max(0, dt));
+    const look = this.look;
+    look.x += (_target.x - look.x) * la;
+    look.y += (_target.y + LOOK_HEIGHT - look.y) * la;
+    look.z += (_target.z - look.z) * la;
     this.camera.lookAt(this.look);
     return true;
   }
@@ -429,10 +467,10 @@ export class CameraRig {
       }
     }
     _desired.set(_lookAt.x + sy * cp * SHOULDER_DISTANCE, _lookAt.y - sp * SHOULDER_DISTANCE, _lookAt.z + cy * cp * SHOULDER_DISTANCE);
-    if (_desired.y < this.floorY) _desired.y = this.floorY;
+    if (_desired.y < this.floor) _desired.y = this.floor;
     if (occludes) {
       _dir.subVectors(_desired, _lookAt);
-      const full = _dir.length();
+      const full = Math.sqrt(_dir.x * _dir.x + _dir.y * _dir.y + _dir.z * _dir.z);
       if (full > 1e-4) {
         boomFree(this.occlusion, this.occlusionSink, _lookAt, _desired, BOOM_RADIUS * 0.7);
         const free = _free[1]!;

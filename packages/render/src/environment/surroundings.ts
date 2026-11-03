@@ -316,7 +316,11 @@ export class SurroundingsRig {
 
   /** The hills stay at infinity: they follow the camera in the ground plane. */
   update(camera: Camera): void {
-    this.hills.position.set(camera.position.x, 0, camera.position.z);
+    // Field writes: doubles passed to a Vector3.set that V8 does not inline are boxed every frame.
+    const p = this.hills.position;
+    p.x = camera.position.x;
+    p.y = 0;
+    p.z = camera.position.z;
   }
 
   private clear(): void {

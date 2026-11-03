@@ -197,8 +197,10 @@ describe('render loop allocation probe', () => {
         rig.update(1 / 60, cam);
         weather.update(1 / 60, cam);
       },
-      // The 5000-particle loop optimizes quickly; a long warmup would only cost test time.
-      { iterations: 300, warmup: 1500, match: RENDER_SRC },
+      // The 5000-particle loop tiers up quickly through on-stack replacement, but the code around it (and the sky and
+      // surroundings updates) needs whole-call tier-up: until then the interpreter boxes every double field it reads.
+      // On a loaded machine 1500 calls were not always enough.
+      { iterations: 300, warmup: 6000, match: RENDER_SRC },
     );
     expect(r.bytesPerIteration, describeSites(r)).toBeLessThan(BUDGET);
     weather.dispose();
