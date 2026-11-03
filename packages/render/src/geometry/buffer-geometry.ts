@@ -3,15 +3,17 @@
  * `BufferGeometry`. Typed arrays are shared, not copied (generator outputs are
  * immutable), except for indices which are narrowed to 16 bits when possible.
  *
- * Texture coordinates are box-projected in metres (see
- * {@link boxProjectedUvs}) rather than taken from the part: the only
- * textured materials are tiling surface details (lava, water) that must
- * keep a constant real-world scale on any size of mesh.
+ * Texture coordinates run in metres on every surface (see metre-uvs.ts):
+ * authored UVs are kept where they are already metric and projected per
+ * triangle elsewhere, so a finish or a tiling surface detail keeps its
+ * real-world scale on any size of mesh. Splitting corners for the
+ * projection copies the vertex streams of that part.
  */
 import { BufferAttribute, BufferGeometry } from 'three';
 import type { MeshPart } from '../types';
 import { setPositionBounds } from './position-bounds';
 import { RefCache } from '../refcache';
+import { metreUvMesh } from './metre-uvs';
 
 /** Thrown for malformed mesh data (never happens with validated procgen output). */
 export class InvalidMeshError extends Error {
@@ -81,10 +83,39 @@ export function partToBufferGeometry(part: MeshPart): BufferGeometry {
   const vertexCount = positions.length / 3;
   if (!(indices instanceof Uint32Array) || indices.length % 3 !== 0) throw new InvalidMeshError('indices must be a Uint32Array of triangles');
   const g = new BufferGeometry();
+  const hasNormals = normals instanceof Float32Array && normals.length === positions.length;
+  const hasColors = colors instanceof Float32Array && colors.length === vertexCount * 3;
+  const splat = part.material?.splat === true;
+  // Falling water and foliage cards read their authored UVs as they are (u across the sheet, v metres down from the lip; the
+  // leaf atlas). Terrain samples top-down metre UVs. Everything else gets metre UVs: authored ones are kept where they are
+  // already metric (boards along a floor, courses along a wall), the rest projected per triangle (see metre-uvs.ts).
+  const keep = (part.material?.foliage !== undefined || part.material?.waterKind === 'fall') && part.uvs instanceof Float32Array && part.uvs.length === vertexCount * 2;
+  const authored = part.material?.finish !== undefined && part.uvs instanceof Float32Array && part.uvs.length === vertexCount * 2;
+  if (!keep && !splat && indices.length > 0) {
+    let nrm = hasNormals ? normals : null;
+    if (!nrm) {
+      const tmp = new BufferGeometry();
+      tmp.setAttribute('position', new BufferAttribute(positions, 3));
+      tmp.setIndex(new BufferAttribute(indices, 1));
+      tmp.computeVertexNormals();
+      nrm = tmp.getAttribute('normal').array as Float32Array;
+    }
+    const r = metreUvMesh({ positions, normals: nrm, indices, colors: hasColors ? colors : null, uvs: authored ? (part.uvs as Float32Array) : null });
+    const n = r.positions.length / 3;
+    g.setAttribute('position', new BufferAttribute(r.positions, 3));
+    g.setAttribute('normal', new BufferAttribute(r.normals, 3));
+    if (r.colors) g.setAttribute('color', new BufferAttribute(r.colors, 3));
+    g.setIndex(new BufferAttribute(narrowIndices(r.indices, n), 1));
+    g.setAttribute('uv', new BufferAttribute(r.uvs, 2));
+    // Corners were split: anything that pairs the part's own arrays with this geometry (cluster LOD) must use these instead.
+    if (r.positions !== positions) g.userData[SPLIT_SOURCE_KEY] = { positions: r.positions, indices: r.indices };
+    setPositionBounds(g, r.positions);
+    return g;
+  }
   g.setAttribute('position', new BufferAttribute(positions, 3));
-  if (normals instanceof Float32Array && normals.length === positions.length) g.setAttribute('normal', new BufferAttribute(normals, 3));
-  if (colors instanceof Float32Array && colors.length === vertexCount * 3) g.setAttribute('color', new BufferAttribute(colors, 3));
-  if (part.material?.splat === true) {
+  if (hasNormals) g.setAttribute('normal', new BufferAttribute(normals, 3));
+  if (hasColors) g.setAttribute('color', new BufferAttribute(colors, 3));
+  if (splat) {
     // Terrain layer weights; a part that asks for layering without weights is plain grass.
     if (part.splat instanceof Float32Array && part.splat.length === vertexCount * 4) g.setAttribute('splat', new BufferAttribute(part.splat, 4));
     else {
@@ -95,19 +126,14 @@ export function partToBufferGeometry(part: MeshPart): BufferGeometry {
   }
   if (indices.length > 0) g.setIndex(new BufferAttribute(narrowIndices(indices, vertexCount), 1));
   if (!g.getAttribute('normal')) g.computeVertexNormals();
-  // Parts with a physically based finish (architecture) carry authored metre UVs (boards along a
-  // floor, courses along a wall); everything else gets box-projected metre UVs.
-  // Falling water reads its authored UVs too (u across the sheet, v metres down from the lip).
-  const authored = (part.material?.finish !== undefined || part.material?.foliage !== undefined || part.material?.waterKind === 'fall') && part.uvs instanceof Float32Array && part.uvs.length === vertexCount * 2;
-  const uvs = authored
-    ? (part.uvs as Float32Array)
-    : part.material?.splat === true
-      ? terrainUvs(positions)
-      : boxProjectedUvs(positions, g.getAttribute('normal').array as Float32Array);
+  const uvs = keep ? (part.uvs as Float32Array) : splat ? terrainUvs(positions) : boxProjectedUvs(positions, g.getAttribute('normal').array as Float32Array);
   g.setAttribute('uv', new BufferAttribute(uvs, 2));
   setPositionBounds(g, positions);
   return g;
 }
+
+/** `userData` key of a geometry whose vertices were split for its UVs: `{ positions, indices }` matching its attributes. */
+export const SPLIT_SOURCE_KEY = 'aetherSplitSource';
 
 /** Cache key of the geometry of part `index` of the output identified by `outputKey`. */
 export function partKey(outputKey: string, index: number): string {

@@ -50,7 +50,7 @@ import {
   type WorldDoc,
 } from '@aether/core';
 import type { GeneratorOutput, GeometrySource, KeyedOutput, MeshPart } from '../types';
-import type { GeometryCache } from '../geometry/buffer-geometry';
+import { SPLIT_SOURCE_KEY, type GeometryCache } from '../geometry/buffer-geometry';
 import type { MaterialCache } from '../materials/material-cache';
 import { FINISHES } from '@aether/arch';
 import { finishAlbedoScale } from '@aether/procgen';
@@ -1776,7 +1776,7 @@ export class SceneSync {
           // Large parts (terrain) raycast through a BVH: picking, snapping and camera occlusion stay O(log n).
           accelerateRaycast(mesh);
           // A kit of small pieces (trims, rails, flowers) would lose whole pieces to cluster LOD: it stays an ordinary mesh.
-          if (this.dags && part.indices.length / 3 >= VIRTUAL_MIN_TRIANGLES && !isKitOfPieces(part.positions, part.indices)) this.virtualize(node, mesh, g.key, part.positions, part.indices);
+          if (this.dags && part.indices.length / 3 >= VIRTUAL_MIN_TRIANGLES && !isKitOfPieces(part.positions, part.indices)) this.virtualize(node, mesh, g.key, ...splitSource(g.geometry, part));
         }
         node.bindings.push({
           mesh,
@@ -2183,4 +2183,10 @@ function waterMaterial(material: Material): boolean {
 function updateWorldChain(object: Object3D): void {
   if (object.parent) updateWorldChain(object.parent);
   object.updateWorldMatrix(false, false, true);
+}
+
+/** The positions and indices that match `geometry`'s attributes: its split streams when its UVs split corners, else the part's. */
+function splitSource(geometry: BufferGeometry, part: MeshPart): [Float32Array, Uint32Array] {
+  const split = geometry.userData[SPLIT_SOURCE_KEY] as { positions: Float32Array; indices: Uint32Array } | undefined;
+  return split ? [split.positions, split.indices] : [part.positions, part.indices];
 }
