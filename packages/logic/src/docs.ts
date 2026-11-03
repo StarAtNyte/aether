@@ -30,7 +30,7 @@ TRIGGERS (when):
 - key — key pressed (edge; "e", "space", "arrowup", "1"…). {"on":"key","key":"e"}
 - click — entity clicked/tapped. {"on":"click","target":"button-1"}
 - state — condition becomes true (edge-triggered; fires again only after it was false). {"on":"state","key":"score","op":">=","value":10}
-- event — a named event emitted by an emit action/behavior. {"on":"event","name":"alarm"}
+- event — a named event emitted by an emit action/behavior. {"on":"event","name":"alarm"}. A character (entity.npc) that dies emits "npc-died", "<id>-died" and "<tag>-died" for each of its tags (so "raider-died" counts spawned clones too).
 - fallBelow — a target's y drops below a height (once per fall). {"on":"fallBelow","target":"player","y":-5}
 
 ACTIONS (then):

@@ -34,7 +34,7 @@ const TitleCardView = memo(function TitleCardView({ intro, onStart, onExit }: { 
         )}
         <div className="title-card__actions">
           <button type="button" className="btn btn--primary title-card__start" onClick={onStart} autoFocus>
-            <Icon name="play" /> Start
+            <Icon name="play" /> {intro.button ?? 'Start'}
           </button>
           <button type="button" className="btn btn--ghost title-card__exit" onClick={onExit}>
             Back to editor
@@ -67,7 +67,8 @@ export const InteractPromptView = memo(function InteractPromptView(): ReactEleme
   const prompt = useUI((s) => s.interact);
   const photo = useUI((s) => s.arch.photo);
   const intro = useUI((s) => s.game.intro);
-  if (mode !== 'play' || photo || intro) return null;
+  const armed = useUI((s) => s.combat !== null);
+  if (mode !== 'play' || photo || intro || armed) return null;
   return (
     <div className="interact" aria-live="polite" data-testid="interact">
       <span className={`interact__dot${prompt ? ' is-active' : ''}`} aria-hidden="true" />
@@ -145,7 +146,29 @@ export const PlayHud = memo(function PlayHud(): ReactElement | null {
           <span className="play-hud__value">{formatClock(game.time)}</span>
         </div>
       </div>
-      {!over && (
+      {!over && world.player.weapon && (
+        <div className="play-hint" aria-hidden="true">
+          <span>
+            <kbd>W</kbd>
+            <kbd>A</kbd>
+            <kbd>S</kbd>
+            <kbd>D</kbd> Move
+          </span>
+          <span>
+            <kbd>Mouse</kbd> Aim
+          </span>
+          <span>
+            <kbd>Click</kbd> Fire
+          </span>
+          <span>
+            <kbd>R</kbd> Reload
+          </span>
+          <span>
+            <kbd>Esc</kbd> Stop
+          </span>
+        </div>
+      )}
+      {!over && !world.player.weapon && (
         <div className="play-hint" aria-hidden="true">
           <span>
             <kbd>W</kbd>
@@ -172,6 +195,12 @@ export const PlayHud = memo(function PlayHud(): ReactElement | null {
             </span>
             <h2>{game.status === 'won' ? 'You win!' : 'Game over'}</h2>
             {game.text && <p>{game.text}</p>}
+            {game.score !== undefined && (
+              <p className="game-over__score" data-testid="game-over-score">
+                Score <strong>{game.score}</strong>
+                {game.best !== undefined && (game.record ? <span className="game-over__best"> · New best!</span> : <span className="game-over__best"> · Best {game.best}</span>)}
+              </p>
+            )}
             {credits.length > 0 && (
               <p className="game-over__credits">
                 Assets: {credits.slice(0, 3).map((c) => `${c.source} (${c.licence})`).join(', ')}

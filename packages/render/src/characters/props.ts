@@ -15,6 +15,12 @@ export interface Prop {
   twoHanded: boolean;
   /** True for a pack worn on the back (mounted on the spine, both hands stay free). */
   onBack?: boolean;
+  /**
+   * A long gun held at the ready in both hands: the prop is built along −Z (forward) with its origin at the pistol
+   * grip, mounted in front of the right shoulder; `grip` and `fore` are where the right and left hands close, in the
+   * prop's frame.
+   */
+  shouldered?: { grip: readonly [number, number, number]; fore: readonly [number, number, number] };
   /** Where a live flame burns (a torch's head): the renderer attaches a fire emitter to it. */
   flame?: Object3D;
   dispose(): void;
@@ -42,7 +48,34 @@ export function buildProp(kind: CharacterHold): Prop | null {
   let twoHanded = false;
   let onBack = false;
   let flameAnchor: Object3D | undefined;
+  let shouldered: Prop['shouldered'];
   switch (kind) {
+    case 'rifle': {
+      // A compact carbine in dark gunmetal and polymer: receiver, barrel with a flash hider, handguard, a curved magazine,
+      // pistol grip, stock and an optic. Origin at the grip; the muzzle points along −Z.
+      const metal = new MeshStandardMaterial({ color: '#2a2d30', roughness: 0.42, metalness: 0.75 });
+      const poly = new MeshStandardMaterial({ color: '#34352f', roughness: 0.82, metalness: 0.05 });
+      const glass = new MeshStandardMaterial({ color: '#1a2630', roughness: 0.15, metalness: 0.6, emissive: '#3a1408', emissiveIntensity: 0.25 });
+      add(new BoxGeometry(0.056, 0.085, 0.4), metal, 0, 0.045, -0.12);
+      const barrel = add(new CylinderGeometry(0.012, 0.012, 0.36, 10), metal, 0, 0.06, -0.5);
+      barrel.rotation.x = Math.PI / 2;
+      const hider = add(new CylinderGeometry(0.018, 0.016, 0.06, 8), metal, 0, 0.06, -0.7);
+      hider.rotation.x = Math.PI / 2;
+      add(new BoxGeometry(0.06, 0.07, 0.27), poly, 0, 0.05, -0.43);
+      const mag = add(new BoxGeometry(0.034, 0.17, 0.072), poly, 0, -0.07, -0.16);
+      mag.rotation.x = 0.22;
+      const grip = add(new BoxGeometry(0.036, 0.11, 0.05), poly, 0, -0.04, 0.02);
+      grip.rotation.x = -0.32;
+      add(new BoxGeometry(0.048, 0.1, 0.24), poly, 0, 0.03, 0.2);
+      add(new BoxGeometry(0.05, 0.13, 0.03), poly, 0, 0.015, 0.33);
+      const scope = add(new CylinderGeometry(0.021, 0.021, 0.12, 12), metal, 0, 0.12, -0.12);
+      scope.rotation.x = Math.PI / 2;
+      const lens = add(new CylinderGeometry(0.018, 0.018, 0.005, 12), glass, 0, 0.12, -0.183);
+      lens.rotation.x = Math.PI / 2;
+      add(new BoxGeometry(0.02, 0.03, 0.05), metal, 0, 0.095, -0.12);
+      shouldered = { grip: [0, -0.03, 0.02], fore: [0, 0.01, -0.42] };
+      break;
+    }
     case 'torch': {
       const w = wood();
       add(new CylinderGeometry(0.022, 0.03, 0.56, 10), w, 0, 0.12, 0);
@@ -149,6 +182,7 @@ export function buildProp(kind: CharacterHold): Prop | null {
     twoHanded,
     ...(onBack ? { onBack } : {}),
     ...(flameAnchor ? { flame: flameAnchor } : {}),
+    ...(shouldered ? { shouldered } : {}),
     dispose() {
       for (const x of geos) x.dispose();
       for (const x of mats) x.dispose();

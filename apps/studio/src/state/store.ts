@@ -18,6 +18,7 @@ import { DEFAULT_ARCH_UI, mergeArchUi, type ArchUiState } from './archUi';
 import type { EditorTool } from '../engine/Simulation';
 import { DEFAULT_AI_PREFS, parsePrefs, type AiPrefs } from '../ai/prefs';
 import type { VoxelHudState } from '../voxel/hudState';
+import type { CombatHud } from '../engine/Simulation';
 import type { LabelSpec } from '../engine/viewOverlay';
 import type { NpcFrame } from '../engine/npcFrame';
 import type { InteractPrompt } from '../engine/interaction';
@@ -298,6 +299,11 @@ export interface GameState {
   time: number;
   /** The world's title card is showing (the session is held until the player starts). */
   intro: boolean;
+  /** Final score (world state `score`) and the best one kept on this device, set when a game with a score ends. */
+  score?: number;
+  best?: number;
+  /** This run set the best score. */
+  record?: boolean;
 }
 
 /** Full UI state + actions. */
@@ -353,6 +359,8 @@ export interface StudioState {
   npc: NpcFrame | null;
   /** Voxel game HUD (null unless a block world is being played). */
   voxelHud: VoxelHudState | null;
+  /** The player's gun in play mode (ammunition, reload, hit markers); null without one. */
+  combat: CombatHud | null;
   /** What the crosshair is on and can use in play mode (null when nothing). */
   interact: InteractPrompt | null;
   cameraView: CameraView;
@@ -429,6 +437,7 @@ export interface StudioState {
   setNpc(frame: NpcFrame | null): void;
   setInteract(prompt: InteractPrompt | null): void;
   setVoxelHud(v: VoxelHudState | null): void;
+  setCombat(c: CombatHud | null): void;
   setCameraView(v: CameraView): void;
   setTouring(on: boolean): void;
   toast(text: string, kind?: Toast['kind'], duration?: number, action?: Toast['action']): number;
@@ -568,6 +577,7 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     game: INITIAL_GAME,
     npc: null,
     voxelHud: null,
+    combat: null,
     interact: null,
     cameraView: 'orbit',
     touring: false,
@@ -670,6 +680,7 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     resetGame: () => set({ game: INITIAL_GAME, npc: null, interact: null }),
     setNpc: (frame) => set({ npc: frame }),
     setVoxelHud: (v) => set({ voxelHud: v }),
+    setCombat: (combat) => set({ combat }),
     setInteract: (p) => set((s) => (s.interact === p ? s : { interact: p })),
     setCameraView: (cameraView) => set({ cameraView }),
     setTouring: (touring) => set((st) => (st.touring === touring ? st : { touring })),

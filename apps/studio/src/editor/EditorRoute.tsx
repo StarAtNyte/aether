@@ -11,7 +11,7 @@ import { StudioProvider } from '../app/context';
 import { Studio } from '../engine/Studio';
 import { settleWithin } from '../lib/deadline';
 import { createLogger } from '../lib/log';
-import { takeRun } from '../projects/pending';
+import { takeLaunch, takeRun } from '../projects/pending';
 import { getLoadPoster, setLoadPoster } from '../lib/loadPoster';
 import { abandonedPromptReply } from '../projects/create';
 import type { ProjectRepo } from '../projects/repo';
@@ -140,6 +140,8 @@ export const EditorRoute = memo(function EditorRoute({ id }: { id: string }): Re
         }, ms);
       };
       let sentPending = pending === null;
+      // A game template marked `launch` opens straight into play: its title card is the first screen.
+      let launched = !takeLaunch(id);
       let abandonChecked = false;
       const abandon = async (reply: string): Promise<void> => {
         await s.flush();
@@ -158,6 +160,12 @@ export const EditorRoute = memo(function EditorRoute({ id }: { id: string }): Re
         if (ready && !sentPending && pending) {
           sentPending = true;
           void s.send(pending.prompt, { offline: pending.offline });
+        }
+        if (ready && !launched && sentPending && !st.agentBusy && st.mode === 'edit' && !st.modeBusy) {
+          launched = true;
+          void s.simulation?.whenSynced().then(() => {
+            if (!cancelled && s.store.getState().mode === 'edit') void s.togglePlay();
+          });
         }
         if (ready && firstThumb && sentPending && !st.agentBusy) {
           firstThumb = false;

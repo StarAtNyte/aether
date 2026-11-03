@@ -292,6 +292,17 @@ export class CharacterRig {
       this.mountOnBack(prop);
       return;
     }
+    if (prop.shouldered) {
+      // At the ready: the grip in front of the right shoulder, the muzzle forward and a little down.
+      this.mixer.update(0);
+      this.root.updateMatrixWorld(true);
+      const hand = this.bones.rHand;
+      const side = hand ? Math.sign(this.root.worldToLocal(hand.getWorldPosition(new Vector3())).x) || 1 : 1;
+      prop.group.position.set(side * 0.13, 1.22, -0.3);
+      prop.group.rotation.set(-0.06, 0, 0);
+      this.root.add(prop.group);
+      return;
+    }
     const hand = this.bones.rHand;
     if (!hand) return;
     // Grip frame: upright (and facing forward) in the idle pose, expressed in the hand bone's frame.
@@ -735,6 +746,10 @@ export class CharacterRig {
 
   private updateCarry(): void {
     const prop = this.prop;
+    if (prop?.shouldered) {
+      this.updateShouldered(prop.shouldered, prop.group);
+      return;
+    }
     if (!prop || !prop.twoHanded) return;
     const b = this.bones;
     if (!b.lUpper || !b.lLower || !b.lHand || !b.rUpper || !b.rLower || !b.rHand) return;
@@ -749,6 +764,24 @@ export class CharacterRig {
       if (side === 1) solveTwoBone(b.lUpper, b.lLower, b.lHand, _target, _pole, 1);
       else solveTwoBone(b.rUpper, b.rLower, b.rHand, _target, _pole, 1);
     }
+  }
+
+  /** Both hands on a long gun: the right on the grip, the left under the handguard, elbows down and out. */
+  private updateShouldered(at: NonNullable<Prop['shouldered']>, gun: Object3D): void {
+    const b = this.bones;
+    if (!b.lUpper || !b.lLower || !b.lHand || !b.rUpper || !b.rLower || !b.rHand) return;
+    this.root.updateWorldMatrix(true, true);
+    const side = Math.sign(gun.position.x) || 1;
+    _target.set(at.grip[0], at.grip[1], at.grip[2]);
+    gun.localToWorld(_target);
+    _pole.set(side * 0.55, 0.75, 0.15);
+    this.root.localToWorld(_pole);
+    solveTwoBone(b.rUpper, b.rLower, b.rHand, _target, _pole, 1);
+    _target.set(at.fore[0], at.fore[1], at.fore[2]);
+    gun.localToWorld(_target);
+    _pole.set(-side * 0.35, 0.7, -0.1);
+    this.root.localToWorld(_pole);
+    solveTwoBone(b.lUpper, b.lLower, b.lHand, _target, _pole, 1);
   }
 
   /** Release mixer, instance GPU state, prop and swapped materials. Source geometry/textures stay cached. */

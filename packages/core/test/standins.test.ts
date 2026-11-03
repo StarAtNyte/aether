@@ -79,4 +79,11 @@ describe('world skins', () => {
     expect(ok.ok).toBe(true);
     expect(validateWorld({ ...createWorld(), skins: { 'Bad Key': { id: 'tex-0123456789ab' } } }).ok).toBe(false);
   });
+
+  it('does not count machines that are NPCs (a relay to defend, a turret) as people', () => {
+    const relay: EntityInput = { id: 'relay', name: 'Relay', shape: { kind: 'primitive', primitive: 'box', size: [1.9, 2.2, 1.1] }, npc: { role: 'relay', archetype: 'sentinel', faction: 'outpost' } };
+    const turret: EntityInput = { id: 'gun-1', name: 'Gun', shape: { kind: 'primitive', primitive: 'cylinder', size: [1, 1.5, 1] }, npc: { role: 'turret', archetype: 'sentinel' } };
+    expect(findStandIns(world([relay, turret]))).toEqual([]);
+    expect(findStandIns(world([{ ...relay, id: 'guard-1', name: 'Guard', npc: { role: 'guard' } }])).map((x) => x.kind)).toEqual(['person']);
+  });
 });

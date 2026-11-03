@@ -130,7 +130,7 @@ export const COLOR_WORDS: Readonly<Record<string, string>> = {
 
 const BOTTOM_NOUNS = /^(trousers|pants|jeans|skirt|shorts|slacks|leggings)$/;
 const TOP_NOUNS = /^(coat|jacket|shirt|top|blouse|sweater|jumper|hoodie|cloak|tunic|dress|robe|uniform|vest|cardigan|armour|armor|overalls|t-shirt|tee)$/;
-const HOLD_WORDS: Readonly<Record<string, CharacterHold>> = { torch: 'torch', lantern: 'lantern', sword: 'sword', blade: 'sword', spear: 'spear', pike: 'spear', halberd: 'spear', axe: 'axe', staff: 'staff', stick: 'staff', bag: 'bag', satchel: 'bag', crate: 'crate', box: 'crate', book: 'book', cup: 'cup', mug: 'cup', paddle: 'paddle', oar: 'paddle', backpack: 'backpack', rucksack: 'backpack', knapsack: 'backpack', umbrella: 'umbrella', brolly: 'umbrella' };
+const HOLD_WORDS: Readonly<Record<string, CharacterHold>> = { torch: 'torch', lantern: 'lantern', sword: 'sword', blade: 'sword', spear: 'spear', pike: 'spear', halberd: 'spear', axe: 'axe', staff: 'staff', stick: 'staff', bag: 'bag', satchel: 'bag', crate: 'crate', box: 'crate', book: 'book', cup: 'cup', mug: 'cup', paddle: 'paddle', oar: 'paddle', backpack: 'backpack', rucksack: 'backpack', knapsack: 'backpack', umbrella: 'umbrella', brolly: 'umbrella', rifle: 'rifle', gun: 'rifle', carbine: 'rifle' };
 const MOOD_WORDS: Readonly<Record<string, CharacterMood>> = {
   tired: 'tired', weary: 'tired', exhausted: 'tired', sleepy: 'tired',
   cheerful: 'cheerful', happy: 'cheerful', jolly: 'cheerful', friendly: 'cheerful',

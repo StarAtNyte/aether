@@ -59,6 +59,8 @@ export interface ShowcaseEntry {
   shot?: string;
   /** For `origin: 'photo'`: the photograph the room was rebuilt from (credit, licence, source page; see docs/THIRD_PARTY.md). */
   photo?: PhotoCredit;
+  /** Games: opening the template goes straight into play mode, so the game's title card is the first screen. */
+  launch?: boolean;
 }
 
 /** Credit of the photograph an example room was rebuilt from (permissive licences only). */
@@ -75,6 +77,7 @@ export interface PhotoCredit {
 export const SHOWCASE: readonly ShowcaseEntry[] = Object.freeze([
   // --- Flagships -------------------------------------------------------------------
   { slug: 'highland-trail', title: 'Highland Trail', kind: 'game', curation: 'featured', origin: 'flagship', description: 'A river valley at first light: log six survey stakes, cross the footbridge and climb to the summit before the daylight runs out.', prompt: 'Highland Trail: a realistic hiking game in a misty river valley with a trail, a footbridge, six survey stakes and a summit cairn' },
+  { slug: 'kestrel-outpost', title: 'Kestrel Outpost', kind: 'game', curation: 'featured', origin: 'flagship', launch: true, description: 'A third-person shooter: hold a cliff-ringed relay outpost against five waves of raiders at golden hour.', prompt: 'Kestrel Outpost: a third-person shooter where you defend a mountain relay outpost against five waves of raiders coming through three passes' },
   { slug: 'lantern-isles', title: 'Lantern Isles', kind: 'game', curation: 'featured', origin: 'flagship', description: 'Find twelve lost lanterns across floating islands at golden hour.', prompt: 'Lantern Isles: an exploration game on floating islands at golden hour — find the twelve lost lanterns' },
   { slug: 'hollow-gate', title: 'The Hollow Gate', kind: 'game', curation: 'featured', origin: 'flagship', description: 'Earn gold, buy the key, sneak past the guard and outwit the wolves — every character is a prompt.', prompt: 'The Hollow Gate: a walled hamlet at night with a locked gate, a patrolling guard, a shopkeeper who sells the key and a wolf pack that fears fire' },
   { slug: 'chain-reaction', title: 'Chain Reaction', kind: 'physics', curation: 'featured', origin: 'flagship', description: 'Five Rube-Goldberg machines set each other off — every bounce verified.', prompt: 'Chain Reaction: five Rube-Goldberg machines wired into one physics chain reaction' },

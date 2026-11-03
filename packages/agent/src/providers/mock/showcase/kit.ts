@@ -3,7 +3,7 @@
  * explicit mood, the finishing step (clear + patches + title card), and
  * small placement utilities (rings, curves, glowing lanterns).
  */
-import { encodeMesh, type Json, type MaterialSpec, type MeshData, type PatchInput, type WorldIntro } from '@aether/core';
+import { encodeMesh, type FeelSpecInput, type Json, type MaterialSpec, type MeshData, type PatchInput, type WorldIntro } from '@aether/core';
 import { generateBuiltinSync } from '@aether/procgen';
 import { Builder, r2, type Mood, type V3 } from '../builder';
 import type { MockPlan } from '../planner';
@@ -19,7 +19,7 @@ export function flagshipBuilder(seed: number, mood: Partial<Mood> = {}, opts: { 
 }
 
 /** Title card input (defaults filled by the schema). */
-export type IntroInput = { title: string; tagline?: string; objective?: string; controls?: string[]; accent?: string };
+export type IntroInput = { title: string; tagline?: string; objective?: string; controls?: string[]; accent?: string; button?: string };
 
 /** Everything a flagship plan reports besides its patches. */
 export interface FlagshipFinish {
@@ -32,6 +32,8 @@ export interface FlagshipFinish {
   message: string;
   /** Architecture ops sent with build_architecture after the patches. */
   arch?: { ops: unknown[]; message: string };
+  /** Game feel of the world (`world.feel`). */
+  feel?: FeelSpecInput;
 }
 
 /**
@@ -48,8 +50,10 @@ export function finish(b: Builder, f: FlagshipFinish): MockPlan {
     if (f.intro.objective) intro.objective = f.intro.objective;
     if (f.intro.controls) intro.controls = f.intro.controls;
     if (f.intro.accent) intro.accent = f.intro.accent;
+    if (f.intro.button) intro.button = f.intro.button;
     patches.push({ op: 'setMeta', intro: intro as WorldIntro });
   }
+  if (f.feel) patches.push({ op: 'setMeta', feel: f.feel as NonNullable<Extract<PatchInput, { op: 'setMeta' }>['feel']> });
   return { plan: f.plan, patches, message: f.message, ...(f.arch ? { arch: f.arch } : {}) };
 }
 

@@ -1,7 +1,7 @@
 /**
  * Internal contract between the runtime and built-in behaviors.
  */
-import type { BuiltinBehavior, EntityId, FeelEvent, Json, Vec3 } from '@aether/core';
+import type { BuiltinBehavior, EntityId, FeelEvent, Json, Vec3, VfxPreset } from '@aether/core';
 import type { RuntimeEntity } from '../entities';
 import type { ParamReader } from '../params';
 import type { BehaviorParamSpec, InputState, LogicHost } from '../types';
@@ -66,6 +66,8 @@ export interface BehaviorEnv {
    * `host.feedback`). `amount` is the signed number floating text shows.
    */
   feedback(kind: FeelEvent, at: Readonly<Vec3> | undefined, opts?: { source?: EntityId; target?: EntityId; amount?: number; intensity?: number }): void;
+  /** Optional (additive): a particle burst at a place, optionally with an event's cue (presentation only). */
+  effect?(vfx: VfxPreset | 'none', at: Readonly<Vec3> | undefined, feel: FeelEvent | undefined, color: string | undefined, scale: number | undefined): void;
   /** Respawn point set by checkpoints (undefined → `playerSpawn`). */
   respawnPoint: Vec3 | undefined;
   /** `world.player.spawn`. */

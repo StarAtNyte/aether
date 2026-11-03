@@ -34,6 +34,7 @@ const OTHER_BOTS: Record<string, string> = {
   'skyline-penthouse': 'architecture: walked by the walkthrough bot',
   'dusk-lake-house': 'architecture: walked by the walkthrough bot',
   'casa-patio': 'architecture: walked by the walkthrough bot',
+  'kestrel-outpost': 'shooter: packages/agent/test/kestrel-outpost.test.ts fights all five waves to an ending with the weapon',
 };
 
 beforeAll(async () => {

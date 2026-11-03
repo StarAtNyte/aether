@@ -24,6 +24,12 @@ const TONES: Readonly<Record<string, Tone>> = Object.freeze({
   click: { type: 'square', from: 1200, to: 900, duration: 0.04, gain: 0.08 },
   whoosh: { type: 'sawtooth', from: 300, to: 1200, duration: 0.3, gain: 0.08 },
   bell: { type: 'sine', from: 988, to: 980, duration: 1.2, gain: 0.18 },
+  // Weapons: a sharp crack with a low thump under it, a distant one for others' guns, the magazine change and a dry click.
+  shot: { type: 'noise', from: 3200, to: 260, duration: 0.11, gain: 0.26, then: { from: 140, to: 50, delay: 0.004 } },
+  'enemy-shot': { type: 'noise', from: 1500, to: 220, duration: 0.14, gain: 0.11 },
+  reload: { type: 'noise', from: 2600, to: 1900, duration: 0.05, gain: 0.1, then: { from: 900, to: 700, delay: 0.32 } },
+  empty: { type: 'square', from: 2200, to: 1900, duration: 0.025, gain: 0.05 },
+  alarm: { type: 'sawtooth', from: 520, to: 780, duration: 0.45, gain: 0.08, then: { from: 520, to: 780, delay: 0.5 } },
   // Block worlds.
   dig: { type: 'noise', from: 900, to: 700, duration: 0.07, gain: 0.12 },
   break: { type: 'noise', from: 620, to: 380, duration: 0.16, gain: 0.2 },
@@ -60,7 +66,7 @@ const TONES: Readonly<Record<string, Tone>> = Object.freeze({
 /** Minimum seconds between two plays of the same sound. */
 const MIN_INTERVAL = 0.06;
 /** Most voices started per second overall. */
-const MAX_VOICES_PER_SECOND = 24;
+const MAX_VOICES_PER_SECOND = 40;
 
 /** Lazily-created audio output for game sounds. */
 export class SoundBoard {

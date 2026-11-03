@@ -26,6 +26,7 @@ import type { BehaviorEnv, BehaviorSlot, ContactInfo } from './behaviors/types';
 import { EntityRegistry, lookupEntity, quatFromEulerDeg, RuntimeEntity } from './entities';
 import { KeyEdges } from './keys';
 import { NpcSystem } from './npc/system';
+import { WeaponSystem, type WeaponEnv } from './weapon';
 import { ParamReader } from './params';
 import { errorText, RuleEngine, type RuleHost } from './rules';
 import { checkIntent } from './scripting/intents';
@@ -108,14 +109,17 @@ export class Engine implements BehaviorEnv, RuleHost {
   private readonly scope: StateScope;
   private readonly rules: RuleEngine;
   private readonly keyEdges = new KeyEdges();
-  private readonly inputState: { forward: number; right: number; jump: boolean; action: boolean; keys: ReadonlySet<string>; pointerYawDeg: number } = {
+  private readonly inputState: { forward: number; right: number; jump: boolean; action: boolean; keys: ReadonlySet<string>; pointerYawDeg: number; fire: boolean; pitchDeg: number; aim?: { origin: Vec3; dir: Vec3 } } = {
     forward: 0,
     right: 0,
     jump: false,
     action: false,
     keys: new Set<string>(),
     pointerYawDeg: 0,
+    fire: false,
+    pitchDeg: 0,
   };
+  private readonly aimScratch: { origin: Vec3; dir: Vec3 } = { origin: [0, 0, 0], dir: [0, 0, -1] };
   private spawnRandom: () => number;
   private _time = 0;
   private _dt = 0;
@@ -156,6 +160,8 @@ export class Engine implements BehaviorEnv, RuleHost {
   respawnPoint: Vec3 | undefined;
   /** NPC minds, navigation, dialogue and speech (see `./npc`). */
   readonly npcs: NpcSystem;
+  /** The player's gun (`world.player.weapon`), or null. */
+  weapon: WeaponSystem | null = null;
 
   constructor(world: WorldDoc, host: LogicHost, opts: EngineOptions = {}) {
     this.world = world;
@@ -282,6 +288,8 @@ export class Engine implements BehaviorEnv, RuleHost {
     this.usedNow = this.uses.length > 0 ? new Set(this.uses) : EMPTY_USED;
     this.uses = [];
     this.updateBehaviors(step);
+    const gun = this.weapon;
+    if (gun) this.guard('weapon', () => gun.tick(step, this.inputState, this.keyEdges.pressed));
     this.guard('state rules', () => this.rules.states());
     this.guard('poses', () => this.flushPoses());
     this.drainScriptDiagnostics();
@@ -356,6 +364,25 @@ export class Engine implements BehaviorEnv, RuleHost {
     }
     this.defaultPlayer = this.findDefaultPlayer();
     this.rules.load(world.rules);
+    const gun = world.player.weapon;
+    this.weapon = gun ? new WeaponSystem(this.weaponEnv(), gun, rng(this.seed ^ 0x2f6b9c31)) : null;
+    this.weapon?.arm();
+  }
+
+  /** The engine as seen by the weapon. */
+  private weaponEnv(): WeaponEnv {
+    return {
+      host: this.host,
+      npcs: this.npcs,
+      playerId: () => this.playerId(),
+      positionOf: (id) => this.positionOf(id),
+      readState: (k) => this.readState(k),
+      setState: (k, v) => this.setState(k, v),
+      isDynamic: (id) => this.registry.get(id)?.dynamic === true,
+      feedback: (kind, at, opts) => this.feedback(kind, at, opts),
+      effect: (vfx, at, feel, color, scale) => this.effect(vfx, at, feel, color, scale),
+      log: (t) => void this.log(t),
+    };
   }
 
   private loadScripts(world: WorldDoc): void {
@@ -521,6 +548,16 @@ export class Engine implements BehaviorEnv, RuleHost {
     s.keys = isKeySet(keys) ? keys : EMPTY_KEYS;
     const yaw = input?.pointerYawDeg;
     s.pointerYawDeg = typeof yaw === 'number' && Number.isFinite(yaw) ? yaw : 0;
+    s.fire = input?.fire === true;
+    const pitch = input?.pitchDeg;
+    s.pitchDeg = typeof pitch === 'number' && Number.isFinite(pitch) ? Math.max(-89, Math.min(89, pitch)) : 0;
+    const aim: unknown = input?.aim;
+    const a = aim as { origin?: unknown; dir?: unknown } | undefined;
+    if (a && isVec3(a.origin) && isVec3(a.dir)) {
+      copy3(this.aimScratch.origin, a.origin);
+      copy3(this.aimScratch.dir, a.dir);
+      s.aim = this.aimScratch;
+    } else delete s.aim;
     this.keyEdges.update(s.keys);
   }
 
@@ -1108,6 +1145,10 @@ export class Engine implements BehaviorEnv, RuleHost {
 }
 
 const EMPTY_KEYS: ReadonlySet<string> = new Set<string>();
+
+function isVec3(v: unknown): v is Vec3 {
+  return Array.isArray(v) && v.length === 3 && Number.isFinite(v[0]) && Number.isFinite(v[1]) && Number.isFinite(v[2]);
+}
 
 /** Hot-reload key of an entity's NPC spec. */
 function npcKey(npc: unknown): string {

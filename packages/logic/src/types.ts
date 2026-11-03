@@ -94,6 +94,22 @@ export interface LogicHost {
    * proofs are the same with or without it. The event object is reused: copy what you keep past the call.
    */
   feedback?(event: FeedbackEvent): void;
+  /**
+   * Optional (additive): solid things along a ray, nearest first (at most `limit`, sensors skipped). The player's
+   * weapon (`player.weapon`) uses it to stop shots at walls and to find what they hit; without it shots only test
+   * NPC bodies.
+   */
+  raycast?(origin: Vec3, dir: Vec3, maxDist: number, limit: number): ReadonlyArray<RayHit>;
+}
+
+/** One hit of {@link LogicHost.raycast}. */
+export interface RayHit {
+  /** Entity hit (undefined for the ground plane or an unknown collider). */
+  id?: EntityId;
+  /** Distance along the ray (m). */
+  distance: number;
+  point: Vec3;
+  normal?: Vec3;
 }
 
 /** A moment the game feel layer answers (see {@link LogicHost.feedback}). */
@@ -132,6 +148,15 @@ export interface InputState {
   keys: ReadonlySet<string>;
   /** Camera yaw in degrees; movement input is relative to it. */
   pointerYawDeg: number;
+  /** Additive: the fire input (left mouse button, touch fire button) is held. */
+  fire?: boolean;
+  /** Additive: look pitch in degrees (negative looks down); aims the weapon when `aim` is absent. */
+  pitchDeg?: number;
+  /**
+   * Additive: the crosshair ray in world space (the camera's position and its unit view direction). Shots follow
+   * it; without it they leave the player's eyes along `pointerYawDeg` / `pitchDeg`.
+   */
+  aim?: { origin: Vec3; dir: Vec3 };
 }
 
 /** Input with nothing pressed. */

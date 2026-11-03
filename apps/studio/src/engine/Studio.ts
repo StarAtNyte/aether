@@ -4,6 +4,7 @@
  * once the viewport canvas exists. React components call into this object
  * and subscribe to History / the store; they never own engine state.
  */
+import { recordScore } from '../lib/bestScore';
 import type { Proof } from '@aether/playtest/proof';
 import { isUserAssetId, worldAssetIds } from '@aether/assets';
 import { History, diffWorlds, getEntity, patchesBetween, type EntityId, type GeneratorDef, type Patch, type WorldDoc } from '@aether/core';
@@ -449,7 +450,15 @@ export class Studio {
           onMessage: (text, duration) => this.store.getState().toast(text, 'game', duration),
           onNpc: (frame) => this.store.getState().setNpc(frame),
           onInteract: (prompt) => this.store.getState().setInteract(prompt),
-          onGameOver: (result, text) => this.store.getState().setGame({ status: result === 'win' ? 'won' : 'lost', text }),
+          onGameOver: (result, text) => {
+            // A game that keeps a score shows it on the end screen, with the best run on this device.
+            const raw = this.sim?.logic?.readState('score');
+            const score = typeof raw === 'number' && Number.isFinite(raw) ? Math.round(raw) : undefined;
+            const w = this.history.current;
+            const kept = score !== undefined ? recordScore(`${w.id}:${w.name}`, score) : undefined;
+            this.store.getState().setGame({ status: result === 'win' ? 'won' : 'lost', text, ...(score !== undefined && kept ? { score, best: kept.best, record: kept.record } : { score: undefined, best: undefined, record: undefined }) });
+          },
+          onCombat: (hud) => this.store.getState().setCombat(hud),
           onPick: (id, additive) => this.pick(id, additive),
           onTransform: (commit) => this.editor.commitGizmo(commit),
           onSynced: () => this.editor.onSynced(),

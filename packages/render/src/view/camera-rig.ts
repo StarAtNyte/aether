@@ -65,6 +65,12 @@ const OCCLUSION_PADDING = 0.35;
 const FOLLOW_HEIGHT = 2.4;
 const LOOK_HEIGHT = 1.3;
 const EYE_HEIGHT = 1.65;
+/** Over-the-shoulder camera: pivot height above the feet, offset to the right, boom length behind (m). */
+export const SHOULDER_HEIGHT = 1.62;
+export const SHOULDER_SIDE = 0.62;
+export const SHOULDER_DISTANCE = 2.7;
+/** Closest the shoulder camera gets to its pivot when a wall pulls it in (m). */
+const SHOULDER_MIN = 0.45;
 
 /** Half-width of the chase camera's "lens" (m): the boom is probed with a ring of rays this far off its axis, so a wall beside the boom pulls the camera in before the near plane can cut into it. */
 export const BOOM_RADIUS = 0.3;
@@ -79,6 +85,7 @@ const _boom = new Vector3();
 const _lookAt = new Vector3();
 const _dir = new Vector3();
 const _desired = new Vector3();
+const _head = new Vector3();
 const _euler = new Euler(0, 0, 0, 'YXZ');
 /** [0]: one occlusion ray's answer; [1]: the boom's free length. */
 const _free = new Float64Array(2);
@@ -347,6 +354,10 @@ export class CameraRig {
       this.look.set(_target.x - Math.sin(yaw) * 4, _target.y + this.eyeHeight, _target.z - Math.cos(yaw) * 4);
       return true;
     }
+    if (this.mode === 'shoulder') {
+      this.updateShoulder(yaw);
+      return true;
+    }
     // Follow: chase from behind the target's heading.
     _desired.set(_target.x + Math.sin(yaw) * FOLLOW_DISTANCE, _target.y + FOLLOW_HEIGHT, _target.z + Math.cos(yaw) * FOLLOW_DISTANCE);
     let rate = 6;
@@ -391,6 +402,52 @@ export class CameraRig {
     this.look.lerp(_desired, 1 - Math.exp(-10 * Math.max(0, dt)));
     this.camera.lookAt(this.look);
     return true;
+  }
+
+  /**
+   * Over-the-shoulder aim: the camera hangs behind a pivot beside the head, turned by the look yaw and pitch, so the
+   * centre of the screen is where the player aims. No easing (aim must follow the mouse exactly); a wall behind or
+   * beside the player pulls the camera in along the boom.
+   */
+  private updateShoulder(yaw: number): void {
+    this.pitch = Math.max(-1.25, Math.min(1.2, this.pitch));
+    const cy = Math.cos(yaw);
+    const sy = Math.sin(yaw);
+    const cp = Math.cos(this.pitch);
+    const sp = Math.sin(this.pitch);
+    // Pivot: beside the head on the right; the head itself is the safe start of the side probe.
+    _head.set(_target.x, _target.y + SHOULDER_HEIGHT, _target.z);
+    _lookAt.set(_target.x + cy * SHOULDER_SIDE, _head.y, _target.z - sy * SHOULDER_SIDE);
+    const occludes = this.occlusion !== null || this.occlusionSink !== null;
+    if (occludes) {
+      boomFree(this.occlusion, this.occlusionSink, _head, _lookAt, 0.15);
+      const side = _free[1]!;
+      if (side < SHOULDER_SIDE + 0.2) {
+        const k = Math.max(0, side - 0.2) / SHOULDER_SIDE;
+        _lookAt.x = _head.x + cy * SHOULDER_SIDE * k;
+        _lookAt.z = _head.z - sy * SHOULDER_SIDE * k;
+      }
+    }
+    _desired.set(_lookAt.x + sy * cp * SHOULDER_DISTANCE, _lookAt.y - sp * SHOULDER_DISTANCE, _lookAt.z + cy * cp * SHOULDER_DISTANCE);
+    if (_desired.y < this.floorY) _desired.y = this.floorY;
+    if (occludes) {
+      _dir.subVectors(_desired, _lookAt);
+      const full = _dir.length();
+      if (full > 1e-4) {
+        boomFree(this.occlusion, this.occlusionSink, _lookAt, _desired, BOOM_RADIUS * 0.7);
+        const free = _free[1]!;
+        if (free < full) {
+          const k = Math.max(SHOULDER_MIN, free - OCCLUSION_PADDING) / full;
+          _desired.x = _lookAt.x + _dir.x * k;
+          _desired.y = _lookAt.y + _dir.y * k;
+          _desired.z = _lookAt.z + _dir.z * k;
+        }
+      }
+    }
+    this.camera.position.copy(_desired);
+    _euler.set(this.pitch, yaw, 0, 'YXZ');
+    this.camera.quaternion.setFromEuler(_euler);
+    this.look.set(_lookAt.x - sy * cp * 6, _lookAt.y + sp * 6, _lookAt.z - cy * cp * 6);
   }
 
   /**

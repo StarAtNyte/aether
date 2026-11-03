@@ -7,7 +7,7 @@ import { createStarterWorld } from '../lib/starterWorld';
 import { templateBySlug, type WorldTemplate } from '../lib/examples';
 import type { ChatEntry } from '../lib/chat';
 import { loadTemplateThumbnail, loadTemplateWorld, type FetchLike } from '../showcase/load';
-import { queueRun } from './pending';
+import { queueLaunch, queueRun } from './pending';
 import type { RepoResult } from './repo';
 import type { ProjectRepo } from './repo';
 import type { ProjectMeta } from './model';
@@ -49,6 +49,7 @@ export async function createFromTemplate(repo: ProjectRepo, slug: string, fetchI
   const saved = await loadTemplateWorld(t.slug, fetchImpl);
   if (saved.ok) {
     const r = await repo.create({ world: saved.world, name: t.title, template: t.slug, chat: templateChat(t) });
+    if (r.ok && t.launch) queueLaunch(r.value.id);
     if (r.ok) {
       const thumb = await thumbP;
       if (thumb) await repo.setThumbnail(r.value.id, thumb);
@@ -57,6 +58,7 @@ export async function createFromTemplate(repo: ProjectRepo, slug: string, fetchI
   }
   const r = await repo.create({ world: createEmptyWorld(t.title), name: t.title, template: t.slug });
   if (r.ok) queueRun(r.value.id, { prompt: t.prompt, offline: true });
+  if (r.ok && t.launch) queueLaunch(r.value.id);
   return r;
 }
 

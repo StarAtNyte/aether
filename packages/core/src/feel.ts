@@ -43,6 +43,8 @@ const NORMAL: Readonly<Record<FeelEvent, Base>> = Object.freeze({
   land: { shake: 0.12, hitStop: 0, fovKick: 0, flash: 0, flashColor: '#ffffff', vignette: 0, rumble: 0.2, squash: 0.35, text: false, duck: 0, vfx: 'dust', vfxScale: 1 },
   explosion: { shake: 0.8, hitStop: 0.08, fovKick: 4, flash: 0.42, flashColor: '#ffd59a', vignette: 0.2, rumble: 1, squash: 0, text: false, duck: 0.5, vfx: 'explosion', vfxScale: 1 },
   launch: { shake: 0.1, hitStop: 0, fovKick: 6, flash: 0, flashColor: '#ffffff', vignette: 0, rumble: 0.3, squash: 0.3, text: false, duck: 0, vfx: 'dust', vfxScale: 0.8 },
+  shoot: { shake: 0.16, hitStop: 0, fovKick: 0.6, flash: 0, flashColor: '#ffe2a8', vignette: 0, rumble: 0.25, squash: 0, text: false, duck: 0, vfx: 'muzzle', vfxScale: 0.7 },
+  kill: { shake: 0.3, hitStop: 0.04, fovKick: 1, flash: 0.06, flashColor: '#ffffff', vignette: 0, rumble: 0.5, squash: 0, text: false, duck: 0.15, vfx: 'debris', vfxScale: 0.8 },
 });
 
 /** Multipliers of a tier relative to `normal`. */
@@ -65,7 +67,7 @@ export const FEEL_TIER_SCALE: Readonly<Record<FeelTier, Readonly<TierScale>>> = 
 });
 
 /** Every feel event, in a stable order. */
-export const FEEL_EVENTS: readonly FeelEvent[] = ['pickup', 'hit', 'damage', 'death', 'win', 'checkpoint', 'jump', 'land', 'explosion', 'launch'];
+export const FEEL_EVENTS: readonly FeelEvent[] = ['pickup', 'hit', 'damage', 'death', 'win', 'checkpoint', 'jump', 'land', 'explosion', 'launch', 'shoot', 'kill'];
 
 /** One line per event for docs and prompts. */
 export const FEEL_EVENT_DOCS: Readonly<Record<FeelEvent, string>> = Object.freeze({
@@ -79,6 +81,8 @@ export const FEEL_EVENT_DOCS: Readonly<Record<FeelEvent, string>> = Object.freez
   land: 'the player landed after a fall (scaled by the fall speed)',
   explosion: 'an explosive went off or an explode action ran',
   launch: 'a launcher (jump pad, cannon) threw something',
+  shoot: "the player fired a weapon (player.weapon)",
+  kill: "the player's weapon brought a character down",
 });
 
 const clamp = (v: number, lo: number, hi: number): number => (v < lo ? lo : v > hi ? hi : v);

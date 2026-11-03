@@ -31,3 +31,17 @@ export function takeRun(projectId: string): PendingRun | null {
   pending.delete(projectId);
   return r;
 }
+
+/** Projects that open straight into play mode (game templates marked `launch`): the title card is the first screen. */
+const launches = new Set<string>();
+
+/** Open this project in play mode once its world is ready. */
+export function queueLaunch(projectId: string): void {
+  if (launches.size >= MAX_PENDING) launches.clear();
+  launches.add(projectId);
+}
+
+/** Take (and forget) the launch request of a project. */
+export function takeLaunch(projectId: string): boolean {
+  return launches.delete(projectId);
+}

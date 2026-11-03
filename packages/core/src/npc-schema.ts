@@ -135,6 +135,13 @@ export const NpcAttack = z.object({
   range: z.number().min(0.3).max(30).default(1.7),
   damage: z.number().min(0).max(1000).default(12),
   cooldown: z.number().min(0.1).max(60).default(1.1),
+  /**
+   * Additive: a ranged attack (a gun, a bow): every attack shows a muzzle flash at the attacker and an impact at the
+   * target instead of a melee blow, and it can miss (see `accuracy`).
+   */
+  ranged: z.boolean().optional(),
+  /** Additive: chance (0..1) that an attack lands; default 1 (every attack in reach lands). */
+  accuracy: z.number().min(0).max(1).optional(),
 });
 export type NpcAttack = z.infer<typeof NpcAttack>;
 
@@ -330,6 +337,14 @@ export const NpcSpec = z.object({
   barks: NpcBarks.optional(),
   /** Extra edges added on top of the archetype's defaults. */
   transitions: z.array(NpcTransition).max(24).default([]),
+  /**
+   * Additive: what it leaves behind when it dies. Each entry spawns a clone of a template entity (`template: true`,
+   * as the `spawn` action does) where it fell, with the given chance (0..1, seeded per character). At most one item
+   * per entry.
+   */
+  drops: z.array(z.object({ template: Slug, chance: z.number().min(0).max(1).default(1) })).max(6).optional(),
+  /** Additive: seconds its body stays after death before it is removed (default: it stays). */
+  corpse: z.number().min(0).max(600).optional(),
 });
 export type NpcSpec = z.infer<typeof NpcSpec>;
 export type NpcSpecInput = z.input<typeof NpcSpec>;

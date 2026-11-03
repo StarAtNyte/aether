@@ -54,7 +54,17 @@ export class InputController {
   private readonly held = new Set<string>();
   private readonly latched = new Set<string>();
   private readonly merged = new Set<string>();
-  private readonly state: { forward: number; right: number; jump: boolean; action: boolean; keys: ReadonlySet<string>; pointerYawDeg: number };
+  private readonly state: { forward: number; right: number; jump: boolean; action: boolean; keys: ReadonlySet<string>; pointerYawDeg: number; fire: boolean; pitchDeg: number; aim?: { origin: [number, number, number]; dir: [number, number, number] } };
+  /** Weapon worlds: the left button fires (once the pointer is captured) instead of only dragging the view. */
+  private fireMode = false;
+  /** The left button is held as a trigger. */
+  private firing = false;
+  /** Pointer capture was refused (headless, embedded frames): presses fire while dragging the view. */
+  private lockRefused = false;
+  /** On-screen (touch) fire button, or a test driver. */
+  private virtualFire = false;
+  private readonly aimRay: { origin: [number, number, number]; dir: [number, number, number] } = { origin: [0, 0, 0], dir: [0, 0, -1] };
+  private aimSet = false;
   private yaw = 0;
   /** First-person pitch in degrees (negative looks down), clamped to ±{@link MAX_PITCH_DEG}. */
   private pitch = 0;
@@ -68,7 +78,7 @@ export class InputController {
   private virtualRight = 0;
 
   constructor() {
-    this.state = { forward: 0, right: 0, jump: false, action: false, keys: this.merged, pointerYawDeg: 0 };
+    this.state = { forward: 0, right: 0, jump: false, action: false, keys: this.merged, pointerYawDeg: 0, fire: false, pitchDeg: 0 };
   }
 
   /** Camera/player yaw in degrees (0 faces −Z). */
@@ -109,6 +119,32 @@ export class InputController {
     if (code === 'Space' || code === 'KeyE') this.latched.add(code);
   }
 
+  /** Hold or release the trigger from an on-screen button (or a test driver). */
+  setVirtualFire(on: boolean): void {
+    this.virtualFire = on === true;
+  }
+
+  /** The crosshair ray for the next samples (camera position and unit view direction); null clears it. */
+  setAim(origin: readonly [number, number, number] | null, dir?: readonly [number, number, number]): void {
+    if (!origin || !dir) {
+      this.aimSet = false;
+      return;
+    }
+    const r = this.aimRay;
+    r.origin[0] = origin[0];
+    r.origin[1] = origin[1];
+    r.origin[2] = origin[2];
+    r.dir[0] = dir[0];
+    r.dir[1] = dir[1];
+    r.dir[2] = dir[2];
+    this.aimSet = true;
+  }
+
+  /** True while the trigger is held (mouse or on-screen). */
+  get trigger(): boolean {
+    return this.firing || this.virtualFire;
+  }
+
   /** Turn the camera/player by a number of degrees (touch look). */
   turnBy(deg: number): void {
     if (Number.isFinite(deg)) this.yaw = wrapDeg(this.yaw + deg);
@@ -121,10 +157,12 @@ export class InputController {
   }
 
   /** Start listening. `pointerLock` requests mouse capture on canvas click. */
-  attach(canvas: HTMLElement, opts: { pointerLock: boolean }): void {
+  attach(canvas: HTMLElement, opts: { pointerLock: boolean; fire?: boolean }): void {
     this.detach();
     this.attached = canvas;
     this.pointerLock = opts.pointerLock;
+    this.fireMode = opts.fire === true;
+    this.lockRefused = false;
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
     window.addEventListener('blur', this.onBlur);
@@ -164,6 +202,10 @@ export class InputController {
     this.state.jump = a.jump;
     this.state.action = a.action;
     this.state.pointerYawDeg = this.yaw;
+    this.state.fire = this.firing || this.virtualFire;
+    this.state.pitchDeg = this.pitch;
+    if (this.aimSet) this.state.aim = this.aimRay;
+    else delete this.state.aim;
     return this.state;
   }
 
@@ -183,6 +225,8 @@ export class InputController {
   private readonly onBlur = (): void => {
     this.held.clear();
     this.dragging = false;
+    this.firing = false;
+    this.virtualFire = false;
     this.virtualForward = 0;
     this.virtualRight = 0;
   };
@@ -190,18 +234,26 @@ export class InputController {
   private readonly onPointerDown = (e: PointerEvent): void => {
     if (e.button !== 0) return;
     this.dragging = true;
-    if (this.pointerLock && this.attached && document.pointerLockElement !== this.attached) {
+    const locked = this.attached !== null && document.pointerLockElement === this.attached;
+    // With a weapon the press that captures the mouse does not shoot; every press after it does.
+    if (this.fireMode && (locked || this.lockRefused || !this.pointerLock)) this.firing = true;
+    if (this.pointerLock && this.attached && !locked) {
       try {
         const p = this.attached.requestPointerLock() as unknown;
-        if (p instanceof Promise) p.catch(() => undefined);
+        if (p instanceof Promise)
+          p.catch(() => {
+            this.lockRefused = true;
+          });
       } catch {
         /* pointer lock unsupported: dragging still works */
+        this.lockRefused = true;
       }
     }
   };
 
   private readonly onPointerUp = (): void => {
     this.dragging = false;
+    this.firing = false;
   };
 
   private readonly onPointerMove = (e: PointerEvent): void => {

@@ -14,6 +14,7 @@ export {
   type LogEntry,
   type LogicHost,
   type PhysicsEventLike,
+  type RayHit,
   type QuatTuple,
   type ScriptDiagnostic,
   type ScriptIntent,
@@ -22,6 +23,7 @@ export {
   type ScriptSnapshot,
 } from './types';
 export { LogicRuntime, type LogicRuntimeOptions } from './runtime';
+export { WeaponSystem, WEAPON_SOURCE, rayCapsule, type WeaponStatus, type WeaponEnv } from './weapon';
 export type { GameStatus } from './engine';
 export { MAX_LOG_ENTRIES, MAX_LIVE_SPAWNED, MAX_SCRIPT_CALLS_PER_TICK, MAX_SPAWNS_PER_TICK } from './engine';
 export { MAX_EMIT_DEPTH, MAX_EVENT_QUEUE, MAX_FIRINGS_PER_TICK, describeTrigger } from './rules';

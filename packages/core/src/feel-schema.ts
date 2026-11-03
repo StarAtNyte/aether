@@ -28,7 +28,7 @@ export const FeelTier = z.enum(['off', 'subtle', 'normal', 'punchy']);
 export type FeelTier = z.infer<typeof FeelTier>;
 
 /** Gameplay moments a cue can be attached to. */
-export const FeelEvent = z.enum(['pickup', 'hit', 'damage', 'death', 'win', 'checkpoint', 'jump', 'land', 'explosion', 'launch']);
+export const FeelEvent = z.enum(['pickup', 'hit', 'damage', 'death', 'win', 'checkpoint', 'jump', 'land', 'explosion', 'launch', 'shoot', 'kill']);
 export type FeelEvent = z.infer<typeof FeelEvent>;
 
 /** Particle effects the renderer knows (seeded, GPU-instanced, never simulated). */
@@ -92,6 +92,8 @@ export const FeelEvents = z.object({
   land: FeelCue.optional(),
   explosion: FeelCue.optional(),
   launch: FeelCue.optional(),
+  shoot: FeelCue.optional(),
+  kill: FeelCue.optional(),
 });
 export type FeelEvents = z.infer<typeof FeelEvents>;
 

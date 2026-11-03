@@ -169,6 +169,11 @@ export class PlaytestHost implements LogicHost {
     // Silent.
   }
 
+  /** What a shot of the player's weapon passes through, nearest first (the same physics query as the studio). */
+  raycast(origin: Vec3, dir: Vec3, maxDist: number, limit: number): Array<{ id?: EntityId; distance: number; point: Vec3; normal: Vec3 }> {
+    return this.pw.raycastAll(origin, dir, maxDist, limit).map((h) => (h.id === null ? { distance: h.distance, point: h.point, normal: h.normal } : { id: h.id, distance: h.distance, point: h.point, normal: h.normal }));
+  }
+
   gameOver(result: 'win' | 'lose', text: string): void {
     if (this.seen.outcome !== null) return;
     this.seen.outcome = result;

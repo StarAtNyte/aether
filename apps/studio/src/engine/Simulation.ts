@@ -22,7 +22,7 @@
  */
 import { eulerDegToQuat, worldTransform, type Entity, type EntityId, type FeelEvent, type History, type Json, type ResolvedCue, type Vec3, type WorldDoc } from '@aether/core';
 import { Vector3 } from 'three';
-import { initScripting, LogicRuntime, terrainSampler, type FeedbackEvent, type LogicHost, type NpcSystem, type QuatTuple, type ScriptRunner, createScriptRunner } from '@aether/logic';
+import { initScripting, LogicRuntime, terrainSampler, type FeedbackEvent, type LogicHost, type NpcSystem, type QuatTuple, type ScriptRunner, type WeaponStatus, createScriptRunner } from '@aether/logic';
 import type { CharacterController, ColliderProvider, PhysicsWorld } from '@aether/physics';
 import { assetColliderDescs } from '@aether/physics/asset-colliders';
 import { entityColliderBounds, entityWorldBounds } from '@aether/physics/bounds';
@@ -191,6 +191,24 @@ export interface SimulationListener {
   onInteract?(prompt: InteractPrompt | null): void;
   /** The baked interior light started, progressed, applied, failed or was cancelled. */
   onLightmap?(status: LightmapStatus): void;
+  /** The player's gun changed (ammunition, reload, a hit or a kill landed); null when play stops or there is none. */
+  onCombat?(hud: CombatHud | null): void;
+}
+
+/** Weapon HUD snapshot (see {@link SimulationListener.onCombat}). */
+export interface CombatHud {
+  name: string;
+  ammo: number;
+  reserve: number;
+  magazine: number;
+  reloading: boolean;
+  /** Reload progress 0..1 (tenths). */
+  reload: number;
+  /** Hits and kills landed so far (a change shows a hit marker). */
+  hits: number;
+  kills: number;
+  /** The last hit was a head shot. */
+  head: boolean;
 }
 
 /** Construction options. */
@@ -743,8 +761,19 @@ export class Simulation {
       this.renderer.setCameraMode('orbit');
       return;
     }
-    if (s.avatarId) this.renderer.setCameraMode(view, s.avatarId);
-    else if (s.character) this.renderer.setCameraMode(view);
+    const mode = view === 'follow' && s.world.player.weapon ? 'shoulder' : view;
+    if (s.avatarId) this.renderer.setCameraMode(mode, s.avatarId);
+    else if (s.character) this.renderer.setCameraMode(mode);
+  }
+
+  /** Hold or release the weapon's trigger (on-screen fire button, test drivers). */
+  setVirtualFire(on: boolean): void {
+    this.input.setVirtualFire(on);
+  }
+
+  /** Live state of the player's gun in the running session (null without one). */
+  get weapon(): WeaponStatus | null {
+    return this.session?.logic.weapon ?? null;
   }
 
   /** Data URL screenshot of the viewport. */
@@ -938,6 +967,21 @@ export class Simulation {
     this.input.turnBy(deg);
   }
 
+  /** Look along a heading and pitch in degrees (0 faces −Z; negative pitch looks down): aim assists and test drivers. */
+  setLook(yawDeg: number, pitchDeg: number): void {
+    if (!Number.isFinite(yawDeg) || !Number.isFinite(pitchDeg)) return;
+    this.input.setYaw(yawDeg);
+    this.input.setPitch(pitchDeg);
+  }
+
+  /** Where the play camera is and looks (eye and unit direction), for aim assists and test drivers. */
+  get viewRay(): { origin: [number, number, number]; dir: [number, number, number] } {
+    const e = this.renderer.camera.matrixWorld.elements;
+    const d: [number, number, number] = [-(e[8] as number), -(e[9] as number), -(e[10] as number)];
+    const l = Math.hypot(d[0], d[1], d[2]) || 1;
+    return { origin: [e[12] as number, e[13] as number, e[14] as number], dir: [d[0] / l, d[1] / l, d[2] / l] };
+  }
+
   private refreshDebug(): void {
     this.renderer.showDebug({ colliders: this.showColliders, diagnostics: this.diagnostics });
   }
@@ -1087,12 +1131,15 @@ export class Simulation {
       this.input.setYaw(startYawDeg(world, (o, d, max) => session.pw.raycast(o, d, max) !== null) ?? cameraYawDeg(this.renderer));
       this.input.setPitch(0);
       // The voxel game has its own input (mouse look, hotbar, break/place).
-      if (!session.voxel) this.input.attach(this.renderer.domElement, { pointerLock: this.pointerLock });
+      // A gun captures the mouse (aim with it, click to fire) and looks over the shoulder in third person.
+      const armed = world.player.weapon !== undefined && !session.voxel;
+      if (!session.voxel) this.input.attach(this.renderer.domElement, { pointerLock: this.pointerLock || armed, fire: armed });
+      const chase = armed ? 'shoulder' : 'follow';
       if (session.voxel) this.renderer.setCameraMode('manual');
-      else if (session.avatarId) this.renderer.setCameraMode('follow', session.avatarId);
+      else if (session.avatarId) this.renderer.setCameraMode(chase, session.avatarId);
       else if (character) {
         this.renderer.setPlayerAvatar(character.position, this.input.yawDeg);
-        this.renderer.setCameraMode(world.player.mode === 'firstPerson' ? 'firstPerson' : 'follow');
+        this.renderer.setCameraMode(world.player.mode === 'firstPerson' ? 'firstPerson' : chase);
       } else this.renderer.setCameraMode('orbit');
       this.stepper.reset();
       session.logic.start();
@@ -1101,6 +1148,10 @@ export class Simulation {
       await this.endSession();
       throw err;
     }
+    this.combatKey = '';
+    this.combatKills = 0;
+    this.combatLastKill = -1;
+    this.listener.onCombat?.(null);
     this.listener.onModeChange?.('play');
   }
 
@@ -1158,6 +1209,7 @@ export class Simulation {
       });
       safely('highlight', () => this.renderer.highlight(this.selection));
       safely('tool navigation', () => this.renderer.setLeftDragNavigation(this.viewportTool === null));
+      this.listener.onCombat?.(null);
       this.listener.onModeChange?.('edit');
       // Catch up with edits that happened while playing.
       if (this.history.current !== s.world) this.requestSync(this.history.current);
@@ -1428,6 +1480,11 @@ export class Simulation {
         if (s.avatarId) return s.avatarId;
         return s.character || s.voxel ? PLAYER_PSEUDO_ID : undefined;
       },
+      // The player's weapon: what a shot passes through, nearest first.
+      raycast(o, d, max, limit) {
+        if (s.ended) return [];
+        return s.pw.raycastAll(o, d, max, limit).map((h) => (h.id === null ? { distance: h.distance, point: h.point, normal: h.normal } : { id: h.id, distance: h.distance, point: h.point, normal: h.normal }));
+      },
       // NPC navigation: footprints of generated shapes, and the ground under hills.
       getBounds: (id) => (!s.ended && isDoc(id) ? (entityWorldBounds(s.world, id) ?? undefined) : undefined),
       getColliderBounds: (id) => (!s.ended && isDoc(id) ? entityColliderBounds(s.world, id) : []),
@@ -1580,6 +1637,7 @@ export class Simulation {
     }
     const steps = this.stepper.advance(dt);
     const { pw, logic, character } = s;
+    if (s.world.player.weapon) this.aimFromCamera();
     const speed = s.world.player.moveSpeed;
     const jump = s.world.player.jumpSpeed;
     for (let i = 0; i < steps && !s.ended; i++) {
@@ -1612,6 +1670,7 @@ export class Simulation {
       logic.tick(FIXED_DT, input, events);
     }
     if (s.ended) return;
+    this.emitCombat(s);
     this.stepSeat(s, dt);
     this.pumpNpc(s);
     this.feedCharacters(s);
@@ -1628,9 +1687,53 @@ export class Simulation {
         vy: character.verticalSpeed,
         crouching: this.sneaking,
         sprinting: false,
+        // Armed, the body faces where the gun points and strafes; otherwise it turns toward its motion.
+        ...(s.world.player.weapon ? { faceYawDeg: this.input.yawDeg } : {}),
       });
     }
   }
+
+  private combatKey = '';
+  private combatKills = 0;
+  private combatLastKill = -1;
+
+  /** Send the weapon HUD when it changed (a few times a second while firing, never every frame for nothing). */
+  private emitCombat(s: PlaySession): void {
+    const w = s.logic.weapon;
+    if (!w || !this.listener.onCombat) return;
+    if (w.lastKill !== this.combatLastKill && w.lastKill >= 0) {
+      this.combatLastKill = w.lastKill;
+      this.combatKills++;
+    }
+    const reload = w.reloading ? Math.round(w.reloadProgress * 10) / 10 : 0;
+    const key = `${w.ammo}|${w.reserve}|${w.reloading ? 1 : 0}|${reload}|${w.hits}|${this.combatKills}`;
+    if (key === this.combatKey) return;
+    this.combatKey = key;
+    this.listener.onCombat({ name: w.name, ammo: w.ammo, reserve: w.reserve, magazine: w.magazine, reloading: w.reloading, reload, hits: w.hits, kills: this.combatKills, head: w.lastHitHead });
+  }
+
+  /** The crosshair ray of the last drawn frame (the camera's eye and view direction) for the weapon. */
+  private aimFromCamera(): void {
+    const e = this.renderer.camera.matrixWorld.elements;
+    const dx = -(e[8] as number);
+    const dy = -(e[9] as number);
+    const dz = -(e[10] as number);
+    const l = Math.hypot(dx, dy, dz);
+    if (!(l > 1e-6)) {
+      this.input.setAim(null);
+      return;
+    }
+    this.aimOrigin[0] = e[12] as number;
+    this.aimOrigin[1] = e[13] as number;
+    this.aimOrigin[2] = e[14] as number;
+    this.aimDir[0] = dx / l;
+    this.aimDir[1] = dy / l;
+    this.aimDir[2] = dz / l;
+    this.input.setAim(this.aimOrigin, this.aimDir);
+  }
+
+  private readonly aimOrigin: [number, number, number] = [0, 0, 0];
+  private readonly aimDir: [number, number, number] = [0, 0, -1];
 
   /** Footstep of a person: the sound of the surface underfoot, quieter with distance and softer when sneaking. */
   private footstep(id: string, speed: number, position: readonly [number, number, number]): void {

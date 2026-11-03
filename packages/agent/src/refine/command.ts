@@ -113,7 +113,7 @@ export type Command =
   | { op: 'redo' };
 
 /** Feel events and particle presets (mirrors `@aether/core` FeelEvent / VfxPreset). */
-export type FeelEventName = 'pickup' | 'hit' | 'damage' | 'death' | 'win' | 'checkpoint' | 'jump' | 'land' | 'explosion' | 'launch';
+export type FeelEventName = import('@aether/core').FeelEvent;
 export type VfxName = import('@aether/core').VfxPreset;
 
 /** Environment changes in words. */

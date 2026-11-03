@@ -439,6 +439,22 @@ describe('SceneSync runtime', () => {
     expect(p.z).toBeCloseTo(2, 5);
   });
 
+  it('does not draw a light switched off, and draws it again when switched on within the budget', async () => {
+    const { sync } = makeSync();
+    sync.setLightBudget(1);
+    await sync.setWorld(world([box('off', [0, 0.5, 0], { light: { type: 'point', intensity: 0 } }), box('on', [9, 0.5, 0], { light: { type: 'point', intensity: 2 } })]));
+    expect(sync.node('off')!.light!.light.visible).toBe(false);
+    expect(sync.node('on')!.light!.light.visible).toBe(true);
+    // On: it joins the budget of one, which now keeps one of the two.
+    expect(sync.setProperty('off', 'light.intensity', 3)).toBe(true);
+    const lit = ['off', 'on'].filter((id) => sync.node(id)!.light!.light.visible);
+    expect(lit.length).toBe(1);
+    // Off again: the other one is back.
+    expect(sync.setProperty('off', 'light.intensity', 0)).toBe(true);
+    expect(sync.node('off')!.light!.light.visible).toBe(false);
+    expect(sync.node('on')!.light!.light.visible).toBe(true);
+  });
+
   it('runtime property overrides: fast paths, generic paths, rejection and reset', async () => {
     const { sync } = makeSync();
     const w = world([box('a', [0, 0.5, 0], { light: { type: 'point', intensity: 1 } })]);

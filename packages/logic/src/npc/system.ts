@@ -463,6 +463,35 @@ export class NpcSystem implements DialogueHost {
     this.makeNoise(from.x, from.z, 10, from, from.feetY);
   }
 
+  /**
+   * A ranged attack (`attack.ranged`): a muzzle flash at the shooter's hands, then either the blow lands
+   * ({@link hit}) or the shot strikes the ground beside the target. Either way it makes the noise of a shot.
+   */
+  shoot(from: NpcBrain, kind: number, id: EntityId | null, damage: number, lands: boolean): void {
+    const env = this.ctx.env;
+    const hx = from.headingX;
+    const hz = from.headingZ;
+    const muzzle: Vec3 = [from.x + hx * 0.75, from.feetY + from.spec.height * 0.75, from.z + hz * 0.75];
+    env.effect?.('muzzle', muzzle, undefined, '#ffc477', 0.6);
+    env.host.sound('enemy-shot');
+    if (lands) {
+      this.hit(from, kind, id, damage);
+      return;
+    }
+    const tid = kind === 1 ? env.playerId() : id;
+    const tp = tid !== undefined && tid !== null ? env.positionOf(tid) : undefined;
+    if (tp) {
+      // A miss kicks up dirt a little way off the target, on the shooter's side.
+      const dx = tp[0] - from.x;
+      const dz = tp[2] - from.z;
+      const d = Math.max(0.01, hyp(dx, dz));
+      const side = (this.tickNo + from.index) % 2 === 0 ? 1 : -1;
+      const at: Vec3 = [tp[0] - (dx / d) * 0.6 + (-dz / d) * 0.7 * side, from.feetY + 0.05, tp[2] - (dz / d) * 0.6 + (dx / d) * 0.7 * side];
+      env.effect?.('impact', at, undefined, '#c9b79a', 0.6);
+    }
+    this.makeNoise(from.x, from.z, 14, from, from.feetY);
+  }
+
   /** An NPC died. */
   onDeath(b: NpcBrain): void {
     if (this.sessionBrain === b) this.endDialogue();

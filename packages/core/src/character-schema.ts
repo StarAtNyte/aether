@@ -27,7 +27,7 @@ export const CharacterMood = z.enum(['neutral', 'tired', 'cheerful', 'angry', 'n
 export type CharacterMood = z.infer<typeof CharacterMood>;
 
 /** What the person holds in a hand (a prop attached to the right hand bone). */
-export const CharacterHold = z.enum(['none', 'torch', 'lantern', 'sword', 'spear', 'axe', 'staff', 'bag', 'crate', 'book', 'cup', 'paddle', 'backpack', 'umbrella']);
+export const CharacterHold = z.enum(['none', 'torch', 'lantern', 'sword', 'spear', 'axe', 'staff', 'bag', 'crate', 'book', 'cup', 'paddle', 'backpack', 'umbrella', 'rifle']);
 export type CharacterHold = z.infer<typeof CharacterHold>;
 
 /** Which kind of wardrobe the planner picks a body for. */

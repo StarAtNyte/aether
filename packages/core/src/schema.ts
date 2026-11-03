@@ -631,7 +631,7 @@ export const Action = z.discriminatedUnion('do', [
   z.object({ do: z.literal('setGravity'), vector: Vec3 }),
   z.object({ do: z.literal('emit'), event: z.string().min(1), delay: z.number().min(0).default(0) }),
   z.object({ do: z.literal('message'), text: z.string(), duration: z.number().positive().default(3) }),
-  z.object({ do: z.literal('sound'), sound: z.enum(['pickup', 'hit', 'explosion', 'win', 'lose', 'click', 'whoosh', 'bell']) }),
+  z.object({ do: z.literal('sound'), sound: z.enum(['pickup', 'hit', 'explosion', 'win', 'lose', 'click', 'whoosh', 'bell', 'shot', 'alarm']) }),
   z.object({ do: z.literal('win'), text: z.string().default('You win!') }),
   z.object({ do: z.literal('lose'), text: z.string().default('Game over') }),
   z.object({ do: z.literal('reset') }),
@@ -814,6 +814,43 @@ export const Environment = z.object({
 });
 export type Environment = z.infer<typeof Environment>;
 
+/**
+ * Additive: the player's gun (third-person and first-person play). The fire input (left mouse button, the touch fire
+ * button) shoots along the crosshair: a hitscan ray that damages NPCs (`entity.npc`; above 85 % of a character's height
+ * counts as a head shot) and stops at solid geometry. Ammunition lives in world state (`ammoKey` in the magazine,
+ * `reserveKey` in reserve), so the HUD, rules and pickups (a `collectible` with `scoreKey: "reserve"`) work with it.
+ * R reloads (also automatic when the magazine runs dry). In third person a weapon puts the camera over the shoulder.
+ */
+export const WeaponSpec = z.object({
+  name: z.string().max(40).default('Rifle'),
+  /** Damage of one hit (NPC health points). */
+  damage: z.number().min(0).max(10000).default(25),
+  /** Shots per second. */
+  fireRate: z.number().min(0.2).max(30).default(8),
+  /** Fires while the trigger is held (false: one shot per press). */
+  automatic: z.boolean().default(true),
+  /** Rounds in a full magazine. */
+  magazine: z.number().int().min(1).max(500).default(30),
+  /** Rounds in reserve at the start. */
+  reserve: z.number().int().min(0).max(100000).default(120),
+  /** Seconds a reload takes. */
+  reloadTime: z.number().min(0.1).max(10).default(1.6),
+  /** Reach of a shot (m). */
+  range: z.number().min(1).max(500).default(90),
+  /** Random cone of a shot (degrees, full width). */
+  spread: z.number().min(0).max(30).default(1.2),
+  /** Damage multiplier of a head shot. */
+  headshot: z.number().min(1).max(10).default(2),
+  /** Radius (m) in which NPCs hear a shot. */
+  noise: z.number().min(0).max(200).default(30),
+  /** Push (N·s) a shot gives a dynamic body it hits. */
+  impulse: z.number().min(0).max(100).default(3),
+  ammoKey: z.string().min(1).max(40).default('ammo'),
+  reserveKey: z.string().min(1).max(40).default('reserve'),
+});
+export type WeaponSpec = z.infer<typeof WeaponSpec>;
+export type WeaponSpecInput = z.input<typeof WeaponSpec>;
+
 export const PlayerSpec = z.object({
   mode: z.enum(['orbit', 'firstPerson', 'thirdPerson', 'vehicle']).default('thirdPerson'),
   spawn: Vec3.default([0, 1, 8]),
@@ -825,6 +862,8 @@ export const PlayerSpec = z.object({
   jumpSpeed: z.number().min(0).default(6),
   /** Additive: how the player's body looks in third person (default: chosen from the world's seed). */
   character: CharacterSpec.optional(),
+  /** Additive: the player's gun (see {@link WeaponSpec}). */
+  weapon: WeaponSpec.optional(),
 });
 export type PlayerSpec = z.infer<typeof PlayerSpec>;
 
@@ -956,6 +995,8 @@ export const WorldIntro = z.object({
   controls: z.array(z.string().min(1).max(60)).max(6).default([]),
   /** Accent colour of the card (defaults to the theme accent). */
   accent: Color.optional(),
+  /** Additive: label of the start button (default "Start"). */
+  button: z.string().min(1).max(24).optional(),
 });
 export type WorldIntro = z.infer<typeof WorldIntro>;
 

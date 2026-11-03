@@ -23,6 +23,11 @@ export interface BotInput {
   yawDeg: number;
   /** Keys that go down this tick. */
   keys?: readonly string[];
+  /** The weapon's trigger is held (worlds with `player.weapon`). */
+  fire?: boolean;
+  /** The crosshair ray (eye and unit direction); without it shots follow `yawDeg` and `pitchDeg`. */
+  aim?: { origin: Vec3; dir: Vec3 };
+  pitchDeg?: number;
 }
 
 const NO_KEYS: ReadonlySet<string> = new Set<string>();
@@ -110,6 +115,10 @@ export class Session {
     s.right = input.right;
     s.jump = input.jump;
     s.pointerYawDeg = input.yawDeg;
+    s.fire = input.fire === true;
+    s.pitchDeg = input.pitchDeg ?? 0;
+    if (input.aim) s.aim = input.aim;
+    else delete s.aim;
     if (input.keys && input.keys.length > 0) {
       this.keySet.clear();
       for (const k of input.keys) this.keySet.add(k);

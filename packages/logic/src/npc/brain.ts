@@ -92,8 +92,13 @@ export class NpcBrain implements BehaviorInstance {
   mode: NpcMode;
   modeT = 0;
   dead = false;
+  /** Seconds since death, and whether the body was cleared away (`spec.corpse`). */
+  private deadT = 0;
+  private cleared = false;
   hp: number;
   angry = false;
+  /** Seconds the player stays this character's chosen foe while seen (shot at by the player: it turns on them). */
+  private aggroT = 0;
   following: boolean;
   // --- position bookkeeping ------------------------------------------------------
   private homeX: number;
@@ -326,7 +331,10 @@ export class NpcBrain implements BehaviorInstance {
 
   update(env: BehaviorEnv, dt: number): void {
     const sys = this.sys;
-    if (this.dead) return;
+    if (this.dead) {
+      this.clearBody(env, dt);
+      return;
+    }
     this.modeT += dt;
     this.barkCd = Math.max(0, this.barkCd - dt);
     this.attackCd = Math.max(0, this.attackCd - dt);
@@ -335,6 +343,7 @@ export class NpcBrain implements BehaviorInstance {
     this.lostT += dt;
     this.heardT += dt;
     this.exitT = Math.max(0, this.exitT - dt);
+    this.aggroT = Math.max(0, this.aggroT - dt);
     this.syncPos();
     if (this.firstTick) this.initGround(env);
     this.syncHealth();
@@ -379,6 +388,16 @@ export class NpcBrain implements BehaviorInstance {
 
   dispose(): void {
     this.sys.forget(this);
+  }
+
+  /** A body with `corpse` seconds is cleared away after that long (waves of attackers do not pile up). */
+  private clearBody(env: BehaviorEnv, dt: number): void {
+    const keep = this.spec.corpse;
+    if (keep === undefined || this.cleared) return;
+    this.deadT += dt;
+    if (this.deadT < keep) return;
+    this.cleared = true;
+    env.destroy(this.id);
   }
 
   // ---------------------------------------------------------------------------
@@ -427,6 +446,16 @@ export class NpcBrain implements BehaviorInstance {
     this.angry = true;
   }
 
+  /**
+   * Shot by the player: turn on them and keep them as the foe for `seconds` while they are in sight (a raider firing at
+   * a building turns around when you hit it).
+   */
+  aggro(seconds: number): void {
+    if (this.dead || !Number.isFinite(seconds)) return;
+    this.aggroT = Math.max(this.aggroT, Math.min(60, seconds));
+    if (this.isHostileToPlayer() || !this.eff.timid) this.provoke();
+  }
+
   /** Stop being hostile: forget the current foe. */
   calm(): void {
     this.angry = false;
@@ -459,9 +488,35 @@ export class NpcBrain implements BehaviorInstance {
       s.offset[1] = -Math.max(0, this.spec.height * 0.25);
     }
     this.sys.env.log(`npc ${this.id} died`);
+    this.dropLoot();
     this.sys.env.emit('npc-died');
     this.sys.env.emit(`${this.id}-died`);
+    // Per tag as well (`raider-died`, `heavy-died`): rules can answer a kind of character, including spawned clones.
+    let n = 0;
+    for (const t of s.tags) {
+      if (++n > 8) break;
+      if (t !== 'npc' && t.length <= 58) this.sys.env.emit(`${t}-died`);
+    }
     this.sys.onDeath(this);
+  }
+
+  /** Spawn what the character leaves behind (`spec.drops`), each with its chance, side by side where it fell. */
+  private dropLoot(): void {
+    const drops = this.spec.drops;
+    if (!drops || drops.length === 0) return;
+    const env = this.sys.env;
+    let k = 0;
+    for (const d of drops) {
+      if (this.random() >= d.chance) continue;
+      const a = k * 2.1 + this.index;
+      const r = k === 0 ? 0 : 0.7;
+      k++;
+      try {
+        env.spawn(d.template, [this.x + Math.cos(a) * r, this.feetY + 0.6, this.z + Math.sin(a) * r], 1, 0);
+      } catch (err) {
+        env.log(`npc ${this.id}: drop '${d.template}' failed (${err instanceof Error ? err.message : String(err)})`);
+      }
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -542,7 +597,9 @@ export class NpcBrain implements BehaviorInstance {
       }
     }
     const others = sys.brains;
-    for (let i = 0; i < others.length; i++) {
+    // Recently shot by the player and seeing them: the player stays the foe, however near anyone else is.
+    const fixed = this.aggroT > 0 && bestKind === T_PLAYER;
+    for (let i = 0; i < others.length && !fixed; i++) {
       const o = others[i] as NpcBrain;
       if (o === this || o.dead || !this.isHostileTo(o)) continue;
       const dx = o.x - x;
@@ -1566,9 +1623,15 @@ export class NpcBrain implements BehaviorInstance {
     else this.stop(env);
     this.face(env, dt, this.lastX, this.lastZ);
     if (!atk || this.attackCd > 0 || d > range * 1.05 || this.lostT > 0.5 || elsewhere) return;
-    this.attackCd = atk.cooldown;
     this.attackAnimT = 0.35;
-    this.sys.hit(this, this.targetKind, this.targetId, atk.damage);
+    if (atk.ranged) {
+      // Gunfire is not a metronome: each shot comes a little early or late.
+      this.attackCd = atk.cooldown * (0.8 + this.random() * 0.4);
+      this.sys.shoot(this, this.targetKind, this.targetId, atk.damage, this.random() < (atk.accuracy ?? 1));
+    } else {
+      this.attackCd = atk.cooldown;
+      if (atk.accuracy === undefined || this.random() < atk.accuracy) this.sys.hit(this, this.targetKind, this.targetId, atk.damage);
+    }
   }
 
   private doFlee(env: BehaviorEnv, dt: number): void {

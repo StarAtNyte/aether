@@ -67,8 +67,15 @@ function words(e: Entity): string[] {
   return text.split(/[^a-z]+/).filter((w) => w.length > 0);
 }
 
+/**
+ * NPCs that are machines or structures, not bodies: something to defend or a gun emplacement is a character to the NPC
+ * runtime (health, a faction, perception) but has no body to dress (a relay, a turret, a reactor core).
+ */
+const MACHINE_WORDS: ReadonlySet<string> = new Set(['relay', 'turret', 'generator', 'reactor', 'core', 'beacon', 'mast', 'antenna', 'machine', 'objective', 'console', 'terminal', 'pylon', 'totem', 'crystal']);
+
 function kindOf(e: Entity): StandInKind | null {
   const ws = words(e);
+  if (e.npc && [...ws, ...e.npc.role.toLowerCase().split(/[^a-z]+/)].some((w) => MACHINE_WORDS.has(w))) return null;
   if (e.npc || e.behaviors.some((b) => b.type === 'npc')) {
     // An NPC that is an animal archetype is an animal; the rest are people.
     const arch = e.npc?.archetype;

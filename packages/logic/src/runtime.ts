@@ -16,6 +16,7 @@
  */
 import type { EntityId, Json, WorldDoc } from '@aether/core';
 import { Engine, type GameStatus } from './engine';
+import type { WeaponStatus } from './weapon';
 import type { NpcSystem } from './npc/system';
 import type { InputState, LogEntry, LogicHost, PhysicsEventLike, ScriptRunner } from './types';
 
@@ -105,6 +106,11 @@ export class LogicRuntime {
    */
   get npcs(): NpcSystem {
     return this.engine.npcs;
+  }
+
+  /** Live state of the player's gun (`world.player.weapon`): ammunition, reload, hits; null without one. */
+  get weapon(): WeaponStatus | null {
+    return this.engine.weapon?.status ?? null;
   }
 
   /** Hot-reload rules, behaviors and entities while preserving runtime state. */

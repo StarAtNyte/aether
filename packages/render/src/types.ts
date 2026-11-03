@@ -41,7 +41,8 @@ export interface GeometrySource {
 
 /** Camera modes supported by the renderer. */
 /** `manual`: the host poses the camera every frame (`WorldRenderer.setCameraPose`, e.g. the voxel game). */
-export type CameraMode = 'orbit' | 'follow' | 'firstPerson' | 'manual';
+/** `shoulder`: an aiming third-person camera over the right shoulder that turns with the look yaw and pitch (shooters). */
+export type CameraMode = 'orbit' | 'follow' | 'firstPerson' | 'manual' | 'shoulder';
 
 /** Axis-aligned bounds as plain tuples. */
 export interface Bounds {

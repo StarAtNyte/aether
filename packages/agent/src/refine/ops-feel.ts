@@ -34,6 +34,8 @@ const EVENT_WORDS: ReadonlyArray<[RegExp, readonly FeelEvent[]]> = [
   [/\b(?:jump|jumps|jumping)\b/, ['jump']],
   [/\b(?:explosions?|explodes?|exploding|blasts?|barrels?|bombs?|detonat\w*)\b/, ['explosion']],
   [/\b(?:launch(?:es|ers?|ing)?|jump\s*pads?|bounce\s*pads?|boost(?:s|ers?)?\s*pads?|springs?)\b/, ['launch']],
+  [/\b(?:shots?|shooting|gunfire|firing|recoil|muzzle)\b/, ['shoot']],
+  [/\b(?:kills?|killing|takedowns?)\b/, ['kill']],
 ];
 
 const VFX_WORDS: ReadonlyArray<[RegExp, VfxPreset]> = [
@@ -143,7 +145,7 @@ const KNOB_LABEL: Readonly<Record<FeelKnob, string>> = { shake: 'camera shake', 
 
 function eventList(evs: readonly FeelEvent[]): string {
   if (evs.length === 0 || evs.length === FEEL_EVENTS.length) return 'every event';
-  const names = evs.map((e) => (e === 'pickup' ? 'pickups' : e === 'hit' ? 'hits' : e === 'land' ? 'landings' : e === 'jump' ? 'jumps' : e === 'checkpoint' ? 'checkpoints' : e === 'explosion' ? 'explosions' : e === 'launch' ? 'launches' : e));
+  const names = evs.map((e) => (e === 'pickup' ? 'pickups' : e === 'hit' ? 'hits' : e === 'land' ? 'landings' : e === 'jump' ? 'jumps' : e === 'checkpoint' ? 'checkpoints' : e === 'explosion' ? 'explosions' : e === 'launch' ? 'launches' : e === 'shoot' ? 'shots' : e === 'kill' ? 'kills' : e));
   return names.length === 1 ? (names[0] as string) : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1] as string}`;
 }
 
