@@ -38,7 +38,10 @@ export interface RenderBudget {
   virtualTriangles: number;
   /** Largest block-terrain view distance in chunks (the world's own setting is capped to it). */
   voxelViewDistance: number;
-  /** Edge (pixels) of the procedural finish textures (architecture materials; 3 maps per finish). */
+  /**
+   * Edge (pixels) of the finish textures (3 maps per finish). 512 on every GPU with memory to spare: at 256 a 2.5 m stone tile
+   * is 100 px per metre and blurs within a few metres of the camera. Low memory and software rasterisers keep 256.
+   */
   finishTextureSize: number;
 }
 
@@ -89,7 +92,7 @@ export function renderBudget(tier: GpuTier, lowMemory: boolean): RenderBudget {
     case 'integrated':
     case 'unknown':
     default:
-      return { pixelRatioCap: 1.25, maxPixels: 2.1e6, shadowMapCap: 2048, post: true, antialias: true, maxInstances: 120_000, generatorCacheBytes: 48 * MB, fieldInstances: 1_200_000, fieldTriangles: 2_000_000, virtualTriangles: 1_500_000, voxelViewDistance: 12, finishTextureSize: 256 };
+      return { pixelRatioCap: 1.25, maxPixels: 2.1e6, shadowMapCap: 2048, post: true, antialias: true, maxInstances: 120_000, generatorCacheBytes: 48 * MB, fieldInstances: 1_200_000, fieldTriangles: 2_000_000, virtualTriangles: 1_500_000, voxelViewDistance: 12, finishTextureSize: 512 };
   }
 }
 

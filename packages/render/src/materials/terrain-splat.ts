@@ -45,7 +45,9 @@ const SHARPEN = 2.4;
  * repeat): broad sun-dried and lush patches (about 90 m across) with a finer mottling (about 11 m), and a
  * warm-cool hue drift. Strengths are the multiplier's deviation from 1.
  */
-export const MACRO_VARIATION = Object.freeze({ patchScale: 1 / 90, mottleScale: 1 / 11, patch: 0.15, mottle: 0.05, hue: 0.05 });
+export const MACRO_VARIATION = Object.freeze({ patchScale: 1 / 90, mottleScale: 1 / 11, patch: 0.2, mottle: 0.1, hue: 0.12 });
+/** Grass gives way to bare earth between these slopes (1 − normal.y), up to this share of its weight. */
+export const SLOPE_DIRT = Object.freeze({ from: 0.05, to: 0.22, amount: 0.6 });
 
 /** `userData` key marking a layered terrain material. */
 export const SPLAT_KEY = 'aetherSplat';
@@ -57,7 +59,14 @@ export const SPLAT_KEY = 'aetherSplat';
  */
 export function applySplat(material: Material, maps: (id: MaterialFinish) => FinishMaps, stack: SplatArrays, detail = false): void {
   const w4 = attribute('splat', 'vec4');
-  const weights = [w4.x, w4.y, w4.z, w4.w];
+  // Grass thins to bare earth where the ground tilts (worn banks, the shoulders of a hill), before the generator's rock takes
+  // over on the steep parts: part of the grass weight moves to the dry-ground layer by the slope of the surface.
+  const dirt = () => {
+    const n = transformDirection(normalLocal, modelWorldMatrix);
+    return smoothstep(float(SLOPE_DIRT.from), float(SLOPE_DIRT.to), float(1).sub(n.y)).mul(SLOPE_DIRT.amount);
+  };
+  const weight = (i: number) => (i === 0 ? w4.x.mul(float(1).sub(dirt())) : i === 2 ? w4.z.add(w4.x.mul(dirt())) : i === 1 ? w4.y : w4.w);
+  const weights = [weight(0), weight(1), weight(2), weight(3)];
   const layerMaps = SPLAT_LAYERS.map((id) => maps(id));
   // A node used twice becomes a variable declared where it is first built; inside a branch that would leave it unset
   // outside it. Everything a branch needs is therefore built fresh at each use, from varyings and uniforms only.
@@ -68,7 +77,7 @@ export function applySplat(material: Material, maps: (id: MaterialFinish) => Fin
   // the blend noise and the rock's side planes would only be averaged away. Each lookup builds its own small nodes (the
   // blend noise, the rotated coordinates) inside its branch: a node first built inside one branch cannot be shared with
   // another. The results are variables the blend below reads; a skipped layer reads as a neutral photograph.
-  const active = (i: number) => (weights[i] as typeof w4.x).greaterThan(ACTIVE_WEIGHT);
+  const active = (i: number) => weight(i).greaterThan(ACTIVE_WEIGHT);
   // A moving view (lean shading) takes the large-scale lookup everywhere: at the scale it moves at, the fine one is below a pixel.
   const far = () => dist().greaterThan(FAR_METRES).or(leanShading.greaterThan(0.5));
   const sampleAt = (kind: 'map' | 'orm' | 'normal', i: number, macro: boolean) => {

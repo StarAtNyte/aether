@@ -12,7 +12,7 @@
  * stays a live uniform, so retiling a finish to its photo's real size later recompiles nothing.
  */
 import { staticShadowAlpha } from '../gpu/shadow-alpha';
-import { Fn, If, cameraPosition, clamp, float, materialColor, materialRoughness, mix, normalMap, normalView, normalWorld, positionWorld, smoothstep, texture, uniform, uv, vec2, vec3, vec4 } from 'three/tsl';
+import { Fn, If, cameraPosition, clamp, dot, float, fract, materialColor, materialRoughness, mix, modelWorldMatrix, normalMap, normalView, normalWorld, positionWorld, sin, smoothstep, texture, uniform, uv, vec2, vec3, vec4 } from 'three/tsl';
 import type { Material, Texture } from 'three';
 import type { Node } from 'three/webgpu';
 import { noise01 } from './noise-texture';
@@ -53,7 +53,7 @@ export function needsAntiTile(finish: string, tileMetres: number): boolean {
  * Normal-map strength per finish: the photographs of plaster and concrete carry a faint relief that reads as flat paint on
  * a wall, so their maps are pushed harder; everything else uses 1 (0 without a bump in the finish definition).
  */
-export const NORMAL_STRENGTH: Readonly<Record<string, number>> = Object.freeze({ plaster: 2.4, concrete: 1.7, terrazzo: 1.3, limestone: 1.3, cobble: 1.2, 'dry-earth': 1.3, rock: 1.2 });
+export const NORMAL_STRENGTH: Readonly<Record<string, number>> = Object.freeze({ plaster: 2.4, concrete: 1.7, terrazzo: 1.3, limestone: 1.6, cobble: 1.4, 'dry-earth': 1.3, rock: 1.5, stone: 1.4 });
 
 /** Share of a surface that stands in puddles when the weather is dry, and the extra share rain adds, per finish (0 = never wet). */
 export const WETNESS: Readonly<Record<string, { base: number; rain: number }>> = Object.freeze({
@@ -95,6 +95,22 @@ export const MID_DETAIL_FINISHES: ReadonlySet<string> = new Set(['grass', 'grave
 export const DETAIL_MID_SCALES: readonly [number, number] = Object.freeze([1.7, 5.5]) as readonly [number, number];
 export const DETAIL_MID: readonly [number, number] = Object.freeze([2.5, 9]) as readonly [number, number];
 export const DETAIL_MID_AMOUNT: readonly [number, number] = Object.freeze([0.5, 0.22]) as readonly [number, number];
+
+/** Share of the occlusion map multiplied into the albedo (crevices dark in direct light too). */
+export const CAVITY = 0.6;
+/** Spread of the per-piece tone (each separate object a little lighter or darker, warmer or cooler): ±7 %. */
+export const PIECE_TONE = 0.14;
+/**
+ * Hue drift of the natural ground finishes: multipliers toward a sun-dried and toward a lush, darker look, and how far the
+ * patches go toward them. Applied over the brightness patches (see applyAntiTile).
+ */
+export const GROUND_HUE: Readonly<Record<string, { dry: readonly [number, number, number]; lush: readonly [number, number, number]; amount: number }>> = Object.freeze({
+  grass: { dry: [1.3, 1.08, 0.55], lush: [0.72, 0.88, 0.78], amount: 0.9 },
+  soil: { dry: [1.12, 1.04, 0.9], lush: [0.82, 0.8, 0.78], amount: 0.4 },
+  'dry-earth': { dry: [1.1, 1.04, 0.92], lush: [0.86, 0.82, 0.78], amount: 0.4 },
+  gravel: { dry: [1.06, 1.03, 0.96], lush: [0.9, 0.9, 0.88], amount: 0.35 },
+  rock: { dry: [1.06, 1.02, 0.94], lush: [0.88, 0.9, 0.92], amount: 0.4 },
+});
 
 /** Options of {@link applyAntiTile}. */
 export interface AntiTileOptions {
@@ -194,7 +210,22 @@ export function applyAntiTile(material: Material, maps: AntiTileMaps, normalStre
   const speck = smoothstep(float(0.3), float(0.7), m2);
   const macro = float(0.74).add(patch.mul(0.46)).add(speck.sub(0.5).mul(0.2));
   const warmth = patch.sub(0.5);
-  const albedoDetailed = albedoTex.mul(macro).mul(vec3(float(1).add(warmth.mul(0.1)), float(1), float(1).sub(warmth.mul(0.14))));
+  // Every piece is cut from its own block: a per-object tone (hashed from the object's origin, no texture read) so a row
+  // of steps, plinths or paving slabs laid as separate pieces never reads as one uniform pour.
+  const origin = modelWorldMatrix.mul(vec4(0, 0, 0, 1)).xyz;
+  const seed = fract(sin(dot(origin, vec3(12.9898, 78.233, 37.719))).mul(43758.5453));
+  const piece = float(1).add(seed.sub(0.5).mul(PIECE_TONE));
+  const pieceWarm = seed.sub(0.5).mul(PIECE_TONE * 0.5);
+  let tinted = albedoTex.mul(macro).mul(piece).mul(vec3(float(1).add(warmth.mul(0.1)).add(pieceWarm), float(1), float(1).sub(warmth.mul(0.14)).sub(pieceWarm)));
+  // Natural ground: sun-dried and lush patches that change the hue, not just the brightness (a lawn seen from 30 m is
+  // otherwise one flat green). The two noises above already in hand, so no extra texture reads.
+  const hue = opts.finish !== undefined ? GROUND_HUE[opts.finish] : undefined;
+  if (hue) {
+    const dry = smoothstep(float(0.38), float(0.78), m1.mul(0.6).add(m2.mul(0.4)));
+    const lush = float(1).sub(smoothstep(float(0.15), float(0.5), m2));
+    tinted = tinted.mul(mix(vec3(1), vec3(hue.dry[0], hue.dry[1], hue.dry[2]), dry.mul(hue.amount))).mul(mix(vec3(1), vec3(hue.lush[0], hue.lush[1], hue.lush[2]), lush.mul(hue.amount)));
+  }
+  const albedoDetailed = tinted;
   const normalEnc = normalTex;
   const orm = ormTex;
   // Wet ground: the weather uniform darkens and glosses everything a little; surfaces with a puddle share (asphalt,
@@ -206,7 +237,10 @@ export function applyAntiTile(material: Material, maps: AntiTileMaps, normalStre
   const coverage = wet ? clamp(groundWeather.mul(wet.rain).add(wet.base), 0, 0.95) : float(0);
   const puddle = wet ? smoothstep(float(1).sub(coverage), float(1).sub(coverage).add(0.07), pool).mul(flatUp) : float(0);
   const roughBase = materialRoughness.mul(orm.g).mul(float(0.88).add(m2.mul(0.24))).mul(float(1).sub(damp.mul(0.55)));
-  const rgb = albedoDetailed.mul(float(1).sub(damp.mul(0.5))).mul(float(1).sub(puddle.mul(0.5)));
+  // Cavity: the occlusion map darkens the albedo too, not only the ambient light, so joints, pits and the gaps between stones
+  // stay dark under direct sun and the surface reads as relief rather than a printed photograph.
+  const cavity = mix(float(1), orm.r, float(CAVITY));
+  const rgb = albedoDetailed.mul(cavity).mul(float(1).sub(damp.mul(0.5))).mul(float(1).sub(puddle.mul(0.5)));
   const roughness = mix(roughBase, float(0.035), puddle);
   const normalScale = float(normalStrength).mul(float(1).sub(puddle.mul(0.92)));
   // Exporters (glTF, path tracing) read classic maps: keep the textures reachable for them.

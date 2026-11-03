@@ -1072,6 +1072,48 @@ const wildflowers = defineGenerator({
   },
 });
 
+/**
+ * Split faces: a few fracture planes shear off the round mass, so a boulder has the flat broken faces and edges of real stone
+ * instead of reading as a lumpy ball. Each plane takes the part of the rock beyond it down onto it (with a little relief left,
+ * so the face is not machined); planes never face down (the base stays flat). Blocky boulders get more and deeper cuts.
+ */
+function fractureFaces(m: Mesh, api: InternalApi, variant: number): void {
+  const pos = m.positions;
+  if (pos.length < 9) return;
+  const b = m.bounds();
+  const c = [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2];
+  const cuts = variant === 1 ? 5 + Math.floor(api.rng() * 2) : variant === 2 ? 3 : 3 + Math.floor(api.rng() * 2);
+  const depth = variant === 1 ? [0.62, 0.78] : variant === 2 ? [0.7, 0.85] : [0.72, 0.86];
+  const n = api.noise;
+  const a0 = api.rng() * Math.PI * 2;
+  for (let k = 0; k < cuts; k++) {
+    // Spread round the sides, tilted up to 50 degrees toward the top (or the top itself for one cut of a blocky rock).
+    const yaw = a0 + (k / cuts) * Math.PI * 2 + api.range(-0.35, 0.35);
+    const tilt = variant === 1 && k === 0 ? Math.PI / 2 - api.range(0, 0.25) : api.range(-0.15, 0.85);
+    const nx = Math.cos(yaw) * Math.cos(tilt);
+    const ny = Math.sin(tilt);
+    const nz = Math.sin(yaw) * Math.cos(tilt);
+    let reach = 0;
+    for (let i = 0; i < pos.length; i += 3) reach = Math.max(reach, ((pos[i] as number) - c[0]!) * nx + ((pos[i + 1] as number) - c[1]!) * ny + ((pos[i + 2] as number) - c[2]!) * nz);
+    if (!(reach > 0)) continue;
+    const d = reach * api.range(depth[0]!, depth[1]!);
+    for (let i = 0; i < pos.length; i += 3) {
+      const x = pos[i] as number;
+      const y = pos[i + 1] as number;
+      const z = pos[i + 2] as number;
+      const t = (x - c[0]!) * nx + (y - c[1]!) * ny + (z - c[2]!) * nz - d;
+      if (t <= 0) continue;
+      // Down onto the plane, keeping 4 % of the height above it plus a faint ripple: a split face, not a saw cut.
+      const keep = t * 0.04 + reach * 0.012 * n.noise3(x * 2.3 + k * 7, y * 2.3, z * 2.3);
+      const s = t - Math.max(0, keep);
+      pos[i] = x - nx * s;
+      pos[i + 1] = y - ny * s;
+      pos[i + 2] = z - nz * s;
+    }
+  }
+  m.recomputeNormals();
+}
+
 const boulder = defineGenerator({
   id: 'boulder',
   description: 'Realistic boulder: a displaced, weathered mass with strata, lichen on the top and the photographed rock surface. Flat base. Use rock for the stylised one.',
@@ -1109,6 +1151,7 @@ const boulder = defineGenerator({
     // A slab's thin rim takes less of the lumping, which would fold it over on the welded mesh.
     if (variant === 2) m.displace((x, y, z) => lumps(x, y, z) * (0.25 + 0.75 * Math.min(1, Math.abs(y) / (0.35 * R))));
     else m.displace(lumps);
+    fractureFaces(m, api, variant);
     const b0 = m.bounds();
     const cut = b0.min[1] + (b0.max[1] - b0.min[1]) * 0.1;
     const pos = m.positions;
