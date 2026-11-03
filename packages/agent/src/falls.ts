@@ -9,7 +9,7 @@
  */
 import type { Entity, Json, WorldDoc } from '@aether/core';
 import { findingKey, scoreFindings, type Finding } from '@aether/arch';
-import { getBuiltinGenerator } from '@aether/procgen';
+import { generateBuiltinSync, getBuiltinGenerator } from '@aether/procgen';
 import type { ReviewSnapshot } from './review';
 import { worldGround } from './land';
 import { localBounds, paramBounds } from './sunk';
@@ -39,7 +39,7 @@ export interface BuriedFall {
   dir: [number, number];
 }
 
-interface Solid {
+export interface Solid {
   id: string;
   b: Box;
   ox: number;
@@ -50,11 +50,88 @@ interface Solid {
   sz: number;
   c: number;
   s: number;
+  /** Height of the rock's top over a local (x, z), for a built-in rock generator (its real surface, not its bounding box). */
+  top?: (lx: number, lz: number) => number;
+}
+
+const TOP_CELL = 1;
+const topCache = new Map<string, ((lx: number, lz: number) => number) | null>();
+
+/**
+ * The top surface of a built-in rock generator's output (highest vertex per 1 m cell, in its own frame), or null. A cliff's
+ * bounding box is as high as its highest crag: a ledge lower down is open air, not rock.
+ */
+export function rockTop(generator: string, params: Record<string, Json>, seed: number): ((lx: number, lz: number) => number) | null {
+  const key = `${generator}|${seed}|${JSON.stringify(params)}`;
+  if (topCache.has(key)) return topCache.get(key) ?? null;
+  let fn: ((lx: number, lz: number) => number) | null = null;
+  try {
+    const out = generateBuiltinSync(generator, params, seed);
+    const b = out.bounds;
+    const nx = Math.max(1, Math.ceil((b.max[0] - b.min[0]) / TOP_CELL));
+    const nz = Math.max(1, Math.ceil((b.max[2] - b.min[2]) / TOP_CELL));
+    if (nx * nz <= 250_000) {
+      const grid = new Float32Array(nx * nz).fill(-Infinity);
+      // Every triangle drawn into the grid from above (cell centres inside it take its height there): a flat cap of a few
+      // big triangles covers its cells though no vertex falls in them.
+      const cx = (i: number): number => b.min[0] + (i + 0.5) * TOP_CELL;
+      const cz = (i: number): number => b.min[2] + (i + 0.5) * TOP_CELL;
+      for (const part of out.parts) {
+        const pos = part.positions;
+        const idx = part.indices;
+        const tris = idx ? idx.length / 3 : pos.length / 9;
+        for (let t = 0; t < tris; t++) {
+          const a = (idx ? (idx[t * 3] as number) : t * 3) * 3;
+          const bb = (idx ? (idx[t * 3 + 1] as number) : t * 3 + 1) * 3;
+          const cc = (idx ? (idx[t * 3 + 2] as number) : t * 3 + 2) * 3;
+          const x0 = pos[a] as number, y0 = pos[a + 1] as number, z0 = pos[a + 2] as number;
+          const x1 = pos[bb] as number, y1 = pos[bb + 1] as number, z1 = pos[bb + 2] as number;
+          const x2 = pos[cc] as number, y2 = pos[cc + 1] as number, z2 = pos[cc + 2] as number;
+          const i0 = Math.max(0, Math.floor((Math.min(x0, x1, x2) - b.min[0]) / TOP_CELL));
+          const i1 = Math.min(nx - 1, Math.floor((Math.max(x0, x1, x2) - b.min[0]) / TOP_CELL));
+          const k0 = Math.max(0, Math.floor((Math.min(z0, z1, z2) - b.min[2]) / TOP_CELL));
+          const k1 = Math.min(nz - 1, Math.floor((Math.max(z0, z1, z2) - b.min[2]) / TOP_CELL));
+          const det = (z1 - z2) * (x0 - x2) + (x2 - x1) * (z0 - z2);
+          for (let k = k0; k <= k1; k++) {
+            for (let i = i0; i <= i1; i++) {
+              let y = Math.max(y0, y1, y2);
+              if (Math.abs(det) > 1e-9) {
+                const px = cx(i);
+                const pz = cz(k);
+                const w0 = ((z1 - z2) * (px - x2) + (x2 - x1) * (pz - z2)) / det;
+                const w1 = ((z2 - z0) * (px - x2) + (x0 - x2) * (pz - z2)) / det;
+                const w2 = 1 - w0 - w1;
+                // Cells the triangle only grazes (its bounding box, not its area) keep its vertices' heights only.
+                if (w0 < -0.02 || w1 < -0.02 || w2 < -0.02) {
+                  const near = (x: number, z: number): boolean => Math.floor((x - b.min[0]) / TOP_CELL) === i && Math.floor((z - b.min[2]) / TOP_CELL) === k;
+                  y = Math.max(near(x0, z0) ? y0 : -Infinity, near(x1, z1) ? y1 : -Infinity, near(x2, z2) ? y2 : -Infinity);
+                } else y = w0 * y0 + w1 * y1 + w2 * y2;
+              }
+              const key = k * nx + i;
+              if (y > (grid[key] as number)) grid[key] = y;
+            }
+          }
+        }
+      }
+      const filled = grid;
+      fn = (lx, lz) => {
+        const ix = Math.floor((lx - b.min[0]) / TOP_CELL);
+        const iz = Math.floor((lz - b.min[2]) / TOP_CELL);
+        if (ix < 0 || iz < 0 || ix >= nx || iz >= nz) return -Infinity;
+        return filled[iz * nx + ix] as number;
+      };
+    }
+  } catch {
+    fn = null;
+  }
+  if (topCache.size > 200) topCache.clear();
+  topCache.set(key, fn);
+  return fn;
 }
 
 const num = (v: Json | undefined): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
-function solidsOf(world: WorldDoc, skip: string): Solid[] {
+export function solidsOf(world: WorldDoc, skip: string): Solid[] {
   const out: Solid[] = [];
   for (const e of Object.values(world.entities)) {
     if (out.length >= FALLS_LIMITS.MAX_SOLIDS) break;
@@ -73,13 +150,14 @@ function solidsOf(world: WorldDoc, skip: string): Solid[] {
     const [sx, sy, sz] = e.transform.scale;
     const [ox, oy, oz] = e.transform.position;
     if (!(sx > 0 && sy > 0 && sz > 0)) continue;
-    out.push({ id: e.id, b, ox, oy, oz, sx, sy, sz, c: Math.cos(yaw), s: Math.sin(yaw) });
+    const top = sh.kind === 'procedural' && getBuiltinGenerator(sh.generator) ? rockTop(sh.generator, sh.params as Record<string, Json>, sh.seed ?? 0) : null;
+    out.push({ id: e.id, b, ox, oy, oz, sx, sy, sz, c: Math.cos(yaw), s: Math.sin(yaw), ...(top ? { top } : {}) });
   }
   return out;
 }
 
 /** The solid `(x, y, z)` is inside, or null. */
-function inside(solids: readonly Solid[], ground: (x: number, z: number) => number, x: number, y: number, z: number): string | null {
+export function inside(solids: readonly Solid[], ground: (x: number, z: number) => number, x: number, y: number, z: number): string | null {
   if (y < ground(x, z) - 0.2) return 'terrain';
   for (const q of solids) {
     const dx = x - q.ox;
@@ -88,12 +166,12 @@ function inside(solids: readonly Solid[], ground: (x: number, z: number) => numb
     const lx = (dx * q.c - dz * q.s) / q.sx;
     const lz = (dx * q.s + dz * q.c) / q.sz;
     const ly = (y - q.oy) / q.sy;
-    if (lx > q.b.min[0] && lx < q.b.max[0] && ly > q.b.min[1] && ly < q.b.max[1] && lz > q.b.min[2] && lz < q.b.max[2]) return q.id;
+    if (lx > q.b.min[0] && lx < q.b.max[0] && ly > q.b.min[1] && ly < q.b.max[1] && lz > q.b.min[2] && lz < q.b.max[2] && (!q.top || ly < q.top(lx, lz))) return q.id;
   }
   return null;
 }
 
-function isFall(e: Entity): boolean {
+export function isFall(e: Entity): boolean {
   if (e.tags.includes('waterfall') || e.material?.waterKind === 'fall') return true;
   const sh = e.shape;
   return sh.kind === 'procedural' && FALL_GEN.test(sh.generator);

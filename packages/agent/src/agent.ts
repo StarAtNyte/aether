@@ -40,6 +40,7 @@ import { briefStage, lookReference, type BriefReviewer, type BriefStageResult } 
 import { LEVEL_SUBJECT, levelSnapshot, levelTurnText } from './level-review';
 import { withSunk } from './sunk';
 import { withPlaceholders } from './placeholders';
+import { withArtifacts } from './artifacts';
 import { withFalls } from './falls';
 import { GAME_CODES, GameReviewCache, isReviewedGame, withGame, type GameReviewResult } from './game-review';
 import type { AgentEvent, AgentHost, AgentOptions, ChatMessage, CompletionResponse, ContentBlock, ReviewOptions, ToolDef, UsageTotals } from './types';
@@ -809,8 +810,10 @@ export class WorldAgent {
       }
       // Hardcore: every round renders the hero shots, the views the references were drawn for.
       if (this.hardcore && withViews) snap = { ...snap, views: this.hardcore.shots };
-      // Pieces sunk into the terrain and falls buried in the rock they pour from are checked in every round, whatever else measured the world.
-      snap = withPlaceholders(withFalls(withSunk(snap, world), world), world);
+      // Pieces sunk into the terrain or floating over it, falls buried in the rock they pour from and the artifacts a viewer spots at
+      // a glance (pieces in the sky, cloud meshes, the land ending in a white void, untextured sheets, roofs in the rock, plants
+      // in a waterfall) are checked in every round, whatever else measured the world.
+      snap = withArtifacts(withPlaceholders(withFalls(withSunk(snap, world), world), world), world);
       // A game is played too (flow and balance), when the host can: its findings carry the fixes in the game's own params.
       if (isReviewedGame(world)) {
         const game = await this.playGame(world, signal);
