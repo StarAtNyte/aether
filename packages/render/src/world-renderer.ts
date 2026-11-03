@@ -5649,6 +5649,9 @@ export class WorldRenderer {
     const pass = async (): Promise<string[]> => {
       const out: string[] = [];
       for (const pose of list) {
+        // Steady effects (mist, spray, smoke) as they look after running a while near this view, not as they start.
+        aim(pose);
+        this.fx.vfx.warm(cam, 3);
         if (!this.asyncCaptureFailed) {
           try {
             await this.settleTrim(() => {

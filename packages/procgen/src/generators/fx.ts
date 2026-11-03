@@ -119,7 +119,8 @@ const cloud = defineGenerator({
     if (body) {
       const pos = body.positions;
       const nz = api.noise;
-      const relief = S * 0.035;
+      // Shallow relief: deep folds catch hard shadows and read as cracks in stone.
+      const relief = S * 0.018;
       for (let i = 0; i < pos.length; i += 3) {
         const px = pos[i] as number;
         const py = pos[i + 1] as number;
@@ -143,7 +144,10 @@ const cloud = defineGenerator({
         out[1] = lo[1] + (hi[1] - lo[1]) * m;
         out[2] = lo[2] + (hi[2] - lo[2]) * m;
       });
-      api.add(body, { vertexColors: true, roughness: 1, flatShading: false, opacity: variant === 1 ? 0.9 : 1 });
+      // Self-lit: a cloud is bright through its whole body (light scatters inside it), so its shaded side never goes the dull
+      // grey of a lit solid; drawn as a plain diffuse solid it reads as a grey rock hanging in the sky.
+      const glowCol = variant === 2 ? mixHex(bottom, top, 0.5) : mixHex(top, '#dfe8f4', 0.35);
+      api.add(body, { vertexColors: true, roughness: 1, flatShading: false, emissive: glowCol, emissiveIntensity: variant === 2 ? 0.2 : 0.55, opacity: variant === 1 ? 0.9 : 1 });
       api.collider(boxCollider((b.min[0] + b.max[0]) / 2, b.max[1] * 0.4, (b.min[2] + b.max[2]) / 2, (b.max[0] - b.min[0]) * 0.8, b.max[1] * 0.8, (b.max[2] - b.min[2]) * 0.7));
     }
     return api.build();

@@ -9,6 +9,7 @@
 import { resolveFeelCue, type EntityId, type FeelEvent, type ResolvedCue, type VfxPreset, type WorldDoc } from '@aether/core';
 import type { Camera, Color, Object3D, PerspectiveCamera } from 'three';
 import { mixSeed } from '../vfx/pool';
+import { fallAnchors, type FallAnchors } from '../vfx/falls';
 import { VfxSystem, type BurstOptions } from '../vfx/system';
 import { FeelDirector } from './director';
 
@@ -28,6 +29,12 @@ export interface FeelHost {
 
 const scratchSquash = { y: 1, xz: 1 };
 
+/** A waterfall entity: the falling-water generator, or any shape drawn as falling water. */
+function isFall(e: WorldDoc['entities'][string]): boolean {
+  const shape = e.shape as { kind?: string; generator?: string } | undefined;
+  return (shape?.kind === 'procedural' && shape.generator === 'waterfall-sheet') || e.material?.waterKind === 'fall';
+}
+
 /** Game feel of one renderer. */
 export class GameFeel {
   readonly vfx: VfxSystem;
@@ -36,6 +43,8 @@ export class GameFeel {
   private worldSeed = 1;
   private emitterKey = '';
   private readonly keep = new Set<string>();
+  /** Spray spots of the falling water in each scene object (found once per object). */
+  private readonly falls = new WeakMap<Object3D, FallAnchors>();
   /** True in play mode: camera shake and FOV kicks apply only then (entity emitters run in the editor too). */
   playing = false;
   /** Freeze the effects clock and the cues (tests, posed captures); {@link VfxSystem.update} can still be driven by hand. */
@@ -76,6 +85,25 @@ export class GameFeel {
       if (e && e.vfx && !e.template) visit(id, e.vfx);
     }
     if (extra) for (const e of extra) if (e.vfx) visit(e.id, e.vfx);
+    // Falling water throws its own spray and mist where it lands and a fine spray off the lip.
+    for (const id in world.entities) {
+      const e = world.entities[id];
+      if (!e || e.template || e.visible === false || !isFall(e)) continue;
+      const obj = this.host.object(id);
+      if (!obj) continue;
+      let anchors = this.falls.get(obj);
+      if (!anchors) {
+        const found = fallAnchors(obj);
+        if (!found) continue;
+        anchors = found;
+        this.falls.set(obj, anchors);
+      }
+      const big = Math.min(4, Math.max(0.8, Math.sqrt(anchors.height) * 0.55));
+      anchors.impact.forEach((a, i) => visit(`${id}~fall${i}`, { preset: 'mist', enabled: true, rate: 14, scale: big, offset: [a[0], a[1] + 0.3, a[2]] }));
+      // A veil of spray climbing the lower fall in front of it (a tall fall hides its own foot in its mist).
+      if (anchors.height > 12) anchors.impact.forEach((a, i) => visit(`${id}~veil${i}`, { preset: 'mist', enabled: true, rate: 6, scale: big, offset: [a[0], a[1] + anchors.height * 0.12, a[2] + 0.8] }));
+      anchors.lip.forEach((a, i) => visit(`${id}~lip${i}`, { preset: 'fallspray', enabled: true, rate: 12, scale: Math.min(2, big * 0.6), offset: [a[0], a[1], a[2] + 0.4] }));
+    }
     // Flames of held props are not world entities: they stay until their rig says otherwise.
     for (const id of this.props) keep.add(id);
     if (key !== this.emitterKey || keep.size !== this.vfx.emitterCount) {

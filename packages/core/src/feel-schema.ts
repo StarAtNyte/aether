@@ -35,7 +35,7 @@ export type FeelEvent = z.infer<typeof FeelEvent>;
 export const VfxPreset = z.enum([
   'sparks', 'dust', 'sparkle', 'fire', 'smoke', 'magic', 'explosion', 'splash', 'footstep', 'muzzle', 'embers', 'confetti', 'shockwave',
   // Environment emitters (place them on an entity: a fall, a fountain, a vent, a glade).
-  'mist', 'fountain', 'drips', 'spray', 'steam', 'bubbles', 'motes', 'fireflies', 'leaves', 'petals', 'snowfall', 'rainfall', 'ash', 'sandswirl', 'groundfog', 'incense', 'candle',
+  'mist', 'fallspray', 'fountain', 'drips', 'spray', 'steam', 'bubbles', 'motes', 'fireflies', 'leaves', 'petals', 'snowfall', 'rainfall', 'ash', 'sandswirl', 'groundfog', 'incense', 'candle',
   // Combat, impacts and destruction.
   'impact', 'blood', 'debris', 'glass', 'smokebomb', 'electric',
   // Machines and vehicles.

@@ -334,6 +334,17 @@ export class VfxSystem {
     this.upload(this.layers.alpha);
   }
 
+  /**
+   * Run the continuous emitters for `seconds` as seen from `camera` (a still of a place the live view never went near:
+   * the mist at a waterfall's foot is already billowing instead of just starting). Steps of 1/15 s.
+   */
+  warm(camera: Camera, seconds: number): void {
+    if (this.disposed || this.emitters.size === 0 || !(seconds > 0)) return;
+    camera.updateMatrixWorld();
+    const n = Math.min(120, Math.ceil(seconds * 15));
+    for (let i = 0; i < n; i++) this.update(1 / 15, camera);
+  }
+
   /** Multiplier on every emitter's rate (the performance ladder lowers it; 1 = as authored). */
   emissionScale = 1;
 
@@ -360,7 +371,9 @@ export class VfxSystem {
       const dx = _pos.x - cx;
       const dy = _pos.y - cy;
       const dz = _pos.z - cz;
-      if (dx * dx + dy * dy + dz * dz > EMIT_DISTANCE * EMIT_DISTANCE || !t.visible) {
+      // A big emitter (the mist of a tall waterfall) is seen from further away than a candle.
+      const reach = EMIT_DISTANCE * (0.5 + 0.5 * Math.max(1, em.scale));
+      if (dx * dx + dy * dy + dz * dz > reach * reach || !t.visible) {
         em.accum = 0;
         continue;
       }
