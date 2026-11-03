@@ -13,6 +13,8 @@ import { LocomotionMachine, type ActionName, type ActorInput, type ClipInfo, typ
 import { applyLook, LookController, solveTwoBone, type LookState } from './ik';
 import { disposeModelInstance } from '../geometry/model-loader';
 import { buildProp, type Prop } from './props';
+import { buildGear, disposeGear, fitBody, type GearPiece } from './gear';
+import { contactShadow } from './surface';
 import { airPoseOf, ArmSpring, jumpArmTarget, jumpClipPhase, landKeep, PELVIS_ABOVE_SEAT, seatBlendOf } from './motion';
 
 /** Foot of a footstep event. */
@@ -149,6 +151,7 @@ export class CharacterRig {
         this.meshes.push(o);
       }
     });
+    this.root.add(contactShadow());
     for (const c of opts.clips) this.clips.set(c.name, c);
     this.mixer = new AnimationMixer(opts.scene);
     this.machine = new LocomotionMachine(opts.table);
@@ -184,6 +187,7 @@ export class CharacterRig {
     this.input.mood = opts.look.mood;
     this.start();
     this.setHold(opts.look.hold);
+    this.mountGear();
     const sc = opts.look.scale;
     if (sc !== 1) this.root.scale.setScalar(sc);
     this.root.updateMatrixWorld(true);
@@ -267,6 +271,45 @@ export class CharacterRig {
     spine.add(anchor);
   }
 
+  /** Worn gear pieces (helmet, vest ...), each under the bone that carries it. */
+  private gear: GearPiece[] = [];
+
+  /** Fit the look's gear to this body in its rest pose and hang each piece on its bone (see `gear.ts`). */
+  private mountGear(): void {
+    const gear = this.opts.look.gear ?? [];
+    if (gear.length === 0 || !this.bones.spine) return;
+    this.mixer.update(0);
+    this.root.updateMatrixWorld(true);
+    const spineY = this.root.worldToLocal(this.bones.spine.getWorldPosition(new Vector3())).y;
+    const fit = fitBody(this.opts.scene, this.root, spineY);
+    if (!fit) return;
+    const rootQ = this.root.getWorldQuaternion(new Quaternion());
+    const rootS = this.root.getWorldScale(new Vector3());
+    for (const piece of buildGear(gear, fit, this.opts.look.wardrobe ?? 'casual')) {
+      const bone = this.bones[piece.bone];
+      if (!bone) {
+        disposeGear([piece]);
+        continue;
+      }
+      const anchor = new Object3D();
+      anchor.name = `anchor-${piece.group.name}`;
+      anchor.quaternion.copy(bone.getWorldQuaternion(new Quaternion()).invert()).multiply(rootQ);
+      anchor.scale.copy(rootS).divide(bone.getWorldScale(new Vector3()));
+      anchor.position.copy(bone.worldToLocal(this.root.localToWorld(new Vector3(0, 0, 0))));
+      for (const o of piece.group.children) if (o instanceof Mesh) o.castShadow = o.receiveShadow = this.opts.castShadow;
+      anchor.add(piece.group);
+      bone.add(anchor);
+      this.gear.push(piece);
+    }
+    // Hair cards would poke through a close head cover: hide them under a helmet or a beanie.
+    if (gear.includes('helmet') || gear.includes('beanie')) {
+      for (const m of this.meshes) {
+        const name = (Array.isArray(m.material) ? m.material[0]?.name : m.material.name) ?? '';
+        if (/hair/i.test(name)) m.visible = false;
+      }
+    }
+  }
+
   /** Hold (or put down) a prop. */
   setHold(kind: CharacterHold): void {
     if (kind === this.propHold && (kind === 'none') === (this.prop === null)) return;
@@ -282,7 +325,7 @@ export class CharacterRig {
     const prop = buildProp(kind);
     if (!prop) return;
     this.prop = prop;
-    for (const o of prop.group.children) if (o instanceof Mesh) o.castShadow = this.opts.castShadow;
+    for (const o of prop.group.children) if (o instanceof Mesh) o.castShadow = o.receiveShadow = this.opts.castShadow;
     if (prop.twoHanded) {
       prop.group.position.set(0, 1.14, -0.4);
       this.root.add(prop.group);
@@ -354,6 +397,8 @@ export class CharacterRig {
     this.prop?.group.traverse((o) => {
       o.visible = !shadowOnly;
     });
+    // Worn gear goes with the body (a helmet would otherwise sit in front of a first-person camera).
+    for (const g of this.gear) g.group.visible = !shadowOnly;
   }
 
   /** True while only the shadow is drawn. */
@@ -794,6 +839,8 @@ export class CharacterRig {
     if (this.prop) this.opts.onProp?.(null, this);
     this.prop?.group.removeFromParent();
     this.prop?.dispose();
+    disposeGear(this.gear);
+    this.gear = [];
     for (const m of this.shadowMaterials.values()) m.dispose();
     this.shadowMaterials.clear();
     this.root.removeFromParent();

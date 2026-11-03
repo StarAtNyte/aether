@@ -10,7 +10,7 @@
  *   it gives a model a worked example of the vocabulary.
  * - {@link defaultWardrobe} is the archetype-to-look table.
  */
-import type { CharacterHold, CharacterMood, CharacterSpec, CharacterSpecInput, CharacterWardrobe } from '@aether/core';
+import type { CharacterGear, CharacterHold, CharacterMood, CharacterSpec, CharacterSpecInput, CharacterWardrobe } from '@aether/core';
 import { CAST, castById, type CastMember } from './library';
 
 /** A resolved look: one body and the tints to apply. */
@@ -22,6 +22,10 @@ export interface ResolvedLook {
   scale: number;
   mood: CharacterMood;
   hold: CharacterHold;
+  /** Worn gear, fitted to the body by the renderer (empty: none). */
+  gear: readonly CharacterGear[];
+  /** The wardrobe asked for (picks the gear colours), when one was. */
+  wardrobe?: CharacterWardrobe;
 }
 
 /** 32-bit FNV-1a hash of a string. */
@@ -78,11 +82,26 @@ export function resolveLook(spec: CharacterSpec | CharacterSpecInput | undefined
   }
   if (!body) throw new Error('the character library is empty');
   const mood: CharacterMood = s.mood ?? 'neutral';
-  const out: ResolvedLook = { body, scale: s.scale ?? 1, mood, hold: s.hold ?? 'none' };
+  const hold = s.hold ?? 'none';
+  const scale = s.scale ?? 1;
+  const out: ResolvedLook = { body, scale, mood, hold, gear: s.gear ? [...new Set(s.gear)] : defaultGear(hold, s.wardrobe, scale) };
+  if (s.wardrobe) out.wardrobe = s.wardrobe;
   if (s.top) out.top = s.top;
   if (s.bottom) out.bottom = s.bottom;
   if (s.hair) out.hair = s.hair;
   return out;
+}
+
+/**
+ * Gear a person wears when the spec names none: only someone holding a rifle (a modern fighter) gets any, read from the
+ * wardrobe, so the roles of a shooter read at a glance: guards in helmets and plate carriers (heavy armour when scaled up
+ * as a heavy), bandits and raiders in beanies, face scarves and chest rigs, anyone else in a cap and a chest rig.
+ */
+export function defaultGear(hold: CharacterHold, wardrobe: CharacterWardrobe | undefined, scale = 1): CharacterGear[] {
+  if (hold !== 'rifle') return [];
+  if (wardrobe === 'guard') return scale >= 1.08 ? ['helmet', 'heavy-armor'] : ['helmet', 'plate-carrier'];
+  if (wardrobe === 'bandit') return ['beanie', 'scarf', 'chest-rig'];
+  return ['cap', 'chest-rig'];
 }
 
 /** What each archetype wears by default (kind ids of the planner and NPC archetypes). */

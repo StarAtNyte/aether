@@ -34,6 +34,14 @@ export type CharacterHold = z.infer<typeof CharacterHold>;
 export const CharacterWardrobe = z.enum(['casual', 'guard', 'merchant', 'villager', 'bandit', 'traveller', 'elder', 'worker', 'formal']);
 export type CharacterWardrobe = z.infer<typeof CharacterWardrobe>;
 
+/**
+ * What the person wears over the outfit (modelled pieces fitted to the body and carried by its bones): head cover
+ * (`helmet`, `cap`, `beanie`), a face `scarf`, and load-bearing gear (`chest-rig` pouches, a `plate-carrier`, or
+ * `heavy-armor` with shoulder and groin plates). Modern pieces: a medieval guard wears none.
+ */
+export const CharacterGear = z.enum(['helmet', 'cap', 'beanie', 'scarf', 'chest-rig', 'plate-carrier', 'heavy-armor']);
+export type CharacterGear = z.infer<typeof CharacterGear>;
+
 export const CharacterSpec = z.object({
   /** A cast member id (see `CAST` in `@aether/assets`), e.g. "marcus". Omit to choose from the fields below. */
   body: Slug.optional(),
@@ -50,6 +58,12 @@ export const CharacterSpec = z.object({
   hold: CharacterHold.optional(),
   /** Additive: `sit` shows the person seated (a paddler in a canoe, a guest on a sofa); the collider and the entity's position are unchanged. Default `stand`. */
   pose: z.enum(['stand', 'sit']).optional(),
+  /**
+   * Additive: worn gear (see {@link CharacterGear}). Omitted: a person holding a rifle gets role gear from the wardrobe
+   * (guard: helmet and plate carrier, heavy armour when scaled 1.08 or more; bandit: beanie, scarf and chest rig; others: cap
+   * and chest rig). `[]` wears nothing extra.
+   */
+  gear: z.array(CharacterGear).max(4).optional(),
   /** Free-form words the resolver may use ("tired", "old") when the fields above are not set. */
   words: z.array(z.string().min(1).max(24)).max(6).optional(),
 });

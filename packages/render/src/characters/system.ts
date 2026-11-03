@@ -111,7 +111,7 @@ export class CharacterSystem {
    */
   async add(id: string, look: ResolvedLook, parent: Object3D, opts: { footOffset?: number; track?: Object3D | null; castShadow?: boolean; autoMotion?: boolean } = {}): Promise<CharacterRig | null> {
     if (this.disposed) return null;
-    const key = `${look.body.id}|${tintKey(look)}|${look.scale}|${look.hold}|${look.mood}`;
+    const key = `${look.body.id}|${tintKey(look)}|${look.scale}|${look.hold}|${look.mood}|${(look.gear ?? []).join(',')}|${look.wardrobe ?? ''}`;
     const existing = this.entries.get(id);
     if (existing && existing.key === key && existing.rig.root.parent === parent) return existing.rig;
     if (existing) this.remove(id);
