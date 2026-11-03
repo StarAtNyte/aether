@@ -28,6 +28,7 @@ const TONES: Readonly<Record<string, Tone>> = Object.freeze({
   shot: { type: 'noise', from: 3200, to: 260, duration: 0.11, gain: 0.26, then: { from: 140, to: 50, delay: 0.004 } },
   'enemy-shot': { type: 'noise', from: 1500, to: 220, duration: 0.14, gain: 0.11 },
   reload: { type: 'noise', from: 2600, to: 1900, duration: 0.05, gain: 0.1, then: { from: 900, to: 700, delay: 0.32 } },
+  warn: { type: 'sawtooth', from: 900, to: 300, duration: 0.22, gain: 0.12, then: { from: 700, to: 250, delay: 0.12 } },
   empty: { type: 'square', from: 2200, to: 1900, duration: 0.025, gain: 0.05 },
   alarm: { type: 'sawtooth', from: 520, to: 780, duration: 0.45, gain: 0.08, then: { from: 520, to: 780, delay: 0.5 } },
   // Block worlds.

@@ -1014,11 +1014,14 @@ export class Studio {
     this.store.getState().setGame({ intro: false });
   }
 
-  /** Restart the running game (the title card is not shown again). */
+  /** Restart the running game: a world with a title card returns to it (Play starts the new run). */
   async restart(): Promise<void> {
     this.store.getState().resetGame();
-    this.sim?.setHeld(false);
-    await this.sim?.restart();
+    const intro = this.history.current.intro !== undefined;
+    this.sim?.setHeld(intro);
+    await this.sim?.restart({ held: intro });
+    if (intro && this.simMode() === 'play') this.store.getState().setGame({ intro: true });
+    else this.sim?.setHeld(false);
   }
 
   /** Camera view in play mode. */

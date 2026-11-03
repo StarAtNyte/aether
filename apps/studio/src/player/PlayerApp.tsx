@@ -11,7 +11,9 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactElem
 import { History, type Json, type WorldDoc } from '@aether/core';
 import { creditsFor, loadCatalog, setCatalog, setLibraryRemote, type Credit } from '@aether/assets';
 import { createWorkerSandbox, type SandboxRunner } from '@aether/procgen';
-import { prefersReducedMotion, Simulation } from '../engine/Simulation';
+import { prefersReducedMotion, Simulation, type CombatHud } from '../engine/Simulation';
+import { CombatHudView, ScoreLine } from '../components/viewport/CombatHud';
+import { recordScore } from '../lib/bestScore';
 import { formatStateValue } from '../lib/format';
 import type { VoxelHudState } from '../voxel/hudState';
 import { VoxelHudView } from '../components/viewport/VoxelHud';
@@ -41,6 +43,8 @@ interface PlayerHandle {
   readonly entities: number;
   readonly backend: string | null;
   readonly world: WorldDoc;
+  /** The running simulation (test drivers: aim, fire, read the game state). */
+  readonly simulation: Simulation | null;
   start(): void;
 }
 
@@ -162,7 +166,8 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
   const [fatal, setFatal] = useState<string | null>(null);
   const [hud, setHud] = useState<Record<string, string>>({});
   const [time, setTime] = useState(0);
-  const [over, setOver] = useState<{ win: boolean; text: string } | null>(null);
+  const [over, setOver] = useState<{ win: boolean; text: string; score?: number; best?: number; record?: boolean } | null>(null);
+  const [combat, setCombat] = useState<CombatHud | null>(null);
   const [voxelHud, setVoxelHud] = useState<VoxelHudState | null>(null);
   const [npc, setNpc] = useState<NpcFrame | null>(null);
   const [interact, setInteract] = useState<InteractPrompt | null>(null);
@@ -292,10 +297,21 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
     setOver(null);
     setHud({});
     setTime(0);
+    setCombat(null);
+    if (world.intro) {
+      // As in the studio: a game with a title card starts every run from it (Play builds a fresh session).
+      stopMusic();
+      sim.setPaused(false);
+      await sim.stop();
+      setPanel('main');
+      go('title');
+      void attract();
+      return;
+    }
     await sim.restart();
     sim.setPaused(false);
     go('playing');
-  }, [go]);
+  }, [attract, go, stopMusic, world.intro]);
 
   // Boot: renderer, world, attract mode.
   useEffect(() => {
@@ -328,9 +344,14 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
             onNpc: (frame) => setNpc(frame),
             onInteract: (prompt) => setInteract(prompt),
             onGameOver: (result, text) => {
-              setOver({ win: result === 'win', text });
+              // A game that keeps a score shows it, with the best run on this device (the studio does the same).
+              const raw = simRef.current?.logic?.readState('score');
+              const score = typeof raw === 'number' && Number.isFinite(raw) ? Math.round(raw) : undefined;
+              const kept = score !== undefined ? recordScore(`${world.id}:${world.name}`, score) : undefined;
+              setOver({ win: result === 'win', text, ...(score !== undefined && kept ? { score, best: kept.best, record: kept.record } : {}) });
               go('over');
             },
+            onCombat: (c) => setCombat(c),
             onError: (message) => toast(message),
             onFatal: (message) => {
               setFatal(message);
@@ -457,6 +478,9 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
         return simRef.current?.backend ?? null;
       },
       world,
+      get simulation() {
+        return simRef.current;
+      },
       start: () => void start(),
     };
     return () => {
@@ -548,7 +572,8 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
       )}
       {playing && world.voxel && voxelHud && <VoxelHudView hud={voxelHud} play={sim?.voxel?.game ?? null} toast={(t) => toast(t)} />}
       {phase === 'playing' && !world.voxel && <NpcSpeechView frame={npc} actions={sim} />}
-      {phase === 'playing' && !world.voxel && (
+      {phase === 'playing' && !world.voxel && combat && <CombatHudView combat={combat} health={hud['health']} />}
+      {phase === 'playing' && !world.voxel && !combat && (
         <div className="interact" aria-live="polite">
           <span className={`interact__dot${interact ? ' is-active' : ''}`} aria-hidden="true" />
           {interact && (
@@ -559,7 +584,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
           )}
         </div>
       )}
-      {phase === 'playing' && !world.voxel && <TouchControlsView sim={sim} />}
+      {phase === 'playing' && !world.voxel && <TouchControlsView sim={sim} armed={world.player.weapon !== undefined} />}
       {phase === 'playing' && (
         <button type="button" className="pl-pausebtn" aria-label="Pause" onClick={() => pause(true)}>
           ❚❚
@@ -578,6 +603,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
           <div className="pl-panel" role="dialog" aria-label="Game over">
             <h2 className={`pl-over ${over.win ? 'is-win' : 'is-lose'}`}>{over.win ? 'You win!' : 'Game over'}</h2>
             {over.text && <p className="pl-muted">{over.text}</p>}
+            {over.score !== undefined && <ScoreLine score={over.score} best={over.best} record={over.record} />}
             <ul className="pl-stats" aria-label="Your run">
               {world.hud.map((b) => (
                 <li key={b.key}>

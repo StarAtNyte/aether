@@ -183,4 +183,31 @@ describe('NPC drops, bodies and ranged attacks', () => {
     expect(health).toBeGreaterThan(100 - muzzles * 10);
     expect(host.sounds).toContain('enemy-shot');
   });
+
+  it('ranged accuracy falls with distance (farAccuracy at the edge of the range)', () => {
+    const shooter = (accuracy: number, farAccuracy: number) => ({ faction: 'raiders', archetype: 'sentinel', enemies: ['player'], perception: { sight: 40, fov: 360 }, attack: { range: 20, damage: 1, cooldown: 0.2, ranged: true, accuracy, farAccuracy } });
+    const landed = (z: number): number => {
+      const { rt } = setup([npcEntity('gunner', 0, z, shooter(1, 0))], { extra: { state: { health: 1000 } } });
+      hold(rt, 20, input());
+      return 1000 - (rt.readState('health') as number);
+    };
+    // Close by every shot lands; near the edge of the range almost none do.
+    expect(landed(-2)).toBeGreaterThan(landed(-19) * 3);
+  });
+
+  it('a wound-up melee blow warns first and misses a foe who stepped out of reach', () => {
+    const rusher = { faction: 'raiders', archetype: 'guard', enemies: ['player'], perception: { sight: 40, fov: 360 }, speed: 0, runSpeed: 0, attack: { range: 2, damage: 20, cooldown: 1, windup: 0.5 } };
+    const { rt, host } = setup([npcEntity('axe', 0, -1.5, rusher)], { extra: { state: { health: 100 } } });
+    hold(rt, 0.3, input());
+    expect(host.sounds).toContain('warn');
+    expect(rt.readState('health')).toBe(100);
+    // Step back before the swing ends: no damage.
+    host.place('avatar', [0, 0, 6]);
+    hold(rt, 0.5, input());
+    expect(rt.readState('health')).toBe(100);
+    // Stay in reach: the next swing lands after its wind-up.
+    host.place('avatar', [0, 0, 0]);
+    hold(rt, 2.5, input());
+    expect(rt.readState('health')).toBeLessThan(100);
+  });
 });

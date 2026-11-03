@@ -190,8 +190,11 @@ describe('Studio title card', () => {
     studio.startGame();
     expect(fake.held[fake.held.length - 1]).toBe(false);
     expect(studio.store.getState().game.intro).toBe(false);
-    // Restart never shows the card again; stopping releases any hold.
+    // Restart returns to the title card (held again until Start); stopping releases any hold.
     await studio.restart();
+    expect(studio.store.getState().game.intro).toBe(true);
+    expect(fake.held[fake.held.length - 1]).toBe(true);
+    studio.startGame();
     expect(studio.store.getState().game.intro).toBe(false);
     await studio.togglePlay();
     expect(fake.calls.at(-1)).toBe('stop');

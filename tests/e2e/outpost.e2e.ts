@@ -6,15 +6,18 @@
  * (`setLook`, computed from the play camera's eye), holds the trigger (`setVirtualFire`), strafes, and reloads with R.
  * It checks that the wave counter advances, raiders die, the player's health drops when they are hit and the HUD shows
  * ammunition; then it stops firing and stands in the open until the game is lost, and restarts from the game-over
- * screen. Screenshots of each stage are written to the output folder.
+ * screen (back to the title card). Then the published game: a share link opened in the standalone player, with the
+ * weapon HUD, a fight to the game-over screen and its score, and the touch Fire button. Screenshots of each stage are written to the output folder.
  *
  * Run: `STATIC_DIR=<built studio> npx tsx tests/e2e/outpost.e2e.ts [--out=<dir>]`
  * (`AETHER_E2E_GPU=1` for the machine's GPU; software GL by default). The driver counts game seconds, so a slow
  * renderer takes longer instead of failing.
  */
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { chromium, type Page } from 'playwright';
+import { chromium, type Browser, type Page } from 'playwright';
+import { validateWorld } from '@aether/core';
+import { encodeShare } from '../../apps/studio/src/publish/share';
 import { CHROME_ARGS, REPO_ROOT, SKIP_FIRST_RUN, findChrome, startServer } from './support/env';
 
 const ARGS = process.argv.slice(2);
@@ -133,6 +136,95 @@ async function fight(page: Page, gameSeconds: number, fire: boolean, until: stri
   );
 }
 
+/** Play the published game (share link → /play): weapon HUD, a fight, the game-over screen with the score, touch fire. */
+async function publishedPlayer(browser: Browser, url: string, errors: string[]): Promise<Record<string, unknown>> {
+  const raw = JSON.parse(readFileSync(join(REPO_ROOT, 'apps/studio/public/templates/worlds', `${SLUG}.json`), 'utf8')) as { world: unknown };
+  const v = validateWorld(raw.world);
+  check(v.ok, 'the template world is valid');
+  const share = await encodeShare(v.world, { title: 'Kestrel Outpost' });
+  check(share.fits, 'the world fits a share link');
+  const link = `${url}/play#w=${share.value}`;
+  const out: Record<string, unknown> = {};
+  for (const touch of [false, true]) {
+    const ctx = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1, ...(touch ? { hasTouch: true, isMobile: true } : {}) });
+    if (process.env['GEN_GPU'] === 'intel') await ctx.addInitScript({ content: 'delete Navigator.prototype.gpu; try { delete navigator.gpu; } catch {}' });
+    const page = await ctx.newPage();
+    page.on('pageerror', (e) => errors.push(`player pageerror: ${e.message}`));
+    try {
+      await page.goto(link, { waitUntil: 'domcontentloaded' });
+      await page.getByTestId('pl-title').waitFor({ timeout: 240_000 });
+      await page.waitForFunction(() => window.__aetherPlayer?.phase === 'title', null, { timeout: 120_000 });
+      await page.evaluate(() => window.__aetherPlayer?.start());
+      await page.waitForFunction(() => window.__aetherPlayer?.phase === 'playing', null, { timeout: 60_000 });
+      await page.waitForSelector('[data-testid="combat-hud"]', { timeout: 30_000 });
+      const ammo0 = (await page.getByTestId('combat-ammo').textContent()) ?? '';
+      check(/30\s*\/\s*150/.test(ammo0.replace(/[^0-9/ ]/g, ' ')), `the player's weapon HUD shows a full magazine (${ammo0})`);
+      if (touch) {
+        const fire = page.getByTestId('touch-fire');
+        check(await fire.isVisible(), 'the touch Fire button shows');
+        const box = await fire.boundingBox();
+        check(box !== null, 'the Fire button has a box');
+        await page.touchscreen.tap(box!.x + box!.width / 2, box!.y + box!.height / 2);
+        // A held press: pointerdown, a moment, pointerup.
+        await fire.dispatchEvent('pointerdown', { pointerId: 7, pointerType: 'touch', isPrimary: true });
+        await page.waitForTimeout(700);
+        await fire.dispatchEvent('pointerup', { pointerId: 7, pointerType: 'touch', isPrimary: true });
+        const shots = await page.evaluate(() => window.__aetherPlayer?.simulation?.weapon?.shots ?? 0);
+        check(shots > 0, `touch Fire shoots (${shots} shots)`);
+        // Let the scene finish drawing before the picture.
+        await page.waitForFunction(() => window.__aetherPlayer?.simulation?.renderer.animating === false, null, { timeout: 60_000, polling: 500 }).catch(() => undefined);
+        await page.waitForTimeout(3000);
+        await page.screenshot({ path: join(OUT, '8-player-touch.png') });
+        out['touchShots'] = shots;
+        continue;
+      }
+      // Fight until a raider is down, then stand in the open until the game is lost.
+      await page.evaluate('window.__name = (f) => f');
+      const end = await page.evaluate(async (wallCap) => {
+        const h = window.__aetherPlayer;
+        const sim = h?.simulation;
+        if (!h || !sim) throw new Error('no player simulation');
+        const w0 = performance.now();
+        let kills = 0;
+        while (performance.now() - w0 < wallCap && h.phase === 'playing') {
+          kills = Number(sim.logic?.readState('kills') ?? 0);
+          const eye = sim.viewRay.origin;
+          let best: { x: number; y: number; z: number; d: number } | null = null;
+          for (const b of sim.logic?.npcs.brains ?? []) {
+            if (b.dead || b.spec.faction !== 'raiders') continue;
+            const d = Math.hypot(b.x - eye[0], b.z - eye[2]);
+            if (!best || d < best.d) best = { x: b.x, y: b.feetY + b.spec.height * 0.6, z: b.z, d };
+          }
+          if (best && (kills < 2 || best.d < 80)) {
+            const dx = best.x - eye[0];
+            const dy = best.y - eye[1];
+            const dz = best.z - eye[2];
+            sim.setLook((Math.atan2(-dx, -dz) * 180) / Math.PI, (Math.atan2(dy, Math.hypot(dx, dz)) * 180) / Math.PI);
+            // Two raiders down: stop shooting and walk into the rest, so the game ends quickly.
+            sim.setVirtualFire(kills < 2 && best.d < 45);
+            sim.setVirtualStick(kills >= 2 ? 1 : 0, 0);
+          } else sim.setVirtualFire(false);
+          await new Promise((r) => setTimeout(r, 30));
+        }
+        sim.setVirtualFire(false);
+        sim.setVirtualStick(0, 0);
+        return { phase: h.phase, kills };
+      }, WALL_CAP_MS);
+      await page.waitForTimeout(1200);
+      check(end.phase === 'over', `the published game ended (${end.phase})`);
+      check(end.kills >= 1, `raiders died in the published game (${end.kills})`);
+      const score = page.locator('[data-testid="game-over-score"]');
+      await score.waitFor({ timeout: 10_000 });
+      out['gameOver'] = { ...end, score: await score.textContent() };
+      await page.screenshot({ path: join(OUT, '7-player-game-over.png') });
+      log(`published player: ${JSON.stringify(out['gameOver'])}`);
+    } finally {
+      await ctx.close();
+    }
+  }
+  return out;
+}
+
 async function main(): Promise<void> {
   mkdirSync(OUT, { recursive: true });
   const server = await startServer(log);
@@ -165,10 +257,14 @@ async function main(): Promise<void> {
     check((await card.locator('.title-card__controls li').count()) >= 4, 'the title card lists the controls');
     await page.screenshot({ path: join(OUT, '1-start-screen.png') });
     log(`start screen: "${title}", button "${button}"`);
+    const early = await page.locator('.toast__text').allTextContents();
+    check(!early.some((t) => /Raiders are moving/.test(t)), `the welcome message showed under the title card (${early.join(' | ')})`);
 
     // 2. Play.
     await card.locator('.title-card__start').click();
     await card.waitFor({ state: 'detached', timeout: 15_000 });
+    await page.locator('.toast__text', { hasText: 'Raiders are moving' }).first().waitFor({ timeout: 20_000 });
+    log('the welcome message shows after Play');
     await page.waitForSelector('[data-testid="combat-hud"]', { timeout: 30_000 });
     const s0 = await snap(page);
     check(s0.combat !== null && s0.combat.ammo === 30, `the weapon HUD shows a full magazine (${JSON.stringify(s0.combat)})`);
@@ -185,6 +281,8 @@ async function main(): Promise<void> {
     } finally {
       clearInterval(shotTimer);
     }
+    // The HUD refreshes a few times a second: let it catch up with the game state.
+    await page.waitForTimeout(800);
     const s1 = await snap(page);
     log(`fight: ${JSON.stringify(f)}; HUD ${JSON.stringify(s1.hud)}; combat ${JSON.stringify(s1.combat)}`);
     await page.screenshot({ path: join(OUT, '2-gameplay.png') });
@@ -214,9 +312,13 @@ async function main(): Promise<void> {
     // 5. Restart from the game-over screen: a fresh game (wave 0, full health, a full magazine).
     await over.locator('.btn--primary').click();
     await page.waitForFunction(() => window.__aether?.store.getState().game.status === 'playing' && window.__aether?.store.getState().mode === 'play', null, { timeout: 60_000 });
-    // The restarted session holds on its title card again (or starts at once): press Play when it shows.
+    // Restart returns to the title card: the new run starts on Play.
     const again = page.locator('.title-card__start');
-    if (await again.isVisible().catch(() => false)) await again.click();
+    await again.waitFor({ timeout: 30_000 });
+    const heldTime = await page.evaluate(() => window.__aether?.simulation?.logic?.time ?? -1);
+    check(heldTime === 0, `the restarted game waits on its title card (game time ${heldTime})`);
+    await page.screenshot({ path: join(OUT, '5-restart-title.png') });
+    await again.click();
     await page.waitForFunction(() => (window.__aether?.simulation?.logic?.time ?? 0) > 1.5, null, { timeout: 120_000, polling: 250 });
     await page.waitForTimeout(800);
     const s3 = await snap(page);
@@ -224,8 +326,12 @@ async function main(): Promise<void> {
     check(s3.status === 'playing', 'the restarted game is running');
     check(Number(s3.hud['health'] ?? 0) === 100, `health is back to 100 (${s3.hud['health']})`);
     check(Number(s3.hud['wave'] ?? 9) <= 1 && Number(s3.hud['score'] ?? 1) === 0, `the waves and score start over (${JSON.stringify(s3.hud)})`);
-    await page.screenshot({ path: join(OUT, '5-restarted.png') });
+    await page.screenshot({ path: join(OUT, '6-restarted.png') });
     result['restart'] = s3.hud;
+
+    // 6. The published game: the same world through a share link, in the standalone player.
+    await context.close();
+    result['player'] = await publishedPlayer(browser, server.url, errors);
 
     check(errors.length === 0, `page errors: ${errors.slice(0, 4).join(' | ')}`);
     log('OUTPOST OK');

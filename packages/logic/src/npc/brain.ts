@@ -180,6 +180,9 @@ export class NpcBrain implements BehaviorInstance {
   // --- combat / feedback -------------------------------------------------------------
   private attackCd = 0;
   private attackAnimT = 0;
+  /** A telegraphed blow is coming (`attack.windup`): seconds until it lands. */
+  private windupOn = false;
+  private windupT = 0;
   private hurtT = 0;
   private hpSeen: number;
   private barkCd = 0;
@@ -344,6 +347,7 @@ export class NpcBrain implements BehaviorInstance {
     this.heardT += dt;
     this.exitT = Math.max(0, this.exitT - dt);
     this.aggroT = Math.max(0, this.aggroT - dt);
+    if (this.windupOn && this.mode !== 'attack') this.windupOn = false;
     this.syncPos();
     if (this.firstTick) this.initGround(env);
     this.syncHealth();
@@ -1622,12 +1626,31 @@ export class NpcBrain implements BehaviorInstance {
     if ((d > range * 0.85 || elsewhere) && !this.eff.stationary) this.goTo(env, dt, elsewhere ? (this.aim[1] as number) : this.lastX, elsewhere ? (this.aim[2] as number) : this.lastZ, this.spec.runSpeed * 0.7, range * 0.7, this.aim[0] as number);
     else this.stop(env);
     this.face(env, dt, this.lastX, this.lastZ);
+    if (atk && this.windupOn) {
+      // The telegraphed blow lands when the wind-up ends, if the foe is still in reach (stepping back dodges it).
+      this.windupT -= dt;
+      if (this.windupT > 0) return;
+      this.windupOn = false;
+      this.attackCd = atk.cooldown;
+      if (d <= range * 1.2 && this.lostT <= 0.5 && !elsewhere && (atk.accuracy === undefined || this.random() < atk.accuracy)) this.sys.hit(this, this.targetKind, this.targetId, atk.damage);
+      return;
+    }
     if (!atk || this.attackCd > 0 || d > range * 1.05 || this.lostT > 0.5 || elsewhere) return;
     this.attackAnimT = 0.35;
     if (atk.ranged) {
       // Gunfire is not a metronome: each shot comes a little early or late.
       this.attackCd = atk.cooldown * (0.8 + this.random() * 0.4);
-      this.sys.shoot(this, this.targetKind, this.targetId, atk.damage, this.random() < (atk.accuracy ?? 1));
+      // Accuracy falls from `accuracy` up close to `farAccuracy` at the edge of the range.
+      const near = atk.accuracy ?? 1;
+      const far = atk.farAccuracy ?? near;
+      const k = Math.min(1, Math.max(0, d / Math.max(0.1, range)));
+      this.sys.shoot(this, this.targetKind, this.targetId, atk.damage, this.random() < near + (far - near) * k);
+    } else if (atk.windup !== undefined && atk.windup > 0) {
+      // Telegraph the blow: the swing starts now (with a warning cue), the damage comes at the end of it.
+      this.windupOn = true;
+      this.windupT = atk.windup;
+      this.attackAnimT = atk.windup + 0.2;
+      this.sys.telegraph(this);
     } else {
       this.attackCd = atk.cooldown;
       if (atk.accuracy === undefined || this.random() < atk.accuracy) this.sys.hit(this, this.targetKind, this.targetId, atk.damage);

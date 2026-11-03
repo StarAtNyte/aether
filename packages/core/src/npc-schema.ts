@@ -140,8 +140,15 @@ export const NpcAttack = z.object({
    * target instead of a melee blow, and it can miss (see `accuracy`).
    */
   ranged: z.boolean().optional(),
-  /** Additive: chance (0..1) that an attack lands; default 1 (every attack in reach lands). */
+  /** Additive: chance (0..1) that an attack lands; default 1 (every attack in reach lands). For a ranged attack it is the chance up close. */
   accuracy: z.number().min(0).max(1).optional(),
+  /** Additive, ranged attacks: chance (0..1) to land at the edge of `range` (linear from `accuracy` up close); default `accuracy`. */
+  farAccuracy: z.number().min(0).max(1).optional(),
+  /**
+   * Additive, melee attacks: seconds between the start of the swing (a warning sound and flash) and the blow; a foe who
+   * steps out of reach in time is missed. Default 0 (the blow lands at once).
+   */
+  windup: z.number().min(0).max(3).optional(),
 });
 export type NpcAttack = z.infer<typeof NpcAttack>;
 

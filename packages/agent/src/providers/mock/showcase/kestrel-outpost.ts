@@ -60,30 +60,30 @@ const KINDS: readonly RaiderKind[] = [
     health: 70,
     speed: 2.2,
     runSpeed: 4.1,
-    attack: { range: 24, damage: 5, cooldown: 1.4, ranged: true, accuracy: 0.34 },
-    drops: [{ template: 'ammo-drop', chance: 0.5 }, { template: 'medkit-drop', chance: 0.14 }],
+    attack: { range: 24, damage: 6, cooldown: 1.5, ranged: true, accuracy: 0.5, farAccuracy: 0.1 },
+    drops: [{ template: 'ammo-drop', chance: 0.45 }, { template: 'medkit-drop', chance: 0.1 }],
     look: { wardrobe: 'bandit', gender: 'male', top: '#4a4237', bottom: '#2f2d29', hold: 'rifle', mood: 'angry' },
     score: 100,
   },
   {
     id: 'heavy',
     name: 'Heavy raider',
-    health: 220,
+    health: 240,
     speed: 1.7,
     runSpeed: 3.1,
-    attack: { range: 21, damage: 10, cooldown: 1.8, ranged: true, accuracy: 0.42 },
-    drops: [{ template: 'medkit-drop', chance: 0.85 }, { template: 'ammo-drop', chance: 0.85 }],
+    attack: { range: 20, damage: 9, cooldown: 1.8, ranged: true, accuracy: 0.5, farAccuracy: 0.15 },
+    drops: [{ template: 'medkit-drop', chance: 0.7 }, { template: 'ammo-drop', chance: 0.85 }],
     look: { wardrobe: 'guard', gender: 'male', top: '#5b2a22', bottom: '#2b2622', hold: 'rifle', mood: 'angry', scale: 1.12 },
     score: 300,
   },
   {
     id: 'rusher',
     name: 'Rusher',
-    health: 45,
+    health: 75,
     speed: 3,
     runSpeed: 6.2,
-    attack: { range: 1.8, damage: 14, cooldown: 0.9 },
-    drops: [{ template: 'medkit-drop', chance: 0.3 }, { template: 'ammo-drop', chance: 0.25 }],
+    attack: { range: 1.9, damage: 24, cooldown: 1.1, windup: 0.45 },
+    drops: [{ template: 'medkit-drop', chance: 0.15 }, { template: 'ammo-drop', chance: 0.2 }],
     look: { wardrobe: 'bandit', gender: 'male', top: '#6b5a3a', bottom: '#3a3226', hold: 'axe', mood: 'angry', scale: 0.95 },
     score: 150,
   },
@@ -131,7 +131,7 @@ function raiderTemplate(b: Builder, kind: RaiderKind, pass: Pass): string {
 }
 
 /** A pickup template dropped by raiders (single entity: spawns do not clone children). */
-function pickupTemplate(b: Builder, id: string, o: { name: string; key: string; value: number; size: V3; color: string; glow: string; message: string; sound?: string }): void {
+function pickupTemplate(b: Builder, id: string, o: { name: string; key: string; value: number; size: V3; color: string; glow: string; message: string; sound?: string; beacon?: { vfx: 'heal' | 'sparkle'; light: string } }): void {
   b.add({
     id,
     name: o.name,
@@ -139,15 +139,18 @@ function pickupTemplate(b: Builder, id: string, o: { name: string; key: string; 
     tags: ['pickup'],
     transform: { position: [0, 0.6, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
     shape: { kind: 'primitive', primitive: 'box', size: o.size },
-    material: { preset: 'plastic', color: o.color, roughness: 0.55, emissive: o.glow, emissiveIntensity: 0.35 },
+    material: { preset: 'plastic', color: o.color, roughness: 0.55, emissive: o.glow, emissiveIntensity: o.beacon ? 0.7 : 0.35 },
     castShadow: false,
+    // A beacon pickup (health) glows and pulses so it reads from across the arena, even in a firefight.
+    ...(o.beacon ? { light: { type: 'point' as const, color: o.beacon.light, intensity: 1.4, range: 5, castShadow: false } } : {}),
     behaviors: [
       { type: 'spin', params: { axis: [0, 1, 0], speed: 90 } },
       { type: 'bob', params: { amplitude: 0.12, period: 1.6 } },
       { type: 'collectible', params: { scoreKey: o.key, value: o.value, margin: 0.9, message: o.message, sound: o.sound ?? 'pickup' } },
       { type: 'lifetime', params: { seconds: 30 } },
+      ...(o.beacon ? [{ type: 'pulseLight' as const, params: { min: 0.6, max: 1.8, period: 0.9 } }] : []),
     ],
-    vfx: { preset: 'sparkle', rate: 5, color: o.glow, scale: 0.7 },
+    vfx: o.beacon ? { preset: o.beacon.vfx, rate: 12, color: o.glow, scale: 1.1 } : { preset: 'sparkle', rate: 5, color: o.glow, scale: 0.7 },
   });
 }
 
@@ -273,11 +276,12 @@ interface Group {
 
 /** The five waves: more raiders, more passes, heavies from wave 3, rushers to flush the player out of cover. */
 const WAVES: ReadonlyArray<{ text: string; groups: Group[] }> = [
-  { text: 'Wave 1: raiders at the north pass.', groups: [{ kind: 'raider', pass: 'n', count: 3, at: 0 }, { kind: 'raider', pass: 'e', count: 2, at: 9 }] },
-  { text: 'Wave 2: they are coming from the east and the west.', groups: [{ kind: 'raider', pass: 'e', count: 3, at: 0 }, { kind: 'rusher', pass: 'w', count: 2, at: 4 }, { kind: 'raider', pass: 'w', count: 2, at: 12 }] },
-  { text: 'Wave 3: a heavy is with them. Aim for the head.', groups: [{ kind: 'raider', pass: 'n', count: 3, at: 0 }, { kind: 'heavy', pass: 'n', count: 1, at: 3 }, { kind: 'rusher', pass: 'e', count: 3, at: 10 }, { kind: 'raider', pass: 'w', count: 2, at: 16 }] },
-  { text: 'Wave 4: all three passes at once.', groups: [{ kind: 'raider', pass: 'w', count: 3, at: 0 }, { kind: 'raider', pass: 'e', count: 3, at: 0 }, { kind: 'heavy', pass: 'e', count: 1, at: 8 }, { kind: 'rusher', pass: 'n', count: 3, at: 12 }, { kind: 'raider', pass: 'n', count: 2, at: 18 }] },
-  { text: 'Final wave: everything they have left. Hold the relay!', groups: [{ kind: 'raider', pass: 'n', count: 4, at: 0 }, { kind: 'heavy', pass: 'w', count: 1, at: 2 }, { kind: 'heavy', pass: 'e', count: 1, at: 6 }, { kind: 'rusher', pass: 'e', count: 3, at: 10 }, { kind: 'rusher', pass: 'w', count: 3, at: 14 }, { kind: 'raider', pass: 'w', count: 3, at: 20 }] },
+  // Wave 1 teaches: a few riflemen from one side, then a pair from another, with time to find cover between them.
+  { text: 'Wave 1: raiders at the north pass. Get behind the sandbags and pick them off.', groups: [{ kind: 'raider', pass: 'n', count: 2, at: 0 }, { kind: 'raider', pass: 'e', count: 2, at: 10 }] },
+  { text: 'Wave 2: east and west. Rushers charge in with axes; back off when you hear them swing.', groups: [{ kind: 'raider', pass: 'e', count: 3, at: 0 }, { kind: 'rusher', pass: 'w', count: 4, at: 6 }, { kind: 'raider', pass: 'w', count: 3, at: 10 }, { kind: 'raider', pass: 'n', count: 3, at: 14 }] },
+  { text: 'Wave 3: a heavy is with them. Aim for the head.', groups: [{ kind: 'raider', pass: 'n', count: 4, at: 0 }, { kind: 'heavy', pass: 'n', count: 1, at: 4 }, { kind: 'rusher', pass: 'e', count: 4, at: 10 }, { kind: 'raider', pass: 'w', count: 3, at: 16 }, { kind: 'heavy', pass: 'e', count: 1, at: 20 }, { kind: 'rusher', pass: 'w', count: 4, at: 24 }] },
+  { text: 'Wave 4: all three passes at once.', groups: [{ kind: 'raider', pass: 'w', count: 3, at: 0 }, { kind: 'raider', pass: 'e', count: 3, at: 0 }, { kind: 'heavy', pass: 'e', count: 1, at: 6 }, { kind: 'rusher', pass: 'n', count: 3, at: 10 }, { kind: 'raider', pass: 'n', count: 3, at: 16 }, { kind: 'heavy', pass: 'w', count: 1, at: 20 }] },
+  { text: 'Final wave: everything they have left. Hold the relay!', groups: [{ kind: 'raider', pass: 'n', count: 4, at: 0 }, { kind: 'raider', pass: 'e', count: 3, at: 0 }, { kind: 'heavy', pass: 'w', count: 1, at: 2 }, { kind: 'heavy', pass: 'e', count: 1, at: 6 }, { kind: 'rusher', pass: 'e', count: 3, at: 9 }, { kind: 'rusher', pass: 'w', count: 3, at: 13 }, { kind: 'raider', pass: 'w', count: 3, at: 18 }, { kind: 'raider', pass: 'n', count: 3, at: 24 }, { kind: 'heavy', pass: 'n', count: 1, at: 28 }, { kind: 'rusher', pass: 'n', count: 3, at: 30 }, { kind: 'heavy', pass: 'w', count: 1, at: 34 }, { kind: 'rusher', pass: 'w', count: 3, at: 38 }] },
 ];
 
 /** Wave, kill and ending rules. */
@@ -463,7 +467,7 @@ export function kestrelOutpost(): MockPlan {
 
   // --- Raiders and their drops (templates; spawned by the wave rules) ------------------------------------
   pickupTemplate(b, 'ammo-drop', { name: 'Ammunition', key: 'reserve', value: 45, size: [0.55, 0.32, 0.36], color: '#55603a', glow: '#ffd27a', message: '+45 rounds' });
-  pickupTemplate(b, 'medkit-drop', { name: 'Medkit', key: 'health', value: 35, size: [0.5, 0.36, 0.3], color: '#e8e2d6', glow: '#ff5a4a', message: '+35 health' });
+  pickupTemplate(b, 'medkit-drop', { name: 'Medkit', key: 'health', value: 35, size: [0.66, 0.44, 0.4], color: '#c8241b', glow: '#ff4a3a', message: '+35 health', beacon: { vfx: 'heal', light: '#ff5a48' } });
   for (const kind of KINDS) for (const pass of Object.keys(PASSES) as Pass[]) raiderTemplate(b, kind, pass);
   // Two ammunition crates by the relay to start with.
   for (const [x, z] of [[CX - 2.5, CZ + 6.5], [CX + 3.5, CZ - 6.6]] as const) {

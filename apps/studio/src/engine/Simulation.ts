@@ -437,6 +437,8 @@ export class Simulation {
     this.held = on;
     // Releasing must not replay the held time as a burst of catch-up steps.
     this.stepper.reset();
+    // A held session has not begun: its start rules (a welcome message, a first timer) run when the player starts.
+    if (!on) this.session?.logic.start();
     this.touch();
   }
 
@@ -955,9 +957,9 @@ export class Simulation {
   }
 
   /** On-screen jump / action buttons (play mode). */
-  tapVirtual(code: 'Space' | 'KeyE'): void {
+  tapVirtual(code: 'Space' | 'KeyE' | 'KeyR'): void {
     if (code === 'KeyE' && this.interaction?.use()) return;
-    this.session?.voxel?.input.tap(code);
+    if (code !== 'KeyR') this.session?.voxel?.input.tap(code);
     this.input.tapVirtual(code);
   }
 
@@ -1029,11 +1031,13 @@ export class Simulation {
   }
 
   /** Restart the running session from the original world. */
-  restart(): Promise<void> {
+  restart(opts: { held?: boolean } = {}): Promise<void> {
     this.transition = this.transition
       .then(async () => {
         if (!this.session) return;
         await this.endSession();
+        // Leaving play releases any hold; a restart onto a title card holds the new session again before it is built.
+        if (opts.held !== undefined) this.setHeld(opts.held);
         await this.startSession();
       })
       .catch((err: unknown) => {
@@ -1142,7 +1146,7 @@ export class Simulation {
         this.renderer.setCameraMode(world.player.mode === 'firstPerson' ? 'firstPerson' : chase);
       } else this.renderer.setCameraMode('orbit');
       this.stepper.reset();
-      session.logic.start();
+      if (!this.held) session.logic.start();
     } catch (err) {
       // Roll back to edit mode so `mode`, the renderer sync and the UI agree.
       await this.endSession();

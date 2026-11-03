@@ -1,10 +1,11 @@
 import { memo, type ReactElement } from 'react';
 import { useUI } from '../../app/context';
+import type { CombatHud as CombatState } from '../../engine/Simulation';
 
 /**
  * The shooter HUD of a world with a player weapon (`player.weapon`): a crosshair with a hit marker (white for a hit,
- * red for a kill), the magazine and reserve, a reload bar and the player's health as a bar. Shown in play mode once
- * the title card is gone and while the game runs.
+ * yellow for a head shot, red for a kill), the magazine and reserve, a reload bar and the player's health as a bar.
+ * The studio's play mode and the published player both draw it ({@link CombatHudView}).
  */
 export const CombatHud = memo(function CombatHud(): ReactElement | null {
   const mode = useUI((s) => s.mode);
@@ -13,8 +14,13 @@ export const CombatHud = memo(function CombatHud(): ReactElement | null {
   const status = useUI((s) => s.game.status);
   const health = useUI((s) => s.game.hud['health']);
   if (mode !== 'play' || !combat || intro || status !== 'playing') return null;
+  return <CombatHudView combat={combat} health={health} />;
+});
+
+/** The shooter HUD for a weapon snapshot and the formatted `health` HUD value (absent: no health bar). */
+export const CombatHudView = memo(function CombatHudView({ combat, health }: { combat: CombatState; health: string | undefined }): ReactElement {
   const hp = Number(health);
-  const hpShown = Number.isFinite(hp) ? Math.max(0, Math.min(100, hp)) : null;
+  const hpShown = health !== undefined && Number.isFinite(hp) ? Math.max(0, Math.min(100, hp)) : null;
   const low = combat.ammo <= Math.max(1, Math.floor(combat.magazine * 0.2));
   return (
     <div className="combat" aria-live="off" data-testid="combat-hud">
@@ -50,5 +56,15 @@ export const CombatHud = memo(function CombatHud(): ReactElement | null {
         )}
       </div>
     </div>
+  );
+});
+
+/** The final score and the best run on this device, on a win or game-over screen. */
+export const ScoreLine = memo(function ScoreLine({ score, best, record }: { score: number; best?: number | undefined; record?: boolean | undefined }): ReactElement {
+  return (
+    <p className="game-over__score" data-testid="game-over-score">
+      Score <strong>{score}</strong>
+      {best !== undefined && (record ? <span className="game-over__best"> · New best!</span> : <span className="game-over__best"> · Best {best}</span>)}
+    </p>
   );
 });

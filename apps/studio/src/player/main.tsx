@@ -10,7 +10,7 @@ import { registerOfflineCache } from './offline';
 
 const root = document.getElementById('player');
 if (root) {
-  void Promise.all([import('react-dom/client'), import('react'), import('./PlayerApp'), import('./player.css'), import('../styles/npc.css')]).then(([dom, react, app]) => {
+  void Promise.all([import('react-dom/client'), import('react'), import('./PlayerApp'), import('./player.css'), import('../styles/npc.css'), import('../styles/combat.css')]).then(([dom, react, app]) => {
     root.replaceChildren();
     dom.createRoot(root).render(react.createElement(app.PlayerApp));
   });

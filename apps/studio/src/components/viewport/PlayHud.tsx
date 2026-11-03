@@ -3,6 +3,7 @@ import type { WorldIntro } from '@aether/core';
 import { useStudio, useUI, useWorld } from '../../app/context';
 import { isTouchScreen, touchHints } from '../../lib/touchHints';
 import { Icon } from '../Icon';
+import { ScoreLine } from './CombatHud';
 
 function formatClock(t: number): string {
   const s = Math.max(0, Math.floor(t));
@@ -195,12 +196,7 @@ export const PlayHud = memo(function PlayHud(): ReactElement | null {
             </span>
             <h2>{game.status === 'won' ? 'You win!' : 'Game over'}</h2>
             {game.text && <p>{game.text}</p>}
-            {game.score !== undefined && (
-              <p className="game-over__score" data-testid="game-over-score">
-                Score <strong>{game.score}</strong>
-                {game.best !== undefined && (game.record ? <span className="game-over__best"> · New best!</span> : <span className="game-over__best"> · Best {game.best}</span>)}
-              </p>
-            )}
+            {game.score !== undefined && <ScoreLine score={game.score} best={game.best} record={game.record} />}
             {credits.length > 0 && (
               <p className="game-over__credits">
                 Assets: {credits.slice(0, 3).map((c) => `${c.source} (${c.licence})`).join(', ')}

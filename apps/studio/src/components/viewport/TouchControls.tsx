@@ -5,7 +5,7 @@
  * render per move); the knob moves with a transform.
  */
 import { memo, useRef, type PointerEvent, type ReactElement } from 'react';
-import { useSimulation } from '../../app/context';
+import { useSimulation, useWorld } from '../../app/context';
 import type { Simulation } from '../../engine/Simulation';
 import { Icon } from '../Icon';
 
@@ -23,11 +23,15 @@ export function stickVector(dx: number, dy: number, radius: number = RADIUS): { 
 
 /** Touch controls of the studio's play mode. */
 export const TouchControls = memo(function TouchControls(): ReactElement {
-  return <TouchControlsView sim={useSimulation()} />;
+  const armed = useWorld().player.weapon !== undefined;
+  return <TouchControlsView sim={useSimulation()} armed={armed} />;
 });
 
-/** Touch controls driving `sim` (the studio and published games share it). */
-export const TouchControlsView = memo(function TouchControlsView({ sim }: { sim: Pick<Simulation, 'setVirtualStick' | 'tapVirtual'> | null }): ReactElement {
+/**
+ * Touch controls driving `sim` (the studio and published games share it). `armed` (a world with a player weapon) adds
+ * a Fire button (held: the trigger) and a Reload button; dragging on the view aims.
+ */
+export const TouchControlsView = memo(function TouchControlsView({ sim, armed = false }: { sim: Pick<Simulation, 'setVirtualStick' | 'tapVirtual' | 'setVirtualFire'> | null; armed?: boolean }): ReactElement {
   const knob = useRef<HTMLSpanElement>(null);
   const origin = useRef<{ x: number; y: number; id: number } | null>(null);
 
@@ -65,6 +69,43 @@ export const TouchControlsView = memo(function TouchControlsView({ sim }: { sim:
         <span className="touch__knob" ref={knob} />
       </div>
       <div className="touch__buttons">
+        {armed && (
+          <button
+            type="button"
+            className="touch__btn"
+            aria-label="Reload"
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              sim?.tapVirtual('KeyR');
+            }}
+          >
+            R
+          </button>
+        )}
+        {armed && (
+          <button
+            type="button"
+            className="touch__btn touch__btn--primary touch__btn--fire"
+            aria-label="Fire"
+            data-testid="touch-fire"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              sim?.setVirtualFire(true);
+              try {
+                // Keep the trigger while the thumb slides off the button.
+                e.currentTarget.setPointerCapture(e.pointerId);
+              } catch {
+                /* an unknown pointer (synthetic events): the press still fires */
+              }
+            }}
+            onPointerUp={() => sim?.setVirtualFire(false)}
+            onPointerCancel={() => sim?.setVirtualFire(false)}
+            onLostPointerCapture={() => sim?.setVirtualFire(false)}
+          >
+            Fire
+          </button>
+        )}
         <button
           type="button"
           className="touch__btn"

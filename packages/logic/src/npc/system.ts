@@ -492,6 +492,13 @@ export class NpcSystem implements DialogueHost {
     this.makeNoise(from.x, from.z, 14, from, from.feetY);
   }
 
+  /** A telegraphed melee blow begins (`attack.windup`): a warning sound and a burst at the attacker, so the player can react. */
+  telegraph(from: NpcBrain): void {
+    const env = this.ctx.env;
+    env.host.sound('warn');
+    env.effect?.('shockwave', [from.x, from.feetY + 1.1, from.z], undefined, '#ff5a3a', 0.6);
+  }
+
   /** An NPC died. */
   onDeath(b: NpcBrain): void {
     if (this.sessionBrain === b) this.endDialogue();

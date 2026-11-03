@@ -1,0 +1,237 @@
+/*
+ * Shooter HUD of worlds with a player weapon (crosshair, hit markers, ammunition, health) and the touch fire button.
+ * Shared by the studio's play mode and the published player (which has no studio tokens: every token has a fallback).
+ */
+.combat {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-overlay, 10);
+  pointer-events: none;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.6);
+}
+
+.combat__cross {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+}
+
+.combat__tick {
+  position: absolute;
+  background: rgb(255 255 255 / 0.9);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.45);
+}
+
+.combat__tick--n,
+.combat__tick--s {
+  left: -1px;
+  width: 2px;
+  height: 8px;
+}
+
+.combat__tick--n {
+  top: -14px;
+}
+
+.combat__tick--s {
+  top: 6px;
+}
+
+.combat__tick--w,
+.combat__tick--e {
+  top: -1px;
+  width: 8px;
+  height: 2px;
+}
+
+.combat__tick--w {
+  left: -14px;
+}
+
+.combat__tick--e {
+  left: 6px;
+}
+
+/* Hit marker: four short diagonal strokes that pop and fade. */
+.combat__marker {
+  position: absolute;
+  left: -11px;
+  top: -11px;
+  width: 22px;
+  height: 22px;
+  opacity: 0;
+  background:
+    linear-gradient(45deg, transparent 44%, currentColor 44%, currentColor 56%, transparent 56%) center / 100% 100%,
+    linear-gradient(-45deg, transparent 44%, currentColor 44%, currentColor 56%, transparent 56%) center / 100% 100%;
+  -webkit-mask: radial-gradient(circle, transparent 5px, #000 5.5px);
+  mask: radial-gradient(circle, transparent 5px, #000 5.5px);
+  color: #fff;
+  animation: combat-marker 260ms ease-out;
+}
+
+.combat__marker.is-head {
+  color: #ffd27a;
+}
+
+.combat__marker.is-kill {
+  color: #ff4a3d;
+  left: -15px;
+  top: -15px;
+  width: 30px;
+  height: 30px;
+  animation-duration: 420ms;
+}
+
+@keyframes combat-marker {
+  0% {
+    opacity: 1;
+    transform: scale(0.7);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.1);
+  }
+}
+
+.combat__health {
+  position: absolute;
+  left: var(--s-4, 16px);
+  bottom: calc(var(--s-3, 12px) + 44px);
+  display: grid;
+  grid-template-columns: auto 180px auto;
+  align-items: center;
+  gap: var(--s-2, 8px);
+  padding: 6px 10px;
+  border-radius: var(--r-2, 8px);
+  background: rgb(12 10 8 / 0.5);
+  font-size: var(--fs-12, 12px);
+}
+
+.combat__label {
+  color: rgb(255 255 255 / 0.75);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.combat__bar {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 0.18);
+  overflow: hidden;
+}
+
+.combat__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #d9d2c2, #f4efe4);
+  transition: width 200ms ease;
+}
+
+.combat__health.is-low .combat__fill {
+  background: linear-gradient(90deg, #b3261e, #ff5a4a);
+}
+
+.combat__hp {
+  min-width: 2.5ch;
+  text-align: right;
+  font-weight: 700;
+}
+
+.combat__ammo {
+  position: absolute;
+  right: var(--s-4, 16px);
+  bottom: calc(var(--s-3, 12px) + 44px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 6px 12px;
+  border-radius: var(--r-2, 8px);
+  background: rgb(12 10 8 / 0.5);
+}
+
+.combat__weapon {
+  color: rgb(255 255 255 / 0.75);
+  font-size: var(--fs-12, 12px);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.combat__rounds strong {
+  font-size: 30px;
+  line-height: 1;
+  font-weight: 800;
+}
+
+.combat__reserve {
+  margin-left: 6px;
+  color: rgb(255 255 255 / 0.7);
+  font-size: var(--fs-16, 16px);
+}
+
+.combat__ammo.is-low .combat__rounds strong {
+  color: #ff6a4a;
+}
+
+.combat__reload {
+  position: relative;
+  width: 110px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgb(255 255 255 / 0.2);
+  overflow: hidden;
+}
+
+.combat__reload span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: #ffd27a;
+}
+
+.combat__hint {
+  color: #ffd27a;
+  font-size: var(--fs-12, 12px);
+}
+
+/* Touch fire button of shooter worlds: big, under the right thumb, no text selection or callout while held. */
+.touch__btn--fire {
+  width: 78px;
+  height: 78px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: none;
+}
+
+/* Final score and best run on the end screens (studio and published player). */
+.game-over__score {
+  font-variant-numeric: tabular-nums;
+}
+
+.game-over__score strong {
+  font-size: var(--fs-16, 16px);
+}
+
+.game-over__best {
+  color: var(--text-2);
+}
+
+/* Touch screens: the stick and the buttons own the bottom edge, so the health and ammunition panels sit above them. */
+@media (pointer: coarse) {
+  .combat__health,
+  .combat__ammo {
+    bottom: calc(150px + env(safe-area-inset-bottom, 0px));
+  }
+}

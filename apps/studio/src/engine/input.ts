@@ -112,11 +112,11 @@ export class InputController {
 
   /**
    * A tap on an on-screen button: latched like a key tap so a short press is
-   * never missed between two fixed steps. Only `Space` (jump) and `KeyE`
-   * (action) are accepted.
+   * never missed between two fixed steps. Only `Space` (jump), `KeyE`
+   * (action) and `KeyR` (reload) are accepted.
    */
-  tapVirtual(code: 'Space' | 'KeyE'): void {
-    if (code === 'Space' || code === 'KeyE') this.latched.add(code);
+  tapVirtual(code: 'Space' | 'KeyE' | 'KeyR'): void {
+    if (code === 'Space' || code === 'KeyE' || code === 'KeyR') this.latched.add(code);
   }
 
   /** Hold or release the trigger from an on-screen button (or a test driver). */
@@ -236,7 +236,8 @@ export class InputController {
     this.dragging = true;
     const locked = this.attached !== null && document.pointerLockElement === this.attached;
     // With a weapon the press that captures the mouse does not shoot; every press after it does.
-    if (this.fireMode && (locked || this.lockRefused || !this.pointerLock)) this.firing = true;
+    // A finger on the view looks around; touch fires with its own button.
+    if (this.fireMode && e.pointerType !== 'touch' && (locked || this.lockRefused || !this.pointerLock)) this.firing = true;
     if (this.pointerLock && this.attached && !locked) {
       try {
         const p = this.attached.requestPointerLock() as unknown;
