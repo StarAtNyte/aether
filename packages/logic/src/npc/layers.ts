@@ -9,7 +9,7 @@
  * preallocated: a route search allocates nothing and is deterministic (fixed node order, index tie-breaks).
  */
 import type { Vec3, WorldDoc } from '@aether/core';
-import { NavGrid } from './nav';
+import { NAV_MAX_CELLS, NavGrid } from './nav';
 import { buildNavFor, type BoundsProvider } from './obstacles';
 import { insidePolygon, MAX_STAIR_LINKS, stairLinks, type StairLink } from './stairs';
 
@@ -39,6 +39,91 @@ const FLOOR_CLEARANCE = 0.3;
 const FLOOR_STEP = 0.3;
 /** How far inside a stair's footprint a position counts as on that stair (between its floors). */
 const ON_STAIR_MARGIN = 0.3;
+
+/**
+ * How far from its own points a stair still belongs to a group of NPCs that walks one part of a large place (m): the
+ * stair of the house its residents live in, never one three houses down the street.
+ */
+export const LOCAL_STAIR_REACH = 8;
+/**
+ * Widest plan span of one group's points that still gets floor grids at {@link FLOOR_CELL}: the cell cap of a grid
+ * less the room round the points and the stairs it may take (m).
+ */
+export const LAYER_GROUP_SPAN = NAV_MAX_CELLS * FLOOR_CELL - 2 * (GROUND_PAD + LOCAL_STAIR_REACH);
+
+/** NPCs of one body size that share floor grids: their points, and whether the grids keep to their own part of the place. */
+export interface LayerGroup {
+  /** Body size key of the members. */
+  size: string;
+  /** Where the members stand and walk. */
+  points: LayerPoint[];
+  /** The group walks one part of a place too large for one fine grid: its build keeps to the stairs near its points. */
+  local: boolean;
+}
+
+/**
+ * Split NPCs into the groups whose floor grids are built together. NPCs of one size share one build while it covers
+ * them all at the fine floor cell; in a larger place (a neighbourhood of houses, each with its residents) one grid
+ * over everyone grew its cell past a doorway's width and shut every resident in its room, so the NPCs are grouped by
+ * where they walk instead, each group with grids of its own. `entries` in a fixed order (creation order) give the same
+ * groups every time. Returns the groups and the group index of each entry.
+ */
+export function groupLayerPoints(world: WorldDoc, entries: ReadonlyArray<{ size: string; points: readonly LayerPoint[] }>): { groups: LayerGroup[]; of: number[] } {
+  const groups: LayerGroup[] = [];
+  const of: number[] = new Array<number>(entries.length).fill(-1);
+  const box = (pts: readonly { x: number; z: number }[]): [number, number, number, number] => {
+    let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+    for (const p of pts) {
+      x0 = Math.min(x0, p.x);
+      z0 = Math.min(z0, p.z);
+      x1 = Math.max(x1, p.x);
+      z1 = Math.max(z1, p.z);
+    }
+    return [x0, z0, x1, z1];
+  };
+  const sizes = [...new Set(entries.map((e) => e.size))];
+  let ends: Array<{ x: number; z: number }> | null = null;
+  for (const size of sizes) {
+    const members = entries.map((e, i) => (e.size === size ? i : -1)).filter((i) => i >= 0);
+    const all = members.flatMap((i) => (entries[i] as { points: readonly LayerPoint[] }).points);
+    // Everything one shared build covers on its lowest floor: the points, every stair's ends and the spawn.
+    ends ??= [
+      ...stairLinks(world).slice(0, MAX_STAIR_LINKS).flatMap((l) => [{ x: l.line[0] as number, z: l.line[2] as number }, { x: l.line[(l.n - 1) * 3] as number, z: l.line[(l.n - 1) * 3 + 2] as number }]),
+      { x: world.player.spawn[0], z: world.player.spawn[2] },
+    ];
+    const [ax0, az0, ax1, az1] = box([...all, ...ends]);
+    if (Math.max(ax1 - ax0, az1 - az0) + 2 * GROUND_PAD <= NAV_MAX_CELLS * FLOOR_CELL || members.length < 2) {
+      const g = groups.push({ size, points: [...all], local: false }) - 1;
+      for (const i of members) of[i] = g;
+      continue;
+    }
+    const first = groups.length;
+    const boxes: Array<[number, number, number, number]> = [];
+    for (const i of members) {
+      const pts = (entries[i] as { points: readonly LayerPoint[] }).points;
+      const b = box(pts);
+      let joined = -1;
+      for (let k = 0; k < boxes.length; k++) {
+        const o = boxes[k] as [number, number, number, number];
+        const m: [number, number, number, number] = [Math.min(o[0], b[0]), Math.min(o[1], b[1]), Math.max(o[2], b[2]), Math.max(o[3], b[3])];
+        if (Math.max(m[2] - m[0], m[3] - m[1]) <= LAYER_GROUP_SPAN) {
+          boxes[k] = m;
+          joined = k;
+          break;
+        }
+      }
+      if (joined < 0) {
+        boxes.push(b);
+        groups.push({ size, points: [], local: true });
+        joined = boxes.length - 1;
+      }
+      const g = first + joined;
+      (groups[g] as LayerGroup).points.push(...pts);
+      of[i] = g;
+    }
+  }
+  return { groups, of };
+}
 
 /** A route across floors: the stairs to take in order, `+(i + 1)` up stair `i`, `−(i + 1)` down it. */
 export class NavRoute {
@@ -110,8 +195,21 @@ export class NavLayers {
    * Returns null when the world has neither stairs nor buildings (a coarse single-floor grid does the job); a
    * building without stairs gets its floors' fine grids all the same (doorways need them).
    */
-  static build(world: WorldDoc, o: { radius: number; height: number; points: readonly LayerPoint[]; groundPad?: number }, bounds?: BoundsProvider): NavLayers | null {
-    const links = stairLinks(world).slice(0, MAX_STAIR_LINKS);
+  static build(world: WorldDoc, o: { radius: number; height: number; points: readonly LayerPoint[]; groundPad?: number; local?: boolean }, bounds?: BoundsProvider): NavLayers | null {
+    let links = stairLinks(world).slice(0, MAX_STAIR_LINKS);
+    // A local group (see groupLayerPoints) takes only the stairs near where it walks, and its grids cover only its own part.
+    let near = (_x: number, _z: number): boolean => true;
+    if (o.local && o.points.length > 0) {
+      let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+      for (const p of o.points) {
+        x0 = Math.min(x0, p.x);
+        z0 = Math.min(z0, p.z);
+        x1 = Math.max(x1, p.x);
+        z1 = Math.max(z1, p.z);
+      }
+      near = (x, z) => x >= x0 - LOCAL_STAIR_REACH && x <= x1 + LOCAL_STAIR_REACH && z >= z0 - LOCAL_STAIR_REACH && z <= z1 + LOCAL_STAIR_REACH;
+      links = links.filter((l) => near(l.line[0] as number, l.line[2] as number) || near(l.line[(l.n - 1) * 3] as number, l.line[(l.n - 1) * 3 + 2] as number));
+    }
     if (links.length === 0 && !hasBuildings(world)) return null;
     // Floor levels: stair ends first (exact), then the points' feet heights.
     const heights: number[] = [];
@@ -151,7 +249,7 @@ export class NavLayers {
         if (lower[i] === li) pts.push([l.line[0] as number, h, l.line[2] as number]);
         if (upper[i] === li) pts.push([l.line[(l.n - 1) * 3] as number, h, l.line[(l.n - 1) * 3 + 2] as number]);
       });
-      if (li === 0) pts.push(world.player.spawn);
+      if (li === 0 && near(world.player.spawn[0], world.player.spawn[2])) pts.push(world.player.spawn);
       // The lowest level drapes over terrain like a single-floor grid; floors above are flat storeys.
       const grid = buildNavFor(world, { refY: h, radius: Math.min(o.radius, FLOOR_CLEARANCE), height: o.height, points: pts, pad: li === 0 ? (o.groundPad ?? GROUND_PAD) : UPPER_PAD, cell: FLOOR_CELL, step: FLOOR_STEP }, li === 0 ? bounds : withoutTerrain(bounds));
       grids.push(grid);

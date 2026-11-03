@@ -9,7 +9,7 @@ import { resolveSelector, worldTransform, type Dialogue, type DialogueEffect, ty
 import { zoneShapeOf } from '../bounds';
 import { DialogueSession } from './dialogue';
 import { NavGrid, NAV_MAX_PATH } from './nav';
-import { hasBuildings, NavLayers, NavRoute, type LayerPoint } from './layers';
+import { groupLayerPoints, hasBuildings, NavLayers, NavRoute, type LayerPoint } from './layers';
 import { buildNavFor, type BoundsProvider } from './obstacles';
 
 /** Result of {@link analyzeNpcs}. */
@@ -121,9 +121,28 @@ export function analyzeNpcs(world: WorldDoc, opts: { target?: string; bounds?: B
   const scratch = new Float32Array(NAV_MAX_PATH * 2);
   // In a world with buildings the floors and stairs are checked as the runtime walks them (layered grids).
   const buildings = hasBuildings(world);
-  const layerSets = new Map<string, NavLayers | null>();
+  const layerSets = new Map<number, NavLayers | null>();
   const route = new NavRoute();
-  for (const id of npcs) {
+  // NPCs of one size share floor grids, grouped by where they walk in a place too large for one fine grid (as the runtime does).
+  let grouping: ReturnType<typeof groupLayerPoints> | null = null;
+  if (buildings) {
+    const entries = npcs.map((other) => {
+      const oe = world.entities[other] as Entity;
+      const os = oe.npc as NpcSpec;
+      const points: LayerPoint[] = [];
+      try {
+        const op = worldTransform(world, other).position;
+        points.push({ x: op[0], y: feetOf(oe, op[1]), z: op[2] });
+      } catch {
+        // No transform: it is skipped below.
+      }
+      for (const w of os.waypoints) points.push({ x: w[0], y: w[1], z: w[2] });
+      for (const r of os.routine ?? []) points.push({ x: r.at[0], y: r.at[1], z: r.at[2] });
+      return { size: `${Math.round(os.radius * 4)}|${Math.round(os.height * 2)}`, points };
+    });
+    grouping = groupLayerPoints(world, entries);
+  }
+  for (const [n, id] of npcs.entries()) {
     const e = world.entities[id] as Entity;
     const spec = e.npc as NpcSpec;
     let pos: Vec3;
@@ -133,22 +152,13 @@ export function analyzeNpcs(world: WorldDoc, opts: { target?: string; bounds?: B
       continue;
     }
     const feet = feetOf(e, pos[1]);
-    if (buildings) {
-      const sizeKey = `${Math.round(spec.radius * 4)}|${Math.round(spec.height * 2)}`;
-      let layers = layerSets.get(sizeKey);
+    if (buildings && grouping) {
+      const gi = grouping.of[n] as number;
+      let layers = layerSets.get(gi);
       if (layers === undefined) {
-        const points: LayerPoint[] = [];
-        for (const other of npcs) {
-          const oe = world.entities[other] as Entity;
-          const os = oe.npc as NpcSpec;
-          if (`${Math.round(os.radius * 4)}|${Math.round(os.height * 2)}` !== sizeKey) continue;
-          const op = worldTransform(world, other).position;
-          points.push({ x: op[0], y: feetOf(oe, op[1]), z: op[2] });
-          for (const w of os.waypoints) points.push({ x: w[0], y: w[1], z: w[2] });
-          for (const r of os.routine ?? []) points.push({ x: r.at[0], y: r.at[1], z: r.at[2] });
-        }
-        layers = NavLayers.build(world, { radius: spec.radius, height: spec.height, points }, opts.bounds);
-        layerSets.set(sizeKey, layers);
+        const group = grouping.groups[gi];
+        layers = group ? NavLayers.build(world, { radius: spec.radius, height: spec.height, points: group.points, local: group.local }, opts.bounds) : null;
+        layerSets.set(gi, layers);
       }
       if (layers) {
         checkLayered(id, spec, pos, feet, layers, route, out);

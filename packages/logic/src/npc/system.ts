@@ -10,7 +10,7 @@ import { NpcBrain, type NpcInfo } from './brain';
 import { DialogueSession, type DialogueHost, type DialogueView } from './dialogue';
 import { resolveNpc, type NpcEff } from './graph';
 import type { NavGrid } from './nav';
-import { hasBuildings, NavLayers, type LayerPoint } from './layers';
+import { groupLayerPoints, hasBuildings, NavLayers, type LayerGroup, type LayerPoint } from './layers';
 import { buildNavFor, npcOpensDoor, type BoundsProvider } from './obstacles';
 import { flockAdd, flockReset, flockSteer, type FlockSums } from './steering';
 import { hyp } from './math';
@@ -79,7 +79,10 @@ export class NpcSystem implements DialogueHost {
   private readonly byId = new Map<EntityId, NpcBrain>();
   private readonly grids = new Map<string, NavGrid>();
   /** Layered navigation per body size (null: the world has no stairs, single-floor grids do). */
-  private readonly layerSets = new Map<string, NavLayers | null>();
+  private readonly layerSets = new Map<number, NavLayers | null>();
+  /** Floor-grid group of each brain (see groupLayerPoints), assigned on first use. */
+  private readonly layerGroupOf = new Map<NpcBrain, number>();
+  private layerGroups: LayerGroup[] = [];
   private stairsKnown: boolean | null = null;
   /** Doors NPCs open as they pass (key-operated `door` behaviours), with their positions; null until first needed. */
   private doorIds: EntityId[] | null = null;
@@ -143,6 +146,7 @@ export class NpcSystem implements DialogueHost {
   forget(b: NpcBrain): void {
     const i = this.brains.indexOf(b);
     if (i >= 0) this.brains.splice(i, 1);
+    this.layerGroupOf.delete(b);
     if (this.byId.get(b.id) === b) this.byId.delete(b.id);
     if (this.sessionBrain === b) this.endDialogue();
   }
@@ -166,6 +170,8 @@ export class NpcSystem implements DialogueHost {
   invalidate(): void {
     this.grids.clear();
     this.layerSets.clear();
+    this.layerGroupOf.clear();
+    this.layerGroups = [];
     this.stairsKnown = null;
     this.doorIds = null;
     this.navVersion++;
@@ -231,23 +237,61 @@ export class NpcSystem implements DialogueHost {
     }
     if (!this.stairsKnown) return null;
     const spec = b.spec;
-    const key = `${Math.round(spec.radius * 4)}|${Math.round(spec.height * 2)}`;
-    if (this.layerSets.has(key)) return this.layerSets.get(key) ?? null;
-    const points: LayerPoint[] = [];
-    for (const o of this.brains) {
-      if (`${Math.round(o.spec.radius * 4)}|${Math.round(o.spec.height * 2)}` !== key) continue;
-      points.push({ x: o.self.anchor[0], y: o.feetY, z: o.self.anchor[2] });
-      for (const w of o.spec.waypoints) points.push({ x: w[0], y: w[1], z: w[2] });
-      for (const r of o.spec.routine ?? []) points.push({ x: r.at[0], y: r.at[1], z: r.at[2] });
+    let gi = this.layerGroupOf.get(b);
+    if (gi === undefined) {
+      this.assignLayerGroups(world);
+      gi = this.layerGroupOf.get(b) ?? -1;
     }
+    if (this.layerSets.has(gi)) return this.layerSets.get(gi) ?? null;
+    const group = this.layerGroups[gi];
     let layers: NavLayers | null = null;
     try {
-      layers = NavLayers.build(world, { radius: spec.radius, height: spec.height, points }, this.ctx.bounds);
+      if (group) layers = NavLayers.build(world, { radius: spec.radius, height: spec.height, points: group.points, local: group.local }, this.ctx.bounds);
     } catch (err) {
       this.ctx.env.log(`navigation layers failed: ${err instanceof Error ? err.message : String(err)}`);
     }
-    this.layerSets.set(key, layers);
+    this.layerSets.set(gi, layers);
     return layers;
+  }
+
+  /**
+   * Group the brains that have none yet by body size and where they walk (as the static NPC check does). The first
+   * call groups every brain; a brain that arrives later joins a group of its size whose grids already cover its
+   * points, else gets one of its own.
+   */
+  private assignLayerGroups(world: WorldDoc): void {
+    const sizeOf = (o: NpcBrain): string => `${Math.round(o.spec.radius * 4)}|${Math.round(o.spec.height * 2)}`;
+    const pointsOf = (o: NpcBrain): LayerPoint[] => {
+      const points: LayerPoint[] = [{ x: o.self.anchor[0], y: o.feetY, z: o.self.anchor[2] }];
+      for (const w of o.spec.waypoints) points.push({ x: w[0], y: w[1], z: w[2] });
+      for (const r of o.spec.routine ?? []) points.push({ x: r.at[0], y: r.at[1], z: r.at[2] });
+      return points;
+    };
+    const fresh = this.brains.filter((o) => !this.layerGroupOf.has(o));
+    if (this.layerGroups.length === 0) {
+      const { groups, of } = groupLayerPoints(world, fresh.map((o) => ({ size: sizeOf(o), points: pointsOf(o) })));
+      this.layerGroups = groups;
+      fresh.forEach((o, i) => this.layerGroupOf.set(o, of[i] as number));
+      return;
+    }
+    for (const o of fresh) {
+      const size = sizeOf(o);
+      const pts = pointsOf(o);
+      let gi = this.layerGroups.findIndex((g) => {
+        if (g.size !== size) return false;
+        if (!g.local) return true;
+        let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+        for (const p of g.points) {
+          x0 = Math.min(x0, p.x);
+          z0 = Math.min(z0, p.z);
+          x1 = Math.max(x1, p.x);
+          z1 = Math.max(z1, p.z);
+        }
+        return pts.every((p) => p.x >= x0 && p.x <= x1 && p.z >= z0 && p.z <= z1);
+      });
+      if (gi < 0) gi = this.layerGroups.push({ size, points: pts, local: this.layerGroups.some((g) => g.size === size) }) - 1;
+      this.layerGroupOf.set(o, gi);
+    }
   }
 
   /** A walking NPC opens the doors it passes (holds them open a moment; see the `door` behaviour). */
