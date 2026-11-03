@@ -60,18 +60,19 @@ export function seasonsGarden(): MockPlan {
 
   // --- Paths, pond, bridge, tea house -------------------------------------------------------
   for (const [w, d] of [[64, 3.2], [3.2, 64]] as const) b.prim('gravel-path', 'box', [w, 0.06, d], [0, 0.03, 0], { material: { finish: 'gravel', preset: 'sand', color: '#d6cdbb', roughness: 1 }, castShadow: false, tags: ['path'] });
-  const pond = b.prim('koi-pond', 'cylinder', [16, 0.08, 16], [0, 0.05, 0], { name: 'Koi pond', material: { preset: 'water', waterKind: 'pond', color: '#2f5a63', opacity: 0.92, roughness: 0.03 }, castShadow: false, tags: ['water'] });
+  const pond = b.prim('koi-pond', 'cylinder', [16, 0.08, 16], [0, 0.2, 0], { name: 'Koi pond', material: { preset: 'water', waterKind: 'pond', color: '#2f5a63', opacity: 0.92, roughness: 0.03 }, castShadow: false, tags: ['water'] });
   void pond;
-  b.prim('pond-rim', 'cylinder', [17.4, 0.16, 17.4], [0, 0.04, 0], { material: { finish: 'limestone', preset: 'stone', color: '#8a857c' }, castShadow: false });
+  // The rim is the stone bed and lip under the water: its top (0.2) stays below the water surface (0.24) so the pond shows.
+  b.prim('pond-rim', 'cylinder', [17.4, 0.2, 17.4], [0, 0.1, 0], { material: { finish: 'limestone', preset: 'stone', color: '#8a857c' }, castShadow: false });
   b.keepClear(0, 0, 9.5);
   b.gen('moon-bridge', 'bridge', { length: 19, width: 2, height: 2.4, color: '#b8382a', variant: 0 }, [0, 0, 0], { physics: 'static', name: 'Moon bridge', tags: ['landmark'] });
   for (let i = 0; i < 8; i++) {
     const [x, , z] = onCircle(0, 0, 2.5 + (i % 3) * 1.4, (i / 8) * Math.PI * 2);
-    b.asset('koi', 'fish', [x, 0.03, z], { fitSize: 0.7, physics: { body: 'kinematic', sensor: true }, behaviors: [{ type: 'orbit', params: { center: [0, 0.03, 0], radius: r2(2.5 + (i % 3) * 1.6), speed: r2(16 + i * 4) } }], castShadow: false, tags: ['koi'] });
+    b.asset('koi', 'fish', [x, 0.2, z], { fitSize: 0.7, physics: { body: 'kinematic', sensor: true }, behaviors: [{ type: 'orbit', params: { center: [0, 0.2, 0], radius: r2(2.5 + (i % 3) * 1.6), speed: r2(16 + i * 4) } }], castShadow: false, tags: ['koi'] });
   }
   for (let i = 0; i < 9; i++) {
     const [x, , z] = onCircle(0, 0, b.rand(4, 7), b.rand(0, Math.PI * 2));
-    b.asset('lily-pad', 'lily-pad', [x, 0.07, z], { yaw: r2(b.rand(0, 360)), castShadow: false });
+    b.asset('lily-pad', 'lily-pad', [x, 0.25, z], { yaw: r2(b.rand(0, 360)), castShadow: false });
   }
   b.gen('tea-house', 'hero-gazebo', { width: 6, height: 5, color: '#efe6d6', roofColor: '#3d4a52', deckColor: '#8a6a4a' }, [0, 0, -34], { physics: 'static', name: 'Tea house', tags: ['landmark'] });
   b.light(b.empty('tea-light', [0, 2.6, -34]), [0, 0, 0], '#ffc27a', 2.6, 14);
