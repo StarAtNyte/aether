@@ -1528,8 +1528,8 @@ export class Simulation {
     this.lastFrame = t;
     const s = this.session;
     this.emitProcessing();
-    // While a game (a world with a title card) is being played the quality tier keeps still (a tier step rebuilds every lit material and the next
-    // frames come out black or partial); it moves at the title card, while paused and between sessions.
+    // While a game (a world with a title card) is being played the quality tier keeps still (a tier step rebuilds every lit material, and the view
+    // holds its last complete picture for the seconds that takes: a freeze in play); it moves at the title card, while paused and between sessions.
     this.renderer.holdQuality(!!s && !!s.world.intro && !s.ended && !this.paused && !this.held);
     try {
       if (s && !this.paused) {

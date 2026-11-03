@@ -52,14 +52,33 @@ describe('deferred first-use render preparation',()=>{
     const g=fixture();g.draw();const idle=g.preparation.idle();g.preparation.dispose();await idle;await vi.runAllTimersAsync();expect(g.builds).toHaveLength(0);expect(vi.getTimerCount()).toBe(0);f.preparation.dispose();
   });
   it('does not upload resources while links or native compilation are pending',async()=>{
-    vi.useFakeTimers();const f=fixture();f.block();f.draw();await vi.advanceTimersByTimeAsync(16);expect(f.builds).toHaveLength(0);
-    f.unblock();await vi.advanceTimersByTimeAsync(8);expect(f.builds).toHaveLength(1);f.preparation.dispose();
+    vi.useFakeTimers();const f=fixture();f.block();f.state.target='beauty';f.draw();f.state.target='screen';await vi.advanceTimersByTimeAsync(16);
+    // The node graph (CPU only) is built ahead in the requesting pass while programs link; nothing is uploaded or bound.
+    expect(f.builds).toHaveLength(1);expect(f.builds[0]).toMatchObject({target:'beauty'});expect(f.state.target).toBe('screen');
+    expect(f.renderer._geometries.updateForRender).not.toHaveBeenCalled();expect(f.renderer._bindings.getForRender).not.toHaveBeenCalled();expect(f.preparation.pending).toBe(1);
+    f.unblock();await vi.advanceTimersByTimeAsync(8);expect(f.builds).toHaveLength(1);expect(f.renderer._bindings.getForRender).toHaveBeenCalledOnce();expect(f.preparation.pending).toBe(0);f.preparation.dispose();
     const g=fixture();let release!:()=>void;
     // Install on a fresh renderer to wrap a genuinely pending native compile.
     g.preparation.dispose();g.renderer.compileAsync=vi.fn(()=>new Promise<void>(r=>{release=r;}));
     const c=deferRenderPreparation(g.renderer as unknown as WebGPURenderer,{ready:g.ready,error:g.error,blocked:()=>false,channel:null});
     const compiled=g.renderer.compileAsync();g.draw();await vi.advanceTimersByTimeAsync(16);expect(g.builds).toHaveLength(0);
     release();await compiled;await vi.advanceTimersByTimeAsync(8);expect(g.builds).toHaveLength(1);c.dispose();
+  });
+  it('starts the program link of a prepared object without waiting for a frame to draw it',async()=>{
+    vi.useFakeTimers();const f=fixture();const seen: unknown[]=[];
+    const pipelines={getForRender:vi.fn(()=>{seen.push(f.state.target);})};Object.assign(f.renderer,{_pipelines:pipelines});
+    f.state.target='beauty';f.draw();f.state.target='screen';
+    await vi.runAllTimersAsync();
+    // Links start at the next frame start (the host calls link()), not inside the preparation task.
+    expect(pipelines.getForRender).not.toHaveBeenCalled();f.preparation.link();f.preparation.link();
+    // Created in the pass that asked for the object, after its uploads and bindings, with no draw in between.
+    expect(pipelines.getForRender).toHaveBeenCalledOnce();expect(pipelines.getForRender).toHaveBeenCalledWith(f.ro);expect(seen).toEqual(['beauty']);
+    expect(f.renderer._bindings.getForRender.mock.invocationCallOrder[0]).toBeLessThan(pipelines.getForRender.mock.invocationCallOrder[0]!);
+    expect(f.nativeDraw).not.toHaveBeenCalled();expect(f.state.target).toBe('screen');expect(f.preparation.deferred).toBe(1);
+    // A failed link is reported, and the object is still drawn (three retries the pipeline on the draw).
+    const g=fixture();Object.assign(g.renderer,{_pipelines:{getForRender:()=>{throw new Error('link failed');}}});g.draw();await vi.runAllTimersAsync();g.preparation.link();
+    expect(g.error).toHaveBeenCalledOnce();expect(g.preparation.pending).toBe(0);g.draw();expect(g.nativeDraw).toHaveBeenCalledOnce();
+    f.preparation.dispose();g.preparation.dispose();
   });
   it('renders one-shot environment targets atomically instead of caching incomplete textures',async()=>{
     vi.useFakeTimers();const f=fixture();f.state.target={texture:{isPMREMTexture:true}};f.draw();
@@ -80,6 +99,17 @@ describe('deferred first-use render preparation',()=>{
     f.nativeGet.mockImplementation(((o:unknown)=>o===quad?quadRo:f.ro) as never);f.renderer._renderObjectDirect(quad,f.material,{}, {},f.lightNode,'group',null);
     expect(f.preparation.pending).toBe(2);f.unblock();await vi.runAllTimersAsync();
     expect(order).toEqual(['quad','scene']);f.preparation.dispose();
+  });
+  it('builds the graphs of the objects queued behind while programs link, then uploads them in order', async()=>{
+    vi.useFakeTimers();const f=fixture();f.block();
+    const other={geometry:{drawRange:{start:0,count:3}}};const order: string[]=[];
+    const otherRo={...f.ro,object:other,_bindings:null as null|Array<{bindings:never[]}>,getNodeBuilderState(){order.push('other');},getBindings(){return this._bindings??= [{bindings:[]}];}};
+    f.ro.getNodeBuilderState=()=>{order.push('first');};
+    f.draw();f.nativeGet.mockImplementation(((o:unknown)=>o===other?otherRo:f.ro) as never);f.renderer._renderObjectDirect(other,f.material,{}, {},f.lightNode,'group',null);
+    await vi.advanceTimersByTimeAsync(32);
+    expect(order).toEqual(['first','other']);expect(f.renderer._geometries.updateForRender).not.toHaveBeenCalled();expect(f.preparation.pending).toBe(2);
+    f.unblock();await vi.runAllTimersAsync();
+    expect(order).toEqual(['first','other']);expect(f.renderer._geometries.updateForRender).toHaveBeenCalledTimes(2);expect(f.preparation.pending).toBe(0);f.preparation.dispose();
   });
   it('does not recreate a pass target that was disposed while its setup was queued', async()=>{
     vi.useFakeTimers();const f=fixture();let dispose!:()=>void;

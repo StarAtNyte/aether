@@ -13,6 +13,8 @@ interface Backend {
 }
 export interface ParallelPrograms {
   readonly pending: number;
+  /** Draws issued so far (running count), and those skipped because their program was still linking. */
+  readonly draws: { issued: number; linking: number };
   idle(): Promise<void>;
   synchronous<T>(draw: () => T): T;
   dispose(): void;
@@ -28,8 +30,10 @@ export function parallelPrograms(backend: Backend, changed: () => void, failed: 
     if (n > 0) linking.set(pipeline, n); else linking.delete(pipeline);
   };
   const draw = backend.draw;
+  const draws = { issued: 0, linking: 0 };
   const skipLinking = function (this: unknown, object: RenderObject, info: unknown): void {
-    if (!synchronous && linking.has(object.pipeline)) return;
+    draws.issued++;
+    if (!synchronous && linking.has(object.pipeline)) { draws.linking++; return; }
     return draw!.call(backend, object, info);
   };
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -60,6 +64,7 @@ export function parallelPrograms(backend: Backend, changed: () => void, failed: 
   let synchronous = false;
   const controller: ParallelPrograms = {
     get pending() { return jobs.size; },
+    draws,
     synchronous(draw) {
       const previous = synchronous;
       synchronous = true;

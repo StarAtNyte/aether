@@ -658,6 +658,19 @@ const PROGRESSIVE_EVERY_MS = 400;
  * walk down a street of furnished houses on an integrated GPU held the last image for 6 s at a time).
  */
 const PROGRESSIVE_MOVING_MS = 100;
+/**
+ * Longest a rebuild (a change of tier or a ladder step) keeps the last complete picture (ms); then what is ready shows
+ * progressively. An integrated GPU links the 40-50 programs of a new tier in 5-9 s.
+ */
+const REBUILD_HOLD_MS = 12_000;
+/** Spacing of the unshown frames that find the objects of a rebuild (see `rebuildDiscoveryDue`). */
+const REBUILD_DISCOVERY_MS = 150;
+/**
+ * A rebuild is over once a frame issues at least {@link REBUILD_DONE_DRAWS} of the draws of the last complete picture and
+ * no more than {@link REBUILD_DONE_SHARE} of them still wait for preparation or links.
+ */
+const REBUILD_DONE_DRAWS = 0.9;
+const REBUILD_DONE_SHARE = 0.05;
 const WARMING_MAX_MS = 20_000;
 const MAX_BLANK_RETRIES = 3;
 
@@ -3365,6 +3378,8 @@ export class WorldRenderer {
   render(dt: number, opts: { onDemand?: boolean; animate?: boolean } = {}): boolean {
     if (this.disposed || this.lost || this.captureActive || this.tracing) return false;
     const t0 = now();
+    // Objects prepared since the last frame start linking now, whether or not this frame draws.
+    this.preparation.link();
     if (this.watchdogOn) this.watch(false);
     this.cullFarAnimals();
     this.cullFarInteriors();
@@ -3448,7 +3463,7 @@ export class WorldRenderer {
     // First-use graph/binding setup and program links finish before another viewport draw, up to a bound: a heavy
     // world whose programs take many seconds to link must still show what is ready, then fill in.
     if (this.programs.pending > 0 || this.preparation.pending > 0) {
-      if (!this.progressive) {
+      if (!this.progressive && !this.rebuildDiscoveryDue()) {
         this.drewLastFrame = false;
         return false;
       }
@@ -3482,6 +3497,8 @@ export class WorldRenderer {
     if (this.materials.surfaces.active) this.materials.surfaces.advance(step);
     this.fx.beforeDraw(this.perspective);
     this.presentation.beginFrame();
+    this.heldFrame = false;
+    const issued = this.programs.draws.issued, linking = this.programs.draws.linking, deferred = this.preparation.deferred;
     this.gpuCost.begin(this.domElement.width, this.domElement.height, this.post, this.adaptive.scale);
     let timedFrameComplete = false;
     try {
@@ -3493,12 +3510,24 @@ export class WorldRenderer {
     }
     // A discovery frame may submit new async programs. It is not a completed
     // image and must not feed the quality governor or the blank-frame watchdog.
-    if (this.presentation.skipped || (!this.progressive && (this.programs.pending > 0 || this.preparation.pending > 0))) {
+    if (this.presentation.skipped || this.heldFrame || (!this.progressive && (this.programs.pending > 0 || this.preparation.pending > 0))) {
+      // Nearly all of a rebuild's picture draws (as many draws as the last complete picture, few waiting): the rest are
+      // newcomers, which may fill in as they do while walking.
+      if (this.rebuildSince > 0 && !this.heldFrame) {
+        const waiting = this.programs.draws.linking - linking + this.preparation.deferred - deferred;
+        const drawn = this.programs.draws.issued - issued - (this.programs.draws.linking - linking);
+        if (drawn >= REBUILD_DONE_DRAWS * this.completeDraws && waiting <= REBUILD_DONE_SHARE * (drawn + waiting)) this.rebuildSince = 0;
+      }
       this.requestPreparedFrame(false);
       this.drewLastFrame = false;
       return false;
     }
     this.framesDrawn++;
+    // A complete picture of the new plan is on screen: the rebuild is over.
+    if (timedFrameComplete) {
+      this.rebuildSince = 0;
+      this.completeDraws = this.programs.draws.issued - issued;
+    }
     if (this.progressive) {
       this.progressiveFrames++;
       this.requestPreparedFrame(false);
@@ -3553,6 +3582,36 @@ export class WorldRenderer {
 
   /** First time this wait for programs / render preparation began (0: nothing is pending). */
   private busySince = 0;
+  /**
+   * When the quality plan last changed while a picture was on screen (0: no rebuild under way). A change of tier or a
+   * ladder step rebuilds every lit program and the post chain, so nothing on screen is ready to draw. The moving view's
+   * early progressive frames (made for a few newcomers coming into view) then showed the new post chain over an empty
+   * scene pass: black, then sky only, for the first second, and partial pictures for seconds after. Until a complete
+   * picture of the new plan is drawn (nearly complete, or {@link REBUILD_HOLD_MS} passed) the canvas keeps the last
+   * complete picture, while unshown frames find the objects and their programs link.
+   */
+  private rebuildSince = 0;
+  /** The plan (and ladder cuts) the materials were built for; see {@link rebuildSince}. */
+  private planKey = '';
+  /** The frame drew nothing to the canvas on purpose (the post chain of a rebuild is not built yet). */
+  private heldFrame = false;
+  private rebuildDiscoveryAt = 0;
+  /** Draws issued by the last complete picture. */
+  private completeDraws = 0;
+
+  /**
+   * Whether a rebuild draws a frame that is not shown, though objects still prepare. The post chain's passes run inside its
+   * quads, and the objects of each pass are found only when that pass draws: waiting for one layer to finish linking
+   * before drawing the next one found the second half of a world's objects seconds late, after a tier change. Only
+   * through the post chain, whose canvas pass is held while anything is pending; a direct draw would reach the canvas.
+   */
+  private rebuildDiscoveryDue(): boolean {
+    if (this.rebuildSince === 0 || this.post === null) return false;
+    const t = now();
+    if (t - this.rebuildDiscoveryAt < REBUILD_DISCOVERY_MS) return false;
+    this.rebuildDiscoveryAt = t;
+    return true;
+  }
   private progressiveAt = 0;
   /** True while the frame being drawn is a progressive one (shown although programs or preparation are still pending). */
   private progressive = false;
@@ -3571,6 +3630,10 @@ export class WorldRenderer {
     const t = now();
     if (this.busySince === 0) this.busySince = t;
     const waited = t - this.busySince;
+    // A rebuild keeps the last complete picture up to its own bound: everything prepares again, so an early frame holds
+    // next to nothing (and its discovery frames keep something pending throughout, so `waited` never restarts).
+    if (this.rebuildSince > 0 && t - this.rebuildSince > REBUILD_HOLD_MS) this.rebuildSince = 0;
+    if (this.rebuildSince > 0) return false;
     const motion = moving && this.framesDrawn > 0;
     if (waited < (this.framesDrawn === 0 ? PROGRESSIVE_FIRST_MS : motion ? PROGRESSIVE_MOVING_MS : PROGRESSIVE_MS)) return false;
     if (!motion && t - this.progressiveAt < PROGRESSIVE_EVERY_MS) return false;
@@ -4291,7 +4354,9 @@ export class WorldRenderer {
   /** Apply the cuts of the ladder's current level (the governor moved one step: {@link PerformanceGovernor.lastMove}). */
   /**
    * Hold the quality ladder and the automatic tier still (resolution scaling still adapts). For an active game: a tier
-   * or ladder step rebuilds every lit material, and until they are prepared again the frames come out black or partial.
+   * or ladder step rebuilds every lit material and the post chain. The view then keeps its last complete picture until
+   * the new one is ready (see `rebuildSince`), which takes seconds on an integrated GPU: a picture standing still while
+   * the player moves is a freeze in a game.
    */
   holdQuality(on: boolean): void {
     this.qualityHeld = on;
@@ -4703,6 +4768,9 @@ export class WorldRenderer {
     this.resize(this.cssWidth, this.cssHeight);
     this.boundsDirty = true;
     this.needsDraw = true;
+    const key = JSON.stringify([plan.tier, plan.shadowTier, plan.shadowStill, plan.post, plan.effects, plan.moveEffects, this.cuts]);
+    if (key !== this.planKey && this.framesDrawn > 0) this.rebuildSince = now();
+    this.planKey = key;
     if (plan.quality !== before) this.onQualityChange?.(plan.quality);
     return plan.quality;
   }
@@ -4927,6 +4995,12 @@ export class WorldRenderer {
       return;
     }
     this.syncPost();
+    // A rebuild keeps the last complete picture until the new post chain exists: drawing the scene straight to the canvas
+    // meanwhile would show it without the chain's exposure and grade (or, with nothing prepared, black).
+    if (!capture && this.rebuildSince > 0 && !this.post && this.postPending) {
+      this.heldFrame = true;
+      return;
+    }
     this.syncSceneScale();
     this.aimSunShadows(capture);
     // Water joins the depth pre-pass (and so the screen-space reflections) while they run.

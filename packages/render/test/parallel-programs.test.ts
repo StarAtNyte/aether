@@ -148,11 +148,14 @@ describe('drawing while a program links', () => {
     (backend.createRenderPipeline as unknown as (o: typeof object, p: null) => void)(object, null);
     backend.draw(object, {});
     expect(draw).not.toHaveBeenCalled();
+    // The renderer measures how much of a frame still waits for links from these counts.
+    expect(controller.draws).toEqual({ issued: 1, linking: 1 });
     ready.add(data.get(pipeline)!.programGPU!);
     await vi.advanceTimersToNextTimerAsync();
     expect(controller.pending).toBe(0);
     backend.draw(object, {});
     expect(draw).toHaveBeenCalledTimes(1);
+    expect(controller.draws).toEqual({ issued: 2, linking: 1 });
     controller.dispose();
     expect(backend.draw).toBe(draw);
   });
