@@ -67,7 +67,9 @@ describe('system prompt', () => {
     // 18.1k -> 18.7k for material surface layers and shader expressions (the layer kinds, masks and the expression language).
     // 18.7k -> 19k for the scale, structure-over-drops and natural-ground guidelines (requested sizes, stairs on piers, waterfalls
     // clear of the face, eroded terraces, regional species) and the golden-hour hours of the day sky.
-    expect(prompt.length / 4).toBeLessThan(19_000);
+    // 19k -> 19.6k for the outpost props in the catalog (shipping container, sandbag wall, radio mast) and the character
+    // gear and game-prop lines (rifle hold, role gear, generators over stacked primitives; ~110 tokens).
+    expect(prompt.length / 4).toBeLessThan(19_600);
     expect(buildSystemPrompt(REAL)).toBe(prompt);
     expect(prompt).not.toMatch(/\d{4}-\d{2}-\d{2}T/); // no timestamps (cache-stable)
   });

@@ -39,6 +39,7 @@ import { briefChecklistText, richnessShortfalls, richnessOnlyTurnText, richnessS
 import { briefStage, lookReference, type BriefReviewer, type BriefStageResult } from './brief-stage';
 import { LEVEL_SUBJECT, levelSnapshot, levelTurnText } from './level-review';
 import { withSunk } from './sunk';
+import { withPlaceholders } from './placeholders';
 import { withFalls } from './falls';
 import { GAME_CODES, GameReviewCache, isReviewedGame, withGame, type GameReviewResult } from './game-review';
 import type { AgentEvent, AgentHost, AgentOptions, ChatMessage, CompletionResponse, ContentBlock, ReviewOptions, ToolDef, UsageTotals } from './types';
@@ -809,7 +810,7 @@ export class WorldAgent {
       // Hardcore: every round renders the hero shots, the views the references were drawn for.
       if (this.hardcore && withViews) snap = { ...snap, views: this.hardcore.shots };
       // Pieces sunk into the terrain and falls buried in the rock they pour from are checked in every round, whatever else measured the world.
-      snap = withFalls(withSunk(snap, world), world);
+      snap = withPlaceholders(withFalls(withSunk(snap, world), world), world);
       // A game is played too (flow and balance), when the host can: its findings carry the fixes in the game's own params.
       if (isReviewedGame(world)) {
         const game = await this.playGame(world, signal);
@@ -1034,7 +1035,7 @@ export class WorldAgent {
       before = world;
       if (!editedThisRound && declared) {
         const afterWorld = host.getWorld();
-        const afterBase: ReviewSnapshot = withFalls(withSunk(richOnly ? richnessSnapshot(host.getWorld(), { maxViews: 1, withViews: false }) : isLevel && this.opts.levelTools ? ((await raceAbort(levelSnapshot(this.opts.levelTools, host.getWorld(), { maxViews: 1, withViews: false }), signal)) ?? snap) : snapshotForReview(host.getWorld(), null, { maxViews: 1, withViews: false }), host.getWorld()), host.getWorld());
+        const afterBase: ReviewSnapshot = withPlaceholders(withFalls(withSunk(richOnly ? richnessSnapshot(host.getWorld(), { maxViews: 1, withViews: false }) : isLevel && this.opts.levelTools ? ((await raceAbort(levelSnapshot(this.opts.levelTools, host.getWorld(), { maxViews: 1, withViews: false }), signal)) ?? snap) : snapshotForReview(host.getWorld(), null, { maxViews: 1, withViews: false }), host.getWorld()), host.getWorld()), host.getWorld());
         const after: ReviewSnapshot = isReviewedGame(afterWorld) ? withGame(afterBase, afterWorld, (await this.playGame(afterWorld, signal)).result) : afterBase;
         const errors = after.findings.filter((f) => f.severity === 'error');
         // Warnings are real until the model has seen them once more and still leaves them: ask again, once per set.
