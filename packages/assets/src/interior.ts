@@ -10,13 +10,15 @@ import { synonymsOf } from './synonyms';
 import { searchAssets, tokenize } from './search';
 
 /** What a furniture catalogue kind maps to: the interior types that can stand in for it. */
-export const KIND_MODELS: Readonly<Record<string, { types: readonly string[]; mount?: AssetPlacement }>> = {
+export const KIND_MODELS: Readonly<Record<string, { types: readonly string[]; mount?: AssetPlacement; avoid?: readonly string[] }>> = {
   sofa: { types: ['sofa'] },
   armchair: { types: ['armchair'] },
   lounger: { types: ['armchair'] },
-  chair: { types: ['chair'] },
+  // A chair at a dining table or a desk in a home is not a swivel office chair on castors.
+  chair: { types: ['chair'], avoid: ['swivel'] },
   'bar-stool': { types: ['stool'] },
-  'dining-table': { types: ['table'] },
+  // Nor is a dining or meeting table a steel kitchen prep bench, a garage workbench or a low coffee table.
+  'dining-table': { types: ['table'], avoid: ['prep', 'stainless', 'workbench', 'coffee'] },
   'coffee-table': { types: ['coffee-table'] },
   desk: { types: ['desk'] },
   bed: { types: ['bed'] },
@@ -201,6 +203,7 @@ export function findModels(catalog: Catalog, q: ModelQuery): ModelHit[] {
   const known = knownTypes(catalog);
   const types = new Set<string>();
   let mount = q.mount;
+  const avoid = new Set<string>(q.kind ? (KIND_MODELS[q.kind]?.avoid ?? []) : []);
   if (q.kind && KIND_MODELS[q.kind]) {
     for (const t of KIND_MODELS[q.kind]!.types) types.add(t);
     mount ??= KIND_MODELS[q.kind]!.mount;
@@ -247,6 +250,7 @@ export function findModels(catalog: Catalog, q: ModelQuery): ModelHit[] {
     const t = typeOf(e, known);
     if (!t || !types.has(t)) continue;
     if (mount && e.placement !== mount) continue;
+    if (avoid.size > 0 && e.tags.some((g) => avoid.has(g))) continue;
     if (q.category && e.category !== q.category) continue;
     if (look === 'realistic' && e.style !== 'realistic') continue;
     const notes: string[] = [];

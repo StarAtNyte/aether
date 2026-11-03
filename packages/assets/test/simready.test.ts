@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createWorld } from '@aether/core';
 import { creditsFor, creditsText } from '../src/credits';
-import { findModels } from '../src/interior';
+import { findModels, pickModel } from '../src/interior';
 import { Catalog } from '../src/schema';
 import { setCatalog } from '../src/registry';
 import { describeSimreadyHit, judgeLicence, parseSimreadyUrl, searchSimready, type FetchLike } from '../src/simready';
@@ -174,5 +174,16 @@ describe('the imported common props', () => {
       'cardboard box': 'simready-box-cardboard',
     };
     for (const [w, id] of Object.entries(want)) expect(findModels(catalog, { text: w, limit: 8 }).map((h) => h.entry.id), w).toContain(id);
+  });
+  it('do not furnish a home as an office: no swivel chair at a dining table, no prep bench, workbench or coffee table to dine at', () => {
+    for (const style of ['modern', 'scandinavian', 'industrial', 'japandi', 'classic']) {
+      for (const seed of ['kitchen-f9', 'dining-f1', 'master-f9', 'study-f3', 'a', 'b', 'c']) {
+        expect(pickModel(catalog, 'chair', style, { seed })?.tags ?? [], `${style} ${seed}`).not.toContain('swivel');
+        expect(['simready-table-stainless', 'simready-workbench-standard', 'simready-table-coffee-low'], `${style} ${seed}`).not.toContain(pickModel(catalog, 'dining-table', style, { seed })?.id);
+      }
+    }
+    // Asked for by name they are still found.
+    expect(findModels(catalog, { text: 'office chair', limit: 8 }).map((h) => h.entry.id)).toContain('simready-office-chair-manager');
+    expect(findModels(catalog, { kind: 'chair', style: 'modern', limit: 30 }).map((h) => h.entry.id)).toContain('chair-dining-02');
   });
 });

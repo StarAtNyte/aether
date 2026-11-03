@@ -60,6 +60,31 @@ async function bakePhoto(entry: ShowcaseEntry): Promise<{ text: string; entities
   return { text, entities: Object.keys(valid.world.entities).length, ms: Math.round(performance.now() - t0), stored: true };
 }
 
+/**
+ * The texture skins laid on a planned world after it is baked (`scripts/blender/pack-surfaces.ts --apply`: Blender-baked setts,
+ * roof tiles, limestone) are not something the planner makes, so a rebake carries them over from the committed file instead of
+ * dropping them: each world skin the planner did not set, with the texture set it points to.
+ */
+export function withStoredSkins(world: WorldDoc, slug: string): WorldDoc {
+  let stored: Pick<WorldDoc, 'skins' | 'textures'> | undefined;
+  try {
+    stored = (JSON.parse(readFileSync(join(OUT_DIR, `${slug}.json`), 'utf8')) as { world?: Pick<WorldDoc, 'skins' | 'textures'> }).world;
+  } catch {
+    return world;
+  }
+  const skins = { ...(world.skins ?? {}) };
+  const textures = { ...(world.textures ?? {}) };
+  let added = 0;
+  for (const [key, ref] of Object.entries(stored?.skins ?? {})) {
+    const def = stored?.textures?.[ref.id];
+    if (key in skins || !def) continue;
+    skins[key] = ref;
+    textures[ref.id] ??= def;
+    added++;
+  }
+  return added > 0 ? { ...world, skins, textures } : world;
+}
+
 async function bake(entry: ShowcaseEntry, sandbox: ReturnType<typeof createNodeSandbox>): Promise<{ text: string; entities: number; ms: number; stored?: true }> {
   if (entry.origin === 'photo' || entry.origin === 'agent') return bakePhoto(entry);
   const t0 = performance.now();
@@ -70,7 +95,7 @@ async function bake(entry: ShowcaseEntry, sandbox: ReturnType<typeof createNodeS
     if (ev.type === 'error') problems.push(`agent error: ${ev.text}`);
     else if (ev.type === 'patches' && ev.result.errors.length > 0) problems.push(`${ev.result.errors.length} rejected patch(es): ${ev.result.errors.slice(0, 6).map((e) => e.message).join(" | ")}`);
   }
-  const world = host.getWorld();
+  const world = withStoredSkins(host.getWorld(), entry.slug);
   const valid = validateWorld(world);
   if (!valid.ok) problems.push(`invalid world: ${valid.issues.slice(0, 3).map((i) => `${i.path}: ${i.message}`).join('; ')}`);
   const verdict = await runVerify(world);
