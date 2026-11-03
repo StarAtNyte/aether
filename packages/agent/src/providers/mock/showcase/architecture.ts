@@ -179,7 +179,7 @@ export function duskLakeHouse(): MockPlan {
   b.keepClear(lx, lz, lr + 1);
   b.keepClearRect(lx - lr * 1.2, lz - lr * 1.2, lx + lr * 1.2, lz + lr * 1.2);
   b.gen('jetty', 'dock', { length: 10, width: 2, height: 0.45, color: '#7a5a3c', variant: 1 }, [lx - 2, waterY - 0.15, lz - lr + 1.5], { yaw: 90, physics: 'static', name: 'Jetty' });
-  b.gen('rowboat', 'boat', { length: 3.6, variant: 0, color: '#e8e1d4', accentColor: '#2f5d7a' }, [lx + 2.2, waterY + 0.05, lz - lr + 8], { yaw: 70, behaviors: [{ type: 'bob', params: { amplitude: 0.05, period: 3.6 } }], name: 'Rowboat' });
+  b.gen('rowboat', 'boat', { length: 3.6, variant: 0, color: '#e8e1d4', accentColor: '#2f5d7a' }, [lx + 2.2, waterY + 0.05, lz - lr + 8], { yaw: 70, behaviors: [{ type: 'bob', params: { amplitude: 0.05, period: 3.6 } }], name: 'Rowboat', tags: ['floating'] });
   const awayFromLake = (x: number, z: number, d: number): boolean => Math.hypot(x - lx, z - lz) > lr * 1.25 + d;
   const onPlot = (x: number, z: number): boolean => x > -6 && x < 20 && z > -4 && z < 19;
   // Reeds along the shore, spruce and birch round the plot and up the hills, meadow grass, shrubs and boulders.
