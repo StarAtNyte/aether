@@ -123,30 +123,30 @@ export function casaPatio(): MockPlan {
   }
   // A big olive in the corner of the patio.
   const [tx, tz] = at(6.1, 10.0);
-  b.gen('patio-olive', 'tree-broadleaf', { height: 4.8, variant: 2, color: '#7f8f66', trunkColor: '#7d6d5a', detail: 1.2 }, [tx, 0.22, tz], { physics: 'static', tags: ['tree'], name: 'Olive tree' });
+  b.gen('patio-olive', 'tree-olive', { height: 4.8, variant: 1, color: '#7f8f66', trunkColor: '#7d6d5a', detail: 1.2 }, [tx, 0.22, tz], { physics: 'static', tags: ['tree'], name: 'Olive tree' });
   // The olive grove below the house and cypresses along the drive.
   for (let i = 0; i < 34; i++) {
     // Terraces of olives on both sides of the drive, near enough to walk among, thinning out up the hill.
     const p = i < 26 ? b.spot(-6, 26, 9, 32, 3.6) : b.spot(0, 30, 30, 70, 3.4);
     if (!p || (Math.abs(p[0] + 6.5) < 6.5 && p[1] > 4) || (Math.abs(p[0]) < 12 && p[1] < 14) || Math.hypot(p[0] + 22, p[1] + 26) < 18) continue; // nothing grows in front of the cover camera
-    b.gen('olive', 'tree-broadleaf', { height: r2(b.rand(4, 6)), variant: 2, color: b.chance(0.5) ? '#76865a' : '#849270', trunkColor: '#7d6d5a', detail: 1 }, [p[0], land.h(p[0], p[1]), p[1]], { yaw: r2(b.rand(0, 360)), physics: 'static', tags: ['tree'] });
+    b.gen('olive', 'tree-olive', { height: r2(b.rand(4, 6)), variant: b.chance(0.5) ? 1 : 0, color: b.chance(0.5) ? '#76865a' : '#849270', trunkColor: '#7d6d5a', detail: 1 }, [p[0], land.h(p[0], p[1]), p[1]], { yaw: r2(b.rand(0, 360)), physics: 'static', tags: ['tree'] });
   }
   for (const side of [-1, 1] as const) {
     for (let k = 0; k < 4; k++) {
       const [cx] = at(3 + side * 4.4, 0);
-      b.gen('cypress', 'furn-tree', { height: r2(b.rand(8.5, 11.5)), species: 'cypress', leaf: '#2f3f2c' }, [cx, land.h(cx, r2(dz0 + 4 + k * 6)), r2(dz0 + 4 + k * 6)], { yaw: r2(b.rand(0, 360)), physics: 'static', tags: ['tree'] });
+      b.gen('cypress', 'tree-cypress', { height: r2(b.rand(8.5, 11.5)), color: '#2f3f2c', variant: k % 2 }, [cx, land.h(cx, r2(dz0 + 4 + k * 6)), r2(dz0 + 4 + k * 6)], { yaw: r2(b.rand(0, 360)), physics: 'static', tags: ['tree'] });
     }
   }
   for (let i = 0; i < 5; i++) {
     const p = b.spot(-30, -22, 4, 22, 4);
     if (!p || Math.hypot(p[0] + 22, p[1] + 26) < 14) continue; // not in front of the cover camera
-    b.gen('pine', 'tree-broadleaf', { height: r2(b.rand(11, 14)), variant: 2, color: '#4f6c3a', detail: 1 }, [p[0], land.h(p[0], p[1]), p[1]], { yaw: r2(b.rand(0, 360)), physics: 'static', tags: ['tree'] });
+    b.gen('pine', 'tree-umbrella-pine', { height: r2(b.rand(11, 14)), variant: 1, color: '#4f6c3a', detail: 1 }, [p[0], land.h(p[0], p[1]), p[1]], { yaw: r2(b.rand(0, 360)), physics: 'static', tags: ['tree'] });
   }
   // The serra: oak and umbrella-pine woods on the hills, scrub and boulders on the slopes between.
   const nearLane = (x: number, z: number): boolean => z > -4 && Math.abs(x - (ox + 3)) < 11;
   const woods = (x: number, z: number, minD: number): boolean => Math.hypot(x, z) > minD && !nearLane(x, z) && land.slope(x, z) < 30 && Math.hypot(x + 22, z + 26) > 20; // clear of the cover camera
   grove(b, 'woods-oak', 'Cork oak woods', 'tree-broadleaf', { height: 9.5, detail: 0.5, color: '#5a6f3d', variant: 1 }, landPoints(b, 330, 210, (x, z) => woods(x, z, 58), 6.5, land.h), [0.8, 1.35], land.id);
-  grove(b, 'woods-pine', 'Stone pines', 'tree-spruce', { height: 15, detail: 0.5, color: '#3f5a36' }, landPoints(b, 150, 210, (x, z) => woods(x, z, 70), 7, land.h), [0.8, 1.3], land.id);
+  grove(b, 'woods-pine', 'Stone pines', 'tree-umbrella-pine', { height: 15, detail: 0.5, color: '#3f5a36', variant: 1 }, landPoints(b, 150, 210, (x, z) => woods(x, z, 70), 7, land.h), [0.8, 1.3], land.id);
   grove(b, 'scrub', 'Scrub', 'shrub', { size: 1.4, detail: 0.6, color: '#6c7a46' }, landPoints(b, 420, 190, (x, z) => woods(x, z, 34), 2.6, land.h), [0.7, 1.5], land.id);
   const grass = { heightAt: land.h, onSurface: land.id, minSpacing: 0.5, scaleRange: [0.7, 1.6] as [number, number] };
   b.scatter('dry-grass', 'grass-tuft', { color: '#a9a266', size: 0.7 }, 3200, [150, 110], [0, 0, 52], grass);
