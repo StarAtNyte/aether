@@ -84,7 +84,8 @@ const KINDS: readonly RaiderKind[] = [
     runSpeed: 6.2,
     attack: { range: 1.9, damage: 24, cooldown: 1.1, windup: 0.45 },
     drops: [{ template: 'medkit-drop', chance: 0.15 }, { template: 'ammo-drop', chance: 0.2 }],
-    look: { wardrobe: 'bandit', gender: 'male', top: '#6b5a3a', bottom: '#3a3226', hold: 'axe', mood: 'angry', scale: 0.95 },
+    // A face scarf and a cap: no rifle and no chest rig, so a rusher reads apart from the riflemen at a glance.
+    look: { wardrobe: 'bandit', gender: 'male', top: '#6b5a3a', bottom: '#3a3226', hold: 'axe', mood: 'angry', scale: 0.95, gear: ['scarf', 'cap'] },
     score: 150,
   },
 ];
@@ -154,73 +155,35 @@ function pickupTemplate(b: Builder, id: string, o: { name: string; key: string; 
   });
 }
 
-/** A sandbag wall: three staggered courses of filled bags (flat-topped, slightly sagging) on one hidden collider. */
+/**
+ * A sandbag wall: the sandbag-wall generator, double thick with header courses, `bags` bag-lengths long. Six courses
+ * stand 0.68 m; the wall is drawn 1.38 times as tall (fat, well-filled bags) so it covers to 0.94 m like the old
+ * blockout, and its box collider (scaled with it) stops raiders and bullets.
+ */
 function sandbags(b: Builder, x: number, z: number, yaw: number, bags = 5): void {
-  const root = b.empty('sandbags', [x, 0, z], { yaw, name: 'Sandbag wall' });
-  const len = bags * 0.66;
-  // The collider: one low box under the bags (bullets and raiders stop at it).
-  b.prim('sandbag-core', 'box', [len, 0.95, 0.6], [0, 0.47, 0], { parent: root, visible: false, physics: 'static', castShadow: false, tags: ['cover'] });
-  const tones = ['#a69572', '#9b8a66', '#ad9d7a'];
-  for (let row = 0; row < 3; row++) {
-    const n = row === 1 ? bags - 1 : row === 2 ? bags - 2 : bags;
-    const start = -((n - 1) * 0.66) / 2;
-    for (let i = 0; i < n; i++) {
-      const k = i * 7 + row * 3;
-      b.prim('sandbag', 'box', [0.64, 0.27, 0.44], [r2(start + i * 0.66), r2(0.14 + row * 0.27), r2(((k % 3) - 1) * 0.025)], {
-        parent: root,
-        rot: [((k % 5) - 2) * 1.5, ((k % 7) - 3) * 2, ((k % 4) - 1.5) * 1.6],
-        material: { preset: 'fabric', finish: 'fabric', color: tones[k % 3] as string, roughness: 0.97 },
-      });
-    }
-  }
+  b.gen('sandbags', 'sandbag-wall', { length: r2(bags * 0.66), courses: 6, color: '#a8976f', variant: 1 }, [x, 0, z], { yaw, name: 'Sandbag wall', scale: [1, 1.38, 1], physics: 'static', tags: ['cover'] });
 }
 
-/** A weathered shipping container (corrugated steel) with its door end; `stack` puts a second one on top. */
+/** A weathered 20 ft shipping container (doors at +X) from the shipping-container generator; `y` stacks it on another. */
 function container(b: Builder, x: number, z: number, yaw: number, color: string, y = 0): string {
-  const id = b.prim('container', 'box', [6.06, 2.59, 2.44], [x, r2(y + 1.295), z], {
-    yaw,
-    name: 'Shipping container',
-    material: { preset: 'metal', finish: 'metal-roof', color, roughness: 0.7, metalness: 0.2 },
-    physics: 'static',
-    tags: ['cover', 'container'],
-    footprint: 3.4,
-  });
-  // Door end: two leaves with locking bars, and the corner castings.
-  b.prim('container-doors', 'box', [0.06, 2.4, 2.3], [3.04, 0, 0], { parent: id, material: { preset: 'metal', color, roughness: 0.6, metalness: 0.5 } });
-  for (const zz of [-0.55, -0.3, 0.3, 0.55]) b.prim('container-bar', 'cylinder', [0.04, 2.3, 0.04], [3.09, 0, zz], { parent: id, material: { preset: 'metal', color: '#3a3936', metalness: 0.8, roughness: 0.5 } });
-  return id;
+  return b.gen('container', 'shipping-container', { length: 6.06, color, wear: 0.45, variant: 0 }, [x, y, z], { yaw, name: 'Shipping container', physics: 'static', tags: ['cover', 'container'], footprint: 3.4 });
 }
 
-/** A floodlight mast: a steel pole, a lamp head and a warm light (lit for the evening). */
-function floodlight(b: Builder, x: number, z: number, yaw: number): void {
-  const pole = b.prim('flood-pole', 'cylinder', [0.16, 6, 0.16], [x, 3, z], { yaw, name: 'Floodlight mast', material: { preset: 'metal', color: '#5b5a55', metalness: 0.7, roughness: 0.5 }, physics: 'static' });
-  b.asset('floodlight', 'floodlight-security', [0, 2.85, -0.18], { parent: pole, yaw: 180, fitSize: 0.6, fallback: { kind: 'primitive', primitive: 'box', size: [0.5, 0.35, 0.3] } });
-  b.light(pole, [0, 2.4, -1.6], '#ffd7a0', 2.4, 16);
+/** An industrial floodlight pole (two lamp heads on a crossarm, facing along `yaw`) with a warm light for the evening. */
+function floodlight(b: Builder, x: number, z: number, yaw: number, y = 0): void {
+  // The heads face the generator's +Z; the old mast lit its -Z, so it turns half a turn and the light stays where it was.
+  const pole = b.gen('floodlight', 'lamp-post', { height: 6, variant: 3, lightColor: '#ffe2b8' }, [x, y, z], { yaw: yaw + 180, name: 'Floodlight mast', physics: 'static' });
+  b.light(pole, [0, 5.4, 1.6], '#ffd7a0', 2.4, 16);
 }
 
-/** The relay mast: a tapering steel lattice with a dish, antennas and a red beacon. */
-function relayMast(b: Builder, x: number, z: number): void {
-  const steel = { preset: 'metal' as const, color: '#8b8f8a', metalness: 0.75, roughness: 0.45 };
-  const base = b.empty('relay-mast', [x, 0.25, z], { name: 'Relay mast' });
-  const H = 15;
-  for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) {
-    // Legs lean in from 1.9 m apart at the foot to 0.6 m at the top.
-    const lean = (Math.atan2(0.65, H) * 180) / Math.PI;
-    b.prim('mast-leg', 'cylinder', [0.12, H, 0.12], [sx * 0.62, H / 2, sz * 0.62], { parent: base, rot: [sz * lean, 0, -sx * lean], material: steel, castShadow: true });
-  }
-  b.prim('mast-foot', 'box', [2.3, 0.5, 2.3], [0, 0.25, 0], { parent: base, material: { preset: 'concrete', finish: 'concrete', color: '#9a958a' }, physics: 'static' });
-  for (let k = 1; k <= 5; k++) {
-    const y = k * 2.6;
-    const half = r2(0.95 - (0.65 * y) / H);
-    for (const [sx, sz, w, d] of [[0, -1, 2, 0], [0, 1, 2, 0], [-1, 0, 0, 2], [1, 0, 0, 2]] as const) {
-      b.prim('mast-brace', 'box', [w ? half * 2 : 0.06, 0.06, d ? half * 2 : 0.06], [sx * half, y, sz * half], { parent: base, material: steel, castShadow: false });
-    }
-  }
-  const dish = b.prim('mast-dish', 'cylinder', [1.5, 0.22, 1.5], [0.5, 11.5, 0.2], { parent: base, rot: [0, 0, 70], material: { preset: 'metal', color: '#d9d6cf', metalness: 0.3, roughness: 0.4 } });
-  b.prim('mast-dish-feed', 'cone', [0.16, 0.6, 0.16], [0, 0.4, 0], { parent: dish, material: steel });
-  b.prim('mast-antenna', 'cylinder', [0.05, 3.2, 0.05], [0, H + 1.4, 0], { parent: base, material: steel });
-  const beacon = b.prim('mast-beacon', 'sphere', [0.28, 0.28, 0.28], [0, H + 3.05, 0], { parent: base, material: { preset: 'emissive', color: '#ff4a2a', emissive: '#ff2a10', emissiveIntensity: 3 }, castShadow: false });
-  b.light(beacon, [0, 0, 0], '#ff4020', 1.4, 12, [{ type: 'pulseLight', params: { min: 0.2, max: 1.6, period: 1.4 } }]);
+/**
+ * The relay mast: a tapered self-supporting lattice tower from the radio-mast generator (dishes, panel antennas, a
+ * beacon, a cable bridge to its equipment shelter, which stands 4.35 m along the mast's +X), with a pulsing red light.
+ * `yaw` -90 puts the shelter to the south of the tower.
+ */
+function relayMast(b: Builder, x: number, z: number, yaw: number): void {
+  const mast = b.gen('relay-mast', 'radio-mast', { height: 15, variant: 2, color: '#8b8f8a' }, [x, 0, z], { yaw, name: 'Relay mast', physics: 'static' });
+  b.light(mast, [0, 15.4, 0], '#ff4020', 1.4, 12, [{ type: 'pulseLight', params: { min: 0.2, max: 1.6, period: 1.4 } }]);
 }
 
 /** The relay itself: the equipment cabinet raiders want to destroy (a character of the outpost, allied with the player). */
@@ -431,12 +394,16 @@ export function kestrelOutpost(): MockPlan {
 
   // --- The outpost --------------------------------------------------------------------------------------
   b.prim('pad', 'box', [13, 0.25, 13], [CX, 0.125, CZ], { name: 'Concrete pad', material: { preset: 'concrete', finish: 'concrete', color: '#a7a093' }, physics: 'static', castShadow: false, footprint: 7 });
-  relayMast(b, CX - 2.2, CZ - 2.2);
+  // The mast and its shelter stand south-west of the pad, behind the defenders: the tower and the shelter are solid, and
+  // in front of the relay they blocked the lines of fire to the passes (a third of the wins went with them).
+  relayMast(b, CX - 6, CZ + 12, -90);
   relay(b);
   b.asset('generator', 'generator-portable', [CX - 3.6, 0.25, CZ + 2.6], { yaw: 30, physics: 'static', fallback: { kind: 'primitive', primitive: 'box', size: [0.8, 0.6, 0.6] } });
   b.asset('power-box', 'power-box', [CX + 4.4, 0.25, CZ - 3.8], { yaw: -90, physics: 'static', fallback: { kind: 'primitive', primitive: 'box', size: [0.8, 1.2, 0.4] } });
   b.asset('utility-box', 'utility-box', [CX - 4.6, 0.25, CZ - 4.2], { yaw: 90, physics: 'static', fallback: { kind: 'primitive', primitive: 'box', size: [0.8, 1.2, 0.4] } });
-  for (const [x, z, y] of [[-6.1, -9.8, 45], [6.2, 1.6, -135]] as const) floodlight(b, CX + x, CZ + z, y);
+  // One stands off the pad on the ground, one on the pad.
+  floodlight(b, CX - 6.1, CZ - 9.8, 45);
+  floodlight(b, CX + 6.2, CZ + 1.6, -135, 0.25);
   // Sandbag ring: six short walls with gaps, the player's main cover.
   for (let i = 0; i < 6; i++) {
     const a = ((i + 0.5) / 6) * Math.PI * 2;
@@ -451,8 +418,15 @@ export function kestrelOutpost(): MockPlan {
   for (const [x, z, s] of [[7, -17, 1.1], [8.2, -17.4, 0.9], [-12, -14, 1.2], [-13.1, -13.2, 1], [12, 18, 1.1], [-5, 19, 1]] as const) {
     b.gen('crate', 'crate', { size: s, color: '#7a6040' }, [x, 0, z], { yaw: r2(b.rand(0, 90)), physics: 'static', tags: ['cover'], footprint: 0.8 });
   }
-  b.asset('barrels', 'barrels-wooden', [-20, 0, -7], { yaw: 20, physics: 'static', fallback: { kind: 'primitive', primitive: 'cylinder', size: [0.6, 0.9, 0.6] } });
-  b.asset('barrels', 'barrels-wooden', [21, 0, -3], { yaw: -40, physics: 'static', fallback: { kind: 'primitive', primitive: 'cylinder', size: [0.6, 0.9, 0.6] } });
+  // Two clusters of dented, rusting steel drums, one red fuel drum in each.
+  for (const [cx, cz, turn] of [[-20, -7, 20], [21, -3, -40]] as const) {
+    const t = (turn * Math.PI) / 180;
+    for (const [dx, dz, variant, color] of [[-0.32, -0.12, 1, '#4f5a3c'], [0.3, -0.18, 1, '#365066'], [0.02, 0.42, 2, '#a3271c']] as const) {
+      const px = r2(cx + dx * Math.cos(t) + dz * Math.sin(t));
+      const pz = r2(cz - dx * Math.sin(t) + dz * Math.cos(t));
+      b.gen('drum', 'barrel', { height: 0.88, color, variant }, [px, 0, pz], { yaw: r2(b.rand(0, 360)), name: variant === 2 ? 'Fuel drum' : 'Steel drum', physics: 'static', tags: ['cover'] });
+    }
+  }
   for (const [x, z] of [[4, 16], [4.8, 16.6], [-21, -9]] as const) b.asset('tyre', 'tyre-old', [x, 0, z], { yaw: r2(b.rand(0, 360)), physics: 'static', fallback: { kind: 'primitive', primitive: 'cylinder', size: [0.8, 0.3, 0.8] } });
   b.asset('stove', 'stove-barrel', [CX + 5, 0.25, CZ + 4.5], { physics: 'static', fallback: { kind: 'primitive', primitive: 'cylinder', size: [0.6, 0.9, 0.6] } });
   b.gen('campfire', 'campfire', { size: 0.9, lit: true }, [CX + 6.2, 0.25, CZ + 5.4], { physics: 'static' });
@@ -464,20 +438,24 @@ export function kestrelOutpost(): MockPlan {
   for (const sx of [-1, 1]) b.prim('hut-side', 'box', [0.15, 2.6, 3.8], [sx * 2.5, 1.3, 0], { parent: hut, material: plank, physics: 'static' });
   b.prim('hut-roof', 'box', [5.6, 0.08, 4.6], [0, 2.75, 0.1], { parent: hut, rot: [-6, 0, 0], material: { preset: 'metal', finish: 'metal-roof', color: '#8a7d6c', roughness: 0.7 }, physics: 'static' });
   b.prim('hut-shelf', 'box', [3.4, 0.9, 0.6], [0, 0.45, -1.5], { parent: hut, material: { preset: 'wood', finish: 'oak', color: '#6c5236' }, physics: 'static' });
+  // A chain-link compound fence with barbed wire behind the hut, on the side no raider comes from.
+  for (const [x0, x1] of [[-13, -4.5], [3, 12]] as const) {
+    b.gen('fence', 'fence', { length: r2(x1 - x0), height: 2.2, color: '#9aa0a2', variant: 3 }, [r2((x0 + x1) / 2), 0, CZ + 26.5], { name: 'Chain-link fence', physics: 'static' });
+  }
 
   // --- Raiders and their drops (templates; spawned by the wave rules) ------------------------------------
   pickupTemplate(b, 'ammo-drop', { name: 'Ammunition', key: 'reserve', value: 45, size: [0.55, 0.32, 0.36], color: '#55603a', glow: '#ffd27a', message: '+45 rounds' });
   pickupTemplate(b, 'medkit-drop', { name: 'Medkit', key: 'health', value: 35, size: [0.66, 0.44, 0.4], color: '#c8241b', glow: '#ff4a3a', message: '+35 health', beacon: { vfx: 'heal', light: '#ff5a48' } });
   for (const kind of KINDS) for (const pass of Object.keys(PASSES) as Pass[]) raiderTemplate(b, kind, pass);
   // Two ammunition crates by the relay to start with.
-  for (const [x, z] of [[CX - 2.5, CZ + 6.5], [CX + 3.5, CZ - 6.6]] as const) {
+  for (const [x, z, yaw] of [[CX - 2.5, CZ + 5.9, 8], [CX + 3.5, CZ - 6.6, -12]] as const) {
     b.add({
       id: b.id('ammo-crate'),
       name: 'Ammunition crate',
       tags: ['pickup'],
-      transform: { position: [x, 0.55, z], rotation: [0, 0, 0], scale: [1, 1, 1] },
-      shape: { kind: 'primitive', primitive: 'box', size: [0.7, 0.4, 0.45] },
-      material: { preset: 'wood', finish: 'paint', color: '#5d6a40', roughness: 0.75 },
+      // A military ammunition crate (0.95 x 0.4 x 0.48 m: olive plywood on skids, rope handles, latches, stencilled lot) on the pad.
+      transform: { position: [x, 0.25, z], rotation: [0, yaw, 0], scale: [1, 1, 1] },
+      shape: { kind: 'procedural', generator: 'crate', params: { size: 0.95, color: '#56603a', variant: 3 }, seed: 4100 + Math.round(x * 10) },
       behaviors: [{ type: 'collectible', params: { scoreKey: 'reserve', value: 60, margin: 0.9, message: '+60 rounds', respawn: 45 } }],
       vfx: { preset: 'sparkle', rate: 4, color: '#ffd27a', scale: 0.7 },
     });
