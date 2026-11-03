@@ -10,7 +10,8 @@
     "./wire": "./src/wire.ts",
     "./proof": "./src/proof.ts",
     "./level": "./src/level/index.ts",
-    "./route": "./src/route.ts"
+    "./route": "./src/route.ts",
+    "./game": "./src/game/index.ts"
   },
   "main": "./src/index.ts",
   "types": "./src/index.ts",

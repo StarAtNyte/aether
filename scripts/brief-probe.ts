@@ -20,7 +20,7 @@ import { loadLibraryGenerator } from '@aether/procgen';
 import { createNodeSandbox } from '@aether/procgen/node';
 import { createHeadlessProvider } from './lib/live-provider';
 import { captureReviewHeadless } from '../apps/cli/src/mcp/review';
-import { CATALOGS, GENERATOR_DRY_RUN_MS, NodeAgentHost, nodeLevelTools } from './lib/headless-world';
+import { CATALOGS, GENERATOR_DRY_RUN_MS, NodeAgentHost, nodeGameReview, nodeLevelTools } from './lib/headless-world';
 import { GpuRoom } from './lib/gpu-room';
 
 const arg = (n: string, d?: string): string | undefined => process.argv.find((a) => a.startsWith(`--${n}=`))?.slice(n.length + 3) ?? d;
@@ -102,13 +102,16 @@ async function main(): Promise<void> {
   const host = new Host(sandbox, initial);
   const events: AgentEvent[] = [];
   const t0 = performance.now();
-  const agent = new WorldAgent({ provider, catalogs: CATALOGS, resolveGenerator: loadLibraryGenerator, maxRepairs: 2, maxTurns: Number(arg('turns', '40')), maxToolCalls: Number(arg('tool-calls', '300')), levelTools: nodeLevelTools(sandbox), textures: { images: null }, review: { vision: true, maxViews: 6, stallRounds: 3, maxRounds: rounds }, ...(withBrief ? { brief: {} } : {}) });
+  const agent = new WorldAgent({ provider, catalogs: CATALOGS, resolveGenerator: loadLibraryGenerator, maxRepairs: 2, maxTurns: Number(arg('turns', '40')), maxToolCalls: Number(arg('tool-calls', '300')), levelTools: nodeLevelTools(sandbox), gameReview: nodeGameReview(), textures: { images: null }, review: { vision: true, maxViews: 6, stallRounds: 3, maxRounds: rounds }, ...(withBrief ? { brief: {} } : {}) });
   for await (const ev of agent.run(prompt, host, { intent: from ? 'refine' : 'new' })) {
     events.push(ev);
     if (ev.type === 'status' || ev.type === 'brief' || ev.type === 'review') console.log(`[${Math.round((performance.now() - t0) / 1000)}s] ${ev.type}${'phase' in ev ? `:${ev.phase}` : ''} ${'text' in ev ? ev.text.slice(0, 120) : ''}`);
   }
   const ms = Math.round(performance.now() - t0);
   const world = host.getWorld();
+  // A game world: the flow and balance check on the final world, logged and kept in the summary.
+  const game = await nodeGameReview()(world);
+  if (game) console.log(`game check: ${game.summary.join(' | ')}${game.findings.map((f) => `\n  [${f.severity}] ${f.code}: ${f.message} Fix: ${f.fix}`).join('')}`);
   const kinds = new Set(Object.values(world.entities).map(kindOf));
   const imgs = await captureReviewHeadless(world, views(world), { sandbox, width: 960 });
   for (const im of imgs) await writeFile(join(out, `${im.name}.png`), Buffer.from(im.dataUrl.split(',')[1] as string, 'base64'));
@@ -137,6 +140,7 @@ async function main(): Promise<void> {
     lights: Object.values(world.entities).filter((e) => e.light).length,
     referenceDecision: briefEv?.type === 'brief' ? briefEv.view.reference : null,
     errors: events.filter((e) => e.type === 'error').map((e) => (e as { text: string }).text.slice(0, 200)),
+    game: game ? { summary: game.summary, findings: game.findings.map((f) => `${f.code}: ${f.message}`) } : null,
     final: events.filter((e) => e.type === 'message').at(-1),
   };
   await writeFile(join(out, 'summary.json'), JSON.stringify(summary, null, 2));

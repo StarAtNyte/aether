@@ -40,6 +40,7 @@ import { briefStage, lookReference, type BriefReviewer, type BriefStageResult } 
 import { LEVEL_SUBJECT, levelSnapshot, levelTurnText } from './level-review';
 import { withSunk } from './sunk';
 import { withFalls } from './falls';
+import { GAME_CODES, GameReviewCache, isReviewedGame, withGame, type GameReviewResult } from './game-review';
 import type { AgentEvent, AgentHost, AgentOptions, ChatMessage, CompletionResponse, ContentBlock, ReviewOptions, ToolDef, UsageTotals } from './types';
 
 const DEFAULTS = Object.freeze({ maxRepairs: 2, maxTurns: 8, maxToolCalls: 48, maxTokens: 16_000 });
@@ -207,9 +208,12 @@ export class WorldAgent {
   private hardcore: HardcoreRun | null = null;
   /** The brief of the current run (the build's checklist and the richness review's yardstick), with its reference picture. */
   private briefState: BriefStageResult | null = null;
+  /** The host's game review (played checks of game worlds), cached on the game's signature. */
+  private readonly games: GameReviewCache | null;
 
   constructor(opts: AgentOptions) {
     this.opts = opts;
+    this.games = opts.gameReview ? new GameReviewCache(opts.gameReview) : null;
     this.maxRepairs = clampInt(opts.maxRepairs, DEFAULTS.maxRepairs, 0, 10);
     this.maxTurns = clampInt(opts.maxTurns, DEFAULTS.maxTurns, 1, 200);
     this.maxToolCalls = clampInt(opts.maxToolCalls, DEFAULTS.maxToolCalls, 1, 2000);
@@ -743,6 +747,12 @@ export class WorldAgent {
     }
   }
 
+  /** The host's game review of `world` (cached; null result without a runner or when it failed). */
+  private async playGame(world: WorldDoc, signal: AbortSignal | undefined): Promise<{ result: GameReviewResult | null; fresh: boolean }> {
+    if (!this.games) return { result: null, fresh: false };
+    return (await raceAbort(this.games.get(world, signal), signal)) ?? { result: null, fresh: false };
+  }
+
   private async *reviewLoop(ctx: ExecutorContext, messages: ChatMessage[], host: AgentHost, startWorld: WorldDoc, session: string | undefined, signal: AbortSignal | undefined, steer: (() => readonly string[] | Promise<readonly string[]>) | undefined, held: { diffs: DifferenceLedger | null }): AsyncGenerator<AgentEvent> {
     const cfg: ReviewOptions | undefined = this.opts.review;
     if (!cfg) return;
@@ -789,7 +799,7 @@ export class WorldAgent {
       if (snap.buildings.length === 0) {
         const lvl = this.opts.levelTools ? await raceAbort(levelSnapshot(this.opts.levelTools, world, { maxViews, withViews }), signal) : null;
         // A world made of free pieces with no plan and nothing to measure is still compared with its brief, or, with no brief (a refine run), judged by eye from the renders.
-        const snapped = lvl ?? (this.briefState || withViews ? richnessSnapshot(world, { maxViews, withViews }) : null);
+        const snapped = lvl ?? (this.briefState || withViews || (this.games && isReviewedGame(world)) ? richnessSnapshot(world, { maxViews, withViews }) : null);
         if (!snapped) {
           yield { type: 'status', text: 'Review skipped: nothing to measure here (no building, no level snapshot, no brief to compare with).' };
           return;
@@ -800,6 +810,12 @@ export class WorldAgent {
       if (this.hardcore && withViews) snap = { ...snap, views: this.hardcore.shots };
       // Pieces sunk into the terrain and falls buried in the rock they pour from are checked in every round, whatever else measured the world.
       snap = withFalls(withSunk(snap, world), world);
+      // A game is played too (flow and balance), when the host can: its findings carry the fixes in the game's own params.
+      if (isReviewedGame(world)) {
+        const game = await this.playGame(world, signal);
+        if (game.fresh && game.result && game.result.summary.length > 0) yield { type: 'status', text: `Game check: ${game.result.summary.join(' · ')}`.slice(0, 600) };
+        snap = withGame(snap, world, game.result);
+      }
       // Findings seen unchanged twice are folded into one unresolved line (the tracker keeps the original keys).
       snap = { ...snap, findings: repeats.apply(snap.findings) };
       const isLevel = snap.buildings[0] === LEVEL_SUBJECT;
@@ -918,6 +934,9 @@ export class WorldAgent {
       if (hc?.targets && lumaRows.length > 0) content.push({ type: 'text', text: targetEvidenceText(lumaRows, hc.targets) });
       if (hc) content.push({ type: 'text', text: hc.bible });
       if (this.briefState) content.push({ type: 'text', text: richnessReviewText(this.briefState.brief, host.getWorld(), round, this.briefState.notes) });
+      // The richness turn prints no checker list: the game's findings (played headless) are shown on their own.
+      const gameFound = richOnly ? snap.findings.filter((f) => GAME_CODES.has(f.code)) : [];
+      if (gameFound.length > 0) content.push({ type: 'text', text: `GAME CHECK (the game was played headless by novice and average bots; fix with apply_patches on the params named):\n${findingsText(gameFound)}` });
       if (stallAsk) content.push({ type: 'text', text: stallAsk });
       if (shortAsk) content.push({ type: 'text', text: `The checker keeps repeating itself, but your brief's counts are still well short: ${shortAsk.slice(0, 900)}. Build the rest in one call each (shape_land tier, grid, perimeter, wall or along, as the brief says), or say plainly why each stays short, then finish.` });
       if (images.length > 0) yield { type: 'step', tool: 'look', label: round === 1 ? 'Looking at the renders' : 'Looking at the renders again', ok: true, looked: images.map((im) => ({ label: im.label, dataUrl: im.dataUrl })) };
@@ -1014,7 +1033,9 @@ export class WorldAgent {
       lastEdited = editedThisRound;
       before = world;
       if (!editedThisRound && declared) {
-        const after: ReviewSnapshot = withFalls(withSunk(richOnly ? richnessSnapshot(host.getWorld(), { maxViews: 1, withViews: false }) : isLevel && this.opts.levelTools ? ((await raceAbort(levelSnapshot(this.opts.levelTools, host.getWorld(), { maxViews: 1, withViews: false }), signal)) ?? snap) : snapshotForReview(host.getWorld(), null, { maxViews: 1, withViews: false }), host.getWorld()), host.getWorld());
+        const afterWorld = host.getWorld();
+        const afterBase: ReviewSnapshot = withFalls(withSunk(richOnly ? richnessSnapshot(host.getWorld(), { maxViews: 1, withViews: false }) : isLevel && this.opts.levelTools ? ((await raceAbort(levelSnapshot(this.opts.levelTools, host.getWorld(), { maxViews: 1, withViews: false }), signal)) ?? snap) : snapshotForReview(host.getWorld(), null, { maxViews: 1, withViews: false }), host.getWorld()), host.getWorld());
+        const after: ReviewSnapshot = isReviewedGame(afterWorld) ? withGame(afterBase, afterWorld, (await this.playGame(afterWorld, signal)).result) : afterBase;
         const errors = after.findings.filter((f) => f.severity === 'error');
         // Warnings are real until the model has seen them once more and still leaves them: ask again, once per set.
         const open = after.findings.filter((f) => f.severity === 'warning');

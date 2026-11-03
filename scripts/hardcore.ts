@@ -23,7 +23,7 @@ import { loadLibraryGenerator } from '@aether/procgen';
 import { createNodeSandbox } from '@aether/procgen/node';
 import { createCodexImageBackend } from '../apps/bridge/src/backends/codex-image';
 import { createHeadlessProvider } from './lib/live-provider';
-import { CATALOGS, GENERATOR_DRY_RUN_MS, NodeAgentHost, nodeLevelTools } from './lib/headless-world';
+import { CATALOGS, GENERATOR_DRY_RUN_MS, NodeAgentHost, nodeGameReview, nodeLevelTools } from './lib/headless-world';
 import { GpuRoom } from './lib/gpu-room';
 
 const ARGS = process.argv.slice(2);
@@ -161,7 +161,7 @@ async function main(): Promise<void> {
         log(`look sweep chose ${JSON.stringify(best.env)} (${best.d.toFixed(0)})`);
       }
     }
-    const agent = new WorldAgent({ provider, catalogs: CATALOGS, resolveGenerator: loadLibraryGenerator, maxRepairs: 2, maxTurns: Number(arg('turns', '150')), maxToolCalls: Number(arg('tool-calls', '1500')), levelTools: nodeLevelTools(sandbox), textures: { images: null }, review: { vision: true, maxViews: 4, stallRounds: 3, maxRounds: rounds, differences: true } });
+    const agent = new WorldAgent({ provider, catalogs: CATALOGS, resolveGenerator: loadLibraryGenerator, maxRepairs: 2, maxTurns: Number(arg('turns', '150')), maxToolCalls: Number(arg('tool-calls', '1500')), levelTools: nodeLevelTools(sandbox), gameReview: nodeGameReview(), textures: { images: null }, review: { vision: true, maxViews: 4, stallRounds: 3, maxRounds: rounds, differences: true } });
     const events: AgentEvent[] = [];
     for await (const ev of agent.run(passPrompt(pass, pi, bible), host, { intent: 'refine', images: refs, hardcore: { bible, shots, ...(targets ? { targets } : {}) } })) {
       events.push(ev);
@@ -176,6 +176,9 @@ async function main(): Promise<void> {
     console.log(sunk.length === 0 ? '  ground check: nothing sunk or over an edge' : `  ground check: ${sunk.length} piece(s) ${sunk.slice(0, 6).map((p) => `${p.id} ${p.kind} ${p.depth.toFixed(1)} m`).join(', ')}`);
     const buried = findBuriedFalls(host.getWorld());
     if (buried.length > 0) console.log(`  falls check: ${buried.length} buried at the top ${buried.slice(0, 6).map((p) => `${p.id} ${p.hidden.toFixed(1)} m in ${p.inside.join('+')}`).join(', ')}`);
+    // A game world is played once more after the pass: flow (start, lose, win, restart) and balance (novice, average).
+    const game = await nodeGameReview()(host.getWorld());
+    if (game) console.log(`  game check: ${game.summary.join(' | ')}${game.findings.length > 0 ? `\n    ${game.findings.map((f) => `[${f.severity}] ${f.code}: ${f.message} Fix: ${f.fix}`).join('\n    ')}` : ''}`);
     await gpu.load(host.getWorld());
     const renders = await gpu.capture(shots.map((s) => ({ ...s.pose, hideTops: false })), { width: 1600, height: 900 });
     const files: string[] = [];

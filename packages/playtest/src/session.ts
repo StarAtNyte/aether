@@ -56,7 +56,7 @@ export class Session {
     readonly world: WorldDoc,
     readonly pw: PhysicsWorld,
     scripts: ScriptRunner | undefined,
-    opts: { trace: boolean; traceHz: number },
+    opts: { trace: boolean; traceHz: number; held?: boolean },
   ) {
     this.scripts = scripts;
     this.recording = opts.trace;
@@ -64,14 +64,28 @@ export class Session {
     this.character = new CharacterController(pw, { radius: PLAYER_CAPSULE.radius, height: PLAYER_CAPSULE.height, spawn: world.player.spawn, id: PLAYER_ID });
     this.host = new PlaytestHost(pw, world, this.character);
     this.runtime = new LogicRuntime(world, this.host, scripts ? { scripts, seed: world.seed } : { seed: world.seed });
+    this.begun = opts.held !== true;
+    if (this.begun) this.runtime.start();
+  }
+
+  /** False while a held session waits behind its title card (see `create`'s `held`). */
+  begun: boolean;
+
+  /** Start a held session's logic (the player pressed the title card's button); no-op once begun. */
+  begin(): void {
+    if (this.begun) return;
+    this.begun = true;
     this.runtime.start();
   }
 
-  /** Build a session for `world` (physics must be loadable; scripts optional). */
-  static async create(world: WorldDoc, opts: { trace?: boolean; traceHz?: number; scripts?: ScriptRunner } = {}): Promise<Session> {
+  /**
+   * Build a session for `world` (physics must be loadable; scripts optional). `held`: the logic does not start until
+   * `begin()`, as the studio holds a world with a title card until the player presses its button.
+   */
+  static async create(world: WorldDoc, opts: { trace?: boolean; traceHz?: number; scripts?: ScriptRunner; held?: boolean } = {}): Promise<Session> {
     const pw = await PhysicsWorld.create(world, { fixedDt: STEP, ...levelColliders() });
     try {
-      return new Session(world, pw, opts.scripts, { trace: opts.trace ?? true, traceHz: opts.traceHz ?? 12 });
+      return new Session(world, pw, opts.scripts, { trace: opts.trace ?? true, traceHz: opts.traceHz ?? 12, held: opts.held === true });
     } catch (err) {
       pw.dispose();
       throw err;
@@ -101,6 +115,7 @@ export class Session {
   /** One fixed tick with the given input. */
   tick(input: BotInput): void {
     if (this.over) return;
+    this.begin();
     this.yaw = input.yawDeg;
     this.host.yawDeg = input.yawDeg;
     this.character.move({ forward: input.forward, right: input.right, jump: input.jump, yawDeg: input.yawDeg }, STEP, this.world.player.moveSpeed, this.world.player.jumpSpeed);
@@ -157,6 +172,7 @@ export class Session {
   /** One fixed tick of a driven vehicle: `throttle` (−1 brake/reverse … 1) and `steer` (−1 left … 1 right). */
   driveTick(throttle: number, steer: number): void {
     if (this.over || !this.driven) return;
+    this.begin();
     const events = this.pw.stepFixed();
     const s = this.input;
     s.forward = throttle;

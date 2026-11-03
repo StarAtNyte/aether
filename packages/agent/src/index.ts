@@ -101,3 +101,4 @@ export { PERCEIVE_TOOL_NAME } from './photo/perception/names';
 export { findSunk, sunkFindings, withSunk, type SunkPiece } from './sunk';
 export { findBuriedFalls, fallsFindings, withFalls, type BuriedFall } from './falls';
 export { HARDCORE_PASSES, HARDCORE_SHADER_BUDGET_PATCH, bibleText, heroShots, judgeCloser, lookCandidates, lookDistance, pictureColour, type PictureColour, lumaPercentiles, meanTargets, passPrompt, referencePrompt as heroReferencePrompt, targetEvidenceText, type HardcoreRun, type LumaTargets } from './hardcore';
+export { GAME_CODES, GameReviewCache, gameSignature, gameStaticFindings, isReviewedGame, withGame, type GameReviewResult, type GameReviewRunner } from './game-review';

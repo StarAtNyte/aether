@@ -32,3 +32,4 @@ export { selfRepair, proposeRepairs, countdownOf, type RepairProposal, type Repa
 export { ReportWire, ProgressWire, parseReport, parseProgress } from './wire';
 export * from './level';
 export { LiftClock, readLift } from './lifts';
+export { reviewGame, gameShape, isGameWorld, playGame, SKILL_PROFILES, type GameReview, type GameReviewOptions, type GameRun, type GameShape, type SkillProfile } from './game';

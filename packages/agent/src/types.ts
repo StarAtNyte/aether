@@ -4,6 +4,7 @@
  * Every provider normalizes its wire format to these shapes so the agent loop,
  * the server proxy and the studio never depend on a vendor API.
  */
+import type { GameReviewRunner } from './game-review';
 import type { Provenance } from './photo/stages';
 import type { EntityId, GeneratorDef, Patch, PatchError, PatchResult, ProceduralShape, ScriptDef, TextureSetDef, TextureTier, WorldDoc } from '@aether/core';
 import type { GeneratorOutput } from '@aether/procgen';
@@ -393,6 +394,13 @@ export interface AgentOptions {
    * can run physics (`runLevelTool` of @aether/playtest). Absent: the two tools are not offered.
    */
   levelTools?: LevelToolRunner;
+  /**
+   * Plays game worlds headless in every review round (flow: start, lose, win, restart; balance: novice and average
+   * players): `reviewGame` of @aether/playtest, for hosts that can run physics. Its findings join the review like the
+   * sunk and falls checks; only worlds that are games are played, and an unchanged game is not played twice.
+   * Absent: only the data checks of the game run (title card, a way to win).
+   */
+  gameReview?: GameReviewRunner;
   /**
    * Textures (`make_texture`): the image model to draw with (null: none connected, the photo and library paths still work) and,
    * when the room was read from a photograph, that photograph. Supplied by hosts that can store pictures (`AgentHost.storeTexture`).
