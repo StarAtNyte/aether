@@ -160,17 +160,41 @@ export function heroShots(world: WorldDoc, opts: HeroShotOptions = {}): ReviewVi
   const spawn = block?.spawn ?? world.player.spawn;
   const mark = block?.mark ?? landmark(world) ?? c;
   const shots = framedShots(world, c, r, spawn, mark);
-  // On generated block land the cameras would otherwise sit inside a hill: keep each one, and what it looks at, above the ground.
   if (block) {
-    const ground = opts.groundAt ?? (() => VOXEL_SEA_LEVEL + 4);
-    for (const s of shots) {
-      const p = s.pose.position as Vec3;
-      const t = s.pose.target as Vec3;
-      p[1] = Math.max(p[1], ground(p[0], p[2]) + 1.7);
-      t[1] = Math.max(t[1], ground(t[0], t[2]) + 1);
-    }
+    const land = opts.groundAt ?? (() => VOXEL_SEA_LEVEL + 4);
+    const built = opts.builtAt;
+    const solid = built ? (x: number, z: number) => Math.max(land(x, z), built(x, z)) : land;
+    for (const s of shots) clearBlockLand(s, solid);
   }
   return shots;
+}
+
+/**
+ * On generated block land a camera placed by the usual offsets can sit inside a hill, in a tree crown or behind a ridge. The
+ * camera is kept above the highest ground round it (by eye height on the street, by a house and a tree elsewhere, so a block
+ * village is seen over its roofs), what it looks at above the ground, and it rises until the land no longer hides the target.
+ */
+function clearBlockLand(s: ReviewViewRequest, ground: (x: number, z: number) => number): void {
+  const p = s.pose.position as Vec3;
+  const t = s.pose.target as Vec3;
+  const street = s.name === 'hero-street';
+  const around = (x: number, z: number, r: number): number => {
+    let h = -Infinity;
+    for (let dx = -r; dx <= r; dx += r || 1) for (let dz = -r; dz <= r; dz += r || 1) h = Math.max(h, ground(x + dx, z + dz));
+    return h;
+  };
+  t[1] = Math.max(t[1], ground(t[0], t[2]) + 1);
+  p[1] = Math.max(p[1], around(p[0], p[2], street ? 1 : 6) + (street ? 1.7 : 12));
+  for (let k = 0; k < 24; k++) {
+    let hidden = false;
+    for (let f = 0.08; f < 0.95 && !hidden; f += 0.04) {
+      const x = p[0] + (t[0] - p[0]) * f;
+      const z = p[2] + (t[2] - p[2]) * f;
+      hidden = p[1] + (t[1] - p[1]) * f < ground(x, z) + 1.5;
+    }
+    if (!hidden) break;
+    p[1] += 3;
+  }
 }
 
 /** How the hero shots of a world are framed. */
@@ -180,6 +204,11 @@ export interface HeroShotOptions {
    * a seed (the voxel terrain generator's ground level). Without it the land is taken to lie a few blocks above the sea.
    */
   groundAt?: (x: number, z: number) => number;
+  /**
+   * The first free height above what the block edits built at (x, z) (a house roof, a castle keep), or anything below the land
+   * where nothing is built. Cameras keep clear of it and look over it; the landmark is still aimed at on the land.
+   */
+  builtAt?: (x: number, z: number) => number;
 }
 
 /** Where a block edit stands, in plan: its anchor corner or centre and, for boxes and lines, the far corner. */
@@ -228,7 +257,10 @@ function voxelFrame(world: WorldDoc, groundAt: (x: number, z: number) => number)
   // A world of bare land round the spawn: frame the land a short walk round it.
   const pad = max[0] - min[0] < 24 && max[2] - min[2] < 24 ? 24 : 0;
   min[0] -= pad; min[2] -= pad; max[0] += pad; max[2] += pad;
-  return { min, max, spawn, mark: mark?.p ?? (pad ? [spawn[0], spawn[1] + 3, spawn[2]] : null) };
+  // On bare land the landmark is the land ahead of the spawn, away from the side the establishing view comes from (see framedShots).
+  const ahead: Vec3 = [spawn[0] - 0.6 * 16, 0, spawn[2] - 0.8 * 16];
+  ahead[1] = groundAt(ahead[0], ahead[2]) + 3;
+  return { min, max, spawn, mark: mark?.p ?? (pad ? ahead : null) };
 }
 
 /** The four hero shots round the centre `c` of a place of radius `r`, seen from the side of `spawn`, looking at `mark`. */
@@ -236,8 +268,9 @@ function framedShots(world: WorldDoc, c: Vec3, r: number, spawn: Vec3, mark: Vec
   // The establishing view comes from the side the spawn is on, so the place is seen the way a visitor first meets it.
   const sx = spawn[0] - c[0];
   const sz = spawn[2] - c[2];
-  const sl = Math.hypot(sx, sz) || 1;
-  const dir: Vec3 = [sx / sl, 0, sz / sl];
+  const sl = Math.hypot(sx, sz);
+  // A spawn at the very centre gives no side to come from: take a fixed one rather than a camera straight above the centre.
+  const dir: Vec3 = sl > 1 ? [sx / sl, 0, sz / sl] : [0.6, 0, 0.8];
   const side: Vec3 = [-dir[2], 0, dir[0]];
   return [
     view('hero-establishing', 'establishing view: the whole place from outside and above, the way a postcard frames it', [c[0] + dir[0] * r * 1.35 + side[0] * r * 0.35, c[1] + r * 0.55, c[2] + dir[2] * r * 1.35 + side[2] * r * 0.35], [c[0], c[1], c[2]], 45),

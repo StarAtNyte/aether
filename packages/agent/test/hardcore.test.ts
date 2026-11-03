@@ -27,7 +27,7 @@ describe('hardcore mode', () => {
   it('frames hero shots of a block world from its spawn and block edits, above the generated land', () => {
     const tpl = (slug: string): WorldDoc => createWorld((JSON.parse(readFileSync(fileURLToPath(new URL(`../../../apps/studio/public/templates/worlds/${slug}.json`, import.meta.url)), 'utf8')) as { world: WorldDoc }).world);
     // A rolling ground that rises to the east, the way generated land would.
-    const groundAt = (x: number, z: number) => 60 + Math.round(x / 8) + Math.round(Math.sin(z / 10) * 3);
+    const groundAt = (x: number, z: number) => 60 + Math.round(x / 4) + Math.round(Math.sin(z / 6) * 5);
     for (const slug of ['blockfall', 'survival-world']) {
       const world = tpl(slug);
       expect(Object.keys(world.entities)).toEqual([]);
@@ -41,10 +41,28 @@ describe('hardcore mode', () => {
         expect(t[1]).toBeGreaterThanOrEqual(groundAt(t[0], t[2]) + 1);
         // Every camera stays within reach of the spawn, where the terrain streams in.
         expect(Math.hypot(x - world.player.spawn[0], z - world.player.spawn[2])).toBeLessThan(120);
+        // It looks across the place, never straight down (a spawn at the centre of the frame gives no side to come from).
+        expect(Math.hypot(t[0] - x, t[2] - z), `${slug} ${s.name}`).toBeGreaterThan(8);
+        // And the land never hides what it looks at.
+        for (let f = 0.1; f < 0.95; f += 0.05) {
+          const qx = x + (t[0] - x) * f;
+          const qz = z + (t[2] - z) * f;
+          expect(y + (t[1] - y) * f, `${slug} ${s.name} at ${f.toFixed(2)}`).toBeGreaterThanOrEqual(groundAt(qx, qz) + 1.5);
+        }
       }
-      // The street shot stands at eye height on the spawn.
+      // The street shot stands on the spawn, at eye height unless a rise hides the landmark.
       const sp = world.player.spawn;
-      expect(shots[1]!.pose.position[1]).toBeCloseTo(groundAt(sp[0], sp[2]) + 1.7, 5);
+      expect(shots[1]!.pose.position[1]).toBeGreaterThanOrEqual(groundAt(sp[0], sp[2]) + 1.7);
+      expect(shots[1]!.pose.position[1]).toBeLessThan(groundAt(sp[0], sp[2]) + 30);
+    }
+    // What the edits built (a castle keep 25 blocks over the land) is cleared and looked over, like the land.
+    const keep = (x: number, z: number) => (Math.hypot(x - 17, z - 28) < 14 ? groundAt(17, 28) + 25 : -1);
+    const solid = (x: number, z: number) => Math.max(groundAt(x, z), keep(x, z));
+    for (const s of heroShots(tpl('blockfall'), { groundAt, builtAt: keep })) {
+      const p = s.pose.position as [number, number, number];
+      const t = s.pose.target as [number, number, number];
+      expect(p[1], s.name).toBeGreaterThanOrEqual(solid(p[0], p[2]) + 1.7);
+      for (let f = 0.1; f < 0.95; f += 0.05) expect(p[1] + (t[1] - p[1]) * f, `${s.name} at ${f.toFixed(2)}`).toBeGreaterThanOrEqual(solid(p[0] + (t[0] - p[0]) * f, p[2] + (t[2] - p[2]) * f) + 1.5);
     }
     // Without a ground function the land is taken to lie just above the sea, never at y 0.
     for (const s of heroShots(tpl('survival-world'))) expect(s.pose.position[1]).toBeGreaterThan(40);

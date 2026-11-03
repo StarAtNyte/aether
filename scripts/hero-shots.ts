@@ -9,7 +9,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { createWorld, type WorldDoc } from '@aether/core';
 import { heroShots } from '@aether/agent';
-import { BlockRegistry, TerrainGenerator } from '@aether/voxel';
+import { BlockRegistry, compileEdits, TerrainGenerator } from '@aether/voxel';
 import { GpuRoom } from './lib/gpu-room';
 
 const args = process.argv.slice(2);
@@ -26,8 +26,16 @@ try {
     const world = createWorld((raw.world ?? raw) as WorldDoc) as WorldDoc;
     // A block world grows its land from a seed: frame the shots on the generated ground, not on a guess.
     const v = world.voxel;
-    const gen = v ? new TerrainGenerator(v.seed ?? world.seed, v.preset, new BlockRegistry(v.blocks)) : null;
-    const shots = heroShots(world, gen ? { groundAt: (x, z) => gen.groundLevel(Math.floor(x), Math.floor(z)) } : {});
+    const reg = v ? new BlockRegistry(v.blocks) : null;
+    const gen = v && reg ? new TerrainGenerator(v.seed ?? world.seed, v.preset, reg) : null;
+    // What the edits built (houses, the castle, lettering), so a camera is never placed inside a roof or behind a keep.
+    const built = v && reg && gen ? compileEdits(v.edits, reg, gen, v.seed ?? world.seed).map((e) => ({ ...e, top: e.content?.maxY ?? e.maxY })) : [];
+    const builtAt = (x: number, z: number): number => {
+      let top = -1;
+      for (const e of built) if (x >= e.minX && x <= e.maxX && z >= e.minZ && z <= e.maxZ) top = Math.max(top, e.top + 1);
+      return top;
+    };
+    const shots = heroShots(world, gen ? { groundAt: (x, z) => gen.groundLevel(Math.floor(x), Math.floor(z)), builtAt } : {});
     let imgs: Array<string | null | undefined>;
     if (full) {
       imgs = [];
