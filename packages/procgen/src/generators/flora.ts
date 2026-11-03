@@ -1085,19 +1085,35 @@ const boulder = defineGenerator({
   run(p, api) {
     const variant = p.int('variant');
     const R = p.num('size') / 2;
-    const sc: Vec3 = [[1, 0.75, 0.9], [1, 0.9, 1.1], [1.35, 0.45, 1]][variant] as Vec3;
+    const sc: Vec3 = [[1, 0.75, 0.9], [1, 0.9, 1.1], [1.35, 0.5, 1]][variant] as Vec3;
     const n = api.noise;
-    const m = api.icosphereRock(R, 0.2, 3);
-    m.scale(sc[0], sc[1], sc[2]);
-    m.displace((x, y, z) => {
+    // A welded (smooth, shared-vertex) icosphere, lumped like icosphereRock: displacing a flat, unwelded mesh moves each
+    // facet along its own normal and tears the surface into separate triangles with gaps between them (a dark web).
+    const m = api.icosphere(R, 3);
+    const ox = api.rng() * 100, oy = api.rng() * 100, oz = api.rng() * 100;
+    const lp = m.positions;
+    for (let i = 0; i < lp.length; i += 3) {
+      const x = (lp[i] as number) / R, y = (lp[i + 1] as number) / R, z = (lp[i + 2] as number) / R;
+      const k = Math.max(0.35, 1 + 0.11 * (0.65 * n.noise3(x * 1.2 + ox, y * 1.2 + oy, z * 1.2 + oz) + 0.35 * n.noise3(x * 2.9 - oz, y * 2.9 + ox, z * 2.9 - oy)));
+      lp[i] = x * R * k;
+      lp[i + 1] = y * R * k;
+      lp[i + 2] = z * R * k;
+    }
+    m.recomputeNormals();
+    const lumps = (x: number, y: number, z: number): number => {
       const big = n.fbm2(x * 0.9 + 3, z * 0.9 + y * 0.6, 3) * 0.22;
       const ridge = variant === 1 ? Math.round(n.noise3(x * 1.4, y * 1.4, z * 1.4) * 3) / 3 * 0.1 : n.ridged2(x * 2.1 + y, z * 2.1, 3) * 0.08;
       return (big + ridge) * R;
-    });
+    };
+    m.scale(sc[0], sc[1], sc[2]);
+    // A slab's thin rim takes less of the lumping, which would fold it over on the welded mesh.
+    if (variant === 2) m.displace((x, y, z) => lumps(x, y, z) * (0.25 + 0.75 * Math.min(1, Math.abs(y) / (0.35 * R))));
+    else m.displace(lumps);
     const b0 = m.bounds();
     const cut = b0.min[1] + (b0.max[1] - b0.min[1]) * 0.1;
     const pos = m.positions;
-    for (let i = 1; i < pos.length; i += 3) if ((pos[i] as number) < cut) pos[i] = cut;
+    // Squash (not clamp) what lies under the cut: a monotonic map keeps every triangle facing its way on the welded mesh.
+    for (let i = 1; i < pos.length; i += 3) if ((pos[i] as number) < cut) pos[i] = cut - ((cut - (pos[i] as number)) * 0.02);
     m.recomputeNormals();
     const base = p.color('color');
     const dark = lin(shade(base, -0.18));
