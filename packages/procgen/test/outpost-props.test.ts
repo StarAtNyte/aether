@@ -19,9 +19,15 @@ const CASES: Array<[string, Record<string, Json>, number, number]> = [
   ['radio-mast', {}, 4000, 6],
   ['radio-mast', { height: 40, variant: 1 }, 7000, 6],
   ['radio-mast', { height: 30, variant: 2 }, 7000, 6],
+  ['crate', { variant: 3 }, 1500, 3],
+  ['barrel', { variant: 1 }, 2600, 1],
+  ['barrel', { variant: 2 }, 2800, 2],
+  ['fence', { variant: 3, height: 2.2 }, 3000, 1],
+  ['fence', { variant: 3, height: 4, length: 60 }, 8000, 1],
+  ['lamp-post', { variant: 3, height: 8 }, 1000, 3],
 ];
 
-describe('outpost props', () => {
+describe('outpost props and new variants', () => {
   for (const [id, params, maxTris, maxDraws] of CASES) {
     it(`${id} ${JSON.stringify(params)} builds within budget with colliders, deterministically`, () => {
       const a = generateBuiltinSync(id, params, 11);

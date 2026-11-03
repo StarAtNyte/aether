@@ -6,13 +6,14 @@
 import type { MaterialSpec, Vec3 } from '@aether/core';
 import type { InternalApi } from '../api';
 import type { ColliderDesc } from '../types';
-import type { Mesh } from '../kernel/mesh';
+import { MeshBuilder, type Mesh } from '../kernel/mesh';
 import { boxCollider, cylinderCollider } from '../colliders';
 import { mixLinear } from '../color';
 import {
   addFinish, defineGenerator, glow, jitter, lin, MAT, paintNoise, paintSolid, pBool, pColor, pInt, pNum, pVariant, roundUvs, shade, uvMap, WINDOW_GLASS,
   type Finish,
 } from './kit';
+import { strut } from './outpost';
 
 const DEG = 180 / Math.PI;
 
@@ -562,18 +563,19 @@ const wall = defineGenerator({
 
 const fence = defineGenerator({
   id: 'fence',
-  description: 'Fence segment along X: picket, ranch rails, or wrought iron with spear tips.',
+  description: 'Fence segment along X: picket, ranch rails, wrought iron with spear tips, or galvanized chain-link wire mesh on steel posts with a barbed-wire top (compounds, outposts, yards; use height 2 to 2.5).',
   category: 'architecture',
   params: {
     length: pNum(6, 1, 60, 'length along X in meters'),
     height: pNum(1.1, 0.3, 4, 'height in meters'),
     color: pColor('#8b5a2b', 'main color (e.g. #f2efe8 for a white picket fence)'),
-    variant: pVariant(2, '0 picket, 1 ranch rails, 2 wrought iron'),
+    variant: pVariant(3, '0 picket, 1 ranch rails, 2 wrought iron, 3 chain-link with barbed wire'),
   },
   run(p, api) {
     const L = p.num('length');
     const H = p.num('height');
     const variant = p.int('variant');
+    if (variant === 3) return chainLink(api, L, H, p.color('color') === '#8b5a2b' ? '#8e9397' : p.color('color'));
     const c = variant === 2 && p.color('color') === '#8b5a2b' ? '#2b2d31' : p.color('color');
     const finish: Finish = variant === 2 ? 'black-metal' : variant === 1 ? 'oak' : 'paint';
     const all = api.box(0.01, 0.01, 0.01).translate(0, H / 2, 0);
@@ -608,6 +610,61 @@ const fence = defineGenerator({
     return api.build();
   },
 });
+
+/**
+ * Chain-link fence along X: steel pipe posts every 2.5 m with caps and outward-leaning arms, a top rail, a bottom tension
+ * wire, the diamond mesh as two families of thin diagonal wires (pitch widened on long runs to hold the triangle budget)
+ * and three strands of barbed wire with barbs on the arms. One galvanized draw.
+ */
+function chainLink(api: InternalApi, L: number, H: number, color: string) {
+  const mb = new MeshBuilder(4096, 6144);
+  const posts = Math.max(2, Math.round(L / 2.5) + 1);
+  const m = api.box(0.01, 0.01, 0.01).translate(0, H / 2, 0);
+  const arm = (x: number, t: number): Vec3 => [x, H + 0.05 + t * 0.32, -t * 0.32];
+  for (let i = 0; i < posts; i++) {
+    const x = -L / 2 + (i * L) / (posts - 1);
+    const end = i === 0 || i === posts - 1;
+    m.merge(api.cylinder(end ? 0.04 : 0.03, end ? 0.04 : 0.03, H + 0.05, 8).translate(x, (H + 0.05) / 2, 0));
+    m.merge(api.cylinder(end ? 0.045 : 0.035, end ? 0.045 : 0.035, 0.04, 8).translate(x, H + 0.07, 0));
+    strut(mb, [x, H + 0.05, 0], arm(x, 1), 0.016, 4);
+    // Concrete-set foot: a slightly wider collar.
+    m.merge(api.cylinder(0.06, 0.07, 0.06, 8).translate(x, 0.03, 0));
+  }
+  strut(mb, [-L / 2, H - 0.03, 0.035], [L / 2, H - 0.03, 0.035], 0.021, 6, true);
+  strut(mb, [-L / 2, 0.06, 0.035], [L / 2, 0.06, 0.035], 0.004, 3);
+  // The diamond mesh.
+  const y0 = 0.06, y1 = H - 0.05;
+  const span = y1 - y0;
+  const pitch = Math.max(0.065, (12 * 2 * (L + span)) / 5200);
+  for (const dir of [1, -1]) {
+    for (let x = -L / 2 - span; x < L / 2; x += pitch) {
+      // A wire from (x, y0) rising at 45 degrees, clipped to the panel.
+      let ax = x, ay = y0, bx = x + span, by = y1;
+      if (ax < -L / 2) {
+        ay += -L / 2 - ax;
+        ax = -L / 2;
+      }
+      if (bx > L / 2) {
+        by -= bx - L / 2;
+        bx = L / 2;
+      }
+      if (by - ay < 0.01) continue;
+      const fx = (v: number): number => (dir > 0 ? v : -v);
+      strut(mb, [fx(ax), ay, 0.04], [fx(bx), by, 0.04], 0.0032, 3);
+    }
+  }
+  // Barbed wire: three strands on the arms, a barb every so often.
+  const barbStep = Math.max(0.25, L / 40);
+  for (const t of [0.33, 0.66, 1]) {
+    const a = arm(-L / 2, t), b = arm(L / 2, t);
+    strut(mb, a, b, 0.004, 3);
+    for (let x = -L / 2 + barbStep / 2; x < L / 2; x += barbStep) strut(mb, [x - 0.012, a[1] - 0.015, a[2] - 0.015], [x + 0.012, a[1] + 0.015, a[2] + 0.015], 0.0025, 3);
+  }
+  m.merge(api.fromBuilder(mb));
+  addFinish(api, m, 'brushed-metal', color, { variation: 0.06, freq: 1.5 });
+  api.collider(boxCollider(0, (H + 0.3) / 2, -0.1, L, H + 0.3, 0.3));
+  return api.build();
+}
 
 /** Points along a parabolic arc from x=-L/2 to L/2 with rise `h` at the center. */
 function arcY(x: number, L: number, h: number): number {

@@ -11,8 +11,9 @@ import type { Mesh } from '../kernel/mesh';
 import { boxCollider, cylinderCollider } from '../colliders';
 import { mixLinear } from '../color';
 import {
-  addFinish, boxUvs, defineGenerator, finishMat, glow, hullOf, lin, paintGradientY, pBool, pColor, pNum, pVariant, roundUvs, shade,
+  addFinish, boxUvs, defineGenerator, paintNoise, finishMat, glow, hullOf, lin, paintGradientY, pBool, pColor, pNum, pVariant, roundUvs, shade,
 } from './kit';
+import { flatQuads, rustPaint, solid, stencilRects, stencilWidth, weathered } from './outpost';
 
 /** An empty seed mesh to merge parts into (a 1 cm cube hidden inside the object at `y`). */
 function seed(api: InternalApi, y: number): Mesh {
@@ -33,19 +34,20 @@ function staveUvs(m: Mesh, radius: number): Mesh {
 
 const lampPost = defineGenerator({
   id: 'lamp-post',
-  description: 'Street lamp: ornate cast base, slim pole and a glowing lantern (classic), curved arm (modern) or twin lanterns.',
+  description: 'Street lamp: ornate cast base, slim pole and a glowing lantern (classic), curved arm (modern), twin lanterns, or an industrial floodlight pole with two lamp heads on a crossarm (yards, outposts, car parks).',
   category: 'props',
   params: {
     height: pNum(3.5, 1.5, 10, 'height in meters'),
     color: pColor('#2d2d33', 'metal color'),
     lightColor: pColor('#ffd27a', 'light color'),
-    variant: pVariant(2, '0 classic lantern, 1 modern arm, 2 twin lanterns'),
+    variant: pVariant(3, '0 classic lantern, 1 modern arm, 2 twin lanterns, 3 industrial floodlight pole (galvanized, two lamp heads)'),
   },
   run(p, api) {
     const H = p.num('height');
     const c = p.color('color');
     const light = p.color('lightColor');
     const variant = p.int('variant');
+    if (variant === 3) return floodPole(api, H, c === '#2d2d33' ? '#9a9fa2' : c, light);
     const k = H / 3.5;
     const iron = api.lathe([[0, 0], [0.24 * k, 0], [0.24 * k, 0.08 * k], [0.2 * k, 0.12 * k], [0.15 * k, 0.26 * k], [0.1 * k, 0.4 * k], [0.08 * k, 0.5 * k], [0, 0.5 * k]], 16);
     const poleTop = variant === 1 ? H : H * 0.86;
@@ -93,6 +95,41 @@ const lampPost = defineGenerator({
     return api.build();
   },
 });
+
+/**
+ * Industrial floodlight pole: a concrete footing, a bolted base plate, a tapered galvanized pole with a hand-hole and a
+ * junction box, and a crossarm carrying two finned lamp heads tilted down on yokes.
+ */
+function floodPole(api: InternalApi, H: number, steel: string, light: string) {
+  addFinish(api, api.cylinder(0.26, 0.3, 0.3, 14).translate(0, 0.15, 0), 'concrete', '#a6a29a', { variation: 0.06 });
+  const m = api.box(0.34, 0.025, 0.34).translate(0, 0.3125, 0);
+  for (const [bx, bz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]] as const) m.merge(api.cylinder(0.014, 0.014, 0.05, 6).translate(bx * 0.13, 0.33, bz * 0.13));
+  m.merge(api.cylinder(0.055, 0.09, H - 0.32, 12).translate(0, 0.32 + (H - 0.32) / 2, 0));
+  m.merge(api.box(0.07, 0.2, 0.02).translate(0, 0.8, 0.085));
+  m.merge(api.box(0.24, 0.32, 0.13).translate(0, 1.5, 0.14));
+  m.merge(api.cylinder(0.014, 0.014, H - 1.8, 6).translate(0.07, 1.66 + (H - 1.8) / 2, 0.07));
+  const top = H - 0.12;
+  m.merge(api.box(1.1, 0.06, 0.08).translate(0, top, 0));
+  m.merge(api.limb([0, top - 0.45, 0], [0.38, top - 0.03, 0], 0.016, 0.016, 6)).merge(api.limb([0, top - 0.45, 0], [-0.38, top - 0.03, 0], 0.016, 0.016, 6));
+  const heads: Mesh[] = [];
+  const glass: Mesh[] = [];
+  for (const sx of [-1, 1]) {
+    // A head built facing +Z, tilted 35 degrees down, hung under the arm on a yoke.
+    const h = api.box(0.44, 0.32, 0.12);
+    for (let f = 0; f < 6; f++) h.merge(api.box(0.012, 0.28, 0.06).translate(-0.18 + f * 0.072, 0, -0.08));
+    h.merge(api.box(0.46, 0.03, 0.14).translate(0, 0.165, 0.01));
+    const yoke = api.box(0.02, 0.26, 0.04).translate(-0.24, 0.1, 0).merge(api.box(0.02, 0.26, 0.04).translate(0.24, 0.1, 0)).merge(api.box(0.5, 0.025, 0.04).translate(0, 0.23, 0));
+    const place = (mesh: Mesh): Mesh => mesh.rotate(35, 0, 0).translate(sx * 0.38, top - 0.3, 0.12);
+    heads.push(place(h.merge(yoke)));
+    glass.push(place(api.box(0.38, 0.26, 0.01).translate(0, 0, 0.062)));
+  }
+  for (const h of heads) m.merge(h);
+  addFinish(api, m, 'brushed-metal', steel, { variation: 0.05 });
+  for (const g of glass) api.add(g, glow(light, 3));
+  api.collider(cylinderCollider(0, 0.15, 0, 0.3, 0.3));
+  api.collider(cylinderCollider(0, H / 2, 0, 0.09, H));
+  return api.build();
+}
 
 const bench = defineGenerator({
   id: 'bench',
@@ -272,18 +309,19 @@ const chair = defineGenerator({
 
 const crate = defineGenerator({
   id: 'crate',
-  description: 'Shipping crate: framed wooden crate with diagonal brace, slatted crate, or sci-fi metal cargo box with glowing strips.',
+  description: 'Shipping crate: framed wooden crate with diagonal brace, slatted crate, sci-fi metal cargo box with glowing strips, or an olive-drab military ammunition / supply crate (size long, half as deep, lid, rope handles, latches, stencilled lot markings).',
   category: 'props',
   params: {
     size: pNum(1, 0.3, 4, 'edge length in meters'),
     color: pColor('#b07d45', 'main color'),
-    variant: pVariant(2, '0 framed wood, 1 slatted wood, 2 sci-fi metal'),
+    variant: pVariant(3, '0 framed wood, 1 slatted wood, 2 sci-fi metal, 3 military ammo / supply crate'),
   },
   run(p, api) {
     const S = p.num('size');
     const c = p.color('color');
     const variant = p.int('variant');
     const e = S * 0.09;
+    if (variant === 3) return militaryCrate(api, S, c === '#b07d45' ? '#4d5434' : c);
     if (variant === 2) {
       const metal = c === '#b07d45' ? '#7c858d' : c;
       addFinish(api, api.box(S * 0.96, S * 0.96, S * 0.96).translate(0, S / 2, 0), 'brushed-metal', metal, { variation: 0.04 });
@@ -326,6 +364,71 @@ const crate = defineGenerator({
   },
 });
 
+const LOTS = ['CTG 7.62MM', 'CTG 5.56MM', 'CAL .50 M33', 'GRENADE M67', 'RATIONS MRE', 'MEDICAL KIT'];
+
+/**
+ * Military ammunition / supply crate, `S` long: a painted plywood box on two skids with end cleats, a lid with a shadow
+ * seam, rope handles, steel latches, hinges and corner caps, and a stencilled lot in yellow. Paint wears off the rounded
+ * edges (surface layers). Three draws.
+ */
+function militaryCrate(api: InternalApi, S: number, olive: string) {
+  const L = S;
+  const D = S * 0.5;
+  const H = S * 0.42;
+  const skid = S * 0.05;
+  const r = Math.min(0.012, S * 0.012);
+  const paint = solid(api.roundedBox(L * 0.94, H * 0.78, D * 0.94, r, 1).translate(0, skid + H * 0.39, 0), olive);
+  paint.merge(solid(api.roundedBox(L * 0.955, H * 0.2, D * 0.955, r, 1).translate(0, skid + H * 0.78 + H * 0.1 + 0.004, 0), shade(olive, 0.04)));
+  paint.merge(solid(api.box(L * 0.935, 0.006, D * 0.935).translate(0, skid + H * 0.78 + 0.002, 0), shade(olive, -0.6)));
+  const wood = shade(olive, -0.12);
+  for (const sz of [-1, 1]) paint.merge(solid(api.box(L * 0.97, skid, S * 0.07).translate(0, skid / 2, sz * D * 0.3), wood));
+  for (const sx of [-1, 1]) {
+    const x = sx * (L * 0.47 + S * 0.015);
+    for (const sz of [-1, 1]) paint.merge(solid(api.box(S * 0.03, H * 0.92, S * 0.06).translate(x, skid + H * 0.46, sz * (D * 0.47 - S * 0.03)), wood));
+    paint.merge(solid(api.box(S * 0.03, S * 0.05, D * 0.8).translate(x, skid + H * 0.25, 0), wood));
+  }
+  // The stencilled lot on the front and the end.
+  const yellow = '#d9c45a';
+  const lot = LOTS[Math.floor(api.rng() * LOTS.length) % LOTS.length] as string;
+  const h1 = S * 0.05;
+  const w1 = stencilWidth(lot, h1);
+  const rects = stencilRects(lot, -w1 / 2, skid + H * 0.5, h1);
+  const line2 = `LOT ${String(10 + Math.floor(api.rng() * 89))}-${String(100 + Math.floor(api.rng() * 899))}`;
+  const w2 = stencilWidth(line2, h1 * 0.6);
+  rects.push(...stencilRects(line2, -w2 / 2, skid + H * 0.5 - h1 * 1.2, h1 * 0.6));
+  paint.merge(solid(flatQuads(api, rects, D * 0.47 + 0.002), yellow));
+  paint.merge(solid(flatQuads(api, stencilRects(line2, -w2 / 2, skid + H * 0.45, h1 * 0.6), L * 0.47 + 0.002), yellow).rotate(0, 90, 0));
+  api.add(paint, weathered('paint', 0.72, [{ kind: 'edgeWear', amount: 0.7, color: '#8a8064' }, { kind: 'grime', amount: 0.3 }]));
+  // Steel: latches on the front, hinges on the back, corner caps.
+  const steel = seed(api, skid + H * 0.8);
+  for (const sx of [-1, 1]) {
+    const x = sx * L * 0.3;
+    steel.merge(api.box(S * 0.07, H * 0.22, 0.008).translate(x, skid + H * 0.76, D * 0.47 + 0.004));
+    steel.merge(api.box(S * 0.05, S * 0.025, 0.02).translate(x, skid + H * 0.7, D * 0.47 + 0.01));
+    steel.merge(api.box(S * 0.08, H * 0.16, 0.008).translate(x, skid + H * 0.8, -(D * 0.47 + 0.004)));
+    for (const sz of [-1, 1]) {
+      for (const y of [skid + 0.02 * S, skid + H - 0.02 * S]) {
+        steel.merge(api.box(S * 0.05, S * 0.04, 0.004).translate(sx * (L * 0.47 - S * 0.025), y, sz * (D * 0.47 + 0.002)));
+        steel.merge(api.box(0.004, S * 0.04, S * 0.05).translate(sx * (L * 0.47 + 0.002), y, sz * (D * 0.47 - S * 0.025)));
+      }
+    }
+  }
+  addFinish(api, steel, 'black-metal', '#3a3c38', { variation: 0.03 });
+  // Rope handles through the end cleats.
+  const rope = seed(api, skid + H * 0.6);
+  for (const sx of [-1, 1]) {
+    const path: Vec3[] = [];
+    for (let i = 0; i <= 10; i++) {
+      const a = (i / 10) * Math.PI;
+      path.push([sx * (L * 0.47 + S * 0.03 + Math.sin(a) * S * 0.06), skid + H * 0.62 - Math.sin(a) * S * 0.035, Math.cos(a) * D * 0.3]);
+    }
+    rope.merge(api.tube(path, S * 0.011, 6));
+  }
+  addFinish(api, rope, 'fabric', '#a99a74', { variation: 0.05 });
+  api.collider(boxCollider(0, (skid + H) / 2, 0, L, skid + H, D));
+  return api.build();
+}
+
 /** A plain dark part (the shadowed core between crate slats). */
 function paintSolidDark(api: InternalApi, m: Mesh, color: string): void {
   boxUvs(m);
@@ -333,9 +436,12 @@ function paintSolidDark(api: InternalApi, m: Mesh, color: string): void {
   api.add(m, { color: '#ffffff', vertexColors: true, roughness: 0.95 });
 }
 
+/** Steel drum paint: grime at the foot and paint worn off the rolled hoops and chimes (rust is painted per vertex). */
+const DRUM_PAINT = weathered('paint', 0.45, [{ kind: 'grime', amount: 0.4 }, { kind: 'edgeWear', amount: 0.6 }]);
+
 const barrel = defineGenerator({
   id: 'barrel',
-  description: 'Barrel: bulging wooden cask with metal hoops, steel oil drum, or red explosive barrel with hazard band.',
+  description: 'Barrel: bulging wooden cask with metal hoops, dented and weathered steel oil drum with rolling hoops and bungs, or red explosive barrel with hazard band.',
   category: 'props',
   params: {
     height: pNum(1.1, 0.4, 3, 'height in meters'),
@@ -356,7 +462,32 @@ const barrel = defineGenerator({
       addFinish(api, hoops, 'black-metal', hoop, { variation: 0.03 });
     } else {
       const c = variant === 2 ? '#b42b2b' : p.color('color') === '#8a5a2e' ? '#3d6e8f' : p.color('color');
-      addFinish(api, api.cylinder(R * 0.92, R * 0.92, H, 24).translate(0, H / 2, 0), 'paint', c, { uv: 'round', radius: R, variation: 0.05, roughness: 0.45 });
+      // A steel drum: a recessed lid inside the rolled chime, swedged sides with a few dents of hard use, rust, grime at
+      // the foot and paint worn off the hoops (surface layers).
+      const rb = R * 0.92;
+      const prof: Array<[number, number]> = [[0, H * 0.985], [rb * 0.97, H * 0.985], [rb * 0.97, H * 0.985], [rb, H * 0.975], [rb, H * 0.975]];
+      for (let i = 9; i >= 1; i--) prof.push([rb, H * (0.02 + (0.95 * i) / 10)]);
+      prof.push([rb, H * 0.02], [rb, H * 0.02], [rb * 0.97, H * 0.012], [rb * 0.97, H * 0.012], [0, H * 0.012]);
+      const body = api.lathe(prof, 24);
+      const dents = 1 + Math.floor(api.rng() * 3);
+      const spots: Vec3[] = [];
+      for (let k = 0; k < dents; k++) {
+        const a = api.rng() * Math.PI * 2;
+        spots.push([Math.sin(a) * rb, H * api.range(0.12, 0.88), Math.cos(a) * rb]);
+      }
+      const n = api.noise;
+      body.displace((x, y, z) => {
+        if (Math.hypot(x, z) < rb * 0.99 || y < H * 0.03 || y > H * 0.96) return 0;
+        let d = 0.004 * R * n.noise3(x * 6, y * 6, z * 6);
+        for (const s of spots) {
+          const q = Math.hypot(x - s[0], (y - s[1]) * 0.8, z - s[2]) / (R * 0.45);
+          if (q < 1) d -= R * 0.07 * (1 - q * q) * (1 - q * q);
+        }
+        return d;
+      });
+      roundUvs(body, R);
+      paintNoise(body, api, shade(c, -0.07), shade(c, 0.05), 1.6);
+      api.add(rustPaint(body, api, 0.45, H), DRUM_PAINT);
       if (variant === 2) {
         const panels = 16;
         const pw = 2 * R * 0.93 * Math.sin(Math.PI / panels) * 1.02;
@@ -368,8 +499,11 @@ const barrel = defineGenerator({
       }
       const rims = seed(api, H / 2);
       for (const f of [0.02, 0.33, 0.66, 0.98]) rims.merge(api.torus(R * 0.93, H * 0.016, 6, 24).rotate(90, 0, 0).translate(0, H * f, 0));
-      rims.merge(api.cylinder(R * 0.12, R * 0.12, H * 0.03, 10).translate(R * 0.45, H + H * 0.012, 0));
-      addFinish(api, rims, 'paint', shade(c, -0.25), { variation: 0.03, roughness: 0.5 });
+      rims.merge(api.cylinder(R * 0.12, R * 0.12, H * 0.025, 10).translate(R * 0.5, H * 0.995, 0));
+      rims.merge(api.cylinder(R * 0.07, R * 0.07, H * 0.02, 8).translate(-R * 0.55, H * 0.993, R * 0.1));
+      boxUvs(rims);
+      paintNoise(rims, api, shade(c, -0.3), shade(c, -0.18), 2);
+      api.add(rustPaint(rims, api, 0.6, H), DRUM_PAINT);
     }
     api.collider(cylinderCollider(0, H / 2, 0, R * 0.95, H));
     return api.build();
