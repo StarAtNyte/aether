@@ -5504,6 +5504,28 @@ export class WorldRenderer {
   }
 
   /**
+   * Aim the main camera at a capture pose. The sky dome, the surroundings and the weather follow the camera they were last
+   * updated with, so they are re-centred on the pose too: left on the live camera, a pose a few hundred metres away saw the
+   * far side of the dome past its far plane, and the sky there came out as a black disc rising over the horizon.
+   */
+  private aimCapture(pose: { position: Vec3; target: Vec3; up: Vec3; fov: number }, aspect: number): void {
+    const cam = this.perspective;
+    cam.fov = Math.max(20, Math.min(120, pose.fov));
+    cam.aspect = aspect;
+    cam.zoom = 1;
+    cam.near = 0.05;
+    // A camera far from the world (the overview of a large place) needs a far plane that reaches it: a fixed 400 m drew black.
+    // It also never cuts the camera-centred sky dome (as the live camera's never does), or the sky behind a big world is black.
+    cam.far = Math.min(6000, Math.max(SKY_RADIUS * 2.5, Math.hypot(pose.target[0] - pose.position[0], pose.target[1] - pose.position[1], pose.target[2] - pose.position[2]) * 2.5));
+    cam.position.set(pose.position[0], pose.position[1], pose.position[2]);
+    cam.up.set(pose.up[0], pose.up[1], pose.up[2]);
+    cam.lookAt(pose.target[0], pose.target[1], pose.target[2]);
+    cam.updateProjectionMatrix();
+    cam.updateMatrixWorld();
+    this.env.update(0, cam);
+  }
+
+  /**
    * Perspective captures from explicit camera poses (world space), for reviewing interiors: the AI's
    * corner, wall and plan views. Each image is `width`×`height` pixels; the main camera is restored
    * afterwards. Editing decorations are hidden; fog, sky and lights stay as the viewport shows them.
@@ -5539,6 +5561,7 @@ export class WorldRenderer {
       cam.zoom = saved.zoom;
       cam.updateProjectionMatrix();
       cam.updateMatrixWorld();
+      this.env.update(0, cam);
     };
     const restore = (): void => {
       decorations.forEach((o, i) => (o.visible = wasVisible[i] ?? true));
@@ -5546,20 +5569,7 @@ export class WorldRenderer {
       // The live eye was exposed for the last pose: it adapts back to where the viewport stands.
       this.eyeClock = 1;
     };
-    const aim = (pose: { position: Vec3; target: Vec3; up: Vec3; fov: number }): void => {
-      cam.fov = Math.max(20, Math.min(120, pose.fov));
-      cam.aspect = w / h;
-      cam.zoom = 1;
-      cam.near = 0.05;
-      // A camera far from the world (the overview of a large place) needs a far plane that reaches it: a fixed 400 m drew black.
-      // It also never cuts the camera-centred sky dome (as the live camera's never does), or the sky behind a big world is black.
-      cam.far = Math.min(6000, Math.max(SKY_RADIUS * 2.5, Math.hypot(pose.target[0] - pose.position[0], pose.target[1] - pose.position[1], pose.target[2] - pose.position[2]) * 2.5));
-      cam.position.set(pose.position[0], pose.position[1], pose.position[2]);
-      cam.up.set(pose.up[0], pose.up[1], pose.up[2]);
-      cam.lookAt(pose.target[0], pose.target[1], pose.target[2]);
-      cam.updateProjectionMatrix();
-      cam.updateMatrixWorld();
-    };
+    const aim = (pose: { position: Vec3; target: Vec3; up: Vec3; fov: number }): void => this.aimCapture(pose, w / h);
     // Pipelines and materials the poses need compile on their first draw and that frame can come out blank (a new generator, a
     // camera that sees a new surface): the poses are drawn once to prime them and the frames of that pass are dropped.
     const pass = async (): Promise<string[]> => {
