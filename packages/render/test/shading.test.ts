@@ -10,6 +10,7 @@ import { SURFACE_LAYER_KINDS, type MaterialSpec } from '@aether/core';
 import { applyShading, shadedCap, SHADED_CAP_HIGH, SHADED_CAP_LOW, SHADED_CAP_MEDIUM, SHADED_CAP_ULTRA } from '../src/materials/shading';
 import { materialKey, mergeMaterial, resolveMaterial } from '../src/materials/presets';
 import { MaterialCache } from '../src/materials/material-cache';
+import { LAYER_NOISE_PLANES } from '../src/materials/surface-layers';
 import type { ShadeTier } from '../src/materials/shader-nodes';
 import { log } from '../src/log';
 
@@ -157,6 +158,36 @@ describe('material cache', () => {
     expect(plain.normalNode ?? null).toBeNull();
     expect(cache.shadedProgramCount).toBe(0);
     cache.dispose();
+  });
+
+  it('shaded materials with the same slots compile to their own programs (the layers name the program)', () => {
+    // three keys a classic material's program without looking into its node slots: without a key of its own, an olive crate
+    // with scratches drew with the rust of the first drum compiled.
+    const crate: MaterialSpec = { color: '#56602f', surface: { layers: [{ kind: 'scratches', amount: 0.7 }, { kind: 'edgeWear', amount: 0.4 }] } };
+    const drum: MaterialSpec = { color: '#3d5a2e', surface: { layers: [{ kind: 'rust', amount: 0.6 }, { kind: 'scratches', amount: 0.5 }] } };
+    const lighter: MaterialSpec = { color: '#3d5a2e', surface: { layers: [{ kind: 'rust', amount: 0.2 }, { kind: 'scratches', amount: 0.5 }] } };
+    const keys = [crate, drum, lighter].map((s) => shaded(s).customProgramCacheKey());
+    expect(new Set(keys).size).toBe(3);
+    // The same layers on another colour share the program (the colour is a uniform).
+    expect(shaded({ ...crate, color: '#808080' }).customProgramCacheKey()).toBe(keys[0]);
+    expect(shaded(crate, 'low').customProgramCacheKey()).not.toBe(keys[0]);
+    expect(new MeshStandardMaterial().customProgramCacheKey()).not.toBe(keys[0]);
+  });
+
+  it('layer noise reads each face at its own metric (no skewed projection that streaks walls)', () => {
+    // A face along axis i samples the plane of the two other axes, one world metre per noise metre: rust on the side of a
+    // container is patchy instead of the diagonal bands a height-skewed 2D lookup squeezed it into.
+    LAYER_NOISE_PLANES.forEach(([u, v], axis) => {
+      expect(u).not.toBe(axis);
+      expect(v).not.toBe(axis);
+      expect(u).not.toBe(v);
+    });
+    // Walls keep height as their second coordinate, so a stretch along it (streaks) runs down them.
+    expect(LAYER_NOISE_PLANES[0]![1]).toBe(1);
+    expect(LAYER_NOISE_PLANES[2]![1]).toBe(1);
+    const glsl = shaders(shaded({ color: '#2f5a7a', surface: { layers: [{ kind: 'rust' }] } }), true).fragment;
+    // Three projections of the shared noise texture per octave.
+    expect((glsl.match(/texture\(/g) ?? []).length).toBeGreaterThanOrEqual(6);
   });
 
   it('the key changes with the layers, the expressions and the shading tier', () => {

@@ -152,6 +152,13 @@ export function applyShading(m: MeshStandardMaterial, r: ResolvedMaterial, tier:
   }
 
   // Assign last: everything above may throw.
+  // The renderer keys a compiled program by the classic material, where node slots count only as "an object": two
+  // shaded materials with the same slots would share whichever program compiled first (an olive crate with scratches
+  // drew with a drum's rust). The layers and expressions are baked into the program as constants, so they, the tier
+  // and the vertex-colour fold name it, on top of any key the finish setup gave (anti-tile).
+  const prior = m.customProgramCacheKey.bind(m);
+  const own = `aether-shade:${tier}:${foldVertex ? 1 : 0}:${shadeKey(r) ?? ''}`;
+  m.customProgramCacheKey = () => `${prior()}|${own}`;
   if (recolours) slots.colorNode = staticShadowAlpha(T.vec4(color, colorIn.a));
   if (foldVertex) m.vertexColors = false;
   if (touchedRough) slots.roughnessNode = T.clamp(rough, 0.02, 1);

@@ -97,15 +97,51 @@ export function maskNode(mask: SurfaceMask | undefined, inp: LayerInputs, salt: 
   }
   if (mask.noise !== undefined) {
     const c = mask.noise;
-    and(T.smoothstep(1 - c - 0.08, 1 - c + 0.08, n01(inp.p, 4, 2, salt + 0.5)));
+    and(T.smoothstep(1 - c - 0.08, 1 - c + 0.08, n01(inp, 4, 2, salt + 0.5)));
   }
   if (m === null) return mask.invert ? T.float(0) : null;
   return mask.invert ? (m as Nd).oneMinus() : m;
 }
 
-/** The shared noise field (0..1) at a feature size in metres; `salt` decorrelates layers. */
-function n01(p: Nd, size: number, channel: 0 | 1 | 2, salt: number): Nd {
-  return noise01(p as unknown as typeof positionWorld, 1 / Math.max(1e-3, size), channel, [salt * 0.37, salt * 0.61]) as unknown as Nd;
+/**
+ * The plane each face-normal axis projects onto, as two world coordinates (0 = x, 1 = y, 2 = z): a face along x reads
+ * (z, y), the top (x, z), a face along z (x, y). Walls keep height as their second coordinate, so a stretch along it
+ * runs down the wall. Every face sees the field at its own metric: one metre on the face is one metre of noise.
+ */
+export const LAYER_NOISE_PLANES: readonly (readonly [0 | 1 | 2, 0 | 1 | 2])[] = [[2, 1], [0, 2], [0, 1]];
+/** Blend sharpness of the three projections (power of |n|): faces read one plane, only bevels and curves mix. */
+export const LAYER_NOISE_BLEND = 4;
+/** Per-plane offsets of the field, so the three planes never show the same pattern at a corner. */
+const PLANE_OFFSET: readonly (readonly [number, number])[] = [[0.13, 0.71], [0, 0], [0.47, 0.29]];
+
+/**
+ * The shared noise field (0..1) at a feature size in metres, projected per face (triplanar on the geometric normal);
+ * `salt` decorrelates layers and `stretch` scales the two in-plane coordinates (scratches, runs).
+ *
+ * The plain world-space lookup (noise01 maps a 3D point onto its 2D field by a fixed skew of height) is fine for
+ * ground but not for weathering on walls: on a face along z the skew squeezes the field about four to one along a
+ * diagonal, so thresholded patches (rust, lichen) came out as broad diagonal stripes. Here each face samples the plane
+ * it faces at its own metric, and the blend keeps the field's spread where planes mix.
+ */
+function n01(inp: Pick<LayerInputs, 'p' | 'n'>, size: number, channel: 0 | 1 | 2, salt: number, q: Nd = inp.p, stretch: readonly [number, number] = [1, 1]): Nd {
+  const a = T.abs(inp.n);
+  const a2 = a.mul(a);
+  const wRaw = LAYER_NOISE_BLEND === 4 ? a2.mul(a2) : T.pow(a, LAYER_NOISE_BLEND);
+  const w = wRaw.div(T.max(wRaw.x.add(wRaw.y).add(wRaw.z), 1e-5));
+  const comp = (axis: 0 | 1 | 2): Nd => (axis === 0 ? q.x : axis === 1 ? q.y : q.z);
+  let sum: Nd | null = null;
+  for (let i = 0; i < 3; i++) {
+    const [ua, va] = LAYER_NOISE_PLANES[i]!;
+    const off = PLANE_OFFSET[i]!;
+    // noise01 reads (x + y·skew, z + y·skew): with y = 0 it is a plain 2D lookup of (u, v).
+    const uv = T.vec3(comp(ua).mul(stretch[0]), 0, comp(va).mul(stretch[1]));
+    const f = (noise01(uv as unknown as typeof positionWorld, 1 / Math.max(1e-3, size), channel, [salt * 0.37 + off[0], salt * 0.61 + off[1]]) as unknown as Nd).sub(0.5);
+    const wi = i === 0 ? w.x : i === 1 ? w.y : w.z;
+    sum = sum ? sum.add(f.mul(wi)) : f.mul(wi);
+  }
+  // A weighted mean of independent fields has less spread than one; divide by the weights' norm to give it back.
+  const norm = T.sqrt(T.dot(w, w));
+  return T.clamp((sum as Nd).div(T.max(norm, 1e-3)).add(0.5), 0, 1);
 }
 
 /** Thin lines along the 0.5 crossings of a noise field (cracks, veins): 1 on the line, 0 away from it. */
@@ -137,7 +173,7 @@ function layerLook(layer: SurfaceLayer, inp: LayerInputs, i: number, sizeScale: 
   const col = colorOf(layer);
   const { p, n } = inp;
   const salt = i * 3 + 1;
-  const N = (size: number, ch: 0 | 1 | 2): Nd => n01(p, size, ch, salt);
+  const N = (size: number, ch: 0 | 1 | 2): Nd => n01(inp, size, ch, salt);
   const crevice = T.smoothstep(0, 2, inp.k.negate());
   const convex = (k0: number): Nd => T.smoothstep(k0 * 0.5, k0 * 2, inp.k);
   switch (kind) {
@@ -192,7 +228,7 @@ function layerLook(layer: SurfaceLayer, inp: LayerInputs, i: number, sizeScale: 
     }
     case 'streaks': {
       const steep = T.smoothstep(0.3, 0.6, T.abs(n.y)).oneMinus();
-      const runs = n01(p.mul(T.vec3(1, 0.06, 1)), s * 0.25, 1, salt);
+      const runs = n01(inp, s * 0.25, 1, salt, p.mul(T.vec3(1, 0.06, 1)));
       const w = steep.mul(T.smoothstep(0.5, 0.75, runs)).mul(A);
       return { w, color: col ?? base.mul(0.45) };
     }
@@ -211,14 +247,20 @@ function layerLook(layer: SurfaceLayer, inp: LayerInputs, i: number, sizeScale: 
       return { w, color: col as Nd, rough: 0.9, height: w.mul(0.0015) };
     }
     case 'rust': {
-      const lean = N(s, 0).add(T.max(crevice, convex(10)).mul(0.2)).add(T.smoothstep(0, 1, inp.oy).oneMinus().mul(0.15));
-      const w = T.smoothstep(0.55 - A * 0.4, 0.75 - A * 0.4, lean);
+      // Patches with ragged edges (a finer octave on the broad one), leaning to crevices, edges and the foot.
+      const field = N(s, 0).add(N(s * 0.3, 2).sub(0.5).mul(0.35));
+      const lean = field.add(T.max(crevice, convex(10)).mul(0.12)).add(T.smoothstep(0, 1, inp.oy).oneMinus().mul(0.08));
+      // The field sits at 0.5 ± 0.14: the threshold puts `amount` 0.5 at about a quarter of the surface, 1 at nearly all of it
+      // (it was centred below the field's mean, so even a light rust covered most of a wall).
+      const t0 = 0.76 - 0.32 * A;
+      const w = T.smoothstep(t0 - 0.03, t0 + 0.03, lean);
       const detail = N(s * 0.1, 1);
       return { w, color: (col as Nd).mul(detail.mul(0.6).add(0.7)), rough: 0.92, metal: 0, height: w.mul(detail).mul(0.002) };
     }
     case 'scratches': {
-      const a = crest(n01(p.mul(T.vec3(0.05, 1, 1)), s * 0.2, 0, salt), 0.015);
-      const b = crest(n01(p.mul(T.vec3(1, 1, 0.05)), s * 0.2, 1, salt), 0.015);
+      // Two families of fine lines on every face: the field squeezed along one in-plane axis, then along the other.
+      const a = crest(n01(inp, s * 0.2, 0, salt, p, [0.05, 1]), 0.015);
+      const b = crest(n01(inp, s * 0.2, 1, salt, p, [1, 0.05]), 0.015);
       const w = T.max(a, b).mul(T.smoothstep(0.4, 0.6, N(s * 4, 2))).mul(A);
       return { w, color: col ?? base.mul(1.3).add(0.04), rough: rough.mul(0.6), height: w.mul(-0.0005) };
     }
