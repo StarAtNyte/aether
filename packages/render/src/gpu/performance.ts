@@ -241,3 +241,79 @@ export class PerformanceGovernor {
     return false;
   }
 }
+
+/**
+ * Frames between redraws of the cached sun shadow map while casters animate, at a measured frame rate `fps`. A redraw draws
+ * every caster again (thousands of draws in a street of houses) for the few that moved, people and animals: a fast GPU does
+ * it every other frame, a slow one less often, so the animated shadows lag a little instead of the whole frame rate falling
+ * with them (an Intel UHD 770 on a 2,300-entity street: every other frame left it at 60-80 ms). Unknown rates keep 2.
+ */
+export function sunMapSoftRefreshFrames(fps: number): number {
+  if (!Number.isFinite(fps) || fps <= 0 || fps >= 40) return 2;
+  return fps >= 30 ? 4 : 8;
+}
+
+/** Roles of the room contents {@link interiorDrawDistance} may leave undrawn far from the eye (doors and windows are the facade: they stay). */
+const INTERIOR_ROLES: ReadonlySet<string> = new Set(['furniture', 'part', 'fixture', 'light', 'switch']);
+
+/** Whether an entity is a room's content (furniture, a drawer, a lamp, a fitting, a switch) rather than part of the building or the world. */
+export function interiorContent(arch: { role?: string; room?: string } | undefined): boolean {
+  return !!arch && typeof arch.room === 'string' && arch.room.length > 0 && typeof arch.role === 'string' && INTERIOR_ROLES.has(arch.role);
+}
+
+/**
+ * Distance from the eye (metres) beyond which the cheaper tiers do not draw room contents (Infinity: always drawn). From the
+ * street a house's furniture, drawers and lamps are a few dim pixels behind glass, yet each is a draw call in the view and
+ * another in the sun's shadow map: a terrace of ten furnished houses is 400-500 of them, most of the frame on a weak CPU.
+ * Inside a room everything near is drawn as before; `high` and `ultra` and stills never leave anything out.
+ */
+export function interiorDrawDistance(tier: RenderTier, still: boolean): number {
+  if (still) return Number.POSITIVE_INFINITY;
+  if (tier === 'low') return 16;
+  if (tier === 'medium') return 28;
+  return Number.POSITIVE_INFINITY;
+}
+
+/**
+ * Scale of the picture height that virtual geometry and scatter fields plan their level of detail for (1: the drawn height).
+ * Both keep their screen-space error under a pixel of that height; on the cheaper tiers a coarser cut is planned, as for
+ * a smaller picture, so a hillside of a hundred and sixty houses draws a few million triangles fewer. `high`, `ultra` and
+ * stills plan for the full picture.
+ */
+export function lodHeightScale(tier: RenderTier, still: boolean): number {
+  if (still) return 1;
+  if (tier === 'low') return 0.4;
+  if (tier === 'medium') return 0.7;
+  return 1;
+}
+
+/** Local lights the low tier draws at most (see {@link forwardLightBudget}). */
+export const LOW_TIER_LIGHTS = 4;
+
+/**
+ * Live local lights (point, spot, area) for the tier: `base`, the GPU's budget, except on the low tier of the realtime
+ * view, which keeps {@link LOW_TIER_LIGHTS}. Every lit pixel loops over every live light: on an Intel UHD 770 eight point
+ * lights were half the frame of a colony or a street of houses, four save a third of it. Stills keep the full budget.
+ */
+export function forwardLightBudget(base: number, tier: RenderTier, still: boolean): number {
+  return !still && tier === 'low' ? Math.min(base, LOW_TIER_LIGHTS) : base;
+}
+
+/**
+ * A world this big (entities, or triangles of its content) starts on the light end of the ladder on a weak GPU. Entities
+ * are what costs: each is draws in the view and the sun's map. Triangles alone count only far past what level of detail
+ * and adaptive resolution absorb (a waterfall valley of 1.5-3 M triangles held 25 ms at medium on an Intel UHD 770, and
+ * started at low it never climbed back).
+ */
+export const HEAVY_WORLD = Object.freeze({ entities: 250, triangles: 6_000_000 });
+
+/**
+ * Ladder level a world starts at (0: nothing given up). On an integrated, unrecognised or software GPU a heavy world starts
+ * at the low tier (level 4) and the governor climbs while frames are comfortably fast, instead of starting at medium and
+ * stepping down: every step rebuilds the lit materials, and on a street of houses each rebuild froze an Intel UHD 770 for
+ * seconds, four times over, before the frame rate was any good.
+ */
+export function startLevel(gpu: GpuTier, world: { entities: number; triangles: number }): number {
+  if (gpu === 'discrete') return 0;
+  return world.entities >= HEAVY_WORLD.entities || world.triangles >= HEAVY_WORLD.triangles ? 4 : 0;
+}

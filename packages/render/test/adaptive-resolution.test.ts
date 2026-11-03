@@ -114,8 +114,13 @@ describe('sharp motion profile', () => {
 
   it('only falls clearly below 30 fps and stops at 0.75 above the emergency rate', () => {
     const a = sharp();
+    expect(a.atFloor).toBe(false);
     feed(a, 20, 60);
     expect(a.scale).toBe(0.75);
+    // As low as it goes: the performance ladder takes over from here.
+    expect(a.atFloor).toBe(true);
+    a.enabled = false;
+    expect(a.atFloor).toBe(false);
   });
 
   it('opens the emergency floor only when the machine is unusable, and closes it when it recovers', () => {

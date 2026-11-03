@@ -71,6 +71,16 @@ describe('deferred first-use render preparation',()=>{
     await vi.runAllTimersAsync();expect(f.builds).toHaveLength(0);expect(f.preparation.pending).toBe(0);
     f.draw();await vi.runAllTimersAsync();expect(f.builds).toHaveLength(1);expect(f.ro.drawRange).toBe(f.object.geometry.drawRange);f.preparation.dispose();
   });
+  it('prepares full-screen passes before the objects queued ahead of them', async()=>{
+    vi.useFakeTimers();const f=fixture();f.block();
+    const quad={geometry:{drawRange:{start:0,count:3}},isQuadMesh:true};
+    const quadRo={...f.ro,object:quad,_bindings:null as null|Array<{bindings:never[]}>,getNodeBuilderState(){order.push('quad');},getBindings(){return this._bindings??= [{bindings:[]}];}};
+    const order: string[]=[];const sceneBuild=f.ro.getNodeBuilderState;f.ro.getNodeBuilderState=()=>{order.push('scene');sceneBuild.call(f.ro);};
+    f.draw();
+    f.nativeGet.mockImplementation(((o:unknown)=>o===quad?quadRo:f.ro) as never);f.renderer._renderObjectDirect(quad,f.material,{}, {},f.lightNode,'group',null);
+    expect(f.preparation.pending).toBe(2);f.unblock();await vi.runAllTimersAsync();
+    expect(order).toEqual(['quad','scene']);f.preparation.dispose();
+  });
   it('does not recreate a pass target that was disposed while its setup was queued', async()=>{
     vi.useFakeTimers();const f=fixture();let dispose!:()=>void;
     f.state.target={addEventListener:(type:string,listener:()=>void)=>{expect(type).toBe('dispose');dispose=listener;}};

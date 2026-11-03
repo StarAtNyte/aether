@@ -181,7 +181,7 @@ export class GpuRoom {
    * Frame intervals of the live viewport (default tier, no vsync override) while the eye walks `frames` small steps along a line at
    * eye height inside the world: median and 90th percentile in milliseconds, with the renderer's own draw and triangle counts.
    */
-  async frameCost(from: readonly [number, number, number], to: readonly [number, number, number], frames: number): Promise<{ medianMs: number; p90Ms: number; stats: unknown }> {
+  async frameCost(from: readonly [number, number, number], to: readonly [number, number, number], frames: number): Promise<{ medianMs: number; p90Ms: number; maxMs: number; over50: number; stats: unknown }> {
     await this.page.evaluate(() => window.__aether?.store.getState().setArch({ walls: 'up' }));
     return this.page.evaluate(
       async ([a, b, n]) => {
@@ -198,7 +198,7 @@ export class GpuRoom {
           last = now;
         }
         dts.sort((x, y) => x - y);
-        return { medianMs: Math.round((dts[Math.floor(dts.length / 2)] as number) * 10) / 10, p90Ms: Math.round((dts[Math.floor(dts.length * 0.9)] as number) * 10) / 10, stats: r.stats() };
+        return { medianMs: Math.round((dts[Math.floor(dts.length / 2)] as number) * 10) / 10, p90Ms: Math.round((dts[Math.floor(dts.length * 0.9)] as number) * 10) / 10, maxMs: Math.round((dts[dts.length - 1] as number) * 10) / 10, over50: dts.filter((d) => d > 50).length, stats: r.stats() };
       },
       [[...from], [...to], frames] as const,
     );

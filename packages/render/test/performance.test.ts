@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { capTier, cutsAt, GOVERNOR_DEFAULTS, hardwareTierCap, PERFORMANCE_STEPS, PerformanceGovernor, readHardware, weakHardware } from '../src/gpu/performance';
+import { capTier, cutsAt, forwardLightBudget, GOVERNOR_DEFAULTS, LOW_TIER_LIGHTS, hardwareTierCap, interiorContent, interiorDrawDistance, HEAVY_WORLD, lodHeightScale, PERFORMANCE_STEPS, PerformanceGovernor, readHardware, startLevel, sunMapSoftRefreshFrames, weakHardware } from '../src/gpu/performance';
 
 describe('hardware hints', () => {
   it('reads what the browser tells and ignores the rest', () => {
@@ -174,5 +174,72 @@ describe('PerformanceGovernor', () => {
     it('keeps the up threshold well above the down threshold', () => {
       expect(GOVERNOR_DEFAULTS.upFps).toBeGreaterThan(GOVERNOR_DEFAULTS.lowFps * 2);
     });
+  });
+});
+
+describe('sun shadow map refresh while casters animate', () => {
+  it('keeps every other frame on a fast GPU and stretches on a slow one', () => {
+    expect(sunMapSoftRefreshFrames(60)).toBe(2);
+    expect(sunMapSoftRefreshFrames(40)).toBe(2);
+    expect(sunMapSoftRefreshFrames(30)).toBe(4);
+    expect(sunMapSoftRefreshFrames(27)).toBe(8);
+    expect(sunMapSoftRefreshFrames(12)).toBe(8);
+    expect(sunMapSoftRefreshFrames(0)).toBe(2);
+    expect(sunMapSoftRefreshFrames(Number.NaN)).toBe(2);
+  });
+});
+
+describe('room contents far from the eye', () => {
+  it('only room contents qualify; the facade and the building stay', () => {
+    expect(interiorContent({ role: 'furniture', room: 'h1-l0-living' })).toBe(true);
+    expect(interiorContent({ role: 'part', room: 'h1-l0-kitchen' })).toBe(true);
+    expect(interiorContent({ role: 'door', room: 'h1-l0-hall' })).toBe(false);
+    expect(interiorContent({ role: 'window', room: 'h1-l0-hall' })).toBe(false);
+    expect(interiorContent({ role: 'furniture' })).toBe(false);
+    expect(interiorContent(undefined)).toBe(false);
+  });
+
+  it('draws everything on high, ultra and stills; nearer on the cheaper tiers', () => {
+    expect(interiorDrawDistance('high', false)).toBe(Number.POSITIVE_INFINITY);
+    expect(interiorDrawDistance('ultra', false)).toBe(Number.POSITIVE_INFINITY);
+    expect(interiorDrawDistance('low', true)).toBe(Number.POSITIVE_INFINITY);
+    expect(interiorDrawDistance('low', false)).toBeLessThan(interiorDrawDistance('medium', false));
+    expect(Number.isFinite(interiorDrawDistance('medium', false))).toBe(true);
+  });
+});
+
+describe('level of detail of the cheaper tiers', () => {
+  it('plans full detail on high, ultra and stills, coarser on medium and low', () => {
+    expect(lodHeightScale('high', false)).toBe(1);
+    expect(lodHeightScale('ultra', false)).toBe(1);
+    expect(lodHeightScale('low', true)).toBe(1);
+    expect(lodHeightScale('medium', false)).toBeLessThan(1);
+    expect(lodHeightScale('low', false)).toBeLessThan(lodHeightScale('medium', false));
+  });
+});
+
+describe('forward light budget', () => {
+  it('keeps fewer local lights on the low tier of the realtime view only', () => {
+    expect(forwardLightBudget(8, 'low', false)).toBe(LOW_TIER_LIGHTS);
+    expect(forwardLightBudget(2, 'low', false)).toBe(2);
+    expect(forwardLightBudget(8, 'low', true)).toBe(8);
+    for (const tier of ['medium', 'high', 'ultra'] as const) expect(forwardLightBudget(64, tier, false)).toBe(64);
+  });
+});
+
+describe('start level of a world', () => {
+  it('starts heavy worlds at the low tier on weak GPUs only', () => {
+    const heavy = { entities: HEAVY_WORLD.entities, triangles: 0 };
+    const dense = { entities: 10, triangles: HEAVY_WORLD.triangles };
+    const valley = { entities: 229, triangles: 3_000_000 };
+    const small = { entities: 40, triangles: 200_000 };
+    expect(startLevel('discrete', heavy)).toBe(0);
+    for (const gpu of ['integrated', 'unknown', 'software'] as const) {
+      expect(startLevel(gpu, heavy)).toBe(4);
+      expect(startLevel(gpu, dense)).toBe(4);
+      expect(startLevel(gpu, small)).toBe(0);
+      expect(startLevel(gpu, valley)).toBe(0);
+    }
+    expect(cutsAt(4).tierCap).toBe('low');
   });
 });

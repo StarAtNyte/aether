@@ -251,7 +251,11 @@ export function deferRenderPreparation(renderer: WebGPURenderer, options: Option
       ro.drawRange = object.geometry.drawRange; ro.group = group;
       if (!queued.has(ro)) {
         const source = r._currentSourceMaterial ?? material;
-        queued.add(ro); jobs.push({ ro, geometry: object.geometry, state: snapshot(), material: materialState(material), lights: lights.getLights().slice(), source, version: source.version, stage: 0, bindingGroup: 0, binding: 0, materialTexture: 0 });
+        const job: Job = { ro, geometry: object.geometry, state: snapshot(), material: materialState(material), lights: lights.getLights().slice(), source, version: source.version, stage: 0, bindingGroup: 0, binding: 0, materialTexture: 0 };
+        queued.add(ro);
+        // A full-screen pass (the post chain's quads, the one that presents the frame among them) goes first: queued behind
+        // a world's thousands of objects, it held the picture frozen until all of them were ready (seconds after a tier change).
+        if ((object as { isQuadMesh?: boolean }).isQuadMesh === true) jobs.splice(head, 0, job); else jobs.push(job);
         schedule();
       }
       return;

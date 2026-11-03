@@ -107,6 +107,11 @@ export class AdaptiveResolution {
     return this.scale < this.lowest ? this.set(this.lowest) : false;
   }
 
+  /** Whether the scale is as low as it may go now (the floor, or the emergency scale): lowering pixels can do no more. */
+  get atFloor(): boolean {
+    return this.enabled && this.scale <= this.lowest + 0.005;
+  }
+
   /** The lowest scale allowed now: the floor, or the emergency scale while the machine is unusably slow. */
   private get lowest(): number {
     return this.crisisOpen ? Math.min(this.floor, this.o.emergencyScale) : this.floor;

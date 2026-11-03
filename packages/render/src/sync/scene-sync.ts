@@ -455,6 +455,13 @@ export class SceneSync {
   private mergesPending = true;
 
   get batchPreparationPending(): number { return this.merges?.pending ?? 0; }
+
+  /** Merge drawers, doors and switches while idle (see `StaticMerges.interactive`); regroups when it changes. */
+  setInteractiveMerges(on: boolean): void {
+    if (!this.merges || this.merges.interactive === on) return;
+    this.merges.interactive = on;
+    this.batchesStale = true;
+  }
   async waitForBatches(): Promise<void> { await this.merges?.idle(); }
   synchronousBatches<T>(draw: () => T): T { return this.merges ? this.merges.synchronous(draw) : draw(); }
 
@@ -708,11 +715,14 @@ export class SceneSync {
       return true;
     }
     if (path === 'light.intensity' && typeof value === 'number' && Number.isFinite(value) && value >= 0 && node.entity.light && node.light) {
+      const before = node.entity.light.intensity;
       const light = { ...node.entity.light, intensity: value };
       node.entity = { ...node.entity, light };
       if (node.entity.arch?.role === 'light') this.applyLampScale(node.light.light, light);
       else updateLightParams(node.light.light, light);
       node.overridden = true;
+      // Switched on or off: the light joins or leaves the budget of live lights.
+      if (before > 0 !== value > 0) this.applyShadowCap();
       return true;
     }
     if (path.startsWith('material.') && this.variant === 'standard') {
@@ -1995,6 +2005,7 @@ export class SceneSync {
     if (node.light && spec && old && old.type === spec.type && old.range === spec.range && old.angle === spec.angle && old.castShadow === spec.castShadow && old.profile === spec.profile && sameSize) {
       if (node.entity.arch?.role === 'light') this.applyLampScale(node.light.light, spec);
       else updateLightParams(node.light.light, spec);
+      if (old.intensity > 0 !== spec.intensity > 0) this.lightsDirty = true;
       return;
     }
     if (node.light) {
@@ -2046,7 +2057,13 @@ export class SceneSync {
       if (!light || !spec || spec.type === 'directional' || n.entity.template || n.entity.visible === false) continue;
       const lamp = n.entity.arch?.role === 'light';
       if (spec.intensity > 0 && (!lamp || this.archLampScale >= LAMP_CUTOFF)) lit.push({ node: n, light, spec });
-      else light.userData['cut'] = false;
+      else {
+        light.userData['cut'] = false;
+        // A light switched off (a lamp waiting for the power to come back) is not drawn: a visible light at zero
+        // intensity still costs every lit pixel its share of the light loop (fourteen of them doubled a colony's frame).
+        // Lamps under the daylight cutoff are hidden by `applyLampScale`.
+        if (!lamp) light.visible = false;
+      }
     }
     const pool: BudgetLight[] = lit.map(({ node, light }) => {
       node.object.updateWorldMatrix(true, false);
