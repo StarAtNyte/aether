@@ -712,6 +712,8 @@ export class WorldRenderer {
   private readonly frameStats = new FrameStats();
   private readonly raycaster = createRaycaster();
   private readonly occlusionRay = createRaycaster();
+  /** See {@link holdQuality}. */
+  private qualityHeld = false;
   private readonly footRay = createRaycaster();
   /** Entity the chase camera follows (its own meshes never block the view). */
   private followId: EntityId | null = null;
@@ -3532,7 +3534,7 @@ export class WorldRenderer {
       const scale = this.adaptive.enabled ? this.adaptive.scale : 0;
       // The ladder waits for adaptive resolution to fall first; a scale held at its floor (0.75 under the sharp motion
       // profile, above the ladder's 0.72) has fallen as far as it will, or a slow frame rate would never give anything else up.
-      if (this.governor.record(dt, measuring, this.adaptive.atFloor ? Math.min(scale, GOVERNOR_DEFAULTS.afterScale) : scale)) this.applyPerformance();
+      if (!this.qualityHeld && this.governor.record(dt, measuring, this.adaptive.atFloor ? Math.min(scale, GOVERNOR_DEFAULTS.afterScale) : scale)) this.applyPerformance();
       // No probe above medium on an integrated or unrecognised GPU: high adds the sun cascades, which rebuilds every lit
       // material, and a probe that fails rebuilds them twice (each rebuild froze an Intel UHD 770 for 5-8 s on a
       // 2,300-entity street). The tier stays a choice in the settings.
@@ -3540,7 +3542,7 @@ export class WorldRenderer {
         && this.governor.level === 0 && this.budget.post && this.gpu.tier !== 'software' && this.gpu.tier !== 'integrated' && this.gpu.tier !== 'unknown'
         && !this.lowMemory && !this.safe && !this.watchPostOff && !this.studioFailed
         && (this.hardware.memoryGB === undefined || this.hardware.memoryGB > 2);
-      if (this.adaptiveTier.record(dt, measuring, scale, this.autoTierBase(), mayProbe)) {
+      if (!this.qualityHeld && this.adaptiveTier.record(dt, measuring, scale, this.autoTierBase(), mayProbe)) {
         this.applyQuality(this.qualityPlan.quality);
         log.info(`performance: measured automatic tier ${this.autoTierNow()}`);
       }
@@ -4287,6 +4289,14 @@ export class WorldRenderer {
   }
 
   /** Apply the cuts of the ladder's current level (the governor moved one step: {@link PerformanceGovernor.lastMove}). */
+  /**
+   * Hold the quality ladder and the automatic tier still (resolution scaling still adapts). For an active game: a tier
+   * or ladder step rebuilds every lit material, and until they are prepared again the frames come out black or partial.
+   */
+  holdQuality(on: boolean): void {
+    this.qualityHeld = on;
+  }
+
   private applyPerformance(): void {
     const up = this.governor.lastMove < 0;
     if (!up) while (this.governor.level < PERFORMANCE_STEPS.length && !this.stepUseful(PERFORMANCE_STEPS[this.governor.level - 1] as (typeof PERFORMANCE_STEPS)[number])) this.governor.level++;
