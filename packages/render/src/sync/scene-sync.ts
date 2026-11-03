@@ -271,6 +271,10 @@ export class SceneSync {
   private archLampScale = 1;
   private totalInstances = 0;
   private lightsDirty = false;
+  /** Every entity light now in the scene graph (lit or not), for the renderer's lamp slots (see `LampSlots`). */
+  readonly lights: Light[] = [];
+  /** Shadowless point lights on the world's templates: lamps a game may spawn copies of (spare lamp slots). */
+  templateLamps = 0;
   /** Most local lights drawn live (the rest stay in the baked volume); see {@link FORWARD_LIGHTS}. */
   private lightBudget = Number.POSITIVE_INFINITY;
   /** True while setWorld rebuilds: dependent scatter relayout is deferred to one pass. */
@@ -600,6 +604,12 @@ export class SceneSync {
     if (prev === world) return RESOLVED;
     const diff = prev ? diffWorlds(prev, world) : null;
     this.current = world;
+    let lamps = 0;
+    for (const id in world.entities) {
+      const e = world.entities[id];
+      if (e?.template && e.light?.type === 'point' && e.light.castShadow !== true) lamps++;
+    }
+    this.templateLamps = lamps;
     if (diff && diff.added.length === 0 && diff.removed.length === 0 && diff.changed.length === 0 && diff.generatorsChanged.length === 0 && diff.meshesChanged.length === 0) return RESOLVED;
 
     const renderable = renderableIds(world);
@@ -1074,6 +1084,7 @@ export class SceneSync {
     this.batchesStale = true;
     this.teardownContent(node);
     if (node.light) {
+      this.dropLight(node.light.light);
       disposeEntityLight(node.light);
       node.light = null;
       this.lightsDirty = true;
@@ -2009,6 +2020,7 @@ export class SceneSync {
       return;
     }
     if (node.light) {
+      this.dropLight(node.light.light);
       disposeEntityLight(node.light);
       node.light = null;
     }
@@ -2030,8 +2042,14 @@ export class SceneSync {
       if (node.entity.arch?.role === 'light') this.applyLampScale(node.light.light, spec);
       node.object.add(node.light.light);
       if (node.light.target) node.object.add(node.light.target);
+      this.lights.push(node.light.light);
     }
     this.lightsDirty = true;
+  }
+
+  private dropLight(light: Light): void {
+    const i = this.lights.indexOf(light);
+    if (i >= 0) this.lights.splice(i, 1);
   }
 
   private applyShadowCap(): void {

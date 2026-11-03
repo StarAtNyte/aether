@@ -12,6 +12,7 @@ import { AssetSkinCache } from './gpu/asset-skin-cache';
 import { warmRaycastTrees } from './geometry/raycast-bvh';
 import { FrameInvalidation } from './view/frame-invalidation';
 import { deferRenderPreparation, type RenderPreparation } from './gpu/render-preparation';
+import { LampSlots } from './sync/lamp-slots';
 import { parallelPrograms, type ParallelPrograms } from './gpu/parallel-programs';
 import { gpuFrameCost } from './gpu/frame-cost';
 import { preparePresentation } from './gpu/presentation';
@@ -696,6 +697,8 @@ export class WorldRenderer {
   private readonly compression: TextureCompression;
   private readonly textures: TextureCache;
   private readonly sync: SceneSync;
+  /** The point lamps the renderer shades with, standing in for the entity lamps (a steady light set while a world plays). */
+  private readonly lampSlots = new LampSlots();
   private readonly ghost: SceneSync;
   private readonly env: EnvironmentRig;
   private readonly highlighter = new Highlighter();
@@ -1080,7 +1083,7 @@ export class WorldRenderer {
     this.env.setAutoHdri(this.qualityPlan.tier === 'high' || this.qualityPlan.tier === 'ultra');
     this.env.shadowMapCap = this.budget.shadowMapCap;
     this.fx = new GameFeel(this.scene, this.qualityPlan.tier, this.lowMemory, { object: (id) => this.sync.object(id) });
-    this.scene.add(this.env.group, this.sync.root, this.ghost.root, this.highlighter.group, this.debug.group, this.avatar.group, this.editOverlay.group, this.proof.group, this.ghostRun.group, this.blueprint.group, this.pathOverlay.group, this.lightVolume.light, this.contact.mesh);
+    this.scene.add(this.env.group, this.sync.root, this.ghost.root, this.highlighter.group, this.debug.group, this.avatar.group, this.editOverlay.group, this.proof.group, this.ghostRun.group, this.blueprint.group, this.pathOverlay.group, this.lightVolume.light, this.contact.mesh, this.lampSlots.group);
     canvas.addEventListener('pointermove', this.onPointerMove, { passive: true });
     canvas.addEventListener('pointerdown', this.onUserCamera, { passive: true });
     canvas.addEventListener('wheel', this.onUserCamera, { passive: true });
@@ -4879,6 +4882,8 @@ export class WorldRenderer {
   }
 
   private drawReady(capture = false): void {
+    // Lamps that came, went or switched off since the last frame change the slots' values only, not the light set.
+    if (this.lampSlots.sync(this.sync.lights, this.sync.templateLamps)) log.info(`lamp slots: ${this.lampSlots.size}`);
     // The post chain's scene passes update once per node frame, and the node frame advances once per animation frame:
     // a capture drawn in the same frame as the viewport (another aspect, another size, a camera moved a moment ago) would
     // reuse the viewport's scene pass and only re-composite it, stretched. Advance the frame so the capture renders fresh.
@@ -5943,6 +5948,7 @@ export class WorldRenderer {
     this.compute?.dispose();
     this.rig.dispose();
     this.sync.dispose();
+    this.lampSlots.dispose();
     this.ghost.dispose();
     this.voxelLayer?.dispose();
     this.voxelLayer = null;
