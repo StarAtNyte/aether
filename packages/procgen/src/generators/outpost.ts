@@ -489,7 +489,7 @@ const sandbagWall = defineGenerator({
     // Detail of each bag so the run stays within its triangle budget.
     const n = Math.max(1, slots.length);
     let proto = bagMesh(api, 2);
-    for (const d of [1, 0, -1]) if (n * proto.triangleCount > 3600) proto = bagMesh(api, d);
+    for (const d of [1, 0, -1]) if (n * proto.triangleCount > 5600) proto = bagMesh(api, d);
     const all = api.box(0.01, 0.01, 0.01).translate(0, BAG.h * 0.4, 0);
     const pal = [base, shade(base, 0.08), shade(base, -0.1), mixHexSafe(base, '#7d7a55', 0.25), mixHexSafe(base, '#b9a782', 0.3)];
     const dirt = lin('#5a4a36');
@@ -505,7 +505,7 @@ const sandbagWall = defineGenerator({
       const sc = 1 + jit(0.05);
       // Lumps of the fill, different for every bag, fading out toward the gathered ends.
       const o = api.rng() * 100;
-      b.displace((x, y, z) => Math.min(1, Math.max(0, (BAG.l / 2 - Math.abs(x)) / 0.1)) * (0.009 * nz.noise3(x * 9 + o, y * 9, z * 9) + 0.004 * nz.noise3(x * 23, y * 23 + o, z * 23)));
+      b.displace((x, y, z) => Math.min(1, Math.max(0, (BAG.l / 2 - Math.abs(x)) / 0.1)) * (0.013 * nz.noise3(x * 8 + o, y * 8, z * 8) + 0.005 * nz.noise3(x * 23, y * 23 + o, z * 23)));
       b.scale(sc, 0.92 + jit(0.1), 1 + jit(0.06)).rotate(s.roll, 0, s.pitch).rotate(0, s.yaw, 0);
       const at = place(s.x, s.z);
       b.rotate(0, at.yaw, 0).translate(at.px, s.y, at.pz);
