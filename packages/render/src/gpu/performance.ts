@@ -248,10 +248,19 @@ export class PerformanceGovernor {
  * it every other frame, a slow one less often, so the animated shadows lag a little instead of the whole frame rate falling
  * with them (an Intel UHD 770 on a 2,300-entity street: every other frame left it at 60-80 ms). Unknown rates keep 2.
  */
-export function sunMapSoftRefreshFrames(fps: number): number {
-  if (!Number.isFinite(fps) || fps <= 0 || fps >= 40) return 2;
-  return fps >= 30 ? 4 : 8;
+export function sunMapSoftRefreshFrames(fps: number, casterDraws = 0): number {
+  const byRate = !Number.isFinite(fps) || fps <= 0 || fps >= 40 ? 2 : fps >= 30 ? 4 : 8;
+  // A redraw costs one draw per caster: thousands on a street or a hillside town redrawn for a few walking people.
+  // Past a few hundred casters the animated shadows update at 10-15 Hz instead (a lag nobody sees on a walking figure).
+  const n = Number.isFinite(casterDraws) && casterDraws > 0 ? casterDraws : 0;
+  const byCost = n >= SUN_CASTERS_HEAVY ? 6 : n >= SUN_CASTERS_MANY ? 4 : 2;
+  return Math.max(byRate, byCost);
 }
+
+/** Shadow-pass draws above which animated casters refresh the sun map less often (see {@link sunMapSoftRefreshFrames}). */
+export const SUN_CASTERS_MANY = 400;
+/** The same, for the heaviest worlds. */
+export const SUN_CASTERS_HEAVY = 1200;
 
 /** Roles of the room contents {@link interiorDrawDistance} may leave undrawn far from the eye (doors and windows are the facade: they stay). */
 const INTERIOR_ROLES: ReadonlySet<string> = new Set(['furniture', 'part', 'fixture', 'light', 'switch']);
@@ -267,12 +276,17 @@ export function interiorContent(arch: { role?: string; room?: string } | undefin
  * another in the sun's shadow map: a terrace of ten furnished houses is 400-500 of them, most of the frame on a weak CPU.
  * Inside a room everything near is drawn as before; `high` and `ultra` and stills never leave anything out.
  */
-export function interiorDrawDistance(tier: RenderTier, still: boolean): number {
+export function interiorDrawDistance(tier: RenderTier, still: boolean, gpu?: GpuTier): number {
   if (still) return Number.POSITIVE_INFINITY;
   if (tier === 'low') return 16;
   if (tier === 'medium') return 28;
-  return Number.POSITIVE_INFINITY;
+  // An integrated GPU draws room contents up to {@link INTEGRATED_INTERIOR_REACH} at the high tiers too: a street of
+  // furnished houses is most of a frame's triangles, and furniture behind glass two streets away reads as nothing.
+  return gpu === 'integrated' || gpu === 'unknown' ? INTEGRATED_INTERIOR_REACH : Number.POSITIVE_INFINITY;
 }
+
+/** Distance (m) of room contents drawn by an integrated GPU at the high and ultra tiers. */
+export const INTEGRATED_INTERIOR_REACH = 40;
 
 /**
  * Scale of the picture height that virtual geometry and scatter fields plan their level of detail for (1: the drawn height).
@@ -280,12 +294,17 @@ export function interiorDrawDistance(tier: RenderTier, still: boolean): number {
  * a smaller picture, so a hillside of a hundred and sixty houses draws a few million triangles fewer. `high`, `ultra` and
  * stills plan for the full picture.
  */
-export function lodHeightScale(tier: RenderTier, still: boolean): number {
+export function lodHeightScale(tier: RenderTier, still: boolean, gpu?: GpuTier): number {
   if (still) return 1;
-  if (tier === 'low') return 0.4;
-  if (tier === 'medium') return 0.7;
-  return 1;
+  const base = tier === 'low' ? 0.4 : tier === 'medium' ? 0.7 : 1;
+  // An integrated GPU (or one not recognised) runs out of vertex throughput long before pixels: a hillside town planned
+  // at full height drew 6 million triangles a frame on an Intel UHD. It plans as for a picture about half as tall, at
+  // every tier: the effects of the tier stay, the far geometry is a coarser cut nobody can tell at that distance.
+  return gpu === 'integrated' || gpu === 'unknown' ? base * INTEGRATED_LOD_SCALE : base;
 }
+
+/** Factor on {@link lodHeightScale} for integrated and unrecognised GPUs. */
+export const INTEGRATED_LOD_SCALE = 0.5;
 
 /** Local lights the low tier draws at most (see {@link forwardLightBudget}). */
 export const LOW_TIER_LIGHTS = 4;

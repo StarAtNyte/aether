@@ -31,6 +31,8 @@ describe('heapUnderPressure', () => {
     expect(heapUnderPressure({ heapUsedBytes: 600, heapLimitBytes: 1000 })).toBe(false);
     expect(heapUnderPressure({ heapUsedBytes: HEAP_PRESSURE_BYTES })).toBe(true);
     expect(heapUnderPressure({})).toBe(false);
+    // A large world on a big heap is not pressure: 700 MB of a 4 GB limit.
+    expect(heapUnderPressure({ heapUsedBytes: 700 * 1024 * 1024, heapLimitBytes: 4096 * 1024 * 1024 })).toBe(false);
   });
 });
 

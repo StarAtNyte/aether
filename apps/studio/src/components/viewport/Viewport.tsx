@@ -401,34 +401,45 @@ export const Viewport = memo(function Viewport(): ReactElement {
       <div className="viewport__host" ref={hostRef} data-layout-ignore="" />
       {ready && <ViewOverlays playing={playing} />}
       {ready && planOpen && <PlanView />}
-      {ready && <ArchBar />}
-      <div className="vp-overlay vp-overlay--tl">
-        {ready && !playing && (
-          <div className="vp-row">
-            <CameraPresets />
-            <TourButton />
+      {/* Every top overlay sits in one flow so none can cover another: the row wraps on narrow viewports, the graphics
+          alert and the performance readout stack below it. */}
+      <div className="vp-top">
+        <div className="vp-top__row">
+          <div className="vp-overlay vp-overlay--tl">
+            {ready && !playing && (
+              <div className="vp-row">
+                <CameraPresets />
+                <TourButton />
+              </div>
+            )}
           </div>
-        )}
-        <PerfHud />
-        {ready && <GeometryBadge />}
-      </div>
-      <div className="vp-overlay vp-overlay--tr">
-        {playing ? !voxelGame && <CameraToggle /> : ready && (
-          <>
-            <LightmapPill />
-            <PlaytestPill />
-            <VerifyPill />
-          </>
-        )}
-        {ready && !playing && <DisplayMenu />}
+          {ready && <ArchBar />}
+          <div className="vp-overlay vp-overlay--tr">
+            {playing ? !voxelGame && <CameraToggle /> : ready && (
+              <>
+                <LightmapPill />
+                <PlaytestPill />
+                <VerifyPill />
+              </>
+            )}
+            {ready && !playing && <DisplayMenu />}
+          </div>
+        </div>
+        <div className="vp-top__center">
+          <BusyIndicator />
+          {ready && <ProofSeal />}
+        </div>
+        {!fatal && <GraphicsAlert />}
+        <div className="vp-top__stack">
+          <PerfHud />
+          {ready && <GeometryBadge />}
+        </div>
       </div>
       {ready && !playing && !viewer && (
         <div className="vp-context">
           <ContextBar />
         </div>
       )}
-      <BusyIndicator />
-      {ready && <ProofSeal />}
       {ready && <ReplayBar />}
       {voxelGame ? (
         <VoxelHud />
@@ -448,7 +459,6 @@ export const Viewport = memo(function Viewport(): ReactElement {
         </div>
       )}
       {loading && !fatal && <ViewportLoading text={loading} />}
-      {!fatal && <GraphicsAlert />}
       {fatal && (
         <div className="vp-fatal" role="alert">
           <span className="vp-fatal__icon">

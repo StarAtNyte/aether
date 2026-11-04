@@ -181,6 +181,17 @@ export interface StudioMemoryReport {
 const CATALOG_PRELOAD_MS = 1500;
 /** Longest the loading poster waits for the first presented frame after the world is framed (ms). */
 const FIRST_DRAW_WAIT_MS = 15_000;
+/** Longest the loading screen waits for the world to finish preparing before letting the user in anyway (ms). */
+const FULL_LOAD_WAIT_MS = 90_000;
+/** What the loading screen says while the world finishes preparing. */
+const LOADING_STAGE_TEXT = Object.freeze({
+  scene: 'Building the world…',
+  materials: 'Loading models and textures…',
+  render: 'Preparing shaders and geometry…',
+  motion: 'Almost ready…',
+  capture: 'Almost ready…',
+  lighting: 'Lighting the world…',
+});
 
 export class Studio {
   readonly history: History;
@@ -545,6 +556,14 @@ export class Studio {
       if (gen === this.attachGen) {
         clearBooting(this.storage);
         this.scheduleVerifyWarmup();
+      }
+      // No exploring until the world is complete: models, textures, programs and merged batches all in, so the first
+      // steps never hitch on a shader link or show objects popping in.
+      if (gen === this.attachGen && !this.disposed) {
+        this.store.getState().setLoading(LOADING_STAGE_TEXT.render);
+        await sim.whenFullyLoaded(FULL_LOAD_WAIT_MS, (stage) => {
+          if (gen === this.attachGen && !this.disposed) this.store.getState().setLoading(LOADING_STAGE_TEXT[stage]);
+        });
       }
       this.store.getState().setLoading(null);
       return () => {

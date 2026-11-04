@@ -19,6 +19,10 @@ export interface ParallelPrograms {
   synchronous<T>(draw: () => T): T;
   dispose(): void;
 }
+/** Links slower than this are recorded in {@link slowLinks} (ms). */
+const SLOW_LINK_MS = 1500;
+/** Slow program links seen in this page (diagnostics: how long, and how big the shader source was). */
+export const slowLinks: Array<{ ms: number; chars: number; head: string }> = [];
 /** Retain the bindings, not a mutable/disposable RenderObject, while a program links. */
 export function parallelPrograms(backend: Backend, changed: () => void, failed: (error: unknown) => void): ParallelPrograms {
   const jobs = new Set<{ cancel(): void; done: Promise<void>; ready(): boolean; complete(): void; pipeline: object }>();
@@ -117,6 +121,7 @@ export function parallelPrograms(backend: Backend, changed: () => void, failed: 
     gl.attachShader(programGPU, fragmentShader);
     gl.attachShader(programGPU, vertexShader);
     gl.linkProgram(programGPU);
+    const linkStart = performance.now();
     backend.set(pipeline, { programGPU, fragmentShader, vertexShader });
     let resolve!: () => void;
     const done = new Promise<void>(r => { resolve = r; });
@@ -131,7 +136,12 @@ export function parallelPrograms(backend: Backend, changed: () => void, failed: 
       done,
       cancel: () => { if (!gl.isContextLost()) gl.deleteProgram(programGPU); finish(); },
       ready: () => gl.getProgramParameter(programGPU, parallel.COMPLETION_STATUS_KHR) === true,
-      complete: () => { backend._completeCompile({ getBindings: () => bindings }, pipeline); finish(); },
+      complete: () => {
+        const ms = performance.now() - linkStart;
+        // Diagnostics: one slow link holds every other completion and the preparation queue (see poll).
+        if (ms > SLOW_LINK_MS) slowLinks.push({ ms: Math.round(ms), chars: (gl.getShaderSource(fragmentShader)?.length ?? 0) + (gl.getShaderSource(vertexShader)?.length ?? 0), head: (gl.getShaderSource(fragmentShader) ?? '').slice(0, 0) });
+        backend._completeCompile({ getBindings: () => bindings }, pipeline); finish();
+      },
     };
     jobs.add(job); hold(pipeline);
     submitted++;

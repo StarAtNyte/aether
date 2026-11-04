@@ -33,6 +33,10 @@ import { BATCHED_LAYER } from './static-batches';
 import { MergeBuildClient, type MergeJob } from './merge-client';
 import { mergeGeometryStamp, mergeRequest, type MergeRequest } from './merge-wire';
 import { errorMessage, log } from '../log';
+import { interiorContent } from '../gpu/performance';
+
+/** Marks the merge key of room contents (see `rebuild`). */
+const INTERIOR_KEY = '|in';
 
 /** Edge (m) of the cells that world props (entities without `arch`) are merged in: a merged mesh is culled as a whole, so it stays local. */
 export const PROP_CELL = 160;
@@ -223,6 +227,11 @@ export class StaticMerges {
     return this.saved;
   }
 
+  /** Merged meshes of room contents (furniture, fittings), for distance culling. */
+  *interiorMeshes(): Iterable<Mesh> {
+    for (const m of this.merges) if (m.mesh.userData['aetherInterior'] === true) yield m.mesh;
+  }
+
   /** Number of merged meshes. */
   get count(): number {
     return this.readyCount;
@@ -253,7 +262,9 @@ export class StaticMerges {
         // towers or a row of trees is a few draws and still culls by region.
         const at = instanced(mesh) ? memberWorld(_rel, mesh, 0) : mesh.matrixWorld;
         const cell = node.entity.arch ? '' : `|${edge}:${Math.floor(at.elements[12] / edge)},${Math.floor(at.elements[14] / edge)}`;
-        const key = `${parent.uuid}${cell}|${b.materialKey}|${mesh.castShadow ? 1 : 0}${mesh.receiveShadow ? 1 : 0}|${attrs}`;
+        // Room contents merge apart from the building around them, so a whole house's furniture can be left undrawn far away.
+        const inside = node.entity.arch && interiorContent(node.entity.arch) ? INTERIOR_KEY : '';
+        const key = `${parent.uuid}${cell}${inside}|${b.materialKey}|${mesh.castShadow ? 1 : 0}${mesh.receiveShadow ? 1 : 0}|${attrs}`;
         let list = groups.get(key);
         if (!list) {
           list = { parent, material: mesh.material as Material, meshes: [] };
@@ -388,6 +399,7 @@ export class StaticMerges {
     const geometry = request ? new BufferGeometry() : this.build(members.map((m) => m.mesh), members);
     const mesh = new Mesh(geometry, material);
     mesh.name = 'aether:merged';
+    if (key.includes(INTERIOR_KEY)) mesh.userData['aetherInterior'] = true;
     const first = meshes[0] as Mesh;
     mesh.castShadow = first.castShadow;
     mesh.receiveShadow = first.receiveShadow;

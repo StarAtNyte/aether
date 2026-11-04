@@ -394,6 +394,11 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
         sim.onDuck((depth, seconds) => musicRef.current?.duck?.(depth, seconds));
         setLoading('Building the world…');
         await sim.whenSynced();
+        // The title card (and with it Start) waits for the world to be complete: no hitches or pop-in once playing.
+        await sim.whenFullyLoaded(90_000, (stage) => {
+          if (!disposed) setLoading(stage === 'materials' ? 'Loading models and textures…' : stage === 'scene' ? 'Building the world…' : 'Preparing shaders and geometry…');
+        });
+        if (disposed) return;
         // A bundled block-world save is imported once per browser.
         if (game.save && sim.voxel) {
           const marker = `aether.player.save.${musicSeed(game.save + world.name).toString(36)}`;

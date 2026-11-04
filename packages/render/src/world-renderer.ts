@@ -13,7 +13,7 @@ import { warmRaycastTrees } from './geometry/raycast-bvh';
 import { FrameInvalidation } from './view/frame-invalidation';
 import { deferRenderPreparation, type RenderPreparation } from './gpu/render-preparation';
 import { LampSlots } from './sync/lamp-slots';
-import { parallelPrograms, type ParallelPrograms } from './gpu/parallel-programs';
+import { parallelPrograms, slowLinks, type ParallelPrograms } from './gpu/parallel-programs';
 import { gpuFrameCost } from './gpu/frame-cost';
 import { preparePresentation } from './gpu/presentation';
 import { warmProceduralFields } from './gpu/procedural-fields-client';
@@ -94,6 +94,7 @@ import { installRenderPatches } from './three-patches';
 import { installLodBias, lodBiasFor, setTextureLodBias } from './gpu/lod-bias';
 import { createGpuRenderer, type BackendKind, type BackendPreference, type BackendReason, type GpuInfo } from './gpu/backend';
 import { opaqueSort, type SortItem } from './gpu/render-order';
+import { needsPrePass } from './gpu/finishing';
 import { BlackScreenWatchdog, GpuLogCapture, measureFrame, WATCHDOG_STEPS, type FrameSample, type WatchdogAction, type WatchdogOptions } from './gpu/watchdog';
 import { AdaptiveTier } from './gpu/adaptive-tier';
 import { capTier, cutsAt, forwardLightBudget, GOVERNOR_DEFAULTS, hardwareTierCap, interiorContent, interiorDrawDistance, lodHeightScale, PerformanceGovernor, startLevel, PERFORMANCE_STEPS, readHardware, sunMapSoftRefreshFrames, WEAK_PIXEL_RATIO, weakHardware, type HardwareHints, type PerformanceCuts } from './gpu/performance';
@@ -609,6 +610,14 @@ const KTX2_SETUP_DELAY_MS = 4000;
 
 /** Longest the load screen waits for the first frame's shader programs to link (ms). */
 const SHADER_WARMUP_MS = 15_000;
+/**
+ * The warm-up compiles every object, not one per (material, layout, kind): objects that share that key still differ in
+ * what makes a program (lights, receiving, light-map channels), and each one met later linked a program on the way, a
+ * freeze of 1.5-5 s on an integrated GPU as a new street came into view (a hundred of them in a minute of walking).
+ * Off by default: a render state for every object of a large world costs too much memory on an 8-16 GB laptop
+ * (the machine swapped during loading). `globalThis.__AETHER_FULL_WARMUP = true` turns it on.
+ */
+const FULL_WARMUP = (globalThis as { __AETHER_FULL_WARMUP?: boolean }).__AETHER_FULL_WARMUP === true;
 /** Frames after which the cached sun shadow map is drawn again whatever happened (a safety net). */
 const SUN_MAP_REFRESH = 24;
 /**
@@ -621,6 +630,13 @@ const SUN_MAP_REFRESH_CHEAP = 120;
 const SUN_MAP_REFRESH_MOVING = 60;
 /** Frames between redraws of the cached sun shadow map while casters animate (30 fps at 60; more on a slow GPU, see `sunMapSoftRefreshFrames`). */
 const SUN_MAP_SOFT_REFRESH = 2;
+/**
+ * Frames between redraws of the cached sun map for a level-of-detail re-plan that followed the camera (scatter fields,
+ * virtual geometry), and at rest at once. A re-plan swaps far detail levels that change a shadow by a texel at most,
+ * yet asked for a redraw of every caster every few frames while the view moved (860 caster draws every 3.5 frames on a
+ * hillside town: half the frame time of an integrated GPU).
+ */
+const SUN_MAP_VIEW_REFRESH = 30;
 /** The same while the view moves under the split studio chain (2 fps at 60): animated shadows lag a little, the frame rate holds (a redraw is a frame of 5 ms more, which a 13 ms frame cannot afford often). */
 const SUN_MAP_SOFT_REFRESH_MOVING = 30;
 /** Assets smaller than this in every direction cast no sun shadow on the low tier (metres). */
@@ -632,6 +648,13 @@ const FAR_ANIMAL_METRES = 55;
  * nor the shadow cameras render it, the renderer's raycasters still test it (picking through a window works).
  */
 const FAR_INTERIOR_LAYER = 6;
+/** Layer of meshes left undrawn on integrated GPUs for covering under {@link SMALL_MESH_PX} pixels (see cullSmallMeshes). */
+const SMALL_MESH_LAYER = 8;
+/**
+ * Projected radius (pixels of the drawn picture) under which a mesh is not drawn on an integrated GPU in the realtime
+ * view: a window bar, a tile, a flower pot across the valley. Each is a draw call and its triangles for a speck.
+ */
+const SMALL_MESH_PX = 1.5;
 /** Longest the load screen waits for the world's environment map (ms). */
 const HDRI_WAIT_MS = 8_000;
 /** How long late warming collects arrivals before it links them (ms). */
@@ -640,6 +663,8 @@ const LATE_ROUND_MS = 1_200;
 const LATE_ROUNDS = 5;
 /** Longest one late round holds the draws (ms): the first frame is already on screen. */
 const LATE_COMPILE_MS = 2_500;
+/** Longest a change of quality plan waits for its programs to link off the frame before drawing anyway (ms). */
+const REWARM_MS = 12_000;
 /** Longest the load screen waits for the post chain to be built (ms). */
 const POST_WAIT_MS = 4_000;
 /** Longest the load screen waits for the leaf cards to be filled in (ms): they are made a task at a time while the programs link. */
@@ -670,6 +695,10 @@ const REBUILD_DISCOVERY_MS = 150;
  * no more than {@link REBUILD_DONE_SHARE} of them still wait for preparation or links.
  */
 const REBUILD_DONE_DRAWS = 0.9;
+/** Past {@link REBUILD_HOLD_MS}, the share of the last picture's draws a hidden frame must issue before the new plan shows. */
+const REBUILD_ENOUGH_DRAWS = 0.6;
+/** Longest the last complete picture is kept during a rebuild whatever the new one holds (ms). */
+const REBUILD_HOLD_MAX_MS = 60_000;
 const REBUILD_DONE_SHARE = 0.05;
 const WARMING_MAX_MS = 20_000;
 const MAX_BLANK_RETRIES = 3;
@@ -845,13 +874,20 @@ export class WorldRenderer {
   }
   /** Any content or view-state change that asks for a frame also asks for a fresh sun shadow map (see {@link cacheSunMap}). */
   private set needsDraw(on: boolean) {
-    if (on) { this.frameInvalidation.change(); this.sunMapDirty = true; }
+    if (on) {
+      this.frameInvalidation.change();
+      this.sunMapDirty = true;
+      const trace = (globalThis as { __AETHER_DIRTY_TRACE?: Map<string, number> }).__AETHER_DIRTY_TRACE;
+      if (trace) { const at = (new Error().stack ?? '').split('\n').slice(2, 5).map((x) => x.trim().split(' ')[1]).join(' < '); trace.set(at, (trace.get(at) ?? 0) + 1); }
+    }
     else this.frameInvalidation.clear();
   }
   /** The sun's shadow map no longer matches the scene: content changed. */
   private sunMapDirty = true;
   /** Casters that animate or re-plan with the view (people, wind, scatter fields): the map follows them at a lower rate. */
   private sunMapSoft = false;
+  /** Scatter fields or virtual geometry re-planned with the view since the sun map was drawn (see SUN_MAP_VIEW_REFRESH). */
+  private sunMapView = false;
   /** Frames since the sun's shadow map was drawn. */
   private sunMapAge = 0;
   /** The sun light, map size and fitted frustum the map was drawn for. */
@@ -899,8 +935,9 @@ export class WorldRenderer {
   private lastDrawCalls = 0;
   private framesDrawn = 0;
   /** Frame-time driven resolution scale (see {@link AdaptiveResolution}). */
-  private readonly adaptive = new AdaptiveResolution(MOTION_PROFILES.sharp.opts);
-  private motionProfile: MotionProfile = 'sharp';
+  private readonly adaptive = new AdaptiveResolution(MOTION_PROFILES.smooth.opts);
+  /** Frame rate first by default (published games, the studio's default setting); `setMotionProfile('sharp')` holds 30 fps sharper. */
+  private motionProfile: MotionProfile = 'smooth';
   /** The previous animation frame drew (continuous rendering streak). */
   private drewLastFrame = false;
   private lastTriangles = 0;
@@ -1165,7 +1202,9 @@ export class WorldRenderer {
     // A lost device/context stops drawing and tells the host (three's default only logs an error).
     renderer.onDeviceLost = (info: { message?: unknown }) => wr.handleContextLost(typeof info?.message === 'string' ? info.message : 'unknown reason');
     // User camera input marks the next on-demand frame dirty.
-    onControlsChange?.(() => wr.requestRender());
+    // The view moved: a frame, not a new sun shadow map (the content-fitted map does not depend on the camera; cascades
+    // re-fit themselves). requestRender() would draw every caster again on every frame of an orbit.
+    onControlsChange?.(() => wr.requestViewFrame());
     wr.resize(width, height);
     if (opts.safeMode === true) wr.setSafeMode(true);
     else wr.startCautiously();
@@ -1181,6 +1220,11 @@ export class WorldRenderer {
     }
     opts.onProgress?.(`Renderer ready (${backend}, ${wr.gpu.tier} GPU)`);
     return wr;
+  }
+
+  /** Program links that took over 1.5 s in this page (diagnostics). */
+  get slowProgramLinks(): ReadonlyArray<{ ms: number; chars: number }> {
+    return slowLinks;
   }
 
   /** Frames actually drawn since creation (on-demand rendering skips the rest). */
@@ -1247,7 +1291,7 @@ export class WorldRenderer {
     if (this.captureActive || this.tracing) return 'capture';
     if (this.syncing > 0 || !this.sync.idle) return 'scene';
     if (this.foliagePending || (this.compute?.pendingCount ?? 0) > 0 || textureWork.pending > 0) return 'materials';
-    if (this.warming || this.postPending || this.preparation.pending > 0 || this.programs.pending > 0) return 'render';
+    if (this.warming || this.postPending || this.preparation.pending > 0 || this.programs.pending > 0 || this.sync.batchPreparationPending > 0) return 'render';
     // Background light bakes have their own progress/cancel control. The viewport
     // remains usable and must not look blocked for the duration of a path trace.
     return null;
@@ -1827,6 +1871,31 @@ export class WorldRenderer {
     }
   }
 
+  /** Link the programs of a new quality plan before drawing with it (see applyQuality). One at a time; never throws. */
+  private async rewarm(): Promise<void> {
+    if (this.rewarming || this.disposed || this.lost) return;
+    this.rewarming = true;
+    // Let the plan's own changes (post chain, lights, shadow maps) settle into the scene for a frame first.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    if (this.disposed || this.lost || this.warming) {
+      this.rewarming = false;
+      return;
+    }
+    // No hold on the draws (`warming`): frames keep coming with what is linked, the rebuild shows the last complete
+    // picture meanwhile (see rebuildSince), and the compile walk yields so input and the frame loop stay responsive.
+    try {
+      await this.prepareAndCompile(REWARM_MS);
+    } catch (e) {
+      log.warn(`re-warm after a plan change failed: ${errorMessage(e)}`);
+    } finally {
+      this.rewarming = false;
+      this.needsDraw = true;
+    }
+  }
+
+  private rewarming = false;
+  private programKey = '';
+
   /** Meshes that stopped casting into the sun's shadow map because they are small (mesh and its own flag before). */
   private readonly smallCasters = new Map<Mesh, boolean>();
 
@@ -1883,14 +1952,14 @@ export class WorldRenderer {
    * everything comes back when the eye comes near or the tier rises.
    */
   private cullFarInteriors(): void {
-    const reach = interiorDrawDistance(this.qualityPlan.tier, this.qualityPlan.quality !== 'realtime');
+    const reach = interiorDrawDistance(this.qualityPlan.tier, this.qualityPlan.quality !== 'realtime', this.gpu.tier);
     if (!Number.isFinite(reach)) {
       if (this.farInteriors.size > 0) {
         for (const m of this.farInteriors) if (m.layers.mask === 1 << FAR_INTERIOR_LAYER) m.layers.set(0);
         this.farInteriors.clear();
         this.frameInvalidation.change();
-        this.sunMapSoft = true;
-        this.sunMapDirty = true;
+        // Room contents far from the eye: a soft refresh (their sun shadows fall inside the rooms).
+        this.sunMapView = true;
       }
       return;
     }
@@ -1932,7 +2001,99 @@ export class WorldRenderer {
         }
       }
     }
+    // Merged room contents (a storey's furniture per material) go by the distance to their bounds.
+    for (const mesh of this.sync.mergedInteriors()) {
+      const g = mesh.geometry;
+      if (!g.boundingSphere) g.computeBoundingSphere();
+      const bs = g.boundingSphere;
+      // A merge built in the background starts empty: measure it again once it has geometry.
+      if (!bs || !(bs.radius > 0)) { g.boundingSphere = null; continue; }
+      _center.copy(bs.center).applyMatrix4(mesh.matrixWorld);
+      const far = _center.distanceTo(eye) - bs.radius > reach;
+      if (far) {
+        if (mesh.layers.mask === 1) {
+          mesh.layers.set(FAR_INTERIOR_LAYER);
+          this.farInteriors.add(mesh);
+          changed = true;
+        }
+      } else if (this.farInteriors.delete(mesh) && mesh.layers.mask === 1 << FAR_INTERIOR_LAYER) {
+        mesh.layers.set(0);
+        changed = true;
+      }
+    }
     // A new frame; the sun's map catches up at its next redraw (a far room's furniture shadow is not worth one).
+    if (changed) this.frameInvalidation.change();
+  }
+
+  private readonly smallHidden = new Set<Mesh>();
+  private smallFrame = 0;
+  private smallWorld: unknown = null;
+  private smallIds: string[] = [];
+
+  /**
+   * On integrated and unrecognised GPUs, in the realtime view, meshes whose bounding sphere covers under
+   * {@link SMALL_MESH_PX} pixels of the picture are not drawn (nor cast into the sun map). A town seen whole is
+   * thousands of such specks; each costs a draw call and its triangles. Every few frames; they come back as the eye nears.
+   * Instanced and skinned meshes are left alone (their bounds are not one object's).
+   */
+  private cullSmallMeshes(): void {
+    const on = this.qualityPlan.quality === 'realtime' && (this.gpu.tier === 'integrated' || this.gpu.tier === 'unknown');
+    if (!on) {
+      if (this.smallHidden.size > 0) {
+        for (const m of this.smallHidden) if (m.layers.mask === 1 << SMALL_MESH_LAYER) m.layers.set(0);
+        this.smallHidden.clear();
+        this.frameInvalidation.change();
+      }
+      return;
+    }
+    if (++this.smallFrame % 10 !== 3) return;
+    const world = this.sync.world;
+    if (!world) return;
+    if (world !== this.smallWorld) {
+      this.smallWorld = world;
+      for (const m of this.smallHidden) if (m.parent === null) this.smallHidden.delete(m);
+      this.smallIds = [];
+      for (const [id, e] of Object.entries(world.entities)) if (!e.template) this.smallIds.push(id);
+    }
+    const cam = this.perspective;
+    const eye = cam.position;
+    // Pixels per metre at one metre: half the drawn height over tan(half the vertical field of view).
+    const k = (this.domElement.height / 2) / Math.tan((cam.fov * Math.PI) / 360);
+    const minR = SMALL_MESH_PX / k;
+    let changed = false;
+    for (let i = 0; i < this.smallIds.length; i++) {
+      const node = this.sync.node(this.smallIds[i] as string);
+      if (!node) continue;
+      for (let j = 0; j < node.bindings.length; j++) {
+        const mesh = (node.bindings[j] as { mesh: Mesh }).mesh;
+        if ((mesh as { isInstancedMesh?: boolean }).isInstancedMesh || (mesh as { isSkinnedMesh?: boolean }).isSkinnedMesh) continue;
+        const g = mesh.geometry;
+        if (!g) continue;
+        if (!g.boundingSphere) g.computeBoundingSphere();
+        const bs = g.boundingSphere;
+        if (!bs) continue;
+        const e = mesh.matrixWorld.elements;
+        const sx = Math.hypot(e[0] as number, e[1] as number, e[2] as number), sy = Math.hypot(e[4] as number, e[5] as number, e[6] as number), sz = Math.hypot(e[8] as number, e[9] as number, e[10] as number);
+        const radius = bs.radius * Math.max(sx, sy, sz);
+        const cx = (e[0] as number) * bs.center.x + (e[4] as number) * bs.center.y + (e[8] as number) * bs.center.z + (e[12] as number);
+        const cy = (e[1] as number) * bs.center.x + (e[5] as number) * bs.center.y + (e[9] as number) * bs.center.z + (e[13] as number);
+        const cz = (e[2] as number) * bs.center.x + (e[6] as number) * bs.center.y + (e[10] as number) * bs.center.z + (e[14] as number);
+        const d = Math.max(0.001, Math.hypot(cx - eye.x, cy - eye.y, cz - eye.z) - radius);
+        const small = radius < minR * d;
+        if (small) {
+          if (mesh.layers.mask === 1) {
+            mesh.layers.set(SMALL_MESH_LAYER);
+            this.smallHidden.add(mesh);
+            changed = true;
+          }
+        } else if (this.smallHidden.delete(mesh)) {
+          if (mesh.layers.mask === 1 << SMALL_MESH_LAYER) {
+            mesh.layers.set(0);
+            changed = true;
+          }
+        }
+      }
+    }
     if (changed) this.frameInvalidation.change();
   }
 
@@ -2010,7 +2171,7 @@ export class WorldRenderer {
       const attrs = geo ? Object.keys(geo.attributes).join(',') + (geo.index ? '|i' : '') : '';
       const kind = `${(o as { isInstancedMesh?: boolean }).isInstancedMesh ? 'I' : ''}${(o as { isSkinnedMesh?: boolean }).isSkinnedMesh ? `S${(o as { skeleton?: { bones: unknown[] } }).skeleton?.bones.length ?? 0}` : ''}${o.receiveShadow ? 'r' : ''}${o.castShadow ? 'c' : ''}${o.layers.mask}`;
       const key = `${mats.map((x) => x.uuid).join('+')}|${attrs}|${kind}`;
-      if (seen.has(key)) {
+      if (!FULL_WARMUP && seen.has(key)) {
         changed.push({ o, visible: true, culled: false });
         o.visible = false;
         return;
@@ -2266,7 +2427,8 @@ export class WorldRenderer {
     if (animate) {
       advanceWater(dt);
       this.water.update(dt);
-      this.needsDraw = true;
+      // Waves animate the frame, not the sun's shadow map (water casts nothing): no redraw of every caster for them.
+      this.frameInvalidation.animate();
     }
     const sky = this.env.skyState;
     if (sky !== this.waterSky) {
@@ -2399,6 +2561,11 @@ export class WorldRenderer {
     this.needsDraw = true;
   }
 
+  /** Ask for a frame because the view moved (camera controls): the sun's cached shadow map stays. */
+  requestViewFrame(): void {
+    this.frameInvalidation.change();
+  }
+
   /** GPU resources becoming ready do not mean the user moved the view again. */
   /**
    * Ask for a frame because something finished preparing. `casters`: the preparation queue drained, so everything the
@@ -2409,7 +2576,9 @@ export class WorldRenderer {
    */
   private requestPreparedFrame(casters = true): void {
     this.frameInvalidation.prepared();
-    if (casters) this.sunMapDirty = true;
+    // Newly prepared objects join the sun map on the view-refresh cadence: while the camera moves, objects coming into
+    // view finish preparing many times a second, and each used to redraw every caster.
+    if (casters) this.sunMapView = true;
     else this.sunMapSoft = true;
   }
 
@@ -2472,7 +2641,10 @@ export class WorldRenderer {
   /** Apply packed physics poses (`PhysicsWorld.writeTransforms`). Zero allocations. */
   applyTransforms(packed: Float32Array, order: EntityId[]): void {
     this.sync.applyTransforms(packed, order);
-    this.needsDraw = true;
+    // Bodies moved by the simulation are animated casters: the sun map refreshes on the throttled soft path
+    // (see sunMapSoftRefreshFrames) instead of every caster being drawn again every frame of play.
+    this.frameInvalidation.change();
+    this.sunMapSoft = true;
   }
 
   /** Runtime property override (from logic). Invalid paths/values are ignored. */
@@ -2584,7 +2756,9 @@ export class WorldRenderer {
    */
   setPlayerAvatar(position: Vec3, yawDeg: number, state?: AvatarState): void {
     this.avatar.set(position[0], position[1], position[2], yawDeg, state);
-    this.needsDraw = true;
+    // The player is one animated caster: a soft sun-map refresh, not a redraw of the whole world's casters each frame.
+    this.frameInvalidation.change();
+    this.sunMapSoft = true;
   }
 
   /** Choose the player's look (`world.player.character`). */
@@ -3383,6 +3557,7 @@ export class WorldRenderer {
     if (this.watchdogOn) this.watch(false);
     this.cullFarAnimals();
     this.cullFarInteriors();
+    this.cullSmallMeshes();
     const step = Number.isFinite(dt) ? Math.min(Math.max(dt, 0), 0.1) : 0;
     const cameraMoved = this.rig.update(step);
     // The view or the content was asked to change from outside (camera, edits, resizes), as against content that merely animates.
@@ -3516,7 +3691,12 @@ export class WorldRenderer {
       if (this.rebuildSince > 0 && !this.heldFrame) {
         const waiting = this.programs.draws.linking - linking + this.preparation.deferred - deferred;
         const drawn = this.programs.draws.issued - issued - (this.programs.draws.linking - linking);
-        if (drawn >= REBUILD_DONE_DRAWS * this.completeDraws && waiting <= REBUILD_DONE_SHARE * (drawn + waiting)) this.rebuildSince = 0;
+        // Not while the new plan's programs still link off the frame (rewarm): released early, the view met them one area
+        // at a time as the camera turned, seconds of frozen frames each on an integrated GPU.
+        if (this.rewarming) { /* keep holding */ }
+        else if (drawn >= REBUILD_DONE_DRAWS * this.completeDraws && waiting <= REBUILD_DONE_SHARE * (drawn + waiting)) this.rebuildSince = 0;
+        // Past the usual hold a mostly complete picture is good enough; a nearly empty one never is (black for seconds).
+        else if (now() - this.rebuildSince > REBUILD_HOLD_MS && drawn >= REBUILD_ENOUGH_DRAWS * this.completeDraws) this.rebuildSince = 0;
       }
       this.requestPreparedFrame(false);
       this.drewLastFrame = false;
@@ -3525,7 +3705,7 @@ export class WorldRenderer {
     this.framesDrawn++;
     // A complete picture of the new plan is on screen: the rebuild is over.
     if (timedFrameComplete) {
-      this.rebuildSince = 0;
+      if (!this.rewarming) this.rebuildSince = 0;
       this.completeDraws = this.programs.draws.issued - issued;
     }
     if (this.progressive) {
@@ -3537,6 +3717,10 @@ export class WorldRenderer {
     this.trimWatch();
     const info = this.renderer.info.render;
     this.lastDrawCalls = info.drawCalls ?? info.frameCalls ?? 0;
+    if (this.sunRedrawFrame) {
+      if (this.plainFrameDraws > 0) this.sunCasterDraws = Math.max(0, this.lastDrawCalls - this.plainFrameDraws);
+    } else this.plainFrameDraws = this.lastDrawCalls;
+    this.sunRedrawFrame = false;
     this.lastTriangles = info.triangles ?? 0;
     this.frameStats.record(dt, now() - t0);
     // Only a split studio chain has a lighter chain to fall back to. Under the realtime plan `restAnimating` is true whenever
@@ -3632,7 +3816,7 @@ export class WorldRenderer {
     const waited = t - this.busySince;
     // A rebuild keeps the last complete picture up to its own bound: everything prepares again, so an early frame holds
     // next to nothing (and its discovery frames keep something pending throughout, so `waited` never restarts).
-    if (this.rebuildSince > 0 && t - this.rebuildSince > REBUILD_HOLD_MS) this.rebuildSince = 0;
+    if (this.rebuildSince > 0 && t - this.rebuildSince > REBUILD_HOLD_MAX_MS) this.rebuildSince = 0;
     if (this.rebuildSince > 0) return false;
     const motion = moving && this.framesDrawn > 0;
     if (waited < (this.framesDrawn === 0 ? PROGRESSIVE_FIRST_MS : motion ? PROGRESSIVE_MOVING_MS : PROGRESSIVE_MS)) return false;
@@ -3772,18 +3956,30 @@ export class WorldRenderer {
     const age = this.sunMapAge + 1;
     const moving = this.qualityPlan.moveEffects !== null && !this.atRest;
     const net = moving ? SUN_MAP_REFRESH_MOVING : this.qualityPlan.tier === 'low' || this.qualityPlan.tier === 'medium' ? SUN_MAP_REFRESH_CHEAP : SUN_MAP_REFRESH;
-    const due = this.sunMapDirty || moved || age >= net || (this.sunMapSoft && age >= (moving ? SUN_MAP_SOFT_REFRESH_MOVING : Math.max(SUN_MAP_SOFT_REFRESH, sunMapSoftRefreshFrames(this.frameStats.fps))));
+    const due = this.sunMapDirty || moved || age >= net || (this.sunMapView && age >= SUN_MAP_VIEW_REFRESH) || (this.sunMapSoft && age >= (moving ? SUN_MAP_SOFT_REFRESH_MOVING : Math.max(SUN_MAP_SOFT_REFRESH, sunMapSoftRefreshFrames(this.frameStats.fps, this.sunCasterDraws))));
     shadow.needsUpdate = due;
+    this.sunRedrawFrame = due;
     if (due) {
+      const why = this.sunMapDirty ? 'dirty' : moved ? 'moved' : age >= net ? 'net' : this.sunMapView ? 'view' : 'soft';
+      this.sunMapReasons[why] = (this.sunMapReasons[why] ?? 0) + 1;
       this.sunMapDraws++;
       this.sunMapAge = 0;
       this.sunMapDirty = false;
       this.sunMapSoft = false;
+      this.sunMapView = false;
     } else this.sunMapAge = age;
   }
 
   /** Times the cached sun map was drawn again (diagnostics and benchmarks). */
   sunMapDraws = 0;
+  /** Why the cached sun map was redrawn, counted (diagnostics). */
+  readonly sunMapReasons: Record<string, number> = {};
+  /** The frame being drawn redraws the sun map (its draw count then includes the casters). */
+  private sunRedrawFrame = false;
+  /** Draws of the last frame that did not redraw the sun map. */
+  private plainFrameDraws = 0;
+  /** Draws the last sun-map redraw added to its frame: the shadow pass's caster count. */
+  sunCasterDraws = 0;
   private shadowFrame = 0;
   private readonly focusProbe = { point: new Vector3(), valid: false, at: -1e9, pos: new Vector3(Number.NaN, 0, 0), quat: new Quaternion() };
 
@@ -4745,6 +4941,19 @@ export class WorldRenderer {
     this.restDeferred = false;
     this.motionFrameReady = false;
     this.qualityPlan = qualityPlan(quality, this.budget, this.gpu.tier === 'software', this.tierChoice === 'auto' ? this.autoTierNow() : this.tierChoice, { split: this.tierChoice === 'auto' && this.gpu.tier !== 'discrete', tierCap: this.tierChoice === 'auto' ? this.cuts.tierCap : null });
+    // An integrated GPU keeps the single cached sun map in the realtime view at every tier: cascades follow the camera and
+    // draw their casters again on nearly every moving frame (an ultra hillside town: 1,700 draws and 9.7 M triangles a
+    // frame against 250 and 2.2 M at medium on an Intel UHD). The other effects of the tier stay; stills keep cascades.
+    if (this.qualityPlan.quality === 'realtime' && (this.gpu.tier === 'integrated' || this.gpu.tier === 'unknown') && (this.qualityPlan.shadowTier === 'high' || this.qualityPlan.shadowTier === 'ultra')) {
+      this.qualityPlan = { ...this.qualityPlan, shadowTier: 'medium' };
+    }
+    // The same GPUs give up the opaque pre-pass while the view moves (a second draw of every object: 1,577 draws a
+    // frame instead of 690 down a furnished street) and take it back at rest, as the split studio chain does: ambient
+    // occlusion, reflections and the temporal resolve refine the still picture; motion keeps the composite and grade.
+    if (this.qualityPlan.quality === 'realtime' && this.qualityPlan.moveEffects === null && (this.gpu.tier === 'integrated' || this.gpu.tier === 'unknown') && needsPrePass(this.qualityPlan.effects)) {
+      const e = this.qualityPlan.effects;
+      this.qualityPlan = { ...this.qualityPlan, moveEffects: { ...e, ao: false, gi: false, taa: false, contact: false, ssr: false, shafts: false, dof: false } };
+    }
     const plan = this.qualityPlan;
     // The high and ultra tiers (and stills) light and reflect with a photographed sky.
     this.env.setAutoHdri(plan.tier === 'high' || plan.tier === 'ultra');
@@ -4769,8 +4978,15 @@ export class WorldRenderer {
     this.boundsDirty = true;
     this.needsDraw = true;
     const key = JSON.stringify([plan.tier, plan.shadowTier, plan.shadowStill, plan.post, plan.effects, plan.moveEffects, this.cuts]);
-    if (key !== this.planKey && this.framesDrawn > 0) this.rebuildSince = now();
+    // Only a change of tier or effects rebuilds programs; the ladder's cuts alone (cascades, light volume) do not need a re-link walk.
+    const programsChanged = JSON.stringify([plan.tier, plan.shadowTier, plan.post, plan.effects]) !== this.programKey;
+    this.programKey = JSON.stringify([plan.tier, plan.shadowTier, plan.post, plan.effects]);
+    const rebuilt = key !== this.planKey && this.framesDrawn > 0;
+    if (rebuilt) this.rebuildSince = now();
     this.planKey = key;
+    // A new plan rebuilds every lit program. Link them off the frame (the compile walk yields to the browser) while
+    // the last picture stays up, instead of building them one draw at a time on the main thread (seconds of freeze).
+    if (rebuilt && programsChanged) void this.rewarm();
     if (plan.quality !== before) this.onQualityChange?.(plan.quality);
     return plan.quality;
   }
@@ -4955,8 +5171,25 @@ export class WorldRenderer {
    * camera immediately, never throttled.
    */
   private draw(capture = false): void {
-    if (capture) return this.presentation.synchronous(() => this.preparation.synchronous(() => this.programs.synchronous(() => this.drawReady(capture))));
-    this.drawReady(capture);
+    if (capture) return this.presentation.synchronous(() => this.preparation.synchronous(() => this.programs.synchronous(() => this.drawOnce(capture))));
+    this.drawOnce(capture);
+  }
+
+  /**
+   * One frame's draws with the scene's world matrices brought up to date once. three's render() walks the whole graph for
+   * its matrices on every call, and a frame makes several (the scene pass of the post chain, the water's backdrop, the
+   * mirror): on a 7,000-object hillside town that walk was a fifth of the frame's script time on a laptop CPU.
+   */
+  private drawOnce(capture: boolean): void {
+    const scene = this.scene;
+    if (!scene.matrixWorldAutoUpdate) return this.drawReady(capture);
+    scene.updateMatrixWorld();
+    scene.matrixWorldAutoUpdate = false;
+    try {
+      this.drawReady(capture);
+    } finally {
+      scene.matrixWorldAutoUpdate = true;
+    }
   }
 
   private drawReady(capture = false): void {
@@ -4970,13 +5203,13 @@ export class WorldRenderer {
     // Scatter fields and virtual geometry re-plan for whatever camera draws this frame
     // (the viewport, or a capture view), only when the view or content changed.
     // The cheaper tiers plan the level of detail for a smaller picture (see `lodHeightScale`); a change of tier re-plans.
-    const lodScale = capture ? 1 : lodHeightScale(this.qualityPlan.tier, this.qualityPlan.quality !== 'realtime');
+    const lodScale = capture ? 1 : lodHeightScale(this.qualityPlan.tier, this.qualityPlan.quality !== 'realtime', this.gpu.tier);
     const lodChanged = !capture && lodScale !== this.lodScale;
     if (lodChanged) this.lodScale = lodScale;
     if (this.viewChanged() || this.sync.viewNeedsUpdate || lodChanged) {
       const target = this.renderer.getOutputRenderTarget();
       const height = target ? target.height : Math.round(this.cssHeight * this.renderer.getPixelRatio());
-      if (this.sync.updateView(this.perspective, Math.max(1, height * lodScale), capture || lodChanged ? 0 : now(), this.viaPassApplied && this.adaptive.scale < 0.8 ? VIEW_INTERVAL_SCALED_MS : VIEW_INTERVAL_MS)) this.sunMapSoft = true;
+      if (this.sync.updateView(this.perspective, Math.max(1, height * lodScale), capture || lodChanged ? 0 : now(), this.viaPassApplied && this.adaptive.scale < 0.8 ? VIEW_INTERVAL_SCALED_MS : VIEW_INTERVAL_MS)) this.sunMapView = true;
     }
     // A resized sun shadow map reallocates its textures on the next draw; shafts built against the old
     // ones would sample destroyed textures. Drop the pipeline, draw once directly, and let it rebuild.

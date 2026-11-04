@@ -124,6 +124,28 @@ export function pickBackend(preference: BackendPreference, env: BackendEnvironme
   return env.linux ? 'webgl2' : 'probe';
 }
 
+/** A WebGPU adapter that rasterises on the CPU (SwiftShader, lavapipe, llvmpipe) by its description. */
+export function softwareAdapterInfo(info: AdapterInfoLike | null | undefined): boolean {
+  if (!info) return false;
+  return /swiftshader|lavapipe|llvmpipe|softpipe/i.test(`${info.vendor ?? ''} ${info.architecture ?? ''} ${info.device ?? ''} ${info.description ?? ''}`);
+}
+
+/** WebGL2 in this browser draws on a real GPU (not a software rasteriser). False when it cannot tell. */
+export function hardwareWebGL(): boolean {
+  if (typeof document === 'undefined') return false;
+  try {
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl2');
+    if (!gl) return false;
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    const name = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    return name.length > 0 && !/swiftshader|llvmpipe|lavapipe|softpipe|software/i.test(name);
+  } catch {
+    return false;
+  }
+}
+
 /** Discrete / known-good GPU vendors for Firefox's WebGPU (Windows and macOS). */
 const KNOWN_GOOD_VENDORS = /^(nvidia|amd|ati|apple)\b/i;
 
@@ -309,7 +331,13 @@ export async function createGpuRenderer(canvas: HTMLCanvasElement, opts: Backend
           failure = 'no-adapter';
           throw new Error(`no WebGPU adapter after ${attempts} requests`);
         }
-        const softwareAdapter = adapter.isFallbackAdapter === true || adapter.info?.isFallbackAdapter === true;
+        const softwareAdapter = adapter.isFallbackAdapter === true || adapter.info?.isFallbackAdapter === true || softwareAdapterInfo(adapter.info);
+        // Chromium on Linux without Vulkan hands WebGPU a CPU rasteriser (SwiftShader) while WebGL2 runs on the real GPU:
+        // the GPU wins by an order of magnitude. Only an explicit WebGPU choice keeps the software adapter.
+        if (softwareAdapter && preference !== 'webgpu' && hardwareWebGL()) {
+          failure = 'no-adapter';
+          throw new Error(`WebGPU adapter is a software rasteriser (${describeAdapter(adapter.info)}) while WebGL2 has a GPU`);
+        }
         const dev = await acquireDevice(adapter);
         for (const e of dev.events) note(e);
         if (!dev.device) {

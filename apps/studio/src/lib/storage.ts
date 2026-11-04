@@ -149,7 +149,7 @@ export interface StudioSettings {
   reduceMotion: boolean;
   /** Graphics quality tier (auto follows the GPU). */
   renderTier: RenderTierSetting;
-  /** Sharp (default) or Smooth: whether the picture gives up resolution in motion to hold the frame rate. */
+  /** Smooth (default) or Sharp: whether the picture gives up resolution in motion to hold the frame rate. */
   motion: MotionSetting;
   /** Individual effect switches on top of the tier. */
   effects: EffectSettings;
@@ -171,7 +171,8 @@ export const DEFAULT_SETTINGS: Readonly<StudioSettings> = Object.freeze({
   immersivePlay: true,
   reduceMotion: false,
   renderTier: 'auto',
-  motion: 'sharp',
+  // Frame rate first: holds near 60 fps by lowering resolution in motion (Sharp settled at 30 fps on integrated GPUs).
+  motion: 'smooth',
   effects: Object.freeze({}) as EffectSettings,
 });
 

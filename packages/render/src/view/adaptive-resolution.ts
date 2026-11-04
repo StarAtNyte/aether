@@ -65,10 +65,14 @@ export const MOTION_PROFILES: Readonly<Record<MotionProfile, { opts: AdaptiveOpt
     opts: { lowFps: 26, highFps: 33, targetFps: 30, minScale: 0.75, minStep: 0.8, downAfter: 2, upAfter: 8, emergencyFps: 15, emergencyAfter: 3, emergencyScale: 0.4 },
     passFloor: 0.75,
   },
-  smooth: { opts: {}, passFloor: 0.15 },
+  // Not below a quarter of the picture in motion (sharpened on upscale); the still picture refines at full size.
+  smooth: { opts: {}, passFloor: 0.25 },
 });
 
 /** Frame-time driven resolution scale controller. */
+/** Longest frame (s) still counted as a sustained slow frame rather than a stall (see `record`). */
+const SUSTAINED_SLOW_MAX_DT = 1;
+
 export class AdaptiveResolution {
   /** Current scale in [minScale, 1]. */
   scale = 1;
@@ -86,6 +90,7 @@ export class AdaptiveResolution {
   /** Seconds spent under the emergency frame rate, and whether the emergency floor is open. */
   private crisis = 0;
   private crisisOpen = false;
+  private lastDt = 0;
   /** Ring of recent continuous frame times (s) and a scratch copy for the percentile. */
   private readonly window = new Float32Array(WINDOW);
   private readonly sorted = new Float32Array(WINDOW);
@@ -148,6 +153,11 @@ export class AdaptiveResolution {
   record(dt: number, continuous: boolean, gpuSeconds?: number): boolean {
     if (!this.enabled || !(dt > 0) || !Number.isFinite(dt)) return false;
     this.sinceUpscale += dt;
+    // A frame past `maxContinuousDt` is a hitch, unless the one before was slow too: a machine drawing every frame in
+    // 270-300 ms is the case adaptive resolution exists for, and resetting on each of those frames left it at full scale.
+    const sustained = continuous && dt > this.o.maxContinuousDt && dt <= SUSTAINED_SLOW_MAX_DT && this.lastDt > this.o.maxContinuousDt * 0.5;
+    this.lastDt = dt;
+    if (sustained) dt = this.o.maxContinuousDt;
     if (!continuous || dt > this.o.maxContinuousDt) {
       this.fps = 0;
       this.filled = 0;

@@ -77,6 +77,22 @@
   animation: seal-in 360ms var(--ease) both;
 }
 
+/* In the top flow (.vp-top) the seal is not centred by a transform. */
+.vp-top .proof-seal {
+  animation-name: seal-in-flow;
+}
+
+@keyframes seal-in-flow {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 @keyframes seal-in {
   from {
     opacity: 0;

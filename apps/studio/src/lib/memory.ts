@@ -13,7 +13,7 @@ export const HISTORY_ENTRIES = { normal: 150, low: 40 } as const;
 export const LOW_DEVICE_MEMORY_GB = 4;
 /** JS heap use, as a fraction of the heap limit, treated as memory pressure. */
 export const HEAP_PRESSURE_RATIO = 0.7;
-/** Absolute JS heap use treated as memory pressure (the studio's steady state is far below). */
+/** Absolute JS heap use treated as memory pressure when the browser does not report the heap limit. */
 export const HEAP_PRESSURE_BYTES = 600 * 1024 * 1024;
 /** How often memory pressure is sampled (ms). */
 export const MEMORY_SAMPLE_MS = 10_000;
@@ -54,7 +54,10 @@ export function heapUnderPressure(s: MemorySignals): boolean {
   const used = finitePositive(s.heapUsedBytes);
   if (used === undefined) return false;
   const limit = finitePositive(s.heapLimitBytes);
-  return used >= HEAP_PRESSURE_BYTES || (limit !== undefined && used / limit >= HEAP_PRESSURE_RATIO);
+  // With a known limit the share of it is what matters: a large world holds 600+ MB of a 4 GB heap on a 16 GB machine,
+  // and the absolute rule used to latch low-memory mode (the weakest budget, for the whole session) on a discrete GPU.
+  if (limit !== undefined) return used / limit >= HEAP_PRESSURE_RATIO;
+  return used >= HEAP_PRESSURE_BYTES;
 }
 
 /**

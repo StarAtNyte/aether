@@ -137,4 +137,17 @@ describe('sharp motion profile', () => {
     feed(a, 45, 20);
     expect(a.scale).toBeLessThan(0.75);
   });
+  it('scales down when every frame is very slow (270-300 ms), not only on moderately slow frames', () => {
+    const a = new AdaptiveResolution();
+    for (let i = 0; i < 40; i++) a.record(0.28, true);
+    expect(a.scale).toBeLessThan(1);
+  });
+
+  it('still ignores a single long stall between fast frames', () => {
+    const a = new AdaptiveResolution();
+    for (let i = 0; i < 30; i++) a.record(1 / 60, true);
+    a.record(0.6, true);
+    for (let i = 0; i < 30; i++) a.record(1 / 60, true);
+    expect(a.scale).toBe(1);
+  });
 });

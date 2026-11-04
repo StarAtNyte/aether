@@ -517,6 +517,11 @@ export class SceneSync {
   }
 
   /** Bookkeeping node of an entity (read-only use: debug overlays, tests). */
+  /** Merged meshes of room contents (see StaticMerges.interiorMeshes). */
+  mergedInteriors(): Iterable<Mesh> {
+    return this.merges ? this.merges.interiorMeshes() : [];
+  }
+
   node(id: EntityId): Readonly<EntityNode> | undefined {
     return this.nodes.get(id);
   }

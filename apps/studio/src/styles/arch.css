@@ -476,18 +476,18 @@
   pointer-events: none;
 }
 
-/* Narrow viewports: the bar moves under the camera presets and drops its labels. */
-@container viewport (max-width: 1180px) {
-  .arch-bar {
-    top: calc(var(--s-3) + var(--control-h) + var(--s-2));
-    left: var(--s-3);
-    max-width: calc(100% - 24px);
-    transform: none;
-  }
+/* In the top flow (.vp-top) the bar is a row item: between the camera presets and the checks when there is room,
+   on its own line under them when not (it wraps after both groups). */
+.vp-top .arch-bar {
+  position: static;
+  transform: none;
+  max-width: 100%;
+  pointer-events: auto;
+}
 
-  /* The bar sits in the top-left column here: keep the performance overlay below it. */
-  .viewport:has(.arch-bar) .vp-overlay--tl .perf-hud {
-    margin-top: calc(var(--control-h) + var(--s-3));
+@container viewport (max-width: 1180px) {
+  .vp-top .arch-bar {
+    order: 3;
   }
 }
 
@@ -507,6 +507,7 @@
 
 /* The floor plan replaces the 3D overlays */
 .viewport.is-plan .vp-overlay--tl,
+.viewport.is-plan .vp-top__stack,
 .viewport.is-plan .vp-bottom,
 .viewport.is-plan .vp-gizmo,
 .viewport.is-plan .vp-context,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { capTier, cutsAt, forwardLightBudget, GOVERNOR_DEFAULTS, LOW_TIER_LIGHTS, hardwareTierCap, interiorContent, interiorDrawDistance, HEAVY_WORLD, lodHeightScale, PERFORMANCE_STEPS, PerformanceGovernor, readHardware, startLevel, sunMapSoftRefreshFrames, weakHardware } from '../src/gpu/performance';
+import { INTEGRATED_INTERIOR_REACH, interiorDrawDistance as idd, capTier, cutsAt, forwardLightBudget, GOVERNOR_DEFAULTS, LOW_TIER_LIGHTS, hardwareTierCap, interiorContent, interiorDrawDistance, HEAVY_WORLD, lodHeightScale, PERFORMANCE_STEPS, PerformanceGovernor, readHardware, startLevel, sunMapSoftRefreshFrames, weakHardware } from '../src/gpu/performance';
 
 describe('hardware hints', () => {
   it('reads what the browser tells and ignores the rest', () => {
@@ -186,6 +186,11 @@ describe('sun shadow map refresh while casters animate', () => {
     expect(sunMapSoftRefreshFrames(12)).toBe(8);
     expect(sunMapSoftRefreshFrames(0)).toBe(2);
     expect(sunMapSoftRefreshFrames(Number.NaN)).toBe(2);
+    // Many casters: the animated redraws thin out whatever the rate.
+    expect(sunMapSoftRefreshFrames(60, 300)).toBe(2);
+    expect(sunMapSoftRefreshFrames(60, 600)).toBe(4);
+    expect(sunMapSoftRefreshFrames(60, 2000)).toBe(6);
+    expect(sunMapSoftRefreshFrames(20, 2000)).toBe(8);
   });
 });
 
@@ -215,6 +220,14 @@ describe('level of detail of the cheaper tiers', () => {
     expect(lodHeightScale('low', true)).toBe(1);
     expect(lodHeightScale('medium', false)).toBeLessThan(1);
     expect(lodHeightScale('low', false)).toBeLessThan(lodHeightScale('medium', false));
+    // Integrated GPUs plan a coarser cut at every tier; stills stay full.
+    expect(lodHeightScale('ultra', false, 'integrated')).toBe(0.5);
+    expect(lodHeightScale('ultra', false, 'discrete')).toBe(1);
+    expect(lodHeightScale('ultra', true, 'integrated')).toBe(1);
+    // Room contents: finite reach on integrated GPUs at every tier, unlimited on discrete at high and ultra.
+    expect(idd('ultra', false, 'integrated')).toBe(INTEGRATED_INTERIOR_REACH);
+    expect(idd('ultra', false, 'discrete')).toBe(Number.POSITIVE_INFINITY);
+    expect(idd('ultra', true, 'integrated')).toBe(Number.POSITIVE_INFINITY);
   });
 });
 

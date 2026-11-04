@@ -39,7 +39,8 @@ export const LOAD_STEPS = ['Loading editor', 'Loading world', 'Preparing light']
 /** Where the loading text sits in the open: step (1-based), and 0..1 over the whole open (determinate-ish). */
 export function loadProgress(text: string): { step: 1 | 2 | 3; fraction: number } {
   const t = text.toLowerCase();
-  if (/sky|shader|light|compil/.test(t)) return { step: 3, fraction: /shader/.test(t) ? 0.9 : 0.8 };
+  if (/almost/.test(t)) return { step: 3, fraction: 0.97 };
+  if (/sky|shader|light|compil|model|texture|geometry/.test(t)) return { step: 3, fraction: /shader|geometry/.test(t) ? 0.9 : 0.8 };
   if (/camera/.test(t)) return { step: 2, fraction: 0.74 };
   if (/building|world/.test(t)) return { step: 2, fraction: 0.6 };
   if (/renderer|webgpu|webgl/.test(t)) return { step: 2, fraction: /ready/.test(t) ? 0.5 : 0.4 };

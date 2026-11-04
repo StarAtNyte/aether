@@ -51,6 +51,8 @@ import { footstepEffect, landingIntensity } from './feel';
 
 /** Longest wait for content to finish materialising before a thumbnail (ms). */
 const THUMBNAIL_SETTLE_MS = 6000;
+/** How long the world must stay free of pending work before it counts as fully loaded (ms). */
+const READY_STABLE_MS = 600;
 /**
  * Quiet time (no input, nothing animating) a thumbnail waits for: reading
  * pixels back stalls slow GPUs for a few hundred milliseconds (WebGL2 on a
@@ -478,6 +480,32 @@ export class Simulation {
   /** Resolves once the renderer reflects the latest requested world. */
   whenSynced(): Promise<void> {
     return this.syncChain;
+  }
+
+  /**
+   * Resolves once the world is fully prepared for exploring: synced, every model and texture in, every program linked,
+   * every static batch merged, and the fly-in over. Readiness must hold for {@link READY_STABLE_MS} (late models start
+   * new work a moment after the last finished). Gives up after `maxMs` so a stuck asset never locks the user out.
+   * `onStage` reports what is still pending.
+   */
+  async whenFullyLoaded(maxMs = 90_000, onStage?: (stage: RenderProcessingStage | 'motion') => void): Promise<void> {
+    await this.whenSynced();
+    const end = performance.now() + maxMs;
+    let readySince = 0;
+    let last: string | null = null;
+    while (!this.disposed && performance.now() < end) {
+      const r = this.renderer;
+      const stage: RenderProcessingStage | 'motion' | null = this.pendingWorld ? 'scene' : (r.processingStage ?? (r.animating ? 'motion' : null));
+      if (stage === null) {
+        if (readySince === 0) readySince = performance.now();
+        else if (performance.now() - readySince >= READY_STABLE_MS) return;
+      } else {
+        readySince = 0;
+        if (stage !== last) onStage?.(stage);
+      }
+      last = stage;
+      await new Promise<void>((resolve) => setTimeout(resolve, 100));
+    }
   }
 
   /** The world the renderer last finished syncing (procedural outputs match it). */

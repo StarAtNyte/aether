@@ -8,6 +8,8 @@ import { cacheUniformUploads } from './gpu/buffer-uploads';
 import { cacheUniformBindingKeys } from './gpu/uniform-binding-keys';
 import { cachePixelStoreState } from './gpu/pixel-store-cache';
 import { specializeTextureUvMath } from './gpu/uv-transform';
+import { shareOpaqueShadowPrograms } from './gpu/opaque-shadow-nodes';
+import { installMatrixDirtyCheck } from './gpu/matrix-dirty-check';
 
 let alphaSetterPatched = false;
 
@@ -67,11 +69,13 @@ function patchRenderObject(r: WebGPURenderer): void {
 export function installRenderPatches(r: WebGPURenderer): void {
   try {
     patchShadowAlphaTest();
+    installMatrixDirtyCheck();
     patchRenderObject(r);
     cacheUniformUploads(r.backend as unknown as Parameters<typeof cacheUniformUploads>[0]);
     cacheUniformBindingKeys(r.backend as unknown as Parameters<typeof cacheUniformBindingKeys>[0]);
     cachePixelStoreState(r.backend as unknown as Parameters<typeof cachePixelStoreState>[0]);
     specializeTextureUvMath();
+    if ((globalThis as { __AETHER_OPAQUE_SHADOWS?: boolean }).__AETHER_OPAQUE_SHADOWS !== false) shareOpaqueShadowPrograms(r);
   } catch {
     // The default paths still work, only slower.
   }

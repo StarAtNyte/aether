@@ -13,7 +13,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright';
-import { CHROME_ARGS, SKIP_FIRST_RUN, findChrome, startServer } from './support/env';
+import { CHROME_ARGS, HEADLESS, SKIP_FIRST_RUN, findChrome, startServer } from './support/env';
 import { COVER_CAMERAS } from './support/showcase-cameras';
 
 const ARGS = process.argv.slice(2);
@@ -42,6 +42,8 @@ interface Cfg {
   off?: string[];
   /** Keep the automatic tier and the governor (the real default). */
   auto?: boolean;
+  /** Fixed tier, but adaptive resolution stays on (what a user who picks a tier gets). */
+  adaptive?: boolean;
   /** Code run in the page with `r` (the renderer) before the measurement. */
   js?: string;
   /** Code run after the measurement to undo `js`. */
@@ -111,6 +113,9 @@ const EXTRA: Cfg[] = [
   { id: 'default-x-sunsh', auto: true, js: 'shadow-off', after: 'shadow-on' },
   { id: 'default-layers-none', auto: true, js: 'layers-none', after: 'layers-all' },
   { id: 'default-taps1', auto: true, js: 'taps1', after: 'taps-restore' },
+  { id: 'low-lights0', ...BASE, js: 'lights0', after: 'lights-restore' },
+  { id: 'low-taps1', ...BASE, js: 'taps1', after: 'taps-restore' },
+  { id: 'low-norecv', ...BASE, js: 'recv-off', after: 'recv-on' },
   { id: 'default-norecv', auto: true, js: 'recv-off', after: 'recv-on' },
   { id: 'default-no-people', auto: true, js: 'people-hide', after: 'people-show' },
   { id: 'default-no-hdri', auto: true, js: 'no-hdri' },
@@ -136,6 +141,8 @@ const CONFIGS: Cfg[] = [
   { id: 'studio', quality: 'studio', tier: 'ultra' },
   ...STUDIO_PIECES.map((p) => ({ id: `studio-no-${p}`, quality: 'studio' as const, tier: 'ultra', off: [p] })),
   { id: 'realtime-ultra', quality: 'realtime', tier: 'ultra' },
+  { id: 'medium-adaptive', quality: 'realtime', tier: 'medium', adaptive: true },
+  { id: 'ultra-adaptive', quality: 'realtime', tier: 'ultra', adaptive: true },
   ...STUDIO_PIECES.map((p) => ({ id: `only-${p}`, quality: 'studio' as const, tier: 'ultra', off: STUDIO_PIECES.filter((q) => q !== p) })),
   ...['ssr', 'shafts', 'halation', 'aberration'].map((p) => ({ id: `high+${p}`, quality: 'studio' as const, tier: 'ultra', off: ['ssr', 'shafts', 'halation', 'aberration'].filter((q) => q !== p) })),
   { id: 'high+ssr+shafts', quality: 'studio', tier: 'ultra', off: ['halation', 'aberration'] },
@@ -318,6 +325,8 @@ async function measure(page: Page, pose: readonly number[], cfg: Cfg): Promise<{
             if (off) { m['__sv_' + key] = m[key]; m[key] = false; } else if (m['__sv_' + key] !== undefined) m[key] = m['__sv_' + key];
           });
         }
+        if (name === 'lights0') (x as unknown as { sync: { setLightBudget(n: number): void } }).sync.setLightBudget(0);
+        if (name === 'lights-restore') (x as unknown as { sync: { setLightBudget(n: number): void } }).sync.setLightBudget(4);
         if (name === 'taps1' || name === 'taps-restore') (x.env as unknown as { softFilter?: { set(o: object): void } }).softFilter?.set(name === 'taps1' ? { blockerSamples: 1, filterSamples: 1, sunAngle: 0.019, minPenumbra: 0.012 } : { blockerSamples: 3, filterSamples: 6, sunAngle: 0.019, minPenumbra: 0.012 });
         if (name === 'recv-off') walk((o) => { const m = o as unknown as { isMesh?: boolean; receiveShadow: boolean; __rs?: boolean }; if (m.isMesh) { m.__rs = m.receiveShadow; m.receiveShadow = false; } });
         if (name === 'recv-on') walk((o) => { const m = o as unknown as { isMesh?: boolean; receiveShadow: boolean; __rs?: boolean }; if (m.isMesh && m.__rs !== undefined) m.receiveShadow = m.__rs; });
@@ -362,7 +371,7 @@ async function measure(page: Page, pose: readonly number[], cfg: Cfg): Promise<{
         await new Promise((res) => setTimeout(res, 1500));
       };
       if (!cfg.auto) {
-        r.setAdaptiveResolution(false);
+        r.setAdaptiveResolution(cfg.adaptive === true);
         r.setRenderQuality(cfg.quality ?? 'realtime');
         r.setRenderTier(cfg.tier ?? 'ultra');
         const o: Record<string, boolean> = {};
@@ -370,6 +379,17 @@ async function measure(page: Page, pose: readonly number[], cfg: Cfg): Promise<{
         r.setEffects(o);
       } else if (cfg.quality) r.setRenderQuality(cfg.quality);
       if (cfg.js) for (const j of cfg.js.split('+')) await hook(r, j);
+      // A change of tier rebuilds every program (40 s on an integrated GPU): measure the new plan, not the held picture.
+      {
+        const rr = r as unknown as { processingStage: string | null; requestRender(): void };
+        const end = performance.now() + 120_000;
+        let quiet = 0;
+        while (performance.now() < end && quiet < 4) {
+          rr.requestRender();
+          await new Promise((res) => setTimeout(res, 250));
+          quiet = rr.processingStage === null ? quiet + 1 : 0;
+        }
+      }
       const pose = p as number[];
       let yaw = pose[3] as number;
       const run = (n: number, record: number[] | null): Promise<void> =>
@@ -409,7 +429,9 @@ async function measure(page: Page, pose: readonly number[], cfg: Cfg): Promise<{
         x.resize(x.cssWidth, x.cssHeight);
       }
       const be = (r.renderer as unknown as { backend?: { gl?: WebGL2RenderingContext } }).backend;
-      const gl = be?.gl ?? r.renderer.getContext?.();
+      const ctx = be?.gl ?? r.renderer.getContext?.();
+      // WebGPU: the context is a GPUCanvasContext, with no timer-query extension.
+      const gl = ctx && typeof (ctx as WebGL2RenderingContext).getExtension === 'function' ? ctx : undefined;
       // GPU time per drawn frame from timer queries wrapped around the whole draw (nothing nested; skipped when the extension is missing).
       const tq = gl ? (gl.getExtension('EXT_disjoint_timer_query_webgl2') as { TIME_ELAPSED_EXT: number; GPU_DISJOINT_EXT: number } | null) : null;
       const rr = r as unknown as { draw: (...a: unknown[]) => void; __origDraw?: (...a: unknown[]) => void; __q: Array<{ q: WebGLQuery; rest: boolean }>; atRest?: boolean };
@@ -561,7 +583,7 @@ async function main(): Promise<void> {
   const server = await startServer(log);
   let browser: Browser | null = null;
   try {
-    browser = await chromium.launch({ executablePath: findChrome(), args: VSYNC ? [...CHROME_ARGS] : [...CHROME_ARGS, '--disable-gpu-vsync', '--disable-frame-rate-limit'] });
+    browser = await chromium.launch({ executablePath: findChrome(), headless: HEADLESS, args: VSYNC ? [...CHROME_ARGS] : [...CHROME_ARGS, '--disable-gpu-vsync', '--disable-frame-rate-limit'] });
     const rows: string[] = [];
     for (const slug of WORLDS) {
       const context = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });

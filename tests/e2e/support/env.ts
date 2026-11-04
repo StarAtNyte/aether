@@ -48,7 +48,19 @@ const SOFTWARE_ARGS: readonly string[] = ['--enable-unsafe-webgpu', '--use-angle
 const GPU_ARGS: readonly string[] = ['--enable-unsafe-webgpu', '--enable-features=Vulkan', `--use-angle=${process.env['AETHER_E2E_ANGLE'] ?? 'vulkan'}`, '--ignore-gpu-blocklist'];
 /** `GEN_GPU=intel`: WebGL2 over ANGLE/GL-EGL on the integrated GPU (holds its context headless while the discrete GPU is busy). */
 const INTEL_ARGS: readonly string[] = ['--enable-unsafe-webgpu', '--use-angle=gl-egl', '--ignore-gpu-blocklist', '--enable-gpu'];
-export const CHROME_ARGS: readonly string[] = process.env['GEN_GPU'] === 'intel' ? INTEL_ARGS : process.env['AETHER_E2E_GPU'] === '1' ? GPU_ARGS : SOFTWARE_ARGS;
+/**
+ * Hybrid-graphics laptops (Intel + NVIDIA, Linux): `GEN_GPU=nvidia` runs WebGL2 over ANGLE/GL-EGL on the NVIDIA GPU via PRIME
+ * render offload (headless works); `GEN_GPU=nvidia-webgpu` runs WebGPU over Vulkan on it, which Chromium only exposes to a
+ * headed browser (set `AETHER_E2E_HEADED=1`; windows open on the desktop). Headless Chromium otherwise gets SwiftShader.
+ */
+const NVIDIA_ENV: Readonly<Record<string, string>> = Object.freeze({ __NV_PRIME_RENDER_OFFLOAD: '1', __GLX_VENDOR_LIBRARY_NAME: 'nvidia', __EGL_VENDOR_LIBRARY_FILENAMES: '/usr/share/glvnd/egl_vendor.d/10_nvidia.json', VK_ICD_FILENAMES: '/usr/share/vulkan/icd.d/nvidia_icd.json' });
+const NVIDIA_GL_ARGS: readonly string[] = ['--enable-unsafe-webgpu', '--use-angle=gl-egl', '--ignore-gpu-blocklist', '--enable-gpu'];
+const NVIDIA_WEBGPU_ARGS: readonly string[] = ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--ignore-gpu-blocklist', '--enable-gpu'];
+const GEN = process.env['GEN_GPU'];
+if (GEN === 'nvidia' || GEN === 'nvidia-webgpu') for (const [k, v] of Object.entries(NVIDIA_ENV)) process.env[k] ??= v;
+export const CHROME_ARGS: readonly string[] = GEN === 'intel' ? INTEL_ARGS : GEN === 'nvidia' ? NVIDIA_GL_ARGS : GEN === 'nvidia-webgpu' ? NVIDIA_WEBGPU_ARGS : process.env['AETHER_E2E_GPU'] === '1' ? GPU_ARGS : SOFTWARE_ARGS;
+/** Headed Chromium (`AETHER_E2E_HEADED=1`, implied by `GEN_GPU=nvidia-webgpu`). */
+export const HEADLESS = !(process.env['AETHER_E2E_HEADED'] === '1' || GEN === 'nvidia-webgpu');
 
 /**
  * Resolve the Chromium executable: `AETHER_E2E_CHROME`, then Playwright's
