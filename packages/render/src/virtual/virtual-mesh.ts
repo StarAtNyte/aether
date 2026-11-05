@@ -39,6 +39,8 @@ interface Instance {
   hash: number;
   /** Camera (object space) xyz and threshold of the last selection (typed: no boxed doubles); NaN = never. */
   last: Float64Array;
+  /** Drawn by a cell batch (see virtual-cell-batch.ts): no cut of its own. */
+  batched: boolean;
 }
 
 /** A shadow caster keeps its cut while the camera moved less than this share of its distance. */
@@ -107,7 +109,7 @@ export class VirtualGroup {
     // Keep three's per-object culling (bounding sphere = the source's): an instance outside the
     // view or the shadow camera is not submitted at all in that pass.
     mesh.frustumCulled = true;
-    this.instances.push({ mesh, source, selected: new Uint32Array(Math.max(1, this.dag.count)), count: 0, indexCount: 0, hash: -1, last: new Float64Array(4).fill(Number.NaN) });
+    this.instances.push({ mesh, source, selected: new Uint32Array(Math.max(1, this.dag.count)), count: 0, indexCount: 0, hash: -1, last: new Float64Array(4).fill(Number.NaN), batched: false });
     return mesh;
   }
 
@@ -122,6 +124,22 @@ export class VirtualGroup {
 
   private readonly retired: BufferGeometry[] = [];
 
+  /** Hand an instance's drawing to a cell batch (`on`) or take it back; its own cut is empty while batched. */
+  setBatched(mesh: Mesh, on: boolean): void {
+    const inst = this.instances.find((x) => x.mesh === mesh);
+    if (!inst || inst.batched === on) return;
+    inst.batched = on;
+    inst.count = 0;
+    inst.indexCount = 0;
+    inst.hash = -1;
+    inst.last.fill(Number.NaN);
+  }
+
+  /** Whether `mesh` is an instance of this group handed to a cell batch. */
+  isBatched(mesh: Mesh): boolean {
+    return this.instances.some((x) => x.mesh === mesh && x.batched);
+  }
+
   /**
    * Select and pack every instance's cut for `camera`. Returns true when
    * the index buffer or a draw range changed. Allocation-free.
@@ -132,6 +150,7 @@ export class VirtualGroup {
       let total = 0;
       for (let i = 0; i < this.instances.length; i++) {
         const inst = this.instances[i] as Instance;
+        if (inst.batched) continue;
         const { mesh, source } = inst;
         mirror(mesh, source);
         // Hidden instances keep their last cut (nothing draws them; it is ready when shown again).
