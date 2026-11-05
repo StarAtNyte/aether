@@ -67,7 +67,7 @@ import { FrameStats } from './view/frame-stats';
 import { gradeFor, gradeWithPreset } from './gpu/grade';
 import { autoTier, degrade, effectsKey, effectsOf, evScale, GRADE_PRESETS, isGradePresetId, presetFor, resolveEffects, type EffectOverrides, type GradePreset, type GradePresetId, type PostEffects, type RenderTier } from './gpu/finishing';
 import { CameraTour, DRONE_TOUR_RADIUS, TOUR_SECONDS, droneTourKeys, tourKeys, tourSections } from './view/tour';
-import { AdaptiveResolution, MOTION_PROFILES, type MotionProfile } from './view/adaptive-resolution';
+import { AdaptiveResolution, MOTION_PROFILES, motionOptions, passFloorOf, type MotionProfile } from './view/adaptive-resolution';
 import { MeshBasicNodeMaterial } from 'three/webgpu';
 import { textureWork } from './gpu/task-queue';
 import { BATCHED_LAYER } from './sync/static-batches';
@@ -415,6 +415,12 @@ const PROOF_MIN_SHARE = 0.22;
 /** Shadow refit / debug rebuild throttle (seconds) while content streams in. */
 const REFIT_INTERVAL = 0.35;
 /** Draws a pipeline with sun shafts waits for the sun's shadow map before giving the shafts up for this world. */
+/** Frames the full chain of a split plan draws into its temporal history before its picture replaces the motion one. */
+export const REST_REVEAL_FRAMES = 5;
+/** Drawing-buffer scale over the display of the realtime ultra tier on a discrete GPU (see WorldRenderer.supersample). */
+export const ULTRA_SUPERSAMPLE = 1.5;
+/** Most drawing-buffer pixels the supersampled ultra tier uses. */
+export const ULTRA_MAX_PIXELS = 5.0e6;
 /** Milliseconds the view stays still before the split studio chain switches to its full version. */
 const REST_DELAY_MS = 220;
 /** Work that can temporarily hold the viewport while its current image stays available. */
@@ -1032,7 +1038,7 @@ export class WorldRenderer {
       sliceMs: () => (this.loadingScreen ? LOADING_SLICE_MS : 4),
       atomic: draw => this.programs.synchronous(draw),
     });
-    this.presentation = preparePresentation(renderer, () => !this.progressive && (this.preparation.pending > 0 || this.programs.pending > 0));
+    this.presentation = preparePresentation(renderer, () => this.restReveal > 0 || (!this.progressive && (this.preparation.pending > 0 || this.programs.pending > 0)));
     this.backend = backend;
     this.domElement = canvas;
     this.perspective = camera;
@@ -1058,6 +1064,7 @@ export class WorldRenderer {
     this.budget = this.budgetFor(this.lowMemory);
     // Integrated GPUs keep textures in system memory: image maps above INTEGRATED_TEXTURE_CAP are uploaded at that size.
     capTextureSize(renderer, this.gpu.tier === 'integrated' || this.gpu.tier === 'unknown' || this.lowMemory ? INTEGRATED_TEXTURE_CAP : 0);
+    this.adaptive.configure(motionOptions(this.motionProfile, this.gpu.tier));
     this.adaptive.enabled = opts.adaptiveResolution !== false;
     this.adaptiveWanted = this.adaptive.enabled;
     // The second texture lookup that hides texture repeats costs fill rate: not on software rasterisers or in low-memory mode.
@@ -2718,7 +2725,7 @@ export class WorldRenderer {
     if (profile === this.motionProfile || !MOTION_PROFILES[profile]) return;
     this.motionProfile = profile;
     this.motionScale = 1;
-    this.adaptive.configure(MOTION_PROFILES[profile].opts);
+    this.adaptive.configure(motionOptions(profile, this.gpu.tier));
     this.resize(this.cssWidth, this.cssHeight);
   }
 
@@ -3851,8 +3858,10 @@ export class WorldRenderer {
     // A still view inside a building: one more frame now and then so the picture can be read back for the room's exposure trim.
     const trimDue = opts.onDemand === true && !changed && !refine && this.trimIdleDue();
     if (opts.onDemand === true && !changed && !refine && !trimDue) {
-      // A reduced motion frame must not become the permanent idle editor image.
-      if (this.adaptive.scale < 1) {
+      // A reduced motion frame must not become the permanent idle editor image. A supersampled tier keeps the scale it earned
+      // (never under the display's own resolution): resetting it here jumped to the full supersampled size at every stop,
+      // and a GPU that cannot hold it stepped back down, one fresh temporal history at a time, on every move.
+      if (this.adaptive.scale < 1 && this.ssApplied <= 1) {
         this.adaptive.reset();
         this.resize(this.cssWidth, this.cssHeight);
         this.needsDraw = true;
@@ -3877,6 +3886,8 @@ export class WorldRenderer {
     try {
       this.draw();
       timedFrameComplete = this.programs.pending === 0 && this.preparation.pending === 0;
+      // A hidden frame of the rest chain went into its history (see syncRest).
+      if (this.restReveal > 0 && timedFrameComplete) this.restReveal--;
     } finally {
       this.gpuCost.end(timedFrameComplete);
       this.fx.afterDraw(this.perspective);
@@ -5177,6 +5188,18 @@ export class WorldRenderer {
     this.refinement.restart();
     this.adaptive.enabled = plan.adaptiveResolution && this.adaptiveWanted;
     if (!this.adaptive.enabled && this.adaptive.scale !== 1) this.adaptive.reset();
+    // Supersampling is earned, not assumed: the ultra tier starts at the display's own resolution and adaptive resolution
+    // climbs into the extra pixels while frames hold (a GPU that cannot afford them never shows a cascade of drops, each a
+    // fresh temporal history). Leaving it returns to the plain scale.
+    const ss = this.supersample();
+    if (ss !== this.ssApplied) {
+      this.ssApplied = ss;
+      this.adaptive.reset();
+      if (ss > 1 && this.adaptive.enabled) {
+        this.adaptive.setFloor(1 / ss);
+        this.adaptive.scale = 1 / ss;
+      } else this.adaptive.setFloor();
+    }
     this.resize(this.cssWidth, this.cssHeight);
     this.boundsDirty = true;
     this.needsDraw = true;
@@ -5353,6 +5376,7 @@ export class WorldRenderer {
     if (this.restDeferred) motion = true;
     if (motion) {
       this.lastChangeAt = t;
+      this.restReveal = 0;
       if (this.atRest) {
         this.atRest = false;
         this.motionFrameReady = false;
@@ -5364,6 +5388,10 @@ export class WorldRenderer {
     } else if (!this.atRest && this.motionFrameReady && this.preparation.pending === 0 && this.programs.pending === 0 && t - this.lastChangeAt > REST_DELAY_MS) {
       this.atRest = true;
       this.restSlow = 0;
+      // The full chain starts from an empty temporal history: its first frames are aliased and crawl while the history fills
+      // (a second of it at the rest chain's 15-20 fps on an integrated GPU). The last motion picture stays on screen until a
+      // few of them have gone into the history; the view then changes once, into a nearly settled picture.
+      this.restReveal = this.refinement.active || this.qualityPlan.accumulateFrames > 0 ? REST_REVEAL_FRAMES : 0;
       this.refinement.restart();
       this.motionScale = this.adaptive.scale;
       if (this.adaptive.scale < 1) {
@@ -5375,6 +5403,12 @@ export class WorldRenderer {
     // Camera input must not replace UV sampling or remove normal maps. Explicit diagnostic overrides still work.
     leanShading.value = this.forceLean === true ? 1 : 0;
   }
+
+  /** Supersampling factor the adaptive scale was last set up for (see applyQuality). */
+  private ssApplied = 1;
+
+  /** Frames of the rest chain still drawn into its history before it is shown (see syncRest). */
+  private restReveal = 0;
 
   /** The view is at rest and the content animates (frames at rest are not refinement frames). */
   private restAnimating = false;
@@ -6359,11 +6393,27 @@ export class WorldRenderer {
     const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
     // While the view moves under the split studio chain the scene pass takes the adaptive scale (see syncSceneScale); the frame keeps its size.
     const viaPass = this.scalesViaPass();
-    const ratio = effectivePixelRatio(Math.min(dpr, this.ratioCap) * (viaPass ? 1 : this.adaptive.scale), width, height, this.budget);
+    const ss = this.supersample();
+    const budget = ss > 1 ? { pixelRatioCap: this.budget.pixelRatioCap * ss, maxPixels: Math.max(this.budget.maxPixels, ULTRA_MAX_PIXELS) } : this.budget;
+    const ratio = effectivePixelRatio(Math.min(dpr, this.ratioCap) * ss * (viaPass ? 1 : this.adaptive.scale), width, height, budget);
     if (ratio !== this.renderer.getPixelRatio()) this.renderer.setPixelRatio(ratio);
     this.renderer.setSize(width, height, false);
     this.perspective.aspect = width / height;
     this.perspective.updateProjectionMatrix();
+  }
+
+  /**
+   * Supersampling of the realtime ultra tier on a discrete GPU (1: none). The tier's temporal resolve and occlusion run on a
+   * drawing buffer {@link ULTRA_SUPERSAMPLE} times the display's (within {@link ULTRA_MAX_PIXELS}), which the browser filters
+   * down to the canvas: thin edges, far roofs and foliage resolve over more samples than one per pixel, which is what ultra
+   * buys over high. Adaptive resolution may take the extra pixels back, never more (its floor is the display's own size).
+   * Not on the split chains of heavy worlds (their motion phase is the light one for a reason), not in low-memory mode.
+   */
+  private supersample(): number {
+    const q = this.qualityPlan;
+    if (this.gpu.tier !== 'discrete' || this.lowMemory || q.quality !== 'realtime' || q.tier !== 'ultra' || q.moveEffects !== null) return 1;
+    if ((globalThis as { __AETHER_SUPERSAMPLE?: boolean }).__AETHER_SUPERSAMPLE === false) return 1;
+    return ULTRA_SUPERSAMPLE;
   }
 
   /** The adaptive scale is applied to the scene pass of the light chain (upsampled and sharpened in its composite), not to the drawing buffer. */
@@ -6377,7 +6427,8 @@ export class WorldRenderer {
   /** Keep the scene pass at the adaptive scale (and the scaler's floor) of the way the scale is applied. */
   private syncSceneScale(): void {
     const via = this.scalesViaPass();
-    const lowered = this.adaptive.setFloor(via ? MOTION_PROFILES[this.motionProfile].passFloor : undefined);
+    const ss = this.supersample();
+    const lowered = this.adaptive.setFloor(via ? passFloorOf(this.motionProfile, this.gpu.tier, this.tierChoice === 'ultra') : ss > 1 ? 1 / ss : undefined);
     if (lowered || via !== this.viaPassApplied) {
       this.viaPassApplied = via;
       // Called while drawing: the buffer follows without asking for another frame (that would count as the view moving, and a

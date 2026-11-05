@@ -151,3 +151,30 @@ describe('sharp motion profile', () => {
     expect(a.scale).toBe(1);
   });
 });
+
+describe('adaptive resolution on a discrete GPU', () => {
+  it('keeps the full picture down to 40 fps and never drops below 0.8', async () => {
+    const { AdaptiveResolution, motionOptions, passFloorOf, MOTION_PROFILES } = await import('../src/view/adaptive-resolution');
+    expect(motionOptions('smooth', 'integrated')).toBe(MOTION_PROFILES.smooth.opts);
+    expect(motionOptions('sharp', 'discrete')).toBe(MOTION_PROFILES.sharp.opts);
+    const a = new AdaptiveResolution(motionOptions('smooth', 'discrete'));
+    // 45 fps for 5 s: the integrated policy would have stepped down; the discrete one holds.
+    for (let i = 0; i < 225; i++) a.record(1 / 45, true);
+    expect(a.scale).toBe(1);
+    // 20 fps for 20 s: it steps down, but not under its floor.
+    for (let i = 0; i < 400; i++) a.record(1 / 20, true);
+    expect(a.scale).toBeGreaterThanOrEqual(0.8);
+    expect(a.scale).toBeLessThan(1);
+    expect(passFloorOf('smooth', 'discrete')).toBeGreaterThanOrEqual(0.6);
+    expect(passFloorOf('smooth', 'integrated')).toBe(MOTION_PROFILES.smooth.passFloor);
+  });
+});
+
+describe('motion floor of a chosen ultra tier', () => {
+  it('stays at half size on an integrated GPU and leaves the cheaper tiers alone', async () => {
+    const { passFloorOf, MOTION_PROFILES } = await import('../src/view/adaptive-resolution');
+    expect(passFloorOf('smooth', 'integrated', true)).toBe(0.5);
+    expect(passFloorOf('smooth', 'integrated', false)).toBe(MOTION_PROFILES.smooth.passFloor);
+    expect(passFloorOf('sharp', 'integrated', true)).toBe(MOTION_PROFILES.sharp.passFloor);
+  });
+});

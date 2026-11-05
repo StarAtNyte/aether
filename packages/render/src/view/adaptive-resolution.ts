@@ -69,6 +69,37 @@ export const MOTION_PROFILES: Readonly<Record<MotionProfile, { opts: AdaptiveOpt
   smooth: { opts: {}, passFloor: 0.25 },
 });
 
+/**
+ * The `smooth` profile on a discrete GPU. Aiming at 60 fps there traded sharpness for frames a capable GPU did not need:
+ * a p90 under 50 fps (one slow frame in ten on a 60 Hz display) lowered the picture to half its size, and the climb back
+ * wanted 5 s above 57 fps, which vsync jitter rarely gives, so the view went soft and stayed soft. A discrete GPU keeps
+ * the full picture down to 40 fps, gives up at most a fifth of it, and climbs back as soon as frames hold 50 fps.
+ */
+export const DISCRETE_SMOOTH: AdaptiveOptions = Object.freeze({ lowFps: 40, highFps: 50, targetFps: 50, minScale: 0.8, minStep: 0.85, downAfter: 2, upAfter: 3, maxUpAfter: 90 });
+
+/** The adaptive options of a profile on a GPU class (see {@link DISCRETE_SMOOTH}). */
+export function motionOptions(profile: MotionProfile, gpu: string): AdaptiveOptions {
+  const base = MOTION_PROFILES[profile].opts;
+  return profile === 'smooth' && gpu === 'discrete' ? { ...base, ...DISCRETE_SMOOTH } : base;
+}
+
+/**
+ * Lowest scale of a scene pass drawn below the frame (split chains in motion) on a GPU class: a discrete GPU stays sharp,
+ * and so does the ultra tier when it was chosen (whoever picks ultra on an integrated GPU asks for the picture over the
+ * last frames: a quarter-size motion picture was a blur on every turn of the camera). The cheaper tiers keep the floor.
+ */
+export function passFloorOf(profile: MotionProfile, gpu: string, chosenUltra = false): number {
+  const f = MOTION_PROFILES[profile].passFloor;
+  if (gpu === 'discrete') return Math.max(f, DISCRETE_PASS_FLOOR);
+  return chosenUltra ? Math.max(f, ULTRA_PASS_FLOOR) : f;
+}
+
+/** Lowest motion scale of the scene pass of a chosen ultra tier on other GPUs. */
+export const ULTRA_PASS_FLOOR = 0.5;
+
+/** Lowest motion scale of the scene pass on a discrete GPU. */
+export const DISCRETE_PASS_FLOOR = 0.6;
+
 /** Frame-time driven resolution scale controller. */
 /** Longest frame (s) still counted as a sustained slow frame rather than a stall (see `record`). */
 const SUSTAINED_SLOW_MAX_DT = 1;
