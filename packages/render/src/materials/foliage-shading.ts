@@ -72,6 +72,11 @@ export function foliageSun(): { direction: [number, number, number]; irradiance:
   return { direction: [sunDirection.x, sunDirection.y, sunDirection.z], irradiance: [sunIrradiance.r, sunIrradiance.g, sunIrradiance.b] };
 }
 
+/** Texels across a foliage card atlas, for the mip level its alpha is read at (the atlases are 512 to 1024 wide). */
+export const FOLIAGE_ALPHA_TEXELS = 512;
+/** Alpha gained per mip level (see the colour node). */
+export const FOLIAGE_ALPHA_PER_MIP = 0.25;
+
 let colorNode: Nd | null = null;
 let emissiveNode: Nd | null = null;
 let maskNode: Nd | null = null;
@@ -83,13 +88,21 @@ function nodes(): { color: Nd; emissive: Nd; mask: Nd } {
   // The two octaves of 3D noise are the heaviest arithmetic of a leaf pixel and a forest is many layers of them: a moving view
   // (lean shading) takes the card's own colour. The branch is on a uniform; the noise nodes are built inside it (a node first
   // built in a branch is declared there).
+  // Far leaves keep their coverage: the mip chain averages a card's hard alpha toward grey, so past a few mips most of a leaf
+  // falls under the cut-out and a distant tree thins into a few flickering specks. The alpha is raised with the mip level the
+  // pixel reads (Ben Golus' mip-scaled alpha test): a quarter more per level, the near cards unchanged.
+  const texel = T.uv().mul(FOLIAGE_ALPHA_TEXELS);
+  const dx = T.dFdx(texel);
+  const dy = T.dFdy(texel);
+  const lod = T.max(T.log2(T.max(T.max(T.dot(dx, dx), T.dot(dy, dy)), 1e-8)).mul(0.5), 0);
+  const alpha = base.w.mul(lod.mul(FOLIAGE_ALPHA_PER_MIP).add(1));
   colorNode = Fn(() => {
-    const out = T.vec4(base.rgb.mul(uFoliageTint), base.w).toVar();
+    const out = T.vec4(base.rgb.mul(uFoliageTint), alpha).toVar();
     If(leanShading.lessThan(0.5), () => {
       const plant = T.mx_noise_float(p.mul(0.23));
       const cluster = T.mx_noise_float(p.mul(1.9).add(T.vec3(13.1, 7.7, 3.3)));
       const tint = T.vec3(T.float(1).add(plant.mul(FOLIAGE_HUE[0])), T.float(1).add(plant.mul(FOLIAGE_HUE[1])), T.float(1).add(plant.mul(FOLIAGE_HUE[2]))).mul(T.float(1).add(cluster.mul(FOLIAGE_VALUE)));
-      out.assign(T.vec4(base.rgb.mul(tint).mul(uFoliageTint), base.w));
+      out.assign(T.vec4(base.rgb.mul(tint).mul(uFoliageTint), alpha));
     });
     return out;
   })() as Nd;

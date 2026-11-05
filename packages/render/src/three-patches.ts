@@ -10,6 +10,7 @@ import { cachePixelStoreState } from './gpu/pixel-store-cache';
 import { specializeTextureUvMath } from './gpu/uv-transform';
 import { shareOpaqueShadowPrograms } from './gpu/opaque-shadow-nodes';
 import { installMatrixDirtyCheck } from './gpu/matrix-dirty-check';
+import { installSpecularAA } from './gpu/specular-aa';
 
 let alphaSetterPatched = false;
 
@@ -75,6 +76,7 @@ export function installRenderPatches(r: WebGPURenderer): void {
     cacheUniformBindingKeys(r.backend as unknown as Parameters<typeof cacheUniformBindingKeys>[0]);
     cachePixelStoreState(r.backend as unknown as Parameters<typeof cachePixelStoreState>[0]);
     specializeTextureUvMath();
+    installSpecularAA();
     if ((globalThis as { __AETHER_OPAQUE_SHADOWS?: boolean }).__AETHER_OPAQUE_SHADOWS !== false) shareOpaqueShadowPrograms(r);
   } catch {
     // The default paths still work, only slower.

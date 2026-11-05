@@ -74,6 +74,7 @@ export interface Tsl {
   min(a: Nd, b: NodeArg): Nd;
   fract(a: Nd): Nd;
   sqrt(a: Nd): Nd;
+  log2(a: Nd): Nd;
   uv(index?: number): Nd;
   floor(a: Nd): Nd;
   select(cond: Nd, a: NodeArg, b: NodeArg): Nd;
