@@ -95,6 +95,8 @@ export interface PostPipeline {
  * materials, the sun disc and sharp specular glints bloom.
  */
 const BLOOM_RADIUS = 0.35;
+/** Strength of the sharpening of the temporal AA's resolved image (0 = none). */
+export const TAA_SHARPEN = 0.45;
 /** Strength of the sharpening that follows a scene pass drawn below the frame resolution. */
 export const SCENE_SHARPEN = 0.9;
 export const BLOOM_THRESHOLD = 1.05;
@@ -199,7 +201,7 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
       contactLight ? import('three/addons/tsl/display/SSSNode.js') : Promise.resolve(null),
     ]);
     const { RenderPipeline, Vector3, UnsignedByteType, HalfFloatType, RGFormat, Color } = three;
-    const { pass, screenUV, screenCoordinate, smoothstep, float, uniform, vec2, vec3, vec4, dot, mix, pow, max, min, clamp, mrt, packNormalToRGB, unpackRGBToNormal, normalView, velocity, sample, context, diffuseColor, convertToTexture, renderOutput, interleavedGradientNoise, metalness, roughness } = tsl;
+    const { pass, screenUV, screenSize, screenCoordinate, smoothstep, float, uniform, vec2, vec3, vec4, dot, mix, pow, max, min, clamp, mrt, packNormalToRGB, unpackRGBToNormal, normalView, velocity, sample, context, diffuseColor, convertToTexture, renderOutput, interleavedGradientNoise, metalness, roughness } = tsl;
     const { bloom } = bloomMod;
     const agxLook = installAgxLook(renderer, three, tsl);
     const disposables: Array<{ dispose(): void }> = [];
@@ -446,7 +448,20 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
       // The placeholder depth texture is replaced after the first frame: keep a handle to free it.
       const placeholder = (traaNode as unknown as { _previousDepthNode?: { value?: { dispose?: () => void } } })._previousDepthNode?.value;
       disposables.push(beauty, traaNode, { dispose: () => disposeTraaTextures(traaNode, placeholder) });
-      output = vec4(traaNode.rgb, color.a);
+      // The temporal resolve blends sub-pixel jittered frames, which softens the whole picture a little (texture detail and
+      // thin edges a step blurrier than the MSAA tiers). A light sharpen of the resolved image against its four neighbours,
+      // limited to their range so nothing rings, gives the detail back (contrast-limited, like AMD's CAS).
+      const resolved = (traaNode as unknown as { getTextureNode(): typeof color }).getTextureNode();
+      const px = vec2(float(1).div(screenSize.x), float(1).div(screenSize.y));
+      const c = resolved.sample(screenUV).rgb;
+      const n = resolved.sample(screenUV.add(vec2(0, px.y))).rgb;
+      const s = resolved.sample(screenUV.sub(vec2(0, px.y))).rgb;
+      const e = resolved.sample(screenUV.add(vec2(px.x, 0))).rgb;
+      const w = resolved.sample(screenUV.sub(vec2(px.x, 0))).rgb;
+      const lo = min(min(min(n, s), min(e, w)), c);
+      const hi = max(max(max(n, s), max(e, w)), c);
+      const sharpened = clamp(c.add(c.sub(n.add(s).add(e).add(w).mul(0.25)).mul(TAA_SHARPEN)), lo, hi);
+      output = vec4(sharpened, color.a);
     }
     const uGrain = uniform(effects.grain ? GRAIN_AMPLITUDE : 0);
     const uSeed = uniform(0);
