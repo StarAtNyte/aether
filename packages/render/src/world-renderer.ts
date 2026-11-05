@@ -416,6 +416,20 @@ const PROOF_MIN_SHARE = 0.22;
 /** Shadow refit / debug rebuild throttle (seconds) while content streams in. */
 const REFIT_INTERVAL = 0.35;
 /** Draws a pipeline with sun shafts waits for the sun's shadow map before giving the shafts up for this world. */
+/** Share of the sun shafts given up at a drone's height (see shaftHeightShare). */
+export const SHAFT_ALTITUDE_CUT = 0.85;
+
+/**
+ * How far the eye is above the content's middle for the sun shafts: 0 up to 20 m (street, terrace and rooftop views keep
+ * the golden haze), 1 from about the content radius (at least 70 m) up, where every ray crossed so much lit air that the
+ * shafts were one veil of the sun's colour.
+ */
+export function shaftHeightShare(heightAboveContent: number, radius: number): number {
+  const top = Math.max(70, Number.isFinite(radius) ? radius : 0);
+  const t = Math.max(0, Math.min(1, ((Number.isFinite(heightAboveContent) ? heightAboveContent : 0) - 20) / (top - 20)));
+  return t * t * (3 - 2 * t);
+}
+
 /** Farthest orbit distance (m) for content of radius `radius`: three radii (the authored establishing views sit at about 2.5), at least 40 m, at most the old sky-wide limit. */
 export function orbitReach(radius: number): number {
   const r = Number.isFinite(radius) && radius > 0 ? radius : 100;
@@ -3840,6 +3854,8 @@ export class WorldRenderer {
     }
     const animate = opts.animate !== false;
     this.env.update(animate ? step : 0, this.perspective);
+    // Sun shafts thin out as the eye climbs out of the ground view (see PostPipeline.setShaftScale).
+    this.post?.setShaftScale(1 - SHAFT_ALTITUDE_CUT * shaftHeightShare(this.perspective.position.y - (this.framing?.center[1] ?? 0), this.framing?.radius ?? 100));
     this.sinceRefit += step;
     if (this.sinceRefit >= REFIT_INTERVAL && (this.boundsDirty || this.debugDirty)) this.refresh();
     // Studio stills keep refining (temporal AA / AO converge) for a while after the view rests.
@@ -4085,6 +4101,7 @@ export class WorldRenderer {
       const f = this.framing;
       if (f) {
         this.env.setContentRadius(f.radius);
+        this.env.setFogLayer(f.center[1], f.radius);
         // The orbit reaches as far as the world is authored for: past about three content radii the eye left the
         // plot for the backdrop (the edges of a sea plane, the land ring, the painted ranges seen from above).
         const orbit = this.orbit as unknown as { maxDistance?: number } | null;

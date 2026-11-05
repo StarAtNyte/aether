@@ -4,6 +4,7 @@
  * fog scaled to the content, ground plane plus a horizon skirt, and weather —
  * all driven by `world.environment`. Pure three.js core (no renderer access).
  */
+import { HeightFog } from './height-fog';
 import { AMBIENT_MIN_RATIO, SUN_MIN_RATIO, boundTint, chroma, limitChroma } from './light-balance';
 import {
   BufferAttribute,
@@ -414,6 +415,13 @@ export class EnvironmentRig {
    * Fog density follows it so small and large worlds both read clearly. Only
    * the density uniform changes (no shader or texture rebuild).
    */
+  /** The ground layer of the height fog: the content's middle height (m) and its radius (see height-fog.ts). */
+  setFogLayer(baseY: number, radius: number): void {
+    this.heightFog?.setLayer(baseY, radius);
+  }
+
+  private heightFog: HeightFog | null = null;
+
   setContentRadius(radius: number): void {
     if (!Number.isFinite(radius) || radius <= 0 || Math.abs(radius - this.contentRadius) < 0.5) return;
     this.contentRadius = radius;
@@ -475,6 +483,7 @@ export class EnvironmentRig {
       this.fog.color.set(fog.color);
       this.fog.density = fog.density;
       scene.fog = this.fog;
+      if (!this.heightFog) this.heightFog = new HeightFog(scene, this.fog);
     } else {
       scene.fog = null;
     }

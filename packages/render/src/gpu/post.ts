@@ -69,6 +69,11 @@ export interface PostPipeline {
    */
   readonly compileTarget: RenderTarget | null;
   setBloom(strength: number): void;
+  /**
+   * Scale the sun shafts (1: as tuned). From a drone's height every ray of the view crosses long stretches of sunlit air and
+   * the shafts' in-scatter became one uniform veil of the sun's colour over the whole ground: the caller lowers it with height.
+   */
+  setShaftScale(scale: number): void;
   /** Apply a colour grade (uniform updates only; no shader rebuild). */
   setGrade(grade: Grade): void;
   /**
@@ -370,6 +375,7 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
     const shaftDepth = prePassDepth ?? (sun ? scenePass.getTextureNode('depth') : null);
     /** The shafts pass, run in order with the other passes (see render). */
     let shaftsPass: unknown = null;
+    let shaftNodes: { density: { value: number }; maxDensity: { value: number } } | null = null;
     if (sun && godMod && blendMod && shaftDepth) {
       const shafts = godMod.godrays(shaftDepth, camera, sun);
       shaftsPass = shafts;
@@ -378,6 +384,7 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
       shafts.maxDensity.value = SHAFT_TUNING.maxDensity;
       shafts.distanceAttenuation.value = SHAFT_TUNING.distanceAttenuation;
       shafts.resolutionScale = SHAFT_TUNING.resolutionScale;
+      shaftNodes = shafts as unknown as { density: { value: number }; maxDensity: { value: number } };
       const shaftColor = new Color(sun.color).multiplyScalar(SHAFT_TUNING.brightness);
       if (prepass) {
         const blendInput = convertToTexture(vec4(hdr, 1));
@@ -533,6 +540,12 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
       },
       setBloom: (s: number) => {
         bloomNode.strength.value = bloomStrength(s);
+      },
+      setShaftScale: (k: number) => {
+        if (!shaftNodes) return;
+        const f = Number.isFinite(k) ? Math.max(0, Math.min(1, k)) : 1;
+        shaftNodes.density.value = SHAFT_TUNING.density * f;
+        shaftNodes.maxDensity.value = SHAFT_TUNING.maxDensity * f;
       },
       setGrade: (g: Grade) => {
         uSat.value = g.saturation;
