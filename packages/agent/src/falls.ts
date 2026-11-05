@@ -178,6 +178,43 @@ export function isFall(e: Entity): boolean {
 }
 
 /** The lip of a falling-water piece in its own frame: x across, the top y, the z of the lip and the drop, or null. */
+const lipCache = new Map<string, { x0: number; x1: number; z: number } | null>();
+
+/**
+ * Where a generated waterfall leaves its lip, in its local frame: the falling-water vertices within 1.5 m of its top
+ * (their x extent and their median z). Null when nothing falls.
+ */
+export function sheetLip(generator: string, params: Record<string, Json>, seed: number): { x0: number; x1: number; z: number } | null {
+  const key = `${generator}|${seed}|${JSON.stringify(params)}`;
+  if (lipCache.has(key)) return lipCache.get(key) ?? null;
+  let lip: { x0: number; x1: number; z: number } | null = null;
+  try {
+    const out = generateBuiltinSync(generator, params, seed);
+    const parts = out.parts.filter((p) => p.material?.waterKind === 'fall');
+    let top = -Infinity;
+    for (const p of parts) for (let i = 1; i < p.positions.length; i += 3) top = Math.max(top, p.positions[i] as number);
+    const zs: number[] = [];
+    let x0 = Infinity;
+    let x1 = -Infinity;
+    for (const p of parts) {
+      for (let i = 0; i + 2 < p.positions.length; i += 3) {
+        if ((p.positions[i + 1] as number) < top - 1.5) continue;
+        const x = p.positions[i] as number;
+        x0 = Math.min(x0, x);
+        x1 = Math.max(x1, x);
+        zs.push(p.positions[i + 2] as number);
+      }
+    }
+    zs.sort((a, b) => a - b);
+    if (zs.length > 0 && x1 > x0) lip = { x0, x1, z: zs[Math.floor(zs.length / 2)] as number };
+  } catch {
+    lip = null;
+  }
+  if (lipCache.size > 200) lipCache.clear();
+  lipCache.set(key, lip);
+  return lip;
+}
+
 function lipOf(e: Entity): { x0: number; x1: number; top: number; z: number; drop: number; pours: boolean } | null {
   const sh = e.shape;
   if (sh.kind === 'procedural' && sh.generator === 'waterfall-sheet') {
@@ -185,8 +222,10 @@ function lipOf(e: Entity): { x0: number; x1: number; top: number; z: number; dro
     const b = localBounds(sh.generator, params, sh.seed ?? 0);
     const w = num(params['width']) ?? 6;
     const h = b ? b.max[1] : (num(params['height']) ?? 18);
-    // The sheet leaves its lip at z = 0 and pours toward +z.
-    return { x0: -w / 2, x1: w / 2, top: h, z: 0.15, drop: h, pours: true };
+    // The sheet pours toward +z from its lip; the generator centres its footprint (the plunge pool reaches far out), so the
+    // lip is read off the generated falling water rather than taken to be at the origin.
+    const lip = sheetLip(sh.generator, params, sh.seed ?? 0);
+    return { x0: lip?.x0 ?? -w / 2, x1: lip?.x1 ?? w / 2, top: h, z: lip ? lip.z : 0.15, drop: h, pours: true };
   }
   let b: Box | null = null;
   if (sh.kind === 'primitive' && Array.isArray(sh.size)) {

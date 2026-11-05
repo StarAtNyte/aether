@@ -1,7 +1,7 @@
 import { applyPatches, createWorld, type WorldDoc } from '@aether/core';
 import { scoreFindings } from '@aether/arch';
 import { describe, expect, it } from 'vitest';
-import { fallsFindings, findBuriedFalls, withFalls } from '../src/falls';
+import { fallsFindings, findBuriedFalls, sheetLip, withFalls } from '../src/falls';
 import type { ReviewSnapshot } from '../src/review';
 
 const CLIFF = { kind: 'procedural', generator: 'cliff-face', params: { width: 60, height: 40, depth: 16, variant: 1 }, seed: 3 };
@@ -12,10 +12,15 @@ function world(entities: Array<Record<string, unknown>>): WorldDoc {
   return out.world;
 }
 
+const FALL_PARAMS = { height: 30, width: 8, variant: 1 };
+/** Where the sheet's lip is in its own frame (the generator centres its footprint, so not at the origin). */
+const LIP_Z = sheetLip('waterfall-sheet', FALL_PARAMS, 1)?.z ?? 0;
+
+/** A waterfall whose lip stands at world z = `z` (turned: `extra.transform` places the entity itself). */
 const fall = (id: string, z: number, extra: Record<string, unknown> = {}): Record<string, unknown> => ({
   id,
-  shape: { kind: 'procedural', generator: 'waterfall-sheet', params: { height: 30, width: 8, variant: 1 }, seed: 1 },
-  transform: { position: [0, 0, z] },
+  shape: { kind: 'procedural', generator: 'waterfall-sheet', params: FALL_PARAMS, seed: 1 },
+  transform: { position: [0, 0, z - LIP_Z] },
   ...extra,
 });
 
@@ -42,7 +47,7 @@ describe('buried falls', () => {
 
   it('follows the yaw of a turned waterfall', () => {
     // Turned 90 degrees the sheet pours toward +x; a box mass east of the lip does not bury it, one around the lip does.
-    const turned = fall('falls', 0, { transform: { position: [0, 0, 0], rotation: [0, 90, 0] } });
+    const turned = fall('falls', 0, { transform: { position: [-LIP_Z, 0, 0], rotation: [0, 90, 0] } });
     const clear = world([turned, { id: 'block', shape: { kind: 'primitive', primitive: 'box', size: [10, 60, 30] }, transform: { position: [-6, 30, 0] } }]);
     expect(findBuriedFalls(clear)).toEqual([]);
     const buried = world([turned, { id: 'block', shape: { kind: 'primitive', primitive: 'box', size: [10, 60, 30] }, transform: { position: [2, 30, 0] } }]);
@@ -70,5 +75,22 @@ describe('buried falls', () => {
 
   it('has nothing to check without falling water', () => {
     expect(findBuriedFalls(world([{ id: 'cliff', shape: CLIFF, transform: { position: [0, 0, -10] } }]))).toEqual([]);
+  });
+
+  it('reads the lip of a generated sheet off its falling water (the generator centres its footprint on the pool)', () => {
+    const params = { height: 45, width: 15, strands: 3, throwSpeed: 2.2, variant: 1, pool: true };
+    const lip = sheetLip('waterfall-sheet', params, 0);
+    expect(lip).not.toBeNull();
+    // Well behind the origin: the plunge pool reaches far out in front.
+    expect(lip!.z).toBeLessThan(-5);
+    // A sheet whose origin stands 4 m in front of a cliff face still has its lip inside the rock.
+    const world = createWorld({
+      entities: {
+        rock: { id: 'rock', transform: { position: [0, 22.5, -20] }, shape: { kind: 'primitive', primitive: 'box', size: [40, 45, 40] } },
+        fall: { id: 'fall', tags: ['waterfall'], transform: { position: [0, 0, 4] }, shape: { kind: 'procedural', generator: 'waterfall-sheet', params } },
+      },
+    }) as WorldDoc;
+    const buried = findBuriedFalls(world);
+    expect(buried.map((b) => b.id)).toContain('fall');
   });
 });
