@@ -488,24 +488,48 @@ export class Simulation {
    * new work a moment after the last finished). Gives up after `maxMs` so a stuck asset never locks the user out.
    * `onStage` reports what is still pending.
    */
-  async whenFullyLoaded(maxMs = 90_000, onStage?: (stage: RenderProcessingStage | 'motion') => void): Promise<void> {
+  async whenFullyLoaded(maxMs = 150_000, onStage?: (stage: RenderProcessingStage | 'motion') => void): Promise<void> {
     await this.whenSynced();
+    this.renderer.setLoading(true);
+    try {
+      await this.loadFully(maxMs, onStage);
+    } finally {
+      this.renderer.setLoading(false);
+    }
+  }
+
+  private async loadFully(maxMs: number, onStage?: (stage: RenderProcessingStage | 'motion') => void): Promise<void> {
     const end = performance.now() + maxMs;
+    // What lies around the spawn point is prepared now, not on the first turn of the camera.
+    onStage?.('render');
+    performance.mark('aether:sweep-start');
+    // Four headings: a 16:9 view is about 90° wide, so four cover the circle (six overlapped and prepared twice).
+    await this.renderer.prepareSurroundings(4, Math.max(1000, maxMs / 3));
+    performance.mark('aether:sweep-end');
     let readySince = 0;
     let last: string | null = null;
     while (!this.disposed && performance.now() < end) {
       const r = this.renderer;
-      const stage: RenderProcessingStage | 'motion' | null = this.pendingWorld ? 'scene' : (r.processingStage ?? (r.animating ? 'motion' : null));
+      // The building light bake runs on the GPU right after loading: on an integrated GPU it froze the first steps for
+      // up to ten seconds, so it finishes behind the load screen too.
+      const stage: RenderProcessingStage | 'motion' | null = this.pendingWorld ? 'scene' : (r.processingStage ?? (r.lightVolumeBaking ? 'lighting' : r.animating ? 'motion' : null));
       if (stage === null) {
         if (readySince === 0) readySince = performance.now();
-        else if (performance.now() - readySince >= READY_STABLE_MS) return;
+        else if (performance.now() - readySince >= READY_STABLE_MS) {
+          performance.mark('aether:fully-loaded');
+          return;
+        }
       } else {
         readySince = 0;
-        if (stage !== last) onStage?.(stage);
+        if (stage !== last) {
+          performance.mark(`aether:wait-${stage}`);
+          onStage?.(stage);
+        }
       }
       last = stage;
       await new Promise<void>((resolve) => setTimeout(resolve, 100));
     }
+    if (!this.disposed) performance.mark('aether:load-timeout');
   }
 
   /** The world the renderer last finished syncing (procedural outputs match it). */

@@ -89,13 +89,19 @@ interface Options {
    * of the work) are still built ahead while links are pending.
    */
   blocked(): boolean;
+  /** Milliseconds one pump may spend before yielding (default 4; more while nothing on screen needs a smooth frame). */
+  sliceMs?(): number;
   /** One-shot texture generation must finish its GPU draws before publishing the texture. */
   atomic?<T>(draw: () => T): T;
   /** Null uses timers (also useful in deterministic lifecycle tests). */
   channel?: (() => MessageChannel) | null;
 }
 
+/** Longest a compile walk holds the preparation queue (ms). */
+const COMPILE_HOLD_MAX_MS = 8000;
+
 export function deferRenderPreparation(renderer: WebGPURenderer, options: Options): RenderPreparation {
+  const slice = (): number => options.sliceMs?.() ?? 4;
   const r = renderer as unknown as Port;
   const jobs: Array<Job | undefined> = [], queued = new Set<RenderObject>(), dead = new WeakSet<object>(), failed = new WeakSet<object>();
   const waiters = new Set<() => void>();
@@ -205,7 +211,7 @@ export function deferRenderPreparation(renderer: WebGPURenderer, options: Option
             let done: boolean;
             do {
               done = !valid(job) || advance(job);
-            } while (!done && !disposed && !compiling && !options.blocked() && performance.now() - start < 4);
+            } while (!done && !disposed && !compiling && !options.blocked() && performance.now() - start < slice());
             return done;
           });
           if (finished && job.link) linking.push(job);
@@ -215,7 +221,7 @@ export function deferRenderPreparation(renderer: WebGPURenderer, options: Option
         // Clear consumed references immediately without shifting the world-sized queue.
         queued.delete(job.ro); jobs[head++] = undefined;
       }
-    } while (!disposed && !compiling && !options.blocked() && head < jobs.length && performance.now() - start < 4);
+    } while (!disposed && !compiling && !options.blocked() && head < jobs.length && performance.now() - start < slice());
     if (head === jobs.length) { jobs.length = 0; head = 0; ahead = 0; }
     if (head < jobs.length) schedule(); else notify();
   }
@@ -236,7 +242,7 @@ export function deferRenderPreparation(renderer: WebGPURenderer, options: Option
   /** Build node graphs (stage 0) of queued jobs within the slice; true while more remain to build. */
   function buildAhead(start: number): boolean {
     if (ahead < head) ahead = head;
-    while (ahead < jobs.length && !disposed && !compiling && performance.now() - start < 4) {
+    while (ahead < jobs.length && !disposed && !compiling && performance.now() - start < slice()) {
       const job = jobs[ahead++]!;
       if (job.stage !== 0 || !valid(job)) continue;
       // A failure is reported by the ordinary pass, which builds the graph again.
@@ -326,8 +332,21 @@ export function deferRenderPreparation(renderer: WebGPURenderer, options: Option
   }
   function compileAsync(...args: unknown[]): Promise<unknown> {
     compiling++;
-    try { return Promise.resolve(compile.apply(r, args)).finally(() => { compiling--; notify(); }); }
-    catch (error) { compiling--; throw error; }
+    // A compile walk holds the queue (its binding phase is atomic), but not for ever: on WebGPU some of its pipeline
+    // promises never settled, and the queue then stood still through a whole load (3,000 objects, the load screen gave
+    // up). Past COMPILE_HOLD_MAX_MS the queue moves on; the compile itself carries on.
+    let held = true;
+    const release = (): void => {
+      if (!held) return;
+      held = false;
+      clearTimeout(timer);
+      compiling--;
+      notify();
+      if (!disposed && head < jobs.length) schedule();
+    };
+    const timer = setTimeout(release, COMPILE_HOLD_MAX_MS);
+    try { return Promise.resolve(compile.apply(r, args)).finally(release); }
+    catch (error) { release(); throw error; }
   }
   r._objects.get = getObject; r._nodes.delete = deleteObject; r._renderObjectDirect = draw; r.compileAsync = compileAsync;
   return result;

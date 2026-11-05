@@ -95,9 +95,11 @@ import { installLodBias, lodBiasFor, setTextureLodBias } from './gpu/lod-bias';
 import { createGpuRenderer, type BackendKind, type BackendPreference, type BackendReason, type GpuInfo } from './gpu/backend';
 import { opaqueSort, type SortItem } from './gpu/render-order';
 import { needsPrePass } from './gpu/finishing';
+import { capTextureSize } from './gpu/texture-cap';
+import { installShaderRelease } from './gpu/shader-release';
 import { BlackScreenWatchdog, GpuLogCapture, measureFrame, WATCHDOG_STEPS, type FrameSample, type WatchdogAction, type WatchdogOptions } from './gpu/watchdog';
 import { AdaptiveTier } from './gpu/adaptive-tier';
-import { capTier, cutsAt, forwardLightBudget, GOVERNOR_DEFAULTS, hardwareTierCap, interiorContent, interiorDrawDistance, lodHeightScale, PerformanceGovernor, startLevel, PERFORMANCE_STEPS, readHardware, sunMapSoftRefreshFrames, WEAK_PIXEL_RATIO, weakHardware, type HardwareHints, type PerformanceCuts } from './gpu/performance';
+import { HEAVY_WORLD, capTier, cutsAt, forwardLightBudget, GOVERNOR_DEFAULTS, hardwareTierCap, interiorContent, interiorDrawDistance, lodHeightScale, PerformanceGovernor, startLevel, PERFORMANCE_STEPS, readHardware, sunMapSoftRefreshFrames, WEAK_PIXEL_RATIO, weakHardware, type HardwareHints, type PerformanceCuts } from './gpu/performance';
 import { classifyGpu, effectivePixelRatio, estimateFramebufferMB, estimateShadowMB, renderBudget, type GpuTier, type RenderBudget } from './gpu/budget';
 import { createPostPipeline, VIGNETTE_STRENGTH, type PostPipeline, type PostQuality } from './gpu/post';
 import { planSunShadows } from './environment/sun-shadow-plan';
@@ -300,6 +302,16 @@ export function surfaceOfFinish(finish: string): SurfaceClass {
   return 'stone';
 }
 
+/** What decides a mesh's programs, as far as a compile gather is concerned: its materials, its attributes and its kind. */
+function programKey(o: Object3D): string {
+  const m = o as Mesh;
+  const mats = Array.isArray(m.material) ? m.material : [m.material];
+  const g = m.geometry as BufferGeometry | undefined;
+  const attrs = g ? Object.keys(g.attributes).sort().join(',') + (g.index ? '+i' : '') + (Object.keys(g.morphAttributes).length > 0 ? '+morph' : '') : '';
+  const kind = (m as Mesh & { isInstancedMesh?: boolean }).isInstancedMesh ? 'inst' : (m as Mesh & { isBatchedMesh?: boolean }).isBatchedMesh ? 'batch' : (m as Mesh & { isSkinnedMesh?: boolean }).isSkinnedMesh ? 'skin' : 'mesh';
+  return `${mats.map((x) => x?.uuid ?? "-").join('/')}|${attrs}|${kind}|${m.castShadow ? 1 : 0}${m.receiveShadow ? 1 : 0}`;
+}
+
 /** A raycaster that also tests batched static props (their meshes live on {@link BATCHED_LAYER}). */
 /** The statistics of a picture read back as RGBA (a 24 x 24 grid of points), as the live read-back reports them. */
 function measurePixels(rgba: Uint8Array, w: number, h: number): FrameSample {
@@ -423,6 +435,7 @@ const _bounds = new Box3();
 /** Vertical field of view (degrees) of the first-person walk camera. */
 export const WALK_FOV = 70;
 const _center = new Vector3();
+const _up = new Vector3(0, 1, 0);
 const _size = new Vector2();
 const _buffer = new Vector2();
 const _savedViewport = new Vector4();
@@ -650,6 +663,14 @@ const FAR_ANIMAL_METRES = 55;
 const FAR_INTERIOR_LAYER = 6;
 /** Layer of meshes left undrawn on integrated GPUs for covering under {@link SMALL_MESH_PX} pixels (see cullSmallMeshes). */
 const SMALL_MESH_LAYER = 8;
+/** Largest image texture (px) uploaded on an integrated GPU or in low-memory mode (see gpu/texture-cap.ts). */
+const INTEGRATED_TEXTURE_CAP = 512;
+/** Preparation slice (ms) while the load screen is up. */
+const LOADING_SLICE_MS = 40;
+/** Share of the JS heap limit above which the load-time sweep (prepareSurroundings) turns through two headings only. */
+const SWEEP_LEAN_HEAP_SHARE = 0.22;
+/** Share above which it is skipped. */
+const SWEEP_SKIP_HEAP_SHARE = 0.4;
 /**
  * Projected radius (pixels of the drawn picture) under which a mesh is not drawn on an integrated GPU in the realtime
  * view: a window bar, a tile, a flower pot across the valley. Each is a draw call and its triangles for a speck.
@@ -774,6 +795,7 @@ export class WorldRenderer {
   private readonly onProgress: ((msg: string) => void) | null;
   /** Programs discovered by actual post/shadow passes link without blocking a draw. */
   private readonly programs: ParallelPrograms;
+  private readonly releaseShaders: () => void;
   private readonly gpuCost: ReturnType<typeof gpuFrameCost>;
   private readonly presentation: ReturnType<typeof preparePresentation>;
   private readonly preparation: RenderPreparation;
@@ -923,6 +945,8 @@ export class WorldRenderer {
   private readonly postBuiltSize = new WeakMap<PostPipeline, number>();
   /** The view has rested long enough for the full chain (always true for plans that do not split). */
   private atRest = true;
+  /** The load sweep draws with the motion phase of a split chain (see prepareSurroundings). */
+  private sweepMotion = false;
   /** The current motion phase has displayed an actual completed frame. */
   private motionFrameReady = false;
   /** Measurement hook (tests): true draws every frame with the lean surface shading, null follows the view's motion. */
@@ -989,12 +1013,19 @@ export class WorldRenderer {
     gpu: GpuInfo,
   ) {
     this.compileTextures = prepareCompileTextures(renderer);
+    // Before parallelPrograms: its link path must see shaders compiled again after release.
+    this.releaseShaders = installShaderRelease(renderer.backend as unknown as Parameters<typeof installShaderRelease>[0]);
     this.programs = parallelPrograms(renderer.backend as unknown as Parameters<typeof parallelPrograms>[0], () => this.requestPreparedFrame(false), e => log.warn(`parallel shader linking failed: ${errorMessage(e)}`));
     this.gpuCost = gpuFrameCost(renderer.backend as unknown as Parameters<typeof gpuFrameCost>[0]);
+    const webgpuBackend = (renderer.backend as unknown as { isWebGPUBackend?: boolean }).isWebGPUBackend === true;
     this.preparation = deferRenderPreparation(renderer, {
       ready: () => this.requestPreparedFrame(),
       error: e => log.warn(`render preparation failed: ${errorMessage(e)}`),
-      blocked: () => this.programs.pending > 0,
+      // WebGL only: there uploads queued behind a linking program wait in the GL command queue. WebGPU builds pipelines
+      // off the queue, and with some always building, blocking left 3,000 objects waiting through a whole load.
+      blocked: () => !webgpuBackend && this.programs.pending > 0,
+      // Behind the load screen nothing needs a smooth frame: prepare in long slices (see setLoading).
+      sliceMs: () => (this.loadingScreen ? LOADING_SLICE_MS : 4),
       atomic: draw => this.programs.synchronous(draw),
     });
     this.presentation = preparePresentation(renderer, () => !this.progressive && (this.preparation.pending > 0 || this.programs.pending > 0));
@@ -1021,6 +1052,8 @@ export class WorldRenderer {
     this.gpuLog.onShaderFailure = (text) => this.shaderFailed(text);
     if (this.watchdogOn && typeof console !== 'undefined') this.uninstallGpuLog = this.gpuLog.install();
     this.budget = this.budgetFor(this.lowMemory);
+    // Integrated GPUs keep textures in system memory: image maps above INTEGRATED_TEXTURE_CAP are uploaded at that size.
+    capTextureSize(renderer, this.gpu.tier === 'integrated' || this.gpu.tier === 'unknown' || this.lowMemory ? INTEGRATED_TEXTURE_CAP : 0);
     this.adaptive.enabled = opts.adaptiveResolution !== false;
     this.adaptiveWanted = this.adaptive.enabled;
     // The second texture lookup that hides texture repeats costs fill rate: not on software rasterisers or in low-memory mode.
@@ -1222,6 +1255,11 @@ export class WorldRenderer {
     return wr;
   }
 
+  /** The load screen is up (true) or gone: while up, preparation runs in long slices. */
+  setLoading(on: boolean): void {
+    this.loadingScreen = on;
+  }
+
   /** Program links that took over 1.5 s in this page (diagnostics). */
   get slowProgramLinks(): ReadonlyArray<{ ms: number; chars: number }> {
     return slowLinks;
@@ -1283,6 +1321,96 @@ export class WorldRenderer {
   /** The buildings' light volume is waiting to bake or baking (captures that want the finished light wait for it). */
   get lightVolumeBaking(): boolean {
     return this.lightVolume.baking || this.lightmap.baking;
+  }
+
+  /**
+   * Prepare what surrounds the eye before anyone looks at it: the view turns through `steps` headings (hidden, nothing is
+   * drawn to the canvas) and links and prepares the objects each one sees. Without it the first turn of the camera after
+   * loading met hundreds of unprepared objects at once (491 on a furnished street: a 4-second frame on an integrated GPU).
+   * Frustum-culled per heading, so it holds only what looking around would load anyway. Bounded; never throws.
+   */
+  async prepareSurroundings(steps = 6, boundMs = 20_000): Promise<void> {
+    if (this.disposed || this.lost || (globalThis as { __AETHER_SWEEP?: boolean }).__AETHER_SWEEP === false) return;
+    // Memory first: every heading prepares what it sees, and a world that already holds a large share of the page's heap
+    // (a hillside town of 31,000 instances at 1.3 GB of 4.4) would push a 14 GB laptop into swap. Such worlds turn
+    // through fewer headings, or none.
+    const heap = (performance as unknown as { memory?: { usedJSHeapSize?: number; jsHeapSizeLimit?: number } }).memory;
+    const share = heap?.usedJSHeapSize && heap.jsHeapSizeLimit ? heap.usedJSHeapSize / heap.jsHeapSizeLimit : 0;
+    if (share >= SWEEP_SKIP_HEAP_SHARE) return;
+    if (share >= SWEEP_LEAN_HEAP_SHARE) steps = Math.min(steps, 2);
+    const cam = this.perspective;
+    const q = cam.quaternion.clone();
+    const end = now() + boundMs;
+    const webgpu = (this.renderer as unknown as { backend?: { isWebGPUBackend?: boolean } }).backend?.isWebGPUBackend === true;
+    // WebGPU builds its pipelines off the frame, so a newly seen object costs no freeze; and compiling from turned
+    // headings there left pipelines that never resolved (nothing drawn after 126 s on a furnished street). WebGL only.
+    if (webgpu) return;
+    // The headings are drawn for real: keep them off the screen (the load screen is translucent over the canvas).
+    const canvas = this.domElement as HTMLCanvasElement;
+    const shown = canvas.style.visibility;
+    canvas.style.visibility = 'hidden';
+    const turn = (i: number): void => {
+      cam.quaternion.copy(q);
+      cam.rotateOnWorldAxis(_up, (i / steps) * Math.PI * 2);
+      cam.updateMatrixWorld();
+    };
+    try {
+      // Every heading's programs are queued at once, so the driver links them side by side: one heading after the
+      // other ran out of time on a cliff town (30 s for two of four headings) and the first turn of the camera then
+      // met the rest, linking synchronously (a 12-second frame on an integrated GPU).
+      const compiles: Promise<unknown>[] = [];
+      for (let i = 1; i <= steps && !this.disposed && !this.lost; i++) {
+        turn(i);
+        const recull = this.uncullForCompile();
+        try {
+          compiles.push(this.renderer.compileAsync(this.scene, cam, this.scene));
+        } finally {
+          recull();
+        }
+      }
+      await this.bounded(Promise.all(compiles), Math.max(0, end - now()));
+      // A real draw of each heading (sun map included) creates what a compile walk does not: shadow-pass variants,
+      // the meshes distance culling brings back. Their links then finish here, behind the load screen.
+      // The rig may have put the camera back while the walk awaited: turn it again for each draw.
+      for (let i = 1; i <= steps && now() < end && !this.disposed && !this.lost; i++) {
+        turn(i);
+        this.sunMapDirty = true;
+        this.drawOnce(false);
+        await this.until(() => this.programs.pending === 0 && this.preparation.pending === 0, Math.max(0, Math.min(4000, end - now())));
+      }
+      // A split chain draws its motion phase from the first turn of the camera: a pipeline of its own, without the
+      // still phase's occlusion and contact shadows, so every lit material links again (40 programs, a 4- to 12-second
+      // first frame on an integrated GPU). Build it and draw each heading with it here too.
+      if (this.qualityPlan.moveEffects !== null && now() < end && !this.disposed && !this.lost) {
+        this.sweepMotion = true;
+        try {
+          this.syncPost();
+          const want = this.wantedEffects();
+          const key = want ? effectsKey(want) : null;
+          await this.until(() => !this.postPending && (key === null || this.post?.key === key), Math.max(0, Math.min(10_000, end - now())));
+          if (key === null || this.post?.key === key) {
+            for (let i = 1; i <= steps && now() < end && !this.disposed && !this.lost; i++) {
+              turn(i);
+              this.drawOnce(false);
+              await this.until(() => this.programs.pending === 0 && this.preparation.pending === 0, Math.max(0, Math.min(4000, end - now())));
+            }
+          }
+        } finally {
+          this.sweepMotion = false;
+          this.syncPost();
+        }
+      }
+    } catch (e) {
+      log.warn(`surroundings preparation failed: ${errorMessage(e)}`);
+    } finally {
+      canvas.style.visibility = shown;
+      cam.quaternion.copy(q);
+      cam.updateMatrixWorld();
+      // The sun's map draws every caster, with programs of its own: draw it once more now, behind the load screen, so
+      // the shadow programs of what was just prepared link here and not on the first move (15 links, a 3-second frame).
+      this.sunMapDirty = true;
+      this.needsDraw = true;
+    }
   }
 
   /** Pending asynchronous work, independent of optional performance-stat collection. */
@@ -1799,6 +1927,11 @@ export class WorldRenderer {
       }
       this.syncSmallCasters();
       if (hold) this.startForWeight();
+    // A discrete GPU's motion chain depends on the world's weight (see applyQuality): plan again once it is known.
+    if (this.gpu.tier === 'discrete' && (this.sync.entityCount >= HEAVY_WORLD.entities) !== this.heavyPlanned) {
+      this.heavyPlanned = this.sync.entityCount >= HEAVY_WORLD.entities;
+      this.applyQuality(this.qualityPlan.quality);
+    }
       if (hold) await this.warmShaders(say);
     } finally {
       if (hold) {
@@ -1869,6 +2002,33 @@ export class WorldRenderer {
       this.syncSmallCasters();
       if (this.sync.idle) return;
     }
+  }
+
+  /**
+   * Put meshes this renderer left undrawn for distance (far room contents, specks) back on the drawn layer for the
+   * duration of a compile gather, so their programs link with the rest instead of on the frame they come back into view
+   * (fifteen synchronous links, a 3-second frame on an integrated GPU). Returns the restore.
+   */
+  private uncullForCompile(): () => void {
+    const moved: Array<{ m: Object3D; mask: number }> = [];
+    // One mesh per program is enough to link it: bringing back every far room put all of a street's furnished interiors
+    // (2,900 meshes, 1,300 geometries) on the GPU at load (+1.3 GB on an integrated GPU, the page out of memory).
+    const seen = new Set<string>();
+    for (const set of [this.farInteriors, this.smallHidden] as Iterable<Object3D>[]) {
+      for (const m of set) {
+        const mask = m.layers.mask;
+        if (mask === 1 << FAR_INTERIOR_LAYER || mask === 1 << SMALL_MESH_LAYER) {
+          const key = programKey(m);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          moved.push({ m, mask });
+          m.layers.set(0);
+        }
+      }
+    }
+    return () => {
+      for (const { m, mask } of moved) if (m.layers.mask === 1) m.layers.mask = mask;
+    };
   }
 
   /** Link the programs of a new quality plan before drawing with it (see applyQuality). One at a time; never throws. */
@@ -2159,6 +2319,7 @@ export class WorldRenderer {
    * (it is gathered synchronously, before the first await). Objects out of view count as well: the camera moves on.
    */
   private async compileScene(boundMs = SHADER_WARMUP_MS): Promise<void> {
+    const webgpu = (this.renderer as unknown as { backend?: { isWebGPUBackend?: boolean } }).backend?.isWebGPUBackend === true;
     const restoreEffects = this.fx.vfx.prepareForCompile();
     const changed: Array<{ o: Object3D; visible: boolean; culled: boolean }> = [];
     const seen = new Set<string>();
@@ -2177,7 +2338,10 @@ export class WorldRenderer {
         return;
       }
       seen.add(key);
-      if (o.frustumCulled) {
+      // WebGL links on the frame, so objects out of view are compiled now too (the camera moves on). WebGPU builds
+      // pipelines off the frame: what is out of view prepares when it comes in, without a freeze, and preparing a whole
+      // furnished street up front took a fully loaded WebGPU page past 5 GB.
+      if (o.frustumCulled && !webgpu) {
         o.frustumCulled = false;
         changed.push({ o, visible: false, culled: true });
       }
@@ -2194,11 +2358,14 @@ export class WorldRenderer {
       if (showPrints) prints.visible = false;
       restoreEffects();
     };
+    const recull = this.uncullForCompile();
     try {
       const done = this.renderer.compileAsync(this.scene, this.perspective, this.scene);
+      recull();
       restore();
       await this.bounded(done, boundMs);
     } catch (e) {
+      recull();
       restore();
       log.warn(`shader warm-up failed: ${errorMessage(e)}`);
     }
@@ -3552,6 +3719,8 @@ export class WorldRenderer {
   render(dt: number, opts: { onDemand?: boolean; animate?: boolean } = {}): boolean {
     if (this.disposed || this.lost || this.captureActive || this.tracing) return false;
     const t0 = now();
+    // Only a walk made inside this frame counts as fresh (prepareBatches also runs outside the frame loop).
+    this.matricesFresh = false;
     // Objects prepared since the last frame start linking now, whether or not this frame draws.
     this.preparation.link();
     if (this.watchdogOn) this.watch(false);
@@ -4026,7 +4195,7 @@ export class WorldRenderer {
    * bloom. Null: render directly.
    */
   private wantedEffects(): PostEffects | null {
-    return this.effectsFor(this.qualityPlan.moveEffects === null || this.atRest || this.captureActive);
+    return this.effectsFor(this.qualityPlan.moveEffects === null || (this.atRest && !this.sweepMotion) || this.captureActive);
   }
 
   /** The effect set of the rest phase (`rest`) or of the motion phase of a split chain (see {@link wantedEffects}). */
@@ -4944,13 +5113,18 @@ export class WorldRenderer {
     // An integrated GPU keeps the single cached sun map in the realtime view at every tier: cascades follow the camera and
     // draw their casters again on nearly every moving frame (an ultra hillside town: 1,700 draws and 9.7 M triangles a
     // frame against 250 and 2.2 M at medium on an Intel UHD). The other effects of the tier stay; stills keep cascades.
-    if (this.qualityPlan.quality === 'realtime' && (this.gpu.tier === 'integrated' || this.gpu.tier === 'unknown') && (this.qualityPlan.shadowTier === 'high' || this.qualityPlan.shadowTier === 'ultra')) {
+    // A heavy world on a discrete GPU too (2,700 draws a frame down a furnished street with three cascades on an RTX 3050).
+    const heavyDiscrete = this.gpu.tier === 'discrete' && this.sync.entityCount >= HEAVY_WORLD.entities;
+    if (this.qualityPlan.quality === 'realtime' && (this.gpu.tier === 'integrated' || this.gpu.tier === 'unknown' || heavyDiscrete) && (this.qualityPlan.shadowTier === 'high' || this.qualityPlan.shadowTier === 'ultra')) {
       this.qualityPlan = { ...this.qualityPlan, shadowTier: 'medium' };
     }
     // The same GPUs give up the opaque pre-pass while the view moves (a second draw of every object: 1,577 draws a
     // frame instead of 690 down a furnished street) and take it back at rest, as the split studio chain does: ambient
     // occlusion, reflections and the temporal resolve refine the still picture; motion keeps the composite and grade.
-    if (this.qualityPlan.quality === 'realtime' && this.qualityPlan.moveEffects === null && (this.gpu.tier === 'integrated' || this.gpu.tier === 'unknown') && needsPrePass(this.qualityPlan.effects)) {
+    // A discrete GPU does the same on a heavy world (a furnished street: 6 M triangles drawn twice a frame held an RTX 3050
+    // at 81 ms in motion); light worlds keep the whole chain while moving.
+    const lean = this.gpu.tier === 'integrated' || this.gpu.tier === 'unknown' || heavyDiscrete;
+    if (this.qualityPlan.quality === 'realtime' && this.qualityPlan.moveEffects === null && lean && needsPrePass(this.qualityPlan.effects)) {
       const e = this.qualityPlan.effects;
       this.qualityPlan = { ...this.qualityPlan, moveEffects: { ...e, ao: false, gi: false, taa: false, contact: false, ssr: false, shafts: false, dof: false } };
     }
@@ -5029,7 +5203,7 @@ export class WorldRenderer {
     this.postShadowSize = this.env.shaftMapSize;
     const gen = ++this.postGen;
     const builtAt = this.postShadowSize;
-    createPostPipeline(this.renderer, this.scene, this.perspective, this.env.bloom, postQualityOf(want) ?? 'standard', { effects: want, sun: this.env.shaftLight ?? this.env.sun, contactLight: this.env.sun, aoScale: this.qualityPlan.moveEffects !== null ? 0.5 : undefined })
+    createPostPipeline(this.renderer, this.scene, this.perspective, this.env.bloom, postQualityOf(want) ?? 'standard', { effects: want, sun: this.env.shaftLight ?? this.env.sun, contactLight: this.env.sun, aoScale: this.qualityPlan.moveEffects !== null ? 0.5 : undefined, screenOcclusion: this.qualityPlan.moveEffects !== null })
       .then((p) => {
         this.postPending = false;
         if (!p) {
@@ -5161,6 +5335,7 @@ export class WorldRenderer {
   private prepareBatches(capture = false): void {
     if (!this.sync.batchesActive) return;
     this.scene.updateMatrixWorld();
+    this.matricesFresh = true;
     if (capture) this.sync.synchronousBatches(() => this.sync.updateBatches());
     else this.sync.updateBatches();
   }
@@ -5180,10 +5355,19 @@ export class WorldRenderer {
    * its matrices on every call, and a frame makes several (the scene pass of the post chain, the water's backdrop, the
    * mirror): on a 7,000-object hillside town that walk was a fifth of the frame's script time on a laptop CPU.
    */
+  /** World matrices were brought up to date this frame, before the draw (see prepareBatches). */
+  private matricesFresh = false;
+  /** The studio's load screen covers the view (see setLoading). */
+  private loadingScreen = false;
+  /** The world counted as heavy when the quality plan was last made (discrete GPUs, see applyQuality). */
+  private heavyPlanned = false;
+
   private drawOnce(capture: boolean): void {
     const scene = this.scene;
     if (!scene.matrixWorldAutoUpdate) return this.drawReady(capture);
-    scene.updateMatrixWorld();
+    // prepareBatches walked the graph moments ago in the same frame: once is enough (a capture always walks).
+    if (capture || !this.matricesFresh) scene.updateMatrixWorld();
+    this.matricesFresh = false;
     scene.matrixWorldAutoUpdate = false;
     try {
       this.drawReady(capture);
@@ -6235,6 +6419,7 @@ export class WorldRenderer {
     this.presentation.dispose();
     this.preparation.dispose();
     this.programs.dispose();
+    this.releaseShaders();
     this.gpuCost.dispose();
     this.fx.dispose();
     this.capture?.end();

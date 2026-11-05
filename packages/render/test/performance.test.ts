@@ -204,9 +204,9 @@ describe('room contents far from the eye', () => {
     expect(interiorContent(undefined)).toBe(false);
   });
 
-  it('draws everything on high, ultra and stills; nearer on the cheaper tiers', () => {
-    expect(interiorDrawDistance('high', false)).toBe(Number.POSITIVE_INFINITY);
-    expect(interiorDrawDistance('ultra', false)).toBe(Number.POSITIVE_INFINITY);
+  it('draws everything in stills; within a reach in the realtime view, nearer on the cheaper tiers', () => {
+    expect(interiorDrawDistance('high', false)).toBe(60);
+    expect(interiorDrawDistance('ultra', false)).toBe(60);
     expect(interiorDrawDistance('low', true)).toBe(Number.POSITIVE_INFINITY);
     expect(interiorDrawDistance('low', false)).toBeLessThan(interiorDrawDistance('medium', false));
     expect(Number.isFinite(interiorDrawDistance('medium', false))).toBe(true);
@@ -224,9 +224,9 @@ describe('level of detail of the cheaper tiers', () => {
     expect(lodHeightScale('ultra', false, 'integrated')).toBe(0.5);
     expect(lodHeightScale('ultra', false, 'discrete')).toBe(1);
     expect(lodHeightScale('ultra', true, 'integrated')).toBe(1);
-    // Room contents: finite reach on integrated GPUs at every tier, unlimited on discrete at high and ultra.
+    // Room contents: finite reach at every tier, farther on discrete GPUs.
     expect(idd('ultra', false, 'integrated')).toBe(INTEGRATED_INTERIOR_REACH);
-    expect(idd('ultra', false, 'discrete')).toBe(Number.POSITIVE_INFINITY);
+    expect(idd('ultra', false, 'discrete')).toBe(60);
     expect(idd('ultra', true, 'integrated')).toBe(Number.POSITIVE_INFINITY);
   });
 });

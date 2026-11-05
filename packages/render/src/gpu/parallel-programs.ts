@@ -23,6 +23,10 @@ export interface ParallelPrograms {
 const SLOW_LINK_MS = 1500;
 /** Slow program links seen in this page (diagnostics: how long, and how big the shader source was). */
 export const slowLinks: Array<{ ms: number; chars: number; head: string }> = [];
+/** Longest a WebGPU pipeline job may hold the draws before it is let go (ms). */
+const STUCK_PIPELINE_MS = 5000;
+/** WebGPU pipeline jobs let go for never settling (diagnostics). */
+export const stuckPipelines = { count: 0 };
 /** Retain the bindings, not a mutable/disposable RenderObject, while a program links. */
 export function parallelPrograms(backend: Backend, changed: () => void, failed: (error: unknown) => void): ParallelPrograms {
   const jobs = new Set<{ cancel(): void; done: Promise<void>; ready(): boolean; complete(): void; pipeline: object }>();
@@ -100,7 +104,17 @@ export function parallelPrograms(backend: Backend, changed: () => void, failed: 
         };
         const job = { done, cancel: finish, ready: () => false, complete: finish, pipeline: object.pipeline };
         jobs.add(job); hold(object.pipeline);
-        pending.then(finish, error => { finish(); if (!disposed) failed(error); });
+        // A pipeline promise that never settles held every draw and the preparation queue behind it: a furnished street
+        // on WebGPU drew no frame in two minutes. Past STUCK_PIPELINE_MS the job is let go (the draw then waits on the
+        // pipeline itself, as three does without this tracker).
+        const started = performance.now();
+        const stuck = setTimeout(() => {
+          if (!jobs.has(job)) return;
+          stuckPipelines.count++;
+          slowLinks.push({ ms: Math.round(performance.now() - started), chars: -1, head: 'webgpu pipeline released' });
+          finish();
+        }, STUCK_PIPELINE_MS);
+        pending.then(() => { clearTimeout(stuck); finish(); }, error => { clearTimeout(stuck); finish(); if (!disposed) failed(error); });
         promises?.push(done);
       }
     };

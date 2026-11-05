@@ -395,7 +395,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
         setLoading('Building the world…');
         await sim.whenSynced();
         // The title card (and with it Start) waits for the world to be complete: no hitches or pop-in once playing.
-        await sim.whenFullyLoaded(90_000, (stage) => {
+        await sim.whenFullyLoaded(150_000, (stage) => {
           if (!disposed) setLoading(stage === 'materials' ? 'Loading models and textures…' : stage === 'scene' ? 'Building the world…' : 'Preparing shaders and geometry…');
         });
         if (disposed) return;

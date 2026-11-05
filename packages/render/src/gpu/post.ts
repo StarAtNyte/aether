@@ -150,7 +150,17 @@ export interface PostOptions {
   aoScale?: number;
   /** The sun itself: screen-space contact shadows are traced toward it and darken its direct light only. */
   contactLight?: DirectionalLight | null;
+  /**
+   * Occlusion and contact shadows multiply the composite instead of entering every lit material. For a split chain
+   * (motion phase without them): in the materials they made each lit material a program of its own per phase, a third of
+   * the programs of a world (306 against 157 on a terrace town), with their memory and a link on the first turn.
+   */
+  screenOcclusion?: boolean;
 }
+
+/** Share of the occlusion and of the contact shadows kept when they multiply the composite (see PostOptions.screenOcclusion). */
+const SCREEN_AO_WEIGHT = 0.7;
+const SCREEN_CONTACT_WEIGHT = 0.5;
 
 const COMPOSITE_ONLY: PostEffects = Object.freeze({ composite: true, ao: false, gi: false, taa: false, contact: false, ssr: false, shafts: false, halation: false, aberration: false, grain: false, dof: false });
 
@@ -188,7 +198,11 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
     const temporalOk = (renderer as unknown as { backend?: { isWebGPUBackend?: boolean } }).backend?.isWebGPUBackend !== true;
     const temporalScene = !needsPrePass(effects) && temporalOk && variant.startsWith('taau');
     // MSAA stays: cut-out foliage is alpha-to-coverage, which without multisampling came out as bright speckle (measured, see the review log).
-    const scenePass = effects.taa ? pass(scene, camera, { samples: 0 }) : pass(scene, camera);
+    // The motion phase of a split chain (screenOcclusion) draws single-sampled too, its temporal upsampler resolving the edges:
+    // three keys render state by sample count, and an MSAA motion pass beside the TAA rest pass gave every mesh a second
+    // set of render objects and bindings (2 GB of page heap on a cliff town, the tab out of memory).
+    const singleSampled = effects.taa || (opts.screenOcclusion === true && temporalScene);
+    const scenePass = singleSampled ? pass(scene, camera, { samples: 0 }) : pass(scene, camera);
     disposables.push(scenePass);
     type Value = ReturnType<typeof float>;
     let aoValue: Value | null = null;
@@ -266,7 +280,7 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
       contactValue = contactPass.getTextureNode().sample(screenUV).r as unknown as Value;
       disposables.push(contactPass);
     }
-    if (aoValue || contactValue) {
+    if ((aoValue || contactValue) && !opts.screenOcclusion) {
       // One context for both (three's built-in AO and shadow contexts, merged).
       const ao = aoValue;
       const contact = contactValue;
@@ -296,6 +310,12 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
       const hi = max(max(max(up, down), max(left, right)), c);
       const blur = up.add(down).add(left).add(right).mul(0.25);
       hdr = clamp(c.add(c.sub(blur).mul(uSharp)), lo, hi);
+    }
+    if (opts.screenOcclusion) {
+      // On the whole picture, direct light included: softer than in the materials, where they shade the ambient (and the
+      // sun's direct light) only.
+      if (aoValue) hdr = hdr.mul(mix(float(1), aoValue, SCREEN_AO_WEIGHT));
+      if (contactValue) hdr = hdr.mul(mix(float(1), contactValue, SCREEN_CONTACT_WEIGHT));
     }
     // One bounce of the lit scene: the sunlit floor patch lights the walls and the ceiling above it, a
     // bright wall tints its neighbours. The bounce is the lit colour gathered around each pixel times the

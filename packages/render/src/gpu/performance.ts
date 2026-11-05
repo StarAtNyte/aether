@@ -282,8 +282,13 @@ export function interiorDrawDistance(tier: RenderTier, still: boolean, gpu?: Gpu
   if (tier === 'medium') return 28;
   // An integrated GPU draws room contents up to {@link INTEGRATED_INTERIOR_REACH} at the high tiers too: a street of
   // furnished houses is most of a frame's triangles, and furniture behind glass two streets away reads as nothing.
-  return gpu === 'integrated' || gpu === 'unknown' ? INTEGRATED_INTERIOR_REACH : Number.POSITIVE_INFINITY;
+  // A discrete GPU draws them farther, but not without end: a street of furnished houses is millions of triangles of
+  // furniture behind glass (an RTX 3050 held 30-37 ms down one at ultra with every room drawn).
+  return gpu === 'integrated' || gpu === 'unknown' ? INTEGRATED_INTERIOR_REACH : DISCRETE_INTERIOR_REACH;
 }
+
+/** Distance (m) of room contents drawn by a discrete GPU at the high and ultra tiers. */
+export const DISCRETE_INTERIOR_REACH = 60;
 
 /** Distance (m) of room contents drawn by an integrated GPU at the high and ultra tiers. */
 export const INTEGRATED_INTERIOR_REACH = 40;
