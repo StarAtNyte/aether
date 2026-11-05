@@ -119,6 +119,7 @@ import { normalizePixels } from './view/still';
 import type { PathTraceOptions } from './view/pathtrace';
 import { buildExportScene, exportGltf as exportSceneGltf, type GltfExportOptions, type GltfExportResult } from './view/gltf-export';
 import { PathOverlay } from './view/path-overlay';
+import { captureUntilComplete, type CapturePass } from './view/capture-rounds';
 import { postQualityOf, qualityPlan, Refinement, studioAvailable, stillPlan, type QualityPlan, type RenderQuality, type StillPlan } from './gpu/render-quality';
 import { ComputeClient, GeneratorCache, generationLanes, proceduralOutputKey } from '@aether/procgen';
 import { GenPool } from './geometry/gen-pool';
@@ -6358,9 +6359,17 @@ export class WorldRenderer {
     };
     const aim = (pose: { position: Vec3; target: Vec3; up: Vec3; fov: number }): void => this.aimCapture(pose, w / h);
     // Pipelines and materials the poses need compile on their first draw and that frame can come out blank (a new generator, a
-    // camera that sees a new surface): the poses are drawn once to prime them and the frames of that pass are dropped.
-    const pass = async (): Promise<string[]> => {
+    // camera that sees a new surface): the poses are drawn once to prime them and the frames of that pass are dropped, then
+    // drawn again until no draw was held back for preparation (see capture-rounds.ts).
+    let held = 0;
+    const drawScene = (): void => {
+      const before = this.preparation.deferred;
+      this.renderer.render(this.scene, cam);
+      held += this.preparation.deferred - before;
+    };
+    const pass = async (): Promise<CapturePass<string[]>> => {
       const out: string[] = [];
+      held = 0;
       for (const pose of list) {
         // Steady effects (mist, spray, smoke) as they look after running a while near this view, not as they start.
         aim(pose);
@@ -6377,7 +6386,7 @@ export class WorldRenderer {
                 this.snapEye();
                 this.prepareBatches(true);
                 this.fx.vfx.face(cam);
-                this.renderer.render(this.scene, cam);
+                drawScene();
               }, restoreCamera),
             );
             out.push(await encodePixels(pixels, w, h, mime, this.backend === 'webgl2', (this.encodeCanvas ??= document.createElement('canvas'))));
@@ -6394,7 +6403,7 @@ export class WorldRenderer {
               this.snapEye();
               this.prepareBatches(true);
               this.fx.vfx.face(cam);
-              this.renderer.render(this.scene, cam);
+              drawScene();
               const image = grab(this.domElement, w, h, mime);
               restoreCamera();
               return image;
@@ -6402,11 +6411,12 @@ export class WorldRenderer {
           ),
         );
       }
-      return out;
+      return { images: out, held };
     };
     try {
-      await pass();
-      return await pass();
+      const done = await captureUntilComplete(pass, () => this.waitForPreparation());
+      if (done.held > 0) log.warn(`capture: ${done.held} draws still preparing after ${done.passes} passes`);
+      return done.images;
     } finally {
       restore();
       this.needsDraw = true;
