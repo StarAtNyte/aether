@@ -8,6 +8,7 @@ import { siteMeta } from '../../scripts/vite/site-meta.ts';
 import { hubProxy } from '../../scripts/vite/hub-proxy.ts';
 import hubConfig from '../../assets/hub.json' with { type: 'json' };
 import { editorPrefetch } from '../../scripts/vite/editor-prefetch.ts';
+import { generationCodeVersion } from '../../scripts/vite/gen-version.ts';
 
 /** The curated asset library (`npm run assets:build`), served at `/assets/lib/`. */
 const LIBRARY_DIR = fileURLToPath(new URL('../../assets/lib', import.meta.url));
@@ -48,7 +49,8 @@ export default defineConfig(async ({ command }) => {
   // A lean build (see scripts/vite/asset-library.ts) ships a subset of the library and fetches the rest from a pinned CDN copy.
   const libCdn = command === 'build' ? await libraryCdn(process.env, LIBRARY_DIR) : undefined;
   return {
-  define: { __AETHER_LIB_LEAN__: JSON.stringify(libCdn !== undefined) },
+  // __AETHER_GEN_VERSION__ salts the persistent geometry cache (scripts/vite/gen-version.ts).
+  define: { __AETHER_LIB_LEAN__: JSON.stringify(libCdn !== undefined), __AETHER_GEN_VERSION__: JSON.stringify(generationCodeVersion()) },
   // Rapier's wasm ships as a cached `.wasm` file (streaming compile) instead of a 4 MB base64 string.
   plugins: [react(), rapierWasm({ warn: (m) => console.warn(m) }), assetLibrary(LIBRARY_DIR, libCdn), playRoute(), hubProxy(hubConfig.dataset), playerManifest(), siteMeta(), editorPrefetch()],
   experimental: {

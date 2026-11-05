@@ -77,7 +77,7 @@ import { isKitOfPieces, mirror, VirtualGroup, VIRTUAL_MIN_TRIANGLES } from '../v
 import { BATCHED_LAYER } from './static-batches';
 import { DEFAULT_FIELD_BUDGET, LodChainCache, lodOutputKey, lodPart, outputRadius, shareDemand, type FieldBudget } from './field-mount';
 import { buildMeshGeometry, previewMeshGeometry, type MeshGeometryBundle } from '../geometry/mesh-asset';
-import { meshColliders } from '@aether/procgen';
+import { meshColliders, yieldToEventLoop } from '@aether/procgen';
 import { areaLightsReady, chooseForwardLights, createEntityLight, disposeEntityLight, enforceShadowCap, LAMP_CUTOFF, loadAreaLights, updateLightParams, type BudgetLight } from './lights';
 import { createEntityNode, ENTITY_ID_KEY, type EntityNode, type MeshBinding } from './entity-node';
 import { renderableIds } from './renderable';
@@ -193,6 +193,9 @@ interface Retired {
 /** Key under `Mesh.userData` holding the global triangle index of each local triangle (mesh shapes). */
 export const MESH_TRIANGLES_KEY = 'aetherTriangles';
 
+/** Mounting generated content runs in slices of about this long before yielding to the page (ms). */
+const MOUNT_SLICE_MS = 12;
+
 let meshKeySeq = 0;
 const meshKeys = new WeakMap<object, string>();
 /** Stable per-object key of an (immutable) mesh asset. */
@@ -280,6 +283,8 @@ export class SceneSync {
   /** True while setWorld rebuilds: dependent scatter relayout is deferred to one pass. */
   private batching = false;
   private disposed = false;
+  /** Where generation is ordered from, nearest first (the opening view or the camera); null: document order. */
+  private generationFocus: readonly [number, number, number] | null = null;
   /** Instanced batches of identical static props (null when disabled). */
   private readonly batches: StaticBatches | null;
   /** Content changed since the batches were grouped. */
@@ -1235,9 +1240,43 @@ export class SceneSync {
     return shape.kind === 'model' || shape.kind === 'asset' ? RESOLVED : tracked;
   }
 
+  /**
+   * Order generation from `point` (world space), nearest entities first: what is seen first is built first. Null
+   * keeps document order. Takes effect for the next {@link setWorld}.
+   */
+  setGenerationFocus(point: readonly [number, number, number] | null): void {
+    this.generationFocus = point && point.every(Number.isFinite) ? [point[0], point[1], point[2]] : null;
+  }
+
+  /** Queue order of a node's generation: its distance from the focus (0 without one). */
+  private generationPriority(node: EntityNode): number {
+    const f = this.generationFocus;
+    if (!f) return 0;
+    node.object.updateWorldMatrix(true, false);
+    const e = node.object.matrixWorld.elements;
+    const d = Math.hypot((e[12] as number) - f[0], (e[13] as number) - f[1], (e[14] as number) - f[2]);
+    return Number.isFinite(d) ? d : 0;
+  }
+
+  /** Start of the current run of mounts on this task (see {@link mountTurn}). */
+  private mountSliceStart = 0;
+
+  /**
+   * Wait for a turn to mount generated content. One generator reply can complete many entities at once (every entity
+   * sharing that output), and their mounts would otherwise run back to back in one long task: past
+   * {@link MOUNT_SLICE_MS} of mounting, the rest wait for the next tasks, one mount each.
+   */
+  private mountTurn(): Promise<void> {
+    const t = performance.now();
+    if (t - this.mountSliceStart < MOUNT_SLICE_MS) return RESOLVED;
+    return yieldToEventLoop().then(() => {
+      this.mountSliceStart = performance.now();
+    });
+  }
+
   private resolveProcedural(node: EntityNode, shape: ProceduralShape, world: Pick<WorldDoc, 'generators'>): Promise<{ keyed: KeyedOutput; failed: boolean }> {
-    return this.opts.source.procedural(shape, world).then(
-      (keyed) => ({ keyed, failed: false }),
+    return this.opts.source.procedural(shape, world, { priority: this.generationPriority(node) }).then(
+      (keyed) => this.mountTurn().then(() => ({ keyed, failed: false })),
       (e: unknown) => {
         const msg = errorMessage(e);
         this.warn(node.id, `generator "${shape.generator.slice(0, 64)}" failed: ${msg}`);
@@ -1781,7 +1820,7 @@ export class SceneSync {
           // Large parts (terrain) raycast through a BVH: picking, snapping and camera occlusion stay O(log n).
           accelerateRaycast(mesh);
           // A kit of small pieces (trims, rails, flowers) would lose whole pieces to cluster LOD: it stays an ordinary mesh.
-          if (this.dags && part.indices.length / 3 >= VIRTUAL_MIN_TRIANGLES && !isKitOfPieces(part.positions, part.indices)) this.virtualize(node, mesh, g.key, ...splitSource(g.geometry, part));
+          if (this.dags && part.indices.length / 3 >= VIRTUAL_MIN_TRIANGLES && !(part.prepared?.kit ?? isKitOfPieces(part.positions, part.indices))) this.virtualize(node, mesh, g.key, ...splitSource(g.geometry, part));
         }
         node.bindings.push({
           mesh,

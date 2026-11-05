@@ -5,8 +5,9 @@
  * runner supplied by the host.
  */
 import { stableStringify, type Json, type PrimitiveShape, type ProceduralShape, type WorldDoc } from '@aether/core';
-import { fallbackOutput, generate, GeneratorCache, primitiveOutput, proceduralOutputKey } from '@aether/procgen';
+import { fallbackOutput, generate, GeneratorCache, primitiveOutput, proceduralOutputKey, type GenerateJob, type GenerateOptions } from '@aether/procgen';
 import type { GeneratorOutput, GeometrySource, KeyedOutput, SandboxRunner } from '../types';
+import type { GenPool } from './gen-pool';
 
 /** Options of {@link createProcgenGeometrySource}. */
 export interface ProcgenSourceOptions {
@@ -16,8 +17,13 @@ export interface ProcgenSourceOptions {
   cache?: GeneratorCache;
   /** Max memoized primitive outputs (default 512). */
   maxPrimitives?: number;
-  /** Off-thread runner for built-in generators (falls back to inline on failure). */
-  builtin?: (generator: string, params: Record<string, Json>, seed: number) => Promise<GeneratorOutput>;
+  /** Off-thread runner for built-in generators (falls back to inline on failure). Ignored when `pool` is given. */
+  builtin?: (generator: string, params: Record<string, Json>, seed: number, job: GenerateJob) => Promise<GeneratorOutput>;
+  /**
+   * Generation lanes with the persistent geometry cache: built-in generators run there, and custom generators'
+   * output is validated and prepared there (the sandbox still runs the source).
+   */
+  pool?: GenPool;
 }
 
 /** Stable key of a primitive shape's geometry. */
@@ -29,6 +35,14 @@ export function primitiveKey(shape: PrimitiveShape): string {
 export function createProcgenGeometrySource(opts: ProcgenSourceOptions = {}): GeometrySource {
   const cache = opts.cache ?? new GeneratorCache(256);
   const maxPrimitives = Math.max(1, opts.maxPrimitives ?? 512);
+  const pool = opts.pool;
+  const sandbox = opts.sandbox;
+  const base: GenerateOptions = {
+    cache,
+    ...(sandbox ? { sandbox } : {}),
+    ...(pool ? { builtin: (g, p, seed, job) => pool.builtin(g, p, seed, job) } : opts.builtin ? { builtin: opts.builtin } : {}),
+    ...(pool && sandbox ? { custom: (def, p, seed, job) => pool.custom(sandbox, def, p, seed, job) } : {}),
+  };
   const primitives = new Map<string, KeyedOutput>();
   let fallback: KeyedOutput | undefined;
 
@@ -46,10 +60,10 @@ export function createProcgenGeometrySource(opts: ProcgenSourceOptions = {}): Ge
       return keyed;
     },
 
-    async procedural(shape: ProceduralShape, world: Pick<WorldDoc, 'generators'>): Promise<KeyedOutput> {
+    async procedural(shape: ProceduralShape, world: Pick<WorldDoc, 'generators'>, run?: { priority?: number }): Promise<KeyedOutput> {
       // Same normalization as generate(): equivalent spellings share one GPU geometry.
       const key = `proc|${proceduralOutputKey(shape, world)}`;
-      const output = await generate(shape, world, { cache, ...(opts.sandbox ? { sandbox: opts.sandbox } : {}), ...(opts.builtin ? { builtin: opts.builtin } : {}) });
+      const output = await generate(shape, world, run?.priority !== undefined ? { ...base, priority: run.priority } : base);
       return { key, output };
     },
 

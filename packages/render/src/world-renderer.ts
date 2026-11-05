@@ -120,7 +120,8 @@ import type { PathTraceOptions } from './view/pathtrace';
 import { buildExportScene, exportGltf as exportSceneGltf, type GltfExportOptions, type GltfExportResult } from './view/gltf-export';
 import { PathOverlay } from './view/path-overlay';
 import { postQualityOf, qualityPlan, Refinement, studioAvailable, stillPlan, type QualityPlan, type RenderQuality, type StillPlan } from './gpu/render-quality';
-import { ComputeClient, GeneratorCache, proceduralOutputKey } from '@aether/procgen';
+import { ComputeClient, GeneratorCache, generationLanes, proceduralOutputKey } from '@aether/procgen';
+import { GenPool } from './geometry/gen-pool';
 import { disposeProfileTextures, registerLightSupport, type IesSpotLightCtor } from './sync/lights';
 import { errorMessage, log } from './log';
 import { GameFeel } from './feel/game-feel';
@@ -971,6 +972,8 @@ export class WorldRenderer {
   private readonly generatorCache: GeneratorCache | null;
   /** Worker for built-in generators (null in Node or when disabled). */
   private readonly compute: ComputeClient | null;
+  /** Generation lanes (built-in generators, validation and preparation of sandbox output, the geometry cache). */
+  private readonly genPool: GenPool | null;
   /** Extra pixel-ratio cap from the options (or {@link setPixelRatioCap}). */
   private ratioCap: number;
   private cssWidth = 1;
@@ -1136,12 +1139,15 @@ export class WorldRenderer {
     // Built-in generators run in the compute worker (heavy sculptures never block the page).
     this.compute = !opts.geometrySource && typeof Worker !== 'undefined' && opts.workerGeneration !== false ? new ComputeClient({ idleTimeoutMs: 30_000 }) : null;
     const compute = this.compute;
+    // Half as many trusted lanes as sandbox workers: they validate, prepare and cache, the sandbox does the heavy part.
+    this.genPool = compute ? new GenPool({ lanes: Math.min(4, Math.ceil(generationLanes() / 2)) }) : null;
+    if (this.genPool) (globalThis as { __aetherGenStats?: unknown }).__aetherGenStats = this.genPool.stats;
     const source =
       opts.geometrySource ??
       createProcgenGeometrySource({
         ...(opts.sandbox ? { sandbox: opts.sandbox } : {}),
         ...(this.generatorCache ? { cache: this.generatorCache } : {}),
-        ...(compute ? { builtin: (g: string, p: Record<string, Json>, seed: number) => compute.generate(g, p, seed) } : {}),
+        ...(this.genPool ? { pool: this.genPool } : compute ? { builtin: (g: string, p: Record<string, Json>, seed: number) => compute.generate(g, p, seed) } : {}),
       });
     // Finish textures (architecture) synthesise in the compute worker and redraw when they land.
     this.materials.finishes.configure({
@@ -1928,6 +1934,11 @@ export class WorldRenderer {
     // Counted on the document: the new entities have no scene nodes before `sync.setWorld` (counting nodes, a replacement never held).
     const hold = this.gpu.tier !== 'software' && (prev === null || addedEntities(prev, world, BULK_HOLD_ENTITIES) >= BULK_HOLD_ENTITIES);
     if (hold) this.warming = true;
+    // Build what is seen first first: around the camera after an edit, around the player's start for a new world.
+    const spawn = world.player?.spawn;
+    const cam = this.perspective.position;
+    this.sync.setGenerationFocus(prev && this.framed ? [cam.x, cam.y, cam.z] : spawn ? [spawn[0], spawn[1], spawn[2]] : null);
+    performance.mark('aether:sync-start');
     const done = this.sync.setWorld(world);
     this.fx.setWorld(world);
     this.trackWaterBodies(world);
@@ -6742,6 +6753,7 @@ export class WorldRenderer {
     }
     this.generatorCache?.clear();
     this.compute?.dispose();
+    this.genPool?.dispose();
     this.rig.dispose();
     this.sync.dispose();
     this.lampSlots.dispose();
