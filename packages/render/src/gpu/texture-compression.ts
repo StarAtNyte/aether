@@ -18,6 +18,7 @@ import type { CompressedTexture } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
 import type { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { errorMessage, log } from '../log';
+import { installedTextureCap } from './texture-cap';
 
 /** Where the transcoder is served by default (relative to the page, so published builds in a sub-folder work). */
 export const DEFAULT_TRANSCODER_PATH = 'basis/';
@@ -147,6 +148,11 @@ export class TextureCompression {
     }
     log.debug(`compressed textures on (${supportLabel(support)})`);
     return loader;
+  }
+
+  /** Largest texture edge the renderer uploads (512 on integrated GPUs and in low-memory mode, 0: no cap). */
+  textureCap(): number {
+    return installedTextureCap(this.renderer);
   }
 
   /** Release the transcoder workers. */

@@ -112,6 +112,13 @@ export const WEBLLM_HOSTS: readonly string[] = Object.freeze([
  */
 export const HUB_IMAGE_HOSTS: readonly string[] = Object.freeze(WEBLLM_HOSTS.filter((h) => h.includes('huggingface.co') || h.includes('hf.co')));
 
+/**
+ * Hugging Face's file CDN: a dataset file (`/resolve/<rev>/…`) answers with a redirect to a host under `cdn.hf.co`
+ * (`us.aws.cdn.hf.co`; listed host by host: the policy has no wildcards). The studio streams Amazon Berkeley Objects products from there; the asset
+ * hub's files redirect there too. Published games embed the products they use.
+ */
+export const HF_CDN_HOSTS: readonly string[] = Object.freeze(['https://us.aws.cdn.hf.co']);
+
 /** CDN that serves the library files a lean studio build does not ship (a pinned GitHub commit, see scripts/vite/asset-library.ts). */
 export const LIBRARY_CDN_HOSTS: readonly string[] = Object.freeze(['https://cdn.jsdelivr.net']);
 
@@ -127,14 +134,14 @@ export const CSP_DIRECTIVES = Object.freeze({
   defaultSrc: ["'self'"],
   scriptSrc: ["'self'", "'wasm-unsafe-eval'"],
   workerSrc: ["'self'", 'blob:'],
-  imgSrc: ["'self'", 'data:', 'blob:', ...HUB_IMAGE_HOSTS],
+  imgSrc: ["'self'", 'data:', 'blob:', ...HUB_IMAGE_HOSTS, ...HF_CDN_HOSTS],
   // Exported videos and music previews play from blob: URLs.
   mediaSrc: ["'self'", 'blob:'],
   // blob:/data: so locally imported glTF models (blob URLs, data URIs) can be fetched.
   // Loopback (any port): the visitor's own Aether Bridge (token-paired, see apps/bridge) — the only wildcard.
   // The explicit hosts serve the opt-in on-device model (WebLLM weights and model libraries)
   // and the model APIs a user's own key is sent to (never to Aether's server).
-  connectSrc: ["'self'", 'blob:', 'data:', 'http://127.0.0.1:*', 'http://localhost:*', ...BYOK_API_HOSTS, ...WEBLLM_HOSTS, ...LIBRARY_CDN_HOSTS],
+  connectSrc: ["'self'", 'blob:', 'data:', 'http://127.0.0.1:*', 'http://localhost:*', ...BYOK_API_HOSTS, ...WEBLLM_HOSTS, ...HF_CDN_HOSTS, ...LIBRARY_CDN_HOSTS],
   styleSrc: ["'self'", "'unsafe-inline'"],
   fontSrc: ["'self'", 'data:'],
   objectSrc: ["'none'"],

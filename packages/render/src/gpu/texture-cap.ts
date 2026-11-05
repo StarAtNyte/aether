@@ -78,3 +78,9 @@ export function capTextureSize(renderer: unknown, cap: number): void {
     return update.call(this, t, o);
   };
 }
+
+/** The cap installed on a renderer by {@link capTextureSize} (0: none). Compressed files cannot be shrunk on upload, so loaders pick a lighter file instead. */
+export function installedTextureCap(renderer: unknown): number {
+  const cap = (renderer as { _textures?: { __aetherCap?: number } } | null)?._textures?.__aetherCap;
+  return typeof cap === 'number' && cap > 0 ? cap : 0;
+}

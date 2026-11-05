@@ -8,7 +8,7 @@ import { Box3, Group, Mesh, Sphere, Vector3, type Material, type Object3D, type 
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 import type { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { isAllowedModelUrl, MAX_MODEL_URL_LENGTH } from '@aether/core';
-import { isLibraryRemoteUrl, loadTextureVariants, textureVariantUrl } from '@aether/assets';
+import { aboFileOf, aboLoadUrl, aboOffset, isAboRemoteUrl, isLibraryRemoteUrl, loadTextureVariants, textureVariantUrl } from '@aether/assets';
 import type { TextureCompression } from '../gpu/texture-compression';
 import { errorMessage, log } from '../log';
 import { RefCache } from '../refcache';
@@ -29,8 +29,9 @@ export { MAX_MODEL_URL_LENGTH };
  * world validation (`isAllowedModelUrl` in @aether/core).
  */
 export function isSafeModelUrl(url: string): boolean {
-  // Plus the library CDN of a lean studio build (its base is fixed at build time, see `isLibraryRemoteUrl`).
-  return isAllowedModelUrl(url) || isLibraryRemoteUrl(url);
+  // Plus the library CDN of a lean studio build (its base is fixed at build time, see `isLibraryRemoteUrl`) and the
+  // product files of the Amazon Berkeley Objects pack at its pinned Hugging Face revision (`isAboRemoteUrl`).
+  return isAllowedModelUrl(url) || isLibraryRemoteUrl(url) || isAboRemoteUrl(url);
 }
 
 /** Draw objects and palettes belong to an instance; geometry/material resources belong to the source cache. */
@@ -62,7 +63,48 @@ const libraryVariant = async (url: string): Promise<string | null> => (CHARACTER
 
 interface GltfLike {
   loadAsync(url: string): Promise<{ scene: Object3D; animations: Object3D['animations'] }>;
+  parseAsync(data: ArrayBuffer, path: string): Promise<{ scene: Object3D; animations: Object3D['animations'] }>;
   setKTX2Loader(loader: KTX2Loader): unknown;
+}
+
+/** Cache Storage bucket of Amazon Berkeley Objects files (pinned revision: a URL's bytes never change). */
+export const ABO_CACHE = 'aether-abo-v1';
+const aboInFlight = new Map<string, Promise<ArrayBuffer>>();
+
+/**
+ * Bytes of a product file: from the page's Cache Storage when it has them (a product loads once per browser, not per
+ * session: Hugging Face's redirect is `no-store`), else fetched, kept and shared by concurrent loads of the same file.
+ */
+function fetchAbo(url: string): Promise<ArrayBuffer> {
+  const pending = aboInFlight.get(url);
+  if (pending) return pending;
+  const p = (async (): Promise<ArrayBuffer> => {
+    const cache = typeof caches !== 'undefined' ? await caches.open(ABO_CACHE).catch(() => null) : null;
+    const hit = cache ? await cache.match(url).catch(() => undefined) : undefined;
+    if (hit) return hit.arrayBuffer();
+    const res = await fetch(url, { mode: 'cors', credentials: 'omit' });
+    if (!res.ok) throw new Error(`HTTP ${res.status} for ${url.slice(0, 160)}`);
+    if (cache) await cache.put(url, res.clone()).catch(() => undefined);
+    return res.arrayBuffer();
+  })().finally(() => aboInFlight.delete(url));
+  aboInFlight.set(url, p);
+  return p;
+}
+
+/**
+ * An Amazon Berkeley Objects product file wrapped so its base rests on y = 0, centred on X/Z (the shift comes from the
+ * index, the same for every level, so the levels of one product line up).
+ */
+function normaliseAbo(url: string, scene: Object3D): Object3D {
+  const off = aboOffset(url);
+  if (!off) return scene;
+  const root = new Group();
+  root.name = 'abo-product';
+  scene.position.set(scene.position.x + off[0], scene.position.y + off[1], scene.position.z + off[2]);
+  scene.updateMatrix();
+  root.add(scene);
+  root.animations = scene.animations;
+  return root;
 }
 
 /**
@@ -100,6 +142,25 @@ export function createGltfModelLoader(opts: GltfLoaderOptions = {}): ModelLoader
     async load(url: string): Promise<Object3D> {
       if (!isSafeModelUrl(url)) throw new Error('model url rejected (only same-origin paths, blob:/glTF data: URLs and allowlisted https hosts)');
       const withKtx2 = await compressed();
+      // Amazon Berkeley Objects: KTX2 levels where the transcoder runs (never above the renderer's texture cap), the WebP
+      // copy where it does not.
+      if (aboFileOf(url)) {
+        const parse = async (target: string, loader: GltfLike): Promise<Object3D> => {
+          if (!isSafeModelUrl(target)) throw new Error('model url rejected');
+          const gltf = await loader.parseAsync(await fetchAbo(target), target.slice(0, target.lastIndexOf('/') + 1));
+          gltf.scene.animations = gltf.animations;
+          sharpenObject(gltf.scene);
+          return normaliseAbo(url, gltf.scene);
+        };
+        const webp = aboLoadUrl(url, { ktx2: false, textureCap: 0 }) ?? url;
+        if (!withKtx2) return parse(webp, await base());
+        try {
+          return await parse(aboLoadUrl(url, { ktx2: true, textureCap: opts.compression?.textureCap() ?? 0 }) ?? url, withKtx2);
+        } catch (e) {
+          log.warn(`KTX2 copy of ${url.slice(0, 160)} failed, loading the WebP copy: ${errorMessage(e)}`);
+          return parse(webp, await base());
+        }
+      }
       const twin = withKtx2 ? await variantOf(url).catch(() => null) : null;
       if (withKtx2 && twin && isSafeModelUrl(twin)) {
         try {
