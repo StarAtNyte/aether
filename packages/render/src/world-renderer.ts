@@ -5231,7 +5231,7 @@ export class WorldRenderer {
     this.postShadowSize = this.env.shaftMapSize;
     const gen = ++this.postGen;
     const builtAt = this.postShadowSize;
-    createPostPipeline(this.renderer, this.scene, this.perspective, this.env.bloom, postQualityOf(want) ?? 'standard', { effects: want, sun: this.env.shaftLight ?? this.env.sun, contactLight: this.env.sun, aoScale: this.qualityPlan.moveEffects !== null ? 0.5 : undefined, screenOcclusion: this.qualityPlan.moveEffects !== null, linkNow: (run) => this.preparation.synchronous(() => this.programs.synchronous(run)) })
+    createPostPipeline(this.renderer, this.scene, this.perspective, this.env.bloom, postQualityOf(want) ?? 'standard', { effects: want, sun: this.env.shaftLight ?? this.env.sun, contactLight: this.env.sun, aoScale: this.qualityPlan.moveEffects !== null ? 0.5 : undefined, screenOcclusion: this.qualityPlan.moveEffects !== null && (globalThis as { __AETHER_SCREEN_OCCLUSION?: boolean }).__AETHER_SCREEN_OCCLUSION !== false, linkNow: (run) => this.preparation.synchronous(() => this.programs.synchronous(run)) })
       .then((p) => {
         this.postPending = false;
         if (!p) {
@@ -5298,7 +5298,7 @@ export class WorldRenderer {
     const gen = this.postGen;
     const builtAt = this.env.shaftMapSize;
     this.postShadowSize = builtAt;
-    createPostPipeline(this.renderer, this.scene, this.perspective, this.env.bloom, postQualityOf(other) ?? 'standard', { effects: other, sun: this.env.shaftLight ?? this.env.sun, contactLight: this.env.sun, aoScale: 0.5, screenOcclusion: true, linkNow: (run) => this.preparation.synchronous(() => this.programs.synchronous(run)) })
+    createPostPipeline(this.renderer, this.scene, this.perspective, this.env.bloom, postQualityOf(other) ?? 'standard', { effects: other, sun: this.env.shaftLight ?? this.env.sun, contactLight: this.env.sun, aoScale: 0.5, screenOcclusion: (globalThis as { __AETHER_SCREEN_OCCLUSION?: boolean }).__AETHER_SCREEN_OCCLUSION !== false, linkNow: (run) => this.preparation.synchronous(() => this.programs.synchronous(run)) })
       .then((p) => {
         this.postPending = false;
         if (!p) return;
