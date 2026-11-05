@@ -123,8 +123,19 @@ export function walkClipFor(mood: CharacterMood): string | null {
   }
 }
 
-/** Gait ladder: clips ordered by captured speed. */
-const LADDER: readonly string[] = ['walk_slow', 'walk', 'walk_fast', 'jog', 'run', 'sprint'];
+/**
+ * Gait ladder: clips ordered by captured speed. `walk_fast` is left out (its stride is within 7 % of `walk`'s, so the two
+ * only traded places at a walk); an angry mood still asks for it by name.
+ */
+const LADDER: readonly string[] = ['walk_slow', 'walk', 'jog', 'run', 'sprint'];
+/** Shortest stay on a gait (s) before another is picked, unless the speed is far from it. */
+const GAIT_DWELL = 0.3;
+/** Log-speed error past which a gait is left at once, dwell or not. */
+const GAIT_FAR = 0.45;
+/** Error multiplier of the sprint clip while not sprinting: an all-out sprint is shown only for a sprint (or a speed only it fits). */
+const SPRINT_UNASKED = 1.7;
+/** Gaits a crouched body walks with (the rig bends the legs and lowers the hips over them), slowest first. */
+const CROUCH_GAITS: readonly string[] = ['walk_slow', 'walk'];
 
 /** The ordered locomotion clips that exist in a motion set with their strides. */
 export function gaitLadder(table: ReadonlyMap<string, ClipInfo>): Array<{ clip: string; stride: number }> {
@@ -166,6 +177,7 @@ export class LocomotionMachine {
   private stateTime = 0;
   private airTime = 0;
   private gait = -1;
+  private gaitTime = 0;
   private oneShot: { clip: string; left: number; state: State } | null = null;
   private talkIndex = 0;
   private talkLeft = 0;
@@ -216,26 +228,48 @@ export class LocomotionMachine {
         return { clip: preferred, stride: c.stride };
       }
     }
+    const errOf = (g: { clip: string; stride: number }): number => Math.abs(Math.log(Math.max(0.05, speed) / g.stride));
+    const held = this.gait >= 0 ? this.ladder[this.gait] : undefined;
+    // A gait just picked is kept a moment: while the body speeds up or slows down, clips do not flicker through the ladder.
+    if (held && this.gaitTime < GAIT_DWELL && errOf(held) < GAIT_FAR && !(sprinting && held.clip !== 'sprint' && this.has('sprint'))) return held;
     let best = 0;
     let bestErr = Infinity;
     for (let i = 0; i < this.ladder.length; i++) {
       const g = this.ladder[i] as { clip: string; stride: number };
-      let err = Math.abs(Math.log(Math.max(0.05, speed) / g.stride));
+      let err = errOf(g);
       if (i === this.gait) err *= 0.7;
-      if (sprinting && g.clip === 'sprint') err *= 0.5;
+      if (g.clip === 'sprint') err *= sprinting ? 0.5 : SPRINT_UNASKED;
       if (err < bestErr) {
         bestErr = err;
         best = i;
       }
     }
+    if (best !== this.gait) this.gaitTime = 0;
     this.gait = best;
     return this.ladder[best] as { clip: string; stride: number };
+  }
+
+  /** The walk a crouched body uses at a speed, or null when the set has none (then a crouch is not shown). */
+  private crouchGait(speed: number): { clip: string; stride: number } | null {
+    let best: { clip: string; stride: number } | null = null;
+    let bestErr = Infinity;
+    for (const name of CROUCH_GAITS) {
+      const c = this.table.get(name);
+      if (!c || c.stride <= 0.1) continue;
+      const err = Math.abs(Math.log(Math.max(0.05, speed) / c.stride)) * (this.clip === name ? 0.7 : 1);
+      if (err < bestErr) {
+        bestErr = err;
+        best = { clip: name, stride: c.stride };
+      }
+    }
+    return best;
   }
 
   /** Advance by `dt` seconds. */
   update(dt: number, input: ActorInput): Plan {
     const step = Number.isFinite(dt) && dt > 0 ? Math.min(dt, 0.25) : 0;
     this.stateTime += step;
+    this.gaitTime += step;
     const prevState = this.state;
     let clip = this.clip;
     let timeScale = 1;
@@ -331,12 +365,15 @@ export class LocomotionMachine {
 
     // Locomotion.
     if (moving) {
-      this.state = input.crouching && this.has('crouch_walk') ? 'crouch' : 'loco';
-      if (this.state === 'crouch') {
-        const c = this.table.get('crouch_walk') as ClipInfo;
-        timeScale = clamp(input.speed / Math.max(0.3, c.stride), RATE_MIN, RATE_MAX);
-        return this.finish('crouch_walk', timeScale, true, 0.2, prevState);
+      // Crouched: a walk (slow or normal by speed) under a crouch the rig lays over it (hips down, knees bent, a lean),
+      // so standing, crouching and crouch walking share one skeleton pose family and blend without a pop.
+      const cg = input.crouching ? this.crouchGait(input.speed) : null;
+      if (cg) {
+        this.state = 'crouch';
+        timeScale = clamp(input.speed / cg.stride, RATE_MIN, RATE_MAX);
+        return this.finish(cg.clip, timeScale, true, 0.25, prevState);
       }
+      this.state = 'loco';
       const g = this.pickGait(input.speed, input.mood, input.sprinting);
       if (g) {
         timeScale = clamp(input.speed / g.stride, RATE_MIN, RATE_MAX);
@@ -345,10 +382,10 @@ export class LocomotionMachine {
     }
     this.gait = -1;
 
-    // Standing: crouch, talk, or an idle that matches the mood.
-    if (input.crouching && this.has('crouch')) {
+    // Standing: crouch (the plain idle under the rig's crouch), talk, or an idle that matches the mood.
+    if (input.crouching && this.crouchGait(1) !== null) {
       this.state = 'crouch';
-      return this.finish('crouch', 1, true, 0.25, prevState);
+      return this.finish(this.has('idle') ? 'idle' : idleClipFor(input.mood), 1, true, 0.3, prevState);
     }
     if (input.talking || input.hint === 'talk') {
       this.state = 'talk';

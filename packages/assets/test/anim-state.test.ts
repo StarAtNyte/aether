@@ -57,3 +57,53 @@ describe('sitting states', () => {
     expect(m.update(1 / 60, input).state).toBe('loco');
   });
 });
+
+describe('gaits and the crouch', () => {
+  it('shows a run at a run pace and the sprint clip only for a sprint', () => {
+    const m = new LocomotionMachine(clipTable('male'));
+    const input = base();
+    input.speed = 5.6 * 0.7;
+    run(m, input, 1);
+    expect(m.update(1 / 60, input).clip).toBe('run');
+    // The same speed with the sprint asked for, and a sprint's speed.
+    input.sprinting = true;
+    input.speed = 5.6;
+    run(m, input, 1);
+    expect(m.update(1 / 60, input).clip).toBe('sprint');
+  });
+
+  it('does not flicker through the ladder while speeding up', () => {
+    const m = new LocomotionMachine(clipTable('male'));
+    const input = base();
+    const clips: string[] = [];
+    // About 0.15 s from a stand to a run, as the player's controller does.
+    for (let i = 0; i < 60; i++) {
+      input.speed = Math.min(3.9, i * (3.9 / 9));
+      const plan = m.update(1 / 60, input);
+      if (clips[clips.length - 1] !== plan.clip) clips.push(plan.clip);
+    }
+    expect(clips[clips.length - 1]).toBe('run');
+    // No clip comes back once left.
+    expect(new Set(clips).size).toBe(clips.length);
+    expect(clips).not.toContain('walk_fast');
+  });
+
+  it('crouches over the standing idle and walk (the rig bends them), never the squat clips', () => {
+    const m = new LocomotionMachine(clipTable('male'));
+    const input = base();
+    input.crouching = true;
+    run(m, input, 0.5);
+    let plan = m.update(1 / 60, input);
+    expect(plan.state).toBe('crouch');
+    expect(plan.clip).toBe('idle');
+    input.speed = 1.6;
+    run(m, input, 0.5);
+    plan = m.update(1 / 60, input);
+    expect(plan.state).toBe('crouch');
+    expect(plan.clip).toBe('walk');
+    expect(plan.timeScale).toBeCloseTo(1.6 / (clipTable('male').get('walk')?.stride ?? 1), 2);
+    input.crouching = false;
+    plan = m.update(1 / 60, input);
+    expect(plan.state).toBe('loco');
+  });
+});
