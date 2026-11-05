@@ -96,6 +96,7 @@
     "assets:hf": "tsx scripts/assets/hf-dataset.ts",
     "assets:simready-setup": "tsx scripts/assets/simready-setup.ts",
     "assets:simready-e2e": "tsx scripts/assets/simready-e2e.ts",
+    "assets:abo": "tsx scripts/assets/abo-index.ts",
     "assets:build": "tsx scripts/assets/build.ts",
     "assets:thumbs": "tsx scripts/assets/thumbs.ts",
     "assets:ktx2": "tsx scripts/assets/ktx2.ts",

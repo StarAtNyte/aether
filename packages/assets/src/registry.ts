@@ -6,6 +6,7 @@
  * point that may meet an `asset` shape awaits {@link loadCatalog} first.
  */
 import { Catalog, type CatalogEntry } from './schema';
+import { aboEntry, aboUrl, isAboAssetId, isAboPath, loadAboIndex } from './abo';
 
 let current: Catalog | null = null;
 let byId = new Map<string, CatalogEntry>();
@@ -61,9 +62,9 @@ export function getCatalog(): Catalog | null {
   return current;
 }
 
-/** Entry by id from the installed catalog (null when unknown or not loaded). */
+/** Entry by id from the installed catalog, or a streamed Amazon Berkeley Objects product (null when unknown or not loaded). */
 export function catalogEntry(id: string): CatalogEntry | null {
-  return byId.get(id) ?? null;
+  return byId.get(id) ?? (isAboAssetId(id) ? aboEntry(id) : null);
 }
 
 /**
@@ -72,19 +73,27 @@ export function catalogEntry(id: string): CatalogEntry | null {
  */
 export function loadCatalog(): Promise<Catalog> {
   if (current) return Promise.resolve(current);
+  // The product index of the streamed Amazon Berkeley Objects pack loads alongside (never fails; see abo.ts).
+  const abo = loadAboIndex();
   loading ??= import('../../../assets/catalog.json')
     .then(async (m: { default: unknown }) => {
+      await abo;
       const c = Catalog.parse(m.default);
       // The lean build's index first: once the catalog is installed, synchronous readers build URLs from it.
       await loadRemote(c.base);
       return install(c);
     })
-    .catch(() => install({ version: 1, base: '/assets/lib/', packs: [], entries: [] }));
+    .catch(async () => {
+      await abo;
+      return install({ version: 1, base: '/assets/lib/', packs: [], entries: [] });
+    });
   return loading;
 }
 
 /** Public URL of a library file (`m/sofa.0123abcd.glb` → `/assets/lib/m/sofa.0123abcd.glb`), or its CDN URL when a lean build does not ship it. */
 export function libraryUrl(path: string, catalog: Pick<Catalog, 'base'> | null = current): string {
+  // Amazon Berkeley Objects files keep the pack's layout and stream from its own base.
+  if (isAboPath(path)) return aboUrl(path);
   if (remote && !remote.shipped.has(path)) return `${remote.base}${path}`;
   return `${catalog?.base ?? '/assets/lib/'}${path}`;
 }

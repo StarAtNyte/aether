@@ -182,6 +182,18 @@ export function resolveType(catalog: Catalog, word: string): string | null {
   return known.has(sing) ? sing : null;
 }
 
+/** A phrase that is itself a type or a synonym of one ("coffee table", "end table"), or null. */
+function resolvePhrase(catalog: Catalog, phrase: string): string | null {
+  const known = knownTypes(catalog);
+  const w = phrase.trim().toLowerCase().replace(/\s+/g, '-');
+  if (known.has(w)) return w;
+  for (const alt of synonymsOf(phrase.trim().toLowerCase())) {
+    const a = alt.replace(/\s+/g, '-');
+    if (known.has(a)) return a;
+  }
+  return null;
+}
+
 function hexToRgb(hex: string): [number, number, number] | null {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
   if (!m) return null;
@@ -217,7 +229,8 @@ export function findModels(catalog: Catalog, q: ModelQuery): ModelHit[] {
     // The type word is the last word that names one ("green velvet armchair").
     const words = tokenize(rest);
     for (let i = words.length - 1; i >= 0 && types.size === 0; i--) {
-      const two = i > 0 ? resolveType(catalog, `${words[i - 1]} ${words[i]}`) : null;
+      // A two-word type only as a phrase ("coffee table"): "table lamp" is a lamp, not a table.
+      const two = i > 0 ? resolvePhrase(catalog, `${words[i - 1]} ${words[i]}`) : null;
       const one = resolveType(catalog, words[i]!);
       const t = two ?? one;
       if (t) {

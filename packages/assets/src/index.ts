@@ -63,7 +63,7 @@ export {
   type TextureSetFiles,
   type TextureSetEntry,
 } from './texture-sets';
-export { creditsFor, creditsText, textureCredits, worldAssetIds, type Credit, type TextureCredit } from './credits';
+export { attributionLines, creditsFor, creditsText, textureCredits, worldAssetIds, type Credit, type TextureCredit } from './credits';
 export { catalogSummary } from './summary';
 export { validateGltf, writeGlb, sanitizeName, DEFAULT_GLTF_LIMITS, SUPPORTED_GLTF_EXTENSIONS, type GltfLimits, type GltfReport, type GltfResult } from './import/glb';
 export { validateImage, validateHdr, DEFAULT_IMAGE_LIMITS, DEFAULT_HDR_LIMITS, type ImageInfo, type ImageFormat, type ImageLimits, type ImageResult, type HdrResult } from './import/image';
@@ -100,3 +100,37 @@ export {
   type FetchLike,
 } from './simready';
 export * from './imported';
+export {
+  ABO_REPO,
+  ABO_REVISION,
+  ABO_REMOTE_BASE,
+  ABO_PAGE,
+  ABO_CREDIT,
+  ABO_PACK,
+  ABO_PACK_ID,
+  ABO_TEXTURE_PX,
+  AboIndex,
+  AboRow,
+  aboAssetId,
+  isAboAssetId,
+  aboPath,
+  parseAboPath,
+  isAboPath,
+  setAboBase,
+  aboBase,
+  aboUrl,
+  aboFileOf,
+  isAboRemoteUrl,
+  setAboIndex,
+  getAboIndex,
+  loadAboIndex,
+  aboRow,
+  aboEntry,
+  aboEntries,
+  aboCatalog,
+  aboOffset,
+  aboLoadUrl,
+  aboWeight,
+  findAboModels,
+  describeAboModel,
+} from './abo';
