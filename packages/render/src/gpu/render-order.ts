@@ -14,16 +14,31 @@ export interface SortItem {
   groupOrder: number;
   renderOrder: number;
   z: number;
-  material: { alphaTest?: number };
+  material: { alphaTest?: number; id?: number; type?: string };
 }
 
-/** `Array.sort` comparator: group, render order, alpha-tested last, then front to back, then creation order. */
+/**
+ * Group opaque draws by material (its class, then the material itself) before depth: consecutive draws of one material
+ * share a program and its bindings, so a town's view switches program a few dozen times instead of once every other
+ * draw. The draw submission is the frame's bottleneck on integrated GPUs, not overdraw (docs/ARCHITECTURE-STREAMING.md
+ * 1.5). Opt out with `globalThis.__AETHER_SORT_BY_MATERIAL = false` (front to back only).
+ */
+const byMaterial = (globalThis as { __AETHER_SORT_BY_MATERIAL?: boolean }).__AETHER_SORT_BY_MATERIAL !== false;
+
+/** `Array.sort` comparator: group, render order, alpha-tested last, material, then front to back, then creation order. */
 export function opaqueSort(a: SortItem, b: SortItem): number {
   if (a.groupOrder !== b.groupOrder) return a.groupOrder - b.groupOrder;
   if (a.renderOrder !== b.renderOrder) return a.renderOrder - b.renderOrder;
   const ta = (a.material.alphaTest ?? 0) > 0 ? 1 : 0;
   const tb = (b.material.alphaTest ?? 0) > 0 ? 1 : 0;
   if (ta !== tb) return ta - tb;
+  if (byMaterial) {
+    const ma = a.material, mb = b.material;
+    if (ma !== mb && ma.id !== undefined && mb.id !== undefined) {
+      if (ma.type !== mb.type) return (ma.type ?? '') < (mb.type ?? '') ? -1 : 1;
+      return ma.id - mb.id;
+    }
+  }
   if (a.z !== b.z) return a.z - b.z;
   return a.id - b.id;
 }
