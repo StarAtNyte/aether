@@ -228,7 +228,10 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
       if (effects.ssr) attachments['material'] = vec4(metalness, roughness, 0, 1);
       prePass.setMRT(mrt(attachments as Parameters<typeof mrt>[0]));
       const normalTexture = prePass.getTexture('output');
-      normalTexture.type = UnsignedByteType;
+      // The normals stay in the pass's own half-float type: set to 8-bit, the target came back to half float after its
+      // first frames, and three keys render state by the target's type, so every mesh was built a second time for the
+      // pre-pass (830 objects on a hillside town). Four more bytes a pixel for one target.
+      void normalTexture;
       if (effects.ssr) {
         // Reflections consume only metalness and roughness; preserve their 8-bit precision without unused BA channels.
         const materialTexture = prePass.getTexture('material');
