@@ -14,7 +14,7 @@
  * The AO, reflections, shafts, DOF and TAA read a half-resolution-capable normal / velocity / material
  * pre-pass of the opaque scene, so the effects only cost what they are switched on for.
  */
-import type { Camera, DirectionalLight, PerspectiveCamera, Scene, ToneMapping } from 'three';
+import type { Camera, DirectionalLight, PerspectiveCamera, RenderTarget, Scene, ToneMapping } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
 import { errorMessage, log } from '../log';
 import { ABERRATION_STRENGTH, GRAIN_AMPLITUDE, effectsKey, needsPrePass, type PostEffects } from './finishing';
@@ -62,6 +62,12 @@ export interface PostPipeline {
   setSceneScale(scale: number, width: number, height: number): void;
   /** True when {@link setSceneScale} has an effect. */
   readonly sceneScalable: boolean;
+  /**
+   * The scene pass's target, for a compile walk to prepare the very render objects the pass draws (a compile to the canvas
+   * builds a set that is never drawn while the chain runs). Null when the pass changes the materials' context (occlusion in
+   * the materials): a compile without that context would not match either.
+   */
+  readonly compileTarget: RenderTarget | null;
   setBloom(strength: number): void;
   /** Apply a colour grade (uniform updates only; no shader rebuild). */
   setGrade(grade: Grade): void;
@@ -445,6 +451,7 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
         uSharp.value = k >= 0.98 || variant === 'bilinear' ? 0 : SCENE_SHARPEN;
         upsampler?.setScale(k, Math.max(1, Math.floor(width * k)), Math.max(1, Math.floor(height * k)), width, height);
       },
+      get compileTarget() { return scenePass.contextNode === null ? (scenePass as unknown as { renderTarget: RenderTarget }).renderTarget : null; },
       quality: prepass ? 'studio' : 'standard',
       agxToneMapping: agxLook?.toneMapping ?? null,
       effects,

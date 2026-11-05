@@ -1363,7 +1363,7 @@ export class WorldRenderer {
         turn(i);
         const recull = this.uncullForCompile();
         try {
-          compiles.push(this.renderer.compileAsync(this.scene, cam, this.scene));
+          compiles.push(this.compileInScenePass(() => this.renderer.compileAsync(this.scene, cam, this.scene)));
         } finally {
           recull();
         }
@@ -2005,6 +2005,26 @@ export class WorldRenderer {
   }
 
   /**
+   * Run a compile walk (its synchronous part) against the scene pass's target when a post chain draws: the render objects
+   * and programs it prepares are then the ones the chain draws, not a canvas set that is never used (190 objects on a small
+   * outpost, a third of a hillside town's preparation).
+   */
+  private compileInScenePass<T>(compile: () => T): T {
+    const target = this.post?.compileTarget ?? null;
+    if (!target || (globalThis as { __AETHER_COMPILE_TARGET?: boolean }).__AETHER_COMPILE_TARGET === false) return compile();
+    const r = this.renderer as unknown as { getRenderTarget(): RenderTarget | null; setRenderTarget(t: RenderTarget | null): void; getMRT(): unknown; setMRT(m: unknown): void };
+    const target0 = r.getRenderTarget(), mrt0 = r.getMRT();
+    r.setRenderTarget(target);
+    r.setMRT(null);
+    try {
+      return compile();
+    } finally {
+      r.setRenderTarget(target0);
+      r.setMRT(mrt0);
+    }
+  }
+
+  /**
    * Put meshes this renderer left undrawn for distance (far room contents, specks) back on the drawn layer for the
    * duration of a compile gather, so their programs link with the rest instead of on the frame they come back into view
    * (fifteen synchronous links, a 3-second frame on an integrated GPU). Returns the restore.
@@ -2360,7 +2380,7 @@ export class WorldRenderer {
     };
     const recull = this.uncullForCompile();
     try {
-      const done = this.renderer.compileAsync(this.scene, this.perspective, this.scene);
+      const done = this.compileInScenePass(() => this.renderer.compileAsync(this.scene, this.perspective, this.scene));
       recull();
       restore();
       await this.bounded(done, boundMs);
