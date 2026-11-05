@@ -189,7 +189,7 @@ about 1.2 GB (JS heap 0.5 GB, texture sources 226 MB, geometry 115 MB, workers).
   `aether:bake-wait`, `aether:wait-<stage>`, `aether:fully-loaded`, `aether:load-timeout`.
 - **Switches** (set on `globalThis` before the studio starts): `__AETHER_SWEEP`, `__AETHER_SWEEP_MOTION`,
   `__AETHER_SHADER_RELEASE`, `__AETHER_PIPELINE_RELEASE`, `__AETHER_PASS_FIRST`, `__AETHER_COMPILE_TARGET`, `__AETHER_FULL_WARMUP` (opt-in),
-  `__AETHER_MATRIX_CHECK`.
+  `__AETHER_MATRIX_CHECK`, `__AETHER_CELL_SHADOWS`, `__AETHER_CELL_VIRTUAL`, `__AETHER_SORT_BY_MATERIAL` (all on by default), `__AETHER_MERGE_VIRTUAL_PARTS` (opt-in).
 
 ## Picture stability and sharpness (5 November 2026)
 
@@ -311,3 +311,54 @@ submission (40–100 ms on Lisbon on this machine; stage 4's per-cell batches). 
 bindings (stage 2), compile-walk uploads (single `bufferData` calls of 250–1,100 ms, mostly waiting on the GPU process), the
 texture cap's redraw (130–180 ms tasks), scatter field mounts (LOD chains and placements, 300 ms). Not moved yet: the texture cap
 redraw (an `ImageBitmap` would change the upload orientation of `flipY` textures) and the scatter field mount.
+
+## Per-cell batches (6 November 2026)
+
+Stage 4a of [ARCHITECTURE-STREAMING.md](ARCHITECTURE-STREAMING.md): the World Partition grid and static batches per cell. Streaming
+(load and unload of cells) is stage 4b and uses the same grid.
+
+- **Grid** (`streaming/cell-grid.ts`): base cell 16 / 32 / 64 / 128 m for a world under 64 m / 256 m / 1.5 km / larger, levels 1
+  and 2 of 2x2 and 4x4 cells, a persistent layer for anything bigger than a level-2 cell. `SceneSync` fixes the grid from
+  the top-level entities when a world is first set (Lisbon Hills: 64 m). `CellIndex` buckets entities and re-buckets one
+  entity at a time.
+- **Shadow batches** (`sync/cell-shadow-batches.ts`): the sun's depth pass draws every caster with one override material,
+  so only geometry and the cast side separate casters there. Static plain casters (no behaviours, static or no body, no
+  alpha test, no vertex displacement) of one level-1 cell and side are one positions-only mesh on layer 9, which only the
+  cached sun map's camera enables; the shadow pass skips the batched meshes for that camera (cascades and point lights
+  draw them as before). Virtual-geometry members cast with a fixed cut of their DAG at 0.1 m error. A batch takes over its
+  members only after it has drawn once (its pipeline is ready). A member that moves, changes, is hidden, removed or
+  selected is evicted at once (its triangles become degenerate, a ranged index upload) and casts by itself; its cell is
+  rebuilt after 400 ms without change, under the frame budget. Each batch keeps member triangle ranges and entity ids
+  (`entityAt`); members stay in the scene graph, so picking and selection never see a batch.
+- **Virtual view batches** (`virtual/virtual-cell-batch.ts`): virtual stand-ins of one level-0 cell and material are one
+  mesh over their vertices merged into batch space; every member still selects its own cut, packed at its vertex offset.
+  Only materials without node slots join (per-object tones and object-space patterns read the model matrix). A member
+  whose sun shadow comes from a ready shadow batch is frustum- and back-face-culled in its view cut.
+- **Draw order**: opaque draws are grouped by material class and material before depth (`gpu/render-order.ts`).
+- **Copies** merge per grid cell (`StaticMerges.copyCell`, 64 m on Lisbon, was 32). Merging the non-virtual parts of
+  entities with virtual parts was tried and left opt-in (`__AETHER_MERGE_VIRTUAL_PARTS`): merged per cell those parts are no
+  longer culled one by one or as sub-pixel specks, and the orbit was slower on Intel.
+- Not done: building the batches in a worker. A positions-only merge copies about as much as it computes, so moving the
+  source arrays to a worker would cost what it saves; builds are sliced per cell on the main thread instead.
+
+Measured with `scripts/arch-probe.ts` (Lisbon Hills, `GEN_GPU=intel`, low tier, shared office PC, niced, 6 GB scope; resolution
+held at 0.5 during the 20 s orbit with `--scale=0.5`, since adaptive resolution otherwise spends the saving on pixels):
+
+| Lisbon Hills | Before (`d9d4dab1`) | After |
+|---|---|---|
+| Draws, opening view: view + shadow pass | 719 + 870 | 700 + 151 (10 shadow batches) |
+| Draws, heaviest heading of the orbit | 1,082 + 865 | 1,083 + 154 |
+| Draws per frame, median / p95 | 519 / 1,464 | 459 / 1,038 |
+| `useProgram` per frame, median / p95 | 228 / 545 | 53 / 102 |
+| Uniform-buffer writes per orbit frame, median | 982 | 971 |
+| Orbit, second visit: p50 / p95 / p99 / max | 16.7 / 33.4 / 66.6 / 233 ms | 16.8 / 33.4 / 50.1 / 283 ms |
+| Orbit, cold: p50 / p95 / p99 | 16.7 / 33.4 / 50 ms | 16.8 / 49.9 / 66.7 ms |
+
+The shadow pass is cut 5.7x and program switches 4-5x; the view pass barely moves. It holds 188 distinct materials at the
+opening view (225 at the heaviest heading; 129 and 146 if colour alone did not count), and a draw per (64 m cell, material)
+would still be 350-470 draws: the view pass needs fewer materials (stage 2, texture arrays) more than more merging. The
+uniform-buffer writes do not follow the draws: a frame drawn with the camera still makes only 20-30, so the writes of a
+moving frame are the camera-dependent bindings, not per-batch state. Frame pacing is within this machine's run-to-run
+noise; the frames over 33 ms are mostly ones with few draws (median 130 against 400 for the fast frames), waiting on the
+GPU process or a node build, not on submission. Hero shots of Lisbon Hills match the old build within run-to-run noise
+(mean pixel difference to a second run of the old build 0.2-2.4, the old build against itself 1.0-10.1).
