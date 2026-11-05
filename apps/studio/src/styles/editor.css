@@ -1133,7 +1133,25 @@
   position: absolute;
   inset: 0;
   border-radius: 0;
-  opacity: 0.6;
+  /* Opaque: the canvas behind is drawing hidden headings and preparing (slow, uneven frames) until the world is ready. */
+  background-color: var(--surface);
+}
+
+.vp-loading.is-leaving {
+  pointer-events: none;
+  animation: vp-loading-out 320ms var(--ease, ease-out) forwards;
+}
+
+@keyframes vp-loading-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vp-loading.is-leaving {
+    animation-duration: 1ms;
+  }
 }
 
 .vp-loading__content {

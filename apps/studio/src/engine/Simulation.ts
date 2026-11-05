@@ -52,6 +52,10 @@ import { footstepEffect, landingIntensity } from './feel';
 /** Longest wait for content to finish materialising before a thumbnail (ms). */
 const THUMBNAIL_SETTLE_MS = 6000;
 /** How long the world must stay free of pending work before it counts as fully loaded (ms). */
+/** Frames at the running rate (each under {@link SETTLE_FRAME_MS}) drawn behind the load screen before it lifts, and the longest wait for them. */
+const SETTLE_FRAMES = 4;
+const SETTLE_FRAME_MS = 70;
+const SETTLE_FRAMES_MAX_MS = 4000;
 const READY_STABLE_MS = 600;
 /**
  * Quiet time (no input, nothing animating) a thumbnail waits for: reading
@@ -495,6 +499,17 @@ export class Simulation {
       await this.loadFully(maxMs, onStage);
     } finally {
       this.renderer.setLoading(false);
+    }
+    // The first frames after loading are the slow ones (the GPU catches up with what was just prepared, 0.3-0.5 s on an
+    // integrated GPU): they are drawn behind the load screen too, so the world appears at its running frame rate.
+    const until = performance.now() + SETTLE_FRAMES_MAX_MS;
+    let last = performance.now();
+    let smooth = 0;
+    while (!this.disposed && performance.now() < until && smooth < SETTLE_FRAMES) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      const t = performance.now();
+      smooth = t - last < SETTLE_FRAME_MS ? smooth + 1 : 0;
+      last = t;
     }
   }
 

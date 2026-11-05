@@ -294,6 +294,9 @@ const ViewOverlays = memo(function ViewOverlays({ playing }: { playing: boolean 
   );
 });
 
+/** Fade-out of the load screen (ms; matches .vp-loading.is-leaving). */
+const LOAD_FADE_MS = 320;
+
 /** The viewport. */
 export const Viewport = memo(function Viewport(): ReactElement {
   const studio = useStudio();
@@ -302,6 +305,16 @@ export const Viewport = memo(function Viewport(): ReactElement {
   const fatal = useUI((s) => s.fatal);
   const mode = useUI((s) => s.mode);
   const [dropping, setDropping] = useState(false);
+  // The load screen covers the canvas while the world prepares, then fades out over the finished picture.
+  const [lastLoading, setLastLoading] = useState<string | null>(null);
+  useEffect(() => {
+    if (loading) {
+      setLastLoading(loading);
+      return;
+    }
+    const t = setTimeout(() => setLastLoading(null), LOAD_FADE_MS);
+    return () => clearTimeout(t);
+  }, [loading]);
   // A new epoch (context-loss recovery, backend switch) remounts the canvas: a lost context is never reused.
   const epoch = useUI((s) => s.rendererEpoch);
   const playing = mode === 'play';
@@ -458,7 +471,7 @@ export const Viewport = memo(function Viewport(): ReactElement {
           {!viewer && <ToolDock />}
         </div>
       )}
-      {loading && !fatal && <ViewportLoading text={loading} />}
+      {(loading || lastLoading) && !fatal && <ViewportLoading text={loading ?? lastLoading ?? ''} leaving={!loading} />}
       {fatal && (
         <div className="vp-fatal" role="alert">
           <span className="vp-fatal__icon">

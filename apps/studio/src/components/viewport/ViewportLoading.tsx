@@ -2,12 +2,12 @@
 import type { ReactElement } from 'react';
 import { LOAD_STEPS, loadProgress, useLoadPoster } from '../../lib/loadPoster';
 
-export function ViewportLoading({ text, poster }: { text: string; poster?: string | null }): ReactElement {
+export function ViewportLoading({ text, poster, leaving = false }: { text: string; poster?: string | null; leaving?: boolean }): ReactElement {
   const shared = useLoadPoster();
   const img = poster === undefined ? shared : poster;
   const { step, fraction } = loadProgress(text);
   return (
-    <div className="vp-loading" role="status" aria-live="polite" data-step={step}>
+    <div className={`vp-loading${leaving ? ' is-leaving' : ''}`} role="status" aria-live="polite" data-step={step}>
       <span className="vp-loading__surface skeleton" aria-hidden="true" />
       {img ? <img className="vp-loading__poster" src={img} alt="" decoding="async" fetchPriority="high" /> : null}
       <span className="vp-loading__content">
