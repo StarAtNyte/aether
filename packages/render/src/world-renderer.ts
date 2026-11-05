@@ -1934,10 +1934,11 @@ export class WorldRenderer {
     // Counted on the document: the new entities have no scene nodes before `sync.setWorld` (counting nodes, a replacement never held).
     const hold = this.gpu.tier !== 'software' && (prev === null || addedEntities(prev, world, BULK_HOLD_ENTITIES) >= BULK_HOLD_ENTITIES);
     if (hold) this.warming = true;
-    // Build what is seen first first: around the camera after an edit, around the player's start for a new world.
-    const spawn = world.player?.spawn;
+    // Build what is seen first first: around the camera after an edit; for a new world around its opening view, else the
+    // player's start.
+    const first = world.opening?.position ?? world.player?.spawn;
     const cam = this.perspective.position;
-    this.sync.setGenerationFocus(prev && this.framed ? [cam.x, cam.y, cam.z] : spawn ? [spawn[0], spawn[1], spawn[2]] : null);
+    this.sync.setGenerationFocus(prev && this.framed ? [cam.x, cam.y, cam.z] : first ? [first[0], first[1], first[2]] : null);
     performance.mark('aether:sync-start');
     const done = this.sync.setWorld(world);
     this.fx.setWorld(world);
