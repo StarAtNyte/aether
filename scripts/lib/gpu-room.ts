@@ -56,6 +56,8 @@ export class GpuRoom {
       // 35 s, and the plain-material step it takes then would turn every still after it flat. Give the watch the time the job needs.
       await ctx.addInitScript({ content: 'globalThis.__aetherWatchdog = { firstFrameMs: 900000, stepFrameMs: 900000, giveUpMs: 900000 };' });
       if (process.env['GEN_GPU'] === 'intel') await ctx.addInitScript({ content: 'delete Navigator.prototype.gpu; try { delete navigator.gpu; } catch {}' });
+      // AETHER_PAGE_GLOBALS='{"__AETHER_SLICED_UPLOAD":false}': engine switches set before the studio starts (A/B runs).
+      if (process.env['AETHER_PAGE_GLOBALS']) await ctx.addInitScript({ content: `Object.assign(globalThis, ${JSON.stringify(JSON.parse(process.env['AETHER_PAGE_GLOBALS']))});` });
       const page = await ctx.newPage();
       page.on('pageerror', (e) => log(`  pageerror: ${e.message.slice(0, 200)}`));
       page.on('console', (m) => {
