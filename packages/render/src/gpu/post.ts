@@ -162,6 +162,12 @@ export interface PostOptions {
    * the programs of a world (306 against 157 on a terrace town), with their memory and a link on the first turn.
    */
   screenOcclusion?: boolean;
+  /**
+   * Runs the effect passes (after the scene passes) with their programs linked on the spot. The passes are a handful of
+   * small full-screen programs; drawn while still linking they were skipped, and the first frame of a chain (the first
+   * turn of the camera) composited empty targets: a black or orange flash.
+   */
+  linkNow?: (run: () => void) => void;
 }
 
 /** Share of the occlusion and of the contact shadows kept when they multiply the composite (see PostOptions.screenOcclusion). */
@@ -356,19 +362,34 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
       disposables.push(ssrPass);
     }
     // Sun shafts ray-marched through the sun's shadow map, blended depth-aware (no halos on edges).
-    if (sun && godMod && blendMod && prePassDepth) {
-      const shafts = godMod.godrays(prePassDepth, camera, sun);
+    // Without a pre-pass (the motion phase of a split chain) the shafts march the scene pass's own depth: the haze is most
+    // of a golden-hour picture's tone, and dropping it while the camera moved made every start and stop of the view a
+    // visible jump between a warm and a cold picture.
+    const shaftDepth = prePassDepth ?? (sun ? scenePass.getTextureNode('depth') : null);
+    /** The shafts pass, run in order with the other passes (see render). */
+    let shaftsPass: unknown = null;
+    if (sun && godMod && blendMod && shaftDepth) {
+      const shafts = godMod.godrays(shaftDepth, camera, sun);
+      shaftsPass = shafts;
       shafts.raymarchSteps.value = SHAFT_TUNING.steps;
       shafts.density.value = SHAFT_TUNING.density;
       shafts.maxDensity.value = SHAFT_TUNING.maxDensity;
       shafts.distanceAttenuation.value = SHAFT_TUNING.distanceAttenuation;
       shafts.resolutionScale = SHAFT_TUNING.resolutionScale;
       const shaftColor = new Color(sun.color).multiplyScalar(SHAFT_TUNING.brightness);
-      const blendInput = convertToTexture(vec4(hdr, 1));
-      const blended = blendMod.depthAwareBlend(blendInput, shafts.getTextureNode(), prePassDepth, camera, { blendColor: vec3(shaftColor.r, shaftColor.g, shaftColor.b), edgeRadius: 2, edgeStrength: 2 });
-      hdr = blended.rgb;
-      // The render-to-texture node owns a target of its own: release it with the chain.
-      disposables.push(shafts, blendInput);
+      if (prepass) {
+        const blendInput = convertToTexture(vec4(hdr, 1));
+        const blended = blendMod.depthAwareBlend(blendInput, shafts.getTextureNode(), shaftDepth, camera, { blendColor: vec3(shaftColor.r, shaftColor.g, shaftColor.b), edgeRadius: 2, edgeStrength: 2 });
+        hdr = blended.rgb;
+        // The render-to-texture node owns a target of its own: release it with the chain.
+        disposables.push(shafts, blendInput);
+      } else {
+        // The motion phase: the same mix (picture toward the sun's colour by the shafts' amount) straight on the picture.
+        // The depth-aware blend reads the picture through a target of its own, which came out empty on the frame the
+        // resolution scale changed (a dark frame); its edge refinement is invisible at motion resolution anyway.
+        hdr = mix(hdr, vec3(shaftColor.r, shaftColor.g, shaftColor.b), shafts.getTextureNode().sample(screenUV).r);
+        disposables.push(shafts);
+      }
     }
     const bloomNode = bloom(color, bloomStrength(strength), BLOOM_RADIUS, BLOOM_THRESHOLD);
     disposables.push(bloomNode);
@@ -441,6 +462,39 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
     }
     let seed = 0;
     let sceneScale = 1;
+    /** One frame of the chain: the scene passes first, then the effects. */
+    const renderOnce = (): void => {
+      seed = (seed + 1) % 4096;
+      uSeed.value = seed;
+      upsampler?.begin();
+      try {
+        // The scene passes first, from the top: three keys render state (and with it every mesh's render objects and
+        // node builds) by call depth too, and inside the chain the scene pass ran at whatever depth the first effect that
+        // read it reached (1 in the motion phase, 2 to 5 at rest): each phase built every mesh again (3,000 objects, a
+        // minute of a hillside town's load). Once per frame either way: the chain then finds them done.
+        const frame = (renderer as unknown as { _nodes?: { nodeFrame?: { renderer?: unknown; updateBeforeNode?: (n: unknown) => void } } })._nodes?.nodeFrame;
+        if (frame?.updateBeforeNode && (globalThis as { __AETHER_PASS_FIRST?: boolean }).__AETHER_PASS_FIRST !== false) {
+          frame.renderer ??= renderer;
+          if (prePass) frame.updateBeforeNode(prePass);
+          frame.updateBeforeNode(scenePass);
+          // The upsampler next: the shafts blend reads its output through a target of its own, and on the frame the
+          // resolution scale switched it on (new, empty targets) it read them before the resolve: a dark frame.
+          // Its full-screen pass draws only while it is on, so its program is first needed the moment the resolution scale
+          // falls: linked on the spot here (with the shafts after it), not skipped as still linking, which showed one
+          // black frame with only the lamps' bloom.
+          const passes = (): void => {
+            if (upsampler?.pass) frame.updateBeforeNode!(upsampler.pass);
+            if (shaftsPass && !prePass) frame.updateBeforeNode!(shaftsPass);
+          };
+          if (opts.linkNow) opts.linkNow(passes);
+          else passes();
+        }
+        if (opts.linkNow) opts.linkNow(() => pipeline.render());
+        else pipeline.render();
+      } finally {
+        upsampler?.end();
+      }
+    };
     return {
       sceneScalable: !prepass,
       setSceneScale: (scale: number, width: number, height: number) => {
@@ -460,24 +514,7 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
       effects,
       key: effectsKey(effects),
       render: () => {
-        seed = (seed + 1) % 4096;
-        uSeed.value = seed;
-        upsampler?.begin();
-        try {
-          // The scene passes first, from the top: three keys render state (and with it every mesh's render objects and
-          // node builds) by call depth too, and inside the chain the scene pass ran at whatever depth the first effect that
-          // read it reached (1 in the motion phase, 2 to 5 at rest): each phase built every mesh again (3,000 objects, a
-          // minute of a hillside town's load). Once per frame either way: the chain then finds them done.
-          const frame = (renderer as unknown as { _nodes?: { nodeFrame?: { renderer?: unknown; updateBeforeNode?: (n: unknown) => void } } })._nodes?.nodeFrame;
-          if (frame?.updateBeforeNode && (globalThis as { __AETHER_PASS_FIRST?: boolean }).__AETHER_PASS_FIRST !== false) {
-            frame.renderer ??= renderer;
-            if (prePass) frame.updateBeforeNode(prePass);
-            frame.updateBeforeNode(scenePass);
-          }
-          pipeline.render();
-        } finally {
-          upsampler?.end();
-        }
+        renderOnce();
       },
       setBloom: (s: number) => {
         bloomNode.strength.value = bloomStrength(s);

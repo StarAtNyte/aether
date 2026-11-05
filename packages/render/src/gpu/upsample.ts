@@ -61,6 +61,8 @@ export interface Upsampler {
   end(): void;
   /** True while the pass jitters and resolves. */
   readonly active: boolean;
+  /** The resolve pass (a node the frame updates once), for a chain that must run it before what reads its output. */
+  readonly pass: unknown;
   dispose(): void;
 }
 
@@ -275,6 +277,7 @@ export function createUpsampler(three: typeof ThreeWebGPU, tsl: typeof TslModule
       });
       return out;
     })() : spatial,
+    pass: node,
     get active(): boolean {
       return uOn.value > 0.5;
     },

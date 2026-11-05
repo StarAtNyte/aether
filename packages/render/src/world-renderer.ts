@@ -5150,7 +5150,7 @@ export class WorldRenderer {
     const lean = this.gpu.tier === 'integrated' || this.gpu.tier === 'unknown' || heavyDiscrete;
     if (this.qualityPlan.quality === 'realtime' && this.qualityPlan.moveEffects === null && lean && needsPrePass(this.qualityPlan.effects)) {
       const e = this.qualityPlan.effects;
-      this.qualityPlan = { ...this.qualityPlan, moveEffects: { ...e, ao: false, gi: false, taa: false, contact: false, ssr: false, shafts: false, dof: false } };
+      this.qualityPlan = { ...this.qualityPlan, moveEffects: { ...e, ao: false, gi: false, taa: false, contact: false, ssr: false, dof: false, ...((globalThis as { __AETHER_MOTION_SHAFTS?: boolean }).__AETHER_MOTION_SHAFTS === false ? { shafts: false } : {}) } };
     }
     const plan = this.qualityPlan;
     // The high and ultra tiers (and stills) light and reflect with a photographed sky.
@@ -5213,6 +5213,10 @@ export class WorldRenderer {
         this.applyLook();
       }
     }
+    if (want !== null && this.post?.key === wantKey && !this.postPending) {
+      this.prepareOtherPhase();
+      return;
+    }
     if (want === null || this.post?.key === wantKey || this.postPending) return;
     // The phase not in use is built while the first one draws: the first frame never waits for both.
     // The shafts march the sun's (outermost) shadow map, which three creates on the first draw that uses it: draw
@@ -5227,7 +5231,7 @@ export class WorldRenderer {
     this.postShadowSize = this.env.shaftMapSize;
     const gen = ++this.postGen;
     const builtAt = this.postShadowSize;
-    createPostPipeline(this.renderer, this.scene, this.perspective, this.env.bloom, postQualityOf(want) ?? 'standard', { effects: want, sun: this.env.shaftLight ?? this.env.sun, contactLight: this.env.sun, aoScale: this.qualityPlan.moveEffects !== null ? 0.5 : undefined, screenOcclusion: this.qualityPlan.moveEffects !== null })
+    createPostPipeline(this.renderer, this.scene, this.perspective, this.env.bloom, postQualityOf(want) ?? 'standard', { effects: want, sun: this.env.shaftLight ?? this.env.sun, contactLight: this.env.sun, aoScale: this.qualityPlan.moveEffects !== null ? 0.5 : undefined, screenOcclusion: this.qualityPlan.moveEffects !== null, linkNow: (run) => this.preparation.synchronous(() => this.programs.synchronous(run)) })
       .then((p) => {
         this.postPending = false;
         if (!p) {
@@ -5280,6 +5284,35 @@ export class WorldRenderer {
   }
 
   /** The effect keys of the two phases of the plan (the rest key alone when the chain does not split). */
+  /**
+   * Keep the other phase of a split chain built while this one draws. Without it the first turn of the camera after its
+   * pipeline was dropped (a resized sun map makes a chain with shafts stale) built the motion chain then: a hitch, and its
+   * first frame came out dark.
+   */
+  private prepareOtherPhase(): void {
+    if (this.qualityPlan.moveEffects === null || this.postStash || this.postPending || !this.post || this.disposed) return;
+    const rest = this.atRest && !this.sweepMotion;
+    const other = this.effectsFor(!rest);
+    if (!other || effectsKey(other) === this.post.key || (other.shafts && !this.env.shaftLight)) return;
+    this.postPending = true;
+    const gen = this.postGen;
+    const builtAt = this.env.shaftMapSize;
+    this.postShadowSize = builtAt;
+    createPostPipeline(this.renderer, this.scene, this.perspective, this.env.bloom, postQualityOf(other) ?? 'standard', { effects: other, sun: this.env.shaftLight ?? this.env.sun, contactLight: this.env.sun, aoScale: 0.5, screenOcclusion: true, linkNow: (run) => this.preparation.synchronous(() => this.programs.synchronous(run)) })
+      .then((p) => {
+        this.postPending = false;
+        if (!p) return;
+        this.postBuiltSize.set(p, builtAt);
+        if (gen === this.postGen && !this.disposed && !this.postStash && this.post && this.post.key !== p.key && this.phaseKeys().includes(p.key)) {
+          this.postStash = p;
+          if (this.vignetteOff) p.setVignette(0);
+        } else p.dispose();
+      })
+      .catch(() => {
+        this.postPending = false;
+      });
+  }
+
   private phaseKeys(): string[] {
     const keys: string[] = [];
     for (const rest of [true, false]) {

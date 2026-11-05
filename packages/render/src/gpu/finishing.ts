@@ -54,7 +54,8 @@ export const DEGRADE_ORDER: readonly (keyof PostEffects)[] = Object.freeze(['dof
 
 /** Effects that need the normal / velocity pre-pass. */
 export function needsPrePass(e: PostEffects): boolean {
-  return e.ao || e.gi || e.taa || e.contact || e.ssr || e.shafts || e.dof;
+  // Sun shafts are not on the list: they march the scene pass's own depth when there is no pre-pass.
+  return e.ao || e.gi || e.taa || e.contact || e.ssr || e.dof;
 }
 
 const NONE: PostEffects = Object.freeze({ composite: false, ao: false, gi: false, taa: false, contact: false, ssr: false, shafts: false, halation: false, aberration: false, grain: false, dof: false });
