@@ -30,6 +30,7 @@ import { findingKey, findingsText } from '@aether/arch';
 import { autoRepairBuildings } from './auto-repair';
 import { lumaPercentiles, targetEvidenceText, type HardcoreRun, type LumaTargets } from './hardcore';
 import { isBlankFrame, lightEvidenceText, pictureStats, type PictureStats } from './picture-stats';
+import { openingCandidates, openingPatch, openingPictureScore, wantsOpening } from './opening';
 import { MAX_REVIEW_VIEWS, RepeatLedger, reviewTurnText, snapshotForReview, StallTracker, stallAskText, type ReviewSnapshot } from './review';
 import { guardVerificationClaim } from './honesty';
 import { DIFFERENCES_TOOL, DIFFERENCES_TOOL_NAME, DifferenceLedger, differenceViews } from './photo/differences';
@@ -677,6 +678,9 @@ export class WorldAgent {
       const open = held.diffs.unresolvedText();
       if (open) yield { type: 'message', text: open };
     }
+    // A new world opens close in: the best eye-level picture becomes its opening view (before the last verification, so the
+    // sealed world is the one that was checked).
+    if (wantsOpening(startWorld, host.getWorld())) yield* this.chooseOpening(host, signal);
     // The review fixed things after the physics run: the world that is sealed and shown as verified must be the one
     // that was checked, so verify again when the review changed anything.
     if (host.getWorld() !== entered) {
@@ -684,6 +688,33 @@ export class WorldAgent {
       const v = await runVerification(ctx);
       yield v.event;
     }
+  }
+
+  /**
+   * Render the eye-level opening candidates of the world (see `opening.ts`), judge the pictures and store the best as
+   * `world.opening`. Without a renderer or a picture decoder nothing is stored (the studio computes an opening view).
+   */
+  private async *chooseOpening(host: AgentHost, signal: AbortSignal | undefined): AsyncGenerator<AgentEvent> {
+    if (!host.captureReview || !host.decodeImage) return;
+    const views = openingCandidates(host.getWorld());
+    if (views.length === 0) return;
+    let best: { view: (typeof views)[number]; score: number } | null = null;
+    try {
+      const got = await raceAbort(host.captureReview(views, signal ? { signal } : {}), signal);
+      for (const g of got) {
+        const view = views.find((v) => v.name === g.name);
+        if (!view || !isImageDataUrl(g.dataUrl)) continue;
+        const px = await raceAbort(host.decodeImage(g.dataUrl, 96), signal).catch(() => null);
+        const score = px ? openingPictureScore(px) : null;
+        if (score !== null && (!best || score > best.score)) best = { view, score };
+      }
+    } catch (e) {
+      if (signal?.aborted) throw e;
+      return;
+    }
+    if (!best) return;
+    const res = host.applyPatches([openingPatch(best.view)], 'Opening view');
+    if (res.applied.length > 0) yield { type: 'status', text: `Opening view: ${best.view.label}.` };
   }
 
   /**

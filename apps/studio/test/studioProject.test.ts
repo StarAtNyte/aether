@@ -32,6 +32,8 @@ function fakeSim(thumb: string | null): Simulation {
     suspendEntityGizmo: () => undefined,
     setLowMemory: () => undefined,
     frameWorld: async () => undefined,
+    openWorld: async () => undefined,
+    toggleOverview: async () => true,
     revealEntities: async () => undefined,
     placementPoint: () => [3, 0, -2],
     thumbnail: async () => thumb,
@@ -165,9 +167,10 @@ describe('Studio in project mode', () => {
     studio.dispose();
   });
 
-  it('forwards camera presets to the simulation (reset re-frames)', async () => {
+  it('forwards camera presets to the simulation (reset goes back to the opening view, O to the overview)', async () => {
     const sim = fakeSim(null);
-    const frame = vi.spyOn(sim, 'frameWorld');
+    const frame = vi.spyOn(sim, 'openWorld');
+    const overview = vi.spyOn(sim, 'toggleOverview');
     vi.spyOn(Simulation, 'create').mockResolvedValue(sim);
     const studio = new Studio({ storage: memoryStorage(), safeMode: false });
     await studio.attachCanvas({} as HTMLCanvasElement);
@@ -176,6 +179,8 @@ describe('Studio in project mode', () => {
     expect(sim.viewPreset).toHaveBeenCalledWith('top');
     studio.viewPreset('reset');
     expect(frame).toHaveBeenCalledTimes(1);
+    studio.toggleOverview();
+    expect(overview).toHaveBeenCalledTimes(1);
     studio.dispose();
   });
 

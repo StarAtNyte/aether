@@ -256,6 +256,14 @@ export class Draft {
     else this.doc.intro = value;
   }
 
+  /** Set (or with `undefined`, remove) the opening view. */
+  setOpening(value: WorldDoc['opening']): void {
+    if (value === this.doc.opening) return;
+    this.dirty = true;
+    if (value === undefined) delete this.doc.opening;
+    else this.doc.opening = value;
+  }
+
   /** Set (or with `undefined`, remove) the game feel. */
   setFeel(value: WorldDoc['feel']): void {
     if (value === this.doc.feel) return;

@@ -160,7 +160,10 @@ export const ToolDock = memo(function ToolDock(): ReactElement {
         <Icon name="trash" />
       </button>
       <span className="dock__sep dock__opt" aria-hidden="true" />
-      <button type="button" className="dock__btn dock__opt" onClick={() => studio.viewPreset('reset')} aria-label="Frame world" data-tip="Frame world" data-kbd="0" data-tip-pos="top">
+      <button type="button" className="dock__btn dock__opt" onClick={() => studio.viewPreset('reset')} aria-label="Opening view" data-tip="Opening view" data-kbd="0" data-tip-pos="top">
+        <Icon name="eye" />
+      </button>
+      <button type="button" className="dock__btn dock__opt" onClick={() => studio.toggleOverview()} aria-label="Overview" data-tip="Overview (again: back)" data-kbd="O" data-tip-pos="top">
         <Icon name="maximize" />
       </button>
       <button type="button" className={`dock__btn dock__opt${labels ? ' is-active' : ''}`} aria-pressed={labels} onClick={() => st.updateSettings({ showLabels: !labels })} aria-label="Object labels" data-tip="Object labels" data-kbd="L" data-tip-pos="top">

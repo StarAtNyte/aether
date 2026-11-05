@@ -30,7 +30,7 @@
  *   terrain) are reset only with `keepEnvironment: false` (player.controls is
  *   always cleared). The title card (`intro`) is removed too.
  * - `setMeta` sets name / description / seed and, additively, the title card
- *   (`intro: null` removes it) and the game feel (`feel`, replaced whole;
+ *   (`intro: null` removes it), the opening view (`opening: null` removes it) and the game feel (`feel`, replaced whole;
  *   `feel: null` removes it). `clear` keeps the feel (a setting of the game,
  *   not content).
  * - `setVoxel` deep-merges voxel terrain settings (`set: null` removes the
@@ -498,6 +498,8 @@ function opSetMeta(d: Draft, p: PatchOf<'setMeta'>): Outcome {
   if (p.seed !== undefined && p.seed !== d.world.seed) d.set('seed', p.seed);
   if (p.intro === null) d.setIntro(undefined);
   else if (p.intro !== undefined && !deepEqual(p.intro, d.world.intro)) d.setIntro(p.intro);
+  if (p.opening === null) d.setOpening(undefined);
+  else if (p.opening !== undefined && !deepEqual(p.opening, d.world.opening)) d.setOpening(p.opening);
   if (p.feel === null) d.setFeel(undefined);
   else if (p.feel !== undefined && !deepEqual(p.feel, d.world.feel)) d.setFeel(p.feel);
   if (p.textures !== undefined) {
@@ -521,6 +523,8 @@ function opClear(d: Draft, p: PatchOf<'clear'>): Outcome {
   for (const m of Object.keys(d.world.meshes)) delete d.meshes()[m];
   // The title card describes the cleared content (its game), so it goes too; so do the texture sets made for it.
   d.setIntro(undefined);
+  // So does the opening view: it looked at what was there.
+  d.setOpening(undefined);
   if (d.world.textures !== undefined) d.setTextures(undefined);
   if (!p.keepEnvironment) {
     const env = EnvironmentSchema.parse({});

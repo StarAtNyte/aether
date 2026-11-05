@@ -545,10 +545,11 @@ export class Studio {
         if (s.clarify && s.selection !== prev.selection && s.selection.length === 1 && s.clarify.items.some((i) => i.id === s.selection[0])) this.answerClarify(s.selection[0] as string);
         if (s.selection !== prev.selection || s.tool !== prev.tool) sim.setGizmo(s.selection, s.tool);
       });
-      // Only the first renderer flies in; a replacement (recovery, backend switch) just frames the world.
+      // The world opens close in, on its opening view (not the far overview, the heaviest view to load): the first
+      // renderer is placed there at once, a replacement (recovery, backend switch) flies there.
       performance.mark('aether:frameworld-start');
       const firstAttach = this.attachCount === 0;
-      await sim.frameWorld(this.attachCount++ === 0 ? { flyIn: true } : {});
+      await sim.openWorld(this.attachCount++ === 0 ? { duration: 0 } : {});
       // A link with ?tour=1 (a shared world, a gallery showcase) opens straight into the cinematic fly-through.
       if (firstAttach && typeof location !== 'undefined' && new URLSearchParams(location.search).get('tour') === '1') window.setTimeout(() => this.tour(), 1500);
       performance.mark('aether:frameworld-end');
@@ -862,7 +863,7 @@ export class Studio {
     }
     if (current !== this.history.current) {
       this.store.getState().select([]);
-      void this.sim?.frameWorld();
+      void this.sim?.openWorld();
     }
   }
 
@@ -1265,7 +1266,7 @@ export class Studio {
         push({ type: 'notice', tone: 'warning', text: 'Stopped before finishing. The world below is only the part built so far and was not checked. Undo removes it.' });
       }
       const after = this.history.current;
-      if (isNewWorld(before, after)) void this.sim?.frameWorld();
+      if (isNewWorld(before, after)) void this.sim?.openWorld();
       else if (after !== before) {
         const d = diffWorlds(before, after);
         const builtFrom = addedVoxelEdits(before, after);
@@ -1739,8 +1740,15 @@ export class Studio {
 
   viewPreset(preset: 'top' | 'front' | 'side' | 'iso' | 'reset'): void {
     if (!this.sim || this.sim.mode === 'play') return;
-    if (preset === 'reset') void this.sim.frameWorld();
+    if (preset === 'reset') void this.sim.openWorld();
     else this.sim.viewPreset(preset);
+  }
+
+  /** Fly to the zoomed-out overview of the whole world, or back to the view it left (edit mode; key O). */
+  toggleOverview(): void {
+    const sim = this.sim;
+    if (!sim || sim.mode === 'play') return;
+    void sim.toggleOverview();
   }
 
   /** A language model for the camera director (null when only the offline planner is available). */

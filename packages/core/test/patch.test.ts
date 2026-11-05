@@ -3,6 +3,7 @@ import {
   applyPatches,
   createWorld,
   LIMITS,
+  patchesBetween,
   validateWorld,
   type Entity,
   type PatchInput,
@@ -446,6 +447,19 @@ describe('environment / player / state / hud / meta / clear', () => {
   it('setMeta updates name/description/seed', () => {
     const r = apply(sampleWorld(), [{ op: 'setMeta', name: 'N', description: 'D', seed: 9 }]);
     expect([r.world.name, r.world.description, r.world.seed]).toEqual(['N', 'D', 9]);
+  });
+
+  it('setMeta sets and removes the opening view; clear removes it', () => {
+    const opening = { position: [1, 2, 3] as [number, number, number], target: [4, 2, 0] as [number, number, number], fov: 50 };
+    const set = apply(sampleWorld(), [{ op: 'setMeta', opening }]).world;
+    expect(set.opening).toEqual(opening);
+    expect(apply(set, [{ op: 'setMeta', opening: null }]).world.opening).toBeUndefined();
+    expect(apply(set, [{ op: 'clear' }]).world.opening).toBeUndefined();
+    expect(only(sampleWorld(), { op: 'setMeta', opening: { position: [0, 0, 0], target: [1, 0, 0], fov: 5 } } as never)).toBeTruthy();
+    // Undo and redo carry it.
+    const back = patchesBetween(set, sampleWorld());
+    expect(apply(set, back).world.opening).toBeUndefined();
+    expect(apply(sampleWorld(), patchesBetween(sampleWorld(), set)).world.opening).toEqual(opening);
   });
 
   it('clear keeps environment/player by default, resets them on request, keeps generators', () => {

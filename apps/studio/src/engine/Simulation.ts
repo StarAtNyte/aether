@@ -748,11 +748,13 @@ export class Simulation {
    * `focus`-tagged entities weighted) from an elevated three-quarter view;
    * character games without an avatar entity also keep the player spawn in
    * view. `flyIn` starts from a wider establishing shot (first load). Waits
-   * for the renderer to catch up.
+   * for the renderer to catch up. This is the overview; worlds open on
+   * {@link openWorld}.
    */
   async frameWorld(opts: { flyIn?: boolean } = {}): Promise<void> {
     await this.whenSynced();
     if (this.disposed || this.session) return;
+    this.overviewReturn = null;
     const world = this.history.current;
     const p = world.player;
     if (world.voxel && this.voxel?.active) {
@@ -778,6 +780,49 @@ export class Simulation {
     }
     const sphere = framingSphere(world);
     if (sphere) this.renderer.frameSphere(sphere.center, sphere.radius, FRAME_OFFSET, FRAME_DURATION);
+  }
+
+  /**
+   * Open a world on its opening view: the world's own `opening`, else a computed eye-level view inside it (open
+   * ground near the middle, facing the landmark; see the renderer's `openingPose`), not the far overview. Block
+   * worlds and worlds with nothing to stand on are framed as by {@link frameWorld}. `duration` 0 jumps.
+   */
+  async openWorld(opts: { duration?: number } = {}): Promise<void> {
+    await this.whenSynced();
+    if (this.disposed || this.session) return;
+    const world = this.history.current;
+    if (world.voxel && this.voxel?.active && !world.opening) return this.frameWorld();
+    await this.renderer.prepareFraming();
+    if (this.disposed || this.session || this.history.current !== world) return;
+    this.overviewReturn = null;
+    if (!this.renderer.frameOpening(opts.duration !== undefined ? { duration: opts.duration } : {})) await this.frameWorld();
+  }
+
+  /** The view to fly back to from the overview (null when the overview is not shown). */
+  private overviewReturn: { pos: Vec3; target: Vec3 } | null = null;
+
+  /** The overview is shown (see {@link toggleOverview}). */
+  get inOverview(): boolean {
+    return this.overviewReturn !== null;
+  }
+
+  /**
+   * Fly to the zoomed-out overview of the whole world and, called again, back to the view it left. Returns whether
+   * the overview is now shown.
+   */
+  async toggleOverview(): Promise<boolean> {
+    if (this.disposed || this.session) return false;
+    const back = this.overviewReturn;
+    if (back) {
+      this.overviewReturn = null;
+      this.renderer.flyToPose(back.pos, back.target, FRAME_DURATION);
+      return false;
+    }
+    const now = this.renderer.cameraPose();
+    await this.frameWorld();
+    if (this.disposed || this.session) return false;
+    this.overviewReturn = { pos: now.pos, target: now.target };
+    return true;
   }
 
   /**

@@ -107,7 +107,7 @@ function contentBounds(world: WorldDoc): { min: Vec3; max: Vec3 } | null {
 }
 
 /** The landmark: an entity tagged focus or landmark, else the highest built piece. */
-function landmark(world: WorldDoc): Vec3 | null {
+export function landmark(world: WorldDoc): Vec3 | null {
   let best: { p: Vec3; score: number } | null = null;
   for (const id in world.entities) {
     const e = world.entities[id] as Entity;

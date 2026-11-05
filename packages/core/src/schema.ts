@@ -1000,6 +1000,19 @@ export const WorldIntro = z.object({
 });
 export type WorldIntro = z.infer<typeof WorldIntro>;
 
+/**
+ * Additive: the view the editor opens a world on: a camera inside the world at eye height or a little above (about 1.6 to 8 m over
+ * the ground), looking at the landmark or the liveliest part. Absent: the studio computes one (an open, walkable spot near the
+ * content's middle). The zoomed-out overview stays one click away; play mode starts from the player spawn as before.
+ */
+export const OpeningView = z.object({
+  position: Vec3,
+  target: Vec3,
+  /** Vertical field of view in degrees (default: the editor camera's). */
+  fov: z.number().min(20).max(100).optional(),
+});
+export type OpeningView = z.infer<typeof OpeningView>;
+
 // ---------------------------------------------------------------------------
 // World document
 // ---------------------------------------------------------------------------
@@ -1068,6 +1081,8 @@ export const WorldDoc = z.object({
   voxel: VoxelTerrain.optional(),
   /** Additive: title card shown when play starts (see {@link WorldIntro}). */
   intro: WorldIntro.optional(),
+  /** Additive: the view the editor opens the world on (see {@link OpeningView}). */
+  opening: OpeningView.optional(),
   /** Additive: game feel — feedback tier and per-event cues (visual only; absent = the `normal` tier). See `feel-schema.ts`. */
   feel: FeelSpec.optional(),
   /** Additive: texture sets of the project (see {@link TextureSetDef}); absent for worlds without photographed or generated maps. */
@@ -1112,6 +1127,8 @@ export const Patch = z.discriminatedUnion('op', [
     seed: z.number().int().optional(),
     /** Additive: set the title card, or with `null` remove it. */
     intro: WorldIntro.nullable().optional(),
+    /** Additive: set the opening view (`world.opening`), or with `null` remove it (the studio computes one). */
+    opening: OpeningView.nullable().optional(),
     /** Additive: replace the game feel (`world.feel`), or with `null` remove it (back to the `normal` tier). */
     feel: FeelSpec.nullable().optional(),
     /** Additive: add or replace texture sets of the project by id, or with `null` remove one (`WorldDoc.textures`). */

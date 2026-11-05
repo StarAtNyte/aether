@@ -24,9 +24,11 @@ export function isOpaqueVisible(object: Object3D): boolean {
 
 /**
  * {@link SightTest} over `sync`'s document content. `skip` makes objects (and everything under them) transparent
- * to the test: the subject of a shot does not hide itself. The caller keeps world matrices current.
+ * to the test: the subject of a shot does not hide itself. `scatter: false` leaves the coarse scatter occluders out
+ * (they are boxes round whole patches: under them every short ray is blocked). The caller keeps world matrices current.
  */
-export function sceneSightTest(sync: SceneSync, skip: ReadonlySet<Object3D> = new Set()): SightTest {
+export function sceneSightTest(sync: SceneSync, skip: ReadonlySet<Object3D> = new Set(), opts: { scatter?: boolean } = {}): SightTest {
+  const scatter = opts.scatter !== false;
   const ray = new Raycaster();
   ray.layers.enable(BATCHED_LAYER);
   const hits: Intersection[] = [];
@@ -57,6 +59,7 @@ export function sceneSightTest(sync: SceneSync, skip: ReadonlySet<Object3D> = ne
       break;
     }
     hits.length = 0;
+    if (!scatter) return free;
     const d = sync.scatterOcclusion(a, b) * length;
     if (d >= SIGHT_NEAR && d < free) free = d;
     return free;

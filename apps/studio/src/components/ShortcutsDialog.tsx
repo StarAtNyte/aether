@@ -56,7 +56,8 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = Object.freeze([
     title: 'View',
     items: [
       ['F', 'Focus selection'],
-      ['0 – 4', 'Frame world / 3D / top / front / side view'],
+      ['0 – 4', 'Opening / 3D / top / front / side view'],
+      ['O', 'Overview of the whole world (again: back)'],
       ['L', 'Object labels'],
       [shortcut('Shift+P'), 'Performance overlay'],
       ['Alt+1 – 6', 'Agent, Objects, Assets, Logic, Checks, History'],

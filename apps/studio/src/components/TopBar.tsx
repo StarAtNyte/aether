@@ -163,7 +163,8 @@ export const TopBar = memo(function TopBar({ layout }: { layout: LayoutMode }): 
 
   const viewMenu: MenuEntry[] = [
     { kind: 'heading', id: 'h-cam', label: 'Camera' },
-    { id: 'reset', label: 'Frame world', icon: 'maximize', shortcut: '0', onSelect: () => studio.viewPreset('reset') },
+    { id: 'reset', label: 'Opening view', icon: 'eye', shortcut: '0', onSelect: () => studio.viewPreset('reset') },
+    { id: 'overview', label: 'Overview', icon: 'maximize', shortcut: 'O', onSelect: () => studio.toggleOverview() },
     { id: 'iso', label: '3D view', icon: 'box3d', shortcut: '1', onSelect: () => studio.viewPreset('iso') },
     { id: 'top', label: 'Top view', icon: 'viewTop', shortcut: '2', onSelect: () => studio.viewPreset('top') },
     { id: 'front', label: 'Front view', icon: 'square', shortcut: '3', onSelect: () => studio.viewPreset('front') },

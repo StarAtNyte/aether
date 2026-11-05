@@ -79,7 +79,7 @@ const PATCHES = `## Patch operations (apply_patches)
 {"op":"addRule","rule":Rule} | {"op":"updateRule","id","set"} | {"op":"removeRule","id"}
 {"op":"setEnvironment","set":{...}} | {"op":"setPlayer","set":{...}} (both deep-merge) | {"op":"setState","key","value"} (null deletes) | {"op":"setHud","hud":[{key,label}]}
 {"op":"defineGenerator","generator":{id,description,params,source}} | {"op":"defineScript","script":{id,description,source}} | {"op":"removeGenerator","id"} | {"op":"removeScript","id"}
-{"op":"addTest","test":Test} | {"op":"removeTest","id"} | {"op":"setMeta","name"?,"description"?,"seed"?} | {"op":"clear","keepEnvironment"?:true} (only for "start over" requests)
+{"op":"addTest","test":Test} | {"op":"removeTest","id"} | {"op":"setMeta","name"?,"description"?,"seed"?,"opening"?:{"position","target","fov"?}} | {"op":"clear","keepEnvironment"?:true} (only for "start over" requests)
 Patches apply in order; later patches may reference entities added earlier in the same call. Unknown fields are rejected — use only fields shown here.`;
 
 const VOXEL = `## Block worlds (voxel terrain; Minecraft-like survival/creative games)
@@ -143,6 +143,7 @@ const GUIDELINES = `## Guidelines
 - Structures over drops: stairs, ramps and bridges on a cliff or slope are slabs about 1.4 m thick under the treads or deck, carried on piers or arches with the ground showing between; never filled solid down to the ground (a blank dam wall). A waterfall stands clear in front of the face it pours from, its lip at the top edge; at or behind the face the rock swallows the top of the drop.
 - Natural ground and region: cliffs and slopes as stepped, eroded terraces and broken rock, never boxy vertical walls with flat green tops (a diorama). Plant the region's species (cypress, olive, umbrella pine around the Mediterranean; spruce, birch in the north), not generic round trees, and build houses in the region's style.
 - Camera: tag the centerpiece (campfire, castle, start platform…) "focus" so the camera frames it, and distant scenery (mountains, planets, skyline) "backdrop" so it is ignored when framing.
+- Opening view: the editor opens close in (world.opening, set after the build from the best eye-level shot). Set it with setMeta "opening" if you know the spot: open ground near the middle, 1.6–8 m up, clear of walls, facing the landmark, horizon in the upper third.
 - Always add tests that prove the requested mechanic works (topples for chain reactions, eventually for rules/timers, staysAbove for things that must not fall out, stable for stacks/structures). Tests must be achievable WITHOUT player input.
 - Refining: if the world has content, every message refines IT. Small requests ("make the sofa green") are property-level "update" patches on the named entities; keep everything else as is: never "clear", never remove-and-re-add. "it/this" = the selected or just-edited entity. Start over only when asked. If a reference is ambiguous, finish with a short question naming the candidates.
 - A later request may carry <scene_changes> (changes since your last turn) instead of a <world_summary>; query_scene gives details.

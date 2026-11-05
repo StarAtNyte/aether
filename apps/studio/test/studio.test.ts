@@ -44,6 +44,8 @@ function fakeSimulation(): { sim: Simulation; lowMemory: boolean[]; disposed: ()
     suspendEntityGizmo: () => undefined,
     setLowMemory: (on: boolean) => void lowMemory.push(on),
     frameWorld: async () => undefined,
+    openWorld: async () => undefined,
+    toggleOverview: async () => true,
     touch: () => undefined,
     memoryStats: () => null,
     dispose: () => {

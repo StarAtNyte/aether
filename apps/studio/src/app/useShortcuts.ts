@@ -153,6 +153,11 @@ export function useShortcuts(): void {
       } else if (e.key === 'f' || e.key === 'F') {
         const id = st.selection[0];
         if (id) studio.focus(id);
+      } else if ((e.key === 'o' || e.key === 'O') && !e.shiftKey) {
+        studio.toggleOverview();
+      } else if (e.key === 'Home' && (e.target === document.body || e.target instanceof HTMLCanvasElement)) {
+        e.preventDefault();
+        studio.toggleOverview();
       } else if (e.key === 'h' || e.key === 'H') {
         editor.toggleHidden();
       } else if (e.key === 'l' || e.key === 'L') {

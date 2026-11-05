@@ -89,6 +89,8 @@ import { isOpaqueVisible, sceneSightTest } from './view/sightline';
 import { ArchView, type ArchViewState } from './view/arch-view';
 import { daylightLampFactor, FORWARD_LIGHTS } from './sync/lights';
 import { collectFramingItems, FOCUS_TAG } from './view/content-items';
+import { rankOpeningViews, type OpeningPose, type OpeningStats } from './view/opening-view';
+import { sceneOpeningProbe } from './view/opening-probe';
 import { GROW_OVERSHOOT_MAX_RADIUS, GrowIn, growDelay } from './view/grow-in';
 import { installRenderPatches } from './three-patches';
 import { GRADE_TEMPERATURE_MAX, GRADE_TINT_MAX, within } from './environment/light-balance';
@@ -1966,7 +1968,8 @@ export class WorldRenderer {
         say?.('Preparing camera…');
         await warmRaycastTrees(this.sync.root, FIRST_FRAME_BVH_MS);
         if (this.disposed || this.sync.world !== world) return;
-        this.framed = this.frameContent({ duration: 0 });
+        // Open close in, on the opening view: what is near the eye is what loads and is prepared first.
+        this.framed = this.frameOpening({ duration: 0 });
         performance.mark('aether:framed');
       }
       this.syncSmallCasters();
@@ -3261,6 +3264,75 @@ export class WorldRenderer {
     }
     this.needsDraw = true;
     return true;
+  }
+
+  /**
+   * Show the view the world opens on (see {@link openingPose}); without one (nothing to stand on) the content is
+   * framed from above as by {@link frameContent}. Returns false when there is nothing to frame.
+   */
+  frameOpening(opts: { duration?: number } = {}): boolean {
+    if (this.disposed) return false;
+    const pose = this.openingPose();
+    if (!pose) return this.frameContent(opts.duration !== undefined ? { duration: opts.duration } : {});
+    this.flyToPose(pose.position, pose.target, opts.duration ?? FRAME_DURATION, pose.fov);
+    return true;
+  }
+
+  /**
+   * The view the editor opens the world on: the world's own `opening` when it has one, else a computed one, a camera
+   * at eye height or a little above on open ground near the content's middle, facing the landmark (see
+   * `view/opening-view.ts`). Null when there is nothing to frame or nowhere to stand.
+   */
+  openingPose(): { position: Vec3; target: Vec3; fov?: number; authored: boolean } | null {
+    if (this.disposed) return null;
+    const own = this.sync.world?.opening;
+    if (own && own.position.every(Number.isFinite) && own.target.every(Number.isFinite)) {
+      return { position: [...own.position], target: [...own.target], ...(own.fov !== undefined ? { fov: own.fov } : {}), authored: true };
+    }
+    // Deterministic per world: computed once per document (the scene tests take a second or two on a big world).
+    const doc = this.sync.world;
+    if (!this.openingCache || this.openingCache.world !== doc) {
+      const view = this.rankOpening(1)[0];
+      this.openingCache = { world: doc, pose: view ? { position: view.position, target: view.target } : null };
+    }
+    const pose = this.openingCache.pose;
+    return pose ? { position: [...pose.position], target: [...pose.target], authored: false } : null;
+  }
+
+  /** The computed opening view of the last world asked about. */
+  private openingCache: { world: WorldDoc | null; pose: { position: Vec3; target: Vec3 } | null } | null = null;
+
+  /**
+   * The best `limit` computed opening views of the content, best first (see `view/opening-view.ts`); `stats` counts
+   * why spots were turned down. Ignores the world's own `opening`.
+   */
+  rankOpening(limit = 1, stats?: OpeningStats): OpeningPose[] {
+    if (this.disposed) return [];
+    const items = this.grow.withFullScale(() => collectFramingItems(this.sync));
+    const framing = contentFraming(items);
+    if (!framing) return [];
+    const cam = this.perspective;
+    const arch = this.archView.active;
+    const front = arch ? this.archFrontAzimuth() : null;
+    return this.grow.withFullScale(() => {
+      this.sync.root.updateMatrixWorld(true);
+      const reach = framing.radius * 2 + 100;
+      const probe = sceneOpeningProbe(this.sync, this.env.groundMesh, framing.center[1] + reach, framing.center[1] - reach);
+      return rankOpeningViews({ framing, items, fovDeg: cam.fov, aspect: cam.aspect, arch, azimuthDeg: front ?? DEFAULT_FRAMING_AZIMUTH }, probe, limit, stats);
+    });
+  }
+
+  /** Fly the editor camera to `pos` looking at `target` (0 jumps), optionally with a field of view. */
+  flyToPose(pos: Vec3, target: Vec3, duration = FRAME_DURATION, fov?: number): void {
+    if (this.disposed || !pos.every(Number.isFinite) || !target.every(Number.isFinite)) return;
+    _pos.set(pos[0], pos[1], pos[2]);
+    _target.set(target[0], target[1], target[2]);
+    this.rig.flyTo(_pos, _target, Math.max(0, duration));
+    if (fov !== undefined && Number.isFinite(fov) && Math.abs(fov - this.perspective.fov) > 1e-6) {
+      this.perspective.fov = Math.min(120, Math.max(5, fov));
+      this.perspective.updateProjectionMatrix();
+    }
+    this.needsDraw = true;
   }
 
   /** Objects a framing shot is of (buildings and focused entities): they never hide themselves from its camera. */
