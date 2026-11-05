@@ -4,7 +4,7 @@
  * All model arguments are untrusted: they are size-checked and zod-validated
  * here, and patches are validated again by the host's `applyPatches`.
  */
-import { describeModel, describeSimreadyHit, findModels, headNoun, lacksNoun, loadCatalog, searchAssets, searchSimready, HUB_FIRST, HUB_SKIP_TEXT, isStructuralQuery, pickHubFirst, withHubTimeout } from '@aether/assets';
+import { aboCatalog, describeAboModel, describeModel, describeSimreadyHit, findAboModels, findModels, headNoun, lacksNoun, loadCatalog, searchAssets, searchSimready, HUB_FIRST, HUB_SKIP_TEXT, isStructuralQuery, pickHubFirst, withHubTimeout } from '@aether/assets';
 import { applyArchOps, describePartLine, emptiesWorld, emptyWorldRefusal, findCrafted, partInfo, runDesignTool, type DesignToolName } from '@aether/arch';
 import { GeneratorDef, ScriptDef, applyPatches, carryPatches, characterPatches, hasOwn, isPlainObject, type CarriedDependent, type Patch, type PatchError, type WorldDoc } from '@aether/core';
 import { summarizeWorldForModel } from './world-text';
@@ -401,6 +401,9 @@ async function searchAssetsTool(input: z.infer<typeof ToolInputs.search_assets>)
   const hits = searchAssets(catalog, { text: input.query, limit: input.limit + 4, ...(input.category ? { category: input.category } : {}) })
     .filter((h) => h.entry.kind !== 'material')
     .slice(0, input.limit);
+  const products = !input.category || PRODUCT_CATEGORIES.has(input.category) ? searchAssets(aboCatalog(), { text: input.query, limit: 4, ...(input.category ? { category: input.category } : {}) }) : [];
+  const productText = products.length > 0 ? `\nReal products (Amazon Berkeley Objects, streamed, real size; find_model ranks them by style and colour):\n${products.map((h) => describeAboModel({ entry: h.entry, score: h.score, notes: [] })).join('\n')}` : '';
+  if (hits.length === 0 && products.length > 0) return { content: clip(`${productText.trimStart()}\nPlace with shape {"kind":"asset","id":"<abo-id>"} or place_items {"kind":"model:<abo-id>"}.`), isError: false, events: [], edited: false };
   if (hits.length === 0) return { content: `No library asset matches "${input.query.slice(0, 80)}". ${NOT_IN_LIBRARY}`, isError: false, events: [], edited: false };
   const lines = hits.map(({ entry: e }) => {
     const size = e.size.map((v) => Math.round(v * 100) / 100).join('x');
@@ -410,7 +413,7 @@ async function searchAssetsTool(input: z.infer<typeof ToolInputs.search_assets>)
   // Weak matches (found through a synonym or a typo, none named like the query's noun: a bench for a pew) are near-misses.
   const noun = headNoun(input.query);
   const weak = !!noun && hits.every((h) => lacksNoun(h.entry, noun));
-  return { content: clip(`${lines.join('\n')}\nPlace with shape {"kind":"asset","id":"<id>"} (real size; optional "fitSize" metres).${weak ? `\nThese are weak matches: if none is the thing asked for, it is not in the library. ${NOT_IN_LIBRARY}` : ''}`), isError: false, events: [], edited: false };
+  return { content: clip(`${lines.join('\n')}\nPlace with shape {"kind":"asset","id":"<id>"} (real size; optional "fitSize" metres).${productText}${weak ? `\nThese are weak matches: if none is the thing asked for, it is not in the library. ${NOT_IN_LIBRARY}` : ''}`), isError: false, events: [], edited: false };
 }
 
 /** simready_search: licence-filtered candidates from NVIDIA SimReady Central. Read-only: nothing is downloaded or imported. */
@@ -493,20 +496,39 @@ function hubLine(h: HubModelHit): string {
   return `${h.id} — ${h.name} [${h.category}, ${h.style}] hub, ${h.size.map((v) => Math.round(v * 100) / 100).join('x')} m, ${h.triangles} triangles, ${(h.bytes / 1000).toFixed(0)} KB, ${h.licence}, by ${h.author.slice(0, 50)}`;
 }
 
+/** Interior kinds of objects the streamed real products answer (not structure, plants outdoors, vehicles or creatures). */
+const PRODUCT_CATEGORIES: ReadonlySet<string> = new Set(['furniture', 'decor', 'lighting', 'plants', 'kitchen', 'bathroom', 'props']);
+
+/**
+ * Real products of the Amazon Berkeley Objects pack for a find_model query (streamed from Hugging Face at real size with
+ * full PBR materials), as a block above the library answer; empty for stylised looks, outdoor categories or no match.
+ */
+function productBlock(what: string, query: Parameters<typeof findAboModels>[0]): string {
+  if (query.look === 'stylised' || query.look === 'low-poly') return '';
+  if (query.category && !PRODUCT_CATEGORIES.has(query.category)) return '';
+  const hits = findAboModels({ ...query, limit: Math.min(5, query.limit ?? 5) });
+  if (hits.length === 0) return '';
+  const noun = headNoun(what);
+  if (noun && hits.every((h) => lacksNoun(h.entry, noun) && h.entry.interior?.type !== noun)) return '';
+  return `Real products (Amazon Berkeley Objects: real items at their measured size with photographed PBR materials, streamed when the world opens; first choice for a real interior, one download each, so reuse one product for matching pieces):\n${hits.map(describeAboModel).join('\n')}\n  place_items {"kind":"model:<abo-id>","room":...} (real size, no fit needed) or shape {"kind":"asset","id":"<abo-id>"}; the credit is added to the world automatically.\n`;
+}
+
 async function findModelCore(input: z.infer<typeof ToolInputs.find_model>): Promise<ToolOutcome> {
   if (!input.what) return fail(input.like_crop ? 'find_model like_crop needs a photo rebuild with the perception layer on (it matches a crop of the photo); give `what` for the name search.' : 'find_model needs `what` (the piece to find).');
   const crafted = craftedLines(input.what);
   const catalog = await loadCatalog();
   const craftedBlock = crafted.length > 0 ? `Crafted parts (procedural, built to the real object, preferred over a box or a stretched model):\n${crafted.join('\n')}\n` : '';
-  if (catalog.entries.length === 0) return { content: craftedBlock || 'The model library is not available here: use the parametric parts.', isError: false, events: [], edited: false };
-  const hits = findModels(catalog, { text: input.what, limit: input.limit, ...(input.style ? { style: input.style } : {}), ...(input.category ? { category: input.category } : {}), ...(input.look ? { look: input.look } : {}), ...(input.color ? { color: input.color } : {}), ...(input.size ? { size: input.size } : {}) });
-  if (hits.length === 0) return { content: craftedBlock ? `${craftedBlock}No photographed library model matches "${input.what.slice(0, 80)}".` : `No library model matches "${input.what.slice(0, 80)}". Use the parametric part for this kind (see the parts list).`, isError: false, events: [], edited: false };
+  const query = { text: input.what, limit: input.limit, ...(input.style ? { style: input.style } : {}), ...(input.category ? { category: input.category } : {}), ...(input.look ? { look: input.look } : {}), ...(input.color ? { color: input.color } : {}), ...(input.size ? { size: input.size } : {}) };
+  const products = productBlock(input.what, query);
+  if (catalog.entries.length === 0) return { content: `${craftedBlock}${products}` || 'The model library is not available here: use the parametric parts.', isError: false, events: [], edited: false };
+  const hits = findModels(catalog, query);
+  if (hits.length === 0) return { content: clip(`${craftedBlock}${products}${craftedBlock || products ? `No photographed library model matches "${input.what.slice(0, 80)}".` : `No library model matches "${input.what.slice(0, 80)}". Use the parametric part for this kind (see the parts list).`}`), isError: false, events: [], edited: false };
   const lines = hits.map(describeModel);
   const same = hits[0]!.entry.interior?.type;
   // Nothing named like the request: say so, so the model does not stand in a different kind of object (a bench for a pew, a tree for a statue).
   const noun = headNoun(input.what);
   const stand = noun && !craftedBlock && hits.every((h) => lacksNoun(h.entry, noun)) ? `No library model is named "${noun}": the models below are other kinds of object (${[...new Set(hits.slice(0, 3).map((h) => h.entry.name))].join(', ')}). Say so in your notes. Then choose the nearest sensible substitute only if it still reads as a ${noun}; otherwise it is not in the library: ${NOT_IN_LIBRARY} Never stand in a different kind of thing for it (a bench is not a pew, a tree is not a statue, a street lamp is not a rope stanchion).\n` : '';
-  return { content: clip(`${craftedBlock}${stand}${craftedBlock ? 'Library models:\n' : ''}${lines.join('\n')}\nPlace with place_items {"kind":"model:<id>","room":...,"fit":[w,h,d]} (the model is scaled within 0.5x to 2x); in a free world shape {"kind":"asset","id":"<id>"}. ${same ? `Other ${same} models exist: ask again with another style or colour.` : ''}`), isError: false, events: [], edited: false };
+  return { content: clip(`${craftedBlock}${products}${stand}${craftedBlock || products ? 'Library models:\n' : ''}${lines.join('\n')}\nPlace with place_items {"kind":"model:<id>","room":...,"fit":[w,h,d]} (the model is scaled within 0.5x to 2x); in a free world shape {"kind":"asset","id":"<id>"}. ${same ? `Other ${same} models exist: ask again with another style or colour.` : ''}`), isError: false, events: [], edited: false };
 }
 
 function inspectTool(ctx: ExecutorContext, input: z.infer<typeof ToolInputs.inspect>): ToolOutcome {

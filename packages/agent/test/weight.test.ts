@@ -30,3 +30,25 @@ describe('weight checks', () => {
     expect(weightFindings(world(hidden))).toEqual([]);
   });
 });
+
+describe('streamed product weight', () => {
+  const product = (id: string, asset: string, x: number): Record<string, unknown> => ({ ...base, id, transform: { position: [x, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }, shape: { kind: 'asset', id: asset } });
+  const ids = (n: number): string[] => Array.from({ length: n }, (_, i) => `abo-b0${String(i).padStart(8, '0')}`);
+
+  it('passes a furnished room and warns, then fails, as distinct products pile up', () => {
+    // No index installed: each product counts as the pack median (1.4 MB, 20k triangles).
+    expect(weightFindings(world(ids(12).map((a, i) => product(`p${i}`, a, i))))).toEqual([]);
+    const heavy = weightFindings(world(ids(60).map((a, i) => product(`p${i}`, a, i))));
+    expect(heavy.map((f) => [f.code, f.severity])).toEqual([['streamed_products', 'warning']]);
+    const huge = weightFindings(world(ids(140).map((a, i) => product(`p${i}`, a, i))));
+    expect(huge.map((f) => [f.code, f.severity])).toEqual([['streamed_products', 'error']]);
+    expect(huge[0]!.message).toMatch(/140 distinct streamed products/);
+  });
+
+  it('counts a reused product once for bytes but every copy for triangles', () => {
+    const chairs = Array.from({ length: 160 }, (_, i) => product(`c${i}`, 'abo-b000000001', i));
+    const f = weightFindings(world(chairs)).filter((x) => x.code === 'streamed_products');
+    expect(f).toHaveLength(1);
+    expect(f[0]!.message).toMatch(/^1 distinct streamed products .* download about 1 MB and draw 3\.2 M triangles/);
+  });
+});

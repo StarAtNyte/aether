@@ -54,8 +54,10 @@ export function kindForModel(e: CatalogEntry): string {
     sofa: 'sofa', armchair: 'armchair', chair: 'chair', stool: 'bar-stool', ottoman: 'armchair', bench: 'chair', table: 'dining-table', 'coffee-table': 'coffee-table',
     'side-table': 'coffee-table', desk: 'desk', nightstand: 'nightstand', console: 'sideboard', sideboard: 'sideboard', dresser: 'sideboard', wardrobe: 'wardrobe',
     bookshelf: 'bookshelf', shelf: 'bookshelf', bed: 'bed', fireplace: 'fireplace', plant: 'plant', mirror: 'mirror', picture: 'art', tv: 'tv-set',
+    // Types of the streamed product pack (Amazon Berkeley Objects).
+    rug: 'rug', curtain: 'curtain', planter: 'planter', cabinet: 'sideboard', headboard: 'bed', mattress: 'bed', candle: 'candle', statue: 'statue',
   };
-  if (t === 'lamp') return e.placement === 'ceiling' ? 'pendant' : e.placement === 'wall' ? 'sconce' : e.placement === 'surface' ? 'table-lamp' : 'plant';
+  if (t === 'lamp') return e.placement === 'ceiling' ? 'pendant' : e.placement === 'wall' ? 'sconce' : e.placement === 'surface' ? 'table-lamp' : 'floor-lamp';
   const k = byType[t];
   // The stand-in must mount the way the model does (a standing photo frame is not a wall picture).
   if (k && furnitureByKind(k)?.mount === e.placement) return k;

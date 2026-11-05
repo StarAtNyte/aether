@@ -69,7 +69,8 @@ describe('system prompt', () => {
     // clear of the face, eroded terraces, regional species) and the golden-hour hours of the day sky.
     // 19k -> 19.6k for the outpost props in the catalog (shipping container, sandbag wall, radio mast) and the character
     // gear and game-prop lines (rifle hold, role gear, generators over stacked primitives; ~110 tokens).
-    expect(prompt.length / 4).toBeLessThan(19_600);
+    // 19.6k -> 19.75k for the streamed real products (Amazon Berkeley Objects) of real interiors and their count per room.
+    expect(prompt.length / 4).toBeLessThan(19_750);
     expect(buildSystemPrompt(REAL)).toBe(prompt);
     expect(prompt).not.toMatch(/\d{4}-\d{2}-\d{2}T/); // no timestamps (cache-stable)
   });

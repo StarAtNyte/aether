@@ -86,7 +86,7 @@ const RULES: Rule[] = [
   { re: /\b(coffee table|cocktail table|tavolino da caff[eè]|mesa de centro|table basse|couchtisch)\b/, type: 'coffee-table', cat: 'furniture', place: 'floor' },
   { re: /\b(side table|end table|accent table|nesting tables?|nest of tables|c-table|c table|sofa side|tavolino|beistelltisch|mesa auxiliar|table d'appoint)\b/, type: 'side-table', cat: 'furniture', place: 'floor' },
   { re: /\b(console table|sofa table|entryway table|hall table)\b/, type: 'console', cat: 'furniture', place: 'floor' },
-  { re: /\b(tv stand|tv unit|tv cabinet|tv bench|media console|media cabinet|entertainment center|entertainment centre|mueble para tv|meuble tv|mobile porta tv|tv-board|lowboard)\b/, type: 'sideboard', cat: 'furniture', place: 'floor' },
+  { re: /\b(tv stand|tv unit|mobile tv|mobile porta tv|tv-möbel|tv cabinet|tv bench|media console|media cabinet|entertainment center|entertainment centre|mueble para tv|meuble tv|mobile porta tv|tv-board|lowboard)\b/, type: 'sideboard', cat: 'furniture', place: 'floor' },
   { re: /\b(sideboard|buffet|credenza|aparador|credenza)\b/, type: 'sideboard', cat: 'furniture', place: 'floor' },
   { re: /\b(desk|writing table|computer table|escritorio|scrivania|bureau|schreibtisch|vanity table|dressing table)\b/, type: 'desk', cat: 'furniture', place: 'floor' },
   { re: /\b(dresser|chest of drawers|drawer chest|commode|c[oó]moda|kommode|cassettiera|tallboy|lowboy)\b/, type: 'dresser', cat: 'furniture', place: 'floor' },
@@ -215,8 +215,10 @@ function classify(m: Meta, name: string): { type: string; cat: Cat; place: Place
   if (rule.type === 'lamp' && place === 'ceiling' && !hangs && h < 0.9) place = 'surface';
   if (rule.type === 'lamp' && place === 'surface' && h > 1.25) place = 'floor';
   if (rule.type === 'shelf' && hangs) place = 'wall';
-  if (rule.type === 'planter' && hangs) place = 'wall';
+  if (rule.type === 'planter') place = hangs ? 'wall' : h >= 0.35 ? 'floor' : 'surface';
   if (rule.type === 'clock' && !hangs && !backOnZ) place = 'surface';
+  // Nothing a metre wide or most of a metre tall stands on a table.
+  if (place === 'surface' && (w > 1 || h > 0.9)) place = 'floor';
   void name;
   return { type: rule.type, cat: rule.cat, place };
 }

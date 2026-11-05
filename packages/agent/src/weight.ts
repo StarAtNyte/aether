@@ -11,9 +11,14 @@
  *   six times); the sun's shadows are cached, the lamps' are not.
  * - `many_lamps`: more lamps than a frame can shade (integrated GPUs light with 8): the rest are dropped or cost every pixel.
  * - `heavy_scatter`: instance counts past what level-of-detail fields keep smooth on an integrated GPU.
+ * - `streamed_products`: Amazon Berkeley Objects products stream from Hugging Face when the world opens. Each distinct
+ *   product is a download (about 1.4 MB with its far levels) and each placed copy draws its full triangles up close, so a
+ *   room furnished from the pack can reach hundreds of megabytes and millions of triangles. Past the limits it is a
+ *   warning; past {@link WEIGHT_LIMITS.STREAMED_MAX_BYTES} it is an error the review will not pass.
  */
 import type { Entity, WorldDoc } from '@aether/core';
 import { findingKey, scoreFindings, type Finding } from '@aether/arch';
+import { aboWeight, isAboAssetId } from '@aether/assets';
 import type { ReviewSnapshot } from './review';
 
 /** Thresholds of the weight checks. */
@@ -28,7 +33,16 @@ export const WEIGHT_LIMITS = Object.freeze({
   LAMPS: 48,
   /** Scatter instances in the whole world. */
   INSTANCES: 1_500_000,
+  /** Bytes of streamed products (distinct Amazon Berkeley Objects files) before the world is heavy to open. */
+  STREAMED_BYTES: 60 * 1024 * 1024,
+  /** Bytes of streamed products no world may load (an error: a room must not ask a laptop for 200 MB). */
+  STREAMED_MAX_BYTES: 150 * 1024 * 1024,
+  /** Full-detail triangles of the placed products (every copy counts: each draws its own up close). */
+  STREAMED_TRIS: 3_000_000,
 });
+
+/** Download and triangles assumed for a product whose index row is not loaded (the pack's median with its far levels). */
+const PRODUCT_GUESS = { bytes: 1.4 * 1024 * 1024, tris: 20_000 };
 
 const LAMP = new Set(['point', 'spot', 'area']);
 
@@ -147,10 +161,45 @@ export function weightFindings(world: WorldDoc): Finding[] {
       fix: `bring the total under ${WEIGHT_LIMITS.INSTANCES.toLocaleString('en-US')}: lower the counts of the largest layers, or widen their spacing`,
     });
   }
+
+  // Streamed products: distinct downloads and the triangles of every placed copy.
+  const products = new Map<string, Entity[]>();
+  for (const e of entities) {
+    if (e.shape.kind !== 'asset') continue;
+    const id = e.shape.variant ?? e.shape.id;
+    if (!isAboAssetId(id)) continue;
+    const g = products.get(id);
+    if (g) g.push(e);
+    else products.set(id, [e]);
+  }
+  if (products.size > 0) {
+    let bytes = 0;
+    let tris = 0;
+    const heavy: Array<[number, Entity]> = [];
+    for (const [id, placed] of products) {
+      const w = aboWeight(id) ?? PRODUCT_GUESS;
+      bytes += w.bytes;
+      tris += w.tris * placed.length;
+      heavy.push([w.bytes + w.tris * 30 * placed.length, placed[0]!]);
+    }
+    heavy.sort((a, b) => b[0] - a[0]);
+    const mb = (b: number): string => (b / 1048576).toFixed(0);
+    if (bytes > WEIGHT_LIMITS.STREAMED_BYTES || tris > WEIGHT_LIMITS.STREAMED_TRIS) {
+      const over = bytes > WEIGHT_LIMITS.STREAMED_MAX_BYTES;
+      out.push({
+        code: 'streamed_products',
+        severity: over ? 'error' : 'warning',
+        message: `${products.size} distinct streamed products (Amazon Berkeley Objects) download about ${mb(bytes)} MB and draw ${(tris / 1e6).toFixed(1)} M triangles at full detail${over ? `: more than the ${mb(WEIGHT_LIMITS.STREAMED_MAX_BYTES)} MB a world may stream` : ''}.`,
+        entities: heavy.slice(0, 12).map(([, e]) => e.id),
+        subject: 'streamed products',
+        fix: `keep streamed products under ${mb(WEIGHT_LIMITS.STREAMED_BYTES)} MB and ${(WEIGHT_LIMITS.STREAMED_TRIS / 1e6).toFixed(0)} M triangles: about 8 to 15 per room for the pieces that carry it (sofa, bed, table, chairs, lamps, rug), the same product reused for matching chairs, and crafted parts or library models for small filler`,
+      });
+    }
+  }
   return out;
 }
 
-const CODES = new Set<string>(['repeat_pieces', 'material_variety', 'shadow_lamps', 'many_lamps', 'heavy_scatter']);
+const CODES = new Set<string>(['repeat_pieces', 'material_variety', 'shadow_lamps', 'many_lamps', 'heavy_scatter', 'streamed_products']);
 
 /** `snap` with the weight findings of `world` added (score and keys follow), so every review round checks them. */
 export function withWeight(snap: ReviewSnapshot, world: WorldDoc): ReviewSnapshot {
