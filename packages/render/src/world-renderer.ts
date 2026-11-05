@@ -91,6 +91,7 @@ import { daylightLampFactor, FORWARD_LIGHTS } from './sync/lights';
 import { collectFramingItems, FOCUS_TAG } from './view/content-items';
 import { GROW_OVERSHOOT_MAX_RADIUS, GrowIn, growDelay } from './view/grow-in';
 import { installRenderPatches } from './three-patches';
+import { GRADE_TEMPERATURE_MAX, GRADE_TINT_MAX, within } from './environment/light-balance';
 import { installLodBias, lodBiasFor, setTextureLodBias } from './gpu/lod-bias';
 import { createGpuRenderer, type BackendKind, type BackendPreference, type BackendReason, type GpuInfo } from './gpu/backend';
 import { opaqueSort, type SortItem } from './gpu/render-order';
@@ -4845,7 +4846,7 @@ export class WorldRenderer {
     // A grade carried by the document (a photo's white balance and tone) replaces the preset's own fields.
     const g = this.docGrade;
     const preset: GradePreset = g
-      ? { ...base, ...(g.temperature !== undefined ? { temperature: g.temperature } : {}), ...(g.tint !== undefined ? { tint: g.tint } : {}), ...(g.saturation !== undefined ? { saturation: g.saturation } : {}), ...(g.contrast !== undefined ? { contrast: g.contrast } : {}), ...(g.exposureEv !== undefined ? { exposureEv: base.exposureEv + g.exposureEv } : {}) }
+      ? { ...base, ...(g.temperature !== undefined ? { temperature: within(g.temperature, -GRADE_TEMPERATURE_MAX, GRADE_TEMPERATURE_MAX, base.temperature) } : {}), ...(g.tint !== undefined ? { tint: within(g.tint, -GRADE_TINT_MAX, GRADE_TINT_MAX, base.tint) } : {}), ...(g.saturation !== undefined ? { saturation: g.saturation } : {}), ...(g.contrast !== undefined ? { contrast: g.contrast } : {}), ...(g.exposureEv !== undefined ? { exposureEv: base.exposureEv + g.exposureEv } : {}) }
       : base;
     this.look = preset;
     const tw = this.lookTweak;

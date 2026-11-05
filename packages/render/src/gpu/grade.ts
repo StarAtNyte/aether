@@ -12,6 +12,7 @@
  */
 import type { SkyState } from '../environment/sky-state';
 import { evScale, whiteBalance, type GradePreset } from './finishing';
+import { GRADE_CONTRAST_MAX, GRADE_SATURATION_MAX } from '../environment/light-balance';
 
 /** Grade parameters (linear RGB tints). */
 export interface Grade {
@@ -62,7 +63,9 @@ export function gradeFor(sky: Pick<SkyState, 'lightColor' | 'zenith' | 'elevatio
     saturation: night ? 0.86 : 1.04 + 0.06 * golden,
     contrast: night ? 1.02 : 1.05,
     shadowTint: tint(hexLinear(sky.zenith), night ? 0.22 : 0.14),
-    highlightTint: tint(hexLinear(sky.lightColor), night ? 0.12 : 0.1 + 0.12 * golden),
+    // The light itself is already the sun's colour: the highlights lean toward it only a little more (at golden hour 0.22 of
+    // its chroma on top turned white stucco salmon).
+    highlightTint: tint(hexLinear(sky.lightColor), night ? 0.12 : 0.08 + 0.06 * golden),
   };
 }
 
@@ -71,9 +74,13 @@ export function gradeFor(sky: Pick<SkyState, 'lightColor' | 'zenith' | 'elevatio
  * its exposure offset and white balance go to the post pass, and the grain follows it.
  */
 export function gradeWithPreset(base: Grade, preset: Pick<GradePreset, 'saturation' | 'contrast' | 'exposureEv' | 'temperature' | 'tint' | 'grain' | 'look'>): Grade {
+  // Both factors are looks of their own; stacked (a golden sky's 1.1 times a world's 1.2) they dyed the picture. The total is
+  // bounded; a preset below neutral (night, overcast) keeps its own value.
+  const saturation = base.saturation * preset.saturation;
+  const contrast = base.contrast * preset.contrast;
   return {
-    saturation: base.saturation * preset.saturation,
-    contrast: base.contrast * preset.contrast,
+    saturation: saturation > 1 ? Math.min(GRADE_SATURATION_MAX, saturation) : saturation,
+    contrast: contrast > 1 ? Math.min(GRADE_CONTRAST_MAX, contrast) : contrast,
     shadowTint: base.shadowTint,
     highlightTint: base.highlightTint,
     exposure: (base.exposure ?? 1) * evScale(preset.exposureEv),

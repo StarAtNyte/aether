@@ -286,7 +286,9 @@ describe('the world\'s look (tuned per world by the reviewer)', () => {
     expect(rig.sun.color.r).toBeCloseTo(sun.r, 6);
     expect(rig.hemi.color.b).toBeCloseTo(hemi.b, 6);
     rig.apply(env({ sky: 'day', look: { sunTint: '#ffb060', ambientTint: '#ffd0a0' } }), scene);
-    expect(rig.sun.color.b).toBeLessThan(sun.b * 0.5);
+    // A tint nudges the light (its chroma is bounded): warmer, not dyed.
+    expect(rig.sun.color.b).toBeLessThan(sun.b * 0.8);
+    expect(rig.sun.color.b).toBeGreaterThan(sun.b * 0.4);
     expect(rig.sun.color.r).toBeCloseTo(sun.r, 1);
     expect(rig.hemi.color.b).toBeLessThan(hemi.b);
     expect(rig.hemi.groundColor.b).toBeLessThan(rig.hemi.groundColor.r);

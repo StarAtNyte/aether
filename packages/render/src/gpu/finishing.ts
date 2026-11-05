@@ -169,7 +169,9 @@ export const GRADE_PRESETS: Readonly<Record<GradePresetId, GradePreset>> = Objec
   // take most of Blender's "Punchy" look (and a little less pre-curve saturation, which the look returns); dim and soft
   // light takes less.
   'archviz-daylight': { id: 'archviz-daylight', tone: 'agx', exposureEv: 0.15, saturation: 1.1, contrast: 1.14, temperature: 0.04, tint: 0, grain: 1, bloom: 0.85, look: 0.8 },
-  'golden-hour': { id: 'golden-hour', tone: 'agx', exposureEv: 0.15, saturation: 1.12, contrast: 1.14, temperature: 0.2, tint: 0.02, grain: 1, bloom: 1.1, look: 0.9 },
+  // The low sun is already orange in the light: the golden look warms and saturates less than it once did (0.2 warm, 1.12
+  // saturation and the full Punchy look over a sunset sun gave salmon walls and violet shadows).
+  'golden-hour': { id: 'golden-hour', tone: 'agx', exposureEv: 0.15, saturation: 1.06, contrast: 1.12, temperature: 0.1, tint: 0.01, grain: 1, bloom: 1.1, look: 0.7 },
   'dusk-interior': { id: 'dusk-interior', tone: 'agx', exposureEv: 0.25, saturation: 1.02, contrast: 1.12, temperature: 0.1, tint: -0.02, grain: 1.2, bloom: 1.25, look: 0.4 },
   overcast: { id: 'overcast', tone: 'agx', exposureEv: 0.2, saturation: 1.04, contrast: 1.14, temperature: -0.06, tint: 0, grain: 1, bloom: 0.7, look: 0.4 },
   night: { id: 'night', tone: 'agx', exposureEv: 0.35, saturation: 0.9, contrast: 1.1, temperature: -0.12, tint: 0, grain: 1.5, bloom: 1.3, look: 0.3 },

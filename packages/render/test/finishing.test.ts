@@ -110,7 +110,7 @@ describe('grade presets', () => {
   it('the AgX day looks counter the curve flat blacks and pale colour with a punchier contrast and saturation', () => {
     for (const id of ['archviz-daylight', 'golden-hour', 'overcast'] as const) {
       expect(GRADE_PRESETS[id].tone).toBe('agx');
-      expect(GRADE_PRESETS[id].contrast).toBeGreaterThanOrEqual(1.14);
+      expect(GRADE_PRESETS[id].contrast).toBeGreaterThanOrEqual(1.12);
       expect(GRADE_PRESETS[id].saturation).toBeGreaterThanOrEqual(1.04);
     }
   });
@@ -152,7 +152,8 @@ describe('grade presets', () => {
     const g = gradeWithPreset(base, GRADE_PRESETS['golden-hour']);
     expect(g.shadowTint).toEqual(base.shadowTint);
     expect(g.highlightTint).toEqual(base.highlightTint);
-    expect(g.saturation).toBeCloseTo(base.saturation * GRADE_PRESETS['golden-hour'].saturation);
+    // The stacked saturation is bounded (see light-balance.ts).
+    expect(g.saturation).toBeCloseTo(Math.min(1.16, base.saturation * GRADE_PRESETS['golden-hour'].saturation));
     expect(g.exposure).toBeCloseTo(evScale(GRADE_PRESETS['golden-hour'].exposureEv));
     expect(g.balance?.[0]).toBeGreaterThan(g.balance?.[2] ?? 0);
     const neutral = gradeWithPreset(NEUTRAL_GRADE, GRADE_PRESETS.neutral);

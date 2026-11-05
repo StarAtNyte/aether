@@ -4,6 +4,7 @@
  * fog scaled to the content, ground plane plus a horizon skirt, and weather —
  * all driven by `world.environment`. Pure three.js core (no renderer access).
  */
+import { AMBIENT_MIN_RATIO, SUN_MIN_RATIO, boundTint, chroma, limitChroma } from './light-balance';
 import {
   BufferAttribute,
   Color,
@@ -380,15 +381,22 @@ export class EnvironmentRig {
     this.materials.setWetness(env.weather === 'rain' ? 1 : 0);
     // The world's look tints the light colour (a reviewer's per-world adjustment); white or absent keeps the sky's own.
     this.sun.color.set(s.lightColor);
-    if (env.look?.sunTint) this.sun.color.multiply(_tint.set(env.look.sunTint));
+    // A tint nudges the light; it never dyes it past what the sky's own colour or a 3200 K sun would be (see light-balance.ts).
+    if (env.look?.sunTint) {
+      const own = 1 - chroma(this.sun.color);
+      this.sun.color.multiply(boundTint(_tint.set(env.look.sunTint)));
+      limitChroma(this.sun.color, Math.min(own, SUN_MIN_RATIO));
+    }
     this.sun.intensity = s.lightIntensity;
     setFoliageSun(s.lightDirection, this.sun.color, s.lightIntensity);
     this.hemi.color.set(s.hemiSky);
     this.hemi.groundColor.set(s.hemiGround);
     if (env.look?.ambientTint) {
-      const t = _tint.set(env.look.ambientTint);
+      const t = boundTint(_tint.set(env.look.ambientTint));
+      const own = 1 - chroma(this.hemi.color);
       this.hemi.color.multiply(t);
       this.hemi.groundColor.multiply(t);
+      limitChroma(this.hemi.color, Math.min(own, AMBIENT_MIN_RATIO));
     }
     this.hemi.intensity = s.hemiIntensity * HEMI_SHARE_WITH_IBL;
     this.applyBounce();
