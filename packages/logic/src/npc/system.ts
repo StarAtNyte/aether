@@ -650,8 +650,8 @@ export class NpcSystem implements DialogueHost {
     this.playerZ = pp[2];
     if (!Number.isNaN(this.px) && dt > 1e-6) {
       const speed = hyp(pp[0] - this.px, pp[2] - this.pz) / dt;
-      // Relative to the player's top speed: full pace is loud, a sneak (half pace) is quiet, standing still is silent.
-      const loud = this.ctx.world().player.moveSpeed * 0.7;
+      // Relative to the player's top speed (a sprint): a run (70 %) or a sprint is loud, a crouch walk (35 %) is quiet, standing still is silent.
+      const loud = this.ctx.world().player.moveSpeed * 0.6;
       this.noise = speed > loud ? 1 : speed > 0.8 ? 0.4 : 0;
     }
     if (env.input.jump) this.noise = Math.max(this.noise, 0.6);

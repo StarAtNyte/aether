@@ -63,10 +63,11 @@ export interface CharacterFeel {
 }
 
 /**
- * The feel the studio gives the player: quick to reach full speed (about 0.12 s), a firm stop, mostly
- * free control in the air, a forgiving ledge and a buffered jump.
+ * The feel the studio gives the player: a run builds up in about 0.15 s and a sprint in about 0.2 s (enough for the body to
+ * lean into it instead of snapping to speed), a firm stop of about 0.12 s, mostly free control in the air, a forgiving
+ * ledge and a buffered jump.
  */
-export const CHARACTER_FEEL: Readonly<CharacterFeel> = Object.freeze({ acceleration: 48, deceleration: 60, airControl: 0.55, coyoteTime: 0.11, jumpBuffer: 0.12, jumpCut: 0.55, fallGravity: 1.7, cutGravity: 2.2, apexGravity: 0.8 });
+export const CHARACTER_FEEL: Readonly<CharacterFeel> = Object.freeze({ acceleration: 26, deceleration: 34, airControl: 0.55, coyoteTime: 0.11, jumpBuffer: 0.12, jumpCut: 0.55, fallGravity: 1.7, cutGravity: 2.2, apexGravity: 0.8 });
 
 /** Per-frame movement input (forward/right in [-1, 1], yaw of the camera in degrees). */
 export interface CharacterInput {

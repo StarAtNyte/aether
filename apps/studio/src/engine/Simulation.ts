@@ -29,6 +29,7 @@ import { entityColliderBounds, entityWorldBounds } from '@aether/physics/bounds'
 import type { SandboxRunner } from '@aether/procgen';
 import { WorldRenderer, type LightmapStatus, type BackendPreference, type BackendReason, type ContextLossInfo, type WatchdogEvent, type GizmoCommit, type GizmoMode, type GizmoOptions, type ProofTrace, type RenderDiagnostic, type RenderProcessingStage, type RenderMemoryStats } from '@aether/render';
 import { FIXED_DT, MAX_FRAME_DT, MAX_SUBSTEPS, PLAYER_CAPSULE, PLAYER_PSEUDO_ID, STATS_INTERVAL_MS } from '../config';
+import { CROUCH_CAMERA_DROP, paceSpeed, playerPace } from './playerPace';
 import { createLogger, errorMessage } from '../lib/log';
 import { yieldToPaint } from '../lib/yieldToPaint';
 import { FixedStepper } from './FixedStepper';
@@ -287,8 +288,18 @@ export class Simulation {
   private readonly table = new TransformTable();
   private readonly input = new InputController();
   private readonly sound = new SoundBoard();
-  /** The player is holding Shift (sneaking): quieter steps, crouched body. */
+  /** The player is crouched (C toggles it): slow, quiet steps, crouched body, lower camera. */
   private sneaking = false;
+  /** The player is sprinting (Shift held while moving). */
+  private sprinting = false;
+  /** C was down at the last fixed step (the crouch toggle acts on the press). */
+  private crouchKeyDown = false;
+  /** Eased crouch amount (0 standing .. 1 crouched) for the camera drop. */
+  private crouchBlend = 0;
+  /** Feet before and after the last fixed step: the drawn body is interpolated between them (no stutter when frames and steps do not line up). */
+  private readonly stepFrom: [number, number, number] = [0, 0, 0];
+  private readonly stepTo: [number, number, number] = [0, 0, 0];
+  private stepValid = false;
   /** Aim-and-use controller of the running session (drawers, doors, taps, props to carry). */
   private interaction: PlayInteraction | null = null;
   /** The player sits on a piece of furniture (capsule disabled, eye lowered, movement locked until they stand). */
@@ -1251,6 +1262,12 @@ export class Simulation {
     this.renderer.fx.reset();
     this.overlay?.clear();
     this.renderer.setEyeHeight(1.6);
+    this.renderer.setCrouchDrop(0);
+    this.sneaking = false;
+    this.sprinting = false;
+    this.crouchKeyDown = false;
+    this.crouchBlend = 0;
+    this.stepValid = false;
     if (this.npcSig !== '') {
       this.npcSig = '';
       this.npcQuick = '';
@@ -1723,6 +1740,7 @@ export class Simulation {
     if (s.world.player.weapon) this.aimFromCamera();
     const speed = s.world.player.moveSpeed;
     const jump = s.world.player.jumpSpeed;
+    const armed = s.world.player.weapon !== undefined;
     for (let i = 0; i < steps && !s.ended; i++) {
       const input = this.input.sample(FIXED_DT);
       if (s.voxel) s.voxel.step(FIXED_DT);
@@ -1731,10 +1749,20 @@ export class Simulation {
         character.teleport(this.sitting.pose.floor);
         if (Math.abs(input.forward) > 0.4 || Math.abs(input.right) > 0.4 || input.jump) this.standUp();
       } else if (character) {
-        // Holding Shift sneaks: half pace, quiet enough for guards not to hear.
-        const sneak = input.keys.has('ShiftLeft') || input.keys.has('ShiftRight');
-        this.sneaking = sneak;
-        character.move({ forward: input.forward, right: input.right, jump: input.jump, yawDeg: input.pointerYawDeg }, FIXED_DT, sneak ? speed * 0.5 : speed, jump);
+        const pace = playerPace(input, armed, this.sneaking, this.crouchKeyDown, character.grounded, this.sprinting);
+        this.sneaking = pace.crouched;
+        this.sprinting = pace.sprinting;
+        this.crouchKeyDown = pace.crouchKey;
+        const from = character.position;
+        character.move({ forward: input.forward, right: input.right, jump: input.jump, yawDeg: input.pointerYawDeg }, FIXED_DT, paceSpeed(speed, pace), jump);
+        const to = character.position;
+        this.stepFrom[0] = from[0];
+        this.stepFrom[1] = from[1];
+        this.stepFrom[2] = from[2];
+        this.stepTo[0] = to[0];
+        this.stepTo[1] = to[1];
+        this.stepTo[2] = to[2];
+        this.stepValid = true;
         // Pushing for a second without getting anywhere (wedged in furniture, on a table edge): nudge to the nearest free ground.
         const at = character.position;
         if (this.stuck.update(at[0], at[2], Math.abs(input.forward) > 0.4 || Math.abs(input.right) > 0.4, FIXED_DT)) {
@@ -1765,15 +1793,37 @@ export class Simulation {
       const f = this.sitting.frame;
       this.renderer.setPlayerAvatar(f.position, this.input.yawDeg, { grounded: true, vy: 0, crouching: false, sprinting: false, sitting: f.sitting, seatTop: this.sitting.pose.top, faceYawDeg: f.yawDeg });
     } else if (character) {
-      this.renderer.setPlayerAvatar(character.position, this.input.yawDeg, {
+      this.renderer.setPlayerAvatar(this.drawnFeet(character), this.input.yawDeg, {
         grounded: character.grounded,
         vy: character.verticalSpeed,
         crouching: this.sneaking,
-        sprinting: false,
+        sprinting: this.sprinting,
+        aimPitchDeg: this.input.pitchDeg,
         // Armed, the body faces where the gun points and strafes; otherwise it turns toward its motion.
-        ...(s.world.player.weapon ? { faceYawDeg: this.input.yawDeg } : {}),
+        ...(armed ? { faceYawDeg: this.input.yawDeg } : {}),
       });
     }
+    // The camera sinks with the body while crouched (eased like the pose, about a quarter second).
+    this.crouchBlend += ((this.sneaking && !this.sitting ? 1 : 0) - this.crouchBlend) * Math.min(1, dt * 9);
+    if (this.crouchBlend < 0.002) this.crouchBlend = 0;
+    this.renderer.setCrouchDrop(this.crouchBlend * CROUCH_CAMERA_DROP);
+  }
+
+  /**
+   * Where the body is drawn: between the feet before and after the last fixed step, at the share of a step the frame is
+   * past it. Physics runs at 60 Hz and frames rarely line up with it; drawing the raw step position moves the body (and
+   * the camera that follows it) 0, 1 or 2 steps a frame, which reads as stutter. A jump of more than 1.5 m in one step is
+   * a teleport (respawn, unstick) and is drawn at once.
+   */
+  private drawnFeet(character: CharacterController): Vec3 {
+    const to = character.position;
+    if (!this.stepValid) return to;
+    const a = this.stepper.alpha;
+    const f = this.stepFrom;
+    const t = this.stepTo;
+    if (Math.abs(to[0] - t[0]) + Math.abs(to[1] - t[1]) + Math.abs(to[2] - t[2]) > 1e-6) return to;
+    if (Math.hypot(t[0] - f[0], t[1] - f[1], t[2] - f[2]) > 1.5) return to;
+    return [f[0] + (t[0] - f[0]) * a, f[1] + (t[1] - f[1]) * a, f[2] + (t[2] - f[2]) * a];
   }
 
   private combatKey = '';
