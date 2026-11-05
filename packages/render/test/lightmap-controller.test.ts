@@ -132,6 +132,30 @@ describe('lightmap controller', () => {
     t.ctl.dispose();
   });
 
+  it('looks again when the host verdict changes (a world opened on the low tier, then switched to ultra)', async () => {
+    const verdict = { auto: false };
+    const t = setup({ auto: false });
+    // The verdict is read through the options object: swap it for one that follows `verdict`.
+    (t.ctl as unknown as { opts: { autoBake: () => boolean } }).opts.autoBake = () => verdict.auto;
+    t.ctl.setEnabled(true);
+    t.ctl.volumeChanged();
+    await tick(1500);
+    expect(t.ctl.status.state).toBe('idle');
+    expect(t.posted).toHaveLength(0);
+    // Before the fix nothing scheduled another look: the building stayed without baked light on ultra.
+    verdict.auto = true;
+    t.ctl.policyChanged();
+    expect(t.ctl.deciding).toBe(true);
+    await until(() => t.ctl.ready);
+    expect(t.posted).toHaveLength(1);
+    expect(t.ctl.status.state).toBe('applied');
+    expect(t.ctl.deciding).toBe(false);
+    // An applied lightmap is left alone by a later change of verdict.
+    t.ctl.policyChanged();
+    expect(t.ctl.deciding).toBe(false);
+    t.ctl.dispose();
+  });
+
   it('bakes on request, gives the surfaces coordinates and the light its atlas, and puts everything back on invalidate', async () => {
     const t = setup();
     t.ctl.setEnabled(true);

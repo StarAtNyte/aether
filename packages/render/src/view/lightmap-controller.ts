@@ -181,7 +181,7 @@ export class LightmapController implements LightmapSource {
   private appliedBytes: Uint8Array | null = null;
   private disposed = false;
   /** A bake is scheduled or being decided (gathering, looking for a stored lightmap): not final yet. */
-  private deciding = false;
+  private looking = false;
   /** A bundled or cached file is being given to the surfaces (a few slices): not a bake, so no status pill, but not final either. */
   private applying = false;
   /** What the last key was made of (a bundled file that does not match: compare this with the one it was baked from). */
@@ -205,7 +205,7 @@ export class LightmapController implements LightmapSource {
 
   /** A bake is waiting for the volume, gathering, or running (captures that want the final light wait for it). */
   get baking(): boolean {
-    return this.enabled && (this.state === 'baking' || this.state === 'waiting' || this.deciding || this.applying);
+    return this.enabled && (this.state === 'baking' || this.state === 'waiting' || this.looking || this.applying);
   }
 
   /** A lightmap is applied to the building. */
@@ -288,6 +288,23 @@ export class LightmapController implements LightmapSource {
     this.schedule(LIGHTMAP_SETTLE_SECONDS * 1000);
   }
 
+  /**
+   * The host's verdict on an automatic bake may have changed (the quality tier rose from low): a building the automatic policy
+   * left without a lightmap is looked at again. Before this, a world opened on the low tier stayed idle ("no baked light for
+   * this building yet") after a switch to ultra, because nothing scheduled another look. Running, applied, cancelled, failed and
+   * requested bakes are left as they are.
+   */
+  policyChanged(): void {
+    if (!this.enabled || this.disposed || this.off || this.requested || this.looking || this.applying) return;
+    if (this.state !== 'idle') return;
+    this.schedule(LIGHTMAP_SETTLE_SECONDS * 1000);
+  }
+
+  /** An automatic look is scheduled or a result is being applied (not a running bake: see {@link status}). */
+  get deciding(): boolean {
+    return this.enabled && !this.disposed && (this.looking || this.applying);
+  }
+
   /** Bake now at this quality (the assistant's `bake_light`, the studio's button). Replaces a running or applied bake. */
   request(quality: LightmapQuality, samples?: number): void {
     if (!this.enabled || this.disposed) return;
@@ -345,11 +362,11 @@ export class LightmapController implements LightmapSource {
 
   private schedule(ms: number): void {
     if (this.timer !== null) clearTimeout(this.timer);
-    this.deciding = !this.off;
+    this.looking = !this.off;
     this.timer = setTimeout(() => {
       this.timer = null;
       void this.begin().finally(() => {
-        if (this.timer === null) this.deciding = false;
+        if (this.timer === null) this.looking = false;
       });
     }, ms);
   }
@@ -357,7 +374,7 @@ export class LightmapController implements LightmapSource {
   private cancelJob(): void {
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
-    this.deciding = false;
+    this.looking = false;
     if (this.job && this.worker) {
       // A stale multi-second bake would hold the worker: replace it.
       this.worker.terminate();
