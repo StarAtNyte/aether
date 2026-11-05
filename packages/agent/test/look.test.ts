@@ -104,3 +104,16 @@ describe('tune_look', () => {
     expect(text).toContain('fog: none');
   });
 });
+
+describe('look bounds', () => {
+  it('holds an extreme grade and softens a dyeing light tint', async () => {
+    const { softTint, GRADE_BOUNDS, LIGHT_TINT_MAX_CHROMA } = await import('../src/look-edit');
+    expect(softTint('#ffffff', LIGHT_TINT_MAX_CHROMA)).toBe('#ffffff');
+    expect(softTint('#ffe2c2', LIGHT_TINT_MAX_CHROMA)).toBe('#ffe2c2');
+    const soft = softTint('#ff8040', LIGHT_TINT_MAX_CHROMA);
+    const n = parseInt(soft.slice(1), 16);
+    const c = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    expect(1 - Math.min(...c) / Math.max(...c)).toBeLessThanOrEqual(LIGHT_TINT_MAX_CHROMA + 0.01);
+    expect(GRADE_BOUNDS.saturation?.[1]).toBeLessThanOrEqual(1.25);
+  });
+});

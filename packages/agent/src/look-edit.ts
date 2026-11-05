@@ -95,6 +95,34 @@ const GRADE_FIELDS = ['temperature', 'tint', 'saturation', 'contrast', 'exposure
 const SURROUND_FIELDS = { surroundings: 'preset', hills: 'hills', hillDistance: 'hillDistance', treeDensity: 'trees', treeSpecies: 'species', farFields: 'fields', clearRadius: 'clearRadius' } as const;
 const LOOK_FIELDS = ['interiorWarmth', 'interiorBalance', 'sunTint', 'ambientTint', 'foliageTint', 'lampStrength', 'vignette'] as const;
 
+/**
+ * Ranges a document grade is held to. The sky model already colours the light for the hour and the renderer's look
+ * saturates it: a grade at the old schema limits (saturation 1.8, temperature 1) on top dyed the whole world (Lisbon
+ * Hills' 1.3 saturation and +0.18 warmth over a sunset sun turned its white stucco salmon). The renderer bounds the totals
+ * too; these keep what is stored honest.
+ */
+export const GRADE_BOUNDS: Readonly<Partial<Record<(typeof GRADE_FIELDS)[number], readonly [number, number]>>> = Object.freeze({
+  temperature: [-0.3, 0.3],
+  tint: [-0.12, 0.12],
+  saturation: [0.7, 1.2],
+  contrast: [0.8, 1.25],
+});
+
+/** Largest chroma (1 - min/max of the sRGB channels) of a sun or ambient tint. */
+export const LIGHT_TINT_MAX_CHROMA = 0.4;
+
+/** `hex` moved toward white until its chroma is at most `max` (unchanged when it already is). */
+export function softTint(hex: string, max: number): string {
+  if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return hex;
+  const n = parseInt(hex.slice(1), 16);
+  const c = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  const hi = Math.max(...c);
+  const lo = Math.min(...c);
+  if (hi === 0 || 1 - lo / hi <= max) return hex;
+  const k = 1 - max / (1 - lo / hi);
+  return `#${c.map((v) => Math.round(v + (hi - v) * k).toString(16).padStart(2, '0')).join('')}`;
+}
+
 /** Result of {@link lookPatches}. */
 export interface LookEditResult {
   patches: Patch[];
@@ -144,7 +172,10 @@ export function lookPatches(world: WorldDoc, input: TuneLookInput): LookEditResu
     }
   }
   for (const k of GRADE_FIELDS) {
-    const v = input[k];
+    const raw = input[k];
+    const bound = GRADE_BOUNDS[k];
+    const v = raw !== undefined && bound ? Math.max(bound[0], Math.min(bound[1], raw)) : raw;
+    if (raw !== undefined && v !== raw) notes.push(`grade.${k} ${show(raw)} held to ${show(v)} (the sky already colours the light; beyond this the picture dyes)`);
     if (v !== undefined) {
       grade[k] = v;
       note(`grade.${k}`, k, v);
@@ -154,7 +185,9 @@ export function lookPatches(world: WorldDoc, input: TuneLookInput): LookEditResu
     }
   }
   for (const k of LOOK_FIELDS) {
-    const v = input[k];
+    const raw = input[k];
+    const v = (k === 'sunTint' || k === 'ambientTint') && typeof raw === 'string' ? softTint(raw, LIGHT_TINT_MAX_CHROMA) : raw;
+    if (raw !== undefined && v !== raw) notes.push(`look.${k} ${show(raw)} softened to ${show(v)} (a light tint nudges the light, it does not dye it)`);
     if (v !== undefined) {
       look[k] = v;
       note(`look.${k}`, k, v);
