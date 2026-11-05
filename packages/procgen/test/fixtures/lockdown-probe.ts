@@ -55,6 +55,18 @@ attempt('protoGetterEscape', `const P = 'proto' + 'type'; const d = Object.getOw
 attempt('protoMethodEscape', `const P = 'proto' + 'type'; const d = Object.getOwnPropertyDescriptor(WorkerGlobalScope[P], 'fetch'); throw new Error('LEAK:' + d.value.call(undefined));`);
 attempt('interfaceObject', `if (typeof IDBFactory !== 'undefined') throw new Error('LEAK:IDBFactory'); ${FINISH}`);
 attempt('intrinsicsKept', `const m = new Map([[1, Math.max(1, 2)]]); if (JSON.stringify([...m]) !== '[[1,2]]' || !Number.isFinite(parseFloat('1.5'))) throw new Error('intrinsics broken'); ${FINISH}`);
+// Determinism: Math.random is seeded per run and the clock is frozen, so two runs of one seed are identical.
+const IMPURE = "const j = Math.random() + Date.now() / 1e15 + new Date().getTime() / 1e15; api.add(api.box(1 + j, 1, 1 + Math.random()), {}); return api.build();";
+const runSeeded = (seed: number): string => {
+  const fn = compileGenerator(IMPURE, caps.FunctionCtor);
+  caps.reseed(seed);
+  return Array.from(runCompiled(fn, {}, seed).parts[0]!.positions).join(',');
+};
+results.deterministic = runSeeded(3) === runSeeded(3) ? 'same' : 'differs';
+results.seeded = runSeeded(3) !== runSeeded(4) ? 'varies' : 'constant';
+results.frozenNow = String(Date.now());
+results.frozenNew = String(new Date().getTime());
+results.dateCtorEscape = String(new (new Date().constructor as DateConstructor)().getTime());
 results.pollutedAfter = String(({} as Record<string, unknown>).polluted);
 results.fetchType = typeof scope.fetch;
 results.functionGlobal = typeof scope.Function;

@@ -7,6 +7,7 @@ import {
   createWorkerSandbox, GENERATOR_API_DTS, GENERATOR_EXAMPLES, staticCheckSource, validateOutput, type WorkerLike,
 } from '../src/index';
 import { compileGenerator, errorMessage, runCompiled } from '../src/sandbox/runner';
+import { FROZEN_TIME } from '../src/sandbox/determinism';
 import { parseRunRequest, parseWorkerMessage, transferables } from '../src/sandbox/protocol';
 
 const FINISH = 'api.add(api.box(1, 1, 1), { color: "#336699" }); return api.build();';
@@ -73,6 +74,28 @@ describe('GENERATOR_API_DTS', () => {
       'emissiveIntensity', "'crystal'", 'halfExtents']) {
       expect(GENERATOR_API_DTS, name).toContain(name);
     }
+  });
+});
+
+describe('generator determinism', () => {
+  // A generator that reaches for Math.random and the clock: cached output must still equal a fresh run.
+  const IMPURE = GeneratorDef.parse({
+    id: 'impure',
+    description: 'uses Math.random and Date',
+    params: {},
+    source: "const t = Date.now() / 1e15 + new Date().getTime() / 1e15; for (let i = 0; i < 4; i++) api.add(api.box(1 + Math.random(), 1 + t, 1 + Math.random()).translate(i * 2, 0, 0), { color: '#808080' }); return api.build();",
+  });
+  const bytes = (o: { parts: Array<{ positions: Float32Array; normals: Float32Array; indices: Uint32Array }> }): string =>
+    o.parts.map((p) => `${Array.from(p.positions).join(',')}|${Array.from(p.normals).join(',')}|${Array.from(p.indices).join(',')}`).join('#');
+
+  it('gives identical output for two runs of one seed in the Node sandbox', async () => {
+    const sb = createNodeSandbox();
+    const a = await sb.run(IMPURE, {}, 7);
+    const b = await sb.run(IMPURE, {}, 7);
+    const c = await sb.run(IMPURE, {}, 8);
+    expect(bytes(a)).toBe(bytes(b));
+    expect(bytes(a)).not.toBe(bytes(c));
+    sb.dispose();
   });
 });
 
@@ -369,5 +392,11 @@ describe('worker lockdown (child process probe)', () => {
     expect(r.pollutedAfter).toBe('undefined');
     expect(r.fetchType).toBe('undefined');
     expect(r.functionGlobal).toBe('undefined');
+    // Determinism: seeded Math.random and a frozen clock.
+    expect(r.deterministic).toBe('same');
+    expect(r.seeded).toBe('varies');
+    expect(r.frozenNow).toBe(String(FROZEN_TIME));
+    expect(r.frozenNew).toBe(String(FROZEN_TIME));
+    expect(r.dateCtorEscape).toBe(String(FROZEN_TIME));
   });
 });

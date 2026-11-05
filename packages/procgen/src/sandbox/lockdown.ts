@@ -14,8 +14,10 @@
  *    live on the prototypes, and an interface object (`WorkerGlobalScope`)
  *    hands them out through `Object.getOwnPropertyDescriptor`, where calling
  *    them with an undefined receiver falls back to the global object;
- * 5. freeze the shared intrinsics so one run cannot tamper with the next.
+ * 5. make `Math.random` seeded and freeze the clock (determinism.ts), so cached output equals a fresh run,
+ * 6. freeze the shared intrinsics so one run cannot tamper with the next.
  */
+import { installDeterminism, type DeterminismTarget } from './determinism';
 
 /** Globals removed from the worker scope. */
 export const BLOCKED_GLOBALS: readonly string[] = [
@@ -48,6 +50,8 @@ export interface SandboxCapabilities {
   post(message: unknown, transfer: Transferable[]): void;
   FunctionCtor: FunctionConstructor;
   now(): number;
+  /** Re-seed the realm's `Math.random` for the next run (see determinism.ts). */
+  reseed(seed: number): void;
 }
 
 /** Minimal view of a worker global scope (also satisfiable by a plain object in tests). */
@@ -122,10 +126,12 @@ export function lockdown(scope: LockableScope, onMessage: (e: MessageEvent, caps
   const rawPost = scope.postMessage.bind(scope);
   const FunctionCtor = Function;
   const perf = typeof performance !== 'undefined' ? performance : undefined;
+  let reseed: (seed: number) => void = () => undefined;
   const caps: SandboxCapabilities = {
     post: (message, transfer) => rawPost(message, transfer),
     FunctionCtor,
     now: () => (perf ? perf.now() : 0),
+    reseed: (seed) => reseed(seed),
   };
   scope.addEventListener('message', (e) => onMessage(e, caps));
 
@@ -150,14 +156,18 @@ export function lockdown(scope: LockableScope, onMessage: (e: MessageEvent, caps
   // 4. strip every other host global, on the scope and on its prototype chain
   stripHostGlobals(scope);
 
-  // 5. freeze intrinsics shared between runs (globals such as `Function` are shadowed by now:
+  // 5. seeded Math.random, frozen clock (before the freeze below)
+  const RealDate = Date;
+  reseed = installDeterminism(scope as unknown as DeterminismTarget);
+
+  // 6. freeze intrinsics shared between runs (globals such as `Function` are shadowed by now:
   //    only use values captured above or names that are not blocked)
   const intrinsics: unknown[] = [
     Object, Object.prototype, FunctionCtor.prototype, Array, Array.prototype, String, String.prototype, Number, Number.prototype,
     Boolean, Boolean.prototype, Symbol, Symbol.prototype, Error, Error.prototype, TypeError, TypeError.prototype,
     RangeError, RangeError.prototype, SyntaxError, SyntaxError.prototype, ReferenceError, ReferenceError.prototype,
     Math, JSON, Reflect, Promise, Promise.prototype, Map, Map.prototype, Set, Set.prototype, WeakMap, WeakMap.prototype,
-    WeakSet, WeakSet.prototype, RegExp, RegExp.prototype, Date, Date.prototype, ArrayBuffer, ArrayBuffer.prototype,
+    WeakSet, WeakSet.prototype, RegExp, RegExp.prototype, Date, RealDate, Date.prototype, ArrayBuffer, ArrayBuffer.prototype,
     Object.getPrototypeOf(Int8Array), Object.getPrototypeOf(Int8Array.prototype),
     Float32Array, Float32Array.prototype, Float64Array, Float64Array.prototype, Uint32Array, Uint32Array.prototype,
     Uint16Array, Uint16Array.prototype, Uint8Array, Uint8Array.prototype, Int32Array, Int32Array.prototype,

@@ -12,6 +12,7 @@
  *   every host function/object handed in is re-parented onto the context's
  *   intrinsics so `.constructor` chains never reach the host realm; host
  *   errors are re-created as context errors; arguments are deep-copied),
+ * - `Math.random` seeded from the run's seed and a frozen clock (sandbox/determinism.ts),
  * - static source screening (advisory only: a denylist that runtime-built
  *   property names bypass), params resolution and output validation.
  * Never import this module from browser code (index.ts does not).
@@ -24,6 +25,13 @@ import { Mesh } from './kernel/mesh';
 import { PROCGEN_LIMITS } from './limits';
 import { validateOutput } from './output';
 import { prepareRun } from './sandbox/worker-sandbox';
+import { installDeterminism } from './sandbox/determinism';
+
+/**
+ * Seeded `Math.random` and a frozen clock in the context (the same function as the worker's lockdown, from its
+ * source text). `__name` is a local binding for transpilers that wrap named functions with it.
+ */
+const DETERMINISM_SCRIPT = new vm.Script(`(() => { const __name = (f) => f; return (${installDeterminism.toString()})(globalThis); })()`, { filename: 'aether-determinism.js' });
 
 /** Methods of GeneratorApi exposed to untrusted code (allowlist). */
 const API_METHODS = [
@@ -262,6 +270,8 @@ function runInVm(source: string, params: Record<string, Json>, seed: number, tim
     microtaskMode: 'afterEvaluate',
   });
   const realm = vm.runInContext(REALM_SETUP, context, { timeout: 1000 }) as Realm;
+  const reseed = DETERMINISM_SCRIPT.runInContext(context, { timeout: 1000 }) as (seed: number) => void;
+  reseed(seed);
   const membrane = new Membrane(realm);
   const api = createGeneratorApi(seed);
   let fn: unknown;

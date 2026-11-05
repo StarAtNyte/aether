@@ -18,6 +18,7 @@ function handle(e: MessageEvent, caps: SandboxCapabilities): void {
     if (!check.ok) throw new Error(`source rejected: ${check.problems.join('; ')}`);
     const started = caps.now();
     const fn = compileGenerator(req.source, caps.FunctionCtor);
+    caps.reseed(req.seed);
     const output = runCompiled(fn, req.params, req.seed);
     output.stats.ms = Math.max(0, caps.now() - started);
     reply = { type: 'result', id: req.id, ok: true, output };
