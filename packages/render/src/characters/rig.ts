@@ -63,6 +63,15 @@ export class CharacterRig {
   autoMotion = true;
   /** World point to look at, or null. */
   lookTarget: Vector3 | null = null;
+  /**
+   * Hips turned away from the chest (radians, about up) toward where the body walks while the facing is imposed (a player
+   * strafing with a gun): the legs step that way, the chest and the gun stay on the aim. 0 for everyone else.
+   */
+  hipYaw = 0;
+  /** Walking backwards with the facing imposed: the gait plays in reverse. */
+  backward = false;
+  /** Aim pitch (radians, positive up) of a shouldered gun: the chest bends and the gun pitches with it. */
+  aimPitch = 0;
   readonly machine: LocomotionMachine;
   private readonly mixer: AnimationMixer;
   private readonly actions = new Map<string, AnimationAction>();
@@ -81,6 +90,7 @@ export class CharacterRig {
   private readonly bones: {
     root: Bone | null;
     spine: Bone | null;
+    spine1: Bone | null;
     neck: Bone | null;
     head: Bone | null;
     lUpper: Bone | null;
@@ -161,6 +171,7 @@ export class CharacterRig {
     this.bones = {
       root: boneOf(s, 'Bip01'),
       spine: boneOf(s, 'Bip01_Spine2'),
+      spine1: boneOf(s, 'Bip01_Spine1'),
       neck: boneOf(s, 'Bip01_Neck'),
       head: boneOf(s, 'Bip01_Head'),
       lUpper: boneOf(s, 'Bip01_L_UpperArm'),
@@ -356,8 +367,9 @@ export class CharacterRig {
       this.root.updateMatrixWorld(true);
       const hand = this.bones.rHand;
       const side = hand ? Math.sign(this.root.worldToLocal(hand.getWorldPosition(new Vector3())).x) || 1 : 1;
-      prop.group.position.set(side * 0.13, 1.22, -0.3);
-      prop.group.rotation.set(-0.06, 0, 0);
+      prop.group.position.set(side * GUN_AT[0], GUN_AT[1], GUN_AT[2]);
+      prop.group.rotation.set(GUN_TILT, 0, 0);
+      this.neckRef = null;
       this.root.add(prop.group);
       return;
     }
@@ -433,6 +445,7 @@ export class CharacterRig {
     this.showDetail(detail);
     if (this.disposed || !(dt > 0)) return;
     const step = Math.min(dt, 0.25);
+    this.lastStep = step;
     if (this.autoMotion && this.tracked) {
       this.tracked.getWorldPosition(_v);
       if (this.primed) {
@@ -454,6 +467,8 @@ export class CharacterRig {
     if (this.current) {
       this.timeScale += (plan.timeScale - this.timeScale) * Math.min(1, step * 10);
       this.current.timeScale = plan.loop && plan.state === 'loco' ? this.timeScale : plan.timeScale;
+      // Backing off with the facing imposed: the gait runs backwards (the clip's own stride, the other way).
+      if (this.backward && plan.loop && GAIT.test(this.currentName)) this.current.timeScale = -Math.abs(this.current.timeScale);
       // The jump clip plays once through the arc (take-off, apex, touch-down) at the pace of the physics, not wall time.
       if (this.currentName === 'jump_air' && !this.input.grounded && (plan.state === 'jump' || plan.state === 'air')) {
         this.clipPhase = jumpClipPhase(this.input.vy, this.peakUp, this.clipPhase);
@@ -467,6 +482,7 @@ export class CharacterRig {
     if (this.bones.root && this.hipScale !== 1) this.bones.root.position.y = this.bones.root.position.y * this.hipScale;
     this.checkFootsteps();
     this.dampHeldArm(plan.state);
+    if (detail >= 1) this.turnHipsAndChest(plan.state, step);
     this.model.position.set(0, 0, 0);
     this.airArms = 0;
     this.trackAir(step);
@@ -557,11 +573,15 @@ export class CharacterRig {
     this.kneeS += ((pose?.kneeFlex ?? 0) - this.kneeS) * ease;
     this.plantS += ((pose ? pose.plant : landing ? 1 : 0) - this.plantS) * Math.min(1, dt * 18);
     this.landS += ((landing ? 1 : 0) - this.landS) * Math.min(1, dt * 16);
+    // The crouch eases in and out over about 0.4 s (smoothstep of a linear ramp: no lurch at either end).
+    const crouchWant = state === 'crouch' && this.input.crouching && this.input.grounded ? 1 : 0;
+    this.crouchT = Math.max(0, Math.min(1, this.crouchT + (crouchWant ? 1 : -1) * dt / CROUCH_TIME));
+    const crouch = this.crouchT * this.crouchT * (3 - 2 * this.crouchT);
     if (this.hipS < 0.002) this.hipS = 0;
     if (this.kneeS < 0.002) this.kneeS = 0;
     if (this.plantS < 0.01) this.plantS = 0;
     if (this.landS < 0.01) this.landS = 0;
-    if (this.seatBlend === 0 && this.hipS === 0 && this.kneeS === 0 && this.plantS === 0 && this.landS === 0) return;
+    if (this.seatBlend === 0 && this.hipS === 0 && this.kneeS === 0 && this.plantS === 0 && this.landS === 0 && crouch === 0) return;
     this.root.updateWorldMatrix(true, true);
     const rootY = this.root.getWorldPosition(_v).y;
     if (this.seatBlend > 0 && (this.seatTop !== null || this.seatAnchor !== null) && b.pelvis) {
@@ -584,6 +604,7 @@ export class CharacterRig {
       this.plantFeet(rootY, this.seatBlend);
       if (!this.prop && this.seatBlend > 0.4) this.handsOnLap(this.seatBlend * 0.9);
     }
+    if (crouch > 0 && this.seatBlend === 0) this.crouchLayer(crouch, sc);
     if (this.landS > 0 && b.pelvis) {
       // The captured landing crouch is deep: a hop keeps a share of it, a drop all of it; the planted feet bend the knees the rest.
       const rest = this.pelvisRest(sc);
@@ -600,6 +621,57 @@ export class CharacterRig {
     if (this.plantS > 0) {
       this.root.updateWorldMatrix(false, true);
       this.plantFeet(airborne ? this.launchY : rootY, airborne ? this.plantS : this.plantS * (1 - landKeep(this.impact) * 0.4));
+    }
+  }
+
+  private crouchT = 0;
+
+  /**
+   * A crouch laid over the standing idle or walk: the hips sink and go back a little, the knees bend so each foot stays where
+   * the clip put it (a walk keeps its steps and lifts, a stand keeps its soles flat), the back leans forward and the neck
+   * comes back up so the eyes stay level. `w` is the eased crouch amount (0..1).
+   */
+  private crouchLayer(w: number, sc: number): void {
+    const b = this.bones;
+    const legs = [[b.lThigh, b.lCalf, b.lFoot], [b.rThigh, b.rCalf, b.rFoot]] as const;
+    this.root.updateWorldMatrix(true, true);
+    let i = 0;
+    for (const [, , foot] of legs) {
+      if (!foot) continue;
+      foot.getWorldPosition(_feet[i] as Vector3);
+      foot.getWorldQuaternion(_feetQ[i] as Quaternion);
+      i++;
+    }
+    this.model.position.y -= CROUCH_DROP * sc * w;
+    this.model.position.z += CROUCH_BACK * sc * w;
+    this.root.updateWorldMatrix(false, true);
+    this.model.getWorldQuaternion(_qm);
+    for (const [bone, angle] of [[b.spine1, CROUCH_LEAN * 0.6], [b.spine, CROUCH_LEAN * 0.4], [b.neck, -CROUCH_LEAN * 0.8]] as const) {
+      if (!bone) continue;
+      bone.parent?.getWorldQuaternion(_qp);
+      bone.quaternion.copy(boneTurned(bone.quaternion, _qp, _qm, _xAxis, angle * w));
+      bone.updateWorldMatrix(false, true);
+    }
+    const e = this.root.matrixWorld.elements;
+    const yaw = Math.atan2(e[8] as number, e[10] as number) + this.hipYaw;
+    const fx = -Math.sin(yaw);
+    const fz = -Math.cos(yaw);
+    i = 0;
+    for (const [thigh, calf, foot] of legs) {
+      if (!foot) continue;
+      const at = _feet[i] as Vector3;
+      const q = _feetQ[i] as Quaternion;
+      i++;
+      if (!thigh || !calf) continue;
+      calf.getWorldPosition(_pole);
+      _pole.x += fx * 0.6;
+      _pole.z += fz * 0.6;
+      solveTwoBone(thigh, calf, foot, at, _pole, 1);
+      // The sole keeps the angle the clip gave it.
+      calf.updateWorldMatrix(true, false);
+      calf.getWorldQuaternion(_qp);
+      foot.quaternion.copy(_qp.invert().multiply(q));
+      foot.updateWorldMatrix(false, true);
     }
   }
 
@@ -744,7 +816,7 @@ export class CharacterRig {
     next.timeScale = plan.timeScale;
     // Gait to gait: continue from the same point of the cycle so feet stay in step.
     if (prev && plan.loop && prev.getClip().duration > 0) {
-      const gait = (n: string): boolean => /^(walk|run|jog|sprint|stroll|crouch_walk)/.test(n);
+      const gait = (n: string): boolean => GAIT.test(n);
       if (gait(prev.getClip().name) && gait(next.getClip().name)) next.time = ((prev.time % prev.getClip().duration) / prev.getClip().duration) * next.getClip().duration;
     }
     next.play();
@@ -759,18 +831,22 @@ export class CharacterRig {
     const cur = this.current;
     if (!cb || !cur || !this.plan || !this.input.grounded) return;
     const name = this.currentName;
-    if (!/^(walk|run|jog|sprint|stroll|crouch_walk)/.test(name) || this.smoothSpeed < 0.3) return;
+    if (!GAIT.test(name) || this.smoothSpeed < 0.3) return;
     const info = this.opts.table.get(name);
     const contacts = info?.contacts;
     if (!contacts || contacts.length === 0) return;
     const dur = cur.getClip().duration;
     const phase = (cur.time % dur) / dur;
-    const prev = this.footPhase;
+    const last = this.footPhase;
     this.footPhase = phase;
-    if (prev < 0) return;
+    if (last < 0) return;
+    // A gait played backwards crosses its contacts the other way round.
+    const rev = cur.timeScale < 0;
+    const prev = rev ? 1 - last : last;
+    const now = rev ? 1 - phase : phase;
     for (const c of contacts) {
-      const at = c[0] as number;
-      const crossed = prev <= phase ? prev < at && phase >= at : prev < at || phase >= at;
+      const at = rev ? 1 - (c[0] as number) : (c[0] as number);
+      const crossed = prev <= now ? prev < at && now >= at : prev < at || now >= at;
       if (crossed) cb(c[1] === 0 ? 'L' : 'R', this.smoothSpeed, this);
     }
   }
@@ -805,6 +881,50 @@ export class CharacterRig {
     if (detail >= 1) applyLook(this.bones, this.lookState, bodyYaw);
   }
 
+  private lastStep = 0;
+  private chestPitch = 0;
+  private sprintLower = 0;
+  /** Neck height and depth (rig frame) the shouldered gun was placed against, and the eased offset from it. */
+  private neckRef: Vector3 | null = null;
+  private readonly neckOff = new Vector3();
+
+  /**
+   * Strafing with a gun: the pelvis (and with it the legs) turns by {@link hipYaw}, the upper spine turns back so the chest
+   * keeps facing the aim. Aiming up or down bends the upper spine a little with the pitch (the gun pivots at the shoulder
+   * for the rest). Runs after the mixer, before the look and the hand IK.
+   */
+  private turnHipsAndChest(state: string, dt: number): void {
+    const b = this.bones;
+    const pitchWant = this.prop?.shouldered && state !== 'sit' && state !== 'sit_down' && state !== 'stand_up' && state !== 'dead' ? MathUtils.clamp(this.aimPitch, -0.9, 0.9) : 0;
+    this.chestPitch += (pitchWant - this.chestPitch) * Math.min(1, dt * 14);
+    const yaw = this.hipYaw;
+    if (Math.abs(yaw) < 1e-3 && Math.abs(this.chestPitch) < 1e-3) return;
+    const pelvis = b.pelvis;
+    const s1 = b.spine1;
+    const s2 = b.spine;
+    if (!pelvis || !s1 || !s2) return;
+    this.root.updateWorldMatrix(true, true);
+    this.model.getWorldQuaternion(_qm);
+    if (Math.abs(yaw) >= 1e-3) {
+      pelvis.parent?.getWorldQuaternion(_qp);
+      pelvis.quaternion.copy(boneTurned(pelvis.quaternion, _qp, _qm, _yAxis, yaw));
+      pelvis.updateWorldMatrix(false, true);
+    }
+    // The counter-turn and the bend are shared by the two upper spine bones, so neither kinks.
+    for (const [bone, k] of [[s1, 0.55], [s2, 0.45]] as const) {
+      bone.parent?.getWorldQuaternion(_qp);
+      if (Math.abs(yaw) >= 1e-3) {
+        bone.quaternion.copy(boneTurned(bone.quaternion, _qp, _qm, _yAxis, -yaw * k));
+        bone.updateWorldMatrix(false, false);
+      }
+      if (Math.abs(this.chestPitch) >= 1e-3) {
+        bone.parent?.getWorldQuaternion(_qp);
+        bone.quaternion.copy(boneTurned(bone.quaternion, _qp, _qm, _xAxis, -this.chestPitch * 0.3 * k));
+      }
+      bone.updateWorldMatrix(false, true);
+    }
+  }
+
   private updateCarry(): void {
     const prop = this.prop;
     if (prop?.shouldered) {
@@ -833,6 +953,33 @@ export class CharacterRig {
     if (!b.lUpper || !b.lLower || !b.lHand || !b.rUpper || !b.rLower || !b.rHand) return;
     this.root.updateWorldMatrix(true, true);
     const side = Math.sign(gun.position.x) || 1;
+    // The gun rides on the chest: it sinks with a crouch or a landing and leans with the body (eased, so a gait's bob is
+    // softened as arms soften it), pitches about the shoulder with the aim, and is lowered across the body in a sprint.
+    const sc = this.root.scale.x || 1;
+    if (b.neck) {
+      b.neck.getWorldPosition(_v2);
+      this.root.worldToLocal(_v2);
+      if (!this.neckRef) this.neckRef = _v2.clone();
+      const k = Math.min(1, this.lastStep * 12);
+      this.neckOff.x += (0 - this.neckOff.x) * k;
+      this.neckOff.y += (_v2.y - this.neckRef.y - this.neckOff.y) * k;
+      this.neckOff.z += (_v2.z - this.neckRef.z - this.neckOff.z) * k;
+    }
+    const sprint = this.input.sprinting && this.plan?.state === 'loco' && this.smoothSpeed > 2.5 ? 1 : 0;
+    this.sprintLower += (sprint - this.sprintLower) * Math.min(1, this.lastStep * 8);
+    const a = this.chestPitch * (1 - this.sprintLower);
+    const ca = Math.cos(a);
+    const sa = Math.sin(a);
+    // Shoulder pivot and the gun's offset from it at rest (rig frame, metres before scale).
+    const oy = GUN_AT[1] - SHOULDER_PIVOT[1];
+    const oz = GUN_AT[2] - SHOULDER_PIVOT[2];
+    gun.position.set(
+      side * GUN_AT[0] * sc + this.sprintLower * -side * 0.08 * sc,
+      (SHOULDER_PIVOT[1] + oy * ca - oz * sa - this.sprintLower * 0.12) * sc + this.neckOff.y,
+      (SHOULDER_PIVOT[2] + oy * sa + oz * ca + this.sprintLower * 0.1) * sc + this.neckOff.z,
+    );
+    gun.rotation.set(GUN_TILT + a - this.sprintLower * 0.75, this.sprintLower * side * 0.5, 0);
+    gun.updateMatrixWorld(true);
     _target.set(at.grip[0], at.grip[1], at.grip[2]);
     gun.localToWorld(_target);
     _pole.set(side * 0.55, 0.75, 0.15);
@@ -869,6 +1016,20 @@ const _qp = new Quaternion();
 const _qpi = new Quaternion();
 const _qd = new Quaternion();
 const _zAxis = new Vector3(0, 0, 1);
+const _yAxis = new Vector3(0, 1, 0);
+const _feet = [new Vector3(), new Vector3()];
+const _feetQ = [new Quaternion(), new Quaternion()];
+/** Crouch: hip drop and the hips' move back (m, before scale), forward lean of the back (radians), seconds to sink or rise. */
+const CROUCH_DROP = 0.34;
+const CROUCH_BACK = 0.06;
+const CROUCH_LEAN = 0.45;
+const CROUCH_TIME = 0.38;
+/** Gait clips (they keep their phase across crossfades, step, and run backwards when backing off). */
+const GAIT = /^(walk|run|jog|sprint|stroll|crouch_walk)/;
+/** A shouldered gun at the ready (rig frame, m; x is to the gun side), its tilt (radians), and the shoulder it pivots on. */
+const GUN_AT = [0.13, 1.22, -0.3] as const;
+const GUN_TILT = -0.06;
+const SHOULDER_PIVOT = [0.13, 1.42, -0.05] as const;
 const _xAxis = new Vector3(1, 0, 0);
 
 /**

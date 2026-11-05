@@ -157,7 +157,17 @@ Each `CharacterRig` drives its mixer from `LocomotionMachine`
 machine over speed, vertical speed, grounded, crouch, sit, talk, NPC hint and
 mood. Locomotion picks the gait clip (`walk_slow` .. `sprint`) whose stride is
 nearest the actual speed, with hysteresis, and plays it at `speed / stride`
-(clamped 0.6-1.7) so feet do not slide; mood selects idle, walk and talk
+(clamped 0.6-1.7) so feet do not slide. A new gait is held for 0.3 s unless
+the speed is far from it (no flicker through the ladder while speeding up),
+and the `sprint` clip is shown only for a sprint. A crouch plays the standing
+`idle` or `walk` under a crouch the rig lays over it (hips down and back,
+knees bent by IK so each foot stays where the clip put it, back leaning,
+eased in and out over about 0.4 s), so standing, crouching and crouch walking
+blend without a pop. A player strafing with a gun turns the hips toward the
+walking direction (up to 65 degrees) with the chest held on the aim, and
+backing off plays the gait in reverse; the shouldered gun rides on the chest
+(it sinks with a crouch), pitches with the aim and is lowered in a sprint.
+Mood selects idle, walk and talk
 variants; jump, fall, land, hit, attack, sit and death are states of their own;
 one-shot actions (wave, nod, pickup, throw, knock, drink and others) interrupt
 locomotion and return to it. The rig only reads the simulation and never

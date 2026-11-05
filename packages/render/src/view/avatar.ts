@@ -32,7 +32,15 @@ export interface AvatarState {
   seatTop?: number;
   /** Body facing (degrees, 0 faces −Z) imposed by the owner (turning to face out of a seat), or null/absent: the body turns toward its motion. */
   faceYawDeg?: number | null;
+  /** Look pitch (degrees, positive up) of an armed player: the chest and the gun follow it. */
+  aimPitchDeg?: number;
 }
+
+/** Most the hips turn away from the chest toward the walking direction with the facing imposed (strafing with a gun). */
+const HIP_TURN_MAX = (65 * Math.PI) / 180;
+/** Walking direction this far off the facing (radians) is walking backwards; back under {@link BACK_EXIT} is forwards again. */
+const BACK_ENTER = (115 * Math.PI) / 180;
+const BACK_EXIT = (95 * Math.PI) / 180;
 
 /** Camera distance (m, to the head) under which the body stops being drawn. */
 const CLIP_DISTANCE = 0.85;
@@ -56,6 +64,8 @@ export class Avatar {
   private lastZ = Number.NaN;
   private bodyYaw = 0;
   private turning = false;
+  private hipYaw = 0;
+  private backward = false;
   private lastTime = 0;
   private readonly look = new Vector3();
 
@@ -152,9 +162,24 @@ export class Avatar {
     const camYaw = this.group.rotation.y;
     let moving = false;
     const face = state?.faceYawDeg;
+    let hipWant = 0;
+    let offMoving = false;
     if (face !== undefined && face !== null && Number.isFinite(face)) {
-      // Imposed facing (turning round to sit): a quick, smooth turn the short way.
+      // Imposed facing (turning round to sit, aiming a gun): a quick, smooth turn the short way.
       this.bodyYaw = turnToward(this.bodyYaw, (face * Math.PI) / 180, Math.min(1, dt * 8));
+      // Walking off the facing (strafing, backing off): the hips turn toward the walking direction and the chest stays on the
+      // aim, and walking backwards plays the gait in reverse, so the feet step the way the body goes instead of sliding.
+      if (Number.isFinite(this.lastX) && dt > 0 && state?.sitting !== true) {
+        const dx = x - this.lastX;
+        const dz = z - this.lastZ;
+        if (Math.hypot(dx, dz) / dt > 0.4) {
+          offMoving = true;
+          const rel = wrapPi(Math.atan2(-dx, -dz) - this.bodyYaw);
+          this.backward = this.backward ? Math.abs(rel) > BACK_EXIT : Math.abs(rel) > BACK_ENTER;
+          const legs = this.backward ? wrapPi(rel - Math.PI) : rel;
+          hipWant = Math.max(-HIP_TURN_MAX, Math.min(HIP_TURN_MAX, legs));
+        }
+      }
     } else if (Number.isFinite(this.lastX) && dt > 0) {
       const dx = x - this.lastX;
       const dz = z - this.lastZ;
@@ -177,9 +202,14 @@ export class Avatar {
     } else if (first) this.bodyYaw = camYaw;
     this.lastX = x;
     this.lastZ = z;
+    if (!offMoving) this.backward = false;
+    this.hipYaw += (hipWant - this.hipYaw) * Math.min(1, dt * 10);
     const rig = this.rig;
     if (rig) {
       rig.root.rotation.y = this.hidden ? 0 : this.bodyYaw - camYaw;
+      rig.hipYaw = this.hidden ? 0 : this.hipYaw;
+      rig.backward = this.backward;
+      rig.aimPitch = state?.aimPitchDeg !== undefined && Number.isFinite(state.aimPitchDeg) && face !== undefined && face !== null ? (state.aimPitchDeg * Math.PI) / 180 : 0;
       if (state) {
         rig.input.grounded = state.grounded;
         rig.input.vy = state.vy;
@@ -250,6 +280,14 @@ export class Avatar {
     this.group.removeFromParent();
     void _v;
   }
+}
+
+/** Wrap an angle (radians) to [-π, π]. */
+function wrapPi(a: number): number {
+  let d = a;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return d;
 }
 
 /** Rotate `from` toward `to` (radians) by at most `rate` of the remaining angle (shortest way). */
