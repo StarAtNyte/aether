@@ -101,6 +101,7 @@ export { PERCEIVE_TOOL_NAME } from './photo/perception/names';
 export { findAfloat, afloatFindings, findSunk, sunkFindings, withSunk, type SunkPiece } from './sunk';
 export { findPlaceholders, generatorForName, placeholderFindings, withPlaceholders, PROP_GENERATORS, type Placeholder } from './placeholders';
 export { findBuriedFalls, fallsFindings, withFalls, type BuriedFall } from './falls';
+export { weightFindings, withWeight, WEIGHT_LIMITS } from './weight';
 export { artifactFindings, findArtifacts, findBuildingsInRock, findLandEnds, findMeshClouds, findPlainPlanes, findPlantsInFalls, findSkyPieces, withArtifacts, type Artifact } from './artifacts';
 export { HARDCORE_PASSES, HARDCORE_SHADER_BUDGET_PATCH, bibleText, heroShots, judgeCloser, lookCandidates, lookDistance, pictureColour, type PictureColour, lumaPercentiles, meanTargets, passPrompt, referencePrompt as heroReferencePrompt, targetEvidenceText, type HardcoreRun, type HeroShotOptions, type LumaTargets } from './hardcore';
 export { GAME_CODES, GameReviewCache, gameSignature, gameStaticFindings, isReviewedGame, withGame, type GameReviewResult, type GameReviewRunner } from './game-review';

@@ -41,6 +41,7 @@ import { LEVEL_SUBJECT, levelSnapshot, levelTurnText } from './level-review';
 import { withSunk } from './sunk';
 import { withPlaceholders } from './placeholders';
 import { withArtifacts } from './artifacts';
+import { withWeight } from './weight';
 import { withFalls } from './falls';
 import { GAME_CODES, GameReviewCache, isReviewedGame, withGame, type GameReviewResult } from './game-review';
 import type { AgentEvent, AgentHost, AgentOptions, ChatMessage, CompletionResponse, ContentBlock, ReviewOptions, ToolDef, UsageTotals } from './types';
@@ -813,7 +814,8 @@ export class WorldAgent {
       // Pieces sunk into the terrain or floating over it, falls buried in the rock they pour from and the artifacts a viewer spots at
       // a glance (pieces in the sky, cloud meshes, the land ending in a white void, untextured sheets, roofs in the rock, plants
       // in a waterfall) are checked in every round, whatever else measured the world.
-      snap = withArtifacts(withPlaceholders(withFalls(withSunk(snap, world), world), world), world);
+      // And what would make it heavy to draw (pieces to instance, too many shaders or shadow-casting lamps).
+      snap = withWeight(withArtifacts(withPlaceholders(withFalls(withSunk(snap, world), world), world), world), world);
       // A game is played too (flow and balance), when the host can: its findings carry the fixes in the game's own params.
       if (isReviewedGame(world)) {
         const game = await this.playGame(world, signal);

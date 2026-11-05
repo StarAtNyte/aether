@@ -145,7 +145,8 @@ const GUIDELINES = `## Guidelines
 - Always add tests that prove the requested mechanic works (topples for chain reactions, eventually for rules/timers, staysAbove for things that must not fall out, stable for stacks/structures). Tests must be achievable WITHOUT player input.
 - Refining: if the world has content, every message refines IT. Small requests ("make the sofa green") are property-level "update" patches on the named entities; keep everything else as is: never "clear", never remove-and-re-add. "it/this" = the selected or just-edited entity. Start over only when asked. If a reference is ambiguous, finish with a short question naming the candidates.
 - A later request may carry <scene_changes> (changes since your last turn) instead of a <world_summary>; query_scene gives details.
-- Title a new world with setMeta (2–4 words).`;
+- Title a new world with setMeta (2–4 words).
+- Keep it light to draw (it must run on a laptop's integrated GPU; the review flags these): 16+ identical pieces with the same turn and size are one scatter (points at their positions), not separate entities; reuse a palette of finishes and vary colour/roughness instead of inventing a new finish per piece (each finish, texture or preset is a shader of its own); cast lamp shadows on at most 2 lamps (the sun keeps its shadows); at most ~48 lamps, emissive materials for small decorative lights.`;
 
 const SHADING = `## Surface layers and shaders (material.surface / .shader, entities and generator parts)
 Plain colours look flat: weather stone, wood, metal, ground, ruins, sci-fi panels and magic with surface layers; use shader expressions for bespoke looks (lava, holograms, force fields, stylised water, animated signs, flags).
