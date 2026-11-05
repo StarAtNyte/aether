@@ -21,9 +21,17 @@ export function generateBuiltinSync(generatorId: string, params: Record<string, 
   return gen.generate(params ?? {}, createGeneratorApi(seed));
 }
 
+/** Hashes by definition object: a world's definitions are immutable, and every entity of a generator asks again. */
+const sourceHashes = new WeakMap<object, { source: string; params: unknown; hash: number }>();
+
 /** Content hash of a custom generator (source + param spec), used in cache keys. */
 export function generatorSourceHash(def: Pick<GeneratorDef, 'source' | 'params'>): number {
-  return hashString(`${def.source}\u0000${stableStringify(def.params ?? {})}`);
+  const hit = sourceHashes.get(def);
+  // Checked by identity of the fields too, in case a caller mutates a definition in place.
+  if (hit && hit.source === def.source && hit.params === def.params) return hit.hash;
+  const hash = hashString(`${def.source}\u0000${stableStringify(def.params ?? {})}`);
+  sourceHashes.set(def, { source: def.source, params: def.params, hash });
+  return hash;
 }
 
 /**
@@ -70,6 +78,32 @@ export function resolveBuiltin(gen: BuiltinGenerator, params: Record<string, Jso
   return resolveParams(gen.params, params);
 }
 
+/** Context handed to the off-thread runners of {@link generate}. */
+export interface GenerateJob {
+  /** Normalized output key ({@link proceduralOutputKey}): the identity of the output, for persistent caches. */
+  key: string;
+  /** Queue order (lower first); see {@link GenerateOptions.priority}. */
+  priority: number;
+}
+
+/** Options of {@link generate}. */
+export interface GenerateOptions {
+  sandbox?: SandboxRunner;
+  cache?: GeneratorCache;
+  /**
+   * Runs built-in generators elsewhere (e.g. a worker, so heavy sculptures never block the page). Its output must be
+   * validated by the runner; a rejection falls back to running inline.
+   */
+  builtin?: (generator: string, params: Record<string, Json>, seed: number, job: GenerateJob) => Promise<GeneratorOutput>;
+  /**
+   * Runs custom generators instead of `sandbox.run` (e.g. through the sandbox with validation and post-processing in a
+   * trusted worker, and a persistent cache). Its output must be validated by the runner. Params are resolved.
+   */
+  custom?: (def: GeneratorDef, params: Record<string, Json>, seed: number, job: GenerateJob) => Promise<GeneratorOutput>;
+  /** Queue order of the run when it has to wait for a worker: lower first (e.g. the distance to the view). Default 0. */
+  priority?: number;
+}
+
 const inflight = new WeakMap<GeneratorCache, Map<string, Promise<GeneratorOutput>>>();
 
 function customGenerator(world: Pick<WorldDoc, 'generators'>, id: string): GeneratorDef | undefined {
@@ -88,35 +122,26 @@ function customGenerator(world: Pick<WorldDoc, 'generators'>, id: string): Gener
  * sandbox failures or invalid output — callers typically fall back to
  * {@link fallbackOutput}.
  */
-export async function generate(
-  shape: ProceduralShape,
-  world: Pick<WorldDoc, 'generators'>,
-  opts: {
-    sandbox?: SandboxRunner;
-    cache?: GeneratorCache;
-    /**
-     * Runs built-in generators elsewhere (e.g. `ComputeClient.generate` in a
-     * worker, so heavy sculptures never block the page). Its output must be
-     * validated by the runner; a rejection falls back to running inline.
-     */
-    builtin?: (generator: string, params: Record<string, Json>, seed: number) => Promise<GeneratorOutput>;
-  } = {},
-): Promise<GeneratorOutput> {
+export async function generate(shape: ProceduralShape, world: Pick<WorldDoc, 'generators'>, opts: GenerateOptions = {}): Promise<GeneratorOutput> {
   const id = shape.generator;
   const seed = shape.seed ?? DEFAULT_SEED;
   const params = shape.params ?? {};
   const custom = customGenerator(world, id);
   const cache = opts.cache;
+  const priority = typeof opts.priority === 'number' && Number.isFinite(opts.priority) ? opts.priority : 0;
 
   let key: string | undefined;
   let run: () => Promise<GeneratorOutput>;
   if (custom) {
     const sandbox = opts.sandbox;
-    if (!sandbox) throw new Error(`custom generator "${id}" requires a sandbox runner`);
+    const hook = opts.custom;
+    if (!sandbox && !hook) throw new Error(`custom generator "${id}" requires a sandbox runner`);
     const resolved = resolveParams(custom.params ?? {}, params);
-    key = cache?.key({ ...shape, params: resolved, seed }, generatorSourceHash(custom));
+    key = generatorCacheKey({ ...shape, params: resolved, seed }, generatorSourceHash(custom));
+    const job: GenerateJob = { key, priority };
     run = async () => {
-      const out = await sandbox.run(custom, resolved, seed);
+      if (hook) return hook(custom, resolved, seed, job);
+      const out = await (sandbox as SandboxRunner).run(custom, resolved, seed, { priority });
       const v = validateOutput(out);
       if (!v.ok) throw new Error(`custom generator "${id}" returned invalid output: ${v.error}`);
       return v.output;
@@ -125,12 +150,13 @@ export async function generate(
     const gen = getBuiltinGenerator(id);
     if (!gen) throw new Error(`unknown generator "${String(id).slice(0, 64)}"`);
     const resolved = resolveBuiltin(gen, params);
-    key = cache?.key({ ...shape, params: resolved, seed });
+    key = generatorCacheKey({ ...shape, params: resolved, seed });
+    const job: GenerateJob = { key, priority };
     const remote = opts.builtin;
     run = async () => {
       if (remote) {
         try {
-          return await remote(gen.id, resolved, seed);
+          return await remote(gen.id, resolved, seed, job);
         } catch {
           // Worker unavailable, crashed or timed out: same result inline.
         }

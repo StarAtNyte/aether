@@ -25,6 +25,20 @@ export function outputBytes(out: GeneratorOutput): number {
   let n = 0;
   for (const p of out.parts) {
     n += p.positions.byteLength + p.normals.byteLength + p.indices.byteLength + (p.uvs?.byteLength ?? 0) + (p.colors?.byteLength ?? 0) + (p.splat?.byteLength ?? 0);
+    const r = p.prepared;
+    if (r) {
+      // Streams of their own only (unsplit parts share the part's arrays).
+      const own = new Set<ArrayBufferLike>([p.positions.buffer, p.normals.buffer, p.indices.buffer]);
+      if (p.uvs) own.add(p.uvs.buffer);
+      if (p.colors) own.add(p.colors.buffer);
+      if (p.splat) own.add(p.splat.buffer);
+      for (const a of [r.positions, r.normals, r.indices, r.uvs, r.colors, r.splat, r.splitIndices]) {
+        if (a && !own.has(a.buffer)) {
+          own.add(a.buffer);
+          n += a.byteLength;
+        }
+      }
+    }
   }
   for (const c of out.colliders) {
     if (c.kind === 'hull') n += c.points.byteLength;

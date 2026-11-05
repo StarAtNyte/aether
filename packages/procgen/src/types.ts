@@ -35,6 +35,35 @@ export interface MeshPart {
   splat?: Float32Array;
   /** Per-part material (merged with the entity material by the renderer). */
   material: MaterialSpec;
+  /**
+   * Render-ready streams of this part, computed off the main thread by the renderer's generation workers (never by
+   * generators, never validated as generator output). Absent: the renderer computes them itself.
+   */
+  prepared?: PreparedPart;
+}
+
+/**
+ * Vertex streams of a {@link MeshPart} as the renderer draws them (texture coordinates in metres, corners split where
+ * the projection turns, indices narrowed to 16 bits when they fit) plus its bounds. Arrays may be the part's own.
+ */
+export interface PreparedPart {
+  positions: Float32Array;
+  normals: Float32Array;
+  indices: Uint16Array | Uint32Array;
+  uvs: Float32Array;
+  colors: Float32Array | null;
+  splat: Float32Array | null;
+  /** 32-bit indices matching `positions` when the corners were split (null: not split, the part's own apply). */
+  splitIndices: Uint32Array | null;
+  /** Bounding box (min xyz, max xyz) and sphere (centre xyz, radius); null: computed when the geometry is built. */
+  bounds: Float64Array | null;
+  /** For parts big enough for virtual geometry: true when the part is a kit of small separate pieces. */
+  kit?: boolean;
+  /**
+   * Soft-shaded variant for the crease angle the part's own material asks for (organic presets on flat-shaded parts):
+   * the new normals and their own prepared streams (null: softening changes nothing for that crease).
+   */
+  soft?: { crease: number; normals: Float32Array | null; prepared: PreparedPart | null };
 }
 
 /**
@@ -191,8 +220,21 @@ export interface GeneratorApi {
   build(): GeneratorOutput;
 }
 
+/** Options of one sandbox run. */
+export interface SandboxRunOptions {
+  /** Wall-clock budget of the run in ms. */
+  timeoutMs?: number;
+  /** Queue order: lower runs first (e.g. the distance to the view); default 0. Runs of one priority keep their order. */
+  priority?: number;
+}
+
 /** Runs LLM-written generator source in isolation. */
 export interface SandboxRunner {
-  run(def: GeneratorDef, params: Record<string, Json>, seed: number, opts?: { timeoutMs?: number }): Promise<GeneratorOutput>;
+  run(def: GeneratorDef, params: Record<string, Json>, seed: number, opts?: SandboxRunOptions): Promise<GeneratorOutput>;
+  /**
+   * Like {@link run}, but resolves with the worker's reply as it arrived, NOT validated: the caller must validate it
+   * (`validateOutput`) before use, typically in a trusted worker, so the page never scans the buffers. Optional.
+   */
+  runRaw?(def: GeneratorDef, params: Record<string, Json>, seed: number, opts?: SandboxRunOptions): Promise<unknown>;
   dispose(): void;
 }

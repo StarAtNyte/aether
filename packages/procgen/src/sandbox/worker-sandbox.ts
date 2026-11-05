@@ -5,7 +5,7 @@
  * main thread. Workers have no network/storage/messaging globals.
  */
 import { GeneratorDef, inspectUntrusted, type Json } from '@aether/core';
-import type { GeneratorOutput, SandboxRunner } from '../types';
+import type { GeneratorOutput, SandboxRunner, SandboxRunOptions } from '../types';
 import { PROCGEN_LIMITS } from '../limits';
 import { resolveParams } from '../params';
 import { validateOutput } from '../output';
@@ -46,7 +46,10 @@ interface Task {
   id: number;
   request: RunRequest;
   timeoutMs: number;
-  resolve: (out: GeneratorOutput) => void;
+  priority: number;
+  /** False: resolve with the raw reply (validated by the caller, see SandboxRunner.runRaw). */
+  validate: boolean;
+  resolve: (out: unknown) => void;
   reject: (err: Error) => void;
 }
 
@@ -154,6 +157,7 @@ export function createWorkerSandbox(opts: WorkerSandboxOptions = {}): SandboxRun
     if (!task) return;
     if (slot.runs >= maxRuns) kill(slot);
     if (!msg.ok) task.reject(new Error(`generator failed: ${msg.error}`));
+    else if (!task.validate) task.resolve(msg.output);
     else {
       const v = validateOutput(msg.output);
       if (v.ok) task.resolve(v.output);
@@ -208,38 +212,69 @@ export function createWorkerSandbox(opts: WorkerSandboxOptions = {}): SandboxRun
     }
   };
 
+  /** The queued task to run next: lowest priority first, then the oldest. */
+  const takeNext = (): Task | undefined => {
+    let best = -1;
+    for (let i = 0; i < queue.length; i++) {
+      if (best < 0 || (queue[i] as Task).priority < (queue[best] as Task).priority) best = i;
+    }
+    return best < 0 ? undefined : queue.splice(best, 1)[0];
+  };
+
   function pump(): void {
     if (disposed) return;
     for (const slot of slots) {
       if (slot.task) continue;
-      const task = queue.shift();
+      const task = takeNext();
       if (task) dispatch(slot, task);
       else scheduleIdle(slot);
     }
   }
 
-  return {
-    run(def: GeneratorDef, params: Record<string, Json>, seed: number, runOpts?: { timeoutMs?: number }): Promise<GeneratorOutput> {
-      if (disposed) return Promise.reject(new Error('sandbox disposed'));
-      let prepared: { def: GeneratorDef; params: Record<string, Json> };
-      try {
-        prepared = prepareRun(def, params);
-      } catch (err) {
-        return Promise.reject(err instanceof Error ? err : new Error(String(err)));
-      }
-      if (queue.length >= maxQueue) return Promise.reject(new Error('generator sandbox queue is full'));
-      const timeoutMs = clamp(runOpts?.timeoutMs, defaultTimeout, 50, PROCGEN_LIMITS.MAX_TIMEOUT_MS);
-      return new Promise<GeneratorOutput>((resolve, reject) => {
-        const id = nextId++;
-        queue.push({
-          id,
-          timeoutMs,
-          resolve,
-          reject,
-          request: { type: 'run', id, source: prepared.def.source, params: prepared.params, seed: Number.isFinite(seed) ? Math.trunc(seed) : 0 },
-        });
-        pump();
+  // A burst of runs (a whole world) is queued in one go and ordered before the first one is sent.
+  let pumpQueued = false;
+  const pumpSoon = (): void => {
+    if (pumpQueued) return;
+    pumpQueued = true;
+    queueMicrotask(() => {
+      pumpQueued = false;
+      pump();
+    });
+  };
+
+  const enqueue = (def: GeneratorDef, params: Record<string, Json>, seed: number, runOpts: SandboxRunOptions | undefined, validate: boolean): Promise<unknown> => {
+    if (disposed) return Promise.reject(new Error('sandbox disposed'));
+    let prepared: { def: GeneratorDef; params: Record<string, Json> };
+    try {
+      prepared = prepareRun(def, params);
+    } catch (err) {
+      return Promise.reject(err instanceof Error ? err : new Error(String(err)));
+    }
+    // Runs about to be sent to an idle worker (the pump is one microtask away) do not count as waiting.
+    if (queue.length - slots.filter((s) => !s.task).length >= maxQueue) return Promise.reject(new Error('generator sandbox queue is full'));
+    const timeoutMs = clamp(runOpts?.timeoutMs, defaultTimeout, 50, PROCGEN_LIMITS.MAX_TIMEOUT_MS);
+    const priority = typeof runOpts?.priority === 'number' && Number.isFinite(runOpts.priority) ? runOpts.priority : 0;
+    return new Promise<unknown>((resolve, reject) => {
+      const id = nextId++;
+      queue.push({
+        id,
+        timeoutMs,
+        priority,
+        validate,
+        resolve,
+        reject,
+        request: { type: 'run', id, source: prepared.def.source, params: prepared.params, seed: Number.isFinite(seed) ? Math.trunc(seed) : 0 },
       });
+      pumpSoon();
+    });
+  };
+
+  return {
+    run(def: GeneratorDef, params: Record<string, Json>, seed: number, runOpts?: SandboxRunOptions): Promise<GeneratorOutput> {
+      return enqueue(def, params, seed, runOpts, true) as Promise<GeneratorOutput>;
+    },
+    runRaw(def: GeneratorDef, params: Record<string, Json>, seed: number, runOpts?: SandboxRunOptions): Promise<unknown> {
+      return enqueue(def, params, seed, runOpts, false);
     },
     dispose(): void {
       if (disposed) return;
@@ -253,4 +288,19 @@ export function createWorkerSandbox(opts: WorkerSandboxOptions = {}): SandboxRun
       for (const task of queue.splice(0)) task.reject(err);
     },
   };
+}
+
+/**
+ * Generator worker lanes for this device: one per hardware thread but one (the page keeps a core), at most 8, and
+ * fewer with little memory (each lane holds a JavaScript realm and its output in flight): 2 at ≤ 2 GB of device
+ * memory, 4 at ≤ 4 GB (`navigator.deviceMemory`). `globalThis.__AETHER_GEN_WORKERS` overrides it (tests, shared machines).
+ */
+export function generationLanes(): number {
+  const g = globalThis as { __AETHER_GEN_WORKERS?: unknown; navigator?: { hardwareConcurrency?: number; deviceMemory?: number } };
+  const forced = Number(g.__AETHER_GEN_WORKERS);
+  if (Number.isFinite(forced) && forced >= 1) return Math.min(8, Math.floor(forced));
+  const threads = Number(g.navigator?.hardwareConcurrency) || 2;
+  const memory = Number(g.navigator?.deviceMemory) || 8;
+  const byMemory = memory <= 2 ? 2 : memory <= 4 ? 4 : 8;
+  return Math.max(1, Math.min(8, threads - 1, byMemory));
 }

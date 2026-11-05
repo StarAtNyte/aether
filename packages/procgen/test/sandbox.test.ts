@@ -270,6 +270,18 @@ describe('createWorkerSandbox (pool, watchdog, protocol)', () => {
     sb.dispose();
   });
 
+  it('runs a burst lowest priority first and hands raw replies back unvalidated', async () => {
+    const order: number[] = [];
+    const sb = createWorkerSandbox({ poolSize: 1, createWorker: () => new FakeWorker() });
+    const runs = [5, 1, 3].map((p) => sb.run(def(FINISH), {}, p, { priority: p }).then(() => order.push(p)));
+    await Promise.all(runs);
+    expect(order).toEqual([1, 3, 5]);
+    const raw = (await sb.runRaw?.(def(FINISH), {}, 1)) as { parts: unknown[]; bounds?: unknown };
+    expect(Array.isArray(raw.parts)).toBe(true);
+    expect(validateOutput(raw).ok).toBe(true);
+    sb.dispose();
+  });
+
   it('terminates idle workers after the idle timeout and respawns them lazily', async () => {
     FakeWorker.created = 0;
     const workers: FakeWorker[] = [];

@@ -10,7 +10,7 @@ import { isUserAssetId, worldAssetIds } from '@aether/assets';
 import { History, diffWorlds, getEntity, patchesBetween, type EntityId, type GeneratorDef, type Patch, type WorldDoc } from '@aether/core';
 import { hasBuilding } from '@aether/arch';
 import { EMPTY_MEMORY, OFFLINE_EXAMPLES, WorldAgent, createFallbackProvider, improvementPatches, isAbortError, needsRefinement, refineInstruction, type AgentEvent, type FallbackNotice, type PhotoResumeState, type Provenance, type PromptProfile, type Provider, type QualityFix, type RefineMemory, HARDCORE_PASSES, HARDCORE_SHADER_BUDGET_PATCH, bibleText, heroShots, heroReferencePrompt, judgeCloser, lumaPercentiles, meanTargets, passPrompt, type HardcoreRun, type LumaTargets } from '@aether/agent';
-import { createWorkerSandbox, type SandboxRunner } from '@aether/procgen';
+import { createWorkerSandbox, generationLanes, type SandboxRunner } from '@aether/procgen';
 import type { StoreApi } from 'zustand/vanilla';
 import { API, MAX_PROMPT_CHARS, PERSIST_DEBOUNCE_MS } from '../config';
 import { beyondEditCard, buildAgentHistory, toEventView, type ChatEntry, type ChatEventView } from '../lib/chat';
@@ -1837,7 +1837,7 @@ function createVerifyPool(lowMemory: boolean): VerifyPool | null {
 
 function createSandbox(): SandboxRunner | null {
   try {
-    return typeof Worker !== 'undefined' ? createWorkerSandbox({ poolSize: 1 }) : null;
+    return typeof Worker !== 'undefined' ? createWorkerSandbox({ poolSize: generationLanes(), maxQueue: 4096 }) : null;
   } catch (err) {
     log.warn('generator sandbox unavailable', err);
     return null;

@@ -10,7 +10,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { History, type Json, type WorldDoc } from '@aether/core';
 import { creditsFor, loadCatalog, setAboBase, setCatalog, setLibraryRemote, type Credit } from '@aether/assets';
-import { createWorkerSandbox, type SandboxRunner } from '@aether/procgen';
+import { createWorkerSandbox, generationLanes, type SandboxRunner } from '@aether/procgen';
 import { prefersReducedMotion, Simulation, type CombatHud } from '../engine/Simulation';
 import { CombatHudView, ScoreLine } from '../components/viewport/CombatHud';
 import { recordScore } from '../lib/bestScore';
@@ -61,7 +61,7 @@ function clock(t: number): string {
 
 function createSandbox(): SandboxRunner | null {
   try {
-    return typeof Worker !== 'undefined' ? createWorkerSandbox({ poolSize: 1 }) : null;
+    return typeof Worker !== 'undefined' ? createWorkerSandbox({ poolSize: generationLanes(), maxQueue: 4096 }) : null;
   } catch {
     return null;
   }

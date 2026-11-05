@@ -16,7 +16,9 @@ export type {
   GeneratorOutput,
   MeshHandle,
   MeshPart,
+  PreparedPart,
   SandboxRunner,
+  SandboxRunOptions,
   SdfNode,
   SdfOptions,
 } from './types';
@@ -24,6 +26,7 @@ export type {
 export { createGeneratorApi, type BuildOptions } from './api';
 export { parseCollider } from './colliders';
 export { ARCH_GENERATOR_IDS, BUILTIN_GENERATORS, catalog, getBuiltinGenerator } from './generators/index';
+export type { GenerateJob, GenerateOptions } from './generate';
 export { generate, generateBuiltinSync, generatorSourceHash, proceduralOutputKey, resolveBuiltin, yieldToEventLoop } from './generate';
 export { archToOutput } from './generators/arch';
 export { primitiveOutput, fallbackOutput, validateOutput } from './output';
@@ -35,7 +38,7 @@ export { PROCGEN_LIMITS } from './limits';
 export { Noise } from './noise';
 export { normalizeHex, mixHex } from './color';
 
-export { createWorkerSandbox, type WorkerSandboxOptions, type WorkerLike } from './sandbox/worker-sandbox';
+export { createWorkerSandbox, generationLanes, type WorkerSandboxOptions, type WorkerLike } from './sandbox/worker-sandbox';
 export { staticCheckSource } from './sandbox/static-check';
 export { GENERATOR_API_DTS } from './sandbox/dts';
 export { GENERATOR_EXAMPLES } from './sandbox/examples';
