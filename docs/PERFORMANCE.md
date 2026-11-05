@@ -223,3 +223,37 @@ tier, pixel ratio and scale):
 STATIC_DIR=/tmp/q-dist GEN_GPU=intel npx tsx scripts/quality-probe.ts --out=<dir> --tier=ultra [--only=far-aerial,drone] <world>
 STATIC_DIR=/tmp/q-dist GEN_GPU=intel npx tsx scripts/quality-probe.ts --out=<dir> --tier=ultra --session <world>
 ```
+
+## Worker generation and the geometry cache (6 November 2026)
+
+Stage 3 of [ARCHITECTURE-STREAMING.md](ARCHITECTURE-STREAMING.md): no generator, validation or vertex-stream work on the main thread, and a second
+visit that does not generate at all.
+
+- **Sandbox pool** (`procgen/sandbox/worker-sandbox.ts`, `generationLanes()`): one locked-down worker per hardware thread but one, at most 8,
+  2 or 4 on small `deviceMemory`; `__AETHER_GEN_WORKERS` overrides it. A burst of runs is queued in one task and sent nearest first (the scene
+  passes each entity's distance to the opening view, the player's start, or the camera after an edit). Compiled bodies are reused across runs.
+  During a world build a run gets 15 s instead of the interactive 3 s, since runs share the CPU.
+- **Generation lanes** (`render/geometry/gen-pool.ts`, `gen.worker.ts`, half as many, at most 4, trusted code): built-in generators run there;
+  sandbox output goes there raw (`runRaw`, transferred buffers) to be validated. Every output is prepared there (`preparePart`: metre UVs,
+  16-bit indices, bounds, the kit-of-pieces test, soft normals), so the page only wraps typed arrays in geometry. A lane failure falls back
+  to the old path.
+- **Geometry cache** (`render/geometry/ddc.ts`): Cache Storage `aether-ddc-v1`, keyed by SHA-256 of the output key (`proceduralOutputKey`) and
+  `__AETHER_GEN_VERSION__` (a build hash of procgen, arch, core and render's geometry code, `scripts/vite/gen-version.ts`); IndexedDB
+  `aether-ddc-meta` for LRU under 1 GB or a quarter of the quota. Written by the lanes after the reply, read by the lanes; a hit skips the
+  sandbox, validation and preparation. Keys are per output, so an edit misses only for the edited entity.
+- **Determinism** (`procgen/sandbox/determinism.ts`): `Math.random` seeded per run and the clock frozen in the worker and Node sandboxes.
+- Mounts of generated content yield every 12 ms (one reply can complete many entities).
+
+Measured on the shared office PC (`GEN_GPU=intel`, niced, other jobs running; `aether:sync-start` → `aether:sync-done`):
+
+| Lisbon Hills | Before | After |
+|---|---|---|
+| Generation, cold | 16.5 s (sync-done 18.6 s from navigation) | 5.0–6.3 s (sync-done 6.7–9.4 s) |
+| Generation, second visit | 16.3 s (sync-done 17.3 s) | 1.2–1.4 s (sync-done 1.9–2.1 s) |
+| Main-thread long tasks before sync-done | 36, 2.7 s, max 225 ms | cold 9, max 508 ms (renderer creation); warm 1–2, max 51–75 ms |
+| JS heap / cgroup peak, cold | 1.40 / 4.0 GB | 1.46 / 4.2–5.0 GB |
+| Cache on disk | — | 520 MB (Sanctuary Terraces 75 MB) |
+
+Sanctuary Terraces: sync-done 2.9 s cold / 3.7 s second visit before, 2.2 / 1.4 s after. Hero shots of both worlds match the old build within
+run-to-run noise (animated water, clouds and foliage). Left on the main thread: scatter placement and the QEM LOD chains of scatter fields
+(one large field mount is about 180 ms on Lisbon), and the virtual-geometry DAG worker (12 s on Lisbon, off the generation path).
