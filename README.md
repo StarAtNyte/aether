@@ -17,7 +17,10 @@ something is broken, the agent repairs it.
 - **Demo video (2 minutes):** attached to the [v0.1.0 release](https://github.com/StarAtNyte/aether/releases/tag/v0.1.0).
   The repository is private for now, so the video lives on the Releases page, not in the tree.
 
-[![Aether demo: watch the video on the Releases page](docs/demo-poster.jpg)](https://github.com/StarAtNyte/aether/releases/tag/v0.1.0)
+[![A cinematic tour of Sanctuary Terraces, rendered in real time in the browser](docs/screenshots/tour-sanctuary-terraces.gif)](https://github.com/StarAtNyte/aether/releases/tag/v0.1.0)
+
+*Sanctuary Terraces, built by the agent (Claude Code): the studio's cinematic tour, recorded in real time on an
+Intel integrated GPU at ultra quality. Click for the two-minute demo video.*
 
 ## Highlights
 
@@ -85,6 +88,16 @@ general bot does not drive.
 | ![Neon Rain City](docs/screenshots/showcase/neon-rain-city.webp)<br>**Neon Rain City**: a wet downtown at night, find five neon cats | ![Kyoto Temple Lanterns](docs/screenshots/showcase/kyoto-temple.webp)<br>**Kyoto Temple Lanterns**: a story in four chapters | ![Painterly Meadow](docs/screenshots/showcase/painterly-meadow.webp)<br>**Painterly Meadow**: a steam train in a wildflower valley |
 | ![Four-Seasons Garden](docs/screenshots/showcase/four-seasons-garden.webp)<br>**Four-Seasons Garden**: switch seasons with the 1 to 5 keys | ![Orbital Lab](docs/screenshots/showcase/orbital-lab.webp)<br>**Orbital Lab**: low gravity, five power cells, restart the reactor | ![Sakura River Journey](docs/screenshots/showcase/sakura-river.webp)<br>**Sakura River Journey**: paddle a canoe through four seasons |
 | ![Casa del Patio](docs/screenshots/showcase/casa-patio.webp)<br>**Casa del Patio**: a courtyard house above Sintra, every drawer opens | ![Skyline Penthouse](docs/screenshots/showcase/skyline-penthouse.webp)<br>**Skyline Penthouse**: walk it, switch the lights, change the hour | ![Dusk House by the Lake](docs/screenshots/showcase/dusk-lake-house.webp)<br>**Dusk House by the Lake**: explode it, cut it, walk to the jetty |
+
+### Big worlds
+
+Larger worlds that show the renderer at scale: hundreds to thousands of objects, furnished interiors, waterfalls and
+whole towns, smooth on a laptop's integrated GPU ([how](#big-worlds-on-a-laptop)).
+
+| | | |
+| --- | --- | --- |
+| ![Sanctuary Terraces](docs/screenshots/showcase/sanctuary-terraces.webp)<br>**Sanctuary Terraces**: a hill town on limestone terraces, waterfalls into a lagoon, a gilded temple | ![Sanctuary Falls](docs/screenshots/showcase/sanctuary-falls.webp)<br>**Sanctuary Falls**: a marble stair between three waterfalls to a Doric temple | ![Sanctuary Ascent](docs/screenshots/showcase/sanctuary-ascent.webp)<br>**Sanctuary Ascent**: a zigzag stair up a crag to a colossal Athena, built end to end in hardcore mode |
+| ![Linden Row](docs/screenshots/showcase/linden-row.webp)<br>**Linden Row**: ten real family houses round a village green, every room furnished, lit and walkable | ![Kestrel Outpost](docs/screenshots/showcase/kestrel-outpost.webp)<br>**Kestrel Outpost**: a third-person shooter, hold a cliff-ringed relay against five waves | |
 
 Four more example rooms, rebuilt from CC0 or public-domain photographs, are
 listed on the Templates page under **Photo to 3D**: a hotel bedroom, a twin room, a four-poster
