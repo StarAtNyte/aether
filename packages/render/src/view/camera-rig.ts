@@ -183,6 +183,8 @@ export class CameraRig {
   pitch = 0;
   /** Eye height above the player's feet in first person (lowered while sitting). */
   eyeHeight = EYE_HEIGHT;
+  /** The subject crouches: every chase height and the first-person eye sink by this much (m). */
+  crouchDrop = 0;
   /**
    * Lowest camera height in orbit mode (ground + clearance), or -Infinity
    * when the world has no ground. Keeps orbiting and fly-tos above ground.
@@ -372,7 +374,7 @@ export class CameraRig {
     this.subject.copy(_target);
     if (this.mode === 'firstPerson') {
       // Small height changes (stairs, kerbs) ease the eye by about 55 ms instead of snapping it; big drops and teleports pass at once.
-      let eyeY = _target.y + this.eyeHeight;
+      let eyeY = _target.y + this.eyeHeight - this.crouchDrop;
       if (this.stepY !== null) {
         const d = eyeY - this.stepY;
         if (Math.abs(d) > 0.02 && Math.abs(d) < STEP_SMOOTH_MAX) eyeY = this.stepY + d * (1 - Math.exp(-18 * Math.max(0, dt)));
@@ -382,7 +384,7 @@ export class CameraRig {
       this.pitch = Math.max(-1.48, Math.min(1.48, this.pitch));
       _euler.set(this.pitch, yaw, 0, 'YXZ');
       this.camera.quaternion.setFromEuler(_euler);
-      this.look.set(_target.x - Math.sin(yaw) * 4, _target.y + this.eyeHeight, _target.z - Math.cos(yaw) * 4);
+      this.look.set(_target.x - Math.sin(yaw) * 4, _target.y + this.eyeHeight - this.crouchDrop, _target.z - Math.cos(yaw) * 4);
       return true;
     }
     if (this.mode === 'shoulder') {
@@ -390,12 +392,12 @@ export class CameraRig {
       return true;
     }
     // Follow: chase from behind the target's heading.
-    _desired.set(_target.x + Math.sin(yaw) * FOLLOW_DISTANCE, _target.y + FOLLOW_HEIGHT, _target.z + Math.cos(yaw) * FOLLOW_DISTANCE);
+    _desired.set(_target.x + Math.sin(yaw) * FOLLOW_DISTANCE, _target.y + FOLLOW_HEIGHT - this.crouchDrop, _target.z + Math.cos(yaw) * FOLLOW_DISTANCE);
     let rate = 6;
     const occludes = this.occlusion !== null || this.occlusionSink !== null;
     if (occludes) {
       // Something solid between the target and the camera (a tree trunk, a wall): move in front of it, fast.
-      _lookAt.set(_target.x, _target.y + LOOK_HEIGHT, _target.z);
+      _lookAt.set(_target.x, _target.y + LOOK_HEIGHT - this.crouchDrop, _target.z);
       _dir.subVectors(_desired, _lookAt);
       const full = Math.sqrt(_dir.x * _dir.x + _dir.y * _dir.y + _dir.z * _dir.z);
       if (full > 1e-4) boomFree(this.occlusion, this.occlusionSink, _lookAt, _desired, BOOM_RADIUS);
@@ -418,7 +420,7 @@ export class CameraRig {
     if (occludes) {
       // The eased camera trails the pulled-in point when the player turns into a wall: never let it stay farther
       // out than the boom is free, whatever the smoothing says (the pull-in is instant, the ease-out is not).
-      _lookAt.set(_target.x, _target.y + LOOK_HEIGHT, _target.z);
+      _lookAt.set(_target.x, _target.y + LOOK_HEIGHT - this.crouchDrop, _target.z);
       _dir.subVectors(this.camera.position, _lookAt);
       const dist = Math.sqrt(_dir.x * _dir.x + _dir.y * _dir.y + _dir.z * _dir.z);
       if (dist > MIN_FOLLOW_DISTANCE) {
@@ -436,7 +438,7 @@ export class CameraRig {
     const la = 1 - Math.exp(-10 * Math.max(0, dt));
     const look = this.look;
     look.x += (_target.x - look.x) * la;
-    look.y += (_target.y + LOOK_HEIGHT - look.y) * la;
+    look.y += (_target.y + LOOK_HEIGHT - this.crouchDrop - look.y) * la;
     look.z += (_target.z - look.z) * la;
     this.camera.lookAt(this.look);
     return true;
@@ -454,7 +456,7 @@ export class CameraRig {
     const cp = Math.cos(this.pitch);
     const sp = Math.sin(this.pitch);
     // Pivot: beside the head on the right; the head itself is the safe start of the side probe.
-    _head.set(_target.x, _target.y + SHOULDER_HEIGHT, _target.z);
+    _head.set(_target.x, _target.y + SHOULDER_HEIGHT - this.crouchDrop, _target.z);
     _lookAt.set(_target.x + cy * SHOULDER_SIDE, _head.y, _target.z - sy * SHOULDER_SIDE);
     const occludes = this.occlusion !== null || this.occlusionSink !== null;
     if (occludes) {

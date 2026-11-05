@@ -3094,6 +3094,11 @@ export class WorldRenderer {
     if (Number.isFinite(h)) this.rig.eyeHeight = Math.min(2.2, Math.max(0.3, h));
   }
 
+  /** How far the player's camera sinks below its standing height (m, 0 standing): the crouch. Every chase mode and first person. */
+  setCrouchDrop(m: number): void {
+    this.rig.crouchDrop = Number.isFinite(m) ? Math.min(1.2, Math.max(0, m)) : 0;
+  }
+
   /** First-person look pitch in radians (negative looks down); the rig clamps it. Ignored in other camera modes. */
   setLookPitch(pitch: number): void {
     if (Number.isFinite(pitch)) this.rig.pitch = pitch;
