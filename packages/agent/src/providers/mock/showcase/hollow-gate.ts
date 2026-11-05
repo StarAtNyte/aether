@@ -232,10 +232,10 @@ export function hollowGate(): MockPlan {
       title: 'The Hollow Gate',
       tagline: 'A walled hamlet at night. A locked gate. A guard who listens, a shopkeeper who sells, wolves that fear fire.',
       objective: 'Collect gold (five buys the key), buy the key from Mira, slip past Marek and leave through the gate.',
-      controls: ['WASD — walk', 'Shift — sneak', 'E — talk', '1–3 — choose', 'Esc — stop'],
+      controls: ['WASD — walk', 'C — sneak (crouch)', 'Shift — sprint', 'E — talk', '1–3 — choose', 'Esc — stop'],
       accent: '#f2c46d',
     },
     plan: 'Plan: The Hollow Gate — walled hamlet, locked gate, guard + shopkeeper + wolf pack + villagers.',
-    message: 'Built The Hollow Gate: Marek patrols with a torch and chases what he sees or hears, Mira sells the gate key for five gold, three wolves hunt the west woods after dark and fear fire. Collect gold, press E to talk, hold Shift to sneak, and leave through the gate.',
+    message: 'Built The Hollow Gate: Marek patrols with a torch and chases what he sees or hears, Mira sells the gate key for five gold, three wolves hunt the west woods after dark and fear fire. Collect gold, press E to talk, press C to crouch and sneak, and leave through the gate.',
   });
 }

@@ -71,7 +71,7 @@ Shape = {kind:"primitive", primitive:"box"|"sphere"|"cylinder"|"cone"|"capsule"|
   | {kind:"none"} (groups, lights, invisible zones)
 Only entities with \`physics\` collide. Scenery players should bump into: physics {body:"static"}. Things that fall/roll/topple: "dynamic". Moved by behaviors: "kinematic" or no physics. Zones/triggers: physics {body:"static", sensor:true}.
 Environment: sky "day"|"dawn"|"sunset"|"night"|"overcast"|"space"|"studio", hdri?: library sky id (photo sky + light; only when a photographed sky is asked for, else the analytic sky), timeOfDay 0..24, fog {color, density 0..1 (0.005 light .. 0.04 thick)}|null, weather "clear"|"rain"|"snow"|"dust"|"fireflies"|"petals"|"leaves", ambientIntensity, sunIntensity, ground {material, size}|null, gravity [0,-9.81,0], bloom 0..3, exposure.
-Player: mode "orbit"(spectator camera) | "thirdPerson" | "firstPerson" | "vehicle" (with controls: entity id), spawn [x,y,z], moveSpeed, jumpSpeed.
+Player: mode "orbit"(spectator camera) | "thirdPerson" | "firstPerson" | "vehicle" (with controls: entity id), spawn [x,y,z], moveSpeed (top speed, a Shift sprint; the normal pace is 70 %, a C crouch 35 %), jumpSpeed.
 World: state {score: 0, ...} global variables; hud [{key, label}] shows state on screen; tests (below).`;
 
 const PATCHES = `## Patch operations (apply_patches)

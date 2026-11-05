@@ -31,7 +31,7 @@ const SECTIONS: ReadonlyArray<{ id: string; title: string; body: ReadonlyArray<s
     id: 'play',
     title: 'Playing',
     body: [
-      'Press Play to run the world: physics, rules and behaviours start, and Stop restores everything exactly. Move with WASD or the arrow keys, jump with Space, act with E; drag to look. On touch screens use the on-screen stick and buttons.',
+      'Press Play to run the world: physics, rules and behaviours start, and Stop restores everything exactly. Move with WASD or the arrow keys, hold Shift to sprint, press C to crouch, jump with Space, act with E; drag to look. On touch screens use the on-screen stick and buttons.',
     ],
   },
   {

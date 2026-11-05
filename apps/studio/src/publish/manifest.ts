@@ -142,9 +142,9 @@ export function defaultControls(world: WorldDoc): string {
   if (world.voxel) return 'WASD move · Space jump · mouse look · left click break · right click place · E inventory · 1–9 hotbar · Esc pause';
   switch (world.player.mode) {
     case 'firstPerson':
-      return 'WASD move · mouse look · Space jump · E interact · Esc pause';
+      return 'WASD move · Shift sprint · C crouch · mouse look · Space jump · E interact · Esc pause';
     case 'thirdPerson':
-      return 'WASD move · arrows or drag to turn · Space jump · E interact · Esc pause';
+      return 'WASD move · Shift sprint · C crouch · arrows or drag to turn · Space jump · E interact · Esc pause';
     case 'vehicle':
       return 'W/S throttle · A/D steer · Space brake · Esc pause';
     default:

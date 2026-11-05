@@ -472,7 +472,7 @@ export function kestrelOutpost(): MockPlan {
       title: 'Kestrel Outpost',
       tagline: 'A relay station in a ring of cliffs. The sun is going down, and the raiders are coming through the passes.',
       objective: `Survive ${WAVES.length} waves and keep the relay standing. Raiders drop ammunition and medkits.`,
-      controls: ['WASD — move', 'Mouse — aim', 'Click — fire', 'R — reload', 'Space — jump', 'Esc — stop'],
+      controls: ['WASD — move', 'Shift — sprint', 'C — crouch', 'Mouse — aim', 'Click — fire', 'R — reload'],
       accent: '#f0a64a',
       button: 'Play',
     },

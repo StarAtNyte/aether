@@ -67,6 +67,7 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = Object.freeze([
     title: 'Play',
     items: [
       ['WASD · Space · E', 'Move · jump · act'],
+      ['Shift · C', 'Sprint (hold) · crouch (toggle)'],
       ['Mouse · 1–9 · E · V', 'Block worlds: break / place · hotbar · inventory · view'],
     ],
   },

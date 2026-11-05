@@ -133,6 +133,7 @@ export const PlayHud = memo(function PlayHud(): ReactElement | null {
       </div>
     );
   }
+  const onFoot = world.player.mode === 'thirdPerson' || world.player.mode === 'firstPerson';
   return (
     <>
       <div className="play-hud" aria-live="polite">
@@ -156,6 +157,12 @@ export const PlayHud = memo(function PlayHud(): ReactElement | null {
             <kbd>D</kbd> Move
           </span>
           <span>
+            <kbd>Shift</kbd> Sprint
+          </span>
+          <span>
+            <kbd>C</kbd> Crouch
+          </span>
+          <span>
             <kbd>Mouse</kbd> Aim
           </span>
           <span>
@@ -177,6 +184,16 @@ export const PlayHud = memo(function PlayHud(): ReactElement | null {
             <kbd>S</kbd>
             <kbd>D</kbd> Move
           </span>
+          {onFoot && (
+            <span>
+              <kbd>Shift</kbd> Sprint
+            </span>
+          )}
+          {onFoot && (
+            <span>
+              <kbd>C</kbd> Crouch
+            </span>
+          )}
           <span>
             <kbd>Space</kbd> Jump
           </span>

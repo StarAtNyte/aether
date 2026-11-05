@@ -399,7 +399,7 @@ export function highlandTrail(): MockPlan {
       title: 'Highland Trail',
       tagline: 'A river valley at first light',
       objective: 'Log the six survey stakes up the valley, then climb to the summit cairn before the daylight is gone.',
-      controls: ['WASD to walk', 'Shift to hurry', 'Space to jump', 'E to talk', 'R to start over'],
+      controls: ['WASD to walk', 'Shift to sprint', 'C to crouch', 'Space to jump', 'E to talk', 'R to start over'],
       accent: '#e8652a',
     },
     plan: 'Plan: a river valley from the layered terrain generator, the realistic vegetation set (spruce, birch, broadleaf, shrubs, ferns, grass, boulders), a gravel trail following the ground, a footbridge between two measured banks, six survey stakes and a summit cairn on the highest walkable hill, a hiker with dialogue, river hazards with checkpoints and a daylight timer.',
