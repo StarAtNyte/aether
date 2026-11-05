@@ -106,7 +106,9 @@ import { HEAVY_WORLD, capTier, cutsAt, forwardLightBudget, GOVERNOR_DEFAULTS, ha
 import { classifyGpu, effectivePixelRatio, estimateFramebufferMB, estimateShadowMB, renderBudget, type GpuTier, type RenderBudget } from './gpu/budget';
 import { createPostPipeline, VIGNETTE_STRENGTH, type PostPipeline, type PostQuality } from './gpu/post';
 import { planSunShadows } from './environment/sun-shadow-plan';
-import { GECKO_START_LEVEL, geckoSafePath } from './gpu/gecko-safe';
+import { geckoSafePath, geckoStartLevel } from './gpu/gecko-safe';
+import { autoTierReason } from './gpu/tier-reason';
+import { QualityTransition, type TransitionState } from './view/quality-transition';
 import { primeTarget } from './gpu/prime-target';
 import { shadowNoiseValue } from './gpu/sun-shadow-nodes';
 import { setFoliageTint } from './materials/foliage-shading';
@@ -806,6 +808,14 @@ export class WorldRenderer {
   private readonly occlusionRay = createRaycaster();
   /** See {@link holdQuality}. */
   private qualityHeld = false;
+  /** The tier change the person asked for, until everything it affects is rebuilt (see {@link qualityTransition}). */
+  private readonly transition = new QualityTransition();
+  /** How the ladder began (the reason of the automatic tier, see {@link autoTierReason}). */
+  private ladderStart: 'gecko' | 'heavy' | null = null;
+  /** The last verdict on an automatic lightmap bake (a tier rising from low lets one start). */
+  private lightmapAuto = false;
+  /** The plan changed again while a re-warm ran: warm once more when it ends. */
+  private rewarmAgain = false;
   private readonly footRay = createRaycaster();
   /** Entity the chase camera follows (its own meshes never block the view). */
   private followId: EntityId | null = null;
@@ -2087,12 +2097,19 @@ export class WorldRenderer {
 
   /** Link the programs of a new quality plan before drawing with it (see applyQuality). One at a time; never throws. */
   private async rewarm(): Promise<void> {
-    if (this.rewarming || this.disposed || this.lost) return;
+    if (this.disposed || this.lost) return;
+    // Rapid toggles: the walk under way links the previous plan's programs; the newest plan gets its own walk after it.
+    if (this.rewarming) {
+      this.rewarmAgain = true;
+      return;
+    }
     this.rewarming = true;
+    this.rewarmAgain = false;
     // Let the plan's own changes (post chain, lights, shadow maps) settle into the scene for a frame first.
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     if (this.disposed || this.lost || this.warming) {
       this.rewarming = false;
+      this.rewarmAgain = false;
       return;
     }
     // No hold on the draws (`warming`): frames keep coming with what is linked, the rebuild shows the last complete
@@ -2104,6 +2121,10 @@ export class WorldRenderer {
     } finally {
       this.rewarming = false;
       this.needsDraw = true;
+      if (this.rewarmAgain && !this.disposed && !this.lost) {
+        this.rewarmAgain = false;
+        void this.rewarm();
+      } else this.rewarmAgain = false;
     }
   }
 
@@ -3778,6 +3799,7 @@ export class WorldRenderer {
   render(dt: number, opts: { onDemand?: boolean; animate?: boolean } = {}): boolean {
     if (this.disposed || this.lost || this.captureActive || this.tracing) return false;
     const t0 = now();
+    this.trackTransition();
     // Only a walk made inside this frame counts as fresh (prepareBatches also runs outside the frame loop).
     this.matricesFresh = false;
     // Objects prepared since the last frame start linking now, whether or not this frame draws.
@@ -4693,6 +4715,7 @@ export class WorldRenderer {
    * the tier now in effect.
    */
   setRenderTier(tier: RenderTier | 'auto'): RenderTier {
+    const changed = tier !== this.tierChoice;
     this.tierChoice = tier;
     this.governor.enabled = tier === 'auto';
     if (tier !== 'auto' && this.governor.level > 0) {
@@ -4705,7 +4728,50 @@ export class WorldRenderer {
     this.governor.reset();
     this.adaptiveTier.reset();
     this.applyQuality(this.qualityPlan.quality);
+    // A proper transition: the view keeps its last complete picture while the new tier's programs link (rebuildSince), the
+    // baked light gets another look, and the host shows "Applying <tier> quality…" until all of it is done.
+    if (changed && this.framesDrawn > 0) {
+      this.transition.begin(this.qualityPlan.tier, now());
+      log.info(`quality: applying the ${this.qualityPlan.tier} tier (${tier === 'auto' ? 'automatic' : 'chosen'})`);
+    }
     return this.qualityPlan.tier;
+  }
+
+  /**
+   * The tier change under way (null: none): the tier being applied and what is still rebuilding (`programs`: the new tier's
+   * shaders and post chain, the view holding its last complete picture; `light`: the baked light being decided). Always ends,
+   * at the latest after `TRANSITION_MAX_MS`.
+   */
+  get qualityTransition(): TransitionState | null {
+    return this.disposed || this.lost ? null : this.transition.state;
+  }
+
+  /** Why the automatic tier is what it is ("Firefox cautious start", "stepped down: 18 fps"); null when a tier was chosen. */
+  get autoTierReason(): string | null {
+    if (this.tierChoice !== 'auto') return null;
+    const base = this.autoTierBase();
+    return autoTierReason({
+      gpu: this.gpu.tier,
+      tier: this.qualityPlan.tier,
+      base: autoTier(this.gpu.tier, this.budget),
+      lowMemory: this.lowMemory,
+      hardware: this.hardware,
+      start: this.ladderStart,
+      level: this.governor.level,
+      stepFps: this.governor.stepFps,
+      probed: this.adaptiveTier.resolve(base) !== base,
+    });
+  }
+
+  /** Report this frame's rebuild work to the tier transition. */
+  private trackTransition(): void {
+    if (this.transition.state === null) return;
+    const programs = this.rebuildSince > 0 || this.rewarming || this.rewarmAgain;
+    // The light volume and the lightmap's decision, not a running lightmap bake (its own pill shows progress and a cancel).
+    const light = this.lightVolume.baking || this.lightmap.deciding || this.lightmap.status.state === 'waiting';
+    if (this.transition.update({ programs, light }, now()) && this.transition.state === null) {
+      log.info(`quality: the ${this.qualityPlan.tier} tier is in effect${this.transition.timedOut > 0 ? ` (${this.transition.timedOut} transition(s) ran into the bound)` : ''}`);
+    }
   }
 
   /** The tier in effect (stills report `ultra`). */
@@ -4762,12 +4828,16 @@ export class WorldRenderer {
     if (!this.geckoSafe) return;
     primeTarget(this.renderer as unknown as Parameters<typeof primeTarget>[0], this.materials.backdrop.target);
     primeTarget(this.renderer as unknown as Parameters<typeof primeTarget>[0], this.materials.mirror.mirror.target);
-    this.governor.start(GECKO_START_LEVEL);
-    this.cuts = cutsAt(GECKO_START_LEVEL);
+    // A discrete GPU starts on medium at the lowest (an RTX 3050 on Firefox started on low and stayed there).
+    const level = geckoStartLevel(this.gpu.tier);
+    // On a discrete GPU the start is a guess, not a measurement: the climb back is quick there.
+    this.governor.start(level, this.gpu.tier === 'discrete');
+    this.ladderStart = 'gecko';
+    this.cuts = cutsAt(level);
     this.fx.vfx.emissionScale = this.cuts.effects;
     this.syncInteriorLight();
     this.applyQuality(this.qualityPlan.quality);
-    log.info(`performance: cautious start at level ${GECKO_START_LEVEL} (Firefox on WebGL2), climbs while frames are fast`);
+    log.info(`performance: cautious start at level ${level} (Firefox on WebGL2, ${this.gpu.tier} GPU), climbs while frames are fast`);
   }
 
   /**
@@ -4779,6 +4849,7 @@ export class WorldRenderer {
     const level = startLevel(this.gpu.tier, { entities: this.sync.entityCount, triangles: this.sync.sceneTriangles() });
     if (level <= this.governor.level) return;
     this.governor.start(level);
+    this.ladderStart = 'heavy';
     this.cuts = cutsAt(level);
     this.fx.vfx.emissionScale = this.cuts.effects;
     this.syncInteriorLight();
@@ -5243,6 +5314,13 @@ export class WorldRenderer {
     // A new plan rebuilds every lit program. Link them off the frame (the compile walk yields to the browser) while
     // the last picture stays up, instead of building them one draw at a time on the main thread (seconds of freeze).
     if (rebuilt && programsChanged) void this.rewarm();
+    // The automatic lightmap bake runs above the low tier only: rising from low it gets another look (before, a world opened
+    // on low kept "no baked light yet" after a switch to ultra, since nothing scheduled one).
+    const auto = this.lightmap ? this.lightmapAutoBake() : false;
+    if (auto !== this.lightmapAuto) {
+      this.lightmapAuto = auto;
+      if (auto) this.lightmap.policyChanged();
+    }
     if (plan.quality !== before) this.onQualityChange?.(plan.quality);
     return plan.quality;
   }

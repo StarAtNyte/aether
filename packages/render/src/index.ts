@@ -46,6 +46,7 @@ export { AssetAnimator, gaitFor, GAIT, FADE_SECONDS } from './sync/asset-animato
 export { planLightmap, LIGHTMAP_VERSION, type LightmapQuality, type LightmapPlan } from './environment/lightmap';
 export { LIGHTMAP_MAX_ASSET_BYTES } from './environment/lightmap-asset';
 export type { LightmapStatus, LightmapState } from './view/lightmap-controller';
+export type { TransitionState, TransitionStage } from './view/quality-transition';
 export { HdriController, createHdriSource, type HdriSource } from './environment/hdri';
 
 export { computeSkyState, sunPosition, sunBearing, bearingDirection, normalizeHour, mixHex, PRESET_HOURS, PRESET_WINDOWS, PRESET_EXPOSURE, VIEW_AZIMUTH, type SkyState, type SkyPreset } from './environment/sky-state';

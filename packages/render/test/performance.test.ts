@@ -171,6 +171,51 @@ describe('PerformanceGovernor', () => {
       for (let i = 0; i < 200; i++) g.record(2, true, 1);
       expect(g.level).toBe(4);
     });
+    it('climbs quickly from a quick start, and at the usual pace once a measured step was given up', () => {
+      const g = new PerformanceGovernor();
+      g.start(3, true);
+      expect(g.cautious).toBe(true);
+      // Full speed: 6 s settle, then 4 s of headroom per step.
+      expect(feed(g, 12, 1 / 60, 1)).toBe(1);
+      expect(g.level).toBe(2);
+      feed(g, 25, 1 / 60, 1);
+      expect(g.level).toBe(0);
+      expect(g.cautious).toBe(false);
+      // A measured step down records its frame rate and ends the quick climb.
+      const h = new PerformanceGovernor();
+      h.start(2, true);
+      expect(feed(h, 3, 1 / 8, 1)).toBe(1);
+      expect(h.level).toBe(3);
+      expect(h.stepFps).toBeGreaterThan(7);
+      expect(h.stepFps).toBeLessThan(9);
+      expect(h.cautious).toBe(false);
+      // A plain start keeps the slow climb.
+      const k = new PerformanceGovernor();
+      k.start(4);
+      expect(k.cautious).toBe(false);
+      expect(feed(k, 12, 1 / 60, 1)).toBe(0);
+    });
+    it('climbs on a 60 Hz display that misses one vsync in ten (p90 30 fps, median 60), not at a steady 30 fps', () => {
+      const vsync = (g: PerformanceGovernor, seconds: number): number => {
+        let steps = 0;
+        let i = 0;
+        for (let t = 0; t < seconds; i++) {
+          const dt = i % 8 === 0 ? 2 / 60 : 1 / 60;
+          t += dt;
+          if (g.record(dt, true, 1)) steps++;
+        }
+        return steps;
+      };
+      const g = new PerformanceGovernor();
+      g.start(3, true);
+      vsync(g, 40);
+      expect(g.fps).toBeLessThan(31);
+      expect(g.level).toBe(0);
+      const k = new PerformanceGovernor();
+      k.start(3, true);
+      expect(feed(k, 60, 1 / 30, 1)).toBe(0);
+      expect(k.level).toBe(3);
+    });
     it('keeps the up threshold well above the down threshold', () => {
       expect(GOVERNOR_DEFAULTS.upFps).toBeGreaterThan(GOVERNOR_DEFAULTS.lowFps * 2);
     });

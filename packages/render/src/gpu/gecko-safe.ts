@@ -11,7 +11,7 @@
  * - clears every render target a material samples before the first frame,
  * - starts on the light end of the performance ladder and climbs while frames stay comfortably fast.
  */
-import { classifyGpu } from './budget';
+import { classifyGpu, type GpuTier } from './budget';
 import type { BackendKind } from './backend';
 
 /** Gecko browsers (Firefox, Zen, LibreWolf) send "Gecko/<date>"; Chromium and Safari only "like Gecko". */
@@ -34,6 +34,17 @@ export function geckoSafePath(backend: BackendKind, gpuDescription: string, ua: 
 
 /** Ladder level a safe path starts at: no baked room light, one shadow map, the lowest tier (no bloom chain). */
 export const GECKO_START_LEVEL = 4;
+
+/** Ladder level a safe path starts at on a recognised discrete GPU: the same cuts, but the medium tier at most, never low. */
+export const GECKO_DISCRETE_START_LEVEL = 3;
+
+/**
+ * Where the cautious start of a GPU class begins. A discrete GPU (an RTX 3050 on Firefox) started on the low tier and, in an
+ * editor whose view mostly rests, rarely drew the continuous frames the climb needs: it stayed on low. It starts on medium.
+ */
+export function geckoStartLevel(gpu: GpuTier): number {
+  return gpu === 'discrete' ? GECKO_DISCRETE_START_LEVEL : GECKO_START_LEVEL;
+}
 
 /**
  * Flip the rows of an image held in a typed array, in place (`height` rows of equal length). Returns false when the

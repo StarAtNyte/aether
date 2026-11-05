@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Texture } from 'three';
-import { bakeFlipY, flipRows, geckoSafePath, GECKO_START_LEVEL, isGeckoAgent } from '../src/gpu/gecko-safe';
+import { bakeFlipY, flipRows, geckoSafePath, geckoStartLevel, GECKO_DISCRETE_START_LEVEL, GECKO_START_LEVEL, isGeckoAgent } from '../src/gpu/gecko-safe';
 import { needsPriming, primeTarget, type ClearableRenderer } from '../src/gpu/prime-target';
 import { cutsAt } from '../src/gpu/performance';
 import { planSunShadows } from '../src/environment/sun-shadow-plan';
@@ -27,6 +27,13 @@ describe('Firefox on WebGL2 path', () => {
     expect(c.tierCap).toBe('low');
     expect(c.effects).toBe(1);
   });
+  it('starts a discrete GPU on medium at the lowest, never on low', () => {
+    expect(geckoStartLevel('discrete')).toBe(GECKO_DISCRETE_START_LEVEL);
+    expect(cutsAt(geckoStartLevel('discrete')).tierCap).toBe('medium');
+    expect(geckoStartLevel('integrated')).toBe(GECKO_START_LEVEL);
+    expect(geckoStartLevel('unknown')).toBe(GECKO_START_LEVEL);
+  });
+
   it('uses the shader filter on the low tier when the map is compared with NEAREST, never on software', () => {
     const base = { tier: 'low' as const, still: false, shadowMapCap: 2048, contentRadius: 100, voxel: false };
     expect(planSunShadows(base).filter).toBe('pcf');

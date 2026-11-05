@@ -103,6 +103,14 @@ export const GOVERNOR_DEFAULTS = Object.freeze({
   maxContinuousDt: 0.25,
   /** Frame rate (p90) above which the climb back up counts time. Well above `lowFps`: no flapping between the two. */
   upFps: 48,
+  /**
+   * The climb also counts time when the median frame is this fast and the p90 one above `climbFloorFps`: on a 60 Hz display a
+   * GPU that misses one vsync in ten has a p90 of exactly 30 fps (33 ms) at a 55 fps average, which never reached `upFps`, so
+   * a fast GPU started low stayed low.
+   */
+  upMedianFps: 55,
+  /** See `upMedianFps`: the p90 frame rate a vsync-quantised climb still needs (above `lowFps`, well clear of a step down). */
+  climbFloorFps: 28,
   /** Seconds above `upFps` before a step back up. */
   upAfter: 10,
   /** Seconds after any move before the next step up (a move recompiles shaders; frames settle first). */
@@ -112,6 +120,10 @@ export const GOVERNOR_DEFAULTS = Object.freeze({
   /** Sustained full-resolution headroom before retrying a failed climb. */
   retryAfter: 120,
   maxRetryAfter: 480,
+  /** Seconds above `upFps` before a step up while climbing from a cautious start (nothing measured has been given up yet). */
+  startUpAfter: 4,
+  /** Seconds after a move before the next step up while climbing from a cautious start. */
+  startSettle: 6,
 });
 
 /**
@@ -136,6 +148,13 @@ export class PerformanceGovernor {
   enabled = true;
   /** Lowest level the climb may return to (raised when a climb was undone at once). */
   floor = 0;
+  /** Frame rate (p90) that made the last step down (0: none since the start). */
+  stepFps = 0;
+  /**
+   * Climbing from a quick {@link start} above level 0 with nothing measured given up: the climb uses the shorter `startUpAfter`
+   * and `startSettle` (a guess is not evidence, so a fast GPU should not spend two minutes of motion proving it).
+   */
+  cautious = false;
   private readonly o: { [K in keyof typeof GOVERNOR_DEFAULTS]: number };
   private readonly ring: Float32Array;
   private readonly sorted: Float32Array;
@@ -157,8 +176,11 @@ export class PerformanceGovernor {
     this.sorted = new Float32Array(this.o.window);
   }
 
-  /** Begin at `level` (a cautious start): the climb may come back down to 0. */
-  start(level: number): void {
+  /**
+   * Begin at `level` (a cautious start): the climb may come back down to 0. `quick`: the start is a guess about a fast GPU
+   * (Firefox on a discrete one), so the climb uses the shorter waits until something measured is given up.
+   */
+  start(level: number, quick = false): void {
     this.level = Math.max(0, Math.min(PERFORMANCE_STEPS.length, Math.floor(Number.isFinite(level) ? level : 0)));
     this.floor = 0;
     this.failedClimbs = 0;
@@ -166,17 +188,28 @@ export class PerformanceGovernor {
     this.lastMove = 0;
     this.lastMoveAt = this.clock;
     this.lastUpAt = Number.NEGATIVE_INFINITY;
+    this.stepFps = 0;
+    this.cautious = quick && this.level > 0;
     this.reset();
   }
 
   /** Frame rate implied by the p90 frame time of the window (0: no data). */
   get fps(): number {
+    return this.rate(0.9);
+  }
+
+  /** Frame rate implied by the median frame time of the window (0: no data). */
+  get medianFps(): number {
+    return this.rate(0.5);
+  }
+
+  private rate(q: number): number {
     if (this.filled < 8) return 0;
     const s = this.sorted;
     for (let i = 0; i < this.filled; i++) s[i] = this.ring[i] as number;
     s.fill(Infinity, this.filled);
     s.sort();
-    return 1 / (s[Math.min(this.filled - 1, Math.floor(this.filled * 0.9))] as number);
+    return 1 / (s[Math.min(this.filled - 1, Math.floor(this.filled * q))] as number);
   }
 
   /** Forget the window (after a step, a world change or a tier choice). */
@@ -216,6 +249,8 @@ export class PerformanceGovernor {
           this.failedClimbs++;
           this.retryWait = Math.min(this.o.maxRetryAfter, this.o.retryAfter * 2 ** Math.min(8, this.failedClimbs - 1));
         }
+        this.stepFps = fps;
+        this.cautious = false;
         this.level++;
         this.lastMove = 1;
         this.lastMoveAt = this.clock;
@@ -223,15 +258,19 @@ export class PerformanceGovernor {
         return true;
       }
     }
-    const roomy = fps >= this.o.upFps && (scale === 0 || scale >= 0.99);
+    const fastEnough = fps >= this.o.upFps || (fps >= this.o.climbFloorFps && this.medianFps >= this.o.upMedianFps);
+    const roomy = fastEnough && (scale === 0 || scale >= 0.99);
     this.floorFast = roomy && this.floor > 0 && this.level === this.floor ? this.floorFast + dt : 0;
     if (this.floorFast >= this.retryWait) {
       this.floor--;
       this.floorFast = 0;
     }
     this.fast = roomy && this.level > this.floor ? this.fast + dt : 0;
-    if (this.fast >= this.o.upAfter && this.clock - this.lastMoveAt >= this.o.settle) {
+    const upAfter = this.cautious ? this.o.startUpAfter : this.o.upAfter;
+    const settle = this.cautious ? this.o.startSettle : this.o.settle;
+    if (this.fast >= upAfter && this.clock - this.lastMoveAt >= settle) {
       this.level--;
+      if (this.level === 0) this.cautious = false;
       this.lastMove = -1;
       this.lastMoveAt = this.clock;
       this.lastUpAt = this.clock;
