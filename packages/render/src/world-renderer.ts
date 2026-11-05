@@ -1068,9 +1068,11 @@ export class WorldRenderer {
     this.programs = parallelPrograms(renderer.backend as unknown as Parameters<typeof parallelPrograms>[0], () => this.requestPreparedFrame(false), e => log.warn(`parallel shader linking failed: ${errorMessage(e)}`));
     this.gpuCost = gpuFrameCost(renderer.backend as unknown as Parameters<typeof gpuFrameCost>[0]);
     const webgpuBackend = (renderer.backend as unknown as { isWebGPUBackend?: boolean }).isWebGPUBackend === true;
-    const uploads = (globalThis as { __AETHER_SLICED_UPLOAD?: boolean }).__AETHER_SLICED_UPLOAD === false ? null : slicedUploads(renderer.backend);
+    // Opt-in (`__AETHER_SLICED_UPLOAD = true`): in runs that load two heavy worlds in one page, buffers handed to three this
+    // way ended in draws with no vertex buffer bound (GL_INVALID_OPERATION) and missing pieces; see docs/PERFORMANCE.md.
+    const uploads = (globalThis as { __AETHER_SLICED_UPLOAD?: boolean }).__AETHER_SLICED_UPLOAD === true ? slicedUploads(renderer.backend) : null;
     this.slicedUploads = uploads;
-    this.uploadStreamer = uploads ? new UploadStreamer(this.scene as never, { step: (g) => uploads.step(g), budget: this.frameBudget, blocked: () => this.programs.pending > 0 }) : null;
+    this.uploadStreamer = uploads && (globalThis as { __AETHER_UPLOAD_AHEAD?: boolean }).__AETHER_UPLOAD_AHEAD !== false ? new UploadStreamer(this.scene as never, { step: (g) => uploads.step(g), budget: this.frameBudget, blocked: () => this.programs.pending > 0 }) : null;
     this.preparation = deferRenderPreparation(renderer, {
       ready: () => this.requestPreparedFrame(),
       error: e => log.warn(`render preparation failed: ${errorMessage(e)}`),
@@ -5694,7 +5696,7 @@ export class WorldRenderer {
   private loadingScreen = false;
   /** Main-thread budget of background work per frame (preparation, sliced uploads). */
   private readonly frameBudget = new FrameBudget();
-  /** Large geometry uploads in slices (WebGL2; null elsewhere or with `__AETHER_SLICED_UPLOAD = false`). */
+  /** Large geometry uploads in slices (WebGL2, opt-in with `__AETHER_SLICED_UPLOAD = true`; null otherwise). */
   private readonly slicedUploads: { readonly stats: SlicedUploadStats } | null;
   /** Uploads new geometry's large buffers ahead of their first use (see streaming/upload-streamer.ts). */
   private readonly uploadStreamer: UploadStreamer | null;

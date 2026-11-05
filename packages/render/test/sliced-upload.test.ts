@@ -8,6 +8,7 @@ function fakeBackend() {
   const bound = new Map<number, object | null>();
   const calls: Array<{ fn: string; bytes: number }> = [];
   let resets = 0;
+  let created = 0;
   const gl = {
     createBuffer: () => ({}) as WebGLBuffer,
     bindBuffer: (target: number, b: WebGLBuffer | null) => void bound.set(target, b),
@@ -28,20 +29,46 @@ function fakeBackend() {
   const backend = {
     isWebGLBackend: true,
     gl,
+    has: (o: object) => data.has(o),
     get: (o: object) => {
       let d = data.get(o);
       if (!d) data.set(o, (d = {}));
       return d;
     },
     state: { resetVertexState: () => void resets++ },
+    attributeUtils: { createAttribute: (attribute: object) => { const d = data.get(attribute) ?? {}; data.set(attribute, d); if (!d['bufferGPU']) { d['bufferGPU'] = { three: true }; created++; } } },
   };
-  return { backend, buffers, calls, resets: () => resets };
+  return { backend, buffers, calls, resets: () => resets, created: () => created };
 }
 
 const bigFloats = (bytes: number): Float32Array => Float32Array.from({ length: bytes / 4 }, (_, i) => i * 0.5);
 
 describe('slicedUploads', () => {
-  it('uploads large attributes in chunks and hands complete buffers to the backend', () => {
+  it('drops a complete buffer when the attribute changed before three took it', () => {
+    const f = fakeBackend();
+    const up = slicedUploads(f.backend)!;
+    const g = new BufferGeometry();
+    const pos = new BufferAttribute(bigFloats(UPLOAD_CHUNK_BYTES), 3);
+    g.setAttribute('position', pos);
+    while (!up.step(g));
+    const mine = (f.backend.get(pos) as { bufferGPU: object }).bufferGPU;
+    pos.needsUpdate = true;
+    f.backend.attributeUtils.createAttribute(pos);
+    expect((f.backend.get(pos) as { bufferGPU: object }).bufferGPU).not.toBe(mine);
+    expect(f.created()).toBe(1);
+    expect(up.stats.stale).toBe(1);
+    // Unchanged: three takes the sliced buffer and creates nothing.
+    const g2 = new BufferGeometry();
+    const pos2 = new BufferAttribute(bigFloats(UPLOAD_CHUNK_BYTES), 3);
+    g2.setAttribute('position', pos2);
+    while (!up.step(g2));
+    const mine2 = (f.backend.get(pos2) as { bufferGPU: object }).bufferGPU;
+    f.backend.attributeUtils.createAttribute(pos2);
+    expect((f.backend.get(pos2) as { bufferGPU: object }).bufferGPU).toBe(mine2);
+    expect(f.created()).toBe(1);
+  });
+
+  it('uploads large vertex attributes in chunks and hands complete buffers to the backend', () => {
     const f = fakeBackend();
     const up = slicedUploads(f.backend)!;
     const g = new BufferGeometry();
@@ -53,21 +80,18 @@ describe('slicedUploads', () => {
     g.setIndex(index);
     let steps = 0;
     while (!up.step(g)) steps++;
-    // Index: allocate + 2 chunks; position: allocate + 3 chunks.
-    expect(steps).toBe(3 + 4);
+    // Position: allocate + 3 chunks.
+    expect(steps).toBe(4);
     expect(f.calls.every((c) => c.bytes <= UPLOAD_CHUNK_BYTES)).toBe(true);
     const posData = f.backend.get(pos) as { bufferGPU: object; bufferType: number; version: number };
     expect(posData.bufferType).toBe(34962);
     expect(posData.version).toBe(pos.version);
     expect(new Float32Array(f.buffers.get(posData.bufferGPU)!.bytes.buffer)).toEqual(pos.array);
-    const idxData = f.backend.get(index) as { bufferGPU: object; bufferType: number };
-    expect(idxData.bufferType).toBe(34963);
-    expect(new Uint32Array(f.buffers.get(idxData.bufferGPU)!.bytes.buffer)).toEqual(index.array);
-    // The element buffer was bound with no vertex array bound.
-    expect(f.resets()).toBeGreaterThan(0);
-    // Small attributes are left to three.
-    expect((f.backend.get(small) as { bufferGPU?: object }).bufferGPU).toBeUndefined();
-    expect(up.stats.attributes).toBe(2);
+    // Index buffers stay with three.
+    expect(f.backend.has(index)).toBe(false);
+    // Small attributes are left to three, and nothing is written to the backend's map for them.
+    expect(f.backend.has(small)).toBe(false);
+    expect(up.stats.attributes).toBe(1);
   });
 
   it('leaves dynamic attributes alone and gives way when three uploaded first', () => {
