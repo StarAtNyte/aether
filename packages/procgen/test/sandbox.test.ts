@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { GeneratorDef, type Json } from '@aether/core';
 import { createNodeSandbox } from '../src/node';
 import {
-  createWorkerSandbox, GENERATOR_API_DTS, GENERATOR_EXAMPLES, staticCheckSource, validateOutput, type WorkerLike,
+  createWorkerSandbox, generationLanes, GENERATOR_API_DTS, GENERATOR_EXAMPLES, staticCheckSource, validateOutput, type WorkerLike,
 } from '../src/index';
 import { compileGenerator, errorMessage, runCompiled } from '../src/sandbox/runner';
 import { FROZEN_TIME } from '../src/sandbox/determinism';
@@ -410,5 +410,36 @@ describe('worker lockdown (child process probe)', () => {
     expect(r.frozenNow).toBe(String(FROZEN_TIME));
     expect(r.frozenNew).toBe(String(FROZEN_TIME));
     expect(r.dateCtorEscape).toBe(String(FROZEN_TIME));
+  });
+});
+
+describe('generationLanes', () => {
+  const g = globalThis as { navigator?: unknown; __AETHER_GEN_WORKERS?: unknown };
+  const lanes = (hardwareConcurrency: number, deviceMemory?: number): number => {
+    const saved = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    Object.defineProperty(globalThis, 'navigator', { value: { hardwareConcurrency, deviceMemory }, configurable: true, writable: true });
+    try {
+      return generationLanes();
+    } finally {
+      if (saved) Object.defineProperty(globalThis, 'navigator', saved);
+      else delete g.navigator;
+    }
+  };
+  it('keeps low-memory PCs to a few workers', () => {
+    expect(lanes(32, 8)).toBe(4); // Chrome reports at most 8
+    expect(lanes(32)).toBe(4); // not reported
+    expect(lanes(4, 8)).toBe(3);
+    expect(lanes(16, 4)).toBe(2);
+    expect(lanes(16, 2)).toBe(2);
+    expect(lanes(2, 2)).toBe(1);
+    expect(lanes(32, 16)).toBe(8);
+  });
+  it('honours the override', () => {
+    g.__AETHER_GEN_WORKERS = 6;
+    try {
+      expect(lanes(32, 4)).toBe(6);
+    } finally {
+      delete g.__AETHER_GEN_WORKERS;
+    }
   });
 });

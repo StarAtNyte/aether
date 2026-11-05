@@ -291,9 +291,10 @@ export function createWorkerSandbox(opts: WorkerSandboxOptions = {}): SandboxRun
 }
 
 /**
- * Generator worker lanes for this device: one per hardware thread but one (the page keeps a core), at most 8, and
- * fewer with little memory (each lane holds a JavaScript realm and its output in flight): 2 at ≤ 2 GB of device
- * memory, 4 at ≤ 4 GB (`navigator.deviceMemory`). `globalThis.__AETHER_GEN_WORKERS` overrides it (tests, shared machines).
+ * Generator worker lanes for this device: one per hardware thread but one (the page keeps a core), and few enough that a
+ * low-end PC keeps its memory (each lane holds a JavaScript realm and its output in flight): at most 4 at ≤ 8 GB of
+ * device memory, 2 at ≤ 4 GB, 8 above (`navigator.deviceMemory`; Chrome reports at most 8, and a browser that does not
+ * report it counts as 8). `globalThis.__AETHER_GEN_WORKERS` overrides it (tests, shared machines).
  */
 export function generationLanes(): number {
   const g = globalThis as { __AETHER_GEN_WORKERS?: unknown; navigator?: { hardwareConcurrency?: number; deviceMemory?: number } };
@@ -301,6 +302,6 @@ export function generationLanes(): number {
   if (Number.isFinite(forced) && forced >= 1) return Math.min(8, Math.floor(forced));
   const threads = Number(g.navigator?.hardwareConcurrency) || 2;
   const memory = Number(g.navigator?.deviceMemory) || 8;
-  const byMemory = memory <= 2 ? 2 : memory <= 4 ? 4 : 8;
+  const byMemory = memory <= 4 ? 2 : memory <= 8 ? 4 : 8;
   return Math.max(1, Math.min(8, threads - 1, byMemory));
 }

@@ -13,7 +13,7 @@ import { generateBuiltinSync, outputBytes, validateOutput } from '@aether/procge
 import type { GeneratorOutput } from '../types';
 import { prepareOutputParts, preparePart } from './buffer-geometry';
 import { prepareSoft } from './soften';
-import { Ddc, ddcKey, encodeOutput } from './ddc';
+import { Ddc, ddcKey, encodeOutput, type EncodedOutput } from './ddc';
 import { checkOutputShape, outputTransfer, parseGenRequest, type GenReply, type LaneTimes } from './gen-protocol';
 
 interface Scope {
@@ -56,53 +56,37 @@ async function finish(id: number, key: string | null, out: GeneratorOutput, ms: 
   prepareOutputParts(out.parts);
   for (const part of out.parts) prepareSoft(part, preparePart);
   t.prepare += performance.now() - t0;
-  // A plain copy is taken before the buffers are transferred away (a memory copy); it is encoded and written after the
-  // reply, so the page never waits on the cache.
+  // The entry is encoded before the buffers are transferred away: a Blob holds its own copy of the bytes, so this is the
+  // only copy kept, and it is written after the reply, so the page never waits on the cache.
   const bytes = outputBytes(out);
-  let copy: GeneratorOutput | null = null;
+  let entry: EncodedOutput | null = null;
   if (ddc && key && (always || ms >= STORE_MIN_MS || bytes >= STORE_MIN_BYTES)) {
-    // Bounded backlog of copies waiting for storage: wait for the writes first rather than pile up memory.
+    // Bounded backlog of entries waiting for storage: wait for the writes first rather than pile up memory.
     if (writeBacklog > MAX_WRITE_BACKLOG) await writes;
     t0 = performance.now();
-    copy = copyOf(out, new Map()) as GeneratorOutput;
+    try {
+      entry = encodeOutput(out);
+    } catch {
+      entry = null;
+    }
     t.encode += performance.now() - t0;
   }
   reply({ type: 'result', id, ok: true, output: out, hit: false, times: t }, out);
-  if (copy && ddc && key) {
-    const entry = copy;
+  if (entry && ddc && key) {
+    const e = entry;
     const store = ddc;
     const k = key;
-    writeBacklog += bytes;
-    writes = writes.then(() => store.put(k, encodeOutput(entry))).finally(() => {
-      writeBacklog -= bytes;
+    writeBacklog += e.bytes;
+    writes = writes.then(() => store.put(k, e)).finally(() => {
+      writeBacklog -= e.bytes;
     });
   }
 }
 
-/**
- * Deep copy of plain output data; typed arrays are copied with `slice` (a memory copy, several times faster than
- * `structuredClone` here) and arrays shared by reference stay shared.
- */
-function copyOf(v: unknown, seen: Map<unknown, unknown>): unknown {
-  if (v === null || typeof v !== 'object') return v;
-  const done = seen.get(v);
-  if (done !== undefined) return done;
-  let c: unknown;
-  if (ArrayBuffer.isView(v)) c = (v as unknown as { slice(): unknown }).slice();
-  else if (Array.isArray(v)) c = v.map((x) => copyOf(x, seen));
-  else {
-    const o: Record<string, unknown> = {};
-    for (const [k, x] of Object.entries(v)) o[k] = copyOf(x, seen);
-    c = o;
-  }
-  seen.set(v, c);
-  return c;
-}
-
-/** Copies waiting to be written, in bytes, and the chain of writes (one at a time per lane). */
+/** Encoded entries waiting to be written, in bytes, and the chain of writes (one at a time per lane). */
 let writeBacklog = 0;
 let writes: Promise<void> = Promise.resolve();
-const MAX_WRITE_BACKLOG = 48 * 1024 * 1024;
+const MAX_WRITE_BACKLOG = 16 * 1024 * 1024;
 
 scope.onmessage = (e: MessageEvent): void => {
   const req = parseGenRequest(e.data);
