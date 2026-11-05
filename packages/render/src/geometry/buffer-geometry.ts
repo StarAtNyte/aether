@@ -8,12 +8,17 @@
  * triangle elsewhere, so a finish or a tiling surface detail keeps its
  * real-world scale on any size of mesh. Splitting corners for the
  * projection copies the vertex streams of that part.
+ *
+ * The work on the vertex streams ({@link preparePart}: metre UVs, 16-bit
+ * indices, bounds) is pure and runs in the generation workers; a part that
+ * arrives with its `prepared` streams only wraps them here.
  */
-import { BufferAttribute, BufferGeometry } from 'three';
-import type { MeshPart } from '../types';
+import { BufferAttribute, BufferGeometry, Box3, Sphere } from 'three';
+import type { MeshPart, PreparedPart } from '../types';
 import { setPositionBounds } from './position-bounds';
 import { RefCache } from '../refcache';
 import { metreUvMesh } from './metre-uvs';
+import { isKitOfPieces, VIRTUAL_MIN_TRIANGLES } from '../virtual/kit';
 
 /** Thrown for malformed mesh data (never happens with validated procgen output). */
 export class InvalidMeshError extends Error {
@@ -21,6 +26,17 @@ export class InvalidMeshError extends Error {
 }
 
 const MAX_UINT16_VERTICES = 65_536;
+
+/** Version of {@link preparePart}'s output: part of the persistent geometry cache key (bump on any change). */
+export const PREPARE_VERSION = 2;
+
+/**
+ * Whether a part is a kit of small pieces (see virtual/kit.ts), computed only for parts big enough to be drawn as
+ * virtual geometry (undefined below that size: nobody asks).
+ */
+function kitOf(part: MeshPart): boolean | undefined {
+  return part.indices.length / 3 >= VIRTUAL_MIN_TRIANGLES ? isKitOfPieces(part.positions, part.indices) : undefined;
+}
 
 function narrowIndices(indices: Uint32Array, vertexCount: number): Uint16Array | Uint32Array {
   if (vertexCount > MAX_UINT16_VERTICES) return indices;
@@ -72,18 +88,35 @@ export function terrainUvs(positions: Float32Array): Float32Array {
   return uvs;
 }
 
+/** Bounding box and sphere of packed xyz positions, exactly as {@link setPositionBounds} sets them; null when not finite. */
+function streamBounds(positions: Float32Array): Float64Array | null {
+  let minX = Infinity, minY = Infinity, minZ = Infinity;
+  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+  for (let i = 0; i < positions.length; i += 3) {
+    const x = positions[i]!, y = positions[i + 1]!, z = positions[i + 2]!;
+    minX = Math.min(minX, x); minY = Math.min(minY, y); minZ = Math.min(minZ, z);
+    maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); maxZ = Math.max(maxZ, z);
+  }
+  if (positions.length === 0 || !Number.isFinite(minX + minY + minZ + maxX + maxY + maxZ)) return null;
+  const cx = (minX + maxX) * 0.5, cy = (minY + maxY) * 0.5, cz = (minZ + maxZ) * 0.5;
+  let radiusSq = 0;
+  for (let i = 0; i < positions.length; i += 3) {
+    const dx = positions[i]! - cx, dy = positions[i + 1]! - cy, dz = positions[i + 2]! - cz;
+    radiusSq = Math.max(radiusSq, dx * dx + dy * dy + dz * dz);
+  }
+  return Float64Array.of(minX, minY, minZ, maxX, maxY, maxZ, cx, cy, cz, Math.sqrt(radiusSq));
+}
+
 /**
- * Build a `BufferGeometry` from one mesh part. Validates array lengths
- * (positions/normals/uvs/colors per vertex, triangle-multiple indices) and
- * computes bounding volumes for frustum culling.
+ * The render-ready streams of one mesh part (pure, no three.js: runs in the generation workers). Null when the part
+ * has no usable normals or no triangles' worth of data (the main thread then builds it the old way).
  */
-export function partToBufferGeometry(part: MeshPart): BufferGeometry {
+export function preparePart(part: MeshPart): PreparedPart | null {
   const { positions, normals, indices, colors } = part;
-  if (!(positions instanceof Float32Array) || positions.length % 3 !== 0) throw new InvalidMeshError('positions must be a Float32Array of xyz triples');
+  if (!(positions instanceof Float32Array) || positions.length % 3 !== 0) return null;
+  if (!(indices instanceof Uint32Array) || indices.length % 3 !== 0) return null;
   const vertexCount = positions.length / 3;
-  if (!(indices instanceof Uint32Array) || indices.length % 3 !== 0) throw new InvalidMeshError('indices must be a Uint32Array of triangles');
-  const g = new BufferGeometry();
-  const hasNormals = normals instanceof Float32Array && normals.length === positions.length;
+  if (!(normals instanceof Float32Array) || normals.length !== positions.length) return null;
   const hasColors = colors instanceof Float32Array && colors.length === vertexCount * 3;
   const splat = part.material?.splat === true;
   // Falling water and foliage cards read their authored UVs as they are (u across the sheet, v metres down from the lip; the
@@ -92,42 +125,108 @@ export function partToBufferGeometry(part: MeshPart): BufferGeometry {
   const keep = (part.material?.foliage !== undefined || part.material?.waterKind === 'fall') && part.uvs instanceof Float32Array && part.uvs.length === vertexCount * 2;
   const authored = part.material?.finish !== undefined && part.uvs instanceof Float32Array && part.uvs.length === vertexCount * 2;
   if (!keep && !splat && indices.length > 0) {
-    let nrm = hasNormals ? normals : null;
-    if (!nrm) {
-      const tmp = new BufferGeometry();
-      tmp.setAttribute('position', new BufferAttribute(positions, 3));
-      tmp.setIndex(new BufferAttribute(indices, 1));
-      tmp.computeVertexNormals();
-      nrm = tmp.getAttribute('normal').array as Float32Array;
-    }
-    const r = metreUvMesh({ positions, normals: nrm, indices, colors: hasColors ? colors : null, uvs: authored ? (part.uvs as Float32Array) : null });
+    const r = metreUvMesh({ positions, normals, indices, colors: hasColors ? colors : null, uvs: authored ? (part.uvs as Float32Array) : null });
     const n = r.positions.length / 3;
-    g.setAttribute('position', new BufferAttribute(r.positions, 3));
-    g.setAttribute('normal', new BufferAttribute(r.normals, 3));
-    if (r.colors) g.setAttribute('color', new BufferAttribute(r.colors, 3));
-    g.setIndex(new BufferAttribute(narrowIndices(r.indices, n), 1));
-    g.setAttribute('uv', new BufferAttribute(r.uvs, 2));
-    // Corners were split: anything that pairs the part's own arrays with this geometry (cluster LOD) must use these instead.
-    if (r.positions !== positions) g.userData[SPLIT_SOURCE_KEY] = { positions: r.positions, indices: r.indices };
-    setPositionBounds(g, r.positions);
-    return g;
+    const split = r.positions !== positions;
+    return {
+      positions: r.positions,
+      normals: r.normals,
+      indices: narrowIndices(r.indices, n),
+      uvs: r.uvs,
+      colors: r.colors,
+      splat: null,
+      splitIndices: split ? r.indices : null,
+      bounds: streamBounds(r.positions),
+      ...withKit(part),
+    };
   }
-  g.setAttribute('position', new BufferAttribute(positions, 3));
-  if (hasNormals) g.setAttribute('normal', new BufferAttribute(normals, 3));
-  if (hasColors) g.setAttribute('color', new BufferAttribute(colors, 3));
+  let weights: Float32Array | null = null;
   if (splat) {
     // Terrain layer weights; a part that asks for layering without weights is plain grass.
-    if (part.splat instanceof Float32Array && part.splat.length === vertexCount * 4) g.setAttribute('splat', new BufferAttribute(part.splat, 4));
+    if (part.splat instanceof Float32Array && part.splat.length === vertexCount * 4) weights = part.splat;
     else {
-      const w = new Float32Array(vertexCount * 4);
-      for (let i = 0; i < vertexCount; i++) w[i * 4] = 1;
-      g.setAttribute('splat', new BufferAttribute(w, 4));
+      weights = new Float32Array(vertexCount * 4);
+      for (let i = 0; i < vertexCount; i++) weights[i * 4] = 1;
     }
   }
+  return {
+    positions,
+    normals,
+    indices: indices.length > 0 ? narrowIndices(indices, vertexCount) : indices,
+    uvs: keep ? (part.uvs as Float32Array) : splat ? terrainUvs(positions) : boxProjectedUvs(positions, normals),
+    colors: hasColors ? colors : null,
+    splat: weights,
+    splitIndices: null,
+    bounds: streamBounds(positions),
+    ...withKit(part),
+  };
+}
+
+function withKit(part: MeshPart): { kit?: boolean } {
+  const kit = kitOf(part);
+  return kit === undefined ? {} : { kit };
+}
+
+/** Prepare every part of an output in place (generation workers; parts that cannot be prepared are left alone). */
+export function prepareOutputParts(parts: MeshPart[]): void {
+  for (const part of parts) {
+    if (part.prepared) continue;
+    const prepared = preparePart(part);
+    if (prepared) part.prepared = prepared;
+  }
+}
+
+/** Wrap prepared streams in a geometry (main thread: no per-vertex work). */
+function preparedGeometry(p: PreparedPart): BufferGeometry {
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(p.positions, 3));
+  g.setAttribute('normal', new BufferAttribute(p.normals, 3));
+  if (p.colors) g.setAttribute('color', new BufferAttribute(p.colors, 3));
+  if (p.splat) g.setAttribute('splat', new BufferAttribute(p.splat, 4));
+  if (p.indices.length > 0) g.setIndex(new BufferAttribute(p.indices, 1));
+  g.setAttribute('uv', new BufferAttribute(p.uvs, 2));
+  // Corners were split: anything that pairs the part's own arrays with this geometry (cluster LOD) must use these instead.
+  if (p.splitIndices) g.userData[SPLIT_SOURCE_KEY] = { positions: p.positions, indices: p.splitIndices };
+  const b = p.bounds;
+  if (b && b.length === 10) {
+    const box = new Box3();
+    box.min.set(b[0]!, b[1]!, b[2]!);
+    box.max.set(b[3]!, b[4]!, b[5]!);
+    g.boundingBox = box;
+    const sphere = new Sphere();
+    sphere.center.set(b[6]!, b[7]!, b[8]!);
+    sphere.radius = b[9]!;
+    g.boundingSphere = sphere;
+  } else setPositionBounds(g, p.positions);
+  return g;
+}
+
+/**
+ * Build a `BufferGeometry` from one mesh part. Validates array lengths
+ * (positions/normals/uvs/colors per vertex, triangle-multiple indices) and
+ * computes bounding volumes for frustum culling. Streams prepared in a worker
+ * are used as they are.
+ */
+export function partToBufferGeometry(part: MeshPart): BufferGeometry {
+  const { positions, indices } = part;
+  if (!(positions instanceof Float32Array) || positions.length % 3 !== 0) throw new InvalidMeshError('positions must be a Float32Array of xyz triples');
+  if (!(indices instanceof Uint32Array) || indices.length % 3 !== 0) throw new InvalidMeshError('indices must be a Uint32Array of triangles');
+  const prepared = part.prepared ?? preparePart(part);
+  if (prepared) return preparedGeometry(prepared);
+  // No usable normals: computed here (never the case for validated generator output).
+  const vertexCount = positions.length / 3;
+  const tmp = new BufferGeometry();
+  tmp.setAttribute('position', new BufferAttribute(positions, 3));
+  tmp.setIndex(new BufferAttribute(indices, 1));
+  tmp.computeVertexNormals();
+  const normals = tmp.getAttribute('normal').array as Float32Array;
+  const fixed = preparePart({ ...part, normals, prepared: undefined } as MeshPart);
+  if (fixed && vertexCount > 0) return preparedGeometry(fixed);
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(positions, 3));
+  g.setAttribute('normal', new BufferAttribute(normals, 3));
   if (indices.length > 0) g.setIndex(new BufferAttribute(narrowIndices(indices, vertexCount), 1));
-  if (!g.getAttribute('normal')) g.computeVertexNormals();
-  const uvs = keep ? (part.uvs as Float32Array) : splat ? terrainUvs(positions) : boxProjectedUvs(positions, g.getAttribute('normal').array as Float32Array);
-  g.setAttribute('uv', new BufferAttribute(uvs, 2));
+  g.setAttribute('uv', new BufferAttribute(boxProjectedUvs(positions, normals), 2));
   setPositionBounds(g, positions);
   return g;
 }

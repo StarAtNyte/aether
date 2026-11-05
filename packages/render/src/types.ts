@@ -4,9 +4,9 @@
  * procgen at runtime).
  */
 import type { EntityId, PrimitiveShape, ProceduralShape, Vec3, WorldDoc } from '@aether/core';
-import type { ColliderDesc, GeneratorOutput, MeshPart, SandboxRunner } from '@aether/procgen';
+import type { ColliderDesc, GeneratorOutput, MeshPart, PreparedPart, SandboxRunner } from '@aether/procgen';
 
-export type { ColliderDesc, GeneratorOutput, MeshPart, SandboxRunner };
+export type { ColliderDesc, GeneratorOutput, MeshPart, PreparedPart, SandboxRunner };
 
 /**
  * A physics/verification diagnostic to visualize. Structurally compatible with
@@ -33,8 +33,11 @@ export interface KeyedOutput {
 export interface GeometrySource {
   /** Synchronous primitive geometry (same sizes physics uses). */
   primitive(shape: PrimitiveShape): KeyedOutput;
-  /** Built-in or custom (sandboxed) procedural geometry. May reject. */
-  procedural(shape: ProceduralShape, world: Pick<WorldDoc, 'generators'>): Promise<KeyedOutput>;
+  /**
+   * Built-in or custom (sandboxed) procedural geometry. May reject. `priority` orders the work when it has to wait
+   * for a worker: lower first (the scene passes the distance to the view).
+   */
+  procedural(shape: ProceduralShape, world: Pick<WorldDoc, 'generators'>, opts?: { priority?: number }): Promise<KeyedOutput>;
   /** Visible placeholder used when generation fails. */
   fallback(reason: string): KeyedOutput;
 }

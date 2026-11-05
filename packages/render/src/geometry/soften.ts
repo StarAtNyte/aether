@@ -130,6 +130,25 @@ export function softenedNormals(part: MeshPart, creaseDeg: number): Float32Array
   return out;
 }
 
+/**
+ * Soften a part off the main thread (generation workers): its normals for the crease its own material asks for, and
+ * the render-ready streams of the softened part, kept on `part.prepared.soft` for {@link softenPart}. Call after the
+ * part's own streams are prepared.
+ */
+export function prepareSoft(part: MeshPart, prepare: (p: MeshPart) => MeshPart['prepared'] | null): void {
+  const own = part.prepared;
+  const crease = creaseFor(part.material);
+  if (!own || crease === null || own.soft) return;
+  const normals = softenedNormals(part, crease);
+  own.soft = { crease, normals, prepared: normals ? (prepare({ ...withoutPrepared(part), normals }) ?? null) : null };
+}
+
+/** A part's fields without the render-ready streams prepared from them. */
+function withoutPrepared(part: MeshPart): MeshPart {
+  const { prepared: _prepared, ...rest } = part;
+  return rest;
+}
+
 /** Softened copies of a part by crease angle (a part is softened once per crease it is asked for). */
 const memo = new WeakMap<MeshPart, Map<number, MeshPart>>();
 
@@ -142,8 +161,12 @@ export function softenPart(part: MeshPart, crease: number | null = creaseFor(par
   let byCrease = memo.get(part);
   const hit = byCrease?.get(crease);
   if (hit) return hit;
-  const normals = softenedNormals(part, crease);
-  const result: MeshPart = normals ? { ...part, normals } : part;
+  // Softened in a generation worker already (see prepareSoft) when the crease is the one the part's own material asks for.
+  const pre = part.prepared?.soft;
+  const done = pre && pre.crease === crease ? pre : null;
+  const normals = done ? done.normals : softenedNormals(part, crease);
+  // New normals: the streams prepared from the flat ones no longer apply.
+  const result: MeshPart = normals ? { ...withoutPrepared(part), normals, ...(done?.prepared ? { prepared: done.prepared } : {}) } : part;
   if (!byCrease) {
     byCrease = new Map();
     memo.set(part, byCrease);
