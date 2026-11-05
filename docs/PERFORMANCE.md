@@ -123,6 +123,20 @@ pipeline's program once its link has finished (opt out: `__AETHER_PIPELINE_RELEA
 | Linden Row, with | 3.51 GB (37 programs deleted) | 3.38 GB |
 | Lisbon Hills, with | 4.57 GB, inside a 5 GB cap (26 deleted) | 4.06 GB |
 
+A tier change is one transition (`view/quality-transition.ts`, `WorldRenderer.qualityTransition`): the view keeps its last
+complete picture while the new tier's programs link (a re-warm asked for during another runs after it), the studio shows
+"Applying <tier> quality…", and the automatic lightmap bake, which runs above the low tier only, gets another look when the tier
+rises (before, a world opened on low kept "no baked light for this building yet" after a switch to ultra). The transition ends
+once nothing has rebuilt for 0.4 s, and never later than 75 s. Probe: `scripts/tier-switch-probe.ts` (low to ultra, ultra to low,
+auto to ultra, rapid toggles).
+
+The automatic tier says why it is what it is (`WorldRenderer.autoTierReason`, shown in Settings next to the GPU line): "Firefox
+cautious start", "stepped down: 18 fps", "integrated GPU", "4-core CPU". Firefox on a recognised discrete GPU starts at ladder
+level 3 (medium) instead of 4 (low) and climbs with shorter waits (4 s of headroom, 6 s settle) until something measured is given
+up; integrated GPUs keep level 4 and the usual climb. The climb also counts a median frame at 55 fps with a p90 above 28 fps as
+fast: one missed vsync in ten holds the p90 at exactly 30 fps on a 60 Hz display. Probe: `scripts/tier-climb-probe.ts --firefox`
+(medium to high in 26 s of motion on an NVIDIA GPU).
+
 A separate bounded investigation that day (capture-target budget, particle buffer usage, an instance-upload cache, still
 path-trace presentation) is in [RENDER_OPTIMIZATION_REPORT.md](RENDER_OPTIMIZATION_REPORT.md): its Lisbon Hills run ran out
 of a 4.6 GB cap during the medium-to-ultra switch the fix above addresses.

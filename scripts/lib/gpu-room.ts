@@ -22,6 +22,8 @@ export interface GpuRoomOptions {
   /** Show the browser window (default: headless). */
   headed?: boolean;
   log?: (line: string) => void;
+  /** User agent of the page (e.g. a Firefox one, to take the renderer's Gecko path in Chromium). */
+  userAgent?: string;
 }
 
 /** A studio page that draws rooms from given cameras. */
@@ -40,7 +42,7 @@ export class GpuRoom {
     let browser: Browser | null = null;
     try {
       browser = await chromium.launch({ executablePath: findChrome(), args: [...CHROME_ARGS], headless: opts.headed !== true });
-      const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, ...(opts.userAgent ? { userAgent: opts.userAgent } : {}) });
       await ctx.addInitScript(SKIP_FIRST_RUN);
       // tsx wraps functions in `__name(...)`; a function run in the page by `evaluate` needs it defined there.
       await ctx.addInitScript({ content: 'globalThis.__name = (f) => f;' });
