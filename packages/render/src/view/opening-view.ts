@@ -30,6 +30,8 @@ export interface OpeningProbe {
   sight: SightTest;
   /** The same for the short clearance tests round the eye (default `sight`): solid meshes only, no coarse scatter boxes. */
   near?: SightTest;
+  /** The point is below a water surface (an eye there sees the underside of the water). */
+  underWater?(p: Vec3): boolean;
 }
 
 /** Inputs of {@link chooseOpeningView}. */
@@ -66,6 +68,8 @@ const HEADROOM = 5;
 const MAX_STEP = 1.3;
 /** Rings round the landmark, as shares of the content radius. */
 const RING_SHARES = [0.3, 0.45, 0.65, 0.9] as const;
+/** Nothing may be closer to the lens than this (m) anywhere in the frame's centre and bottom band. */
+export const NEAR_ZONE = 2;
 /** Smallest downward pitch (radians) of an opening view: the orbit camera never looks level or up. */
 const MIN_DOWN = 0.035;
 /** Directions tried on each ring. */
@@ -118,6 +122,8 @@ export interface OpeningStats {
   eye?: number;
   waist?: number;
   noAim: number;
+  /** Turned down for something within {@link NEAR_ZONE} of the lens in the frame, or an eye under water. */
+  near?: number;
   kept: number;
 }
 
@@ -172,7 +178,12 @@ export function rankOpeningViews(input: OpeningInput, probe: OpeningProbe, limit
           }
           continue;
         }
-        const pose = scoreView(eye, lc, mark, input, probe.sight, items, totalWeight, vHalf, hHalf, r);
+        let pose = scoreView(eye, lc, mark, input, probe.sight, items, totalWeight, vHalf, hHalf, r);
+        // Nothing in the near zone of the lens (a leaf, a branch, a wall edge a metre away fills the frame), never under water.
+        if (pose && (probe.underWater?.(eye) || nearZone(probe.sight, pose.position, pose.target, input.fovDeg, input.aspect) < NEAR_ZONE)) {
+          if (stats) stats.near = (stats.near ?? 0) + 1;
+          pose = null;
+        }
         if (!pose) {
           if (stats) stats.noAim++;
           continue;
@@ -296,4 +307,47 @@ function scoreView(eye: Vec3, lc: Vec3, mark: { top: number; base: number } | nu
   // The orbit pivot at the landmark's horizontal distance: orbiting turns round what is looked at.
   const target: Vec3 = [eye[0] + fx * flat, eye[1] + Math.tan(pitch) * flat, eye[2] + fz * flat];
   return { position: eye, target, landmark: [lc[0], lc[1], lc[2]], score, sees };
+}
+
+/**
+ * The nearest content (m, up to {@link NEAR_ZONE} + 1) along rays through the frame of the view `eye` → `target`: a grid
+ * over the centre and the bottom band (where a shrub, a leaf or a railing next to the camera shows), at the field of
+ * view `fovDeg` and `aspect`. `sight` gives the free distance along a segment.
+ */
+export function nearestInView(sight: SightTest, eye: Vec3, target: Vec3, fovDeg: number, aspect: number): number {
+  const dx = target[0] - eye[0];
+  const dy = target[1] - eye[1];
+  const dz = target[2] - eye[2];
+  const flat = Math.hypot(dx, dz);
+  if (!(flat > 1e-6)) return Number.POSITIVE_INFINITY;
+  const yaw = Math.atan2(dx, dz);
+  const pitch = Math.atan2(dy, flat);
+  const vHalf = (Math.max(10, Math.min(120, fovDeg || 50)) * deg) / 2;
+  const hHalf = Math.atan(Math.tan(vHalf) * (aspect > 0 ? aspect : 16 / 9));
+  const len = NEAR_ZONE + 1;
+  let nearest = len;
+  // Rows: the centre, the lower half and the bottom edge; columns across the width.
+  for (const v of [0, -0.5, -0.92]) {
+    for (const u of [-0.92, -0.5, 0, 0.5, 0.92]) {
+      const a = yaw + Math.atan(Math.tan(hHalf) * u);
+      const b = pitch + Math.atan(Math.tan(vHalf) * v);
+      const c = Math.cos(b);
+      const free = sight(eye, [eye[0] + Math.sin(a) * c * len, eye[1] + Math.sin(b) * len, eye[2] + Math.cos(a) * c * len]);
+      if (free < nearest) nearest = free;
+    }
+  }
+  return nearest;
+}
+
+/**
+ * The near zone of a view: {@link nearestInView} with `sight` (scatter crowns included), and 0 when the eye sits inside
+ * something (a tree crown, a hedge): seen from three metres away in most directions, the eye is hidden.
+ */
+export function nearZone(sight: SightTest, eye: Vec3, target: Vec3, fovDeg: number, aspect: number): number {
+  let hidden = 0;
+  for (const [dx, dy, dz] of [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0.7, 0.7, 0], [-0.7, 0.7, 0]] as const) {
+    if (sight([eye[0] + dx * 3, eye[1] + dy * 3, eye[2] + dz * 3], eye) < 2.9) hidden++;
+  }
+  if (hidden >= 4) return 0;
+  return nearestInView(sight, eye, target, fovDeg, aspect);
 }

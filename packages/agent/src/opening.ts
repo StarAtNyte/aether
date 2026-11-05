@@ -114,6 +114,15 @@ export function openingPictureScore(px: { width: number; height: number; data: A
   return grad / n + spread * 0.3 + Math.min(centre, 40) * 0.2;
 }
 
+/** Content closer than this (m) to the lens in a candidate's frame turns it down. */
+export const OPENING_NEAR_ZONE = 2;
+
+/** Whether a depth-sampled candidate may open the world (see `AgentHost.probeView`); an unknown probe (null) passes to the picture check. */
+export function openingProbeOk(probe: { near: number; underWater: boolean } | null): boolean {
+  if (!probe) return true;
+  return !probe.underWater && !(probe.near < OPENING_NEAR_ZONE);
+}
+
 /** The patch storing a candidate as the opening view. */
 export function openingPatch(view: ReviewViewRequest): Patch {
   const p = view.pose;

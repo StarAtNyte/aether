@@ -288,6 +288,12 @@ export interface AgentHost {
    */
   captureReview?(views: readonly ReviewViewRequest[], opts?: { signal?: AbortSignal; size?: number }): Promise<Array<{ name: string; dataUrl: string }>>;
   /**
+   * Depth-sample a candidate camera in the current scene: the nearest content (m) in the centre and bottom band of its
+   * frame, and whether the eye is below a water surface. Null when the host cannot tell. The opening view never takes a
+   * pose with content within 2 m of the lens or an eye under water.
+   */
+  probeView?(pose: ReviewViewRequest['pose']): Promise<{ near: number; underWater: boolean } | null>;
+  /**
    * Lay image tiles side by side in one picture (each tile cropped to `box` = [x0,y0,x1,y1] in 0..1 when given, scaled to a
    * common height; the longer side at most `maxSide`). Null when it cannot be drawn. Used by the photo compare turn's
    * `look_closer` (photo and render crops, whole-picture side by side).

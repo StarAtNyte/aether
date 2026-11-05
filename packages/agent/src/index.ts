@@ -103,6 +103,6 @@ export { findPlaceholders, generatorForName, placeholderFindings, withPlaceholde
 export { findBuriedFalls, fallsFindings, withFalls, type BuriedFall } from './falls';
 export { weightFindings, withWeight, WEIGHT_LIMITS } from './weight';
 export { artifactFindings, findArtifacts, findBuildingsInRock, findLandEnds, findMeshClouds, findPlainPlanes, findPlantsInFalls, findSkyPieces, withArtifacts, type Artifact } from './artifacts';
-export { openingCandidates, openingPatch, openingPictureScore, wantsOpening } from './opening';
+export { OPENING_NEAR_ZONE, openingCandidates, openingPatch, openingPictureScore, openingProbeOk, wantsOpening } from './opening';
 export { HARDCORE_PASSES, HARDCORE_SHADER_BUDGET_PATCH, bibleText, heroShots, judgeCloser, lookCandidates, lookDistance, pictureColour, type PictureColour, lumaPercentiles, meanTargets, passPrompt, referencePrompt as heroReferencePrompt, targetEvidenceText, type HardcoreRun, type HeroShotOptions, type LumaTargets } from './hardcore';
 export { GAME_CODES, GameReviewCache, gameSignature, gameStaticFindings, isReviewedGame, withGame, type GameReviewResult, type GameReviewRunner } from './game-review';

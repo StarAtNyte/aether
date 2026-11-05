@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { applyPatches, createWorld, type WorldDoc } from '@aether/core';
-import { openingCandidates, openingPatch, openingPictureScore, wantsOpening } from '../src/opening';
+import { openingCandidates, openingPatch, openingPictureScore, openingProbeOk, wantsOpening } from '../src/opening';
 
 const place = (): WorldDoc =>
   createWorld({
@@ -57,5 +57,12 @@ describe('opening view of a built world', () => {
     expect(wantsOpening(createWorld({}), world)).toBe(true);
     expect(wantsOpening(world, world)).toBe(false);
     expect(wantsOpening(createWorld({}), r.world)).toBe(false);
+  });
+
+  it('turns down depth-sampled candidates with content near the lens or the eye under water', () => {
+    expect(openingProbeOk(null)).toBe(true);
+    expect(openingProbeOk({ near: 3, underWater: false })).toBe(true);
+    expect(openingProbeOk({ near: 1.2, underWater: false })).toBe(false);
+    expect(openingProbeOk({ near: 3, underWater: true })).toBe(false);
   });
 });

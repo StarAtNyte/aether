@@ -236,6 +236,13 @@ export class AgentBridge implements AgentHost {
     return out;
   }
 
+  /** Depth-sample a candidate camera in the live scene (see `AgentHost.probeView`). */
+  probeView(pose: ReviewViewRequest['pose']): Promise<{ near: number; underWater: boolean } | null> {
+    // No waiting: without a mounted viewport there is nothing to sample (and nothing to render the candidates with).
+    const sim = this.simulation;
+    return Promise.resolve(sim ? sim.renderer.checkOpeningView({ position: pose.position, target: pose.target, fov: pose.fov }) : null);
+  }
+
   composeImages(tiles: ReadonlyArray<{ dataUrl: string; box?: readonly [number, number, number, number] }>, opts: { maxSide?: number } = {}): Promise<string | null> {
     return composeTiles(tiles, opts.maxSide);
   }

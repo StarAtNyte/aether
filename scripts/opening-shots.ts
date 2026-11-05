@@ -96,6 +96,8 @@ try {
         await page.waitForFunction((f) => (window.__aether?.simulation?.renderer.frameCount ?? 0) > f + 8, f1, { timeout: 60_000, polling: 250 }).catch(() => undefined);
         await page.waitForTimeout(1500);
         await shot(`pose${i}-${v.name ?? ''}`);
+        const check = await page.evaluate((x) => (window.__aether?.simulation?.renderer as unknown as { checkOpeningView(p: unknown): unknown }).checkOpeningView(x), v);
+        log(`  pose${i} ${v.name ?? ''} ${JSON.stringify(check)}`);
       }
       if (overview) {
         await page.keyboard.press('o');

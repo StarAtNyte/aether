@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { boxSightTest, type FramingItem } from '../src/view/framing';
-import { chooseOpeningView, horizonPitch, OPENING_HEIGHT, openingLandmark, type OpeningProbe } from '../src/view/opening-view';
+import { chooseOpeningView, horizonPitch, NEAR_ZONE, nearestInView, OPENING_HEIGHT, openingLandmark, type OpeningProbe } from '../src/view/opening-view';
 
 const boxAt = (cx: number, cz: number, half: number, height: number, extra: Partial<FramingItem> = {}): FramingItem => ({ min: [cx - half, 0, cz - half], max: [cx + half, height, cz + half], ...extra });
 
@@ -77,5 +77,24 @@ describe('opening view', () => {
   it('takes a focus item as the landmark over taller unfocused content', () => {
     const mark = openingLandmark({ center: [0, 0, 0], radius: 30 }, [boxAt(10, 0, 2, 40), boxAt(-5, 0, 2, 6, { focus: true })]);
     expect(mark?.center[0]).toBe(-5);
+  });
+
+  it('turns down a view with something in the near zone of the lens, or an eye under water', () => {
+    const { items, probe } = town();
+    const input = { framing: { center: [0, 4, 0] as [number, number, number], radius: 30 }, items, fovDeg: 50, aspect: 16 / 9 };
+    const free = chooseOpeningView(input, probe)!;
+    // A bush a metre in front of the lens, low in the frame.
+    const p = free.position;
+    const dx = free.target[0] - p[0];
+    const dz = free.target[2] - p[2];
+    const l = Math.hypot(dx, dz);
+    const bush = boxAt(p[0] + (dx / l) * 1.2, p[2] + (dz / l) * 1.2, 0.4, p[1] - 0.6);
+    expect(nearestInView(boxSightTest([bush]), p, free.target, 50, 16 / 9)).toBeLessThan(NEAR_ZONE);
+    const withBush: OpeningProbe = { ...probe, sight: boxSightTest([...items, bush]) };
+    const moved = chooseOpeningView(input, withBush)!;
+    expect(moved.position).not.toEqual(p);
+    expect(nearestInView(boxSightTest([...items, bush]), moved.position, moved.target, 50, 16 / 9)).toBeGreaterThanOrEqual(NEAR_ZONE);
+    // Every eye under water: nothing qualifies.
+    expect(chooseOpeningView(input, { ...probe, underWater: () => true })).toBeNull();
   });
 });

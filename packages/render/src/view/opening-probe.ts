@@ -3,7 +3,7 @@
  * something not to stand on) and the line of sight (see `sightline.ts`). Used to choose the opening view.
  */
 import { Box3, Raycaster, Vector3, type Intersection, type Mesh, type Object3D } from 'three';
-import { findWaterBodies, isWaterEntity, waterAt, type Entity, type EntityId } from '@aether/core';
+import { findWaterBodies, isWaterEntity, waterAt, type Entity, type EntityId, type Vec3 } from '@aether/core';
 import type { SceneSync } from '../sync/scene-sync';
 import { BATCHED_LAYER } from '../sync/static-batches';
 import { SCENERY_GENERATORS } from './content-items';
@@ -106,7 +106,11 @@ export function sceneOpeningProbe(sync: SceneSync, ground: Object3D | null, top:
     if (out && w && w.y > out.y + 0.05) out = { y: out.y, kind: 'water' };
     return out;
   };
-  return { surface, sight: sceneSightTest(sync), near: sceneSightTest(sync, new Set(), { scatter: false }) };
+  const underWater = (p: Vec3): boolean => {
+    const w = waterAt(water, p[0], p[2], p[1]);
+    return !!w && w.y > p[1];
+  };
+  return { surface, sight: sceneSightTest(sync), near: sceneSightTest(sync, new Set(), { scatter: false }), underWater };
 }
 
 function visible(object: Object3D): boolean {

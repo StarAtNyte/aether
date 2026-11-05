@@ -30,7 +30,7 @@ import { findingKey, findingsText } from '@aether/arch';
 import { autoRepairBuildings } from './auto-repair';
 import { lumaPercentiles, targetEvidenceText, type HardcoreRun, type LumaTargets } from './hardcore';
 import { isBlankFrame, lightEvidenceText, pictureStats, type PictureStats } from './picture-stats';
-import { openingCandidates, openingPatch, openingPictureScore, wantsOpening } from './opening';
+import { openingCandidates, openingPatch, openingPictureScore, openingProbeOk, wantsOpening } from './opening';
 import { MAX_REVIEW_VIEWS, RepeatLedger, reviewTurnText, snapshotForReview, StallTracker, stallAskText, type ReviewSnapshot } from './review';
 import { guardVerificationClaim } from './honesty';
 import { DIFFERENCES_TOOL, DIFFERENCES_TOOL_NAME, DifferenceLedger, differenceViews } from './photo/differences';
@@ -696,8 +696,18 @@ export class WorldAgent {
    */
   private async *chooseOpening(host: AgentHost, signal: AbortSignal | undefined): AsyncGenerator<AgentEvent> {
     if (!host.captureReview || !host.decodeImage) return;
-    const views = openingCandidates(host.getWorld());
-    if (views.length === 0) return;
+    const views: ReturnType<typeof openingCandidates> = [];
+    let sampled = 0;
+    const candidates = openingCandidates(host.getWorld());
+    for (const v of candidates) {
+      // Depth-sampled first: foliage or a wall inside the lens' near zone, or an eye under water, is never a first view.
+      const probe = host.probeView ? await raceAbort(host.probeView(v.pose), signal).catch(() => null) : null;
+      if (probe) sampled++;
+      if (!openingProbeOk(probe)) continue;
+      views.push(v);
+    }
+    // A host that samples but could sample none has no scene to render either.
+    if (views.length === 0 || (host.probeView && sampled === 0 && candidates.length > 0)) return;
     let best: { view: (typeof views)[number]; score: number } | null = null;
     try {
       const got = await raceAbort(host.captureReview(views, signal ? { signal } : {}), signal);

@@ -89,7 +89,7 @@ import { isOpaqueVisible, sceneSightTest } from './view/sightline';
 import { ArchView, type ArchViewState } from './view/arch-view';
 import { daylightLampFactor, FORWARD_LIGHTS } from './sync/lights';
 import { collectFramingItems, FOCUS_TAG } from './view/content-items';
-import { rankOpeningViews, type OpeningPose, type OpeningStats } from './view/opening-view';
+import { nearZone, rankOpeningViews, type OpeningPose, type OpeningStats } from './view/opening-view';
 import { sceneOpeningProbe } from './view/opening-probe';
 import { GROW_OVERSHOOT_MAX_RADIUS, GrowIn, growDelay } from './view/grow-in';
 import { installRenderPatches } from './three-patches';
@@ -3331,6 +3331,25 @@ export class WorldRenderer {
       const reach = framing.radius * 2 + 100;
       const probe = sceneOpeningProbe(this.sync, this.env.groundMesh, framing.center[1] + reach, framing.center[1] - reach);
       return rankOpeningViews({ framing, items, fovDeg: cam.fov, aspect: cam.aspect, arch, azimuthDeg: front ?? DEFAULT_FRAMING_AZIMUTH }, probe, limit, stats);
+    });
+  }
+
+  /**
+   * How a candidate opening view sits in the scene: the nearest content in its frame's centre and bottom band (m, up
+   * to 3; see `nearestInView`) and whether the eye is below a water surface. Null before there is content.
+   */
+  checkOpeningView(pose: { position: Vec3; target: Vec3; fov?: number }): { near: number; underWater: boolean } | null {
+    if (this.disposed || !pose.position.every(Number.isFinite) || !pose.target.every(Number.isFinite)) return null;
+    const items = this.grow.withFullScale(() => collectFramingItems(this.sync));
+    const framing = contentFraming(items);
+    if (!framing) return null;
+    const cam = this.perspective;
+    return this.grow.withFullScale(() => {
+      this.sync.root.updateMatrixWorld(true);
+      const reach = framing.radius * 2 + 100;
+      const probe = sceneOpeningProbe(this.sync, this.env.groundMesh, framing.center[1] + reach, framing.center[1] - reach);
+      const near = nearZone(probe.sight, pose.position, pose.target, pose.fov ?? cam.fov, cam.aspect);
+      return { near, underWater: probe.underWater?.(pose.position) ?? false };
     });
   }
 
