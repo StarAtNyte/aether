@@ -68,7 +68,11 @@ const IDLE_BEHAVIORS: ReadonlySet<string> = new Set(['operable', 'door', 'toggle
  */
 export function mergeable(node: Readonly<EntityNode>, interactive = false): boolean {
   if (node.transient || node.placeholder || node.pending || node.failed || node.overridden) return false;
-  if (node.virtual.length > 0 || node.field) return false;
+  // An entity with virtual parts keeps its other parts as they are: merged per cell they would no longer be culled one
+  // by one, or left out when they cover a pixel or two (a hillside town's balconies and windows; measured slower on an
+  // integrated GPU). `__AETHER_MERGE_VIRTUAL_PARTS = true` merges them (the virtual sources stay out, see `virtualSource`).
+  if (node.field) return false;
+  if ((node.virtual.length > 0 || node.bindings.some((b) => b.mesh.userData['aetherVirtualSource'] === true)) && !mergeVirtualParts()) return false;
   const e = node.entity;
   if (e.template || e.visible === false) return false;
   // A small scatter layer merges copy by copy; a big one is cheaper as it is (one instanced draw per part).
@@ -78,6 +82,18 @@ export function mergeable(node: Readonly<EntityNode>, interactive = false): bool
   if (e.physics && e.physics.body !== 'static' && !idle) return false;
   if (node.bindings.length === 0 || node.bindings.length > MAX_PARTS || node.geometryKeys.length !== node.bindings.length) return false;
   return true;
+}
+
+function mergeVirtualParts(): boolean {
+  return (globalThis as { __AETHER_MERGE_VIRTUAL_PARTS?: boolean }).__AETHER_MERGE_VIRTUAL_PARTS === true;
+}
+
+/** Whether `mesh` is the full-detail source of one of the node's virtual stand-ins (raycast only; never merged). */
+function virtualSource(node: Readonly<EntityNode>, mesh: Mesh): boolean {
+  // Marked when its hierarchy is requested, before the stand-in exists.
+  if (mesh.userData['aetherVirtualSource'] === true) return true;
+  for (const v of node.virtual) if (v.source === mesh) return true;
+  return false;
 }
 
 /** A mesh of a mergeable node that can join a merge (opaque, shared single material, indexed). */
@@ -187,6 +203,11 @@ export class StaticMerges {
    * use of one costs a regroup of its merge. Takes effect at the next {@link rebuild}.
    */
   interactive = false;
+  /**
+   * Edge (m) of the cells copies and library models merge in: the world's grid cell (see streaming/cell-grid.ts) once the
+   * owner knows it, {@link COPY_CELL} before. Takes effect at the next {@link rebuild}.
+   */
+  copyCell = COPY_CELL;
   private inline = 0;
   private readonly builder: MergeBuildClient | null;
 
@@ -232,6 +253,11 @@ export class StaticMerges {
     for (const m of this.merges) if (m.mesh.userData['aetherInterior'] === true) yield m.mesh;
   }
 
+  /** Merged meshes that have their geometry. */
+  *meshes(): Iterable<Mesh> {
+    for (const m of this.merges) if (m.built) yield m.mesh;
+  }
+
   /** Number of merged meshes. */
   get count(): number {
     return this.readyCount;
@@ -246,8 +272,8 @@ export class StaticMerges {
     const groups = new Map<string, { parent: Object3D; material: Material; meshes: Mesh[] }>();
     for (const node of nodes) {
       const own = mergeable(node, this.interactive);
-      const parts = own ? node.bindings.filter(mergeablePart).map((b) => ({ mesh: b.mesh, materialKey: b.materialKey })) : assetParts(node);
-      const edge = own && node.entity.shape.kind === 'procedural' ? PROP_CELL : COPY_CELL;
+      const parts = own ? node.bindings.filter((b) => mergeablePart(b) && !virtualSource(node, b.mesh)).map((b) => ({ mesh: b.mesh, materialKey: b.materialKey })) : assetParts(node);
+      const edge = own && node.entity.shape.kind === 'procedural' ? PROP_CELL : this.copyCell;
       if (!parts || !node.content.visible || !node.object.visible) continue;
       const parent = node.object.parent;
       if (!parent) continue;

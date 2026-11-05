@@ -44,6 +44,7 @@ import type { HdriSource } from './environment/hdri';
 import { photoFinishResolver } from './materials/photo-finishes';
 import { getCatalog } from '@aether/assets';
 import { SceneSync } from './sync/scene-sync';
+import { installShadowSkip, SHADOW_BATCH_LAYER, shadowSkipTest } from './sync/cell-shadow-batches';
 import type { EntityNode } from './sync/entity-node';
 import { ghostWorld } from './sync/ghost';
 import { EnvironmentRig } from './environment/environment-rig';
@@ -1190,6 +1191,8 @@ export class WorldRenderer {
       maxInstances: opts.maxInstances ?? this.budget.maxInstances,
       staticBatching: opts.staticBatching !== false,
       backgroundMerges: true,
+      // A caster culled from the view for being far or small keeps casting from its cell's batch.
+      cellShadows: { layers: [1, 1 << SMALL_MESH_LAYER, 1 << FAR_INTERIOR_LAYER], budgetMs: () => this.frameBudget.sliceMs() },
       fields: opts.fields === false ? false : { maxInstances: this.budget.fieldInstances, triangles: this.budget.fieldTriangles },
       // Low-memory mode keeps no hierarchy cache beyond the meshes on screen.
       virtual: opts.virtualGeometry === false ? false : { triangles: this.budget.virtualTriangles, dag: { cacheBytes: this.lowMemory ? 0 : 96 * 1024 * 1024 } },
@@ -1201,6 +1204,8 @@ export class WorldRenderer {
         this.archView?.invalidate();
       },
     });
+    // The sun's depth pass draws static casters per grid cell; their own meshes are skipped there (see cell-shadow-batches).
+    installShadowSkip(this.renderer, shadowSkipTest(() => this.sync.cellShadowBatches));
     this.ghost = new SceneSync({
       ...common,
       variant: 'ghost',
@@ -3894,6 +3899,8 @@ export class WorldRenderer {
   /** Selection outline for `ids` (empty clears). */
   highlight(ids: EntityId[]): void {
     this.highlighter.set(Array.isArray(ids) ? ids : [], (id) => this.sync.object(id));
+    // Selected entities cast as live meshes while selected (an edit then never waits for a batch rebuild).
+    this.sync.pinCellShadows(Array.isArray(ids) ? ids : []);
     this.needsDraw = true;
   }
 
@@ -4301,6 +4308,10 @@ export class WorldRenderer {
 
   /** Point the sun's focus cascades at what the eye looks at, and turn the shadow filters' sampling pattern. */
   private aimSunShadows(capture: boolean): void {
+    // The cached sun map draws the per-cell shadow batches (cascade cameras keep drawing the casters themselves).
+    const sunLayers = this.env.sun.shadow.camera.layers;
+    if (this.sync.cellShadowBatches !== null) sunLayers.enable(SHADOW_BATCH_LAYER);
+    else sunLayers.disable(SHADOW_BATCH_LAYER);
     const cascades = this.env.sunCascades;
     const temporal = this.post?.effects.taa === true;
     if (temporal) {

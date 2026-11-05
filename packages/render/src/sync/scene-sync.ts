@@ -11,7 +11,7 @@
 import { accelerateRaycast } from '../geometry/raycast-bvh';
 import { StaticBatches } from './static-batches';
 import type { LightmapSource } from './lightmap-uv';
-import { StaticMerges } from './static-merges';
+import { COPY_CELL, StaticMerges } from './static-merges';
 import {
   Box3,
   BoxGeometry,
@@ -24,6 +24,7 @@ import {
   Mesh,
   MeshStandardMaterial,
   Quaternion,
+  Sphere,
   StaticDrawUsage,
   Vector3,
   type BufferGeometry,
@@ -75,6 +76,9 @@ import { createLocalView, localView } from '../virtual/view';
 import { DagClient, type DagClientOptions } from '../virtual/dag-client';
 import { isKitOfPieces, mirror, VirtualGroup, VIRTUAL_MIN_TRIANGLES } from '../virtual/virtual-mesh';
 import { BATCHED_LAYER } from './static-batches';
+import { CellShadowBatches, plainCasterMaterial, plainCasterMesh, type ShadowCandidate } from './cell-shadow-batches';
+import { VirtualCellBatches, type VirtualBatchMember } from '../virtual/virtual-cell-batch';
+import { assignCell, partitionFor } from '../streaming/cell-grid';
 import { DEFAULT_FIELD_BUDGET, LodChainCache, lodOutputKey, lodPart, outputRadius, shareDemand, type FieldBudget } from './field-mount';
 import { buildMeshGeometry, previewMeshGeometry, type MeshGeometryBundle } from '../geometry/mesh-asset';
 import { meshColliders, yieldToEventLoop } from '@aether/procgen';
@@ -140,6 +144,12 @@ export interface SceneSyncOptions {
   staticBatching?: boolean;
   /** Off-thread merges; the host must hold drawing while batchPreparationPending is nonzero (WorldRenderer does). */
   backgroundMerges?: boolean;
+  /**
+   * Per-cell shadow batches (see `cell-shadow-batches.ts`; default on with static batching). `layers`: the layer masks a
+   * batched caster may have (a mesh culled from the view by distance keeps casting from its batch); `budgetMs`: main-thread
+   * time a frame may spend building batches.
+   */
+  cellShadows?: false | { layers?: readonly number[]; budgetMs?: () => number };
   /** The scene's people: entities with `character` show a cast member instead of their shape. */
   characters?: CharacterSystem;
   /**
@@ -291,6 +301,15 @@ export class SceneSync {
   private batchesStale = true;
   /** Merged building geometry (null when batching is disabled). */
   private readonly merges: StaticMerges | null;
+  /** Static shadow casters merged per grid cell (null when disabled). */
+  private readonly cellShadows: CellShadowBatches | null;
+  /** Virtual stand-ins of one cell and material drawn as one mesh (null when disabled). */
+  private readonly virtualBatches: VirtualCellBatches | null;
+  /** Virtual-group key of each stand-in mesh. */
+  private readonly virtualKeys = new WeakMap<Mesh, string>();
+  /** Content changed since the shadow batches were grouped, and when it last did (ms). */
+  private cellShadowsStale = true;
+  private cellShadowsAt = 0;
   /** Merging paused (e.g. while content grows in and every matrix changes). */
   private mergesSuspended = false;
   /** Field budgets (null: fields disabled). */
@@ -340,6 +359,19 @@ export class SceneSync {
     this.placeholderMaterial = new MeshStandardMaterial({ color: '#9aa4b2', roughness: 0.9, transparent: true, opacity: 0.35, depthWrite: false });
     this.batches = this.variant === 'standard' && opts.staticBatching !== false ? new StaticBatches(this.root) : null;
     this.merges = this.variant === 'standard' && opts.staticBatching !== false ? new StaticMerges({ background: opts.backgroundMerges === true, changed: opts.onBatchesChanged }) : null;
+    const cells = opts.cellShadows ?? {};
+    this.cellShadows = this.variant === 'standard' && opts.staticBatching !== false && cells !== false && (globalThis as { __AETHER_CELL_SHADOWS?: boolean }).__AETHER_CELL_SHADOWS !== false
+      ? new CellShadowBatches(this.root, { intactLayers: cells.layers, changed: opts.onBatchesChanged }) : null;
+    this.virtualBatches = this.cellShadows && opts.virtual !== false && (globalThis as { __AETHER_CELL_VIRTUAL?: boolean }).__AETHER_CELL_VIRTUAL !== false
+      ? new VirtualCellBatches(this.root, {
+        setBatched: (mesh, on) => {
+          const key = this.virtualKeys.get(mesh);
+          if (key !== undefined) this.virtualGroups.get(key)?.group.setBatched(mesh, on);
+        },
+        hiddenLayer: BATCHED_LAYER,
+        // A member left or joined a batch: plan the cuts again on the next frame, unthrottled.
+        changed: () => { this.lastViewUpdate = 0; this.viewDirty = true; opts.onBatchesChanged?.(); },
+      }) : null;
     this.fieldBudget = this.variant === 'standard' && opts.fields !== false ? (opts.fields ?? DEFAULT_FIELD_BUDGET) : null;
     const virtual = this.variant === 'standard' && opts.virtual !== false ? (opts.virtual ?? { triangles: DEFAULT_VIRTUAL_TRIANGLES }) : null;
     this.dags = virtual ? new DagClient(virtual.dag) : null;
@@ -370,6 +402,8 @@ export class SceneSync {
     this.viewDirty = false;
     let changed = false;
     for (const { group } of this.virtualGroups.values()) if (group.update(camera, heightPx)) changed = true;
+    const vb = this.virtualBatches;
+    if (vb && vb.count > 0 && vb.update(camera, heightPx, this.shadowCovered)) changed = true;
     if (this.fieldNodes.size === 0) return changed;
     for (const node of this.fieldNodes) {
       const field = node.field;
@@ -457,7 +491,121 @@ export class SceneSync {
       }
       if ((m.count > 0 || m.pending > 0) && m.update()) merged = true;
     }
-    return regrouped || moved || merged;
+    return this.updateCellShadows(stale || regrouped || merged) || regrouped || moved || merged;
+  }
+
+  /** A stand-in whose sun shadow comes from a ready shadow batch (its view cut may then cull). */
+  private readonly shadowCovered = (mesh: Mesh): boolean => this.cellShadows?.skips(mesh) === true;
+
+  /** Quiet time after a content change before the shadow casters are grouped again (ms). */
+  private static readonly CELL_REGROUP_MS = 300;
+
+  /** Evict changed shadow-batch members, regroup after content changes, build due cells. True when a frame is needed. */
+  private updateCellShadows(contentChanged: boolean): boolean {
+    const cs = this.cellShadows;
+    if (!cs) return false;
+    const t = performance.now();
+    const vb = this.virtualBatches;
+    if (contentChanged || cs.rescanNeeded || vb?.rescanNeeded) {
+      cs.rescanNeeded = false;
+      if (vb) vb.rescanNeeded = false;
+      this.cellShadowsStale = true;
+      this.cellShadowsAt = t;
+    }
+    let changed = cs.update(contentChanged || this.cellShadowsFull > 0);
+    if (vb?.verify()) changed = true;
+    // Not while merges are suspended (content growing in) or members still prepare in the background.
+    if (this.cellShadowsStale && !this.mergesSuspended && (this.merges?.pending ?? 0) === 0 && t - this.cellShadowsAt >= SceneSync.CELL_REGROUP_MS) {
+      this.cellShadowsStale = false;
+      cs.rebuild(this.shadowCandidates());
+      const grid = cs.grid;
+      if (vb && grid) {
+        vb.rebuild(this.virtualCandidates(), (source) => {
+          const g = source.geometry;
+          if (!g.boundingSphere) g.computeBoundingSphere();
+          if (!g.boundingSphere) return null;
+          const s = _cellSphere.copy(g.boundingSphere).applyMatrix4(source.matrixWorld);
+          return assignCell(grid, s.center.x, s.center.z, s.radius * 2);
+        });
+      }
+    }
+    const budget = Math.max(1, Math.min(8, this.opts.cellShadows ? this.opts.cellShadows.budgetMs?.() ?? 4 : 4));
+    if (cs.pending > 0 && cs.pump(budget)) changed = true;
+    if (vb && vb.pending > 0 && vb.pump(budget)) changed = true;
+    return changed;
+  }
+
+  /**
+   * Fix the world's grid from its top-level entities' positions the first time a world is set (stage 4b streams the same
+   * cells): copies merge per grid cell, and the shadow and virtual batches group by it.
+   */
+  private ensurePartition(world: WorldDoc): void {
+    if (!this.cellShadows || this.cellShadows.grid) return;
+    let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
+    for (const id in world.entities) {
+      const e = world.entities[id];
+      if (!e || e.template || e.parent) continue;
+      const p = e.transform.position;
+      const x = Number(p[0]), z = Number(p[2]);
+      if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
+      minX = Math.min(minX, x); maxX = Math.max(maxX, x); minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
+    }
+    if (!(maxX >= minX)) return;
+    const grid = partitionFor([minX, minZ], [maxX, maxZ]);
+    this.cellShadows.setPartition(grid);
+    if (this.merges && this.merges.copyCell !== Math.max(COPY_CELL, grid.cellSize)) {
+      this.merges.copyCell = Math.max(COPY_CELL, grid.cellSize);
+      this.batchesStale = true;
+    }
+  }
+
+  /** Virtual stand-ins of static entities, offered to the view batches. */
+  private *virtualCandidates(): Iterable<VirtualBatchMember> {
+    for (const node of this.nodes.values()) {
+      if (node.virtual.length === 0 || !staticCaster(node)) continue;
+      for (const v of node.virtual) {
+        const dag = this.virtualGroups.get(v.key)?.group.dag;
+        if (dag) yield { mesh: v.mesh, source: v.source, dag, id: node.id };
+      }
+    }
+  }
+
+  /** The meshes the sun's depth pass draws for static entities, with their owners (see CellShadowBatches). */
+  private *shadowCandidates(): Iterable<ShadowCandidate> {
+    for (const node of this.nodes.values()) {
+      if (!staticCaster(node)) continue;
+      // Virtual stand-ins cast with their source's flags (a stand-in drawn by a view batch is not mirrored any more).
+      for (const v of node.virtual) {
+        const dag = this.virtualGroups.get(v.key)?.group.dag;
+        if (dag && v.source.castShadow && plainCasterMesh(v.mesh) && plainCasterMaterial(v.source.material as Material)) yield { mesh: v.mesh, id: node.id, virtual: { dag, source: v.source } };
+      }
+      const stack: Object3D[] = [...node.content.children];
+      while (stack.length > 0) {
+        const o = stack.pop() as Object3D;
+        for (const c of o.children) stack.push(c);
+        const mesh = o as Mesh;
+        if (mesh.isMesh !== true || !mesh.castShadow || mesh.name.endsWith(':virtual') || !plainCasterMesh(mesh)) continue;
+        yield { mesh, id: node.id };
+      }
+    }
+    if (this.merges) for (const mesh of this.merges.meshes()) if (mesh.castShadow && plainCasterMesh(mesh)) yield { mesh, id: this.idOf(mesh.parent) };
+  }
+
+  /** Static shadow batches (null when disabled), for the renderer's shadow-pass skip test. */
+  get cellShadowBatches(): CellShadowBatches | null {
+    return this.cellShadows;
+  }
+
+  /** Keep the selected entities' casters out of the shadow batches while selected (they cast as live meshes). */
+  pinCellShadows(ids: Iterable<EntityId>): void {
+    const list = [...ids];
+    this.cellShadows?.pin(list);
+    this.virtualBatches?.pin(list);
+  }
+
+  /** Virtual view batches (diagnostics, tests). */
+  get virtualCellBatches(): VirtualCellBatches | null {
+    return this.virtualBatches;
   }
 
   /** A regroup of the merges is due when merging resumes. */
@@ -472,7 +620,12 @@ export class SceneSync {
     this.batchesStale = true;
   }
   async waitForBatches(): Promise<void> { await this.merges?.idle(); }
-  synchronousBatches<T>(draw: () => T): T { return this.merges ? this.merges.synchronous(draw) : draw(); }
+  synchronousBatches<T>(draw: () => T): T {
+    // A capture checks every shadow-batch member (no rotating share).
+    this.cellShadowsFull++;
+    try { return this.merges ? this.merges.synchronous(draw) : draw(); } finally { this.cellShadowsFull--; }
+  }
+  private cellShadowsFull = 0;
 
   /**
    * Pause or resume building merges. While paused (content growing in, every
@@ -488,7 +641,8 @@ export class SceneSync {
   /** Whether {@link updateBatches} has work (batches exist or a regroup is pending). */
   get batchesActive(): boolean {
     const merging = this.merges !== null && !this.mergesSuspended && (this.mergesPending || this.merges.count > 0 || this.merges.pending > 0);
-    return (this.batches !== null && (this.batchesStale || this.batches.count > 0 || this.batches.needsRebuild)) || merging;
+    const cells = this.cellShadows !== null && (this.cellShadowsStale || this.cellShadows.count > 0 || this.cellShadows.pending > 0 || (this.virtualBatches?.count ?? 0) > 0);
+    return (this.batches !== null && (this.batchesStale || this.batches.count > 0 || this.batches.needsRebuild)) || merging || cells;
   }
 
   /** Merged building geometry carries the baked lightmap coordinates `source` gives (null: none). */
@@ -499,6 +653,12 @@ export class SceneSync {
   /** Static-prop batches / building merges and the draw calls they save per pass. */
   batchStats(): { batches: number; drawCallsSaved: number; merges: number } {
     return { batches: this.batches?.count ?? 0, drawCallsSaved: (this.batches?.drawCallsSaved ?? 0) + (this.merges?.drawCallsSaved ?? 0), merges: this.merges?.count ?? 0 };
+  }
+
+  /** Per-cell shadow and virtual batches and the draws they save per pass (see cell-shadow-batches, virtual-cell-batch). */
+  cellBatchStats(): { shadowBatches: number; shadowDrawsSaved: number; virtualBatches: number; virtualDrawsSaved: number; cellSize: number | null } {
+    return { shadowBatches: this.cellShadows?.count ?? 0, shadowDrawsSaved: this.cellShadows?.saved ?? 0,
+      virtualBatches: this.virtualBatches?.count ?? 0, virtualDrawsSaved: this.virtualBatches?.saved ?? 0, cellSize: this.cellShadows?.grid?.cellSize ?? null };
   }
 
   /** The last world passed to {@link setWorld}. */
@@ -622,6 +782,7 @@ export class SceneSync {
     this.templateLamps = lamps;
     if (diff && diff.added.length === 0 && diff.removed.length === 0 && diff.changed.length === 0 && diff.generatorsChanged.length === 0 && diff.meshesChanged.length === 0) return RESOLVED;
 
+    this.ensurePartition(world);
     const renderable = renderableIds(world);
     const started: Promise<void>[] = [];
     const rebuild = new Set<EntityId>();
@@ -987,6 +1148,10 @@ export class SceneSync {
   clear(): void {
     this.batches?.clear();
     this.merges?.clear();
+    // A new world gets a grid of its own.
+    this.virtualBatches?.clear();
+    this.cellShadows?.resetPartition();
+    this.cellShadowsStale = true;
     this.batchesStale = true;
     this.mergesPending = true;
     for (const node of [...this.nodes.values()]) this.removeNode(node);
@@ -999,6 +1164,8 @@ export class SceneSync {
     if (this.disposed) return;
     this.clear();
     this.merges?.dispose();
+    this.cellShadows?.dispose();
+    this.virtualBatches?.dispose();
     this.disposed = true;
     this.dags?.dispose();
     this.placeholderGeometry.dispose();
@@ -1055,7 +1222,7 @@ export class SceneSync {
         if (!rig && node.charToken === token && this.nodes.get(node.id) === node) node.content.visible = true;
         // A seated person (a paddler, a guest): the sit clip replaces locomotion whatever the carrier does.
         if (rig) rig.input.sitting = seated;
-        if (rig) this.opts.onContentChanged?.(node.id);
+        if (rig) { this.shadowCastersChanged(); this.opts.onContentChanged?.(node.id); }
       }),
     );
   }
@@ -1858,6 +2025,8 @@ export class SceneSync {
     // Never draw the full-detail mesh: it stays raycast-only and the cluster cut streams in
     // once the hierarchy is built (a cached hierarchy appears on the next frame).
     source.layers.set(BATCHED_LAYER);
+    // Never merged with the entity's other parts (StaticMerges), whether or not a hierarchy comes.
+    source.userData['aetherVirtualSource'] = true;
     // Tracked: the load waits for the hierarchy, because the stand-in is drawn with a program of its own (see whenIdle).
     void this.track(
       dags.build(key, positions, indices).then(
@@ -1870,18 +2039,19 @@ export class SceneSync {
         }
         entry.refs++;
         const mesh = entry.group.add(source);
+        this.virtualKeys.set(mesh, key);
         mirror(mesh, source);
         source.layers.set(BATCHED_LAYER);
         node.content.add(mesh);
         node.virtual.push({ key, mesh, source });
         this.viewDirty = true;
-        this.opts.onContentChanged?.(node.id);
+        this.shadowCastersChanged(); this.opts.onContentChanged?.(node.id);
       },
       (e: unknown) => {
         // No hierarchy (too large, worker failure): draw the plain mesh after all.
         if (node.token === token) source.layers.set(0);
         log.debug(`virtual geometry unavailable for ${node.id}: ${errorMessage(e)}`);
-        this.opts.onContentChanged?.(node.id);
+        this.shadowCastersChanged(); this.opts.onContentChanged?.(node.id);
       },
       ),
     );
@@ -2145,6 +2315,12 @@ export class SceneSync {
   // Scatter surfaces
   // -------------------------------------------------------------------------
 
+  /** Virtual stand-ins and other late meshes changed what casts: group the shadow casters again after a quiet spell. */
+  private shadowCastersChanged(): void {
+    this.cellShadowsStale = true;
+    this.cellShadowsAt = performance.now();
+  }
+
   private contentChanged(node: EntityNode): void {
     this.batchesStale = true;
     this.opts.onContentChanged?.(node.id);
@@ -2234,3 +2410,13 @@ function splitSource(geometry: BufferGeometry, part: MeshPart): [Float32Array, U
   const split = geometry.userData[SPLIT_SOURCE_KEY] as { positions: Float32Array; indices: Uint32Array } | undefined;
   return split ? [split.positions, split.indices] : [part.positions, part.indices];
 }
+
+/** A node whose meshes stand still: no behaviours, no moving body, no runtime overrides, fully built. */
+function staticCaster(node: Readonly<EntityNode>): boolean {
+  if (node.transient || node.placeholder || node.pending || node.failed || node.overridden || node.characterBody !== null || node.field) return false;
+  const e = node.entity;
+  if (e.template || e.visible === false || e.behaviors.length > 0) return false;
+  return !e.physics || e.physics.body === 'static';
+}
+
+const _cellSphere = new Sphere();
