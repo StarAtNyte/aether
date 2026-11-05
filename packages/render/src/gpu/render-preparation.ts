@@ -91,6 +91,12 @@ interface Options {
   blocked(): boolean;
   /** Milliseconds one pump may spend before yielding (default 4; more while nothing on screen needs a smooth frame). */
   sliceMs?(): number;
+  /** Milliseconds to wait before the next pump (a per-frame budget spent; default 0). */
+  delayMs?(): number;
+  /** Milliseconds one pump spent (accounted against a per-frame budget). */
+  spent?(ms: number): void;
+  /** One step of a sliced upload of the geometry's large buffers; true once none is left (see streaming/sliced-upload.ts). */
+  upload?(geometry: unknown): boolean;
   /** One-shot texture generation must finish its GPU draws before publishing the texture. */
   atomic?<T>(draw: () => T): T;
   /** Null uses timers (also useful in deterministic lifecycle tests). */
@@ -195,11 +201,15 @@ export function deferRenderPreparation(renderer: WebGPURenderer, options: Option
     timer = undefined; posted = false;
     if (disposed || head === jobs.length) { notify(); return; }
     if (compiling) { schedule(8); return; }
+    const wait = options.delayMs?.() ?? 0;
+    if (wait > 0) { schedule(wait); return; }
     const start = performance.now();
     if (options.blocked()) {
       // Programs are linking: build the node graphs of the jobs behind meanwhile (CPU work, no GL commands), so the
       // GPU's links and the CPU's graph building overlap instead of taking turns.
-      if (buildAhead(start)) schedule(); else schedule(8);
+      const more = buildAhead(start);
+      options.spent?.(performance.now() - start);
+      if (more) schedule(options.delayMs?.() ?? 0); else schedule(8);
       return;
     }
     do {
@@ -223,7 +233,8 @@ export function deferRenderPreparation(renderer: WebGPURenderer, options: Option
       }
     } while (!disposed && !compiling && !options.blocked() && head < jobs.length && performance.now() - start < slice());
     if (head === jobs.length) { jobs.length = 0; head = 0; ahead = 0; }
-    if (head < jobs.length) schedule(); else notify();
+    options.spent?.(performance.now() - start);
+    if (head < jobs.length) schedule(options.delayMs?.() ?? 0); else notify();
   }
   /**
    * Start the program links of the objects prepared since the last call, together, without waiting for a frame to draw
@@ -258,6 +269,8 @@ export function deferRenderPreparation(renderer: WebGPURenderer, options: Option
     if (job.stage === 0) {
       job.builder = job.ro.getNodeBuilderState(); job.stage = 1;
     } else if (job.stage === 1) {
+      // Large vertex and index buffers go up in slices first (one per step), so three's upload below has nothing large left.
+      if (options.upload && !options.upload(job.geometry)) return false;
       job.bindings = job.ro.getBindings(); r._geometries.updateForRender(job.ro);
       job.materialTextures = materialReferenceTextures(job.builder, job.ro.material); job.stage = 2;
     } else if (job.stage === 2) {

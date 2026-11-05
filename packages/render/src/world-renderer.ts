@@ -120,6 +120,9 @@ import type { PathTraceOptions } from './view/pathtrace';
 import { buildExportScene, exportGltf as exportSceneGltf, type GltfExportOptions, type GltfExportResult } from './view/gltf-export';
 import { PathOverlay } from './view/path-overlay';
 import { captureUntilComplete, type CapturePass } from './view/capture-rounds';
+import { FrameBudget } from './streaming/frame-budget';
+import { slicedUploads, type SlicedUploadStats } from './streaming/sliced-upload';
+import { UploadStreamer } from './streaming/upload-streamer';
 import { postQualityOf, qualityPlan, Refinement, studioAvailable, stillPlan, type QualityPlan, type RenderQuality, type StillPlan } from './gpu/render-quality';
 import { ComputeClient, GeneratorCache, generationLanes, proceduralOutputKey } from '@aether/procgen';
 import { GenPool } from './geometry/gen-pool';
@@ -700,8 +703,6 @@ const FAR_INTERIOR_LAYER = 6;
 const SMALL_MESH_LAYER = 8;
 /** Largest image texture (px) uploaded on an integrated GPU or in low-memory mode (see gpu/texture-cap.ts). */
 const INTEGRATED_TEXTURE_CAP = 512;
-/** Preparation slice (ms) while the load screen is up. */
-const LOADING_SLICE_MS = 40;
 /** Share of the JS heap limit above which the load-time sweep (prepareSurroundings) turns through two headings only. */
 const SWEEP_LEAN_HEAP_SHARE = 0.22;
 /** Share above which it is skipped. */
@@ -1067,6 +1068,9 @@ export class WorldRenderer {
     this.programs = parallelPrograms(renderer.backend as unknown as Parameters<typeof parallelPrograms>[0], () => this.requestPreparedFrame(false), e => log.warn(`parallel shader linking failed: ${errorMessage(e)}`));
     this.gpuCost = gpuFrameCost(renderer.backend as unknown as Parameters<typeof gpuFrameCost>[0]);
     const webgpuBackend = (renderer.backend as unknown as { isWebGPUBackend?: boolean }).isWebGPUBackend === true;
+    const uploads = (globalThis as { __AETHER_SLICED_UPLOAD?: boolean }).__AETHER_SLICED_UPLOAD === false ? null : slicedUploads(renderer.backend);
+    this.slicedUploads = uploads;
+    this.uploadStreamer = uploads ? new UploadStreamer(this.scene as never, { step: (g) => uploads.step(g), budget: this.frameBudget, blocked: () => this.programs.pending > 0 }) : null;
     this.preparation = deferRenderPreparation(renderer, {
       ready: () => this.requestPreparedFrame(),
       error: e => log.warn(`render preparation failed: ${errorMessage(e)}`),
@@ -1074,7 +1078,12 @@ export class WorldRenderer {
       // off the queue, and with some always building, blocking left 3,000 objects waiting through a whole load.
       blocked: () => !webgpuBackend && this.programs.pending > 0,
       // Behind the load screen nothing needs a smooth frame: prepare in long slices (see setLoading).
-      sliceMs: () => (this.loadingScreen ? LOADING_SLICE_MS : 4),
+      // A per-frame budget (streaming/frame-budget.ts): 2 ms a frame while the view moves, 8 ms at rest, long slices behind the
+      // load screen.
+      sliceMs: () => this.frameBudget.sliceMs(),
+      delayMs: () => this.frameBudget.delayMs(),
+      spent: (ms) => this.frameBudget.spend(ms),
+      ...(uploads ? { upload: (g: unknown) => uploads.step(g) } : {}),
       atomic: draw => this.programs.synchronous(draw),
     });
     this.presentation = preparePresentation(renderer, () => this.restReveal > 0 || (!this.progressive && (this.preparation.pending > 0 || this.programs.pending > 0)));
@@ -1311,6 +1320,7 @@ export class WorldRenderer {
   /** The load screen is up (true) or gone: while up, preparation runs in long slices. */
   setLoading(on: boolean): void {
     this.loadingScreen = on;
+    this.frameBudget.setLoading(on);
   }
 
   /** Program links that took over 1.5 s in this page (diagnostics). */
@@ -1321,6 +1331,16 @@ export class WorldRenderer {
   /** Frames actually drawn since creation (on-demand rendering skips the rest). */
   get frameCount(): number {
     return this.framesDrawn;
+  }
+
+  /** Geometry uploaded in slices so far (probes; null when uploads are not sliced). */
+  get slicedUploadStats(): Readonly<SlicedUploadStats> | null {
+    return this.slicedUploads?.stats ?? null;
+  }
+
+  /** Main-thread budget mode of background work now (probes). */
+  get frameBudgetMode(): string {
+    return this.frameBudget.mode;
   }
 
   /** True once the GPU device / WebGL context was lost (the renderer no longer draws). */
@@ -1970,6 +1990,7 @@ export class WorldRenderer {
     try {
       await done;
       performance.mark('aether:sync-done');
+      this.uploadStreamer?.invalidate();
       // Ceilings measured while their geometry was still streaming in are stale.
       this.invalidateCeilings();
       if (this.disposed) return;
@@ -3916,6 +3937,7 @@ export class WorldRenderer {
     const cameraMoved = this.rig.update(step);
     // The view or the content was asked to change from outside (camera, edits, resizes), as against content that merely animates.
     const motion = cameraMoved || this.frameInvalidation.motion;
+    this.frameBudget.beginFrame(motion);
     // Hit-stop slows the game's own motion (people, particles) to a crawl; the camera and the world around keep time.
     // An idle editor (`animate: false`) freezes the effects like the weather, so it stops drawing.
     const gameStep = step * this.fx.frame(opts.animate !== false ? step : 0, this.perspective, this.avatar.group);
@@ -3923,7 +3945,10 @@ export class WorldRenderer {
     // A field or virtual mesh was just mounted / moved: draw (draw() re-plans the view).
     // The re-plan is throttled, so the view stays dirty while the camera moves: that asks for a frame, not for a new sun map
     // (re-plans that change what is drawn mark the map for a soft refresh themselves).
-    if (this.sync.viewNeedsUpdate) this.frameInvalidation.prepared();
+    if (this.sync.viewNeedsUpdate) {
+      this.frameInvalidation.prepared();
+      this.uploadStreamer?.invalidate();
+    }
     const vox = this.voxelLayer;
     if (vox) {
       const tf = this.env.terrainFog;
@@ -5667,6 +5692,12 @@ export class WorldRenderer {
   private matricesFresh = false;
   /** The studio's load screen covers the view (see setLoading). */
   private loadingScreen = false;
+  /** Main-thread budget of background work per frame (preparation, sliced uploads). */
+  private readonly frameBudget = new FrameBudget();
+  /** Large geometry uploads in slices (WebGL2; null elsewhere or with `__AETHER_SLICED_UPLOAD = false`). */
+  private readonly slicedUploads: { readonly stats: SlicedUploadStats } | null;
+  /** Uploads new geometry's large buffers ahead of their first use (see streaming/upload-streamer.ts). */
+  private readonly uploadStreamer: UploadStreamer | null;
   /** The world counted as heavy when the quality plan was last made (discrete GPUs, see applyQuality). */
   private heavyPlanned = false;
 
@@ -6022,7 +6053,8 @@ export class WorldRenderer {
   private async waitForPreparation(): Promise<void> {
     this.prepareBatches();
     await this.sync.waitForBatches();
-    await this.preparation.idle();
+    // Something waits on the scene being ready (a capture): long slices, not the frame budget.
+    await this.frameBudget.hurry(this.preparation.idle());
     await this.programs.idle();
   }
 
@@ -6784,6 +6816,7 @@ export class WorldRenderer {
     this.generatorCache?.clear();
     this.compute?.dispose();
     this.genPool?.dispose();
+    this.uploadStreamer?.dispose();
     this.rig.dispose();
     this.sync.dispose();
     this.lampSlots.dispose();
