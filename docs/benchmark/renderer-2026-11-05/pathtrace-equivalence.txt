@@ -1,0 +1,7 @@
+Temporary comparison harness, Intel WebGL2, 128x72, 3 samples, 2 bounces.
+Scope: MemoryMax=2400M MemorySwapMax=0 CPUQuota=150%; timeout 90s; nice 15.
+stableNoise enabled; Math.random reset to the same seeded generator for each trace.
+
+{"oldPresentations":5,"newPresentations":1,"same":false,"nonblank":true,"different":1424,"maxDifference":106,"width":128,"height":72}
+
+The test used separate renderer contexts. It did not verify that every stochastic input was identical; the result is insufficient to attribute the mismatch to the presentation change. Since exact image equivalence was not established, the change was reverted and the temporary harness removed.

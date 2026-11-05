@@ -1,0 +1,13 @@
+Command: GEN_GPU=intel npx tsx tests/e2e/instance-upload.e2e.ts
+Scope: MemoryMax=1800M MemorySwapMax=0 CPUQuota=150%; timeout 45s; nice 15
+{"gpu":"ANGLE (Intel, Mesa Intel(R) Graphics (RPL-P), OpenGL ES 3.2)","staticUploads":0,"dynamicUploads":3,"changedUploads":1,"same":true,"changed":true,"sameChanged":true,"sameImmediate":false,"sameNextFrame":false,"nextIsOld":true,"immediateIsOld":true}
+particle attributes: {"staticUploads":0,"dynamicUploads":3,"changedUploads":1,"sameInitial":true,"imageChanged":true,"sameChanged":true}
+
+Command: npx tsx tests/e2e/instance-upload.e2e.ts --webgpu
+Scope: MemoryMax=1800M MemorySwapMax=0 CPUQuota=150%; timeout 45s; nice 15
+Backend: software WebGPU (SwiftShader)
+{"gpu":"WebGPU","staticUploads":0,"dynamicUploads":3,"changedUploads":1,"same":true,"changed":true,"sameChanged":true,"sameImmediate":false,"sameNextFrame":false,"nextIsOld":true,"immediateIsOld":true}
+particle attributes: {"staticUploads":0,"dynamicUploads":3,"changedUploads":1,"sameInitial":true,"imageChanged":true,"sameChanged":true}
+
+The first prototype used too few instances and therefore exercised uniform buffers, not vertex buffers. Its result was rejected; the final check above uses 2,048 instances and tracks the resulting interleaved GPU attribute.
+The later same-node-frame test exposed a pixel mismatch for mutable static instance matrices; the batch and weather usage changes were reverted. Direct particle attributes passed the corresponding immediate-update comparison.

@@ -158,3 +158,14 @@ geometries, 7 materials); the planner allocates nothing per frame
   compute culling with indirect draws would only exist on WebGPU.
 
 Screenshots of the latest Firefox run: [`docs/screenshots/benchmark/`](screenshots/benchmark) (`firefox.png` scale engine with the triangle badge, `firefox-closeup.png` a colossal head at full detail, `firefox-classic.png` the classic engine).
+# Renderer performance review — 2026-11-05
+
+Reviewed renderer CPU work, water passes, memory accounting, still path tracing, and recent ray-tracing research. Implemented bounded capture-target retention and removed redundant intermediate path-tracer presentation passes. See [renderer optimization report](RENDER_OPTIMIZATION_REPORT.md) for changes, targeted validation, research sources, limitations, and follow-up experiments. No GPU benchmark or stress test was run.
+
+Follow-up: capped hardware runs of Lisbon Hills, Kestrel Outpost, and Cliff Sanctuary, plus a shared instance-buffer upload change. The Lisbon ultra transition hit the cap; the Kestrel before/after was inconclusive. See the [bounded run report](RENDER_OPTIMIZATION_REPORT.md#bounded-hardware-runs-2026-11-05) and its raw logs for conditions and results.
+
+Further follow-up: avoid redundant direct particle-attribute uploads. Same-frame capture testing found that static usage is unsafe for mutable instance matrices, so the batch change and proposed weather change were reverted. Intel WebGL2 and software WebGPU controlled tests and their limits are in [the optimization report](RENDER_OPTIMIZATION_REPORT.md#follow-up-particle-uploads-and-capture-correctness). Sustained 60 FPS at full quality remains unverified.
+
+An exact-byte dynamic-matrix upload cache was then prototyped and checked against same-frame captures. A paired capped Cliff Sanctuary run showed no measurable benefit, so the experiment was removed. [Results and raw logs](RENDER_OPTIMIZATION_REPORT.md#follow-up-bounded-dynamic-matrix-upload-experiment).
+
+An attempted skip of intermediate still path-trace presentation was also reverted: a seeded tiny-scene comparison produced different pixels and did not prove equivalence. [Details](RENDER_OPTIMIZATION_REPORT.md#follow-up-still-path-trace-comparison).

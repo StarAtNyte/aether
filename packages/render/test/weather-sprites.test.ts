@@ -25,6 +25,9 @@ describe('weather sprites', () => {
       const mesh = parent.children[0] as InstancedMesh;
       const cam = camera();
       w.update(0.1, cam);
+      const version = mesh.instanceMatrix.version;
+      w.update(0.1, cam);
+      expect(mesh.instanceMatrix.version).toBeGreaterThan(version);
       const m = mesh.instanceMatrix.array as Float32Array;
       const e = cam.matrixWorld.elements;
       const right = [e[0], e[1], e[2]] as number[];

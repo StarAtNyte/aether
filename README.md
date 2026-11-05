@@ -24,7 +24,8 @@ something is broken, the agent repairs it.
 - **Prompt to world.** Outdoor worlds, games, physics machines and buildings from a sentence, built by an agent that plans first, then places things through measuring tools and edits the world with small validated patches.
 - **Photo to room.** Rebuilds a room from a photograph: shell, furniture and decor, with an advisory room-size estimate from a depth network (`measure_room`) and an AI judge loop that compares render and photo.
 - **Generation brief and richness review.** The model plans what a space needs and how elaborate it should be; after the build, a review compares the result with the plan and sends shortfalls back.
-- **Baked light, 60 fps on integrated GPUs.** Bundled lightmaps for interiors, a studio render that is the default view, adaptive resolution and a light chain while the view moves.
+- **Big worlds, smooth on a laptop.** A furnished street of 2,284 objects runs at 60 fps on an Intel integrated GPU at ultra quality and on an RTX 3050 over WebGPU or WebGL2. The load screen stays up until the world is fully prepared, so the first step never stutters ([details](#big-worlds-on-a-laptop)).
+- **Baked light.** Bundled lightmaps for interiors, a studio render that is the default view, adaptive resolution and a light chain while the view moves.
 - **A real model library.** CC0 models and textures (Kenney, Poly Haven, ambientCG) plus first-party crafted parts: venues, streets, harbours, seven regional house types, gyms, clinics, furniture.
 - **Verified playable games.** Physics tests, a playtest bot that plays to the win and repairs defects, and sealed replay proofs that `aether-verify` re-runs.
 - **Publish and share.** Standalone web builds, share links that carry the whole world, videos, stills, GLB and floor plans.
@@ -175,6 +176,41 @@ a patch, a guard refuses any change to objects the request did not name, and
 the model tries again. Lights, zones and decor attached to an object move with
 it (`attachedTo`).
 
+## Big worlds on a laptop
+
+Heavy worlds (a furnished street of ten houses, a hillside town of 31,000 instances, cliff sanctuaries with waterfalls)
+run on an ordinary laptop. Measured on an Intel UHD integrated GPU and an RTX 3050 Laptop GPU (Linux, 14 GB RAM), after
+loading, over a 25 s orbit; frame time is the median of 5 s windows at a 60 Hz display:
+
+| World | Objects | Intel UHD, ultra | Intel UHD, medium | RTX 3050, ultra | Load (Intel ultra) | Peak memory (Intel ultra) |
+| --- | ---: | --- | --- | --- | ---: | ---: |
+| Kestrel Outpost | 118 | 16.7 ms | | 16.7 ms | under 25 s | 2.5 GB |
+| Linden Row | 2,284 | 16.7 ms | 16.7 ms | 16.7 ms (WebGPU and WebGL2) | 61 s | 4.0 GB |
+| Sanctuary Terraces | 224 | 16.7 ms | | | 68 s | 3.5 GB |
+| Cliff Sanctuary | 647 | 16.7 ms | | | 64 s | 4.1 GB |
+| Lisbon Hills | 483 | 16.7 ms (33 ms in the first seconds) | | 16.7 ms | 52 s | 4.7 GB |
+
+What makes it work, all in the renderer, so every world benefits, including new ones:
+
+- **Nothing to explore until it is ready.** The load screen stays up, opaque, until scene, materials, shader programs,
+  merged batches and the light bake are done and frames arrive at the running rate. Behind it the camera turns through
+  four headings and prepares what each one sees, for both the moving and the resting picture, so turning the camera for
+  the first time links nothing (it used to freeze a cliff town for 13 s).
+- **Each mesh prepared once.** three.js keys every mesh's render state by the call depth and target format of the pass
+  that draws it; the scene passes now render first at a fixed depth, so the moving and resting picture share it (a
+  minute of a hillside town's load and up to 2 GB of page heap were spent building every mesh twice).
+- **Memory released, not kept.** Linked shaders are freed (about 10 MB each in Mesa's Intel driver), programs of
+  pipelines that are no longer used are deleted (a change of quality tier no longer keeps the old tier's programs beside
+  the new ones), image textures are capped at 512 px on integrated GPUs, and capture targets live within a 32 MiB budget.
+- **Less work per frame.** A cached sun shadow map redrawn only when casters change, a light motion chain with adaptive
+  resolution on integrated GPUs, far room contents culled as a whole, and matrices recomputed only for objects that moved.
+- **New worlds stay light.** The agent's guidelines and a weight check in every review round flag what only a world can
+  avoid: identical pieces placed one by one (one instanced scatter instead), too many distinct finishes (each is a shader),
+  more than two shadow-casting lamps.
+
+[docs/PERFORMANCE.md](docs/PERFORMANCE.md) has the measurements before and after, every change and where it lives, what
+was tried and rejected, and how to measure safely on your own machine.
+
 ## What you can make
 
 - **Outdoor worlds and games.** Carved terrain with streams, lakes and
@@ -190,7 +226,7 @@ it (`attachedTo`).
   fitted stairs, a roof and a site compiles into mitred walls with real
   openings, furnished rooms and gardens. A building check confirms every room
   is reachable on foot and every door swing is clear. Views: cutaway, exploded
-  storeys, section cut, x-ray, a floor plan with areas, and a floor plan with areas. In walk mode doors, drawers, taps and light switches work, and a mug
+  storeys, section cut, x-ray, and a floor plan with areas. In walk mode doors, drawers, taps and light switches work, and a mug
   can be picked up and thrown.
 - **A room from a photo.** With a vision model connected, Aether reads the
   photo several times and merges the readings into one description. It builds
@@ -334,6 +370,7 @@ prompt caching, photo-to-room, the bot, and rendering.
   verdict). Vaulted ceilings, cornices,
   sash windows and some door styles cannot be built yet. The final item pass
   rate still varies from run to run (83 to 100% in the latest three runs).
+- **Memory.** The heaviest worlds peak at about 4–4.7 GB in Chrome at ultra quality on an integrated GPU. On a machine with 8 GB of RAM or less, use the medium tier.
 - **WebGPU and hardware.** The WebGPU path is tested on a few machines (an Intel integrated GPU and an NVIDIA card on Linux, plus software WebGPU in CI). Other GPUs, drivers and browsers may differ; the WebGL2 path is the fallback and the studio chooses it silently where WebGPU fails.
 - **Live model checks.** The Codex and Claude Code paths were run live by hand on recorded prompts and photos; CI runs everything on the offline planner and never calls a paid model, so a provider-side change can break them without a red build.
 - **Hosted studio:** a browser tab cannot run Codex. Use the bridge, your own
@@ -366,6 +403,7 @@ Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md]
 | [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Vercel, local app, Docker, Fly.io, Render |
 | [ASSETS.md](docs/ASSETS.md) · [THIRD_PARTY.md](docs/THIRD_PARTY.md) | Asset library, licences, credits, AI disclosure |
 | [REVIEW_LOG.md](docs/REVIEW_LOG.md) | Engineering log: every stage with measurements and open issues |
+| [PERFORMANCE.md](docs/PERFORMANCE.md) | Big worlds on a laptop: targets, measurements, every optimization, how to measure safely |
 | [DESIGN.md](docs/DESIGN.md) · [WEBGPU.md](docs/WEBGPU.md) · [RESEARCH_LOG.md](docs/RESEARCH_LOG.md) | UI design, renderer notes, engine experiments |
 
 ## The `aether` command

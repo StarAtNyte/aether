@@ -1,7 +1,7 @@
 # Performance of big worlds
 
 How the renderer keeps the heaviest worlds (Linden Row, Lisbon Hills, Kestrel Outpost, the cliff sanctuaries) smooth on a
-laptop, what was measured, and how to measure it again. Work of 3–5 November 2026, commits `de10901e` to `9a025421`.
+laptop, what was measured, and how to measure it again. Work of 3–5 November 2026, commits `de10901e` onwards.
 
 ## Targets
 
@@ -109,6 +109,36 @@ Everything above is in the renderer, so it applies to every world. What only a w
   `shadow_lamps` (more than 2), `many_lamps` (more than 48), `heavy_scatter` (more than 1.5 M instances). Each finding
   carries the fix.
 
+### Changing quality tier
+
+three r186 never deletes the WebGL program of a pipeline it releases: it only drops it from its cache, and the program
+lives on until the browser happens to collect its wrapper. After a tier change every lit material builds a new program,
+so the old tier's set stayed beside the new one and memory nearly doubled. `gpu/pipeline-release.ts` deletes a released
+pipeline's program once its link has finished (opt out: `__AETHER_PIPELINE_RELEASE = false`).
+
+| Switch medium → ultra | Peak during the switch | After |
+|---|---|---|
+| Linden Row, without | 3.97 GB | 3.54 GB |
+| Linden Row, with | 3.51 GB (37 programs deleted) | 3.38 GB |
+| Lisbon Hills, with | 4.57 GB, inside a 5 GB cap (26 deleted) | 4.06 GB |
+
+A separate bounded investigation that day (capture-target budget, particle buffer usage, an instance-upload cache, still
+path-trace presentation) is in [RENDER_OPTIMIZATION_REPORT.md](RENDER_OPTIMIZATION_REPORT.md): its Lisbon Hills run ran out
+of a 4.6 GB cap during the medium-to-ultra switch the fix above addresses.
+
+## Re-benchmark, 5 November 2026 (final build)
+
+With every change above, including the capture-target budget and static particle buffers:
+
+| World | GPU, tier | Load | Peak | Frames |
+|---|---|---|---|---|
+| Linden Row | Intel ultra | 61 s | 4.04 GB | 16.7 ms median every window |
+| Linden Row | Intel medium | 62 s | 3.67 GB | 16.7 ms |
+| Lisbon Hills | Intel ultra | 52 s | 4.72 GB | 16.7 ms after the first window |
+| Cliff Sanctuary | Intel ultra | 64 s | 4.10 GB | 16.7 ms |
+| Kestrel Outpost | Intel ultra | — | 2.48 GB | 16.7 ms everywhere |
+| Linden Row | RTX ultra, WebGL2 | 48 s | 2.57 GB | 16.7 ms |
+
 ## What was investigated and not done
 
 | Idea | Why not |
@@ -143,5 +173,5 @@ about 1.2 GB (JS heap 0.5 GB, texture sources 226 MB, geometry 115 MB, workers).
 - **Load marks** (`performance.getEntriesByType('mark')`): `aether:compile-start/end`, `aether:sweep-start/end`,
   `aether:bake-wait`, `aether:wait-<stage>`, `aether:fully-loaded`, `aether:load-timeout`.
 - **Switches** (set on `globalThis` before the studio starts): `__AETHER_SWEEP`, `__AETHER_SWEEP_MOTION`,
-  `__AETHER_SHADER_RELEASE`, `__AETHER_PASS_FIRST`, `__AETHER_COMPILE_TARGET`, `__AETHER_FULL_WARMUP` (opt-in),
+  `__AETHER_SHADER_RELEASE`, `__AETHER_PIPELINE_RELEASE`, `__AETHER_PASS_FIRST`, `__AETHER_COMPILE_TARGET`, `__AETHER_FULL_WARMUP` (opt-in),
   `__AETHER_MATRIX_CHECK`.

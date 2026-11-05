@@ -155,7 +155,8 @@ export class VfxSystem {
     const ranges: Array<{ start: number; count: number }> = [];
     for (let i = 0; i < ATTRS.length; i++) {
       const attr = new InstancedBufferAttribute(pool[ARRAYS[i] as PoolArray], 4);
-      attr.setUsage(35048); // DynamicDrawUsage
+      // upload() marks dirty spans explicitly. DynamicDrawUsage forces three's
+      // common renderer to re-upload even when this version is unchanged.
       // One update range per attribute, owned here and kept across uploads: three's `addUpdateRange` allocates a
       // record and its clear trims the array, so both would allocate every frame.
       const range = { start: 0, count: 0 };

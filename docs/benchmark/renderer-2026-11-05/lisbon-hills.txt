@@ -1,0 +1,4 @@
+Running as unit: aether-perf-lisbon-20261105.scope; invocation ID: 3554e244b8b046cba03fbe9f7660aa97
+[ 148.9s] lisbon-hills: quality=realtime tier=low fx=[] level=4 scale=1 | draws=1831 tris=7010849 sceneTris=88833468 programs=? | shadow cascades=1 maps=2048 filter=pcf | textures=213 (357.2 MB) buf=1216x736 | lightmap=off
+[ 148.9s] lisbon-hills: lights HemisphereLight@0.1x1 HemisphereLight(hidden)@0.0x2 DirectionalLight+shadow@4.1x1 PointLight(hidden)@100.0x17 PointLight@100.0x8 LightVolume(hidden)@1.0x1 PointLight@0.0x4
+[ 181.5s] FAILED: page.evaluate: Target page, context or browser has been closed

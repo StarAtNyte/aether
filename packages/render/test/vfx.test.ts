@@ -4,7 +4,7 @@
  */
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { Group, Object3D, PerspectiveCamera, Scene, type Mesh, type InstancedBufferAttribute } from 'three';
+import { Group, Object3D, PerspectiveCamera, Scene, StaticDrawUsage, type Mesh, type InstancedBufferAttribute } from 'three';
 import { VfxPreset } from '@aether/core';
 import { ParticlePool, SeededRandom, mixSeed, NO_FLOOR, STRIDE, SPIN_BIAS } from '../src/vfx/pool';
 import { VFX_PRESETS, vfxBudget, CONTINUOUS_VFX } from '../src/vfx/presets';
@@ -186,6 +186,7 @@ describe('effect system', () => {
     const mesh = scene.children.find((o) => o.name === 'aether:vfx:add') as Mesh;
     const attrs = Object.values(mesh.geometry.attributes).filter((a) => (a as InstancedBufferAttribute).isInstancedBufferAttribute) as InstancedBufferAttribute[];
     expect(attrs.length).toBe(6);
+    expect(attrs.every((a) => a.usage === StaticDrawUsage)).toBe(true);
     const records = attrs.map((a) => a.updateRanges[0]);
     v.hidden = true;
     v.burst('sparks', 0, 1, 0, { seed: 1 });
@@ -200,8 +201,12 @@ describe('effect system', () => {
     v.hidden = false;
     v.update(1 / 60, cam);
     for (const a of attrs) a.clearUpdateRanges();
+    const versions = attrs.map((a) => a.version);
+    v.update(0, cam);
+    expect(attrs.map((a) => a.version)).toEqual(versions);
     v.burst('sparks', 0, 1, 0, { seed: 3 });
     v.update(1 / 60, cam);
+    expect(attrs.every((a, i) => a.version > versions[i]!)).toBe(true);
     for (let i = 0; i < attrs.length; i++) {
       expect(attrs[i]!.updateRanges).toEqual([{ start: second * 4, count: (v.pools.add.count - second) * 4 }]);
       expect(attrs[i]!.updateRanges[0]).toBe(records[i]);

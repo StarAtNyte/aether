@@ -172,6 +172,8 @@ export class StaticBatches {
     const material = first.material as Material;
     const mesh = new InstancedMesh(geometry, material, members.length);
     mesh.name = 'aether:batch';
+    // Capture draws can change matrices twice within one three.js node frame.
+    // Dynamic usage keeps the interleaved GPU buffer current in that case.
     mesh.instanceMatrix.setUsage(DynamicDrawUsage);
     mesh.castShadow = first.castShadow;
     mesh.receiveShadow = first.receiveShadow;

@@ -213,6 +213,7 @@ export class WeatherSystem {
     if (cfg.tumble) material.side = DoubleSide;
     if (cfg.flicker) material.color.multiplyScalar(4); // HDR so fireflies bloom
     const mesh = new InstancedMesh(particleGeometry(cfg), material, cfg.count);
+    // Captures may reorient weather between draws in the same node frame.
     mesh.instanceMatrix.setUsage(DynamicDrawUsage);
     mesh.frustumCulled = false;
     mesh.castShadow = false;

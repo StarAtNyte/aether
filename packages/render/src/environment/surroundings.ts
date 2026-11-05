@@ -18,7 +18,6 @@ import {
   ConeGeometry,
   CylinderGeometry,
   DoubleSide,
-  DynamicDrawUsage,
   Group,
   IcosahedronGeometry,
   InstancedMesh,
@@ -392,7 +391,8 @@ export class SurroundingsRig {
         const material = new MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 });
         const mesh = new InstancedMesh(geometry, material, list.length);
         mesh.name = kind.conifer ? 'aether:trees-conifer' : 'aether:trees-broadleaf';
-        mesh.instanceMatrix.setUsage(DynamicDrawUsage);
+        // The tree transforms are built once. The default static usage avoids
+        // three's unconditional DynamicDrawUsage upload on every render pass.
         mesh.castShadow = false;
         mesh.receiveShadow = false;
         mesh.frustumCulled = false;

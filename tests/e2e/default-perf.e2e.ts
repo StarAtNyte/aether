@@ -24,7 +24,7 @@ const [W, H] = (arg('size') ?? '1920x1080').split('x').map(Number) as [number, n
 const ROWS = arg('rows')?.split(',');
 const STILLS = arg('stills');
 const WEAK = arg('weak') !== undefined;
-const VSYNC = arg('vsync') !== undefined;
+const VSYNC = ARGS.includes('--vsync') || arg('vsync') !== undefined;
 const FORCE_DRAW = arg('forcedraw') !== undefined;
 const PROFILE = arg('profile') !== undefined;
 const MOVESHOT = arg('moveshot');

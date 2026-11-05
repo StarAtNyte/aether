@@ -1,0 +1,26 @@
+Running as unit: aether-perf-kestrel-after-20261105.scope; invocation ID: d974ccdf61524b8fb1a1b25933516081
+[  56.0s] kestrel-outpost: quality=realtime tier=medium fx=[] level=0 scale=1 | draws=124 tris=746888 sceneTris=727606 programs=? | shadow cascades=1 maps=2048 filter=soft | textures=104 (212.1 MB) buf=1280x752 | lightmap=off
+[  56.0s] kestrel-outpost: lights HemisphereLight@0.1x1 HemisphereLight(hidden)@0.0x2 DirectionalLight+shadow@3.8x1 PointLight@48.0x4 PointLight@28.0x2 LightVolume(hidden)@1.0x1 PointLight@0.0x1
+[  78.4s]    prof   3159 ms  bufferSubData :-1
+[  78.4s]    prof    705 ms  (program) :-1
+[  78.4s]    prof    435 ms  drawElements :-1
+[  78.4s]    prof    417 ms  updateForRender three-DcwEEKnQ.js:28
+[  78.4s]    prof    413 ms  updateByType three-DcwEEKnQ.js:28
+[  78.4s]    prof    407 ms  clearBufferfv :-1
+[  78.4s]    prof    356 ms  _projectObject three-DcwEEKnQ.js:28
+[  78.4s]    prof    334 ms  update three-DcwEEKnQ.js:16
+[  78.4s]    prof    315 ms  texSubImage2D :-1
+[  78.4s]    prof    251 ms  update src-Bevwm3zE.js:1
+[  78.4s]    prof    242 ms  (idle) :-1
+[  78.4s]    prof    224 ms  FO.e.updateMatrixWorld src-Bevwm3zE.js:1
+[  78.4s]    prof    218 ms  bufferData :-1
+[  78.4s]    prof    178 ms  renderObject three-DcwEEKnQ.js:28
+[  78.4s]    prof    176 ms  multiplyMatrices three-C7NbAuPQ.js:0
+[  78.4s]    prof    175 ms  _update three-DcwEEKnQ.js:22
+[  78.4s]    prof     99 ms  get value three-DcwEEKnQ.js:16
+[  78.4s]    prof     93 ms  enable :-1
+[  78.4s] | kestrel-outpost | default | 4.6 | 4.8 | 20.7 | rafMed=3.9/3.7/3.4 scaleInMotion=1 gpu(move x n+rest x n)=-x0+9.0x38 | -x0+8.8x39 | -x0+9.0x40 slow=[33:39] water={"tier":"standard","surfaces":0,"mirrorUsed":false,"backdrop":{"used":false,"draws":0,"size":[2,2]},"mirrorReady":false,"mirrorSize":[2,2],"captureMirrorSize":[0,0],"rings":0,"underwater":false} sunMapDraws=1332 blocks=12/5/5 ad=true/true/196 post=10000000000 maps=2048 realtime/medium fx=0 lvl=0 scale=1 draws=54 |
+[  78.4s] kestrel-outpost: after default run: quality=realtime tier=medium fx=[] level=0 scale=1 | draws=181 tris=1406058 sceneTris=727606 programs=? | shadow cascades=1 maps=2048 filter=soft | textures=104 (212.1 MB) buf=1280x752 | lightmap=off
+[  78.4s] | world | config | ms/frame (GPU incl.) | p90 rAF ms | cpu ms | state |
+[  78.4s] | kestrel-outpost | default | 4.6 | 4.8 | 20.7 | rafMed=3.9/3.7/3.4 scaleInMotion=1 gpu(move x n+rest x n)=-x0+9.0x38 | -x0+8.8x39 | -x0+9.0x40 slow=[33:39] water={"tier":"standard","surfaces":0,"mirrorUsed":false,"backdrop":{"used":false,"draws":0,"size":[2,2]},"mirrorReady":false,"mirrorSize":[2,2],"captureMirrorSize":[0,0],"rings":0,"underwater":false} sunMapDraws=1332 blocks=12/5/5 ad=true/true/196 post=10000000000 maps=2048 realtime/medium fx=0 lvl=0 scale=1 draws=54 |
+[  78.4s] DEFAULT PERF DONE

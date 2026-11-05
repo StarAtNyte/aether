@@ -96,7 +96,9 @@ import { createGpuRenderer, type BackendKind, type BackendPreference, type Backe
 import { opaqueSort, type SortItem } from './gpu/render-order';
 import { needsPrePass } from './gpu/finishing';
 import { capTextureSize } from './gpu/texture-cap';
+import { CaptureTargets } from './gpu/capture-targets';
 import { installShaderRelease } from './gpu/shader-release';
+import { installPipelineRelease } from './gpu/pipeline-release';
 import { BlackScreenWatchdog, GpuLogCapture, measureFrame, WATCHDOG_STEPS, type FrameSample, type WatchdogAction, type WatchdogOptions } from './gpu/watchdog';
 import { AdaptiveTier } from './gpu/adaptive-tier';
 import { HEAVY_WORLD, capTier, cutsAt, forwardLightBudget, GOVERNOR_DEFAULTS, hardwareTierCap, interiorContent, interiorDrawDistance, lodHeightScale, PerformanceGovernor, startLevel, PERFORMANCE_STEPS, readHardware, sunMapSoftRefreshFrames, WEAK_PIXEL_RATIO, weakHardware, type HardwareHints, type PerformanceCuts } from './gpu/performance';
@@ -425,8 +427,6 @@ const REST_SLOW_DT = 0.034;
 const REST_SLOW_FRAMES = 10;
 const SHAFT_WAIT_FRAMES = 4;
 const JPEG_QUALITY = 0.8;
-/** Capture render targets kept (critique views and thumbnails use two sizes). */
-const MAX_CAPTURE_TARGETS = 2;
 const VIEW_NAMES: ReadonlySet<string> = new Set(['top', 'front', 'side', 'iso']);
 
 // Scratch (per-frame paths must not allocate).
@@ -883,9 +883,9 @@ export class WorldRenderer {
   private encodeCanvas: HTMLCanvasElement | null = null;
   /**
    * Reused targets of asynchronous captures by size (see {@link renderToPixels}),
-   * at most two (critique views + thumbnails), so captures never reallocate GPU memory per turn.
+   * normally at most two within a byte budget; active readbacks can temporarily exceed it.
    */
-  private readonly captureTargets = new Map<string, RenderTarget>();
+  private readonly captureTargets = new CaptureTargets();
   /** Asynchronous readback failed once on this device: captures use the synchronous canvas path. */
   private asyncCaptureFailed = false;
   private boundsDirty = true;
@@ -1015,6 +1015,10 @@ export class WorldRenderer {
     this.compileTextures = prepareCompileTextures(renderer);
     // Before parallelPrograms: its link path must see shaders compiled again after release.
     this.releaseShaders = installShaderRelease(renderer.backend as unknown as Parameters<typeof installShaderRelease>[0]);
+    // Programs of pipelines three let go (a tier change rebuilds every lit material) are deleted, not kept beside the new ones.
+    const releasePipelines = installPipelineRelease(renderer.backend as unknown as Parameters<typeof installPipelineRelease>[0], (renderer as unknown as { _pipelines?: Parameters<typeof installPipelineRelease>[1] })._pipelines);
+    const releaseShaders = this.releaseShaders;
+    this.releaseShaders = () => { releasePipelines(); releaseShaders(); };
     this.programs = parallelPrograms(renderer.backend as unknown as Parameters<typeof parallelPrograms>[0], () => this.requestPreparedFrame(false), e => log.warn(`parallel shader linking failed: ${errorMessage(e)}`));
     this.gpuCost = gpuFrameCost(renderer.backend as unknown as Parameters<typeof gpuFrameCost>[0]);
     const webgpuBackend = (renderer.backend as unknown as { isWebGPUBackend?: boolean }).isWebGPUBackend === true;
@@ -5709,6 +5713,7 @@ export class WorldRenderer {
         return this.renderToPixels(w, h, () => this.draw(true), () => undefined);
       },
       finish: () => {
+        this.captureTargets.trim();
         hidden.forEach((o, i) => (o.visible = wasVisible[i] ?? true));
         this.vignetteOff = false;
         this.post?.setVignette(this.vignetteStrength());
@@ -5858,10 +5863,11 @@ export class WorldRenderer {
    */
   private renderToPixels(w: number, h: number, draw: () => void, restore: () => void): Promise<Uint8Array> {
     const rt = this.captureTarget(w, h);
+    const release = this.captureTargets.retain(rt);
     const r = this.renderer;
     const prevOutput = r.getOutputRenderTarget();
     const prevTarget = r.getRenderTarget();
-    let pending: Promise<unknown>;
+    let pending: Promise<unknown> | undefined;
     try {
       r.setOutputRenderTarget(rt);
       r.setRenderTarget(null);
@@ -5872,30 +5878,17 @@ export class WorldRenderer {
       r.setRenderTarget(prevTarget);
       restore();
       this.needsDraw = true;
+      if (!pending) release();
     }
     return pending.then((data) => {
       if (!(data instanceof Uint8Array) || data.length < w * h * 4) throw new Error('unexpected capture pixel format');
       return data;
-    });
+    }).finally(release);
   }
 
-  /** The reusable capture target of size w×h (LRU of {@link MAX_CAPTURE_TARGETS}). */
+  /** The reusable capture target of size w×h. */
   private captureTarget(w: number, h: number): RenderTarget {
-    const key = `${w}x${h}`;
-    let rt = this.captureTargets.get(key);
-    if (rt) {
-      // Most recently used last.
-      this.captureTargets.delete(key);
-    } else {
-      rt = new RenderTarget(w, h, { depthBuffer: true, generateMipmaps: false });
-      if (this.captureTargets.size >= MAX_CAPTURE_TARGETS) {
-        const [oldestKey, oldest] = this.captureTargets.entries().next().value as [string, RenderTarget];
-        this.captureTargets.delete(oldestKey);
-        oldest.dispose();
-      }
-    }
-    this.captureTargets.set(key, rt);
-    return rt;
+    return this.captureTargets.get(w, h);
   }
 
   /**
@@ -6466,8 +6459,7 @@ export class WorldRenderer {
     this.proofSync = null;
     this.blueprint.dispose();
     this.dropPost();
-    for (const rt of this.captureTargets.values()) rt.dispose();
-    this.captureTargets.clear();
+    this.captureTargets.dispose();
     if (this.encodeCanvas) {
       this.encodeCanvas.width = 0;
       this.encodeCanvas.height = 0;
