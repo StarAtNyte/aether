@@ -1381,7 +1381,7 @@ export class WorldRenderer {
       // A split chain draws its motion phase from the first turn of the camera: a pipeline of its own, without the
       // still phase's occlusion and contact shadows, so every lit material links again (40 programs, a 4- to 12-second
       // first frame on an integrated GPU). Build it and draw each heading with it here too.
-      if (this.qualityPlan.moveEffects !== null && now() < end && !this.disposed && !this.lost) {
+      if (this.qualityPlan.moveEffects !== null && (globalThis as { __AETHER_SWEEP_MOTION?: boolean }).__AETHER_SWEEP_MOTION !== false && now() < end && !this.disposed && !this.lost) {
         this.sweepMotion = true;
         try {
           this.syncPost();

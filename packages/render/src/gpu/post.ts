@@ -454,6 +454,16 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
         uSeed.value = seed;
         upsampler?.begin();
         try {
+          // The scene passes first, from the top: three keys render state (and with it every mesh's render objects and
+          // node builds) by call depth too, and inside the chain the scene pass ran at whatever depth the first effect that
+          // read it reached (1 in the motion phase, 2 to 5 at rest): each phase built every mesh again (3,000 objects, a
+          // minute of a hillside town's load). Once per frame either way: the chain then finds them done.
+          const frame = (renderer as unknown as { _nodes?: { nodeFrame?: { renderer?: unknown; updateBeforeNode?: (n: unknown) => void } } })._nodes?.nodeFrame;
+          if (frame?.updateBeforeNode && (globalThis as { __AETHER_PASS_FIRST?: boolean }).__AETHER_PASS_FIRST !== false) {
+            frame.renderer ??= renderer;
+            if (prePass) frame.updateBeforeNode(prePass);
+            frame.updateBeforeNode(scenePass);
+          }
           pipeline.render();
         } finally {
           upsampler?.end();

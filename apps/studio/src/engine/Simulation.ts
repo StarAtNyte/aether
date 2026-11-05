@@ -516,6 +516,15 @@ export class Simulation {
   private async loadFully(maxMs: number, onStage?: (stage: RenderProcessingStage | 'motion') => void): Promise<void> {
     const end = performance.now() + maxMs;
     // What lies around the spawn point is prepared now, not on the first turn of the camera.
+    // The buildings' light bake first: when it lands, every lit material changes to its volume-lit form and is prepared
+    // again (2,800 objects and 20 programs on a hillside town, a minute of a load spent twice). Sweeping after it
+    // prepares each object once.
+    const bakeEnd = performance.now() + maxMs / 3;
+    if (this.renderer.lightVolumeBaking) {
+      onStage?.('lighting');
+      performance.mark('aether:bake-wait');
+      while (!this.disposed && this.renderer.lightVolumeBaking && performance.now() < bakeEnd) await new Promise<void>((resolve) => setTimeout(resolve, 100));
+    }
     onStage?.('render');
     performance.mark('aether:sweep-start');
     // Four headings: a 16:9 view is about 90° wide, so four cover the circle (six overlapped and prepared twice).
