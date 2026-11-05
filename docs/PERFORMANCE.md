@@ -229,8 +229,8 @@ STATIC_DIR=/tmp/q-dist GEN_GPU=intel npx tsx scripts/quality-probe.ts --out=<dir
 Stage 3 of [ARCHITECTURE-STREAMING.md](ARCHITECTURE-STREAMING.md): no generator, validation or vertex-stream work on the main thread, and a second
 visit that does not generate at all.
 
-- **Sandbox pool** (`procgen/sandbox/worker-sandbox.ts`, `generationLanes()`): one locked-down worker per hardware thread but one, at most 8,
-  2 or 4 on small `deviceMemory`; `__AETHER_GEN_WORKERS` overrides it. A burst of runs is queued in one task and sent nearest first (the scene
+- **Sandbox pool** (`procgen/sandbox/worker-sandbox.ts`, `generationLanes()`): one locked-down worker per hardware thread but one, at most 4
+  at 8 GB or less of `deviceMemory` and 2 at 4 GB or less (see the next section); `__AETHER_GEN_WORKERS` overrides it. A burst of runs is queued in one task and sent nearest first (the scene
   passes each entity's distance to the opening view, the player's start, or the camera after an edit). Compiled bodies are reused across runs.
   During a world build a run gets 15 s instead of the interactive 3 s, since runs share the CPU.
 - **Generation lanes** (`render/geometry/gen-pool.ts`, `gen.worker.ts`, half as many, at most 4, trusted code): built-in generators run there;
@@ -257,3 +257,57 @@ Measured on the shared office PC (`GEN_GPU=intel`, niced, other jobs running; `a
 Sanctuary Terraces: sync-done 2.9 s cold / 3.7 s second visit before, 2.2 / 1.4 s after. Hero shots of both worlds match the old build within
 run-to-run noise (animated water, clouds and foliage). Left on the main thread: scatter placement and the QEM LOD chains of scatter fields
 (one large field mount is about 180 ms on Lisbon), and the virtual-geometry DAG worker (12 s on Lisbon, off the generation path).
+
+## Frame budget, capture rounds and a smaller generation pool (6 November 2026)
+
+The first part of stage 1 of [ARCHITECTURE-STREAMING.md](ARCHITECTURE-STREAMING.md), and two follow-ups to stage 3.
+
+- **Black hero shots** (one Lisbon Hills run of three after stage 3). A pose capture (`WorldRenderer.capturePoses`) draws into a
+  target of its own size, a render context of its own, so every object it sees is prepared again in the sliced preparation
+  queue, and a draw whose object is still preparing is held back. The first pass queues that work and is dropped; the second
+  pass was returned whatever the queue had done. When the queue had not drained (a loaded machine, a compile walk holding it
+  right after a load) every draw, the sky included, was held, and the picture read back as all zeros. Stage 3 only changed the
+  timing (generation ends seconds earlier, so captures overlap the warm-up more). Now the pass is drawn again after the queue
+  settles until a pass holds back nothing (`view/capture-rounds.ts`, at most four rounds). Ruled out: a GPU process killed
+  mid-load gives washed-out but drawn frames, not zeros; no cache hit returned empty or detached buffers (`hits` and shape
+  checks in the lanes). Not reproduced in 9 runs before the fix; counting held draws per pass shows the mechanism (about 1,150 held in
+  the first pass, 0 in the second when the queue has drained).
+- **Generation pool for low-end PCs** (`generationLanes()`): at most 4 sandbox workers at 8 GB or less of device memory
+  (Chrome never reports more than 8, so this is every Chrome), 2 at 4 GB or less; lanes stay half of that (2). A lane encodes a
+  cache entry before it replies (a Blob holds the only copy) instead of keeping a copy of the output to encode later, and its
+  write backlog is 16 MB instead of 48 MB.
+- **Frame budget** (`streaming/frame-budget.ts`): render preparation after the load screen works 2 ms a frame while the view
+  moves and 8 ms at rest, instead of 4 ms slices back to back; 40 ms slices behind the load screen and while a capture waits for
+  the scene, as before.
+- **Sliced vertex uploads** (`streaming/sliced-upload.ts`, `streaming/upload-streamer.ts`), opt-in with
+  `__AETHER_SLICED_UPLOAD = true`: buffers of 1 MB and more are allocated, filled in 1 MB `bufferSubData` slices under the frame
+  budget and handed to three's backend before its first upload. Off by default: in hero runs that load Lisbon Hills and then
+  Sanctuary Terraces in one page it ended in draws with no vertex buffer bound (`GL_INVALID_OPERATION`) and missing pieces (the
+  castle). Index buffers are never sliced (virtual geometry rewrites them). `__AETHER_SLICED_UPLOAD_VERIFY = true` reads every
+  handed buffer back for comparison. A slice can still take a second when the GPU process is linking: slicing bounds the size of
+  a call, not its wait.
+
+Measured with `scripts/arch-probe.ts` (Lisbon Hills, `GEN_GPU=intel`, low tier, shared office PC, niced, 6 GB scope; three cold
+and three second visits per build, medians, ranges in brackets):
+
+| Lisbon Hills | Before (`43432859`) | After |
+|---|---|---|
+| Browser peak (cgroup), cold | 4.84 GB [4.70–4.93] | 4.74 GB [4.58–4.77] |
+| Generation (sync-start → sync-done), cold | 5.3 s [5.0–6.0] | 5.2 s [5.0–6.2] |
+| Generation, second visit | 1.55 s | 1.32 s |
+| Main-thread tasks over 50 ms after the first picture, cold | 0 [0–1] | 0 [0–0] |
+| Same, second visit | 1, 66–78 ms (the first frames' draw) | 1, 65–154 ms (same) |
+| Orbit, cold: p50 / p95 / p99 / max | 33 / 83 / 167 / 417 ms | 33 / 83 / 183 / 433 ms |
+| Orbit, cold: frames over 33 ms | 172 of 549 | 166 of 588 |
+| Orbit, second visit: p50 / p95 / p99 / max | 33 / 33 / 50 / 367 ms | 17 / 33 / 50 / 317 ms |
+| Orbit, second visit: frames over 33 ms | 138 of 752 | 128 of 805 |
+
+Hero shots of Lisbon Hills and Sanctuary Terraces match the old build within run-to-run noise (mean pixel difference 0.1–5.2
+against 0.5–5.5 between two runs of the old build).
+
+What is left over 50 ms after the first picture, from CPU profiles of the orbit: single node-material builds (three's
+`NodeBuilder`, 50–200 ms for one object, not divisible; stage 2's fixed program set removes them) and the frame's own draw
+submission (40–100 ms on Lisbon on this machine; stage 4's per-cell batches). Before the first picture: program links and
+bindings (stage 2), compile-walk uploads (single `bufferData` calls of 250–1,100 ms, mostly waiting on the GPU process), the
+texture cap's redraw (130–180 ms tasks), scatter field mounts (LOD chains and placements, 300 ms). Not moved yet: the texture cap
+redraw (an `ImageBitmap` would change the upload orientation of `flipY` textures) and the scatter field mount.

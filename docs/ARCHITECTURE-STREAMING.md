@@ -1,8 +1,9 @@
 # Streaming architecture: design (draft for review)
 
-Status: design only, nothing here is implemented. Profiling: 6 November 2026, on the build of `ec8b9593` plus the
-uncommitted work in the tree at the time. This document covers measured baselines, the target architecture and a
-staged plan.
+Status: design, partly implemented. Stage 3 (worker generation, geometry cache) and the first part of stage 1 (frame
+budget, sliced vertex uploads, `scripts/arch-probe.ts`) are in; their numbers are in [PERFORMANCE.md](PERFORMANCE.md).
+Profiling: 6 November 2026, on the build of `ec8b9593` plus the uncommitted work in the tree at the time. This document
+covers measured baselines, the target architecture and a staged plan.
 
 The goal is to move the renderer from "build the whole world, prepare every program, then show it" to a streamed
 world, as Unreal does. The mapping:
@@ -700,7 +701,7 @@ The savings come from the far field (HLOD), program stalls and per-object unifor
 ## 4. Staged plan
 
 Each stage ships on its own and keeps the IR and publish format backward compatible. The metrics are measured with
-the probe harness, to be added as `scripts/arch-probe.ts`. Reference hardware: Intel UHD (integrated) and RTX (discrete),
+the probe harness, `scripts/arch-probe.ts`. Reference hardware: Intel UHD (integrated) and RTX (discrete),
 Chrome, four showcase worlds.
 
 | Stage | What ships | Acceptance metrics |
