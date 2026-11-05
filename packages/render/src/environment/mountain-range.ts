@@ -401,11 +401,12 @@ function rangeColour(atlas: DataTexture, slots: number, look: RangeLook): Nd {
 }
 
 /**
- * How far the eye has climbed out of the ground view the backdrop (ranges, hills, land and its trees) is painted for:
+ * How far the eye has climbed out of the ground view the backdrop ranges are painted for:
  * 0 up to about a third of the content's radius above the ground, 1 from about its whole radius up (at least
  * {@link ALTITUDE_START} and {@link ALTITUDE_FULL} metres). The backdrop is a ring of pictures around the eye, true only
  * from near the ground: from a drone's height the ranges were cardboard walls standing on a pale disc of land, with the dark
- * foot of the far range showing above them as a slate patch in the sky. The scene's own fog and sky take over up there.
+ * foot of the far range showing above them as a slate patch in the sky. The scene's own fog and sky take over up there
+ * (the land ring stays: it is ground).
  */
 export function altitudeShare(eyeY: number, contentRadius: number): number {
   const r = Number.isFinite(contentRadius) && contentRadius > 0 ? contentRadius : 100;
@@ -430,7 +431,7 @@ export function applyLandAir(material: MeshStandardMaterial, look: RangeLook): v
   const out = (T as unknown as { output: Nd }).output;
   const n = look.nodes;
   const d = distance(T.positionWorld, T.cameraPosition);
-  const h = mix(saturate(float(1).sub(exp(d.div(-LAND_AIR_DISTANCE)))).mul(LAND_AIR_MAX), float(1), n.altitude);
+  const h = saturate(float(1).sub(exp(d.div(-LAND_AIR_DISTANCE)))).mul(LAND_AIR_MAX);
   const air = mix(n.air, n.haze, 0.5).mul(n.brightness);
   material.fog = false;
   (material as unknown as { outputNode: Nd }).outputNode = vec4(mix(out.rgb, air, h), out.a);

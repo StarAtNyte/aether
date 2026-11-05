@@ -175,3 +175,36 @@ about 1.2 GB (JS heap 0.5 GB, texture sources 226 MB, geometry 115 MB, workers).
 - **Switches** (set on `globalThis` before the studio starts): `__AETHER_SWEEP`, `__AETHER_SWEEP_MOTION`,
   `__AETHER_SHADER_RELEASE`, `__AETHER_PIPELINE_RELEASE`, `__AETHER_PASS_FIRST`, `__AETHER_COMPILE_TARGET`, `__AETHER_FULL_WARMUP` (opt-in),
   `__AETHER_MATRIX_CHECK`.
+
+## Picture stability and sharpness (5 November 2026)
+
+The low-end work above stays as it is; these changes are about how the picture holds still, settles and stays sharp.
+
+- **Specular antialiasing** (`gpu/specular-aa.ts`): three widens roughness by the change of the geometry normal only. Normal-mapped
+  stone, roofs and water seen from far away now also widen it by the shaded normal's screen-space variance (Kaplanyan and
+  Hoffman, Filament's constants), so a far highlight is a steady sheen instead of glitter. Same programs, every tier. Opt out:
+  `globalThis.__AETHER_SPECULAR_AA = false`.
+- **Far foliage coverage** (`materials/foliage-shading.ts`): the cut-out alpha is raised a quarter per mip level read, so far trees
+  keep their leaves instead of thinning into flickering specks.
+- **Temporal AA sharpen** (`gpu/post.ts`, `TAA_SHARPEN`): a contrast-limited sharpen of the resolved image.
+- **Settling after a stop** (`WorldRenderer.syncRest`, `REST_REVEAL_FRAMES`): a split chain's full chain starts from an empty
+  temporal history; the last motion picture stays on screen until five rest frames have gone into the history (the existing
+  presentation hold), so the view changes once into a nearly settled picture instead of crawling for a second.
+- **Consistent sharpness**: on a discrete GPU adaptive resolution keeps the full picture down to 40 fps and never goes under 0.8
+  (`DISCRETE_SMOOTH`); the motion floor of a split chain is 0.6 there, and 0.5 for a chosen ultra tier on other GPUs (auto and
+  the cheaper tiers keep 0.25).
+- **Ultra on discrete GPUs** (`WorldRenderer.supersample`): the realtime ultra tier draws at up to 1.5 times the display's pixel
+  ratio (5 MP at most). It starts at the display's own resolution and adaptive resolution climbs into the extra pixels only while
+  frames hold; its floor is the display's resolution. Not on heavy worlds' split chains or in low-memory mode. Opt out:
+  `__AETHER_SUPERSAMPLE = false`.
+- **Drone views** (`environment/mountain-range.ts` `altitudeShare`): the backdrop ranges are pictures painted for an eye near the
+  ground. As the eye climbs past a third of the content's radius they melt into the air (all air above about the radius; the
+  land ring and its trees stay). This removed the slate band of the far range's foot over Sanctuary Terraces.
+
+Measured with `scripts/quality-probe.ts` (live frames: still flicker, a slow 0.1° orbit, a settle curve, a 30 s session log of
+tier, pixel ratio and scale):
+
+```sh
+STATIC_DIR=/tmp/q-dist GEN_GPU=intel npx tsx scripts/quality-probe.ts --out=<dir> --tier=ultra [--only=far-aerial,drone] <world>
+STATIC_DIR=/tmp/q-dist GEN_GPU=intel npx tsx scripts/quality-probe.ts --out=<dir> --tier=ultra --session <world>
+```

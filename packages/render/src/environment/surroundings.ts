@@ -237,9 +237,6 @@ export function planTrees(s: ResolvedSurroundings): Array<{ x: number; z: number
   return out;
 }
 
-/** Altitude share (see altitudeShare) above which the land ring, its trees and the fields are not drawn. */
-export const SURROUNDINGS_LAND_ALTITUDE = 0.25;
-
 /** The exterior of one world. Add {@link group} to the scene; call {@link apply} on every environment change. */
 export class SurroundingsRig {
   readonly group = new Group();
@@ -328,14 +325,9 @@ export class SurroundingsRig {
     if (a === this.altitude) return;
     this.altitude = a;
     this.look.setAltitude(a);
-    // The ranges go once all air. The land ring, its trees and the fields are a flat disc from above (a pale plate under the
-    // fog, cut round the plot): they leave early, while the air over them is still thin, and the world's own sea and fog
-    // take the view.
+    // The ranges go once all air. The land ring, its trees and fields stay: they are ground, and without them a drone view of
+    // a plot on open land floated in a featureless haze.
     this.hills.visible = a < 0.999;
-    const low = a < SURROUNDINGS_LAND_ALTITUDE;
-    if (this.land) this.land.visible = low;
-    if (this.fields) this.fields.visible = low;
-    for (const t of this.trees) t.visible = low;
   }
 
   /** The last {@link altitudeShare} applied. */
