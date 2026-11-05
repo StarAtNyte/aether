@@ -51,7 +51,16 @@ try {
       const back = page.getByRole('button', { name: 'Back to editor' });
       if (await page.evaluate(() => window.__aether?.store.getState().mode === 'play')) await back.click({ timeout: 20_000 }).catch(() => log('  (no "Back to editor" button)'));
       await page.waitForFunction(() => window.__aether?.store.getState().mode === 'edit', null, { timeout: 30_000 }).catch(() => log('  (still in play mode)'));
-      await page.waitForTimeout(2500);
+      // Settled: no tier change being applied (the view holds its last complete picture meanwhile) and no flight.
+      await page.waitForFunction(() => {
+        const a = window.__aether;
+        const st = a?.store.getState() as { qualityApplying?: string | null } | undefined;
+        return !st?.qualityApplying && a?.simulation?.renderer.cameraFlying === false;
+      }, null, { timeout: 90_000, polling: 250 }).catch(() => log('  (not settled)'));
+      // Closing the panels resized the view: wait for fresh frames, not the picture held from before.
+      const f0 = await page.evaluate(() => window.__aether?.simulation?.renderer.frameCount ?? 0);
+      await page.waitForFunction((f) => (window.__aether?.simulation?.renderer.frameCount ?? 0) > f + 20, f0, { timeout: 90_000, polling: 250 }).catch(() => log('  (few frames drawn)'));
+      await page.waitForTimeout(1500);
       const canvas = page.locator('.viewport__host canvas').first();
       const shot = async (name: string): Promise<void> => {
         const box = await canvas.boundingBox();
@@ -79,13 +88,21 @@ try {
         }
       }
       for (const [i, v] of (poses[slug] ?? []).entries()) {
-        await page.evaluate((x) => (window.__aether?.simulation?.renderer as unknown as { lookAt(p: number[], t: number[], f?: number): void }).lookAt(x.position, x.target, x.fov), v);
-        await page.waitForTimeout(2500);
+        const f1 = await page.evaluate((x) => {
+          const r = window.__aether?.simulation?.renderer as unknown as { lookAt(p: number[], t: number[], f?: number): void; frameCount: number };
+          r.lookAt(x.position, x.target, x.fov);
+          return r.frameCount;
+        }, v);
+        await page.waitForFunction((f) => (window.__aether?.simulation?.renderer.frameCount ?? 0) > f + 8, f1, { timeout: 60_000, polling: 250 }).catch(() => undefined);
+        await page.waitForTimeout(1500);
         await shot(`pose${i}-${v.name ?? ''}`);
       }
       if (overview) {
         await page.keyboard.press('o');
-        await page.waitForTimeout(3000);
+        // A headless page draws a few frames a second: wait for the flight to land.
+        await page.waitForTimeout(500);
+        await page.waitForFunction(() => window.__aether?.simulation?.renderer.cameraFlying === false, null, { timeout: 90_000, polling: 250 }).catch(() => log('  (overview flight still running)'));
+        await page.waitForTimeout(1500);
         await shot('overview');
       }
     } finally {
