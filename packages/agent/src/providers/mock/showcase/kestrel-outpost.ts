@@ -29,6 +29,8 @@ const CX = 0;
 const CZ = -4;
 /** Radius of the cliff ring. */
 const RING = 40;
+/** Each half of the north ridge pines: centre offset from the axis, width and count (the 36 m over the north pass stay clear). */
+const RIDGE_HALF = { x: 46.5, width: 57, count: 27 } as const;
 /** Number of waves. */
 export const KESTREL_WAVES = 5;
 
@@ -372,7 +374,8 @@ export function kestrelOutpost(): MockPlan {
   for (const [x, z] of [[-24, -20], [23, -21], [-25, 17], [26, 15], [-12, 27], [14, 28], [-30, 0], [30, -3]] as const) {
     b.gen('spruce', 'tree-spruce', { height: r2(b.rand(9, 13)) }, [x, 0, z], { yaw: r2(b.rand(0, 360)), physics: 'static', tags: ['tree'] });
   }
-  b.scatter('ridge-pines', 'tree-pine', { height: 11 }, 70, [150, 30], [CX, 16, CZ - 62], { scaleRange: [0.8, 1.4], minSpacing: 5 });
+  // The north ridge is split at the north pass: there is no cliff top there, and pines over the gap hung in the sky.
+  b.scatter('ridge-pines', 'tree-pine', { height: 11 }, RIDGE_HALF.count, [RIDGE_HALF.width, 30], [CX - RIDGE_HALF.x, 16, CZ - 62], { scaleRange: [0.8, 1.4], minSpacing: 5 });
   b.scatter('ridge-pines-s', 'tree-pine', { height: 11 }, 70, [150, 30], [CX, 16, CZ + 62], { scaleRange: [0.8, 1.4], minSpacing: 5 });
 
   // --- The passes: worn tracks in, a marker where raiders gather ---------------------------------------
@@ -460,6 +463,9 @@ export function kestrelOutpost(): MockPlan {
       vfx: { preset: 'sparkle', rate: 4, color: '#ffd27a', scale: 0.7 },
     });
   }
+
+  // East half of the north ridge (added last so the seeds of everything above are unchanged).
+  b.scatter('ridge-pines-e', 'tree-pine', { height: 11 }, RIDGE_HALF.count, [RIDGE_HALF.width, 30], [CX + RIDGE_HALF.x, 16, CZ - 62], { scaleRange: [0.8, 1.4], minSpacing: 5 });
 
   waveRules(b);
   b.test({ id: 'waves-start', kind: 'eventually', condition: { key: 'wave', op: '>=', value: 1 }, within: 10 });
