@@ -283,10 +283,19 @@ export class RangeLook {
     haze: T.uniform(this.haze),
     air: T.uniform(this.air),
     brightness: T.uniform(1),
+    altitude: T.uniform(0),
   };
 
   setBrightness(v: number): void {
     (this.nodes.brightness as unknown as { value: number }).value = v;
+  }
+
+  /**
+   * How far the eye has climbed out of the ground view the backdrop is painted for (0 on the ground, 1 at a drone's
+   * height; see {@link altitudeShare}): the ranges melt into the air with it.
+   */
+  setAltitude(share: number): void {
+    (this.nodes.altitude as unknown as { value: number }).value = Math.max(0, Math.min(1, Number.isFinite(share) ? share : 0));
   }
 }
 
@@ -384,11 +393,29 @@ function rangeColour(atlas: DataTexture, slots: number, look: RangeLook): Nd {
   // Aerial perspective: more air behind the front of the range and low down; blue air first, then the horizon colour.
   const depth = m.a;
   const foot = float(1).sub(smoothstep(0.0, 0.5, v));
-  const thickness = saturate(hazeShare.add(depth.mul(0.22)).add(foot.mul(0.2)));
+  // Seen from high above the ranges are a painted ring standing on the land: they go into the air as the eye climbs.
+  const thickness = mix(saturate(hazeShare.add(depth.mul(0.22)).add(foot.mul(0.2))), float(1), n.altitude);
   const air = mix(n.air, n.haze, saturate(thickness.mul(1.3).sub(0.15)));
   const colour = mix(lit, air, thickness);
   return max(colour, vec3(0, 0, 0)).mul(n.brightness);
 }
+
+/**
+ * How far the eye has climbed out of the ground view the backdrop (ranges, hills, land and its trees) is painted for:
+ * 0 up to about a third of the content's radius above the ground, 1 from about its whole radius up (at least
+ * {@link ALTITUDE_START} and {@link ALTITUDE_FULL} metres). The backdrop is a ring of pictures around the eye, true only
+ * from near the ground: from a drone's height the ranges were cardboard walls standing on a pale disc of land, with the dark
+ * foot of the far range showing above them as a slate patch in the sky. The scene's own fog and sky take over up there.
+ */
+export function altitudeShare(eyeY: number, contentRadius: number): number {
+  const r = Number.isFinite(contentRadius) && contentRadius > 0 ? contentRadius : 100;
+  const a = Math.max(ALTITUDE_START, r * 0.35);
+  const b = Math.max(ALTITUDE_FULL, r * 1.15, a + 40);
+  const t = Math.max(0, Math.min(1, ((Number.isFinite(eyeY) ? eyeY : 0) - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
+export const ALTITUDE_START = 40;
+export const ALTITUDE_FULL = 140;
 
 /** Share of the air's colour over land `metres` from the viewer: the same air the ranges' feet stand in. */
 export const LAND_AIR_DISTANCE = 1800;
@@ -403,7 +430,7 @@ export function applyLandAir(material: MeshStandardMaterial, look: RangeLook): v
   const out = (T as unknown as { output: Nd }).output;
   const n = look.nodes;
   const d = distance(T.positionWorld, T.cameraPosition);
-  const h = saturate(float(1).sub(exp(d.div(-LAND_AIR_DISTANCE)))).mul(LAND_AIR_MAX);
+  const h = mix(saturate(float(1).sub(exp(d.div(-LAND_AIR_DISTANCE)))).mul(LAND_AIR_MAX), float(1), n.altitude);
   const air = mix(n.air, n.haze, 0.5).mul(n.brightness);
   material.fog = false;
   (material as unknown as { outputNode: Nd }).outputNode = vec4(mix(out.rgb, air, h), out.a);

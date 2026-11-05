@@ -728,7 +728,7 @@ export class EnvironmentRig {
 
   update(dt: number, camera: Camera): void {
     this.sky.update(camera);
-    this.surroundings.update(camera);
+    this.surroundings.update(camera, this.contentRadius);
     this.weather.update(dt, camera);
   }
 

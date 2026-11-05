@@ -31,7 +31,7 @@ import {
 } from 'three';
 import { rng, type Environment } from '@aether/core';
 import type { SkyState } from './sky-state';
-import { applyLandAir, buildRanges, disposeRanges, RangeLook, type RangeSpec } from './mountain-range';
+import { altitudeShare, applyLandAir, buildRanges, disposeRanges, RangeLook, type RangeSpec } from './mountain-range';
 
 export type Surroundings = NonNullable<Environment['surroundings']>;
 export type SurroundingsPreset = NonNullable<Surroundings['preset']>;
@@ -237,6 +237,9 @@ export function planTrees(s: ResolvedSurroundings): Array<{ x: number; z: number
   return out;
 }
 
+/** Altitude share (see altitudeShare) above which the land ring, its trees and the fields are not drawn. */
+export const SURROUNDINGS_LAND_ALTITUDE = 0.25;
+
 /** The exterior of one world. Add {@link group} to the scene; call {@link apply} on every environment change. */
 export class SurroundingsRig {
   readonly group = new Group();
@@ -314,13 +317,29 @@ export class SurroundingsRig {
   }
 
   /** The hills stay at infinity: they follow the camera in the ground plane. */
-  update(camera: Camera): void {
+  update(camera: Camera, contentRadius = 100): void {
     // Field writes: doubles passed to a Vector3.set that V8 does not inline are boxed every frame.
     const p = this.hills.position;
     p.x = camera.position.x;
     p.y = 0;
     p.z = camera.position.z;
+    // From a drone's height the backdrop goes into the air (see altitudeShare); once all air it is not drawn at all.
+    const a = this.resolved === null ? 0 : altitudeShare(camera.position.y, contentRadius);
+    if (a === this.altitude) return;
+    this.altitude = a;
+    this.look.setAltitude(a);
+    // The ranges go once all air. The land ring, its trees and the fields are a flat disc from above (a pale plate under the
+    // fog, cut round the plot): they leave early, while the air over them is still thin, and the world's own sea and fog
+    // take the view.
+    this.hills.visible = a < 0.999;
+    const low = a < SURROUNDINGS_LAND_ALTITUDE;
+    if (this.land) this.land.visible = low;
+    if (this.fields) this.fields.visible = low;
+    for (const t of this.trees) t.visible = low;
   }
+
+  /** The last {@link altitudeShare} applied. */
+  private altitude = 0;
 
   private clear(): void {
     for (const m of [this.farHills, this.nearHills, this.fields, this.land]) {
@@ -348,6 +367,7 @@ export class SurroundingsRig {
 
   private rebuild(): void {
     this.clear();
+    this.altitude = -1;
     const r = this.resolved;
     if (!r) return;
     if (r.mountains > 0) {
