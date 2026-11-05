@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { BufferAttribute, BufferGeometry } from 'three';
-import { getBuiltinGenerator, generateBuiltinSync, resolveBuiltin, validateOutput, type GeneratorOutput, type MeshPart, type WorkerLike } from '@aether/procgen';
+import { GeneratorCache, getBuiltinGenerator, generateBuiltinSync, resolveBuiltin, validateOutput, type GeneratorOutput, type MeshPart, type WorkerLike } from '@aether/procgen';
+import { createProcgenGeometrySource } from '../src/geometry/procgen-source';
+import { makeSync, patch, world } from './helpers';
 import { boxProjectedUvs, partToBufferGeometry, preparePart, prepareOutputParts, SPLIT_SOURCE_KEY, terrainUvs } from '../src/geometry/buffer-geometry';
 import { metreUvMesh } from '../src/geometry/metre-uvs';
 import { setPositionBounds } from '../src/geometry/position-bounds';
@@ -251,6 +253,28 @@ describe('GenPool', () => {
     const out = await pool.custom(sandbox, { id: 'x', description: '', params: {}, source: 'x' }, {}, 1, { key: 'k', priority: 0 });
     expect(out.parts.length).toBeGreaterThan(0);
     expect(pool.stats.fallbacks).toBeGreaterThan(0);
+    pool.dispose();
+  });
+});
+
+describe('generation from the scene', () => {
+  const rock = (id: string, x: number, seed: number) => ({ id, transform: { position: [x, 0, 0] as [number, number, number] }, shape: { kind: 'procedural' as const, generator: 'boulder', params: {}, seed } });
+  /** The seed field of a logged output key (`generator|seed|source|params`). */
+  const seedOf = (line: string): string => line.split('|')[1] ?? '';
+
+  it('generates nearest the focus first, and an edit regenerates only the edited entity', async () => {
+    FakeLane.log = [];
+    const pool = new GenPool({ lanes: 1, createWorker: () => new FakeLane() });
+    const source = createProcgenGeometrySource({ pool, cache: new GeneratorCache(64) });
+    const { sync } = makeSync({ source });
+    sync.setGenerationFocus([100, 0, 0]);
+    const w0 = world([rock('far', 0, 1), rock('near', 90, 2), rock('mid', 50, 3)]);
+    await sync.setWorld(w0);
+    expect(FakeLane.log.map(seedOf)).toEqual(['2', '3', '1']);
+    FakeLane.log = [];
+    await sync.setWorld(patch(w0, [{ op: 'update', id: 'mid', set: { shape: { kind: 'procedural', generator: 'boulder', params: {}, seed: 9 } } }]));
+    expect(FakeLane.log.map(seedOf)).toEqual(['9']);
+    sync.dispose();
     pool.dispose();
   });
 });
