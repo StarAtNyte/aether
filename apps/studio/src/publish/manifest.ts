@@ -22,6 +22,10 @@ export const SAVE_PATH = /^saves\/[a-z0-9-]{1,40}\.aethersave$/;
 export const IMPORT_PATH = /^assets\/user\/(user-[0-9a-f]{12})\.(glb|png|jpg|webp|hdr)$/;
 /** Most bundled user imports. */
 export const MAX_GAME_IMPORTS = 64;
+/** Most attribution lines a game carries. */
+export const MAX_ATTRIBUTION = 64;
+/** Streamed packs a build can carry the files of. */
+export const BUNDLED_PACKS = ['abo'] as const;
 
 const Envelope = z
   .object({
@@ -38,6 +42,10 @@ const Envelope = z
     imports: z.array(z.object({ meta: z.unknown(), file: z.string().regex(IMPORT_PATH) }).strict()).max(MAX_GAME_IMPORTS).default([]),
     /** Replay proof (`@aether/verifier`); untrusted, validated only when a viewer re-checks it. */
     proof: z.unknown().optional(),
+    /** Attribution lines the licences of the assets used require (CC BY: Amazon Berkeley Objects, CC BY library packs). */
+    attribution: z.array(z.string().max(300)).max(MAX_ATTRIBUTION).default([]),
+    /** Streamed asset packs whose files the build carries next to the player (`abo`: Amazon Berkeley Objects under assets/lib/). */
+    packs: z.array(z.enum(BUNDLED_PACKS)).max(BUNDLED_PACKS.length).default([]),
     world: z.unknown(),
   })
   .strict();
@@ -55,6 +63,10 @@ export interface GameManifest {
   imports?: Array<{ meta: unknown; file: string }>;
   /** Sealed replay proof, if the author sealed the game (untrusted until checked). */
   proof?: unknown;
+  /** Attribution lines required by the licences of the assets the world uses (shown on the credits screen). */
+  attribution?: string[];
+  /** Streamed packs whose files ship in the build (the player loads them locally, never from the network). */
+  packs?: Array<(typeof BUNDLED_PACKS)[number]>;
   world: WorldDoc;
 }
 
@@ -80,6 +92,8 @@ export function parseGameManifest(value: unknown): GameParseResult {
       ...(e.save ? { save: e.save } : {}),
       ...(e.imports.length > 0 ? { imports: e.imports.map((i) => ({ meta: i.meta, file: i.file })) } : {}),
       ...(e.proof !== undefined && proofFits(e.proof) ? { proof: e.proof } : {}),
+      ...(e.attribution.length > 0 ? { attribution: e.attribution.flatMap((a) => cleanLine(a, 300) ?? []).filter(Boolean) } : {}),
+      ...(e.packs.length > 0 ? { packs: [...new Set(e.packs)] } : {}),
       world: w.world,
     },
   };
@@ -111,6 +125,8 @@ export function gameJson(game: GameManifest): string {
     ...(game.save ? { save: game.save } : {}),
     ...(game.imports && game.imports.length > 0 ? { imports: game.imports } : {}),
     ...(game.proof !== undefined ? { proof: game.proof } : {}),
+    ...(game.attribution && game.attribution.length > 0 ? { attribution: game.attribution } : {}),
+    ...(game.packs && game.packs.length > 0 ? { packs: game.packs } : {}),
     world: game.world,
   });
 }

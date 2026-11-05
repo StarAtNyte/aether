@@ -7,7 +7,7 @@
 import { memo, useMemo, type ReactElement } from 'react';
 import { useStudio, useWorld } from '../../app/context';
 import { Dialog } from '../../components/ui/Dialog';
-import { textureCredits } from '@aether/assets';
+import { ABO_PACK, textureCredits } from '@aether/assets';
 import { useLibrary } from './useLibrary';
 
 /** The credits dialog (open state lives in the library store). */
@@ -50,6 +50,7 @@ export const CreditsDialog = memo(function CreditsDialog(): ReactElement | null 
                     </>
                   )}
                 </div>
+                {c.line && <div className="credits__meta">{c.line}</div>}
                 <div className="credits__used">{c.assets.join(', ')}</div>
               </li>
             ))}
@@ -77,7 +78,7 @@ export const CreditsDialog = memo(function CreditsDialog(): ReactElement | null 
         <section className="credits" aria-label="Asset library">
           <h3 className="credits__title">Asset library</h3>
           <ul className="credits__packs">
-            {catalog.packs.map((p) => (
+            {[...catalog.packs, ABO_PACK].map((p) => (
               <li key={p.id}>
                 <a href={p.url} target="_blank" rel="noopener noreferrer">
                   {p.title}

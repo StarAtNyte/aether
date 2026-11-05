@@ -9,7 +9,7 @@
  */
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { History, type Json, type WorldDoc } from '@aether/core';
-import { creditsFor, loadCatalog, setCatalog, setLibraryRemote, type Credit } from '@aether/assets';
+import { creditsFor, loadCatalog, setAboBase, setCatalog, setLibraryRemote, type Credit } from '@aether/assets';
 import { createWorkerSandbox, type SandboxRunner } from '@aether/procgen';
 import { prefersReducedMotion, Simulation, type CombatHud } from '../engine/Simulation';
 import { CombatHudView, ScoreLine } from '../components/viewport/CombatHud';
@@ -67,10 +67,14 @@ function createSandbox(): SandboxRunner | null {
   }
 }
 
-/** Library files live next to this page (sub-path hosting: itch.io, GitHub Pages, the local library). */
-async function relativeLibrary(): Promise<void> {
+/**
+ * Library files live next to this page (sub-path hosting: itch.io, GitHub Pages, the local library), and so do the
+ * streamed products (Amazon Berkeley Objects) a build carries: the page never fetches them from Hugging Face.
+ */
+async function relativeLibrary(game: GameManifest): Promise<void> {
   const c = await loadCatalog();
   const base = new URL('assets/lib/', document.baseURI).pathname;
+  if (game.packs?.includes('abo')) setAboBase(base);
   if (c.base !== base) {
     setLibraryRemote(null);
     try {
@@ -143,6 +147,11 @@ const CreditsPanel = memo(function CreditsPanel({ game, credits, onBack }: { gam
           </p>
         ))
       )}
+      {(game.attribution ?? []).map((line) => (
+        <p key={line} className="pl-credit pl-muted">
+          {line}
+        </p>
+      ))}
       <p className="pl-muted pl-made">Made with Aether · rendered with three.js · physics by Rapier</p>
       <div className="pl-panel__actions">
         <Button onClick={onBack} autoFocus>
@@ -326,7 +335,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
     const history = new History(world, { maxEntries: 4 });
     void (async () => {
       try {
-        await relativeLibrary();
+        await relativeLibrary(game);
         await registerBundledImports(game);
         const s0 = settingsRef.current;
         const q = qualityPlan(s0.quality);

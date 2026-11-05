@@ -22,7 +22,7 @@
 import { z } from 'zod';
 import type { WorldDoc } from '@aether/core';
 import { AUTO_HDRI } from '@aether/render';
-import { CAST, catalogEntry, creditsFor, creditsText, getCatalog, isUserAssetId, libraryUrl, loadCatalog, loadTextureVariants, motionSet, resolveLook, textureVariantPath, worldAssetIds, type CastMember } from '@aether/assets';
+import { ABO_PACK_ID, CAST, attributionLines, catalogEntry, creditsFor, creditsText, getCatalog, isAboPath, isUserAssetId, libraryUrl, loadCatalog, loadTextureVariants, motionSet, resolveLook, textureVariantPath, worldAssetIds, type CastMember } from '@aether/assets';
 import { safeEntryName, writeZip, type ZipEntry } from '@aether/assets/zip';
 import { exportFileName, exportWorld } from '../lib/worldIO';
 import { escapeXml } from './floorplan';
@@ -315,12 +315,20 @@ export async function buildGame(input: GameBuildInput): Promise<GameBuild> {
   const want = (path: string | undefined): void => {
     if (typeof path === 'string' && path && !libraryFiles.includes(path)) libraryFiles.push(path);
   };
+  let streamed = false;
   for (const id of worldAssetIds(world)) {
     if (isUserAssetId(id)) continue;
     const e = catalogEntry(id);
     if (!e) continue;
     want(e.file);
     for (const l of e.lods) want(l.file);
+    // Amazon Berkeley Objects products stream in the studio; a published game carries them (KTX2 levels and the WebP copy
+    // for players without a transcoder), so the page never talks to Hugging Face.
+    if (e.pack === ABO_PACK_ID) {
+      streamed = true;
+      want(e.lite);
+      if (isAboPath(e.source)) want(e.source);
+    }
   }
   // The photographed sky the high and ultra tiers light the scene with when the world names none.
   const autoSky = world.environment.hdri ? undefined : AUTO_HDRI[world.environment.sky];
@@ -391,7 +399,7 @@ export async function buildGame(input: GameBuildInput): Promise<GameBuild> {
     add(`assets/lib/${path}`, data);
     progress(++done, total, 'Packing models and textures…');
   }
-  if (twins.length > 0) {
+  if (twins.length > 0 || streamed) {
     for (const f of ['basis/basis_transcoder.js', 'basis/basis_transcoder.wasm', 'basis/ktx2-worker.js']) {
       try {
         add(f, await fetchFile(f));
@@ -407,6 +415,8 @@ export async function buildGame(input: GameBuildInput): Promise<GameBuild> {
     add(file, imp.data);
     imports.push({ meta: imp.meta, file });
   }
+  const credits = creditsFor(world, getCatalog());
+  const attribution = attributionLines(credits);
   const game: GameManifest = {
     title: input.title.trim().slice(0, 80) || world.name,
     description: input.description.trim().slice(0, 600),
@@ -417,6 +427,8 @@ export async function buildGame(input: GameBuildInput): Promise<GameBuild> {
     ...(input.proof ? { proof: input.proof } : {}),
     ...(input.save && input.save.byteLength > 0 ? { save: 'saves/world.aethersave' } : {}),
     ...(imports.length > 0 ? { imports } : {}),
+    ...(attribution.length > 0 ? { attribution } : {}),
+    ...(streamed ? { packs: ['abo' as const] } : {}),
     world,
   };
   const gameText = gameJson(game);
@@ -439,9 +451,9 @@ export async function buildGame(input: GameBuildInput): Promise<GameBuild> {
     add('icon-512.png', await images.crop(input.cover, 512, 512));
   }
   add('manifest.webmanifest', enc.encode(webManifest(game.title, game.description)));
-  const credits = creditsText(game.title, creditsFor(world, getCatalog()));
-  add('CREDITS.txt', enc.encode(credits));
-  add('README.md', enc.encode(buildReadme(game, credits, input.proof !== undefined)));
+  const creditsTxt = creditsText(game.title, credits);
+  add('CREDITS.txt', enc.encode(creditsTxt));
+  add('README.md', enc.encode(buildReadme(game, creditsTxt, input.proof !== undefined)));
   add(`project/${exportFileName(world)}`, enc.encode(exportWorld(world)));
   if (input.proof) add('proof.json', enc.encode(JSON.stringify(input.proof, null, 2)));
   add('.nojekyll', new Uint8Array(0));

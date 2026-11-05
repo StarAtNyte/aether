@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createWorld } from '@aether/core';
 import { readZip } from '@aether/assets/zip';
+import { ABO_CREDIT, ABO_REMOTE_BASE, aboEntries, loadAboIndex } from '@aether/assets';
 import { BUILD_CSP, buildGame, buildId, publishedIndexHtml, webManifest } from '../src/publish/gameBuild';
 import { defaultControls, defaultDescription, defaultTitle, gameJson, parseGameManifest } from '../src/publish/manifest';
 import { serviceWorkerSource } from '../src/player/offline';
@@ -104,6 +105,28 @@ describe('game build (zip)', () => {
     const names = zip.ok ? zip.entries.map((e) => e.name) : [];
     expect(names.some((n) => /^assets\/lib\/c\/motions-(male|female)\.[0-9a-f]+\.glb$/.test(n))).toBe(true);
     expect(names.some((n) => /^assets\/lib\/c\/(?!motions)[a-z]+\.[0-9a-f]+\.glb$/.test(n))).toBe(true);
+  });
+
+  it('carries the streamed products a world uses and their CC BY attribution (Amazon Berkeley Objects)', async () => {
+    await loadAboIndex();
+    const id = aboEntries().find((e) => e.interior?.type === 'sofa')!.id;
+    const room = createWorld({ name: 'Room', entities: { sofa: { id: 'sofa', shape: { kind: 'asset', id } } } });
+    const log: string[] = [];
+    const fetchFile = async (path: string): Promise<Uint8Array> => (path.startsWith(ABO_REMOTE_BASE) ? (log.push(path), new TextEncoder().encode(`abo:${path}`)) : fakeFetch([])(path));
+    const b = await buildGame({ world: room, title: 'Room', description: '', author: '', controls: '', music: null, cover: null, fetchFile, images: { crop: async () => new Uint8Array([1]) }, now: 1 });
+    const upper = id.slice(4).toUpperCase();
+    // LOD 0, the two far levels and the WebP copy, all from the pinned revision; the transcoder ships with them.
+    expect(log.sort()).toEqual([`objects/${upper}/${upper}.glb`, `objects_ktx2/${upper}/${upper}.glb`, `lods/${upper}/${upper}_lod2.glb`, `lods/${upper}/${upper}_lod3.glb`].map((p) => `${ABO_REMOTE_BASE}${p}`).sort());
+    expect(b.files).toContain(`assets/lib/objects_ktx2/${upper}/${upper}.glb`);
+    const zip = await readZip(b.zip);
+    const text = (name: string): string => (zip.ok ? new TextDecoder().decode(zip.entries.find((e) => e.name === name)!.data) : '');
+    const game = JSON.parse(text('game.json')) as { attribution?: string[]; packs?: string[] };
+    expect(game.attribution).toEqual([ABO_CREDIT]);
+    expect(game.packs).toEqual(['abo']);
+    expect(text('CREDITS.txt')).toContain(ABO_CREDIT);
+    const parsed = parseGameManifest(game);
+    expect(parsed.ok && parsed.game.attribution).toEqual([ABO_CREDIT]);
+    expect(parsed.ok && parsed.game.packs).toEqual(['abo']);
   });
 
   it('includes the automatic sky file when the world has a sky preset but names no hdri', async () => {
