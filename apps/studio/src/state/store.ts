@@ -105,7 +105,7 @@ export interface GpuState {
   /** How the backend was chosen and why (adapter attempts, fallback reason). */
   backend?: BackendReport;
   /** Render tier in effect and the effects running (filled in once the renderer has applied the settings). */
-  render?: { tier: string; auto: string; effects: string[]; /** Steps of the performance ladder given up (0: none). */ ladder?: number };
+  render?: { tier: string; auto: string; effects: string[]; /** Steps of the performance ladder given up (0: none). */ ladder?: number; /** Why the automatic tier is what it is (null: a tier was chosen). */ reason?: string | null };
 }
 
 /** A transient notification. */
@@ -335,6 +335,8 @@ export interface StudioState {
   loading: string | null;
   /** Background scene/render work shown without blocking viewport controls. */
   processing: RenderProcessingStage | null;
+  /** A quality tier being applied (the view shows "Applying <tier> quality…"), or null. */
+  qualityApplying: string | null;
   fatal: string | null;
   /** The renderer stepped down (or a shader failed): a message with the Safe mode toggle and the diagnostics. */
   graphicsAlert: GraphicsAlert | null;
@@ -420,6 +422,7 @@ export interface StudioState {
   setBackend(b: 'webgpu' | 'webgl2' | null): void;
   setLoading(msg: string | null): void;
   setProcessing(stage: RenderProcessingStage | null): void;
+  setQualityApplying(tier: string | null): void;
   setFatal(msg: string | null): void;
   setGraphicsAlert(a: GraphicsAlert | null): void;
   setSafeGraphics(on: boolean): void;
@@ -562,6 +565,7 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     backend: null,
     loading: 'Starting renderer…',
     processing: null,
+    qualityApplying: null,
     fatal: null,
     graphicsAlert: null,
     safeGraphics: readSafeGraphics(),
@@ -661,6 +665,7 @@ export function createStudioStore(init: StudioInit = {}): StoreApi<StudioState> 
     setBackend: (backend) => set({ backend }),
     setLoading: (loading) => set({ loading }),
     setProcessing: (processing) => set((s) => s.processing === processing ? s : { processing }),
+    setQualityApplying: (qualityApplying) => set((s) => s.qualityApplying === qualityApplying ? s : { qualityApplying }),
     setFatal: (fatal) => set({ fatal }),
     setGraphicsAlert: (graphicsAlert) => set({ graphicsAlert }),
     setSafeGraphics: (safeGraphics) => {

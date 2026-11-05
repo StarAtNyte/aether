@@ -165,6 +165,12 @@ export interface SimulationStats {
 export interface SimulationListener {
   onStats?(stats: SimulationStats): void;
   onProcessing?(stage: RenderProcessingStage | null): void;
+  /**
+   * A tier change is being applied (`tier`: the tier, the view keeps its last complete picture meanwhile) or is over (null),
+   * or the tier in effect or the reason of the automatic tier changed (`changed`): Settings shows them.
+   */
+  onQualityTransition?(tier: string | null): void;
+  onGraphicsChanged?(): void;
   /** Play-mode HUD refresh (4 Hz): values of `world.hud` keys + game time. */
   onHud?(hud: Record<string, Json | undefined>, time: number): void;
   onMessage?(text: string, duration: number): void;
@@ -1605,6 +1611,25 @@ export class Simulation {
   // Frame loop
   // ---------------------------------------------------------------------------
 
+  private lastTransition: string | null = null;
+  private lastGraphics = '';
+  /** Tell the UI about a tier change under way and about changes of the tier in effect or its reason. */
+  private emitQuality(): void {
+    const r = this.renderer;
+    const t = this.disposed ? null : (r.qualityTransition?.tier ?? null);
+    if (t !== this.lastTransition) {
+      this.lastTransition = t;
+      try { this.listener.onQualityTransition?.(t); }
+      catch (error) { log.warn('quality feedback failed', error); }
+    }
+    const g = this.disposed ? '' : `${r.renderTier}|${r.autoRenderTier}|${r.autoTierReason ?? ''}|${r.performanceLevel}`;
+    if (g !== this.lastGraphics) {
+      this.lastGraphics = g;
+      try { this.listener.onGraphicsChanged?.(); }
+      catch (error) { log.warn('graphics feedback failed', error); }
+    }
+  }
+
   private lastProcessing: RenderProcessingStage | null = null;
   private emitProcessing(): void {
     const stage = this.disposed ? null : this.pendingWorld ? 'scene' : this.renderer.processingStage;
@@ -1623,6 +1648,7 @@ export class Simulation {
     this.lastFrame = t;
     const s = this.session;
     this.emitProcessing();
+    this.emitQuality();
     // While a game (a world with a title card) is being played the quality tier keeps still (a tier step rebuilds every lit material, and the view
     // holds its last complete picture for the seconds that takes: a freeze in play); it moves at the title card, while paused and between sessions.
     this.renderer.holdQuality(!!s && !!s.world.intro && !s.ended && !this.paused && !this.held);

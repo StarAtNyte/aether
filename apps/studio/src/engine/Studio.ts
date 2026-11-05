@@ -452,6 +452,8 @@ export class Studio {
         {
           onStats: (s) => this.store.getState().setStats(s),
           onProcessing: (stage) => { if (gen === this.attachGen) this.store.getState().setProcessing(stage); },
+          onQualityTransition: (tier) => { if (gen === this.attachGen) this.store.getState().setQualityApplying(tier); },
+          onGraphicsChanged: () => { if (gen === this.attachGen) this.publishGraphicsState(); },
           onHud: (hud, time) => {
             const out: Record<string, string> = {};
             for (const k of Object.keys(hud)) out[k] = formatStateValue(hud[k]);
@@ -675,7 +677,7 @@ export class Studio {
     if (!r) return;
     const st = this.store.getState();
     const gpu = st.gpu ?? { tier: r.gpu.tier, description: r.gpu.description };
-    st.setGpu({ ...gpu, backend: r.gpu.report, render: { tier: r.renderTier, auto: r.autoRenderTier, effects: r.intendedEffects, ladder: r.performanceLevel } });
+    st.setGpu({ ...gpu, backend: r.gpu.report, render: { tier: r.renderTier, auto: r.autoRenderTier, effects: r.intendedEffects, ladder: r.performanceLevel, reason: r.autoTierReason } });
   }
 
   /** Re-decide low-memory mode from the setting and the session's signals, and apply it everywhere. */

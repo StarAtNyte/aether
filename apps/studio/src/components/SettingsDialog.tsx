@@ -80,7 +80,7 @@ type Tab = SettingsTab;
 /** Extra (editor-only) information shown in Settings. */
 export interface SettingsContext {
   memory?: { lowMemory: boolean; reason: string | null };
-  gpu?: { description: string; backend?: BackendReport; render?: { tier: string; auto: string; effects: string[] } } | null;
+  gpu?: { description: string; backend?: BackendReport; render?: { tier: string; auto: string; effects: string[]; reason?: string | null } } | null;
 }
 
 /** Settings dialog. */
@@ -159,7 +159,7 @@ export const SettingsDialog = memo(function SettingsDialog({
               <span className="setting-row__text">
                 <span className="setting-row__label">Quality</span>
                 <span className="setting-row__hint">
-                  {gpu?.render ? `In effect: ${gpu.render.tier}${settings.renderTier === 'auto' ? ' (chosen for this GPU)' : ''}. ` : ''}Higher tiers add ambient occlusion, reflections and sun shafts; the Render still dialog has a Final render mode.
+                  {gpu?.render ? `In effect: ${gpu.render.tier}${settings.renderTier === 'auto' ? ` (automatic: ${gpu.render.reason ?? 'chosen for this GPU'})` : ''}. ` : ''}Higher tiers add ambient occlusion, reflections and sun shafts; the Render still dialog has a Final render mode.
                 </span>
               </span>
               <Segmented<RenderTierSetting> label="Graphics quality" value={settings.renderTier} onChange={(v) => update({ renderTier: v })} options={TIER_CHOICES} />
@@ -206,7 +206,7 @@ export const SettingsDialog = memo(function SettingsDialog({
             <div className="setting-row">
               <span className="setting-row__text">
                 <span className="setting-row__label">Renderer</span>
-                <span className="setting-row__hint">Auto uses WebGPU where it is reliable, WebGL2 elsewhere.{gpu?.description ? ` GPU: ${gpu.description}.` : ''}</span>
+                <span className="setting-row__hint">Auto uses WebGPU where it is reliable, WebGL2 elsewhere.{gpu?.description ? ` GPU: ${gpu.description}.` : ''}{gpu?.render?.reason && settings.renderTier === 'auto' ? ` Automatic quality ${gpu.render.tier}: ${gpu.render.reason}.` : ''}</span>
                 {gpu?.backend && (
                   <span className="setting-row__hint" data-testid="backend-indicator" data-backend={gpu.backend.active} data-reason={gpu.backend.reason} role="status">
                     Running on {backendHeadline(gpu.backend)}. {backendWhy(gpu.backend)}

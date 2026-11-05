@@ -176,7 +176,8 @@ const NavHint = memo(function NavHint(): ReactElement | null {
 });
 
 /**
- * Feedback for work the person asked for: the agent's own status line while it works, and a still image render. Mode
+ * Feedback for work the person asked for: the agent's own status line while it works, a still image render, and a quality
+ * tier being applied (the view holds its last complete picture until the new tier is ready). Mode
  * switches, scene or texture preparation, lighting updates, checks and play tests never put text over the picture: the
  * last good frame stays on screen and the toolbar buttons carry their own state.
  */
@@ -186,7 +187,9 @@ const BusyIndicator = memo(function BusyIndicator(): ReactElement | null {
   const stage = useUI((s) => s.processing);
   const loading = useUI((s) => s.loading);
   const fatal = useUI((s) => s.fatal);
-  const text = busy ? line : stage === 'capture' ? 'Rendering image…' : null;
+  // A tier change the person made in Settings: the last good frame stays up until the new tier is complete.
+  const applying = useUI((s) => s.qualityApplying);
+  const text = busy ? line : stage === 'capture' ? 'Rendering image…' : applying ? `Applying ${applying} quality…` : null;
   if (!text || loading || fatal) return null;
   return (
     <>
