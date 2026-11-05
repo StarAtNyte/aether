@@ -394,7 +394,9 @@ function rangeColour(atlas: DataTexture, slots: number, look: RangeLook): Nd {
   const depth = m.a;
   const foot = float(1).sub(smoothstep(0.0, 0.5, v));
   // Seen from high above the ranges are a painted ring standing on the land: they go into the air as the eye climbs.
-  const thickness = mix(saturate(hazeShare.add(depth.mul(0.22)).add(foot.mul(0.2))), float(1), n.altitude);
+  // Only part of the way: a range seen from height keeps its form and its shading (full air was a white cut-out); the orbit's
+  // reach keeps the eye from the heights where the ring would read as a ring.
+  const thickness = mix(saturate(hazeShare.add(depth.mul(0.22)).add(foot.mul(0.2))), float(1), n.altitude.mul(RANGE_ALTITUDE_AIR));
   const air = mix(n.air, n.haze, saturate(thickness.mul(1.3).sub(0.15)));
   const colour = mix(lit, air, thickness);
   return max(colour, vec3(0, 0, 0)).mul(n.brightness);
@@ -416,6 +418,8 @@ export function altitudeShare(eyeY: number, contentRadius: number): number {
   return t * t * (3 - 2 * t);
 }
 export const ALTITUDE_START = 40;
+/** Largest extra share of air over a range seen from a drone's height. */
+export const RANGE_ALTITUDE_AIR = 0.35;
 export const ALTITUDE_FULL = 140;
 
 /** Share of the air's colour over land `metres` from the viewer: the same air the ranges' feet stand in. */

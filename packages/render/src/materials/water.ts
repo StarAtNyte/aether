@@ -44,6 +44,9 @@ export interface WaterShader {
 /** `userData` key of a material's {@link WaterShader}. */
 export const WATER_SHADER_KEY = 'aetherWaterShader';
 
+/** Share of a water surface's width over which its rim fades out (see the opacity node). */
+export const WATER_EDGE_FEATHER = 0.04;
+
 /** Strength of the analytic sky mirror of the simple tier (added to the faint image-light reflection). */
 const SIMPLE_SKY_MIRROR = 1;
 /** Absorption of the three colour channels relative to green (red goes first, blue lasts). */
@@ -285,7 +288,13 @@ export function applyWater(material: Material, water: ResolvedWater, tier: Water
   const through = transmitted.mul(float(1).sub(fresnel)).mul(float(1).sub(foam)).mul(tier === 'simple' ? scatter.mul(0.55) : float(1));
   m.emissiveNode = mix(ceiling, through.add(reflectionTerm), front);
   m.roughnessNode = mix(float(0.04), float(0.85), foam);
-  m.opacityNode = mix(float(1), edge, front);
+  // The rim of the surface fades out over its outer few percent: a lagoon or a pond drawn as a box ended in a hard ruled line
+  // where it met the sea or the land beside it (seen from height, a turquoise rectangle). Top face only (its UVs span it).
+  const uvw = T.uv();
+  const fe = WATER_EDGE_FEATHER;
+  const rim = smoothstep(0, fe, uvw.x).mul(smoothstep(0, fe, float(1).sub(uvw.x))).mul(smoothstep(0, fe, uvw.y)).mul(smoothstep(0, fe, float(1).sub(uvw.y)));
+  const top = smoothstep(0.5, 0.8, T.normalLocal.y);
+  m.opacityNode = mix(float(1), edge, front).mul(mix(float(1), rim, top));
 
   const shader: WaterShader = {
     kind: water.kind,

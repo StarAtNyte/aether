@@ -20,3 +20,13 @@ describe('backdrop altitude', () => {
     expect(altitudeShare(Number.NaN, 140)).toBe(0);
   });
 });
+
+describe('orbit reach', () => {
+  it('follows the content and stays within the old sky limit', async () => {
+    const { orbitReach } = await import('../src/world-renderer');
+    expect(orbitReach(5)).toBe(40);
+    expect(orbitReach(130)).toBe(390);
+    expect(orbitReach(5000)).toBe(720);
+    expect(orbitReach(Number.NaN)).toBe(300);
+  });
+});

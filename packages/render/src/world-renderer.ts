@@ -416,6 +416,14 @@ const PROOF_MIN_SHARE = 0.22;
 /** Shadow refit / debug rebuild throttle (seconds) while content streams in. */
 const REFIT_INTERVAL = 0.35;
 /** Draws a pipeline with sun shafts waits for the sun's shadow map before giving the shafts up for this world. */
+/** Farthest orbit distance (m) for content of radius `radius`: three radii (the authored establishing views sit at about 2.5), at least 40 m, at most the old sky-wide limit. */
+export function orbitReach(radius: number): number {
+  const r = Number.isFinite(radius) && radius > 0 ? radius : 100;
+  return Math.max(ORBIT_REACH_MIN, Math.min(SKY_RADIUS * 0.8, r * ORBIT_REACH_RADII));
+}
+export const ORBIT_REACH_RADII = 3;
+export const ORBIT_REACH_MIN = 40;
+
 /** Frames the full chain of a split plan draws into its temporal history before its picture replaces the motion one. */
 export const REST_REVEAL_FRAMES = 5;
 /** Drawing-buffer scale over the display of the realtime ultra tier on a discrete GPU (see WorldRenderer.supersample). */
@@ -4077,6 +4085,10 @@ export class WorldRenderer {
       const f = this.framing;
       if (f) {
         this.env.setContentRadius(f.radius);
+        // The orbit reaches as far as the world is authored for: past about three content radii the eye left the
+        // plot for the backdrop (the edges of a sea plane, the land ring, the painted ranges seen from above).
+        const orbit = this.orbit as unknown as { maxDistance?: number } | null;
+        if (orbit && typeof orbit.maxDistance === 'number') orbit.maxDistance = orbitReach(f.radius);
         // Shadows are spent on the meaningful content, not on backdrop mountains.
         const r = f.radius * 1.2;
         _bounds.min.set(f.center[0] - r, Math.min(0, f.center[1] - r), f.center[2] - r);

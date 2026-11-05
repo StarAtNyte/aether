@@ -325,9 +325,8 @@ export class SurroundingsRig {
     if (a === this.altitude) return;
     this.altitude = a;
     this.look.setAltitude(a);
-    // The ranges go once all air. The land ring, its trees and fields stay: they are ground, and without them a drone view of
-    // a plot on open land floated in a featureless haze.
-    this.hills.visible = a < 0.999;
+    // Everything stays drawn: the land ring, its trees and fields are ground (without them a drone view of a plot on open
+    // land floated in a featureless haze), and the ranges keep their form under the extra air.
   }
 
   /** The last {@link altitudeShare} applied. */

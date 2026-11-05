@@ -122,6 +122,21 @@ async function main(): Promise<void> {
       await gpu.close();
       process.exit(0);
     }
+    // The aerial poses stay within the orbit's reach (what a visitor can reach): pulled in toward their target when farther.
+    const reach = await gpu.evaluate(() => (window.__aether?.simulation?.renderer as unknown as { orbit?: { maxDistance?: number } } | undefined)?.orbit?.maxDistance ?? 0, null);
+    if (reach > 0 && wide && !args.includes('--no-reach')) {
+      const t = wide.pose.target;
+      for (const p of poses) {
+        if (p.name !== 'far-aerial' && p.name !== 'drone') continue;
+        const d = Math.hypot(p.x - t[0]!, p.y - t[1]!, p.z - t[2]!);
+        if (d <= reach) continue;
+        const k = reach / d;
+        p.x = t[0]! + (p.x - t[0]!) * k;
+        p.y = t[1]! + (p.y - t[1]!) * k;
+        p.z = t[2]! + (p.z - t[2]!) * k;
+      }
+      console.log('orbit reach', Math.round(reach));
+    }
     const only = flag('only')?.split(',');
     for (const p of poses) {
       if (only && !only.includes(p.name)) continue;
