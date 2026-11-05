@@ -659,6 +659,22 @@ row of `index.json` carries the author, licence, credit line, source dataset, pi
 `models/<id>/provenance.json` repeats the pin, and `credits.csv` (linked from the dataset card, which regenerates its table on every
 build and links the CSV above 150 rows) lists them all. Only licences read from both the package and the dataset card, and only CC0-1.0 or CC-BY-4.0, are admitted.
 
+### Amazon Berkeley Objects products (streamed, not in the repository)
+
+| Source | In the repository | Licence | Pin | Credit line |
+| --- | --- | --- | --- | --- |
+| [Amazon Berkeley Objects GLB](https://huggingface.co/datasets/codepawl/abo-glb) (`codepawl/abo-glb`): the 7,953 3D models of [Amazon Berkeley Objects](https://amazon-berkeley-objects.s3.amazonaws.com/index.html) re-encoded for the web (WebP and KTX2 textures, meshopt geometry, three simpler levels) | `assets/abo.json.gz` only: a 386 KB index of 7,813 furnishings (id, a shortened listing name, type, size, triangles, file sizes), built by `npm run assets:abo` from the pack's `metadata.jsonl`. No model file is vendored. | CC-BY-4.0 | revision `c7c8293fed3b7ab122ef5d7896521a187e0962d7` | 3D models by Amazon.com, Amazon Berkeley Objects (CC BY 4.0); web-optimised GLB by CodePawl |
+
+The models, images and listing text are by Amazon.com (dataset by Matthieu Guillaumin, Thomas Dideriksen, Kenan Deng, Himanshu
+Arora, Arnab Dhua, Xi (Brian) Zhang, Tomas Yago-Vicente of Amazon.com and Jasmine Collins, Shubham Goel and Jitendra Malik of UC
+Berkeley); CodePawl's pack changes them (textures re-encoded and resized, geometry compressed, simplified levels). CodePawl is not
+affiliated with Amazon, and Amazon does not endorse this project; brand and product names belong to their owners. The studio
+streams each product a world shows from the pinned revision; a world that uses one lists "Amazon Berkeley Objects" with the credit
+line in its credits panel, end screen and `CREDITS.txt`, and a published game carries the files it uses next to its player and the
+line in `game.json` (`attribution`). Two sofas the pack models in centimetres and 140 listings that are not furnishings (cables,
+hubs, device cases, office and medical supplies) are left out of the index. Paper: Collins et al., "ABO: Dataset and Benchmarks
+for Real-World 3D Object Understanding", CVPR 2022.
+
 ### NVIDIA SimReady Central models (`assets/lib/s/`)
 
 SimReady Central is a search service, not a licence: each package keeps the licence its author gave it, and the library

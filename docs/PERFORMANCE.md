@@ -81,7 +81,8 @@ mesh two to four times (a minute of a load and up to 2 GB of page heap):
   that is about 10 MB a program. Shaders are detached after link and deleted after 4 s unused; compiled again on reuse
   (rare). GPU process 1.9 → 1.0 GB on Sanctuary Terraces. Opt out: `globalThis.__AETHER_SHADER_RELEASE = false`.
 - **Texture cap** (`gpu/texture-cap.ts`): image textures at most 512 px on integrated GPUs and in low-memory mode
-  (Lisbon Hills: textures 726 → 363 MB).
+  (Lisbon Hills: textures 726 → 363 MB). KTX2 textures are left alone (they cannot be redrawn), so streamed Amazon Berkeley Objects products load their
+  first level within the cap instead (`lods/…_lod2`, 512 px), and the weight check counts their downloads (ASSETS.md).
 - **Heap pressure** (`apps/studio/src/lib/memory.ts`) uses the share of the heap limit, not a fixed 600 MB that latched
   low-memory mode on a 16 GB machine.
 

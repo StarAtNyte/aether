@@ -28,7 +28,7 @@ import { isGeneratedServiceWorker } from '@aether/assets/offline-sw';
 /** Build ids: 12 lowercase base36 characters. */
 export const BUILD_ID_RE = /^[a-z0-9]{12}$/;
 /** File types a build may contain. */
-export const ALLOWED_EXT = /\.(html|js|mjs|css|json|webmanifest|wasm|png|jpe?g|webp|svg|glb|hdr|woff2?|txt|md|aethersave)$/i;
+export const ALLOWED_EXT = /\.(html|js|mjs|css|json|webmanifest|wasm|png|jpe?g|webp|svg|glb|hdr|woff2?|txt|md|aethersave|gz)$/i;
 /** Files a browser can run as script (served with a JavaScript MIME type). */
 export const SCRIPT_EXT = /\.m?js$/i;
 /** The player's file list written by the studio build (see scripts/vite/player-manifest.ts). */

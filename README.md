@@ -675,7 +675,10 @@ Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md]
   characters under MIT; Quaternius farm animals under CC0; the Khronos glTF
   sample Fox, partly CC-BY 4.0 with its credit kept; fonts under OFL 1.1) is listed with its licence, source and credit line in
   [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md). Only permissive licences are
-  used. The IFC export's STEP writer is adapted from [Pascal Editor](https://github.com/pascalorg/editor) (MIT, © 2026 Pascal Group Inc.). In-app credits appear in the credits panel, on end-of-game screens and
+  used. Real furnishings for interiors stream at run time from the
+  [Amazon Berkeley Objects GLB pack](https://huggingface.co/datasets/codepawl/abo-glb) (CC BY 4.0; only a compact index is
+  in the repository): "3D models by Amazon.com, Amazon Berkeley Objects (CC BY 4.0); web-optimised GLB by CodePawl". Worlds that
+  use them carry that line in their credits, and published games carry it in `game.json` and `CREDITS.txt`. The IFC export's STEP writer is adapted from [Pascal Editor](https://github.com/pascalorg/editor) (MIT, © 2026 Pascal Group Inc.). In-app credits appear in the credits panel, on end-of-game screens and
   in exported `CREDITS.txt` files.
 - **README images:** the photograph in the photo-to-room comparison is
   [Hotel bedroom windows (Unsplash)](https://commons.wikimedia.org/wiki/File:Hotel_bedroom_windows_(Unsplash).jpg)

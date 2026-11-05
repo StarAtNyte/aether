@@ -284,6 +284,33 @@ npx tsx scripts/assets/thumbs.ts --only a,b --front=out --yaw=0   # straight-on 
 - Size on disk: about 50 MB for the main files and distance levels, 17 MB more for
   the light copies. A scene fetches only the models it places.
 
+## Amazon Berkeley Objects (streamed real products)
+
+7,813 real furnishings (sofas, chairs, tables, beds, lamps, rugs, wall art, mirrors, planters, decor) from the
+[Amazon Berkeley Objects GLB pack](https://huggingface.co/datasets/codepawl/abo-glb), CC BY 4.0, streamed from Hugging Face at
+the pinned revision. Only the index ships: `assets/abo.json.gz` (386 KB; 1.5 MB as JSON), rebuilt with `npm run assets:abo`
+(`scripts/assets/abo-index.ts`; `--metadata=<file>` reads a local `metadata.jsonl`, `--json=<file>` also writes the plain text).
+
+- **Ids.** A product is the asset `abo-<lowercase ABO id>` (`abo-b0714qgc72`). `catalogEntry` and `assetInfo` answer for it as for
+  a library model once `loadCatalog` resolved (it loads the index alongside the catalog), so placement, size, physics (a box
+  collider), credits and the planner need nothing else. Type, category and mounting (floor, wall, ceiling, surface) come from the
+  listing name first, then its product type; the size is the measured one in metres; the loader shifts each product onto a
+  floor-centre pivot (wall art hangs centred on its back, pendants hang from y = 0 in the pack).
+- **Search.** `find_model` lists "Real products" above the library for interior pieces (`findAboModels`: the finder's type, style,
+  colour and size ranking, then the request's other words such as "velvet", "chesterfield" or "floor" first);
+  `search_assets` adds up to four. `place_items {"kind":"model:abo-…"}` places one at real size with the mount the product has.
+- **Levels.** LOD 0 near is `objects_ktx2/` (KTX2 up to 2048 px), the far levels `lods/…_lod2` (512 px) and `_lod3` (256 px); the
+  light copy of the low tiers is `_lod2`. KTX2 textures cannot be shrunk on upload, so under the texture cap (512 px on
+  integrated GPUs and in low-memory mode, see PERFORMANCE.md) the loader takes the first level within it. Without a KTX2
+  transcoder the WebP copy (`objects/`) loads instead. Geometry is meshopt-compressed (the loader's `MeshoptDecoder`).
+- **Network and caching.** The resolve URLs answer with a `no-store` redirect to `us.aws.cdn.hf.co` (or straight from
+  `huggingface.co`), CORS open; the CSP lists both hosts. The model loader keeps every product file in Cache Storage
+  (`aether-abo-v1`): the URLs are pinned, so a product downloads once per browser. Published games carry the files they use
+  under `assets/lib/` and never contact Hugging Face.
+- **Weight.** Each distinct product is about 1.4 MB with its far levels (median); the weight check (`streamed_products`) warns past
+  60 MB or 3 M full-detail triangles and fails a world past 150 MB. The agent is told to use about 8 to 15 products per room.
+- **Credit.** "3D models by Amazon.com, Amazon Berkeley Objects (CC BY 4.0); web-optimised GLB by CodePawl" (see THIRD_PARTY.md).
+
 ## SimReady Central
 
 [NVIDIA SimReady Central](https://huggingface.co/spaces/nvidia/simready-central) is a semantic search over about 3,600

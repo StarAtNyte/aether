@@ -52,8 +52,9 @@ export function registerStatic(app: Hono<AppEnv>, dir: string, logger: Logger): 
   // A byte range always refers to the identity bytes: never answer it from a `.br` / `.gz` sibling.
   const identity = serveStatic<AppEnv>({ root: dir, precompressed: false, onFound });
   app.use('*', async (c, next) => {
-    // Precompressed siblings are an implementation detail: never serve them by their own name.
-    if (/\.(br|gz)$/.test(c.req.path)) return next();
+    // Precompressed siblings are an implementation detail: never serve them by their own name. A file that is gzipped
+    // itself, with no identity twin (the product index `abo.json-<hash>.gz`), is an ordinary file.
+    if (/\.(br|gz)$/.test(c.req.path) && isSibling(dir, c.req.path)) return next();
     const res = await (c.req.header('range') ? identity(c, next) : compressed(c, next));
     if (res instanceof Response && served.has(c)) res.headers.set('Cache-Control', isImmutablePath(c.req.path) ? IMMUTABLE_CACHE : REVALIDATE_CACHE);
     return res;
@@ -77,4 +78,16 @@ export function registerStatic(app: Hono<AppEnv>, dir: string, logger: Logger): 
     notFoundHtml ??= existsSync(notFoundPath) ? await readFile(notFoundPath, 'utf8') : errorPageHtml(404);
     return sendErrorPage(c, 404, notFoundHtml);
   });
+}
+
+/** True when `path` names a precompressed sibling (`x.js.gz` next to `x.js`), or cannot be resolved inside `dir`. */
+function isSibling(dir: string, path: string): boolean {
+  let rel: string;
+  try {
+    rel = decodeURIComponent(path).replace(/^\/+/, '');
+  } catch {
+    return true;
+  }
+  if (rel.split('/').includes('..') || rel.includes('\0')) return true;
+  return existsSync(join(dir, rel.replace(/\.(br|gz)$/, '')));
 }

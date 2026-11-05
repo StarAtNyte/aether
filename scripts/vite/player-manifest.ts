@@ -24,7 +24,7 @@ interface OutputFile {
 export const PLAYER_MANIFEST = 'play-manifest.json';
 
 const TEXT = /\.(html|js|mjs|css|json)$/;
-const NAME = /[A-Za-z0-9_][A-Za-z0-9_.-]*\.(?:js|mjs|css|wasm|woff2?|png|svg|json|webp|jpg|jpeg|glb|hdr)/g;
+const NAME = /[A-Za-z0-9_][A-Za-z0-9_.-]*\.(?:js|mjs|css|wasm|woff2?|png|svg|json|webp|jpg|jpeg|glb|hdr|gz)/g;
 
 /** Files reachable from `entry` (pure; exported for tests). */
 export function reachableFiles(bundle: Record<string, OutputFile>, entry: string): string[] {

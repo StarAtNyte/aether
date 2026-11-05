@@ -45,6 +45,8 @@ export const BUILD_TYPES: Readonly<Record<string, string>> = {
   '.txt': 'text/plain; charset=utf-8',
   '.md': 'text/plain; charset=utf-8',
   '.aethersave': 'application/octet-stream',
+  // The gzipped product index (assets/abo.json.gz): the player inflates it itself, so it is served as plain bytes.
+  '.gz': 'application/gzip',
 };
 
 /** Headers of every served build file. */
