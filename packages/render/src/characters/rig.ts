@@ -72,6 +72,8 @@ export class CharacterRig {
   backward = false;
   /** Aim pitch (radians, positive up) of a shouldered gun: the chest bends and the gun pitches with it. */
   aimPitch = 0;
+  /** The trigger is held: a crouched body raises a shouldered gun from low ready to the aim. */
+  aiming = false;
   readonly machine: LocomotionMachine;
   private readonly mixer: AnimationMixer;
   private readonly actions = new Map<string, AnimationAction>();
@@ -629,7 +631,9 @@ export class CharacterRig {
   /**
    * A crouch laid over the standing idle or walk: the hips sink and go back a little, the knees bend so each foot stays where
    * the clip put it (a walk keeps its steps and lifts, a stand keeps its soles flat), the back leans forward and the neck
-   * comes back up so the eyes stay level. `w` is the eased crouch amount (0..1).
+   * comes back up so the eyes stay level. Standing still the feet also part into a fighting stance (the left a step forward,
+   * the right back on its toes) so the crouch reads as a kneel-ready soldier, not a squat; a step lifts each foot on the way.
+   * `w` is the eased crouch amount (0..1).
    */
   private crouchLayer(w: number, sc: number): void {
     const b = this.bones;
@@ -656,24 +660,47 @@ export class CharacterRig {
     const yaw = Math.atan2(e[8] as number, e[10] as number) + this.hipYaw;
     const fx = -Math.sin(yaw);
     const fz = -Math.cos(yaw);
+    // The stance opens only at rest (a walk keeps the clip's steps), eased with the crouch and with the speed.
+    const still = Math.max(0, Math.min(1, 1 - this.smoothSpeed / 0.6));
+    const target = w * still;
+    this.stanceS += (target - this.stanceS) * Math.min(1, this.lastStep * 9);
+    const st = this.stanceS;
+    // Lift of a foot that is moving to its stance place (0 at both ends of the move).
+    const lift = Math.abs(target - st) > 0.01 ? Math.sin(Math.PI * st) * 0.07 * sc : 0;
     i = 0;
     for (const [thigh, calf, foot] of legs) {
       if (!foot) continue;
       const at = _feet[i] as Vector3;
       const q = _feetQ[i] as Quaternion;
+      const lead = i === 0;
       i++;
       if (!thigh || !calf) continue;
+      if (st > 0) {
+        const d = (lead ? STANCE_FORWARD : -STANCE_BACK) * sc * st;
+        at.x += fx * d;
+        at.z += fz * d;
+        // The rear foot stands on its toes: the ankle rises.
+        at.y += (lead ? lift : lift + STANCE_HEEL * sc * st);
+      }
       calf.getWorldPosition(_pole);
       _pole.x += fx * 0.6;
       _pole.z += fz * 0.6;
       solveTwoBone(thigh, calf, foot, at, _pole, 1);
-      // The sole keeps the angle the clip gave it.
+      // The sole keeps the angle the clip gave it (the rear foot pitched onto its toes).
       calf.updateWorldMatrix(true, false);
       calf.getWorldQuaternion(_qp);
       foot.quaternion.copy(_qp.invert().multiply(q));
+      if (!lead && st > 0) {
+        foot.updateWorldMatrix(false, false);
+        foot.parent?.getWorldQuaternion(_qp);
+        foot.quaternion.copy(boneTurned(foot.quaternion, _qp, _qm, _xAxis, STANCE_TOES * st));
+      }
       foot.updateWorldMatrix(false, true);
     }
   }
+
+  private stanceS = 0;
+  private lowReady = 0;
 
   private hipS = 0;
   private kneeS = 0;
@@ -967,7 +994,11 @@ export class CharacterRig {
     }
     const sprint = this.input.sprinting && this.plan?.state === 'loco' && this.smoothSpeed > 2.5 ? 1 : 0;
     this.sprintLower += (sprint - this.sprintLower) * Math.min(1, this.lastStep * 8);
-    const a = this.chestPitch * (1 - this.sprintLower);
+    // Crouched and not firing: low ready, the muzzle down and the gun drawn in; the trigger brings it up to the aim.
+    const low = this.crouchT > 0 && !this.aiming && this.plan?.state === 'crouch' ? this.crouchT : 0;
+    this.lowReady += (low - this.lowReady) * Math.min(1, this.lastStep * (this.aiming ? 16 : 6));
+    const lr = this.lowReady * (1 - this.sprintLower);
+    const a = this.chestPitch * (1 - this.sprintLower) * (1 - lr) - LOW_READY_PITCH * lr;
     const ca = Math.cos(a);
     const sa = Math.sin(a);
     // Shoulder pivot and the gun's offset from it at rest (rig frame, metres before scale).
@@ -976,18 +1007,19 @@ export class CharacterRig {
     gun.position.set(
       side * GUN_AT[0] * sc + this.sprintLower * -side * 0.08 * sc,
       (SHOULDER_PIVOT[1] + oy * ca - oz * sa - this.sprintLower * 0.12) * sc + this.neckOff.y,
-      (SHOULDER_PIVOT[2] + oy * sa + oz * ca + this.sprintLower * 0.1) * sc + this.neckOff.z,
+      (SHOULDER_PIVOT[2] + oy * sa + oz * ca + this.sprintLower * 0.1 + lr * 0.06) * sc + this.neckOff.z,
     );
     gun.rotation.set(GUN_TILT + a - this.sprintLower * 0.75, this.sprintLower * side * 0.5, 0);
     gun.updateMatrixWorld(true);
     _target.set(at.grip[0], at.grip[1], at.grip[2]);
     gun.localToWorld(_target);
-    _pole.set(side * 0.55, 0.75, 0.15);
+    // Elbow poles sink with the chest, so a crouched body keeps its elbows down instead of reaching.
+    _pole.set(side * 0.55, 0.75 + this.neckOff.y / sc, 0.15);
     this.root.localToWorld(_pole);
     solveTwoBone(b.rUpper, b.rLower, b.rHand, _target, _pole, 1);
     _target.set(at.fore[0], at.fore[1], at.fore[2]);
     gun.localToWorld(_target);
-    _pole.set(-side * 0.35, 0.7, -0.1);
+    _pole.set(-side * 0.35, 0.7 + this.neckOff.y / sc, -0.1);
     this.root.localToWorld(_pole);
     solveTwoBone(b.lUpper, b.lLower, b.lHand, _target, _pole, 1);
   }
@@ -1020,7 +1052,14 @@ const _yAxis = new Vector3(0, 1, 0);
 const _feet = [new Vector3(), new Vector3()];
 const _feetQ = [new Quaternion(), new Quaternion()];
 /** Crouch: hip drop and the hips' move back (m, before scale), forward lean of the back (radians), seconds to sink or rise. */
-const CROUCH_DROP = 0.34;
+const CROUCH_DROP = 0.32;
+/** Crouched stance at rest: the left foot this far forward, the right this far back with the ankle up and toes down (m, radians). */
+const STANCE_FORWARD = 0.2;
+const STANCE_BACK = 0.16;
+const STANCE_HEEL = 0.07;
+const STANCE_TOES = 0.55;
+/** Muzzle-down angle of a shouldered gun at low ready (radians). */
+const LOW_READY_PITCH = 0.5;
 const CROUCH_BACK = 0.06;
 const CROUCH_LEAN = 0.45;
 const CROUCH_TIME = 0.38;

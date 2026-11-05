@@ -292,6 +292,8 @@ export class Simulation {
   private sneaking = false;
   /** The player is sprinting (Shift held while moving). */
   private sprinting = false;
+  /** The trigger was held at the last fixed step. */
+  private firing = false;
   /** C was down at the last fixed step (the crouch toggle acts on the press). */
   private crouchKeyDown = false;
   /** Eased crouch amount (0 standing .. 1 crouched) for the camera drop. */
@@ -1751,6 +1753,7 @@ export class Simulation {
       } else if (character) {
         const pace = playerPace(input, armed, this.sneaking, this.crouchKeyDown, character.grounded, this.sprinting);
         this.sneaking = pace.crouched;
+        this.firing = input.fire === true;
         this.sprinting = pace.sprinting;
         this.crouchKeyDown = pace.crouchKey;
         const from = character.position;
@@ -1799,6 +1802,7 @@ export class Simulation {
         crouching: this.sneaking,
         sprinting: this.sprinting,
         aimPitchDeg: this.input.pitchDeg,
+        firing: this.firing,
         // Armed, the body faces where the gun points and strafes; otherwise it turns toward its motion.
         ...(armed ? { faceYawDeg: this.input.yawDeg } : {}),
       });

@@ -34,6 +34,8 @@ export interface AvatarState {
   faceYawDeg?: number | null;
   /** Look pitch (degrees, positive up) of an armed player: the chest and the gun follow it. */
   aimPitchDeg?: number;
+  /** The trigger is held (a crouched body brings its gun up from low ready). */
+  firing?: boolean;
 }
 
 /** Most the hips turn away from the chest toward the walking direction with the facing imposed (strafing with a gun). */
@@ -209,6 +211,7 @@ export class Avatar {
       rig.root.rotation.y = this.hidden ? 0 : this.bodyYaw - camYaw;
       rig.hipYaw = this.hidden ? 0 : this.hipYaw;
       rig.backward = this.backward;
+      rig.aiming = state?.firing === true;
       rig.aimPitch = state?.aimPitchDeg !== undefined && Number.isFinite(state.aimPitchDeg) && face !== undefined && face !== null ? (state.aimPitchDeg * Math.PI) / 180 : 0;
       if (state) {
         rig.input.grounded = state.grounded;
