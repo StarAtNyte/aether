@@ -8,7 +8,7 @@ import { decodeOutput } from '../geometry/ddc';
 import type { LaneCookIndex } from './format';
 
 /** Pack bytes a lane keeps in memory at once (least recently used dropped first). */
-export const LANE_PACK_CACHE_BYTES = 48 * 1024 * 1024;
+export const LANE_PACK_CACHE_BYTES = 16 * 1024 * 1024;
 
 /** An entry read from a pack: the decoded output, and its encoded bytes (to seed the geometry cache with). */
 export interface CookedEntry {

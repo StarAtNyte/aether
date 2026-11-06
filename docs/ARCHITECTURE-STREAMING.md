@@ -2,7 +2,7 @@
 
 Status: design, partly implemented. Stage 3 (worker generation, geometry cache), the first part of stage 1 (frame
 budget, sliced vertex uploads, `scripts/arch-probe.ts`), stage 4a (the cell grid, per-cell shadow and virtual batches,
-material-grouped draw order) and part of stage 2 (the recorded program set of each tier pre-warmed at boot, the sweep off,
+material-grouped draw order), the first slice of stage 5 (cooked packages, §3.5.1) and part of stage 2 (the recorded program set of each tier pre-warmed at boot, the sweep off,
 neighbouring tiers primed at rest, each material linked once, first use of every program behind the load screen; its gate is not met yet) are in; their numbers are in [PERFORMANCE.md](PERFORMANCE.md).
 Profiling: 6 November 2026, on the build of `ec8b9593` plus the uncommitted work in the tree at the time. This document
 covers measured baselines, the target architecture and a staged plan.
@@ -603,7 +603,7 @@ gzip and brotli sizes. `--install=<dist>` copies it into a dist.
    `irHash` equal to the loaded world's. Anything missing, malformed or stale loads live, with the reason in
    `window.__aetherCook`.
 2. The geometry index goes to the generation lanes (`GenPool.setCook`). A lane looks up the geometry cache, then the
-   package: it fetches a pack once (48 MB per lane kept), decodes the entry, answers, and seeds the geometry cache with it
+   package: it fetches a pack once (16 MB of packs kept per lane), decodes the entry, answers, and seeds the geometry cache with it
    behind the reply. No generator, sandbox or validation runs. An entry that fails generates as before.
 3. The program sets seed the program cache (`cookedProgramStore`). The boot pre-warm links the tier's cooked set, the
    boot pairs first, and keeps submitting them after the world's compile begins (`ProgramStore.boot`). Both are written
@@ -611,6 +611,51 @@ gzip and brotli sizes. `--install=<dist>` copies it into a dist.
 4. The world starts in its `startMode` at its opening (the cook's opening fills in an IR without one). `play` shows the
    title card over the attract tour as before; `orbit` and `walkthrough` stay on the opening view. Their play-mode UI is
    later work.
+
+**Measured** (6 November 2026, Intel UHD 770, headless Chrome, `GEN_GPU=intel`, shared machine;
+`first-picture-probe --player [--live]`, cold then warm on one profile, live and cooked interleaved):
+
+| | Cold first picture, live / cooked | Warm first picture, live / cooked | Generator runs, cooked |
+|---|---|---|---|
+| Kestrel Outpost, 4 pairs | 27.0/24.6, 26.7/24.3, 18.8/17.2, 21.4/20.3 s | 13.2/10.6, 15.4/12.8, 11.2/8.8, 9.9/10.1 s | 0 (live: 65 cold, 12-15 warm) |
+| Lisbon Hills, 1 pair | 50.7/45.7 s | 28.3/36.0 s | 0 (live: 270 cold, 21 warm) |
+
+- Kestrel: cooked is faster in all four cold pairs (1.1-2.4 s, 5-9 %) and in three of four warm pairs (2.4-2.6 s). Most
+  of the gain is the boot set. Warm, 65 of 67 programs come from the pool, against 11-20 live, and the compile walk no
+  longer links one program after another. The rest of a load is the driver: each link, then each program's first use on
+  Mesa. A package cannot ship that work. The machine's load moved the absolute numbers by a third between rounds.
+  Linking 12 at a time instead of 6 (`__AETHER_EAGER_IN_FLIGHT`) was no better.
+- Lisbon: cold is 5 s sooner, with no generation (5-6 s live). Warm is slower: the lanes read 84 of the 270 entries from
+  the packs again (520 MB through the HTTP cache), because seeding the geometry cache was skipped while writes were
+  backed up. With 48 MB of packs per lane, the cold cooked load ran out of the 5 GB cap. At 16 MB it fits.
+- Hero shots: the player at three fixed poses (`--shots --player`), cooked against live: mean 0.10-0.36 / 255, the same as
+  live against live (0.05-0.37).
+- The editor path (studio `#/new/kestrel-outpost`), this build against the one before: cold 19.3 / 18.9 s, warm
+  15.6 / 15.9 s.
+
+**Sizes** (`cook-report.json`):
+
+| | Entries, cells, packs | Geometry | Program sets (low / medium / high / ultra programs) | Total raw | gzip | brotli | Largest file |
+|---|---|---|---|---|---|---|---|
+| Kestrel Outpost | 65, 13, 14 | 25.8 MB | 64 / 75 / 109 / 114, 22 MB | 46.9 MB, 19 files | 13.1 MB | 6.7 MB | 6.9 MB |
+| Lisbon Hills | 270, 26, 87 | 520 MB | 64 / 95 / 128 / 117 | 555 MB, 92 files | 173 MB | 131 MB | 19.7 MB |
+
+The low and high sets reach the set cap (`SET_CAP` 64 / 128), so some programs of those tiers are not cooked.
+
+**Hosting.**
+- Vercel static limits: deployments have per-file and total upload limits that depend on the plan (on the order of
+  100 MB on Hobby). Check the current plan limits before relying on them.
+- The `.bin` packs are served as `application/octet-stream`, which Vercel's edge does not compress. A viewer downloads them
+  raw: Kestrel 26 MB of geometry, Lisbon 520 MB. Program sets are JSON and compress about 20 times.
+- Kestrel fits in a deployment. Lisbon does not: as a git-built Vercel deployment it would also put half a gigabyte into
+  the repository.
+- Options:
+  1. An object store with a CDN (Cloudflare R2, S3 with CloudFront, Vercel Blob), with the package base made
+     configurable. Packs are immutable, so long cache lifetimes are free.
+  2. Precompressed `.bin.br` siblings, served with `content-encoding: br` (the local server already serves `.br`
+     siblings; `scripts/precompress.ts`).
+  3. Stage 5's quantization plus meshopt, about 4-8 times smaller, before anything ships at Lisbon's size.
+- Until then, packages stay out of git (`cooked/` is ignored) and are installed into a dist by hand.
 
 Hooks left for later work: `cells`/`packs` per cell, for cell streaming and unloading; `lightmap`, for the publish bake;
 `profile`, for the publish UI of kinds; `GameManifest.cook`, for a self-hosted game build that ships its package.
