@@ -21,8 +21,9 @@ import { join, resolve } from 'node:path';
 import { brotliCompressSync, constants as zc, gzipSync } from 'node:zlib';
 import { chromium, type BrowserContext, type Page } from 'playwright';
 import type { Entity, ProceduralShape, WorldDoc } from '@aether/core';
-import { proceduralOutputKey } from '@aether/procgen';
-import { decodeOutput } from '../packages/render/src/geometry/ddc';
+import { outputBytes, proceduralOutputKey } from '@aether/procgen';
+import { decodeEntry } from '../packages/render/src/geometry/ddc-codec';
+import { DDC_CACHE_NAME } from '../packages/render/src/geometry/ddc';
 import { assignCell, cellBounds, partitionFor, PERSISTENT_CELL, type CellPartition } from '../packages/render/src/streaming/cell-grid';
 import { COOK_FORMAT, COOK_PROFILES, cookPackageId, PACK_TARGET_BYTES, type CookCell, type CookedProgramSet, type CookFile, type CookManifest, type CookProfile, type StartMode } from '../packages/render/src/cook/format';
 import type { RenderTier } from '../packages/render/src/gpu/finishing';
@@ -62,7 +63,7 @@ async function launch(profileDir: string): Promise<BrowserContext> {
 
 /** Entries in the page's geometry cache. */
 function ddcCount(page: Page): Promise<number> {
-  return page.evaluate(async () => (await (await caches.open('aether-ddc-v1')).keys()).length);
+  return page.evaluate(async (name) => (await (await caches.open(name)).keys()).length, DDC_CACHE_NAME);
 }
 
 /** Wait until the lanes' cache writes have drained (the entry count holds for 3 s). */
@@ -179,8 +180,8 @@ async function session(server: env.TestServer, profileDir: string, slug: string,
         return { sets, sources };
       }) as { sets: Record<string, { entries: Array<{ v: string; f: string; uses: number; last: number }> } | null>; sources: Record<string, string> };
       // The geometry: every cache entry, posted to the route above one at a time.
-      const sent = await page.evaluate(async () => {
-        const c = await caches.open('aether-ddc-v1');
+      const sent = await page.evaluate(async (name) => {
+        const c = await caches.open(name);
         let n = 0;
         for (const req of await c.keys()) {
           const res = await c.match(req);
@@ -190,7 +191,7 @@ async function session(server: env.TestServer, profileDir: string, slug: string,
           n++;
         }
         return n;
-      });
+      }, DDC_CACHE_NAME);
       log(`${slug}: ${sent} geometry entries read`);
     }
     return { rec: { irHash: info.record.irHash, genVersion: info.record.genVersion, world: info.record.world, startMode: (info.startMode ?? 'orbit') as StartMode, opening: info.opening }, tier: info.tier as RenderTier, boot, programs };
@@ -323,6 +324,11 @@ async function pack(slug: string, rec: Recorded, programs: NonNullable<Awaited<R
   const cells: CookCell[] = [];
   const entries: CookManifest['entries'] = {};
   let bad = 0;
+  // Identical entries (outputs of different keys with the same bytes) are stored once: later keys point at the first copy.
+  const stored = new Map<string, [number, number, number]>();
+  let shared = 0;
+  let sharedBytes = 0;
+  let decodedBytes = 0;
   for (const key of cellKeys) {
     const list = (byCell.get(key) ?? []).sort((a, b) => a.d - b.d);
     const cellIndex = cells.length;
@@ -342,14 +348,23 @@ async function pack(slug: string, rec: Recorded, programs: NonNullable<Awaited<R
       const body = readFileSync(join(blobDir, it.hex));
       try {
         const ab = body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) as ArrayBuffer;
-        decodeOutput(ab);
+        decodedBytes += outputBytes(await decodeEntry(ab));
       } catch {
         bad++;
+        continue;
+      }
+      const content = createHash('sha256').update(body).digest('hex');
+      const first = stored.get(content);
+      if (first) {
+        entries[it.hex] = [first[0], first[1], first[2], cellIndex];
+        shared++;
+        sharedBytes += body.length;
         continue;
       }
       if (size > 0 && size + body.length > PACK_TARGET_BYTES) flush();
       const pad = (8 - (body.length % 8)) % 8;
       entries[it.hex] = [packs.length, size, body.length, cellIndex];
+      stored.set(content, [packs.length, size, body.length]);
       chunk.push(body);
       if (pad) chunk.push(Buffer.alloc(pad));
       size += body.length + pad;
@@ -420,12 +435,16 @@ async function pack(slug: string, rec: Recorded, programs: NonNullable<Awaited<R
     cells: cells.length,
     packs: packs.length,
     geometryBytes: geometry,
+    /** The arrays the entries decode to (what format 1 stored, give or take headers and padding). */
+    geometryDecodedBytes: decodedBytes,
+    sharedEntries: shared,
+    sharedEntryBytes: sharedBytes,
     programs: Object.fromEntries(Object.entries(programFiles).map(([t, f]) => [t, { programs: f!.programs, bytes: f!.bytes }])),
     manifestBytes: statSync(join(root, 'manifest.json')).size,
     total: sizes,
   };
   writeFileSync(join(root, 'cook-report.json'), JSON.stringify(summary, null, 1));
-  log(`${slug}: ${summary.entries} entries (${summary.unplaced} unplaced) in ${cells.length} cells, ${packs.length} packs, geometry ${MB(geometry)}; ` + `programs ${Object.entries(programFiles).map(([t, f]) => `${t} ${f!.programs}`).join(', ')}; ` + `total ${sizes.files} files ${MB(sizes.bytes)} (gzip ${MB(sizes.gzip)}, brotli ${MB(sizes.brotli)}), largest file ${MB(sizes.largest)}`);
+  log(`${slug}: ${summary.entries} entries (${summary.unplaced} unplaced) in ${cells.length} cells, ${packs.length} packs, geometry ${MB(geometry)} (decoded ${MB(decodedBytes)}, ${shared} identical entries stored once, ${MB(sharedBytes)}); ` + `programs ${Object.entries(programFiles).map(([t, f]) => `${t} ${f!.programs}`).join(', ')}; ` + `total ${sizes.files} files ${MB(sizes.bytes)} (gzip ${MB(sizes.gzip)}, brotli ${MB(sizes.brotli)}), largest file ${MB(sizes.largest)}`);
   if (INSTALL) {
     const dest = join(resolve(INSTALL), 'cooked', slug);
     rmSync(dest, { recursive: true, force: true });

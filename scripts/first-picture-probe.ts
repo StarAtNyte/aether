@@ -49,8 +49,26 @@ const T0 = Date.now();
 const log = (s: string): void => void process.stdout.write(`[${((Date.now() - T0) / 1000).toFixed(1)}s] ${s}\n`);
 
 /** Page instrumentation: GL program calls, link latency, the first picture. */
+// Memory of the whole capped scope (browser, server, this script), sampled each 250 ms; reset per run.
+let cgDir: string | null = null;
+try {
+  cgDir = `/sys/fs/cgroup${readFileSync('/proc/self/cgroup', 'utf8').trim().split(':').pop()}`;
+} catch {
+  cgDir = null;
+}
+let cgPeak = 0;
+setInterval(() => {
+  if (!cgDir) return;
+  try {
+    cgPeak = Math.max(cgPeak, Number(readFileSync(`${cgDir}/memory.current`, 'utf8')));
+  } catch {
+    // not in a cgroup v2 scope
+  }
+}, 250).unref();
+
 const INSTR = `(() => {
-  const S = (globalThis.__probe = { gl: {}, links: [], firstPicture: -1, progAtFirst: -1, linksAtFirst: -1 });
+  const S = (globalThis.__probe = { gl: {}, links: [], firstPicture: -1, progAtFirst: -1, linksAtFirst: -1, heapMax: 0 });
+  setInterval(() => { const m = performance.memory; if (m && m.usedJSHeapSize > S.heapMax) S.heapMax = m.usedJSHeapSize; }, 200);
   S.bigCalls = [];
   const add = (k, ms) => { const e = S.gl[k] || (S.gl[k] = { n: 0, ms: 0, max: 0 }); e.n++; e.ms += ms; if (ms > e.max) e.max = ms; if (ms > 15 && S.firstPicture < 0) S.bigCalls.push([Math.round(performance.now()), k, Math.round(ms)]); };
   const P = WebGL2RenderingContext.prototype;
@@ -151,6 +169,7 @@ async function main(): Promise<void> {
         // The player's handle under the studio's name, so the rest of the probe reads either.
         if (player) await ctx.addInitScript({ content: "Object.defineProperty(window, '__aether', { configurable: true, get() { return window.__aetherPlayer; } });" });
         await ctx.addInitScript({ content: INSTR });
+        cgPeak = 0;
         const page = ctx.pages()[0] ?? (await ctx.newPage());
         page.on('pageerror', (e) => log(`pageerror ${e.message.slice(0, 160)}`));
         const cdp = await ctx.newCDPSession(page);
@@ -208,6 +227,7 @@ async function main(): Promise<void> {
           const after = links.filter((l) => l.at >= P.firstPicture);
           return {
             firstPictureMs: Math.round(P.firstPicture),
+            heapMaxMB: Math.round((P as unknown as { heapMax: number }).heapMax / 1048576),
             marks,
             timeline: all.map(([k, t]) => `${t} ${k}`),
             states: P.states.map(([t, s]) => `${t} ${s}`),
@@ -325,7 +345,9 @@ async function main(): Promise<void> {
         const gpuMain = gpuTasks(tracePath);
         if (process.env['KEEP_TRACE'] !== '1') rmSync(tracePath, { force: true });
         if (gpuMain) log(`${run}: GPU-process tasks > 50 ms before the first picture ${gpuMain.before.n} (${gpuMain.before.ms} ms, longest ${gpuMain.before.max}), after ${gpuMain.after.n} (${gpuMain.after.ms} ms, longest ${gpuMain.after.max})`);
-        results[run] = { ...load, orbit, gpuMain };
+        const cgPeakMB = Math.round(cgPeak / 1048576);
+        log(`${run}: JS heap peak ${load.heapMaxMB} MB, scope peak ${cgPeakMB} MB`);
+        results[run] = { ...load, orbit, gpuMain, cgPeakMB };
       } finally {
         await ctx.close().catch(() => undefined);
       }

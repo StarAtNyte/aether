@@ -18,6 +18,11 @@ import type { GeneratorOutput, SandboxRunner } from '../types';
 import { checkOutputShape, parseGenReply, rawTransfer, type GenRequest, type LaneTimes } from './gen-protocol';
 import type { LaneCookConfig } from '../cook/format';
 
+/** `__AETHER_GEOMETRY_COMPRESS` (page global, on unless false): the lanes write compressed cache entries (ddc-codec.ts). */
+function compressSwitch(): boolean {
+  return (globalThis as { __AETHER_GEOMETRY_COMPRESS?: unknown }).__AETHER_GEOMETRY_COMPRESS !== false;
+}
+
 /** The generation machinery failed (not the generator): fall back. */
 export class LaneFailure extends Error {
   override name = 'LaneFailure';
@@ -119,7 +124,7 @@ export class GenPool {
 
   private postCook(w: WorkerLike): void {
     try {
-      w.postMessage({ type: 'cook', config: this.cook ?? {} }, []);
+      w.postMessage({ type: 'cook', config: { ...(this.cook ?? {}), compress: compressSwitch() } }, []);
     } catch {
       // The lane is gone: its replacement gets the configuration.
     }
@@ -226,7 +231,7 @@ export class GenPool {
         w.onerror = () => this.crash(lane, new LaneFailure('a generation worker crashed'));
         lane.worker = w;
         lane.ready = false;
-        if (this.cook) this.postCook(w);
+        if (this.cook || !compressSwitch()) this.postCook(w);
       } catch (e) {
         job.reject(new LaneFailure(`no generation worker: ${e instanceof Error ? e.message : String(e)}`));
         this.pumpSoon();

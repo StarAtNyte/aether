@@ -52,7 +52,7 @@ import {
   type WorldDoc,
 } from '@aether/core';
 import type { GeneratorOutput, GeometrySource, KeyedOutput, MeshPart } from '../types';
-import { SPLIT_SOURCE_KEY, type GeometryCache } from '../geometry/buffer-geometry';
+import { SPLIT_SOURCE_KEY, splitSourceIndices, type GeometryCache } from '../geometry/buffer-geometry';
 import type { MaterialCache } from '../materials/material-cache';
 import { FINISHES } from '@aether/arch';
 import { finishAlbedoScale } from '@aether/procgen';
@@ -2426,8 +2426,8 @@ function updateWorldChain(object: Object3D): void {
 
 /** The positions and indices that match `geometry`'s attributes: its split streams when its UVs split corners, else the part's. */
 function splitSource(geometry: BufferGeometry, part: MeshPart): [Float32Array, Uint32Array] {
-  const split = geometry.userData[SPLIT_SOURCE_KEY] as { positions: Float32Array; indices: Uint32Array } | undefined;
-  return split ? [split.positions, split.indices] : [part.positions, part.indices];
+  const split = geometry.userData[SPLIT_SOURCE_KEY] as { positions: Float32Array; indices: Uint32Array | null } | undefined;
+  return split ? [split.positions, splitSourceIndices(geometry, split)] : [part.positions, part.indices];
 }
 
 /** A node whose meshes stand still: no behaviours, no moving body, no runtime overrides, fully built. */

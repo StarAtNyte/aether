@@ -60,7 +60,7 @@ function manifest(over: Partial<CookManifest> = {}): CookManifest {
 describe('cooked package format', () => {
   it('accepts a well-formed manifest and refuses out-of-range or unsafe ones', () => {
     expect(parseCookManifest(manifest()).ok).toBe(true);
-    expect(parseCookManifest({ ...manifest(), format: 2 }).ok).toBe(false);
+    expect(parseCookManifest({ ...manifest(), format: COOK_FORMAT + 1 }).ok).toBe(false);
     expect(parseCookManifest(manifest({ dir: '../x/' })).ok).toBe(false);
     expect(parseCookManifest(manifest({ packs: [{ file: '/etc/passwd', bytes: 1 }] })).ok).toBe(false);
     expect(parseCookManifest(manifest({ entries: { [HEX('b')]: [0, 1000, 100, 0] } })).ok).toBe(false); // past the pack

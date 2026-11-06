@@ -19,11 +19,19 @@ import { PREPARE_VERSION } from './buffer-geometry';
 
 declare const __AETHER_GEN_VERSION__: string | undefined;
 
-/** Code version salted into every key: the build's hash of the generator and preparation sources. */
-export const DDC_CODE_VERSION = `${typeof __AETHER_GEN_VERSION__ === 'string' ? __AETHER_GEN_VERSION__ : 'dev'}.p${PREPARE_VERSION}`;
+/** Version of the entry encoding (ddc-codec.ts): part of every key and of the cooked package id (bump on any change). */
+export const ENTRY_VERSION = 2;
 
-const CACHE_NAME = 'aether-ddc-v1';
-const META_DB = 'aether-ddc-meta';
+/** Code version salted into every key: the build's hash of the generator and preparation sources. */
+export const DDC_CODE_VERSION = `${typeof __AETHER_GEN_VERSION__ === 'string' ? __AETHER_GEN_VERSION__ : 'dev'}.p${PREPARE_VERSION}.e${ENTRY_VERSION}`;
+
+/** Cache Storage name of the cache's blobs (the cook script reads it). */
+export const DDC_CACHE_NAME = 'aether-ddc-v2';
+const CACHE_NAME = DDC_CACHE_NAME;
+const META_DB = 'aether-ddc-meta-v2';
+/** Stores of earlier versions, deleted when the cache is first opened (their keys can never be read again). */
+const OLD_CACHES = ['aether-ddc-v1'];
+const OLD_META_DBS = ['aether-ddc-meta'];
 const META_STORE = 'entries';
 const FORMAT = 1;
 /** Byte cap of the whole cache (before the quota share). */
@@ -166,7 +174,14 @@ export class Ddc {
   private readonly touched = new Map<string, number>();
   private touchTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(private readonly base: string) {}
+  /**
+   * `decode` reads a stored entry (ddc-codec.ts `decodeEntry` in the lanes; the codec stays out of the page bundle, which
+   * imports this module for {@link DDC_CODE_VERSION}).
+   */
+  constructor(
+    private readonly base: string,
+    private readonly decode: (buf: ArrayBuffer) => Promise<GeneratorOutput> | GeneratorOutput = (b) => decodeOutput(b),
+  ) {}
 
   /** True when Cache Storage and IndexedDB are both usable here. */
   static available(): boolean {
@@ -177,6 +192,14 @@ export class Ddc {
     this.ready ??= (async () => {
       try {
         if (!Ddc.available()) return false;
+        for (const old of OLD_CACHES) void caches.delete(old).catch(() => false);
+        for (const old of OLD_META_DBS) {
+          try {
+            indexedDB.deleteDatabase(old);
+          } catch {
+            // best effort
+          }
+        }
         this.cache = await caches.open(CACHE_NAME);
         const req = indexedDB.open(META_DB, 1);
         req.onupgradeneeded = () => {
@@ -209,7 +232,7 @@ export class Ddc {
         this.known.delete(key);
         return null;
       }
-      const out = decodeOutput(await res.arrayBuffer());
+      const out = await this.decode(await res.arrayBuffer());
       this.touch(key);
       return out;
     } catch {

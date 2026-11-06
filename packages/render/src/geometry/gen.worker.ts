@@ -16,6 +16,7 @@ import type { GeneratorOutput } from '../types';
 import { prepareOutputParts, preparePart } from './buffer-geometry';
 import { prepareSoft } from './soften';
 import { Ddc, ddcKey, encodeOutput, type EncodedOutput } from './ddc';
+import { codecReady, decodeEntry, encodeInner, packEntry, type InnerEntry } from './ddc-codec';
 import { checkOutputShape, outputTransfer, parseGenRequest, type GenReply, type LaneTimes } from './gen-protocol';
 import { LaneCookSource } from '../cook/lane-source';
 import type { LaneCookConfig } from '../cook/format';
@@ -26,7 +27,12 @@ interface Scope {
   location: { href: string };
 }
 const scope = self as unknown as Scope;
-const ddc = Ddc.available() ? new Ddc(scope.location.href) : null;
+const ddc = Ddc.available() ? new Ddc(scope.location.href, decodeEntry) : null;
+/** The meshopt codec, compiled once per lane (entries are encoded with it before a reply and decoded on reads). */
+const codec = codecReady().then(
+  () => true,
+  () => false,
+);
 
 /** Outputs cheaper than this to make, and smaller than {@link STORE_MIN_BYTES}, are not worth a cache entry. */
 const STORE_MIN_MS = 4;
@@ -39,10 +45,13 @@ function message(err: unknown): string {
 /** The cooked package of the world being loaded (null: none), and whether every output is kept (a cook records the world). */
 let cook: LaneCookSource | null = null;
 let keepAll = false;
+/** Whether entries are written compressed (the page's `__AETHER_GEOMETRY_COMPRESS`, sent with the cook configuration). */
+let compress = true;
 
 /** Apply a `cook` configuration message (validated loosely: a malformed index only means misses). */
 function configure(cfg: LaneCookConfig): void {
   keepAll = cfg.keepAll === true;
+  compress = cfg.compress !== false;
   const index = cfg.index;
   cook = index && Array.isArray(index.packs) && index.packs.every((u) => typeof u === 'string') && typeof index.entries === 'object' && index.entries !== null ? new LaneCookSource(index) : null;
 }
@@ -67,8 +76,12 @@ async function cached(key: string, t: LaneTimes, from?: { cooked: boolean }): Pr
     t.read += performance.now() - t0;
     if (entry && checkOutputShape(entry.output)) {
       if (from) from.cooked = true;
-      // Seeded behind the reply; skipped while writes are backed up (the package's HTTP cache still serves a later visit).
-      if (ddc && writeBacklog <= MAX_WRITE_BACKLOG) queueWrite(ddc, key, { blob: new Blob([entry.encoded as Uint8Array<ArrayBuffer>]), bytes: entry.encoded.byteLength });
+      // Seeded behind the reply. While writes are backed up the bytes are not held: the seed reads its entry again from the
+      // package when its turn comes (from the lane's packs or the HTTP cache), so a later visit still finds every entry here.
+      if (ddc) {
+        if (writeBacklog <= MAX_WRITE_BACKLOG) queueWrite(ddc, key, { blob: new Blob([entry.encoded as Uint8Array<ArrayBuffer>]), bytes: entry.encoded.byteLength });
+        else queueSeed(ddc, cook, key);
+      }
       return entry.output;
     }
     return null;
@@ -77,12 +90,23 @@ async function cached(key: string, t: LaneTimes, from?: { cooked: boolean }): Pr
   return null;
 }
 
-/** Write an entry after the reply, one at a time per lane, behind a bounded backlog. */
-function queueWrite(store: Ddc, key: string, e: EncodedOutput): void {
-  writeBacklog += e.bytes;
-  writes = writes.then(() => store.put(key, e)).finally(() => {
-    writeBacklog -= e.bytes;
+/** Seed the cache with a cooked entry once the writes ahead of it are done, reading its bytes from the package then. */
+function queueSeed(store: Ddc, source: LaneCookSource, key: string): void {
+  writes = writes.then(async () => {
+    const bytes = await source.encoded(key);
+    if (bytes) await store.put(key, { blob: new Blob([bytes as Uint8Array<ArrayBuffer>]), bytes: bytes.byteLength });
   });
+}
+
+/** Write an entry after the reply, one at a time per lane, behind a bounded backlog. */
+function queueWrite(store: Ddc, key: string, e: EncodedOutput, make?: () => Promise<EncodedOutput>): void {
+  writeBacklog += e.bytes;
+  writes = writes
+    .then(async () => store.put(key, make ? await make() : e))
+    .catch(() => undefined)
+    .finally(() => {
+      writeBacklog -= e.bytes;
+    });
 }
 
 function reply(msg: GenReply, out?: GeneratorOutput): void {
@@ -98,19 +122,29 @@ async function finish(id: number, key: string | null, out: GeneratorOutput, ms: 
   // only copy kept, and it is written after the reply, so the page never waits on the cache.
   const bytes = outputBytes(out);
   let entry: EncodedOutput | null = null;
+  let inner: InnerEntry | null = null;
   if (ddc && key && (always || keepAll || ms >= STORE_MIN_MS || bytes >= STORE_MIN_BYTES)) {
     // Bounded backlog of entries waiting for storage: wait for the writes first rather than pile up memory.
     if (writeBacklog > MAX_WRITE_BACKLOG) await writes;
     t0 = performance.now();
     try {
-      entry = encodeOutput(out);
+      // Compressed (ddc-codec.ts): the arrays are quantized and copied now, deflated after the reply.
+      if (compress && (await codec)) inner = encodeInner(out);
+      else entry = encodeOutput(out);
     } catch {
       entry = null;
+      inner = null;
     }
     t.encode += performance.now() - t0;
   }
   reply({ type: 'result', id, ok: true, output: out, hit: false, times: t }, out);
-  if (entry && ddc && key) queueWrite(ddc, key, entry);
+  if (ddc && key) {
+    if (entry) queueWrite(ddc, key, entry);
+    else if (inner) {
+      const pending = inner;
+      queueWrite(ddc, key, { blob: new Blob([]), bytes: pending.inner.byteLength }, () => packEntry(pending));
+    }
+  }
 }
 
 /** Encoded entries waiting to be written, in bytes, and the chain of writes (one at a time per lane). */

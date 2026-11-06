@@ -53,8 +53,13 @@ export interface PreparedPart {
   uvs: Float32Array;
   colors: Float32Array | null;
   splat: Float32Array | null;
-  /** 32-bit indices matching `positions` when the corners were split (null: not split, the part's own apply). */
+  /**
+   * 32-bit indices matching `positions` when the corners were split and `indices` are those same 32-bit indices; null
+   * otherwise (16-bit indices are widened on demand from the geometry's index, see `split`).
+   */
   splitIndices: Uint32Array | null;
+  /** True when the corners were split for the UVs: `positions` are not the part's own (null `splitIndices`: widen `indices`). */
+  split?: boolean;
   /** Bounding box (min xyz, max xyz) and sphere (centre xyz, radius); null: computed when the geometry is built. */
   bounds: Float64Array | null;
   /** For parts big enough for virtual geometry: true when the part is a kit of small separate pieces. */

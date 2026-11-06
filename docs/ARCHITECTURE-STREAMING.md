@@ -569,7 +569,7 @@ cooked/<slug>/<id>/programs/<tier>.json   program set of a tier, immutable
 (a build hash of procgen, arch, core and render's geometry code) plus the preparation version.
 
 **Manifest** (`CookManifest`, `cook/format.ts`; validated in full by `parseCookManifest`):
-- `format` (1), `irHash`, `genVersion`, `dir` (`<id>/`), `cookedAt`, `world` (id, name, entity count);
+- `format` (2), `irHash`, `genVersion`, `dir` (`<id>/`), `cookedAt`, `world` (id, name, entity count);
 - `opening` (position, target, fov) and `startMode` (`play` | `walkthrough` | `orbit`, also an additive IR field next to
   `opening`), `profile` (`game` | `walkthrough` | `showcase` | `vr`);
 - `partition`: the world's grid (`streaming/cell-grid.ts` `partitionFor`, from the top-level entities, as scene-sync);
@@ -581,10 +581,33 @@ cooked/<slug>/<id>/programs/<tier>.json   program set of a tier, immutable
 - `lightmap`: an optional bundled lightmap folder (`lightmap-controller` `staticBase`), relative to the cook folder. Null
   until the publish bake exists.
 
-**Geometry packs.** Each entry is a generator output in the geometry cache's own encoding (`geometry/ddc.ts`
-`encodeOutput`: header JSON plus typed arrays, prepared render streams included), 8-byte aligned. Entries go to the cell of
-the nearest entity that uses them; outputs no top-level entity places (spawn templates, scatter pieces) go to `p`. A pack
-is cut at 4 MB (`PACK_TARGET_BYTES`); a larger entry gets a pack of its own.
+**Geometry packs.** Each entry is a generator output in the geometry cache's own encoding, 8-byte aligned. Entries go to
+the cell of the nearest entity that uses them; outputs no top-level entity places (spawn templates, scatter pieces) go to
+`p`. A pack is cut at 4 MB (`PACK_TARGET_BYTES`); a larger entry gets a pack of its own. Entries with identical bytes are
+stored once: later keys point at the first copy.
+
+**Entry encoding, format 2** (`geometry/ddc-codec.ts`, manifest `format` 2, `ENTRY_VERSION` 2 in every key and package id;
+`__AETHER_GEOMETRY_COMPRESS = false` writes format 1, which is still read). Static hosts do not compress `.bin`, so the
+entry compresses itself. Layout: `u32 'AEQ2' | u32 inner length | gzip(inner)`; the inner part is
+`u32 header length | header JSON | blobs`, the header as in format 1 (the output as JSON, each typed array a `{ "$a": i }`
+into a table), table rows `[type, offset, bytes, count, codec, param]`. Each array is coded by the property holding it:
+
+| Property | Codec | Error |
+|---|---|---|
+| `positions`, hull `points` | snapped to a 2^-11 m grid, meshopt exponential filter (one exponent per component), vertex codec; past 4,096 m lossless | at most 0.25 mm |
+| `normals` | meshopt octahedral filter, 12 bits a component, vertex codec; not unit length (zero normals): exponential on a 2^-14 grid | under 0.06° |
+| `uvs` (metre UVs, atlases) | 2^-16 grid, exponential filter, vertex codec | 7.6e-6 (a 4,096 px atlas: 1/32 texel) |
+| `colors`, `splat` | 2^-12 grid, exponential filter, vertex codec | 1.2e-4 |
+| heightfield `heights` | 2^-16 grid | 7.6e-6 of the height |
+| triangle `indices` | meshopt index codec (triangles may come back rotated; order and winding kept) | none |
+| values equal to an earlier array (16-bit indices and the 32-bit ones they came from, trimesh copies of a part's streams) | a reference to it (the same type shares the decoded array) | none |
+| anything else | meshopt vertex codec, lossless, or raw | none |
+
+The values are snapped before the filter, so a part's raw positions and its split prepared positions decode to the same
+numbers and no crack opens between them. The codec (meshopt encoder and decoder, about 15 kB gzip) is imported only by the
+generation lanes, the cook script and tests; the page bundle does not grow. Encoding runs in the lane before the reply (the
+arrays are quantized and copied), the deflate after it. Prepared parts no longer carry a 32-bit copy of 16-bit split
+indices (`PREPARE_VERSION` 3): the one reader, cluster LOD of big parts, widens the geometry's index when it needs it.
 
 **Program sets** (`CookedProgramSet`): `{ format, tier, boot, pairs, sources }`. `pairs` are `[vertex hash, fragment
 hash]` in `gpu/program-cache.ts` `sourceHash` form, `sources` the exact GLSL three generated, as the program cache records
@@ -604,7 +627,8 @@ gzip and brotli sizes. `--install=<dist>` copies it into a dist.
    `window.__aetherCook`.
 2. The geometry index goes to the generation lanes (`GenPool.setCook`). A lane looks up the geometry cache, then the
    package: it fetches a pack once (16 MB of packs kept per lane), decodes the entry, answers, and seeds the geometry cache with it
-   behind the reply. No generator, sandbox or validation runs. An entry that fails generates as before.
+   behind the reply. While the lane's writes are backed up (16 MB), a seed waits its turn and reads its bytes from the
+   package again then, rather than being skipped. No generator, sandbox or validation runs. An entry that fails generates as before.
 3. The program sets seed the program cache (`cookedProgramStore`). The boot pre-warm links the tier's cooked set, the
    boot pairs first, and keeps submitting them after the world's compile begins (`ProgramStore.boot`). Both are written
    through to IndexedDB, so the session's save, a later visit and the editor's Remix keep them.
@@ -654,7 +678,7 @@ The low and high sets reach the set cap (`SET_CAP` 64 / 128), so some programs o
      configurable. Packs are immutable, so long cache lifetimes are free.
   2. Precompressed `.bin.br` siblings, served with `content-encoding: br` (the local server already serves `.br`
      siblings; `scripts/precompress.ts`).
-  3. Stage 5's quantization plus meshopt, about 4-8 times smaller, before anything ships at Lisbon's size.
+  3. Quantization plus meshopt (format 2, above): done, Lisbon's geometry 520 to 72 MB.
 - Until then, packages stay out of git (`cooked/` is ignored) and are installed into a dist by hand.
 
 Hooks left for later work: `cells`/`packs` per cell, for cell streaming and unloading; `lightmap`, for the publish bake;

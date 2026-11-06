@@ -4,7 +4,7 @@
  * immutable) and kept while it is useful, under a byte cap. Every failure reads as a miss: the lane then generates.
  */
 import type { GeneratorOutput } from '../types';
-import { decodeOutput } from '../geometry/ddc';
+import { decodeEntry } from '../geometry/ddc-codec';
 import type { LaneCookIndex } from './format';
 
 /** Pack bytes a lane keeps in memory at once (least recently used dropped first). */
@@ -55,13 +55,21 @@ export class LaneCookSource {
       return null;
     }
     try {
-      const output = decodeOutput(buf, off, len);
+      const output = await decodeEntry(buf, off, len);
       this.stats.hits++;
       return { output, encoded: new Uint8Array(buf, off, len) };
     } catch {
       this.stats.misses++;
       return null;
     }
+  }
+
+  /** The stored bytes of `key` (a copy), or null: what seeds the geometry cache when it could not be written at once. */
+  async encoded(key: string): Promise<Uint8Array | null> {
+    if (!this.has(key)) return null;
+    const [pack, off, len] = this.index.entries[key] as [number, number, number, number];
+    const buf = await this.pack(pack);
+    return buf && off + len <= buf.byteLength ? new Uint8Array(buf.slice(off, off + len)) : null;
   }
 
   private pack(i: number): Promise<ArrayBuffer | null> {

@@ -28,7 +28,7 @@ export class InvalidMeshError extends Error {
 const MAX_UINT16_VERTICES = 65_536;
 
 /** Version of {@link preparePart}'s output: part of the persistent geometry cache key (bump on any change). */
-export const PREPARE_VERSION = 2;
+export const PREPARE_VERSION = 3;
 
 /**
  * Whether a part is a kit of small pieces (see virtual/kit.ts), computed only for parts big enough to be drawn as
@@ -128,14 +128,17 @@ export function preparePart(part: MeshPart): PreparedPart | null {
     const r = metreUvMesh({ positions, normals, indices, colors: hasColors ? colors : null, uvs: authored ? (part.uvs as Float32Array) : null });
     const n = r.positions.length / 3;
     const split = r.positions !== positions;
+    const narrowed = narrowIndices(r.indices, n);
     return {
       positions: r.positions,
       normals: r.normals,
-      indices: narrowIndices(r.indices, n),
+      indices: narrowed,
       uvs: r.uvs,
       colors: r.colors,
       splat: null,
-      splitIndices: split ? r.indices : null,
+      // A 32-bit copy of 16-bit indices is not kept: the few readers (cluster LOD of big parts) widen the index on demand.
+      splitIndices: split && narrowed === r.indices ? r.indices : null,
+      ...(split ? { split: true } : {}),
       bounds: streamBounds(r.positions),
       ...withKit(part),
     };
@@ -186,7 +189,7 @@ function preparedGeometry(p: PreparedPart): BufferGeometry {
   if (p.indices.length > 0) g.setIndex(new BufferAttribute(p.indices, 1));
   g.setAttribute('uv', new BufferAttribute(p.uvs, 2));
   // Corners were split: anything that pairs the part's own arrays with this geometry (cluster LOD) must use these instead.
-  if (p.splitIndices) g.userData[SPLIT_SOURCE_KEY] = { positions: p.positions, indices: p.splitIndices };
+  if (p.splitIndices || p.split) g.userData[SPLIT_SOURCE_KEY] = { positions: p.positions, indices: p.splitIndices };
   const b = p.bounds;
   if (b && b.length === 10) {
     const box = new Box3();
@@ -231,8 +234,18 @@ export function partToBufferGeometry(part: MeshPart): BufferGeometry {
   return g;
 }
 
-/** `userData` key of a geometry whose vertices were split for its UVs: `{ positions, indices }` matching its attributes. */
+/**
+ * `userData` key of a geometry whose vertices were split for its UVs: `{ positions, indices }` matching its attributes
+ * (`indices` null: the geometry's own index, widened to 32 bits by the reader, see {@link splitSourceIndices}).
+ */
 export const SPLIT_SOURCE_KEY = 'aetherSplitSource';
+
+/** The 32-bit indices matching a split geometry's attributes: the stored ones, else its index widened. */
+export function splitSourceIndices(geometry: BufferGeometry, split: { indices: Uint32Array | null }): Uint32Array {
+  if (split.indices) return split.indices;
+  const a = geometry.index?.array;
+  return a instanceof Uint32Array ? a : Uint32Array.from(a ?? []);
+}
 
 /** Cache key of the geometry of part `index` of the output identified by `outputKey`. */
 export function partKey(outputKey: string, index: number): string {

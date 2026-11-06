@@ -20,7 +20,7 @@ import { stableStringify } from '@aether/core';
 import type { RenderTier } from '../gpu/finishing';
 
 /** Format of the manifest and of every file it names. */
-export const COOK_FORMAT = 1;
+export const COOK_FORMAT = 2;
 /** Packs are cut at about this size (an entry larger than this gets a pack of its own). */
 export const PACK_TARGET_BYTES = 4 * 1024 * 1024;
 /** Largest manifest a viewer reads. */
@@ -253,4 +253,6 @@ export interface LaneCookConfig {
   keepAll?: boolean;
   /** A cooked package to read from before generating. */
   index?: LaneCookIndex | null;
+  /** Write geometry-cache entries compressed (ddc-codec.ts; `__AETHER_GEOMETRY_COMPRESS`, default true). */
+  compress?: boolean;
 }
