@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cookedProgramStore, openCookedPackage } from '../src/cook/cooked';
-import { COOK_FORMAT, parseCookedProgramSet, parseCookManifest, worldIrHash, type CookedProgramSet, type CookManifest } from '../src/cook/format';
+import { COOK_FORMAT, encodeProgramSetFile, parseCookedProgramSet, parseCookManifest, programSetLines, PROGRAM_SET_FORMAT, readProgramSetFile, worldIrHash, type CookedProgramSet, type CookManifest } from '../src/cook/format';
 import { LaneCookSource } from '../src/cook/lane-source';
 import { decodeOutput, encodeOutput } from '../src/geometry/ddc';
 import { ProgramCache, sourceHash, type GlApi, type ProgramStore, type StoredSet } from '../src/gpu/program-cache';
@@ -78,6 +78,34 @@ describe('cooked package format', () => {
     expect(parseCookedProgramSet({ ...set, boot: 9 }, 'high')?.boot).toBe(0);
   });
 
+  it('stores each line of GLSL once and rebuilds the exact sources from a gzipped file (format 3), and still reads format 2', async () => {
+    const common = Array.from({ length: 50 }, (_, i) => `float f${i}(float x) { return x * ${i}.0; }`).join('\n');
+    const codes = ['#version 300 es\nvoid main() {}', `#version 300 es\n${common}\nout vec4 c;\nvoid main() { c = vec4(1.0); }`, `#version 300 es\n${common}\nout vec4 c;\nvoid main() { c = vec4(0.0); }\n`, ''];
+    const sources = Object.fromEntries(codes.map((c) => [sourceHash(c), c]));
+    const pairs: Array<[string, string]> = [[sourceHash(codes[0]!), sourceHash(codes[1]!)], [sourceHash(codes[0]!), sourceHash(codes[2]!)], [sourceHash(codes[3]!), sourceHash(codes[1]!)]];
+    const plain = { tier: 'medium' as const, boot: 2, pairs, sources };
+    const lines = programSetLines(plain);
+    // The 50 shared lines are stored once, and each source is a few runs.
+    expect(lines.lines.length).toBeLessThan(60);
+    expect(lines.sources[sourceHash(codes[2]!)]!.length).toBeLessThanOrEqual(8);
+    const bytes = await encodeProgramSetFile(plain);
+    expect(bytes[0]).toBe(0x1f);
+    const back = parseCookedProgramSet(await readProgramSetFile(bytes), 'medium');
+    expect(back?.format).toBe(PROGRAM_SET_FORMAT);
+    expect(back?.sources).toEqual(sources);
+    expect(back?.pairs).toEqual(pairs);
+    expect(back?.boot).toBe(2);
+    // A host that took the gzip off already: the JSON is read as it is.
+    expect(parseCookedProgramSet(await readProgramSetFile(new TextEncoder().encode(JSON.stringify(lines))), 'medium')?.sources).toEqual(sources);
+    // Format 2 (plain JSON, cooks before this one).
+    const v2 = parseCookedProgramSet(await readProgramSetFile(new TextEncoder().encode(JSON.stringify({ format: COOK_FORMAT, ...plain }))), 'medium');
+    expect(v2?.sources).toEqual(sources);
+    // Runs past the lines, or a source that does not rebuild to its hash's length, are refused.
+    expect(parseCookedProgramSet({ ...lines, sources: { ...lines.sources, [sourceHash(codes[1]!)]: [0, lines.lines.length + 1] } }, 'medium')).toBeNull();
+    expect(parseCookedProgramSet({ ...lines, sources: { ...lines.sources, [sourceHash(codes[1]!)]: [0, 1] } }, 'medium')).toBeNull();
+    await expect(readProgramSetFile(new Uint8Array([0x1f, 0x8b, 1, 2, 3]))).rejects.toThrow();
+  });
+
   it('hashes the IR canonically, without the opening and the start mode', async () => {
     const a = await worldIrHash({ name: 'x', seed: 1, entities: { a: 1 } });
     expect(await worldIrHash({ entities: { a: 1 }, seed: 1, name: 'x' })).toBe(a);
@@ -132,19 +160,57 @@ function cookedSet(tier: RenderTier, pairs: Array<[string, string]>, boot: numbe
 }
 
 describe('the cooked program store', () => {
-  it('serves the cooked set on top of the stored one and writes it through', async () => {
+  it("serves the browser's own set, the cooked boot pairs and the rest apart, and writes nothing cooked into it", async () => {
     const inner = memoryStore({ medium: { session: 4, entries: [{ v: sourceHash('OLDV'), f: sourceHash('OLDF'), uses: 2, last: 4 }] } }, new Map([[sourceHash('OLDV'), 'OLDV'], [sourceHash('OLDF'), 'OLDF']]));
     const store = cookedProgramStore(inner, async (t) => (t === 'medium' ? cookedSet('medium', [['V1', 'F1'], ['V2', 'F2']], 1) : null));
+    // The browser's own set is not displaced by the cooked pairs.
     const set = await store.getSet('medium');
-    expect(set?.entries.map((e) => e.v)).toEqual([sourceHash('V1'), sourceHash('V2'), sourceHash('OLDV')]);
+    expect(set?.entries.map((e) => e.v)).toEqual([sourceHash('OLDV')]);
+    expect([...((await store.boot!('medium')) ?? [])]).toEqual([`${sourceHash('V1')}:${sourceHash('F1')}`]);
+    expect([...((await store.later!('medium')) ?? [])]).toEqual([`${sourceHash('V2')}:${sourceHash('F2')}`]);
     const src = await store.getSources([sourceHash('V2'), sourceHash('OLDF')]);
     expect(src.get(sourceHash('V2'))).toBe('V2');
     expect(src.get(sourceHash('OLDF'))).toBe('OLDF');
-    expect([...((await store.boot!('medium')) ?? [])]).toEqual([`${sourceHash('V1')}:${sourceHash('F1')}`]);
     await store.putSet('medium', set!);
-    expect(inner.sources.get(sourceHash('F2'))).toBe('F2');
-    expect(inner.sets.medium?.entries).toHaveLength(3);
-    expect(await store.getSet('low')).toBeNull();
+    expect(inner.sources.has(sourceHash('F2'))).toBe(false);
+    expect(inner.sets.medium?.entries).toHaveLength(1);
+    expect(await store.boot!('low')).toBeNull();
+  });
+
+  it('links the boot pairs of the tier the world settles on, and the rest of the cooked set only after the first picture', async () => {
+    vi.useFakeTimers();
+    const linked: string[] = [];
+    const gl = {
+      VERTEX_SHADER: 1, FRAGMENT_SHADER: 2, LINK_STATUS: 3,
+      isContextLost: () => false,
+      createProgram: () => ({ shaders: [] as string[] }),
+      createShader: (t: number) => ({ t, src: '' }),
+      shaderSource: (sh: { src: string }, src: string) => void (sh.src = src),
+      compileShader() {},
+      attachShader: (p: { shaders: string[] }, s: { src: string }) => void p.shaders.push(s.src),
+      detachShader() {},
+      linkProgram: (p: { shaders: string[] }) => void linked.push(p.shaders.join('+')),
+      getProgramParameter: () => true,
+      deleteShader() {}, deleteProgram() {},
+    };
+    const sets: Partial<Record<RenderTier, CookedProgramSet>> = {
+      medium: cookedSet('medium', [['MV1', 'MF1'], ['MV2', 'MF2']], 2),
+      low: cookedSet('low', [['LV1', 'LF1'], ['LV2', 'LF2'], ['LV3', 'LF3']], 2),
+    };
+    const store = cookedProgramStore(memoryStore(), async (t) => sets[t] ?? null);
+    const cache = new ProgramCache(gl as unknown as WebGL2RenderingContext, { COMPLETION_STATUS_KHR: 42 }, store, gl as unknown as GlApi);
+    const boot = cache.prewarm('medium');
+    // The world turns out heavy before the medium set loaded: the low tier's boot pairs link instead.
+    cache.setTier('low');
+    await boot;
+    await vi.advanceTimersByTimeAsync(100);
+    expect(linked.sort()).toEqual(['LF1+LV1', 'LF2+LV2']);
+    cache.markFirstPicture();
+    await cache.prime([], () => true);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(linked).toContain('LF3+LV3');
+    expect(linked.some((l) => l.startsWith('M'))).toBe(false);
+    cache.dispose();
   });
 
   it("keeps linking a cooked world's boot set after the world's compile begins", async () => {

@@ -26,8 +26,9 @@ import { outputBytes, proceduralOutputKey } from '@aether/procgen';
 import { decodeEntry } from '../packages/render/src/geometry/ddc-codec';
 import { DDC_CACHE_NAME } from '../packages/render/src/geometry/ddc';
 import { assignCell, cellBounds, partitionFor, PERSISTENT_CELL, type CellPartition } from '../packages/render/src/streaming/cell-grid';
-import { COOK_FORMAT, COOK_PROFILES, cookPackageId, PACK_TARGET_BYTES, type CookCell, type CookedProgramSet, type CookFile, type CookManifest, type CookProfile, type StartMode } from '../packages/render/src/cook/format';
+import { COOK_FORMAT, COOK_PROFILES, cookPackageId, PACK_TARGET_BYTES, programSetLines, type CookCell, type CookedProgramSet, type CookFile, type CookManifest, type CookProfile, type StartMode } from '../packages/render/src/cook/format';
 import type { RenderTier } from '../packages/render/src/gpu/finishing';
+import { sourceHash } from '../packages/render/src/gpu/program-cache';
 import { TEMPLATE_PUBLISH } from '../apps/studio/src/showcase/publish';
 import * as env from '../tests/e2e/support/env';
 
@@ -83,7 +84,7 @@ async function drainWrites(page: Page): Promise<number> {
 }
 
 /** One recording session on `tier`: load, orbit, play (games), save the program set. */
-async function session(server: env.TestServer, profileDir: string, slug: string, tier: RenderTier | 'auto', last: boolean, sink: (key: string, body: Buffer) => void): Promise<{ rec: Recorded; tier: RenderTier; boot: string[]; programs: { sets: Record<string, { entries: Array<{ v: string; f: string; uses: number; last: number }> } | null>; sources: Record<string, string> } | null }> {
+async function session(server: env.TestServer, profileDir: string, slug: string, tier: RenderTier | 'auto', last: boolean, sink: (key: string, body: Buffer) => void): Promise<{ rec: Recorded; tier: RenderTier; boot: Array<[string, string]>; bootSources: Record<string, string>; programs: { sets: Record<string, { entries: Array<{ v: string; f: string; uses: number; last: number }> } | null>; sources: Record<string, string> } | null }> {
   const ctx = await launch(profileDir);
   try {
     const page = ctx.pages()[0] ?? (await ctx.newPage());
@@ -107,24 +108,21 @@ async function session(server: env.TestServer, profileDir: string, slug: string,
     });
     if (!info.record) throw new Error('the page did not expose the recording (is this a build with the cook route?)');
     log(`${slug} ${tier}: loaded (${info.path}, tier in effect ${info.tier}, start ${info.startMode})`);
-    // The programs of the load itself (before any orbit or play): a viewer links these first.
-    const boot = await page.evaluate(async (t) => {
-      const pc = ((window as unknown as Win).__aetherPlayer!.simulation!.renderer as unknown as { programCache?: { save(): Promise<void> } }).programCache;
-      await pc?.save();
-      const db = await new Promise<IDBDatabase>((res, rej) => {
-        const q = indexedDB.open('aether-programs');
-        q.onsuccess = () => res(q.result);
-        q.onerror = () => rej(q.error);
-      });
-      const set = await new Promise<{ entries: Array<{ v: string; f: string; last: number }> } | undefined>((res, rej) => {
-        const q = db.transaction('sets').objectStore('sets').get(t);
-        q.onsuccess = () => res(q.result as never);
-        q.onerror = () => rej(q.error);
-      });
-      db.close();
-      const top = Math.max(0, ...(set?.entries ?? []).map((e) => e.last));
-      return (set?.entries ?? []).filter((e) => e.last === top).map((e) => `${e.v}:${e.f}`);
-    }, info.tier);
+    // The programs of the load itself (before any orbit or play), in the order it used them, all of them (the stored set is
+    // capped and later sessions would push them out): a viewer on this tier links these first.
+    const bootSources: Record<string, string> = {};
+    const boot = (
+      await page.evaluate(async (t) => {
+        const pc = ((window as unknown as Win).__aetherPlayer!.simulation!.renderer as unknown as { programCache?: { save(): Promise<void>; sessionPairs(t: string): Array<[string, string]> } }).programCache;
+        await pc?.save();
+        return pc?.sessionPairs(t) ?? [];
+      }, info.tier)
+    ).map(([v, f]) => {
+      const hv = sourceHash(v), hf = sourceHash(f);
+      bootSources[hv] = v;
+      bootSources[hf] = f;
+      return [hv, hf] as [string, string];
+    });
     // An orbit around the opening view: what a viewer meets in the first seconds.
     await page.evaluate(async () => {
       const ren = (window as unknown as Win).__aetherPlayer!.simulation!.renderer as unknown as { camera: { position: { x: number; y: number; z: number } }; contentSphere?: { center?: { x: number; z: number } }; setCameraPose(x: number, y: number, z: number, yaw: number, pitch: number): void };
@@ -196,7 +194,7 @@ async function session(server: env.TestServer, profileDir: string, slug: string,
       }, DDC_CACHE_NAME);
       log(`${slug}: ${sent} geometry entries read`);
     }
-    return { rec: { irHash: info.record.irHash, genVersion: info.record.genVersion, world: info.record.world, startMode: (info.startMode ?? 'orbit') as StartMode, opening: info.opening }, tier: info.tier as RenderTier, boot, programs };
+    return { rec: { irHash: info.record.irHash, genVersion: info.record.genVersion, world: info.record.world, startMode: (info.startMode ?? 'orbit') as StartMode, opening: info.opening }, tier: info.tier as RenderTier, boot, bootSources, programs };
   } finally {
     await ctx.close().catch(() => undefined);
   }
@@ -258,7 +256,7 @@ async function cook(server: env.TestServer, slug: string): Promise<void> {
   const blobs = new Map<string, number>();
   let rec: Recorded | null = null;
   let programs: Awaited<ReturnType<typeof session>>['programs'] = null;
-  const boots = new Map<RenderTier, ReadonlySet<string>>();
+  const boots = new Map<RenderTier, { pairs: Array<[string, string]>; sources: Record<string, string> }>();
   try {
     // First on the automatic tier, as a viewer of this machine's class starts: its boot set is then exact for that tier.
     // Then each tier forced (the boot sets of the others come from those sessions).
@@ -271,7 +269,7 @@ async function cook(server: env.TestServer, slug: string): Promise<void> {
       if (rec && (rec.irHash !== r.rec.irHash || rec.genVersion !== r.rec.genVersion)) throw new Error('the world or the build changed between sessions');
       rec ??= r.rec;
       programs = r.programs ?? programs;
-      if (!boots.has(r.tier)) boots.set(r.tier, new Set(r.boot));
+      if (!boots.has(r.tier)) boots.set(r.tier, { pairs: r.boot, sources: r.bootSources });
     }
   } finally {
     rmSync(prof, { recursive: true, force: true });
@@ -284,7 +282,7 @@ async function cook(server: env.TestServer, slug: string): Promise<void> {
   }
 }
 
-async function pack(slug: string, rec: Recorded, programs: NonNullable<Awaited<ReturnType<typeof session>>['programs']>, boots: ReadonlyMap<RenderTier, ReadonlySet<string>>, blobs: ReadonlyMap<string, number>, blobDir: string): Promise<void> {
+async function pack(slug: string, rec: Recorded, programs: NonNullable<Awaited<ReturnType<typeof session>>['programs']>, boots: ReadonlyMap<RenderTier, { pairs: Array<[string, string]>; sources: Record<string, string> }>, blobs: ReadonlyMap<string, number>, blobDir: string): Promise<void> {
   const world = rec.world;
 
   // Each output to the cell of the nearest entity that uses it (to the opening view); unplaced ones are persistent.
@@ -382,27 +380,34 @@ async function pack(slug: string, rec: Recorded, programs: NonNullable<Awaited<R
   }
 
   const programFiles: CookManifest['programs'] = {};
+  // What the sets would weigh as format 2 JSON (reported against the files written).
+  let programJson = 0;
   for (const tier of TIERS) {
     const set = programs.sets[tier];
-    if (!set || set.entries.length === 0) continue;
-    // The load's own programs first (a viewer links them eagerly), then the rest, each most recent first.
-    const boot = boots.get(tier) ?? new Set<string>();
-    const inBoot = (e: { v: string; f: string }): number => (boot.has(`${e.v}:${e.f}`) ? 0 : 1);
-    const ordered = [...set.entries].sort((p, q) => inBoot(p) - inBoot(q) || q.last - p.last || q.uses - p.uses);
+    const recorded = boots.get(tier);
+    if ((!set || set.entries.length === 0) && !recorded) continue;
+    // The load's own programs first, in the order it used them (a viewer links them eagerly: the first session on this
+    // tier's, the automatic one where it settled here), then the rest of the stored set (orbit, play), most recent first.
     const sources: Record<string, string> = {};
     const pairs: Array<[string, string]> = [];
-    for (const e of ordered) {
-      const v = programs.sources[e.v], f = programs.sources[e.f];
-      if (v === undefined || f === undefined) continue;
-      sources[e.v] = v;
-      sources[e.f] = f;
-      pairs.push([e.v, e.f]);
-    }
-    const file = `programs/${tier}.json`;
-    const body: CookedProgramSet = { format: COOK_FORMAT, tier, boot: pairs.filter(([v, f]) => boot.has(`${v}:${f}`)).length, pairs, sources };
-    const text = JSON.stringify(body);
-    writeFileSync(join(dir, file), text);
-    programFiles[tier] = { file, bytes: Buffer.byteLength(text), programs: pairs.length };
+    const have = new Set<string>();
+    const push = (hv: string, hf: string, v: string | undefined, f: string | undefined): void => {
+      if (v === undefined || f === undefined || have.has(`${hv}:${hf}`)) return;
+      have.add(`${hv}:${hf}`);
+      sources[hv] = v;
+      sources[hf] = f;
+      pairs.push([hv, hf]);
+    };
+    for (const [hv, hf] of recorded?.pairs ?? []) push(hv, hf, recorded!.sources[hv], recorded!.sources[hf]);
+    const bootCount = pairs.length;
+    for (const e of [...(set?.entries ?? [])].sort((p, q) => q.last - p.last || q.uses - p.uses)) push(e.v, e.f, programs.sources[e.v], programs.sources[e.f]);
+    // Each distinct line of GLSL once, sources as runs of lines, gzipped (format 3; static hosts serve .bin as is).
+    const file = `programs/${tier}.bin`;
+    const body: Omit<CookedProgramSet, 'format'> = { tier, boot: bootCount, pairs, sources };
+    const bytes = gzipSync(JSON.stringify(programSetLines(body)), { level: 9 });
+    writeFileSync(join(dir, file), bytes);
+    programFiles[tier] = { file, bytes: bytes.byteLength, programs: pairs.length };
+    programJson += Buffer.byteLength(JSON.stringify({ format: COOK_FORMAT, ...body }));
   }
 
   const startMode = rec.startMode;
@@ -443,11 +448,13 @@ async function pack(slug: string, rec: Recorded, programs: NonNullable<Awaited<R
     sharedEntries: shared,
     sharedEntryBytes: sharedBytes,
     programs: Object.fromEntries(Object.entries(programFiles).map(([t, f]) => [t, { programs: f!.programs, bytes: f!.bytes }])),
+    /** The program sets as plain JSON (format 2), against the files written. */
+    programJsonBytes: programJson,
     manifestBytes: statSync(join(root, 'manifest.json')).size,
     total: sizes,
   };
   writeFileSync(join(root, 'cook-report.json'), JSON.stringify(summary, null, 1));
-  log(`${slug}: ${summary.entries} entries (${summary.unplaced} unplaced) in ${cells.length} cells, ${packs.length} packs, geometry ${MB(geometry)} (decoded ${MB(decodedBytes)}, ${shared} identical entries stored once, ${MB(sharedBytes)}); ` + `programs ${Object.entries(programFiles).map(([t, f]) => `${t} ${f!.programs}`).join(', ')}; ` + `total ${sizes.files} files ${MB(sizes.bytes)} (gzip ${MB(sizes.gzip)}, brotli ${MB(sizes.brotli)}), largest file ${MB(sizes.largest)}`);
+  log(`${slug}: ${summary.entries} entries (${summary.unplaced} unplaced) in ${cells.length} cells, ${packs.length} packs, geometry ${MB(geometry)} (decoded ${MB(decodedBytes)}, ${shared} identical entries stored once, ${MB(sharedBytes)}); ` + `programs ${Object.entries(programFiles).map(([t, f]) => `${t} ${f!.programs}`).join(', ')} (${MB(Object.values(programFiles).reduce((n, f) => n + f!.bytes, 0))}, as JSON ${MB(programJson)}); ` + `total ${sizes.files} files ${MB(sizes.bytes)} (gzip ${MB(sizes.gzip)}, brotli ${MB(sizes.brotli)}), largest file ${MB(sizes.largest)}`);
   if (INSTALL) {
     const dest = join(resolve(INSTALL), 'cooked', slug);
     rmSync(dest, { recursive: true, force: true });

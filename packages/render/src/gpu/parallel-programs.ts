@@ -132,7 +132,17 @@ export function parallelPrograms(backend: Backend, changed: () => void, failed: 
   function create(object: RenderObject, promises: Promise<void>[] | null): void {
     const pipeline = object.pipeline;
     if (disposed || synchronous || (!promises && object.context?.textures?.some(texture => texture.isPMREMTexture || texture.isCubeTexture)) || !gl || !parallel) {
-      pool?.note(pipeline.vertexProgram.code, pipeline.fragmentProgram.code);
+      // Synchronous: a pooled program (pre-warmed) is still taken, completed here instead of linking the same pair again
+      // (Kestrel Outpost, cooked: 8 programs of the boot set linked twice, on this path). A failed one links its own.
+      const pooled = !disposed && gl ? pool?.take(pipeline.vertexProgram.code, pipeline.fragmentProgram.code) ?? null : null;
+      if (pooled && gl && !gl.isContextLost() && gl.getProgramParameter(pooled.program, gl.LINK_STATUS) === true) {
+        backend.set(pipeline, { programGPU: pooled.program, fragmentShader: undefined, vertexShader: undefined });
+        pooled.done();
+        backend._completeCompile(object, pipeline);
+        return;
+      }
+      if (pooled && gl && !gl.isContextLost()) gl.deleteProgram(pooled.program);
+      if (!pooled) pool?.note(pipeline.vertexProgram.code, pipeline.fragmentProgram.code);
       return original.call(backend, object, promises);
     }
     // A program of the pre-warmed set (linked, or linking, ahead of need) is taken as it is: no link here.

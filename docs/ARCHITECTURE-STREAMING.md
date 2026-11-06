@@ -561,7 +561,7 @@ headless browser rather than in Node, so what is cooked is exactly what the brow
 ```
 cooked/<slug>/manifest.json               small, revalidated on every visit
 cooked/<slug>/<id>/packs/<nnnn>.bin       geometry, immutable
-cooked/<slug>/<id>/programs/<tier>.json   program set of a tier, immutable
+cooked/<slug>/<id>/programs/<tier>.bin    program set of a tier, immutable (cooks before format 3: <tier>.json)
 ```
 
 `<id>` is 16 hex of SHA-256(IR hash, geometry code version). The IR hash is SHA-256 of the parsed world's canonical JSON
@@ -617,8 +617,20 @@ indices (`PREPARE_VERSION` 3): the one reader, cluster LOD of big parts, widens 
 
 **Program sets** (`CookedProgramSet`): `{ format, tier, boot, pairs, sources }`. `pairs` are `[vertex hash, fragment
 hash]` in `gpu/program-cache.ts` `sourceHash` form, `sources` the exact GLSL three generated, as the program cache records
-them in IndexedDB. The first `boot` pairs are those the load used before its first picture; the rest came from the orbit
-and play.
+them in IndexedDB. The first `boot` pairs are those the load of that tier used before its first picture, in the order it
+used them, all of them (`ProgramCache.sessionPairs`: not the capped stored set); the rest came from the orbit and play.
+The boot pairs of the tier the automatic session settled on are that session's (the split chain of an integrated GPU);
+the other tiers' are their forced session's.
+
+The file (format 3, `programs/<tier>.bin`, `encodeProgramSetFile` / `readProgramSetFile` / `parseCookedProgramSet`) is
+gzipped JSON `{ format: 3, tier, boot, pairs, lines, sources }`: `lines` is every distinct line of GLSL of the tier once,
+in order of first use, and each source is runs of consecutive lines, `[start, count, start, count, …]`, joined by `\n`.
+A source that does not rebuild to the length its hash ends in is refused. three's sources share most of their lines (the
+lighting and shadow functions, uniform blocks), so Kestrel Outpost's four sets are 11.4 MB as format 2 JSON and about
+0.8 MB as format 3 (a tier 160-220 kB; Lisbon Hills 16.9 MB to 1.0 MB). Each tier's file stands alone (a viewer fetches only its tier's); one dictionary
+for all tiers would make the package a third smaller still but every viewer's download three times larger. The page reads
+format 2 (plain JSON) as before, so packages cooked earlier load unchanged; the manifest is unchanged (format 2, the
+file named by `programs.<tier>.file`).
 
 **Cooking** (`scripts/cook.ts`): one headless session per tier on one browser profile, each opening
 `play.html#t=<slug>&cook=record&tier=<tier>` with `__AETHER_COOK_RECORD` set. That switch makes the generation lanes keep
@@ -635,9 +647,13 @@ gzip and brotli sizes. `--install=<dist>` copies it into a dist.
    package: it fetches a pack once (16 MB of packs kept per lane), decodes the entry, answers, and seeds the geometry cache with it
    behind the reply. While the lane's writes are backed up (16 MB), a seed waits its turn and reads its bytes from the
    package again then, rather than being skipped. No generator, sandbox or validation runs. An entry that fails generates as before.
-3. The program sets seed the program cache (`cookedProgramStore`). The boot pre-warm links the tier's cooked set, the
-   boot pairs first, and keeps submitting them after the world's compile begins (`ProgramStore.boot`). Both are written
-   through to IndexedDB, so the session's save, a later visit and the editor's Remix keep them.
+3. The program set of the tier in effect goes to the program cache (`cookedProgramStore`). The boot pre-warm links its
+   boot pairs first and keeps submitting them after the world's compile begins (`ProgramStore.boot`), then the browser's
+   own stored set of the tier (what it drew there before) until the compile begins; the rest of the cooked set
+   (`ProgramStore.later`) links at rest after the first picture, and other tiers' cooked sets are never fetched. A heavy
+   world starts on its lower tier from the document's entity count, before generation (`startForWeight` in `setWorld`),
+   so the pre-warm targets the tier the load draws with; a tier change before the first picture re-targets it. Nothing
+   cooked is written into IndexedDB: the session's save keeps the programs it used, as on a live load.
 4. The world starts in its `startMode` at its opening (the cook's opening fills in an IR without one). `play` shows the
    title card over the attract tour as before; `orbit` and `walkthrough` stay on the opening view. Their play-mode UI is
    later work.

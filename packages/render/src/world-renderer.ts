@@ -2179,6 +2179,10 @@ export class WorldRenderer {
     const first = world.opening?.position ?? world.player?.spawn;
     const cam = this.perspective.position;
     this.sync.setGenerationFocus(prev && this.framed ? [cam.x, cam.y, cam.z] : first ? [first[0], first[1], first[2]] : null);
+    // A first world's weight on the document (its entities; triangles are known only once generated): a heavy world starts
+    // lower before anything is built, so the program pre-warm links the tier the load will draw with, not the boot guess
+    // (Lisbon Hills, cooked: 93 links of the medium set during generation, then the world settled on low).
+    if (hold && prev === null) this.startForWeight(Object.keys(world.entities).length);
     performance.mark('aether:sync-start');
     const done = this.sync.setWorld(world);
     this.fx.setWorld(world);
@@ -5263,9 +5267,9 @@ export class WorldRenderer {
    * A heavy world on a weak GPU starts on the light end of the ladder (see `startLevel`), before its shaders are linked, so
    * the programs linked are the ones drawn; the governor climbs while frames are fast. Automatic tier only.
    */
-  private startForWeight(): void {
+  private startForWeight(entities = this.sync.entityCount): void {
     if (this.tierChoice !== 'auto' || !this.governor.enabled || this.safe || this.qualityPlan.quality !== 'realtime') return;
-    const level = startLevel(this.gpu.tier, { entities: this.sync.entityCount, triangles: this.sync.sceneTriangles() });
+    const level = startLevel(this.gpu.tier, { entities: Math.max(entities, this.sync.entityCount), triangles: this.sync.sceneTriangles() });
     if (level <= this.governor.level) return;
     this.governor.start(level);
     this.ladderStart = 'heavy';

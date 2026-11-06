@@ -15,6 +15,8 @@
  * - GPU-process tasks over 50 ms (from a trace), before and after the first picture;
  * - an 8 s orbit after the load: frame times, `useProgram` and draws per frame.
  * With `--profile` the last run writes a CPU profile of its load (navigation to the first picture).
+ * With `--links` each run writes `<run>-links.json`: every link's source pair (sourceHash form), when it was submitted, its
+ * latency and its first `useProgram`.
  * With `--dead` each run writes `<run>-dead.json` (programs linked during the load and not drawn with afterwards, each with
  * how it differs from the nearest program in use) and `<run>-late.json` (programs linked after the load).
  * `PROBE_EVAL=<file>` evaluates a script in the page once the load settled and logs its result.
@@ -40,6 +42,8 @@ const wantShots = args.includes('--shots');
 const wantProfile = args.includes('--profile');
 /** `--dead`: report the programs linked during the load that are not drawn with afterwards, and how each differs from the nearest one in use. */
 const wantDead = args.includes('--dead');
+/** `--links`: each run writes `<run>-links.json`, every program link (source hashes, time, latency, first use). */
+const wantLinks = args.includes('--links');
 const slug = args.find((a) => !a.startsWith('--')) ?? 'kestrel-outpost';
 /** `--player`: the standalone player on the template (cooked when the dist has the package); `--live`: its live path. */
 const player = args.includes('--player');
@@ -78,7 +82,12 @@ const INSTR = `(() => {
     pending.set(a[0], t);
     // --dead: keep each linked program's sources, to tell which links the load threw away.
     if (globalThis.__probeDead) { try { const sh = this0().getAttachedShaders(a[0]) || []; const src = sh.map((x) => this0().getShaderSource(x) || ''); S.linked.push({ p: a[0], at: Math.round(t), src, used: false, deleted: false }); } catch {} }
+    // --links: each link's source pair (sourceHash form of gpu/program-cache.ts), to compare what two loads linked.
+    if (globalThis.__probeLinks) { try { const g = this0(); const sh = g.getAttachedShaders(a[0]) || []; let v = '', f = ''; for (const x of sh) { const src = g.getShaderSource(x) || ''; if (g.getShaderParameter(x, 0x8B4F) === 0x8B31) v = hashSrc(src); else f = hashSrc(src); } S.linkPairs.push({ p: a[0], at: Math.round(t), v, f, used: false, ms: -1 }); } catch {} }
   });
+  S.linkPairs = [];
+  const hashSrc = (s) => { let a = 0x811c9dc5, b = 0x01000193 ^ 0x5bd1e995; for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); a = Math.imul(a ^ c, 0x01000193); b = Math.imul(b ^ c, 0x01000197); } return (a >>> 0).toString(16).padStart(8, '0') + (b >>> 0).toString(16).padStart(8, '0') + s.length.toString(16); };
+  if (globalThis.__probeLinks) { const up0 = P.useProgram; P.useProgram = function (p) { if (p) { const e = S.linkPairs.find((x) => x.p === p); if (e && !e.used) e.used = Math.round(performance.now()); } return up0.call(this, p); }; }
   let ctx0 = null;
   const this0 = () => ctx0;
   S.linked = [];
@@ -89,7 +98,7 @@ const INSTR = `(() => {
     P.deleteProgram = function (p) { const e = S.linked.find((x) => x.p === p); if (e) e.deleted = Math.round(performance.now()); return del.call(this, p); };
   }
   // 0x91B1 COMPLETION_STATUS_KHR, 0x8B82 LINK_STATUS: the first query that sees the link done ends its latency.
-  wrap('getProgramParameter', (a, r) => { if ((a[1] === 0x91B1 || a[1] === 0x8B82) && r === true && pending.has(a[0])) { const t = pending.get(a[0]); pending.delete(a[0]); S.links.push({ at: Math.round(t), ms: Math.round(performance.now() - t) }); } });
+  wrap('getProgramParameter', (a, r) => { if ((a[1] === 0x91B1 || a[1] === 0x8B82) && r === true && pending.has(a[0])) { const t = pending.get(a[0]); pending.delete(a[0]); S.links.push({ at: Math.round(t), ms: Math.round(performance.now() - t) }); const e = S.linkPairs.find((x) => x.p === a[0]); if (e && e.ms < 0) e.ms = Math.round(performance.now() - t); } });
   for (const n of ['compileShader', 'useProgram', 'drawArrays', 'drawElements', 'drawArraysInstanced', 'drawElementsInstanced', 'texImage2D', 'texSubImage2D', 'texImage3D', 'texSubImage3D', 'texStorage2D', 'bufferData', 'bufferSubData', 'readPixels', 'clientWaitSync', 'generateMipmap', 'getUniformLocation', 'getUniformBlockIndex', 'uniformBlockBinding']) wrap(n);
   const programs = () => { try { return window.__aether.simulation.renderer.renderer.info.memory.programs; } catch { return -1; } };
   const mo = new MutationObserver(() => {
@@ -164,6 +173,7 @@ async function main(): Promise<void> {
         await ctx.addInitScript({ content: 'globalThis.__name = (f) => f;' });
         if (process.env['GEN_GPU'] === 'intel') await ctx.addInitScript({ content: 'delete Navigator.prototype.gpu; try { delete navigator.gpu; } catch {}' });
         if (wantDead) await ctx.addInitScript({ content: 'globalThis.__probeDead = true;' });
+        if (wantLinks) await ctx.addInitScript({ content: 'globalThis.__probeLinks = true;' });
         // `PROBE_INIT=<js>`: switches set before the page starts (`globalThis.__AETHER_… = …`).
         if (process.env['PROBE_INIT']) await ctx.addInitScript({ content: process.env['PROBE_INIT'] });
         // The player's handle under the studio's name, so the rest of the probe reads either.
@@ -287,6 +297,13 @@ async function main(): Promise<void> {
           return { frames, p50: q(0.5), p95: q(0.95), max: q(1), useProgramPerFrame: Math.round((n('useProgram') - u0) / frames), drawsPerFrame: Math.round((draws() - d0) / frames), linksDuringOrbit: n('linkProgram') - l0, busy, programsAdded: r.renderer.info.memory.programs - prog0 };
         });
         log(`${run}: orbit p50 ${orbit.p50} p95 ${orbit.p95} max ${orbit.max}, useProgram/frame ${orbit.useProgramPerFrame}, draws/frame ${orbit.drawsPerFrame}, links ${orbit.linksDuringOrbit}`);
+        if (wantLinks) {
+          const links = await page.evaluate(() => {
+            const P = (globalThis as unknown as { __probe: { firstPicture: number; linkPairs: Array<{ at: number; v: string; f: string; used: number | false; ms: number }> } }).__probe;
+            return { firstPicture: Math.round(P.firstPicture), links: P.linkPairs.map((l) => ({ at: l.at, v: l.v, f: l.f, used: l.used, ms: l.ms })) };
+          });
+          writeFileSync(join(out, `${run}-links.json`), JSON.stringify(links));
+        }
         if (wantDead) {
           // The view rests after the orbit: the rest phase draws again.
           await page.waitForTimeout(4000);

@@ -764,3 +764,100 @@ Not done: identical arrays across entries (52 MB raw) are still stored per entry
 per key (2 in Lisbon). The tests and typecheck pass and the studio bundle is unchanged (203 / 203 kB; the meshopt codec is
 in the generation worker only). Picking, physics, edits and export read the same float32 arrays as before and were covered
 by the unit tests, not by a browser run.
+
+## Cooked program sets: the tier the load draws with, and smaller files (6 November 2026)
+
+A warm cooked load was slower than a warm live one (Lisbon Hills: 36.7 / 32.3 s against 31.1 / 29.3 s; 22-27 s of
+GPU-process tasks before the first picture against 16-21 s). `first-picture-probe --links` (new: every link's source pair,
+its latency and its first `useProgram`, `<run>-links.json`) showed what the cooked load linked that the live one did not.
+Lisbon Hills, warm, base build (`a26adad7`), one interleaved pair:
+
+- **Another tier's set, in full.** A renderer starts on the boot guess of its tier (medium on an Intel UHD 770) and the
+  pre-warm started on it at 0.4 s: the cooked medium set, 96 pairs, all of them boot pairs (the cook's forced medium
+  session), linked eagerly during generation (93 submitted). Lisbon is a heavy world (483 entities) and settles on low,
+  but only at the end of generation (`startForWeight` at sync-done: 11.6 s cold). 72 of those 93 links were never drawn
+  with. A live load never had a medium set to link.
+- **The cooked low set did not hold the load.** It was capped at 64 pairs (`SET_CAP.low`), most of them from the cook's
+  forced low session, which pushed out the automatic session's (its boot count was 3). Of the 126 programs the live load
+  linked, 107 were in no cooked set: forced sessions run without the split chain an integrated GPU's automatic tier uses,
+  so their programs differ.
+- **The browser's own set displaced.** The cooked store merged the cooked pairs into the stored set as the most recent, so
+  on a warm visit they pushed the browser's own (exact) entries out of the capped set, and wrote the cooked pairs into
+  IndexedDB as if they had been used.
+- **Geometry slowed by the links.** Cold, the cooked lanes' reads finished at 10.7 s against 6.7 s for live generation:
+  93 links in flight beside them. With the fix: 2.1 s.
+- **Programs linked twice.** three's synchronous path (environment-mapped materials compiled at render) never took a
+  pooled program: Kestrel Outpost linked 8 of its boot pairs a second time.
+- Links per load: cooked 205-208, live 120-126. Chrome's own program cache was not the difference: both warm loads read
+  all their programs from it; the cooked one simply had 80 more to read and keep.
+
+**Changes**
+
+- A first world's weight is planned from the document (its entity count) before generation, not at its end, so a heavy
+  world starts on its lower tier before anything is built: the pre-warm, the materials and the compile walk are on the
+  tier the load draws with. This also removes a rebuild of every lit material on the live path (Lisbon live: 120-125
+  links per load to 87-92).
+- A tier change before the first picture re-targets the pre-warm (before, only before the compile began).
+- The cooked store keeps the cooked set beside the browser's own: `boot(tier)` is the cooked boot pairs, linked first and
+  through the compile; `later(tier)` the rest of the cooked set, linked only at rest after the first picture; other tiers'
+  cooked sets are never fetched. Nothing cooked is written into IndexedDB; the session's save keeps what it drew.
+- three's synchronous compile path takes a pooled program when there is one.
+- The cook records each tier's boot pairs from the page (`ProgramCache.sessionPairs`: every pair of the load, in order,
+  not the capped stored set), the automatic session's for the tier it settled on.
+- Eager links in flight: 1, 2, 4 and 6 on Kestrel cold, two runs each, gave first pictures of 11.8-13.8, 11.4-12.5,
+  12.4-12.7 and 12.3 s: no difference past the noise (more in flight delays the geometry, 0.9-1.7 s at 1 to 4.5 s at 6,
+  but the GPU process is the bottleneck either way). Kept at 6.
+
+**Program set files** (format 3, ARCHITECTURE-STREAMING.md 3.5.1): each distinct line of GLSL once per tier, a source as
+runs of lines, gzipped, `programs/<tier>.bin`. Format 2 JSON is still read, so packages cooked earlier load unchanged
+(the manifest format did not change).
+
+| | Format 2 (JSON) | Format 3 | Package |
+|---|---|---|---|
+| Kestrel Outpost, four tiers | 11.3 MB | 0.79 MB (162-222 kB a tier) | 15.8 MB to 5.4 MB |
+| Lisbon Hills, four tiers | 16.9 MB (510 pairs) | 1.0 MB | 112.9 MB to 100.4 MB |
+
+**Load** (`first-picture-probe --player`, Intel UHD 770, `GEN_GPU=intel`, 5 GB scope, interleaved, one browser at a time,
+with the cook of every template running beside it; first picture, links per load, GPU-process tasks over 50 ms before
+the first picture):
+
+Lisbon Hills
+
+| | Cold | Warm | Links | GPU tasks, warm |
+|---|---|---|---|---|
+| Base, cooked | 38.4, 37.2 s | 25.0, 22.9 s | 174-207 | 13.5, 11.5 s |
+| Base, live | 30.6, 32.0 s | 21.9, 18.8 s | 120-125 | 9.6, 6.8 s |
+| This build, cooked, package of the base cook | 22.9, 22.8, 22.7, 19.9 s | 16.9, 15.3, 14.3, 13.3 s | 84-88 | 5.3-6.8 s |
+| This build, cooked, package of this cook | 23.3, 22.4 s | 16.1, 13.0 s | 91-94 | 7.4, 5.4 s |
+| This build, live | 27.7, 29.0, 29.7, 28.0 s | 15.8, 18.8, 25.2, 15.3 s | 87-92 | 6.3-9.0 s |
+
+Kestrel Outpost
+
+| | Cold | Warm | Links |
+|---|---|---|---|
+| Base, cooked | 11.8, 13.0 s | 7.9, 7.1 s | 69-77 |
+| Base, live | 12.8, 13.6 s | 6.8, 6.5 s | 64-67 |
+| This build, cooked (package of this cook) | 13.1, 11.9, 12.3, 13.1 s | 7.4, 6.2, 6.2, 6.8 s | 69-77 (69-75 with the synchronous path taking pooled programs) |
+| This build, live | 13.4, 13.6, 12.8, 12.4 s | 7.3, 8.1, 6.2, 7.6 s | 63-69 |
+
+- Lisbon: cooked cold 20-23 s against 28-30 s live (and 37-38 s cooked before); cooked warm 13-17 s against 15-25 s live
+  (23-25 s cooked before). Links per load 205 to 84-94.
+- Kestrel: cooked warm 6.2-7.4 s against 6.2-8.1 s live (means 6.7 and 7.3). Cooked cold is not clearly faster than
+  live (means 12.6 and 13.1 s): Kestrel's live generation takes 0.6 s, so there is no idle GPU time for the pre-warm to
+  fill; both loads are bound by the GPU process linking the same ~67 programs (GPU tasks 8.4-9.4 s either way), and a
+  cooked package carries sources, not program binaries (WebGL has no way to load those).
+- The exact boot set of the new cook did not make Lisbon's cold load sooner than the old package's three boot pairs
+  (22.4-23.3 against 19.9-22.9 s): the GPU process is busy uploading during generation, and 7-9 of the boot pairs are not
+  drawn with in a given load (materials whose graph changes when a texture lands).
+
+**Hero shots** (`--player --shots`, warm cooked visit, this build on this cook's packages against the base on the base's;
+mean pixel difference 0-255): Lisbon Hills against the base 0.34 / 8.2 / 2.1 (settled 3.2), this build against itself
+0.28 / 2.3 / 5.4 (settled 4.8): swaying foliage, the same picture. Kestrel Outpost's second view 0.24 against the base and
+0.33 against itself; its other two views 9-49 either way, because the camera pose of those shots differs from run to run
+(the same with either build, as noted under Compressed geometry entries). Tests and typecheck pass; the studio bundle is
+unchanged (203 / 203 kB).
+
+**Re-cook.** Not needed: packages cooked before this change (format 2 program sets, including the running cook of every
+template) load with the new runtime and get its gains (the Lisbon rows above "package of the base cook"). A re-cook
+brings the smaller program files and exact boot sets. A build from before this change reads a format 3 file as no
+program set and loads without the pre-warm.

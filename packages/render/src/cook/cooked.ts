@@ -4,16 +4,17 @@
  *
  * - the geometry index goes to the generation lanes (gen-pool.ts `setCook`), which read the packs instead of generating
  *   and seed the geometry cache (geometry/ddc.ts) with what they read;
- * - the program sets seed the tier's program set (gpu/program-cache.ts): the renderer's boot pre-warm links them while
- *   the world loads, and the session's save keeps them in IndexedDB for the editor and later visits;
+ * - the program set of the tier in effect goes to the program cache (gpu/program-cache.ts): the renderer's boot pre-warm
+ *   links its boot pairs while the world loads, the rest at rest after the first picture; the session's save keeps the
+ *   programs it used in IndexedDB for the editor and later visits;
  * - the opening view, the start mode and an optional bundled lightmap folder go to the host.
  *
  * Anything missing, malformed or stale makes {@link openCookedPackage} answer `ok: false`, and the host loads live.
  */
 import type { RenderTier } from '../gpu/finishing';
-import { mergeSet, SET_CAP, type ProgramStore, type StoredSet } from '../gpu/program-cache';
+import type { ProgramStore } from '../gpu/program-cache';
 import { DDC_CODE_VERSION } from '../geometry/ddc';
-import { MAX_MANIFEST_BYTES, MAX_PROGRAM_SET_BYTES, parseCookedProgramSet, parseCookManifest, worldIrHash, type CookedProgramSet, type CookManifest, type LaneCookIndex } from './format';
+import { MAX_MANIFEST_BYTES, MAX_PROGRAM_SET_BYTES, parseCookedProgramSet, parseCookManifest, readProgramSetFile, worldIrHash, type CookedProgramSet, type CookManifest, type LaneCookIndex } from './format';
 
 /** Longest wait for the manifest (ms): a slow host must not hold the live path back for long. */
 export const MANIFEST_TIMEOUT_MS = 4000;
@@ -100,7 +101,11 @@ export async function openCookedPackage(manifestUrl: string, world: object, opts
       const at = performance.now();
       p = f
         ? doFetch(new URL(f.file, base).href, { credentials: 'same-origin' })
-            .then(async (res) => (res.ok ? parseCookedProgramSet(await readJson(res, MAX_PROGRAM_SET_BYTES), tier) : null))
+            .then(async (res) => {
+              if (!res.ok || Number(res.headers.get('content-length') ?? '0') > MAX_PROGRAM_SET_BYTES) return null;
+              // Format 3 is gzipped JSON (`<tier>.bin`), format 2 plain JSON (`<tier>.json`, older cooks).
+              return parseCookedProgramSet(await readProgramSetFile(new Uint8Array(await res.arrayBuffer())), tier);
+            })
             .catch(() => null)
             .then((set) => {
               stats.programs[tier] = set ? { ms: Math.round(performance.now() - at), pairs: set.pairs.length } : null;
@@ -124,37 +129,25 @@ export async function openCookedPackage(manifestUrl: string, world: object, opts
 }
 
 /**
- * A program store with the cooked sets on top: `getSet(tier)` answers the stored set merged with the cooked one (the cooked
- * pairs most recent, so the pre-warm links them first), `getSources` falls back to the cooked sources, and the first read of
- * a tier writes the cooked set and its sources into `inner` (in the background), so the session's own save and later
- * visits, the editor's included, keep them. Without `inner` it serves the cooked sets alone.
+ * A program store with the cooked sets beside `inner` (the browser's own, IndexedDB). `getSet` is the browser's own set of
+ * the tier, recorded from what it drew (a cooked set never displaces it); `boot(tier)` is the cooked set's boot pairs (what
+ * the cook's load of that tier drew before its first picture) and `later(tier)` the rest of it, linked at rest after the first
+ * picture; `getSources` falls back to the cooked sources. Nothing cooked is written into `inner`: the session's save keeps
+ * the programs it used, the cooked ones among them, as any other. Without `inner` it serves the cooked sets alone.
  */
 export function cookedProgramStore(inner: ProgramStore | null, cooked: (tier: RenderTier) => Promise<CookedProgramSet | null>): ProgramStore {
   const sources = new Map<string, string>();
-  const seeded = new Map<RenderTier, Promise<void>>();
-  const merged = async (tier: RenderTier): Promise<StoredSet | null> => {
-    const [prev, set] = await Promise.all([inner ? inner.getSet(tier).catch(() => null) : Promise.resolve(null), cooked(tier)]);
-    if (!set) return prev;
-    for (const [h, code] of Object.entries(set.sources)) sources.set(h, code);
-    // One session ahead of the stored set: the cooked pairs come first in the pre-warm order.
-    const session = (prev?.session ?? 0) + 1;
-    return mergeSet(prev, set.pairs.map(([v, f]) => ({ v, f })), SET_CAP[tier], session);
+  const load = async (tier: RenderTier): Promise<CookedProgramSet | null> => {
+    const set = await cooked(tier);
+    if (set) for (const [h, code] of Object.entries(set.sources)) sources.set(h, code);
+    return set;
   };
+  const keys = (pairs: ReadonlyArray<[string, string]>): Set<string> => new Set(pairs.map(([v, f]) => `${v}:${f}`));
   return {
     async getSet(tier) {
-      const set = await merged(tier);
-      if (inner && set && !seeded.has(tier)) {
-        const own = new Map<string, string>();
-        for (const e of set.entries) for (const h of [e.v, e.f]) {
-          const code = sources.get(h);
-          if (code !== undefined) own.set(h, code);
-        }
-        seeded.set(tier, inner.putSources(own).then(() => inner.putSet(tier, set)).catch(() => undefined));
-      }
-      return set;
+      return inner ? inner.getSet(tier).catch(() => null) : null;
     },
     async putSet(tier, set) {
-      await seeded.get(tier);
       await inner?.putSet(tier, set);
     },
     async getSources(hashes) {
@@ -170,12 +163,15 @@ export function cookedProgramStore(inner: ProgramStore | null, cooked: (tier: Re
       await inner?.putSources(s);
     },
     async prune(keep) {
-      await Promise.all([...seeded.values()]);
       await inner?.prune(keep);
     },
     async boot(tier) {
-      const set = await cooked(tier);
-      return set && set.boot > 0 ? new Set(set.pairs.slice(0, set.boot).map(([v, f]) => `${v}:${f}`)) : null;
+      const set = await load(tier);
+      return set && set.boot > 0 ? keys(set.pairs.slice(0, set.boot)) : null;
+    },
+    async later(tier) {
+      const set = await load(tier);
+      return set && set.pairs.length > set.boot ? keys(set.pairs.slice(set.boot)) : null;
     },
   };
 }

@@ -20,9 +20,12 @@
  * - Pooled programs no pipeline took are deleted {@link POOL_TRIM_MS} after the first picture (a program costs memory in
  *   the GPU process, megabytes on Mesa).
  *
- * - **A cooked world's boot set** ({@link ProgramStore.boot}): the programs its load is known to use (recorded by the cook,
- *   cook/format.ts) are linked first and keep being submitted after the world's compile begins: the compile then takes them
- *   from the pool instead of linking one after another.
+ * - **A cooked world's boot set** ({@link ProgramStore.boot}): the programs its load is known to use on the tier (recorded by
+ *   the cook, cook/format.ts) are linked first and keep being submitted after the world's compile begins: the compile then
+ *   takes them from the pool instead of linking one after another. The rest of the cooked set (the cook's orbit and play,
+ *   {@link ProgramStore.later}) links only at rest after the first picture, and other tiers' cooked sets not at all: a
+ *   load links before its first picture only what it is known to draw. A tier change before the first picture (a heavy
+ *   world settles lower) re-targets the pre-warm at the new tier.
  *
  * The sources are the keys: a build that changes a shader simply misses, and its entries age out of the set (least
  * recently used first, at most {@link SET_CAP} per tier). Opt out with `globalThis.__AETHER_PROGRAM_CACHE = false`.
@@ -67,10 +70,15 @@ export interface ProgramStore {
   /** Delete sources whose hash is not in `keep` (no set refers to them). */
   prune(keep: ReadonlySet<string>): Promise<void>;
   /**
-   * Optional: the pairs (`<vertex hash>:<fragment hash>`) the world's load is known to use (a cooked world's), linked first
-   * and not stopped by the world's own compile.
+   * Optional: the pairs (`<vertex hash>:<fragment hash>`, in link order) the world's load is known to use (a cooked world's),
+   * linked first and not stopped by the world's own compile. Their sources come from {@link getSources}.
    */
   boot?(tier: RenderTier): Promise<ReadonlySet<string> | null>;
+  /**
+   * Optional: pairs the world may use later (a cooked world's orbit and play), linked only at rest after the first picture
+   * ({@link ProgramCache.prime}).
+   */
+  later?(tier: RenderTier): Promise<ReadonlySet<string> | null>;
 }
 
 /** What the cache did (diagnostics, the probe and the perf job read it). */
@@ -95,6 +103,8 @@ export interface ProgramCacheStats {
   /** When the pre-warm started and when its last link finished (ms, page clock). */
   startedAt: number;
   doneAt: number;
+  /** Tier changes and pre-warm starts, `<ms> <event>` (diagnostics). */
+  log: string[];
 }
 
 /** 64-bit FNV-1a of a string (two 32-bit lanes) plus its length, as hex: the key of a source. */
@@ -159,6 +169,8 @@ export class ProgramCache {
   private queue: Array<{ v: string; f: string; eager?: boolean }> = [];
   /** Pairs used this session, by tier (source strings; hashed when saved). */
   private readonly used = new Map<RenderTier, Map<string, Set<string>>>();
+  /** Every pair this page used, by tier, in first-use order (not cleared by a save; {@link sessionPairs}). */
+  private readonly seen = new Map<RenderTier, Map<string, [string, string]>>();
   private readonly hashes = new Map<string, string>();
   private readonly linking = new Set<Pooled>();
   private stopped = false;
@@ -174,7 +186,7 @@ export class ProgramCache {
   private generation = 0;
   /** The session number this page saves each tier under. */
   private readonly sessions = new Map<RenderTier, number>();
-  readonly stats: ProgramCacheStats = { tier: null, set: 0, eager: 0, submitted: 0, linked: 0, failed: 0, adopted: 0, linkedOwn: 0, missedAfterFirstPicture: 0, trimmed: 0, primed: 0, startedAt: 0, doneAt: 0 };
+  readonly stats: ProgramCacheStats = { tier: null, set: 0, eager: 0, submitted: 0, linked: 0, failed: 0, adopted: 0, linkedOwn: 0, missedAfterFirstPicture: 0, trimmed: 0, primed: 0, startedAt: 0, doneAt: 0, log: [] };
   /** Pairs of the boot set (source strings): a link outside them after the first picture is a miss. */
   private readonly inSet = new Map<string, Set<string>>();
 
@@ -187,14 +199,20 @@ export class ProgramCache {
 
   /** The tier whose programs are being recorded (null: none, e.g. while a still renders). */
   setTier(tier: RenderTier | null): void {
+    if (tier !== this.tier) this.logEvent(`tier ${tier}`);
     this.tier = tier;
     if (tier) this.stats.tier ??= tier;
-    // The world settled on another tier than the boot guess (a heavy world starts lower): pre-warm that tier's set instead.
-    if (tier && this.prewarmTier !== null && tier !== this.prewarmTier && !this.stopped) void this.prewarm(tier);
+    // The world settled on another tier than the boot guess (a heavy world starts lower): pre-warm that tier's set instead
+    // (after the world's compile began, only its boot set: see pump).
+    if (tier && this.prewarmTier !== null && tier !== this.prewarmTier && !this.firstPicture) void this.prewarm(tier);
   }
 
-  /** Load the tier's set and link it, a few at a time, into the pool. Resolves when the set is loaded (not linked). */
+  /**
+   * Load the tier's set and link it, a few at a time, into the pool: the store's boot pairs first (a cooked world's), then the
+   * stored set (what this browser used on the tier before). Resolves when the set is loaded (not linked).
+   */
   async prewarm(tier: RenderTier): Promise<void> {
+    this.logEvent(`prewarm ${tier}${this.stopped ? ' (compile begun)' : ''}`);
     this.prewarmTier = tier;
     this.tier = tier;
     this.stats.tier = tier;
@@ -202,36 +220,42 @@ export class ProgramCache {
     const gen = ++this.generation;
     if (!this.store || this.disposed) return;
     this.stats.startedAt ||= performance.now();
-    const set = await this.store.getSet(tier).catch(() => null);
-    if (!set || this.disposed || gen !== this.generation) return;
-    const order = prewarmOrder(set, SET_CAP[tier]);
-    this.stats.set = order.length;
-    const [sources, boot] = await Promise.all([
-      this.store.getSources([...new Set(order.flatMap((e) => [e.v, e.f]))]).catch(() => new Map<string, string>()),
-      this.store.boot ? this.store.boot(tier).catch(() => null) : Promise.resolve(null),
-    ]);
+    const [set, boot] = await Promise.all([this.store.getSet(tier).catch(() => null), this.store.boot ? this.store.boot(tier).catch(() => null) : Promise.resolve(null)]);
     if (this.disposed || gen !== this.generation) return;
-    const later: Array<{ v: string; f: string }> = [];
-    for (const e of order) {
-      const v = sources.get(e.v), f = sources.get(e.f);
-      if (v === undefined || f === undefined) continue;
-      this.hashes.set(v, e.v);
-      this.hashes.set(f, e.f);
+    const order = set ? prewarmOrder(set, SET_CAP[tier]) : [];
+    const bootPairs = [...(boot ?? [])].map((k) => k.split(':') as [string, string]);
+    this.stats.set = order.length;
+    if (order.length === 0 && bootPairs.length === 0) return;
+    const sources = await this.store.getSources([...new Set([...order.flatMap((e) => [e.v, e.f]), ...bootPairs.flat()])]).catch(() => new Map<string, string>());
+    if (this.disposed || gen !== this.generation) return;
+    const queued = new Set<string>();
+    const add = (hv: string, hf: string, eager: boolean): void => {
+      const v = sources.get(hv), f = sources.get(hf);
+      if (v === undefined || f === undefined || queued.has(`${hv}:${hf}`)) return;
+      queued.add(`${hv}:${hf}`);
+      this.hashes.set(v, hv);
+      this.hashes.set(f, hf);
       let fs = this.inSet.get(v);
       if (!fs) this.inSet.set(v, (fs = new Set()));
       fs.add(f);
       // Already asked for by three while the set was loading (it links that one itself), or already pooled.
-      if (this.usedNow(v, f) || this.pool.get(v)?.has(f)) continue;
-      if (boot?.has(`${e.v}:${e.f}`)) this.queue.push({ v, f, eager: true });
-      else later.push({ v, f });
-    }
+      if (this.usedNow(v, f) || this.pool.get(v)?.has(f)) return;
+      this.queue.push(eager ? { v, f, eager: true } : { v, f });
+    };
+    // The boot pairs in their order (the load's own), then the stored set, most recently used first.
+    for (const [v, f] of bootPairs) add(v, f, true);
     this.stats.eager = this.queue.length;
-    this.queue.push(...later);
+    for (const e of order) add(e.v, e.f, false);
     if (this.timer === undefined) this.pump();
+  }
+
+  private logEvent(e: string): void {
+    if (this.stats.log.length < 64) this.stats.log.push(`${Math.round(performance.now())} ${e} (submitted ${this.stats.submitted})`);
   }
 
   /** The world's own compile began: stop submitting the boot set (in-flight links finish into the pool). */
   worldCompiling(): void {
+    if (!this.stopped) this.logEvent('compile');
     this.stopped = true;
   }
 
@@ -297,6 +321,16 @@ export class ProgramCache {
     if (!this.store || this.disposed) return;
     const todo: Array<{ v: string; f: string }> = [...this.queue];
     this.queue = [];
+    // The rest of a cooked world's set of the tier in effect (its orbit and play), before the neighbouring tiers' sets.
+    const own = this.tier && this.store.later ? await this.store.later(this.tier).catch(() => null) : null;
+    if (own && own.size > 0 && !this.disposed) {
+      const pairs = [...own].map((k) => k.split(':') as [string, string]);
+      const sources = await this.store.getSources([...new Set(pairs.flat())]).catch(() => new Map<string, string>());
+      for (const [hv, hf] of pairs) {
+        const v = sources.get(hv), f = sources.get(hf);
+        if (v !== undefined && f !== undefined && !this.usedNow(v, f)) todo.push({ v, f });
+      }
+    }
     for (const tier of tiers) {
       const set = await this.store.getSet(tier).catch(() => null);
       if (!set || this.disposed) continue;
@@ -337,6 +371,14 @@ export class ProgramCache {
       this.primeTimer = setTimeout(wait, 50);
     };
     this.primeTimer = setTimeout(step, 0);
+  }
+
+  /**
+   * Every pair (vertex and fragment source) this page used on `tier`, in the order first used, however large: the stored
+   * set is capped at {@link SET_CAP} and shared by every world, this is not (the cook records a load's exact boot set from it).
+   */
+  sessionPairs(tier: RenderTier): Array<[string, string]> {
+    return [...(this.seen.get(tier)?.values() ?? [])];
   }
 
   /** Save what this session used (also called on dispose). */
@@ -395,6 +437,10 @@ export class ProgramCache {
     if (!fs) pairs.set(v, (fs = new Set()));
     if (fs.has(f)) return;
     fs.add(f);
+    let all = this.seen.get(tier);
+    if (!all) this.seen.set(tier, (all = new Map()));
+    const k = `${v.length}:${f.length}:${v}\u0000${f}`;
+    if (!all.has(k)) all.set(k, [v, f]);
     if (this.firstPicture) this.scheduleSave(10_000);
   }
 
