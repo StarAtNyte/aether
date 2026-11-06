@@ -924,3 +924,87 @@ the base's: 203.01 kB gzip with either build (`check-budget.ts` rounds it to 203
 Gate of this step: no link in the first 10 s of play, met; Lisbon cold orbit without links, met (as was the base), p99
 within the noise; hero shots, met; cold GPU tasks after the first picture at most 9, not met (median 16 of 4 runs, from
 40); first picture not slower, not met (Kestrel cold about 1.8 s later).
+
+## One budget for every worker (6 November 2026)
+
+About seventeen kinds of web worker each sized themselves from `navigator.hardwareConcurrency`. On an 8-thread machine,
+Lisbon Hills kept on average **10.1 workers busy during generation** (sandbox lanes, generation lanes, DAG, raycast BVH,
+compute, atlases), more than there are threads, beside the main thread and the GPU process. The worker scheduler
+(`packages/core/src/worker-scheduler.ts`, design in ARCHITECTURE-STREAMING.md 3.6.1) gives them one budget: at most
+`hardwareConcurrency − 2` busy workers (6 here), in priority classes. Bakes and background work wait for the first
+picture, drags and a moving view, and a running lightmap bake parks between its slices while the view moves.
+`window.__aetherWorkers` shows queued and running tokens and wait times per class.
+
+**How it was measured.** One build (on `3ee9ca0d`), A/B by switch: `__AETHER_WORKER_SCHEDULER = false` grants every token at once and
+sizes the pools as before ("before"). Both sides ran with `navigator.hardwareConcurrency` forced to 8 and the browser
+pinned to 8 CPUs (`taskset -c 16-23`), so this 32-thread office PC behaves like the 8-thread laptop. Studio live path,
+`GEN_GPU=intel`, low tier, 5 GB scope, `nice -n 10`. The PC was shared with a cook-and-upload service and other people's
+jobs (at one point a 21-core evaluation), so runs were interleaved in pairs, alternating which side went first.
+Values are medians, and "paired" is the median difference within pairs, with how many pairs improved.
+
+- `scripts/arch-probe.ts`: Lisbon Hills, 12 pairs (cold load and a 20 s orbit in 9 of them). Casa del Patio, 10 pairs:
+  cold load, then a lightmap bake (`bakeLight('medium')` after `setRenderTier` gives back the light volume that the
+  performance ladder had cut on this loaded PC), and a 10 s orbit once the lightmap worker is baking.
+- `scripts/first-picture-probe.ts --runs=cold --shots`: 3 pairs each, for GPU-process tasks over 50 ms and the hero
+  shots.
+
+**arch-probe additions.** Animation-frame pacing from navigation to the end of the load's settle (`loadFrames`), long
+tasks over the whole load (`longAll`), the scheduler's readout at the end of the load (`workerSchedule`), and per worker
+its busy spans (`workers[].spans`).
+
+Lisbon Hills (cold, live generation)
+
+| | Before | After | Paired |
+|---|---|---|---|
+| Workers busy during generation (mean) | 10.1 | 5.7 | −4.3, 7 of 7 |
+| Generation (sync-start to sync-done) | 12.5 s | 11.0 s | −0.4 s, 9 of 12 lower |
+| First picture | 40.9 s | 38.2 s | +0.6 s, 5 of 12 lower |
+| Main-thread long tasks during the load | 57 (8.1 s) | 50.5 (7.8 s) | −4, 7 of 12 fewer |
+| Longest long task | 1,803 ms | 1,345 ms | |
+| Load frame p95 / p99 | 133 / 333 ms | 117 / 300 ms | p99 −33 ms, 10 of 12 lower |
+| Load frames over 50 ms | 132 | 119 | −11, 10 of 12 fewer |
+| Orbit frame p95 / p99 | 92 / 158 ms | 117 / 183 ms | p99 +0.1 ms, 4 of 9 lower |
+| Orbit long tasks | 6 | 4 | −1 |
+| GPU-process tasks > 50 ms before the first picture (first-picture-probe) | 65, 65, 74 (15.1-15.9 s) | 69, 72, 69 (15.0-15.3 s) | |
+| … after the first picture | 40, 27, 43 (1.5-2.4 s) | 39, 39, 39 (2.4-2.7 s) | |
+| First picture (first-picture-probe) | 37.2, 37.5, 38.1 s | 37.9, 37.4, 36.2 s | |
+
+Casa del Patio (cold, then a lightmap bake under an orbit)
+
+| | Before | After | Paired |
+|---|---|---|---|
+| Workers busy during generation (mean) | 6.3 | 5.4 | −1.0, 5 of 5 |
+| Generation | 1.8 s | 1.7 s | −0.15 s |
+| First picture | 21.4 s | 22.8 s | −0.5 s, 6 of 10 lower |
+| Main-thread long tasks during the load | 19.5 (4.6 s) | 21.5 (3.7 s) | −5, 7 of 10 fewer; sum −0.65 s |
+| Load frame p95 / p99 | 142 / 342 ms | 133 / 475 ms | p99 −25 ms, 6 of 10 lower |
+| Orbit during the bake, frame p95 / p99 / max | 142 / 208 / 900 ms | 50 / 133 / 175 ms | p99 −58 ms, 8 of 10 lower |
+| Lightmap bake, request to applied | 27.5 s | 41.6 s | +12.8 s |
+| … of which in the worker (parked time included) | 18.0 s | 28.0 s | |
+| GPU-process tasks > 50 ms before the first picture | 43, 42, 42 (10.6-10.9 s) | 43, 42, 42 (10.0-10.5 s) | |
+| First picture (first-picture-probe) | 22.6, 19.6, 20.0 s | 18.0, 18.8, 19.5 s | |
+
+- **Generation** keeps its speed with about half the busy workers: the extra lanes only shared the same eight threads
+  (the sandbox's summed busy time was 80 s against 44 s for the same work). The main thread gets more of the machine:
+  fewer frames over 50 ms during the load, and a lower load p99, on both worlds.
+- **The orbit during a bake** is the clearest gain: the lightmap parks within 250 ms of the view moving and resumes when
+  it stops, so the orbit's worst frame drops from about 0.9 s to under 0.2 s. The bake takes longer by the time it was
+  parked (the 10 s orbit plus the light volume's bake, which now waits for the view to rest).
+- **Lisbon's orbit** runs no worker at all, before or after (busy spans empty), so the scheduler cannot change it. Its
+  orbit numbers moved within this PC's noise (p99 even in the paired median).
+- **First picture**: no slower within noise on either world (paired medians +0.6 s and −0.5 s, first-picture-probe
+  equal on Lisbon and lower on Casa). An earlier version without headroom for `load` delayed Casa's first picture by
+  2-3 s: transcodes, compute and atlas jobs queued behind the generation lanes. `load` now takes one token over the
+  budget, and waiters age one class every 0.5 s.
+- **What waits** (Lisbon, at the end of the load): generation lanes 30 s in total over about 180 waits (they take
+  turns: a lane yields once another of its class has waited 200 ms); load-critical jobs 32 s over 58 waits of 272;
+  verification's warm-up 2-7 s, until the first picture.
+- **Hero shots** (first-picture-probe, mean pixel difference 0-255): Lisbon settled 0.04-0.23 between any two runs, before
+  or after; Casa del Patio settled 0.2-3.5 between runs either way (one before run 26, a different view). The first
+  picture shots differ by up to 11.6 within one side and up to 15.8 across (the load screen leaves at a different moment
+  of the fly-in).
+
+Gate: fewer long tasks and a better p99 during the load on both worlds and during the orbit on Casa del Patio; Lisbon's
+orbit is unchanged (no worker runs in it). First picture not slower, generation faster, hero shots within noise. Tests
+and typecheck pass. The studio bundle is 205,154 B gzip against 205,153 B for the base (`check-budget.ts`, limit 204 KiB;
+the scheduler goes into the chunks that use it).

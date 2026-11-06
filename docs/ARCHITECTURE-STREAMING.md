@@ -838,6 +838,84 @@ Hooks left for later work: `cells`/`packs` per cell, for cell streaming and unlo
 The biggest single entities, a `lisbon-retaining` part (1.2 s) and a `figure-statue` (0.93 s), set the lower bound
 of a cold cell. That is acceptable in a worker, and the DDC or cook removes it for every later load.
 
+### 3.6.1 Worker scheduler (implemented)
+
+About seventeen kinds of web worker used to size themselves from `navigator.hardwareConcurrency`, each on its own:
+the sandbox pool (up to 8), the generation lanes, voxel, verification, lightmap, light volume, merge, raycast BVH,
+cluster DAG, foliage atlas, procedural fields, KTX2 transcoding, tint and mask decoding, compute, frame samples and
+the glTF export's texture merge. On an 8-thread laptop their sum oversubscribed the cores, so the main thread and the
+browser's GPU process were starved. `packages/core/src/worker-scheduler.ts` gives them one budget, in the spirit of
+Unreal's task graph.
+
+**Budget.** At most `max(1, hardwareConcurrency − 2)` workers are busy at once. The two threads left over are for the
+main thread and the GPU process. The budget is 2 at ≤ 4 GB of `deviceMemory` and 1 at ≤ 2 GB. Each pool keeps its own
+cap below that (the sandbox pool's 4 at ≤ 8 GB and 2 at ≤ 4 GB, two verification lanes), and `lanesWithinBudget`
+keeps any pool from having more workers than the budget.
+
+**Tokens.** Pools keep their workers alive, because starting one costs a JavaScript realm and a module load. But a
+worker gets a job only while its pool holds a token for it:
+- `WorkerSlot` is one lane's hold on a token. `claim(onGrant)` returns true when the lane may send. Otherwise it asks
+  for a token, and `onGrant` runs the pool's pump when one comes. `release()` is called when the lane has nothing
+  left. The sandbox pool, the generation lanes, voxel, the light volume and the lightmap use it.
+- `gateWorker(worker, class)` wraps a request/reply worker. Messages wait for a token, the token is held while
+  replies are outstanding, and it is given back with the last reply, an error or `terminate()`. Merge, raycast BVH,
+  DAG, foliage atlas, tint, mask decode, compute (its unprompted `ready` is not a reply), KTX2 transcoding, frame
+  samples and the export's texture merge use it.
+- Verification requests and the procedural-fields warm-up take a token around the request. Their time budgets start
+  once they hold one.
+- A lane without a token never spawns its worker. With the budget full, workers beyond it are not created at all.
+
+**Classes**, most urgent first:
+
+| Class | Work |
+|---|---|
+| `interactive` | raycast BVH builds (an edit's regeneration when it is told apart) |
+| `visible` | generation: sandbox runs, generation lanes, voxel chunks |
+| `load` | merges, procedural fields, cluster DAGs, foliage atlases, KTX2 transcodes, tints, compute, frame samples |
+| `volume` | the light-volume bake |
+| `bake` | the lightmap bake |
+| `background` | verification, glTF export |
+
+- A free token goes to the most urgent waiter, and within a class to the oldest.
+- A waiter moves up one class for every 0.5 s it waits, down to just short of `interactive`. A merge queued behind a
+  whole world's generation therefore runs within about 0.75 s plus one job.
+- Lanes of one class take turns: a waiter of the holder's own class asks it to yield once it has waited 200 ms (a lane
+  is not stopped for every job, which would empty its pipeline).
+- `load` may take one token over the budget, and `interactive` two: their jobs are short, and the first picture or
+  the user waits on them. Measured on Casa del Patio, load-critical jobs queued behind generation (KTX2 transcodes,
+  compute, atlases) delayed the first picture by 2-3 s before this headroom.
+- `volume`, `bake` and `background` together hold at most the budget less one, so a raycast or a visible cell never
+  waits for a bake to end.
+
+**Yielding.** A token reports `yieldRequested` when a more urgent waiter (after aging), or a waiter of its own class
+that has waited 200 ms, cannot start for want of a token, or when its class is paused:
+- Pools that feed a worker a stream of jobs (the sandbox, the generation lanes, voxel, gated request streams) stop
+  feeding a lane whose token must yield. They give the token back when the lane drains.
+- The lightmap bake already ran in 100 ms slices inside its worker. It now looks at its messages every 400 ms. While
+  its token must yield, the controller sends `{ type: 'pause', on: true }` and gives the token back. It resumes the
+  bake once a token is granted again.
+- Other long single jobs (a light-volume bake, a verification shard) cannot be cut. They do not start while more
+  urgent work is queued.
+
+**Pauses.** While a pause is on, the classes it names get no new token, and their holders are asked to yield:
+- `first-picture` holds back `bake` and `background`, from `setLoading(true)` until the load screen leaves. The load
+  never waits on a bake: the processing stages leave light bakes out.
+- The other three also hold back `volume` (`MOTION_PAUSED`). The light-volume bake is one job that cannot be parked
+  once it runs, so it starts only while nothing moves:
+  - `time-of-day-drag`: while the daylight slider is held, and for 250 ms after each live environment value;
+  - `editor-drag`: while a gizmo is dragged;
+  - `view-moving`: on every frame the view moved, held for the frame budget's 300 ms motion hold. Not behind the load
+    screen: the load waits for the light volume's bake, and content mounting there counts as motion.
+
+The two held pauses (`view-moving`, and the time of day between values) stop holding work back once they have been on
+for 15 s without a break. A game's view moves all the time, and its bake must still finish.
+
+**Introspection.** `window.__aetherWorkers` shows the budget, the pauses that are on, and per class the queued and
+running tokens, tokens granted, granted after a wait, total, longest and oldest-queued wait in ms, and yields asked.
+
+**Switches.** `__AETHER_WORKER_SCHEDULER = false`, set before the page starts, grants every token at once and sizes
+the pools as before (used for the A/B runs). `__AETHER_WORKER_BUDGET` forces the budget.
+
 ### 3.7 Shader pre-warm set (PSO cache)
 
 Programs are the largest single cost: §1.2 point 1, 25–60 s and 107–242 programs. The fix has three parts.

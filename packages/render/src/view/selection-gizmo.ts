@@ -12,6 +12,7 @@
  * pointer) and vertex snapping (the pivot jumps to the nearest vertex of the
  * triangle under the pointer).
  */
+import { MOTION_PAUSED, workerScheduler } from '@aether/core';
 import { Box3, Matrix4, Object3D, Quaternion, Vector3, type Camera } from 'three';
 import type { EntityId, Vec3 } from '@aether/core';
 import type { OrbitControlsLike } from './camera-rig';
@@ -166,6 +167,8 @@ export class SelectionGizmo {
         tc.addEventListener('change', () => this.requestRender());
         tc.addEventListener('dragging-changed', (e) => {
           if (this.orbit) this.orbit.enabled = e.value !== true;
+          // Bakes and background workers wait while an object is dragged (@aether/core worker-scheduler).
+          workerScheduler().setPaused('editor-drag', e.value === true, MOTION_PAUSED);
           if (e.value === true) this.beginDrag();
         });
         tc.addEventListener('objectChange', () => this.applyDrag());
@@ -351,6 +354,7 @@ export class SelectionGizmo {
   /** Release the controls and their GPU resources. */
   dispose(): void {
     this.disposed = true;
+    workerScheduler().setPaused('editor-drag', false);
     this.onCommit = null;
     this.onLive = null;
     this.targets = [];

@@ -16,6 +16,7 @@
  * backs both the editor's quick "Export 3D model" action ({@link exportGlb})
  * and the Publish hub ({@link exportGltf}).
  */
+import { gateWorker } from '@aether/core';
 import {
   BufferGeometry,
   CanvasTexture,
@@ -431,7 +432,7 @@ async function premergeMetalRough(root: Object3D): Promise<Texture[]> {
   if (pairs.size === 0) return [];
   let worker: Worker;
   try {
-    worker = new Worker(new URL('./metal-rough.worker.ts', import.meta.url), { type: 'module', name: 'aether-metal-rough' });
+    worker = gateWorker(new Worker(new URL('./metal-rough.worker.ts', import.meta.url), { type: 'module', name: 'aether-metal-rough' }), 'background');
   } catch {
     return [];
   }

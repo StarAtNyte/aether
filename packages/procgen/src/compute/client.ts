@@ -5,7 +5,7 @@
  * (mesh data re-checked, generator output re-validated); a request that
  * exceeds its time budget terminates the worker (it is respawned lazily).
  */
-import { cloneMeshData, type Json, type MeshData } from '@aether/core';
+import { gateWorker, cloneMeshData, type Json, type MeshData } from '@aether/core';
 import type { GeneratorOutput } from '../types';
 import { generateBuiltinSync, yieldToEventLoop } from '../generate';
 import { validateOutput } from '../output';
@@ -41,7 +41,8 @@ interface Pending {
 }
 
 function defaultWorker(): WorkerLike {
-  return new Worker(new URL('./compute.worker.ts', import.meta.url), { type: 'module', name: 'aether-compute' }) as unknown as WorkerLike;
+  // The worker's unprompted `ready` is not a reply.
+  return gateWorker(new Worker(new URL('./compute.worker.ts', import.meta.url), { type: 'module', name: 'aether-compute' }), 'load', (d) => (d as { type?: unknown } | null)?.type !== 'ready') as unknown as WorkerLike;
 }
 
 /** Off-main-thread mesh operations and generator previews. */

@@ -428,9 +428,9 @@ describe('generationLanes', () => {
   it('keeps low-memory PCs to a few workers', () => {
     expect(lanes(32, 8)).toBe(4); // Chrome reports at most 8
     expect(lanes(32)).toBe(4); // not reported
-    expect(lanes(4, 8)).toBe(3);
+    expect(lanes(4, 8)).toBe(2); // the page's worker budget: threads less two
     expect(lanes(16, 4)).toBe(2);
-    expect(lanes(16, 2)).toBe(2);
+    expect(lanes(16, 2)).toBe(1); // the worker budget at ≤ 2 GB
     expect(lanes(2, 2)).toBe(1);
     expect(lanes(32, 16)).toBe(8);
   });

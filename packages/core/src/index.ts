@@ -63,6 +63,7 @@ export { riverMeander, riverHalfWidth, canyonMeander, canyonHalfWidth, streamCou
 export { summarizeEntity, summarizeWorld, type SummaryOptions } from './summary';
 export { dependencyIndex, carryPatches, isSatellite, footprintRadius, type Dependency, type DependencyIndex, type DependencyWhy, type CarriedDependent } from './dependents';
 export { Emitter } from './emitter';
+export { WORK_CLASSES, AGE_MS, FAIR_MS, MOTION_PAUSED, PAUSE_LIMIT_MS, WorkerScheduler, WorkerSlot, workerScheduler, workerBudget, workerSchedulerEnabled, lanesWithinBudget, gateWorker, type WorkClass, type WorkToken, type WorkClassStats, type WorkerSchedulerSnapshot, type WorkerSchedulerOptions, type GateableWorker } from './worker-scheduler';
 
 export { findStandIns, VOXEL_PERSON_ASSET_IDS, CUBE_PET_ASSET_IDS, type StandIn, type StandInKind } from './standins';
 export * from './water-bodies';

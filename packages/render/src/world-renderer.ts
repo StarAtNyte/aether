@@ -24,7 +24,7 @@ import { ACESFilmicToneMapping, AgXToneMapping, LinearToneMapping, NeutralToneMa
 import type { WebGPURenderer } from 'three/webgpu';
 import type { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { buildStructure } from '@aether/arch';
-import { Entity, deepEqual, type EntityId, type Json, type ProceduralShape, type Vec3, type WorldDoc } from '@aether/core';
+import { gateWorker, MOTION_PAUSED, workerScheduler, Entity, deepEqual, type EntityId, type Json, type ProceduralShape, type Vec3, type WorldDoc } from '@aether/core';
 import type { CameraMode, GeneratorOutput, GeometrySource, RenderDiagnostic, SandboxRunner } from './types';
 import { leanShading } from './materials/anti-tile';
 import { MaterialCache } from './materials/material-cache';
@@ -125,7 +125,7 @@ import type { PathTraceOptions } from './view/pathtrace';
 import { buildExportScene, exportGltf as exportSceneGltf, type GltfExportOptions, type GltfExportResult } from './view/gltf-export';
 import { PathOverlay } from './view/path-overlay';
 import { captureUntilComplete, type CapturePass } from './view/capture-rounds';
-import { FrameBudget } from './streaming/frame-budget';
+import { FrameBudget, MOTION_HOLD_MS } from './streaming/frame-budget';
 import { slicedUploads, type SlicedUploadStats } from './streaming/sliced-upload';
 import { sweepUploads } from './gpu/cpu-release';
 import { UploadStreamer } from './streaming/upload-streamer';
@@ -1396,6 +1396,8 @@ export class WorldRenderer {
   setLoading(on: boolean): void {
     this.loadingScreen = on;
     this.frameBudget.setLoading(on);
+    // Bakes and background workers wait for the first picture (@aether/core worker-scheduler).
+    workerScheduler().setPaused('first-picture', on);
   }
 
   /** Program links that took over 1.5 s in this page (diagnostics). */
@@ -3461,6 +3463,8 @@ export class WorldRenderer {
         this.lightmap.invalidate('light');
       } else clearTimeout(this.liveEnvTimer);
       this.liveEnv = env;
+      // Bakes and background workers wait for the drag to settle (@aether/core worker-scheduler).
+      workerScheduler().holdPause('time-of-day-drag', LIVE_ENVIRONMENT_SETTLE_MS, MOTION_PAUSED);
       this.liveEnvTimer = setTimeout(() => {
         this.liveEnvTimer = null;
         const last = this.liveEnv;
@@ -4338,6 +4342,9 @@ export class WorldRenderer {
     // The view or the content was asked to change from outside (camera, edits, resizes), as against content that merely animates.
     const motion = cameraMoved || this.frameInvalidation.motion;
     this.frameBudget.beginFrame(motion);
+    // While the view moves, bakes and background workers park (the cores go to the frame and the GPU process). Not behind
+    // the load screen: the load waits for the light volume's bake, and content mounting there counts as motion.
+    if (motion && !this.loadingScreen) workerScheduler().holdPause('view-moving', MOTION_HOLD_MS, MOTION_PAUSED);
     // Hit-stop slows the game's own motion (people, particles) to a crawl; the camera and the world around keep time.
     // An idle editor (`animate: false`) freezes the effects like the weather, so it stops drawing.
     const gameStep = step * this.fx.frame(opts.animate !== false ? step : 0, this.perspective, this.avatar.group);
@@ -5036,7 +5043,7 @@ export class WorldRenderer {
     this.trimSampling = forTrim;
     try {
       if (!this.sampleWorker) {
-        const w = new Worker(new URL('./view/frame-sample.worker.ts', import.meta.url), { type: 'module', name: 'aether-frame-sample' });
+        const w = gateWorker(new Worker(new URL('./view/frame-sample.worker.ts', import.meta.url), { type: 'module', name: 'aether-frame-sample' }), 'load');
         w.onmessage = (e: MessageEvent): void => {
           const d = e.data as { id?: number; sample?: FrameSample | null };
           if (d.id !== this.sampleId) return;
@@ -7196,6 +7203,7 @@ export class WorldRenderer {
   /** Dispose every GPU resource, control and listener. The renderer is unusable afterwards. */
   dispose(): void {
     if (this.disposed) return;
+    if (this.loadingScreen) workerScheduler().setPaused('first-picture', false);
     this.endLiveEnvironment();
     clearInterval(this.cpuReleaseTimer);
     this.compileTextures.dispose();

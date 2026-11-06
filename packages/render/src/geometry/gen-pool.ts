@@ -12,7 +12,7 @@
  * - Every failure of the machinery (no workers, a crash, a timeout) is a {@link LaneFailure}: callers fall back to the
  *   old path. A generator's own error (invalid output) is an ordinary Error.
  */
-import type { GeneratorDef, Json } from '@aether/core';
+import { WorkerSlot, type GeneratorDef, type Json, type WorkClass } from '@aether/core';
 import { validateOutput, type GenerateJob, type WorkerLike } from '@aether/procgen';
 import type { GeneratorOutput, SandboxRunner } from '../types';
 import { checkOutputShape, parseGenReply, rawTransfer, type GenRequest, type LaneTimes } from './gen-protocol';
@@ -50,6 +50,8 @@ export interface GenPoolOptions {
   sandboxTimeoutMs?: number;
   /** Worker factory (tests, custom bundlers). */
   createWorker?: () => WorkerLike;
+  /** Class of the page's worker budget a busy lane holds a slot of (default `visible`; null: no budget, as in tests). */
+  workClass?: WorkClass | null;
 }
 
 /** Counters for probes and the debug overlay. */
@@ -89,6 +91,8 @@ interface Lane {
   jobs: Job[];
   timer: ReturnType<typeof setTimeout> | null;
   idle: ReturnType<typeof setTimeout> | null;
+  /** The slot of the page's worker budget held while the lane has jobs (null: no budget). */
+  budget: WorkerSlot | null;
 }
 
 function defaultWorker(): WorkerLike {
@@ -112,7 +116,8 @@ export class GenPool {
 
   constructor(opts: GenPoolOptions = {}) {
     const n = Math.min(8, Math.max(1, Math.round(opts.lanes ?? 2)));
-    this.lanes = Array.from({ length: n }, () => ({ worker: null, ready: false, jobs: [], timer: null, idle: null }));
+    const cls = opts.workClass === undefined ? (opts.createWorker ? null : 'visible') : opts.workClass;
+    this.lanes = Array.from({ length: n }, () => ({ worker: null, ready: false, jobs: [], timer: null, idle: null, budget: cls ? new WorkerSlot(cls) : null }));
     this.timeoutMs = Math.max(100, opts.timeoutMs ?? 60_000);
     this.idleTimeoutMs = Math.max(0, opts.idleTimeoutMs ?? 30_000);
     this.sandboxTimeoutMs = Math.max(50, opts.sandboxTimeoutMs ?? 15_000);
@@ -231,12 +236,23 @@ export class GenPool {
   private pump(): void {
     if (this.disposed) return;
     // Fill the emptiest lanes first, one job at a time, so work spreads over every lane before any lane takes a second.
+    // A lane runs only holding a slot of the page's worker budget (one asked for: the pump runs again when it comes). A
+    // lane more urgent work waits for takes no more jobs, and gives its slot back once it drains.
+    const pump = (): void => this.pumpSoon();
     for (let depth = 0; depth < LANE_DEPTH; depth++) {
       for (const lane of this.lanes) {
         if (lane.jobs.length > depth) continue;
+        if (lane.budget && this.queue.length > 0) {
+          if (lane.jobs.length > 0 && lane.budget.mustYield) continue;
+          if (lane.jobs.length === 0 && lane.budget.held && lane.budget.mustYield) lane.budget.release();
+          if (!lane.budget.claim(pump)) continue;
+        }
         const job = this.takeNext();
         if (!job) {
-          if (lane.jobs.length === 0) this.scheduleIdle(lane);
+          if (lane.jobs.length === 0) {
+            lane.budget?.release();
+            this.scheduleIdle(lane);
+          }
           continue;
         }
         this.dispatch(lane, job);
@@ -318,6 +334,7 @@ export class GenPool {
   private crash(lane: Lane, err: Error): void {
     const jobs = lane.jobs.splice(0);
     this.kill(lane);
+    lane.budget?.release();
     this.stats.fallbacks++;
     for (const job of jobs) job.reject(err);
     this.pumpSoon();
@@ -357,6 +374,7 @@ export class GenPool {
     for (const lane of this.lanes) {
       const jobs = lane.jobs.splice(0);
       this.kill(lane);
+      lane.budget?.dispose();
       for (const job of jobs) job.reject(err);
     }
     for (const job of this.queue.splice(0)) job.reject(err);

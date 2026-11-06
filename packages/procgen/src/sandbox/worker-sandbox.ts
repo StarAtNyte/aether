@@ -4,7 +4,7 @@
  * any worker that exceeds its time budget; outputs are re-validated on the
  * main thread. Workers have no network/storage/messaging globals.
  */
-import { GeneratorDef, inspectUntrusted, type Json } from '@aether/core';
+import { GeneratorDef, inspectUntrusted, lanesWithinBudget, WorkerSlot, type Json, type WorkClass } from '@aether/core';
 import type { GeneratorOutput, SandboxRunner, SandboxRunOptions } from '../types';
 import { PROCGEN_LIMITS } from '../limits';
 import { resolveParams } from '../params';
@@ -40,6 +40,11 @@ export interface WorkerSandboxOptions {
   idleTimeoutMs?: number;
   /** Worker factory (tests / custom bundlers). Defaults to the bundled module worker. */
   createWorker?: () => WorkerLike;
+  /**
+   * Class of the page's worker budget the runs take a slot of (default `visible`; null: no budget, as in tests). See
+   * @aether/core worker-scheduler.
+   */
+  workClass?: WorkClass | null;
 }
 
 interface Task {
@@ -60,6 +65,8 @@ interface Slot {
   task: Task | null;
   timer: ReturnType<typeof setTimeout> | null;
   idleTimer: ReturnType<typeof setTimeout> | null;
+  /** The slot of the page's worker budget held while the worker runs (null: no budget). */
+  budget: WorkerSlot | null;
 }
 
 function defaultWorker(): WorkerLike {
@@ -96,7 +103,8 @@ export function createWorkerSandbox(opts: WorkerSandboxOptions = {}): SandboxRun
   const maxQueue = clamp(opts.maxQueue, 256, 1, 10_000);
   const idleTimeout = clamp(opts.idleTimeoutMs, 60_000, 0, 3_600_000);
   const factory = opts.createWorker ?? defaultWorker;
-  const slots: Slot[] = Array.from({ length: poolSize }, () => ({ worker: null, ready: false, runs: 0, task: null, timer: null, idleTimer: null }));
+  const workClass = opts.workClass === undefined ? (opts.createWorker ? null : 'visible') : opts.workClass;
+  const slots: Slot[] = Array.from({ length: poolSize }, () => ({ worker: null, ready: false, runs: 0, task: null, timer: null, idleTimer: null, budget: workClass ? new WorkerSlot(workClass) : null }));
   const queue: Task[] = [];
   let nextId = 1;
   let disposed = false;
@@ -225,9 +233,16 @@ export function createWorkerSandbox(opts: WorkerSandboxOptions = {}): SandboxRun
     if (disposed) return;
     for (const slot of slots) {
       if (slot.task) continue;
+      // A worker runs only holding a slot of the page's budget (one asked for: the pump runs again when it comes); a
+      // slot more urgent work waits for is given back between runs.
+      if (slot.budget?.held && slot.budget.mustYield) slot.budget.release();
+      if (queue.length > 0 && slot.budget && !slot.budget.claim(pump)) continue;
       const task = takeNext();
       if (task) dispatch(slot, task);
-      else scheduleIdle(slot);
+      else {
+        slot.budget?.release();
+        scheduleIdle(slot);
+      }
     }
   }
 
@@ -283,6 +298,7 @@ export function createWorkerSandbox(opts: WorkerSandboxOptions = {}): SandboxRun
       for (const slot of slots) {
         const task = finish(slot);
         kill(slot);
+        slot.budget?.dispose();
         task?.reject(err);
       }
       for (const task of queue.splice(0)) task.reject(err);
@@ -303,5 +319,6 @@ export function generationLanes(): number {
   const threads = Number(g.navigator?.hardwareConcurrency) || 2;
   const memory = Number(g.navigator?.deviceMemory) || 8;
   const byMemory = memory <= 4 ? 2 : memory <= 8 ? 4 : 8;
-  return Math.max(1, Math.min(8, threads - 1, byMemory));
+  // No more workers than the page's worker budget lets run at once (@aether/core worker-scheduler).
+  return lanesWithinBudget(Math.max(1, Math.min(8, threads - 1, byMemory)));
 }

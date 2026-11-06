@@ -14,6 +14,7 @@
  * Variants share textures and materials by key (`bodyId|top|bottom|hair`):
  * a crowd of red guards uploads one set.
  */
+import { gateWorker } from '@aether/core';
 import { CanvasTexture, Color, LinearFilter, LinearMipmapLinearFilter, SRGBColorSpace, type Material, type MeshStandardMaterial, type Object3D, type Texture } from 'three';
 
 import { recolorPixels, maskWeight } from './tint-pixels';
@@ -92,7 +93,7 @@ function maskDecoder(): Worker | null {
   if (maskWorker) return maskWorker;
   if (typeof Worker === 'undefined') return null;
   try {
-    const w = new Worker(new URL('./mask-decode.worker.ts', import.meta.url), { type: 'module', name: 'aether-mask-decode' });
+    const w = gateWorker(new Worker(new URL('./mask-decode.worker.ts', import.meta.url), { type: 'module', name: 'aether-mask-decode' }), 'load');
     w.onmessage = (e: MessageEvent): void => {
       const d = e.data as { id: number; width?: number; height?: number; data?: ArrayBuffer; error?: string };
       const job = maskWaiting.get(d.id);

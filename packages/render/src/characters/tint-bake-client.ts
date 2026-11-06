@@ -1,3 +1,4 @@
+import { gateWorker } from '@aether/core';
 import type { TintMasks } from './tint';
 
 export interface TintOperation { target: readonly [number, number, number]; ref: number; half?: 0 | 1; channel?: 0 | 1 }
@@ -20,7 +21,7 @@ export class TintBakeClient {
   private failed = false;
   private timer: ReturnType<typeof setTimeout> | undefined;
   constructor(private readonly factory: (() => TintBakeWorker) | null = typeof Worker === 'undefined' ? null :
-    () => new Worker(new URL('./tint-bake.worker.ts', import.meta.url), { type: 'module', name: 'aether-tint-bake' }),
+    () => gateWorker(new Worker(new URL('./tint-bake.worker.ts', import.meta.url), { type: 'module', name: 'aether-tint-bake' }), 'load'),
     private readonly timeoutMs = 30000, private readonly idleMs = 15000) {}
 
   get available(): boolean { return !this.failed && this.factory !== null; }

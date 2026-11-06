@@ -1,3 +1,4 @@
+import { gateWorker } from '@aether/core';
 import type { BufferGeometry } from 'three';
 import { readMergeOutput, type MergeRequest } from './merge-wire';
 export interface MergeWorker {
@@ -19,7 +20,7 @@ export class MergeBuildClient {
   private failed = false;
   private timer: ReturnType<typeof setTimeout> | undefined;
   constructor(private readonly factory: (() => MergeWorker) | null = typeof Worker === 'undefined' ? null :
-    () => new Worker(new URL('./merge.worker.ts', import.meta.url), { type: 'module', name: 'aether-merge' }),
+    () => gateWorker(new Worker(new URL('./merge.worker.ts', import.meta.url), { type: 'module', name: 'aether-merge' }), 'load'),
     private readonly timeoutMs = 30000, private readonly idleMs = 15000) {}
   get available(): boolean { return !this.failed && this.factory !== null; }
   build(request: MergeRequest): MergeJob {

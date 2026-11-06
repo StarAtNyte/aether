@@ -17,6 +17,7 @@
 import type { CompressedTexture } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
 import type { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
+import { gateWorker } from '@aether/core';
 import { errorMessage, log } from '../log';
 import { installedTextureCap } from './texture-cap';
 
@@ -187,7 +188,8 @@ async function useStaticWorker(loader: KTX2Loader, path: string): Promise<void> 
     const worker = new Worker(workerUrl);
     const copy = binary.slice(0);
     worker.postMessage({ type: 'init', config: loader.workerConfig, transcoderBinary: copy }, [copy]);
-    return worker;
+    // Transcodes take a slot of the page's worker budget (the `init` above has no reply, so it goes around the gate).
+    return gateWorker(worker, 'load');
   });
   // KTX2Loader.init() only builds its own blob worker while nothing is pending.
   loader.transcoderPending = Promise.resolve();

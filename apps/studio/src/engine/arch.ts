@@ -10,7 +10,7 @@
  * and come back on Stop.
  */
 import type { StoreApi } from 'zustand/vanilla';
-import type { History, Patch, WorldDoc } from '@aether/core';
+import { MOTION_PAUSED, workerScheduler, type History, type Patch, type WorldDoc } from '@aether/core';
 import { applyArchOps, doorAtOp, drawRoomCandidates, floorPlan2d, listBuildings, listLevels, planOf, planToWorld, PlanError, windowAtOp, type P2 } from '@aether/arch';
 import type { StudioState } from '../state/store';
 import { skyForHour, type ArchUiState } from '../state/archUi';
@@ -141,6 +141,8 @@ export class ArchController {
   beginSunDrag(): void {
     if (this.sunDragging) return;
     this.sunDragging = true;
+    // Bakes and background workers wait while the slider is held (@aether/core worker-scheduler).
+    workerScheduler().setPaused('time-of-day-drag', true, MOTION_PAUSED);
     // The pointer may be let go outside the slider, or the slider may close under it.
     if (typeof window !== 'undefined') {
       const end = (): void => {
@@ -157,6 +159,7 @@ export class ArchController {
   endSunDrag(): void {
     if (!this.sunDragging) return;
     this.sunDragging = false;
+    workerScheduler().setPaused('time-of-day-drag', false);
     this.cancelSunFrame();
     this.applySun();
   }

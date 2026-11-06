@@ -1,3 +1,4 @@
+import { gateWorker } from '@aether/core';
 import type { TriangleBvh } from './raycast-bvh-build';
 
 export type BvhBuffers = Pick<TriangleBvh, 'boxes' | 'nodes' | 'tris' | 'nodeCount' | 'triangleCount'>;
@@ -19,7 +20,7 @@ export class BvhBuildClient {
   private timer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(private readonly factory: (() => BvhWorker) | null = typeof Worker === 'undefined' ? null :
-    () => new Worker(new URL('./raycast-bvh.worker.ts', import.meta.url), { type: 'module', name: 'aether-raycast-bvh' }),
+    () => gateWorker(new Worker(new URL('./raycast-bvh.worker.ts', import.meta.url), { type: 'module', name: 'aether-raycast-bvh' }), 'interactive'),
     private readonly timeoutMs = 30000, private readonly idleMs = 15000) {}
 
   get available(): boolean { return !this.failed && this.factory !== null; }

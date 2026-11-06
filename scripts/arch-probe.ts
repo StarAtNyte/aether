@@ -67,8 +67,10 @@ const INSTR = `(() => {
   for (const n of ['bufferData','bufferSubData']) wrap(n, (a) => { const d = n === 'bufferSubData' ? a[2] : a[1]; return d && typeof d === 'object' && 'byteLength' in d ? d.byteLength : (typeof d === 'number' ? d : 0); });
   for (const n of ['texImage2D','texImage3D','texSubImage2D','texSubImage3D','compressedTexImage2D','compressedTexSubImage2D','compressedTexImage3D','compressedTexSubImage3D','texStorage2D','texStorage3D']) wrap(n, tb);
   const W0 = globalThis.Worker;
-  if (W0) globalThis.Worker = class extends W0 { constructor(u, o) { super(u, o); const rec = { name: (o && o.name) || String(u).split('/').pop().split('?')[0], sent: 0, recv: 0, inflight: 0, busy: 0, since: 0 }; S.workers.push(rec); const post = this.postMessage.bind(this); this.postMessage = (...a) => { rec.sent++; if (rec.inflight++ === 0) rec.since = performance.now(); return post(...a); }; this.addEventListener('message', () => { rec.recv++; if (rec.inflight > 0 && --rec.inflight === 0) rec.busy += performance.now() - rec.since; }); } };
+  if (W0) globalThis.Worker = class extends W0 { constructor(u, o) { super(u, o); const rec = { name: (o && o.name) || String(u).split('/').pop().split('?')[0], sent: 0, recv: 0, inflight: 0, busy: 0, since: 0, spans: [] }; S.workers.push(rec); const post = this.postMessage.bind(this); this.postMessage = (...a) => { rec.sent++; if (rec.inflight++ === 0) rec.since = performance.now(); return post(...a); }; this.addEventListener('message', () => { rec.recv++; if (rec.inflight > 0 && --rec.inflight === 0) { const t = performance.now(); rec.busy += t - rec.since; rec.spans.push([Math.round(rec.since), Math.round(t)]); } }); } };
   setInterval(() => { const m = performance.memory; if (m && m.usedJSHeapSize > S.heapMax) S.heapMax = m.usedJSHeapSize; }, 200);
+  // Animation-frame times from navigation on (the main thread's pacing during the load, load screen included).
+  S.raf = []; const raf = (t) => { S.raf.push(t); requestAnimationFrame(raf); }; requestAnimationFrame(raf);
   try { new PerformanceObserver((l) => { for (const e of l.getEntries()) S.loaf.push({ t: e.startTime, d: e.duration, scripts: e.scripts.map((s) => ({ u: s.sourceURL, f: s.sourceFunctionName, c: s.sourceCharPosition, i: s.invoker, d: s.duration })) }); }).observe({ type: 'long-animation-frame', buffered: true }); } catch (e) {}
   try { new PerformanceObserver((l) => { for (const e of l.getEntries()) S.lt.push({ t: e.startTime, d: e.duration }); }).observe({ type: 'longtask', buffered: true }); } catch (e) {}
   const mo = new MutationObserver(() => { const el = document.querySelector('.vp-loading'); if (el && !S.sawScreen) S.sawScreen = true; if (S.sawScreen && !el && !S.screenGone) { S.screenGone = true; performance.mark('probe:screen-gone'); } });
@@ -241,15 +243,24 @@ try {
           // older builds
         }
         const marks = performance.getEntriesByType('mark').filter((m) => /^(aether|probe):/.test(m.name)).map((m) => [m.name, Math.round(m.startTime)]);
+        // Frame pacing of the load: animation frames from navigation to now (the load and its 5 s settle).
+        const ts = P.raf as number[];
+        const fd = ts.slice(1).map((t, i) => t - ts[i]!).sort((a, b) => a - b);
+        const fq = (p: number): number => (fd.length ? Math.round(fd[Math.min(fd.length - 1, Math.floor(fd.length * p))]! * 10) / 10 : 0);
+        const loadFrames = { frames: fd.length, p50: fq(0.5), p95: fq(0.95), p99: fq(0.99), max: fq(1), over50: fd.filter((x) => x > 50).length };
+        const longAll = { n: lt.length, sum: sum(lt), max: Math.round(Math.max(0, ...lt.map((x) => x.d))) };
         return {
           marks,
+          loadFrames,
+          longAll,
+          workerSchedule: (globalThis as any).__aetherWorkers ?? null,
           firstPicture: first,
           longBefore: { n: before.length, sum: sum(before), max: Math.round(Math.max(0, ...before.map((x) => x.d))) },
           longAfter: { n: after.length, sum: sum(after), max: Math.round(Math.max(0, ...after.map((x) => x.d))), tasks: after.map((x) => ({ t: Math.round(x.t), d: Math.round(x.d), s: attribute(x.t, x.d) })) },
           gl: Object.fromEntries(Object.entries(P.gl as Record<string, { n: number; ms: number; bytes: number; max: number }>).map(([k, e]) => [k, { n: e.n, ms: Math.round(e.ms), mb: Math.round(e.bytes / 1048576), max: Math.round(e.max) }])),
           glSlowAfter: (P.glSlow as Array<{ t: number }>).filter((x) => x.t >= first),
           glSlowBefore: (P.glSlow as Array<{ t: number }>).filter((x) => x.t < first).length,
-          workers: (P.workers as Array<{ name: string; sent: number; busy: number }>).map((w) => ({ name: w.name, sent: w.sent, busy: Math.round(w.busy) })),
+          workers: (P.workers as Array<{ name: string; sent: number; busy: number }>).map((w) => ({ name: w.name, sent: w.sent, busy: Math.round(w.busy), spans: (w as unknown as { spans: number[][] }).spans })),
           heapMaxMB: Math.round(P.heapMax / 1048576),
           programs,
           tier: r?.renderTier ?? null,
@@ -259,7 +270,7 @@ try {
         };
       });
       const rec: Visit = { visit: v, loadWallS: (Date.now() - tNav) / 1000, ...load, cgPeakLoadMB: Math.round(cgPeak / 1048576) };
-      log(`first picture ${load.firstPicture} ms; long tasks after it ${JSON.stringify({ n: load.longAfter.n, max: load.longAfter.max })}; heap ${load.heapMaxMB} MB; cgroup ${rec['cgPeakLoadMB']} MB`);
+      log(`first picture ${load.firstPicture} ms; long tasks all ${JSON.stringify(load.longAll)}, after the first picture ${JSON.stringify({ n: load.longAfter.n, max: load.longAfter.max })}; load frames ${JSON.stringify(load.loadFrames)}; heap ${load.heapMaxMB} MB; cgroup ${rec['cgPeakLoadMB']} MB`);
 
       // --eval=<file>: a page expression to evaluate after the load (diagnostics); its value goes into the result.
       const evalFile = flag('eval');

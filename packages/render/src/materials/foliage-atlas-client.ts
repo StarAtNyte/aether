@@ -1,3 +1,4 @@
+import { gateWorker } from '@aether/core';
 import type { FoliageKind } from '@aether/procgen/foliage';
 
 interface AtlasWorker {
@@ -19,7 +20,7 @@ export class FoliageAtlasClient {
   private timer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(private readonly factory: (() => AtlasWorker) | null = typeof Worker === 'undefined' ? null :
-    () => new Worker(new URL('./foliage-atlas.worker.ts', import.meta.url), { type: 'module', name: 'aether-foliage-atlas' }) as AtlasWorker,
+    () => gateWorker(new Worker(new URL('./foliage-atlas.worker.ts', import.meta.url), { type: 'module', name: 'aether-foliage-atlas' }), 'load') as AtlasWorker,
     private readonly timeoutMs = 30000) {}
 
   compose(kind: FoliageKind, size: number, base: string | null): Promise<Uint8Array | null> {

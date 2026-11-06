@@ -14,7 +14,7 @@
  *   rejects with {@link WorkerUnavailableError} and the caller falls back to
  *   the main thread.
  */
-import type { WorldDoc } from '@aether/core';
+import { workerScheduler, workerSchedulerEnabled, type WorldDoc } from '@aether/core';
 import type { TestResult, VerifyReport } from '@aether/physics';
 import type { ColliderDesc, WorkerLike } from '@aether/procgen';
 import { parseVerifyReply, type VerifyReply } from './protocol';
@@ -104,12 +104,15 @@ export class VerifyPool {
   private nextId = 1;
   private broken = false;
   private disposed = false;
+  /** Requests take a slot of the page's worker budget (not with an injected factory: tests). */
+  private readonly budgeted: boolean;
 
   constructor(opts: VerifyPoolOptions = {}) {
     this.factory = opts.createWorker === null ? null : (opts.createWorker ?? (typeof Worker !== 'undefined' ? defaultWorker : null));
     this.laneCount = Math.max(1, Math.min(MAX_LANES, Math.floor(opts.lanes ?? 1)));
     this.slackMs = Math.max(0, opts.slackMs ?? 20_000);
     this.idleMs = Math.max(0, opts.idleMs ?? 60_000);
+    this.budgeted = opts.createWorker === undefined && workerSchedulerEnabled();
   }
 
   /** True while workers can be used (false after a failed start or without `Worker`). */
@@ -201,8 +204,27 @@ export class VerifyPool {
     }, this.idleMs);
   }
 
-  /** Send one request on a lane; resolves with its terminal reply. */
-  private request(laneIndex: number, body: Record<string, unknown>, timeoutMs: number, signal?: AbortSignal, onProgress?: Pending['onProgress']): Promise<Terminal> {
+  /**
+   * Send one request on a lane once the page's worker budget has a `background` slot for it (held until the terminal
+   * reply; the time budget starts when it is sent); resolves with its terminal reply.
+   */
+  private async request(laneIndex: number, body: Record<string, unknown>, timeoutMs: number, signal?: AbortSignal, onProgress?: Pending['onProgress']): Promise<Terminal> {
+    if (signal?.aborted) throw abortError();
+    if (!this.budgeted) return this.send(laneIndex, body, timeoutMs, signal, onProgress);
+    let token;
+    try {
+      token = await workerScheduler().acquire('background', signal);
+    } catch {
+      throw abortError();
+    }
+    try {
+      return await this.send(laneIndex, body, timeoutMs, signal, onProgress);
+    } finally {
+      token.release();
+    }
+  }
+
+  private send(laneIndex: number, body: Record<string, unknown>, timeoutMs: number, signal?: AbortSignal, onProgress?: Pending['onProgress']): Promise<Terminal> {
     if (signal?.aborted) return Promise.reject(abortError());
     const lane = this.lane(laneIndex);
     if (this.idleTimer !== null) clearTimeout(this.idleTimer);

@@ -5,6 +5,7 @@
  * validated before use. Results are cached per mesh key with a byte-capped
  * LRU, and concurrent requests for one key share a build.
  */
+import { gateWorker } from '@aether/core';
 import { buildClusterDag, type ClusterDag } from './cluster-dag';
 import { MAX_DAG_INDICES, MAX_DAG_VERTICES, validateDag } from './dag-protocol';
 
@@ -27,7 +28,7 @@ export interface DagClientOptions {
 }
 
 function defaultWorker(): DagWorkerLike {
-  return new Worker(new URL('./dag.worker.ts', import.meta.url), { type: 'module', name: 'aether-dag' }) as unknown as DagWorkerLike;
+  return gateWorker(new Worker(new URL('./dag.worker.ts', import.meta.url), { type: 'module', name: 'aether-dag' }), 'load') as unknown as DagWorkerLike;
 }
 
 /** Bytes held by a DAG. */

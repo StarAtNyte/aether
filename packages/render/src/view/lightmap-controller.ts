@@ -13,8 +13,12 @@
  * - Baking is visible ({@link status}) and can be cancelled; a cancelled bake is not started again for the same building.
  * - The assistant asks for a bake with {@link request} (quality, samples); the automatic bake only runs when the host says it is
  *   affordable ({@link LightmapOptions.autoBake}).
+ * - The bake takes a `bake` slot of the page's worker budget (@aether/core worker-scheduler) before it starts, and parks the
+ *   worker between slices (giving the slot back) while the scheduler asks it to yield: the first picture, a drag, the view
+ *   moving, or more urgent work waiting for a core.
  */
 import { Box3, type BufferGeometry, type Mesh } from 'three';
+import { WorkerSlot } from '@aether/core';
 import { log } from '../log';
 import { LIGHTMAP_ATTRIBUTE, LightVolume } from '../environment/light-volume-light';
 import { MAX_TRACE_TRIANGLES, type TraceInput, type V3, type VolumeGrid } from '../environment/light-volume';
@@ -166,7 +170,10 @@ export class LightmapController implements LightmapSource {
   private worker: LightmapWorkerLike | null = null;
   private workerFailed = false;
   private jobId = 0;
-  private job: { id: number; gen: number; key: string; triCounts: number[]; started: number; prepared: Prepared } | null = null;
+  private job: { id: number; gen: number; key: string; triCounts: number[]; started: number; prepared: Prepared; parkedMs: number; parkedAt: number } | null = null;
+  /** The `bake` slot of the page's worker budget (null with an injected worker: tests). */
+  private readonly slot: WorkerSlot | null;
+  private yieldTimer: ReturnType<typeof setInterval> | null = null;
   /** Meshes that draw themselves with their own copy of the geometry → the geometry they had. */
   private readonly swapped = new Map<Mesh, { original: BufferGeometry; clone: BufferGeometry }>();
   /** Baked coordinates of every baked mesh of the building (merged members too). */
@@ -197,6 +204,7 @@ export class LightmapController implements LightmapSource {
   constructor(readonly light: LightVolume, private readonly opts: LightmapOptions) {
     this.cache = opts.cache === undefined ? createIdbLightmapCache() : opts.cache;
     this.factory = opts.createWorker === null ? null : (opts.createWorker ?? (typeof Worker !== 'undefined' ? defaultWorker : null));
+    this.slot = opts.createWorker === undefined && this.factory ? new WorkerSlot('bake') : null;
   }
 
   get status(): LightmapStatus {
@@ -349,6 +357,7 @@ export class LightmapController implements LightmapSource {
   dispose(): void {
     this.disposed = true;
     this.drop();
+    this.slot?.dispose();
     this.worker?.terminate();
     this.worker = null;
   }
@@ -380,7 +389,55 @@ export class LightmapController implements LightmapSource {
       this.worker.terminate();
       this.worker = null;
     }
+    this.endJob();
+  }
+
+  /** No bake runs: the slot goes back and the yield watch stops. */
+  private endJob(): void {
     this.job = null;
+    if (this.yieldTimer !== null) clearInterval(this.yieldTimer);
+    this.yieldTimer = null;
+    this.slot?.release();
+  }
+
+  /**
+   * While a bake runs: park the worker (and give the slot back) when the scheduler asks it to yield, resume it once a slot
+   * is granted again.
+   */
+  private watchYield(id: number): void {
+    const slot = this.slot;
+    if (!slot) return;
+    if (this.yieldTimer !== null) clearInterval(this.yieldTimer);
+    const post = (on: boolean): void => {
+      try {
+        this.worker?.postMessage({ type: 'pause', on });
+      } catch {
+        // the worker is gone: its error handler ends the job
+      }
+    };
+    this.yieldTimer = setInterval(() => {
+      const job = this.job;
+      if (!job || job.id !== id) return;
+      if (job.parkedAt < 0) {
+        if (!slot.mustYield) return;
+        job.parkedAt = performance.now();
+        post(true);
+        slot.release();
+        return;
+      }
+      const resume = (): void => {
+        const j = this.job;
+        if (!j || j.id !== id) {
+          slot.release();
+          return;
+        }
+        if (j.parkedAt < 0) return;
+        j.parkedMs += performance.now() - j.parkedAt;
+        j.parkedAt = -1;
+        post(false);
+      };
+      if (slot.claim(resume)) resume();
+    }, 250);
   }
 
   /** Running work stops (a result still in flight is ignored). */
@@ -587,7 +644,7 @@ export class LightmapController implements LightmapSource {
         this.workerFailed = true;
         this.worker?.terminate();
         this.worker = null;
-        this.job = null;
+        this.endJob();
         if (lost) this.setState('failed', 'the lightmap worker failed; the light volume stays');
       };
       this.worker = w;
@@ -604,6 +661,21 @@ export class LightmapController implements LightmapSource {
     if (!w) {
       this.setState('failed', 'no worker for the bake; the light volume stays');
       return;
+    }
+    // The bake starts holding a slot of the page's worker budget; until one is free it shows as a bake at 0.
+    const slot = this.slot;
+    if (slot && !slot.held) {
+      const go = (): void => {
+        if (gen !== this.gen || !this.enabled || this.disposed || this.job) {
+          if (!this.job) slot.release();
+          return;
+        }
+        this.startBake(p, key, gen);
+      };
+      if (!slot.claim(go)) {
+        this.setState('baking', 'waiting for a free worker', 0);
+        return;
+      }
     }
     const id = ++this.jobId;
     const triCounts = p.data.map((d) => meshTriangleCount(d));
@@ -639,12 +711,14 @@ export class LightmapController implements LightmapSource {
       this.workerFailed = true;
       this.worker?.terminate();
       this.worker = null;
+      this.endJob();
       this.setState('failed', `could not start the bake: ${e instanceof Error ? e.message : String(e)}`);
       return;
     }
-    this.job = { id, gen, key, triCounts, started: performance.now(), prepared: p };
+    this.job = { id, gen, key, triCounts, started: performance.now(), prepared: p, parkedMs: 0, parkedAt: -1 };
     this.bakesStarted++;
     this.setState('baking', 'baking light', 0);
+    this.watchYield(id);
   }
 
   private onReply(raw: unknown): void {
@@ -654,7 +728,7 @@ export class LightmapController implements LightmapSource {
     const reply = parseLightmapReply(raw, job.triCounts);
     if (!reply) {
       log.warn('malformed lightmap reply ignored');
-      this.job = null;
+      this.endJob();
       this.setState('failed', 'the bake returned something unusable; the light volume stays');
       return;
     }
@@ -663,7 +737,8 @@ export class LightmapController implements LightmapSource {
       this.opts.onStatus?.(this.status);
       return;
     }
-    this.job = null;
+    this.endJob();
+    if (job.parkedMs > 0) log.info(`lightmap: the bake was parked for ${Math.round(job.parkedMs)} ms (worker scheduler)`);
     if (!reply.ok) {
       log.warn(`lightmap bake failed: ${reply.error}`);
       this.setState('failed', `bake failed: ${reply.error}`);

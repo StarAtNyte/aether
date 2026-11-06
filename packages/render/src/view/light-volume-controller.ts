@@ -8,6 +8,7 @@
  * change); a change during a bake restarts it, and the previous volume stays on screen until the new one is
  * complete, so editing never flashes an unlit room.
  */
+import { WorkerSlot } from '@aether/core';
 import { Box3, Color, Matrix4, Vector3, type BufferGeometry, type Material, type Mesh, type Object3D } from 'three';
 import { FLOATS_PER_PROBE, LightVolumeBaker, MAX_TRACE_TRIANGLES, planVolumeGrid, sampleVolume, TraceScene, type TraceInput, type VolumeBakeInput, type VolumeGrid, type VolumeLamp, type V3 } from '../environment/light-volume';
 import { CACHE_MIN_BAKE_MS, createIdbVolumeCache, volumeKey, type VolumeCache } from '../environment/light-volume-cache';
@@ -304,6 +305,8 @@ export class LightVolumeController {
   private worker: VolumeWorkerLike | null = null;
   private workerFailed = false;
   private readonly factory: (() => VolumeWorkerLike) | null;
+  /** The `volume` slot of the page's worker budget, held while the worker bakes (null with an injected worker: tests). */
+  private readonly slot: WorkerSlot | null;
   private readonly settled: () => boolean;
   private readonly onUpload: () => void;
   private nextId = 1;
@@ -321,6 +324,7 @@ export class LightVolumeController {
   constructor(private readonly gather: VolumeGather, opts: LightVolumeOptions = {}) {
     this.light.visible = false;
     this.factory = opts.createWorker === null ? null : (opts.createWorker ?? (typeof Worker !== 'undefined' ? defaultWorker : null));
+    this.slot = opts.createWorker === undefined && this.factory ? new WorkerSlot('volume') : null;
     this.settled = opts.settled ?? (() => true);
     this.onUpload = opts.onUpload ?? (() => undefined);
     this.cache = opts.cache === undefined ? createIdbVolumeCache() : opts.cache;
@@ -401,6 +405,7 @@ export class LightVolumeController {
       this.worker = null;
     }
     this.job = null;
+    this.slot?.release();
   }
 
   /** A bake is pending or running. */
@@ -508,6 +513,21 @@ export class LightVolumeController {
   /** Bake `input` in the worker, or on this thread in slices when there is none (or `inline`). */
   private dispatch(input: Required<TraceInput>, grid: VolumeGrid, lighting: VolumeLighting, ground: { y: number; albedo: V3 }, lamps: VolumeLamp[], inline = false): void {
     const w = inline ? null : this.ensureWorker();
+    if (w && this.slot && !this.slot.held) {
+      // The bake waits for a slot of the page's worker budget (more urgent work goes first); still "baking" meanwhile.
+      const wait = this.nextId++;
+      this.job = { id: wait, grid, lookup: true };
+      const go = (): void => {
+        if (this.disposed || !this.enabled || this.job?.id !== wait) {
+          this.slot?.release();
+          return;
+        }
+        this.job = null;
+        this.dispatch(input, grid, lighting, ground, lamps);
+      };
+      if (!this.slot.claim(go)) return;
+      this.job = null;
+    }
     if (w) {
       const id = this.nextId++;
       const req: VolumeRequest = { type: 'bake', id, grid, positions: input.positions, albedo: input.albedo, twoSided: input.twoSided, sun: lighting.sun, ambient: lighting.ambient, ground, lamps };
@@ -557,6 +577,7 @@ export class LightVolumeController {
     this.worker?.terminate();
     this.worker = null;
     this.job = null;
+    this.slot?.release();
   }
 
   private onReply(raw: unknown): void {
@@ -566,6 +587,7 @@ export class LightVolumeController {
     if ((raw as { id?: unknown } | null)?.id !== job.id) return;
     const reply = parseVolumeReply(raw, job.grid);
     this.job = null;
+    this.slot?.release();
     if (!reply) {
       log.warn('malformed light-volume reply ignored');
       return;
@@ -627,6 +649,7 @@ export class LightVolumeController {
 
   dispose(): void {
     this.cancel();
+    this.slot?.dispose();
     this.disposed = true;
     this.enabled = false;
     this.worker?.terminate();

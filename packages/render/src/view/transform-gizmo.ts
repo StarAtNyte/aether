@@ -5,6 +5,7 @@
  * and reports the final local transform once on release, so a drag is one
  * undoable edit. While a handle is dragged the orbit camera is disabled.
  */
+import { MOTION_PAUSED, workerScheduler } from '@aether/core';
 import type { Camera, Object3D } from 'three';
 import type { Vec3 } from '@aether/core';
 import type { OrbitControlsLike } from './camera-rig';
@@ -81,6 +82,8 @@ export class TransformGizmo {
         tc.addEventListener('change', () => this.requestRender());
         tc.addEventListener('dragging-changed', (e) => {
           if (this.orbit) this.orbit.enabled = e.value !== true;
+          // Bakes and background workers wait while an object is dragged (@aether/core worker-scheduler).
+          workerScheduler().setPaused('editor-drag', e.value === true, MOTION_PAUSED);
         });
         tc.addEventListener('mouseUp', () => {
           const o = tc.object;
@@ -135,6 +138,7 @@ export class TransformGizmo {
   /** Release the controls and their GPU resources. */
   dispose(): void {
     this.disposed = true;
+    workerScheduler().setPaused('editor-drag', false);
     this.onCommit = null;
     if (this.tc) {
       this.tc.detach();

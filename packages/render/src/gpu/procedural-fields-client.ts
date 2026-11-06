@@ -1,3 +1,4 @@
+import { workerScheduler, workerSchedulerEnabled, type WorkToken } from '@aether/core';
 import { installProceduralFields, proceduralFieldsReady } from './procedural-fields';
 interface FieldWorker {
   onmessage: ((event: MessageEvent) => void) | null;
@@ -11,11 +12,15 @@ let pending: Promise<boolean> | null = null;
 export function warmProceduralFields(factory: (() => FieldWorker) | null = typeof Worker === 'undefined' ? null : () => new Worker(new URL('./procedural-fields.worker.ts', import.meta.url), { type: 'module' })): Promise<boolean> {
   if (proceduralFieldsReady()) return Promise.resolve(true);
   if (!factory) return Promise.resolve(false);
-  pending ??= new Promise(resolve => {
+  // The worker runs holding a `load` slot of the page's worker budget; its 3 s clock starts once it has one.
+  if (pending) return pending;
+  const sched = workerSchedulerEnabled() ? workerScheduler() : null;
+  const now = sched?.tryAcquire('load') ?? null;
+  const run = (token: WorkToken | null): Promise<boolean> => new Promise<boolean>(resolve => {
     let worker: FieldWorker | null = null, done = false;
     const finish = (value: unknown) => {
       if (done) return;
-      done = true; clearTimeout(timer);
+      done = true; clearTimeout(timer); token?.release();
       if (worker) { worker.onmessage = worker.onerror = worker.onmessageerror = null; worker.terminate(); }
       resolve(installProceduralFields(value));
     };
@@ -28,5 +33,6 @@ export function warmProceduralFields(factory: (() => FieldWorker) | null = typeo
       worker.postMessage('prepare');
     } catch { finish(null); }
   });
+  pending = sched && !now ? sched.acquire('load').then(run) : run(now);
   return pending;
 }

@@ -14,6 +14,7 @@
  *   restarted for the next job); after {@link MAX_FAILURES} failures the
  *   pool switches to inline execution for the rest of the session.
  */
+import { WorkerSlot } from '@aether/core';
 import type { ChunkData } from './chunk';
 import { ChunkData as Chunk } from './chunk';
 import { identityKey, type TerrainIdentity } from './jobs';
@@ -89,6 +90,8 @@ export class VoxelJobPool {
   private readonly timeoutMs: number;
   private readonly lanes: Array<Lane | null> = [];
   private readonly queue: Job[] = [];
+  /** Per lane, the slot of the page's worker budget held while it has jobs (null without workers, or in tests). */
+  private readonly slots: Array<WorkerSlot | null>;
   private readonly inline = new VoxelWorkerHandler();
   private inlineBusy = false;
   private failures = 0;
@@ -105,6 +108,8 @@ export class VoxelJobPool {
     this.factory = opts.createWorker === null ? null : (opts.createWorker ?? (typeof Worker !== 'undefined' ? defaultWorker : null));
     this.laneCount = Math.max(1, Math.min(2, Math.floor(opts.workers ?? defaultWorkerCount())));
     this.timeoutMs = Math.max(100, opts.timeoutMs ?? 20_000);
+    const budget = this.factory !== null && opts.createWorker === undefined;
+    this.slots = Array.from({ length: this.laneCount }, () => (budget ? new WorkerSlot('visible') : null));
   }
 
   /** True while jobs run on the main thread (no usable workers). */
@@ -192,10 +197,24 @@ export class VoxelJobPool {
   private pump(): void {
     if (this.disposed) return;
     if (this.inlineMode) {
+      for (const slot of this.slots) slot?.release();
       this.pumpInline();
       return;
     }
-    for (let i = 0; i < this.laneCount && this.queue.length > 0; i++) {
+    for (let i = 0; i < this.laneCount; i++) {
+      const slot = this.slots[i] ?? null;
+      const busy = (this.lanes[i]?.jobs.size ?? 0) > 0;
+      if (this.queue.length === 0) {
+        if (!busy) slot?.release();
+        continue;
+      }
+      // A lane works only holding a slot of the page's worker budget (asked for: the pump runs again when it comes); a
+      // lane more urgent work waits for takes no more jobs and gives the slot back once it drains.
+      if (slot) {
+        if (busy && slot.mustYield) continue;
+        if (!busy && slot.held && slot.mustYield) slot.release();
+        if (!slot.claim(() => this.pump())) continue;
+      }
       let lane = this.lanes[i] ?? null;
       if (!lane) {
         lane = this.startLane(i);
@@ -371,5 +390,6 @@ export class VoxelJobPool {
       this.lanes[i] = null;
     }
     for (const j of this.queue.splice(0)) j.resolve(null);
+    for (const slot of this.slots) slot?.dispose();
   }
 }

@@ -7,7 +7,7 @@
 import { recordScore } from '../lib/bestScore';
 import type { Proof } from '@aether/playtest/proof';
 import { isUserAssetId, worldAssetIds } from '@aether/assets';
-import { History, diffWorlds, getEntity, patchesBetween, type EntityId, type GeneratorDef, type Patch, type WorldDoc } from '@aether/core';
+import { History, diffWorlds, getEntity, lanesWithinBudget, patchesBetween, type EntityId, type GeneratorDef, type Patch, type WorldDoc } from '@aether/core';
 import { hasBuilding } from '@aether/arch';
 import { EMPTY_MEMORY, OFFLINE_EXAMPLES, WorldAgent, createFallbackProvider, improvementPatches, isAbortError, needsRefinement, refineInstruction, type AgentEvent, type FallbackNotice, type PhotoResumeState, type Provenance, type PromptProfile, type Provider, type QualityFix, type RefineMemory, HARDCORE_PASSES, HARDCORE_SHADER_BUDGET_PATCH, bibleText, heroShots, heroReferencePrompt, judgeCloser, lumaPercentiles, meanTargets, passPrompt, type HardcoreRun, type LumaTargets } from '@aether/agent';
 import { createWorkerSandbox, generationLanes, type SandboxRunner } from '@aether/procgen';
@@ -1869,7 +1869,7 @@ const VERIFY_WARMUP_DELAY_MS = 2500;
 function createVerifyPool(lowMemory: boolean): VerifyPool | null {
   if (typeof Worker === 'undefined') return null;
   const nav = typeof navigator === 'undefined' ? undefined : (navigator as Navigator & { deviceMemory?: number });
-  return new VerifyPool({ lanes: verifyLanes({ hardwareConcurrency: nav?.hardwareConcurrency, deviceMemory: nav?.deviceMemory, lowMemory }) });
+  return new VerifyPool({ lanes: lanesWithinBudget(verifyLanes({ hardwareConcurrency: nav?.hardwareConcurrency, deviceMemory: nav?.deviceMemory, lowMemory })) });
 }
 
 function createSandbox(): SandboxRunner | null {

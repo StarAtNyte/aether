@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "license": "MIT",
-  "exports": { ".": "./src/index.ts", "./random": "./src/random.ts" },
+  "exports": { ".": "./src/index.ts", "./random": "./src/random.ts", "./worker-scheduler": "./src/worker-scheduler.ts" },
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "dependencies": { "zod": "^4.6.6" }
