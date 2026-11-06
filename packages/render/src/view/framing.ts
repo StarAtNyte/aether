@@ -27,6 +27,8 @@ export interface FramingItem {
   weight?: number;
   /** Share of the item's own radius that counts toward the framing radius (default 0.6). */
   extent?: number;
+  /** A sight worth seeing from a viewpoint (tagged `landmark`, a temple, a waterfall, a statue, a tower). */
+  landmark?: boolean;
 }
 
 /** A sphere to frame. */

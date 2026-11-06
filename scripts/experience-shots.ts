@@ -144,10 +144,30 @@ const CASES: Record<string, (page: Page, steps: Array<Record<string, unknown>>) 
   },
 };
 
+/** `--hero`: any world, only its entry view once it has settled (a fly-in landed), with the opening pose and the stop names. */
+const heroOnly = args.includes('--hero');
+async function heroCase(page: Page, slug: string, steps: Array<Record<string, unknown>>): Promise<void> {
+  await page.waitForFunction(() => ['exploring', 'title'].includes((window as unknown as { __aetherPlayer?: { phase: string } }).__aetherPlayer?.phase ?? ''), null, { timeout: 60_000 });
+  await page.waitForTimeout(1200);
+  await page.waitForFunction(() => (window as unknown as { __aetherPlayer?: { simulation: { renderer: { cameraFlying: boolean } } | null } }).__aetherPlayer?.simulation?.renderer.cameraFlying === false, null, { timeout: 60_000, polling: 250 }).catch(() => log('still flying'));
+  await page.waitForTimeout(2500);
+  await shot(page, slug, 'entry', steps);
+  // The hero view once the scene and the stops are complete (stop 0; what the cook stores as the opening).
+  await waitStops(page, 2);
+  if ((await page.evaluate(() => (window as unknown as { __aetherPlayer?: { phase: string } }).__aetherPlayer?.phase)) === 'exploring') {
+    await ctrl(page, 'c.setAutoplay(false), c.goTo(0)');
+    await page.waitForTimeout(4000);
+  }
+  await shot(page, slug, 'hero', steps);
+  const pose = await page.evaluate(() => (window as unknown as { __aetherPlayer: { simulation: { renderer: { openingPose(): unknown } } } }).__aetherPlayer.simulation.renderer.openingPose());
+  const names = (await snap(page)).explore;
+  steps.push({ step: 'opening', pose, names });
+}
+
 const server = await env.startServer(() => undefined);
 try {
   for (const slug of only.length > 0 ? only : Object.keys(CASES)) {
-    const run = CASES[slug];
+    const run = heroOnly ? (page: Page, steps: Array<Record<string, unknown>>) => heroCase(page, slug, steps) : CASES[slug];
     if (!run) throw new Error(`no case for ${slug}`);
     const browser = await chromium.launch({ executablePath: env.findChrome(), args: [...env.CHROME_ARGS], headless: env.HEADLESS });
     const steps: Array<Record<string, unknown>> = [];

@@ -95,7 +95,8 @@ import { daylightLampFactor, FORWARD_LIGHTS, LAMP_CUTOFF } from './sync/lights';
 import { installFirstDrawPacer, type FirstDrawPacer } from './gpu/first-draw-pacer';
 import { collectFramingItems, FOCUS_TAG } from './view/content-items';
 import { drainSteps, nearestInView, nearZone, rankOpeningViews, rankOpeningViewsSteps, type OpeningPose, type OpeningStats } from './view/opening-view';
-import { archStopsSteps, MAX_STOPS, quickSceneStopsSteps, sceneStopsSteps, type QuickStopProbe, type RoomArea, type ViewStopPose } from './view/view-stops';
+import type { ArchBuilding, ArchOpening } from './view/arch-hero';
+import { archStopsSteps, MAX_STOPS, quickSceneStopsSteps, sceneStopsSteps, VEGETATION_NAME, viewpointName, type QuickStopProbe, type RoomArea, type ViewStopPose } from './view/view-stops';
 import { sceneOpeningProbe } from './view/opening-probe';
 import { GROW_OVERSHOOT_MAX_RADIUS, GrowIn, growDelay } from './view/grow-in';
 import { installRenderPatches } from './three-patches';
@@ -494,6 +495,9 @@ const _ndc = new Vector2();
 const _bounds = new Box3();
 /** Vertical field of view (degrees) of the first-person walk camera. */
 export const WALK_FOV = 70;
+
+/** Tags of planting (never a viewpoint's subject). */
+const VEGETATION_TAGS: ReadonlySet<string> = new Set(['tree', 'trees', 'plant', 'plants', 'vegetation', 'foliage', 'hedge', 'bush', 'shrub', 'shrubs', 'flora', 'cypress', 'pine', 'palm']);
 
 /** A label from an entity name: parentheses dropped, generated names ("6 x bollard along a line", "Invisible …") refused. */
 export function cleanStopName(raw: string | undefined): string | null {
@@ -3749,18 +3753,23 @@ export class WorldRenderer {
     // Deterministic per world: computed once per document (the scene tests take a second or two on a big world). A view
     // chosen while content was still being built (the load opens close in before the walls are generated) is chosen
     // again once the scene is complete: made without its walls, it stood inside Casa del Patio.
+    // Nor is a view kept that was chosen before builds that settled since: the sync can be idle between two rounds of
+    // generation (a building's walls standing, its windows and the garden's grass not yet built), and a view chosen then
+    // showed Casa del Patio's back wall.
     const doc = this.sync.world;
-    if (!this.openingCache || this.openingCache.world !== doc || (this.openingCache.partial && this.sync.idle)) {
+    const builds = this.sync.buildsSettled;
+    const stale = this.openingCache !== null && this.sync.idle && (this.openingCache.partial || this.openingCache.builds !== builds);
+    if (!this.openingCache || this.openingCache.world !== doc || stale) {
       const partial = !this.sync.idle;
       const view = this.rankOpening(1)[0];
-      this.openingCache = { world: doc, partial, pose: view ? { position: view.position, target: view.target } : null };
+      this.openingCache = { world: doc, partial, builds, pose: view ? { position: view.position, target: view.target } : null };
     }
     const pose = this.openingCache.pose;
     return pose ? { position: [...pose.position], target: [...pose.target], authored: false } : null;
   }
 
   /** The computed opening view of the last world asked about. */
-  private openingCache: { world: WorldDoc | null; partial: boolean; pose: { position: Vec3; target: Vec3 } | null } | null = null;
+  private openingCache: { world: WorldDoc | null; partial: boolean; builds: number; pose: { position: Vec3; target: Vec3 } | null } | null = null;
 
   /**
    * The best `limit` computed opening views of the content, best first (see `view/opening-view.ts`); `stats` counts
@@ -3778,7 +3787,8 @@ export class WorldRenderer {
       this.sync.root.updateMatrixWorld(true);
       const reach = framing.radius * 2 + 100;
       const probe = sceneOpeningProbe(this.sync, this.env.groundMesh, framing.center[1] + reach, framing.center[1] - reach);
-      return rankOpeningViews({ framing, items, fovDeg: cam.fov, aspect: cam.aspect, arch, azimuthDeg: front ?? DEFAULT_FRAMING_AZIMUTH }, probe, limit, stats);
+      const building = arch ? this.archBuilding() : null;
+      return rankOpeningViews({ framing, items, fovDeg: cam.fov, aspect: cam.aspect, arch, azimuthDeg: front ?? DEFAULT_FRAMING_AZIMUTH, ...(building ? { building } : {}) }, probe, limit, stats);
     });
   }
 
@@ -3840,7 +3850,8 @@ export class WorldRenderer {
       rooms.push({ id: node.id, name: cleanStopName(e.arch.name ?? e.name) ?? 'Room', min: [box.min.x, box.min.y, box.min.z], max: [box.max.x, box.max.y, box.max.z], floorY: box.max.y });
     });
     const front = this.archView.active ? this.archFrontAzimuth() : null;
-    const input = { framing, items, fovDeg: cam.fov, aspect: cam.aspect, arch: this.archView.active, azimuthDeg: front ?? DEFAULT_FRAMING_AZIMUTH };
+    const building = this.archView.active ? this.archBuilding() : null;
+    const input = { framing, items, fovDeg: cam.fov, aspect: cam.aspect, arch: this.archView.active, azimuthDeg: front ?? DEFAULT_FRAMING_AZIMUTH, ...(building ? { building } : {}) };
     if (rooms.length > 0) {
       const inRoom = (r: RoomArea, x: number, z: number): boolean => {
         const hit = this.raycastWorld([x, r.floorY + 1, z], [0, -1, 0], 1.6, undefined, r.id);
@@ -3853,13 +3864,13 @@ export class WorldRenderer {
     }
     // A landmark names one stop only (two views of the same temple: the second is a plain viewpoint).
     const used = new Set<string>();
-    const nameAt = (at: Vec3): string | null => {
-      const n = this.landmarkName(at);
+    const nameAt = (at: Vec3, eye?: Vec3): string | null => {
+      const n = this.viewpointLabel(at, eye);
       if (!n || used.has(n)) return null;
       used.add(n);
       return n;
     };
-    const name = (p: { landmark: Vec3 }): string | null => nameAt(p.landmark);
+    const name = (p: { landmark: Vec3; position: Vec3 }): string | null => nameAt(p.landmark, p.position);
     if (mode.quick) {
       const sections = tourSections(items, framing.radius, 7);
       const parts = sections.length > 0 ? sections : [{ center: framing.center, size: Math.max(6, framing.radius * 0.5) }];
@@ -3908,6 +3919,24 @@ export class WorldRenderer {
     return !groundish && wide < 150 && height > 6 && hit.point[1] > box.min.y + 4;
   }
 
+  /**
+   * A viewpoint's label (see `viewpointName`): what it looks at (the landmark at `at`, never a tree) and where it stands
+   * (`eye`: on steps, a terrace, a quay; high over the subject: a lookout).
+   */
+  private viewpointLabel(at: Vec3, eye?: Vec3): string | null {
+    const subject = this.landmarkName(at);
+    if (!subject) return null;
+    if (!eye) return viewpointName(subject);
+    const hit = this.raycastWorld(eye, [0, -1, 0], 40);
+    const e = hit ? this.sync.node(hit.id)?.entity : undefined;
+    const standsOn = e ? [...e.tags, e.name ?? ''].join(' ') : null;
+    const water = this.sync.world ? findWaterBodies(this.sync.world) : [];
+    let nearWater = false;
+    for (const [dx, dz] of [[6, 0], [-6, 0], [0, 6], [0, -6]] as const) if (waterAt(water, eye[0] + dx, eye[2] + dz, eye[1] - 3) !== null) nearWater = true;
+    const ground = hit ? hit.point[1] : eye[1] - 1.7;
+    return viewpointName(subject, { standsOn, raised: ground > at[1] + 4 || eye[1] - ground > 6, nearWater });
+  }
+
   /** Name of the smallest named entity whose box holds `p` (a viewpoint's landmark), cleaned for a label; null when none reads well. */
   private landmarkName(p: Vec3): string | null {
     const box = new Box3();
@@ -3918,7 +3947,8 @@ export class WorldRenderer {
       const e = node.entity;
       if (e.template || node.transient) return;
       const name = cleanStopName(e.name);
-      if (!name) return;
+      // Planting is never a viewpoint's subject (it named Lisbon's "East slope cypress south").
+      if (!name || VEGETATION_NAME.test(name) || e.tags.some((t) => VEGETATION_TAGS.has(t)) || (e.shape.kind === 'procedural' && /tree|plant|foliage|bush|hedge|grass|flower/i.test(e.shape.generator))) return;
       this.sync.entityBounds(node.id, box);
       if (box.isEmpty() || !box.expandByScalar(0.5).containsPoint(at)) return;
       box.getSize(size);
@@ -3973,6 +4003,108 @@ export class WorldRenderer {
       if (o) out.add(o);
     }
     return out;
+  }
+
+  /**
+   * The largest building's facts for its hero view (see `view/arch-hero.ts`): the box and outline of its outside walls and
+   * roof, its doors and windows in those walls with their outward normals, and the paths and roads near it. Null when the
+   * world has no built walls yet. The caller keeps the content at full scale with current matrices.
+   */
+  private archBuilding(): ArchBuilding | null {
+    const world = this.sync.world;
+    if (!world) return null;
+    const ownerOf = (id: EntityId): EntityId | null => {
+      for (let e = world.entities[id], hops = 0; e && hops < 12; e = e.parent ? world.entities[e.parent] : undefined, hops++) if (e.arch?.role === 'building') return e.id;
+      return null;
+    };
+    type Shell = { box: Box3; outline: Vec3[]; walls: Set<EntityId> };
+    const shells = new Map<EntityId, Shell>();
+    const piece = new Box3();
+    const exterior = (e: { arch?: { role: string; kind?: string | undefined } | undefined; tags: readonly string[] }): boolean => e.arch?.role === 'wall' && (e.arch.kind === 'exterior' || e.tags.includes('exterior'));
+    const anyExterior = Object.values(world.entities).some((e) => exterior(e));
+    this.sync.forEachNode((node) => {
+      const e = node.entity;
+      const role = e.arch?.role;
+      if (e.template || (role !== 'wall' && role !== 'roof')) return;
+      if (role === 'wall' && anyExterior && !exterior(e)) return;
+      const owner = ownerOf(node.id);
+      if (!owner) return;
+      piece.setFromObject(node.object);
+      if (piece.isEmpty()) return;
+      let sh = shells.get(owner);
+      if (!sh) shells.set(owner, (sh = { box: new Box3(), outline: [], walls: new Set() }));
+      sh.box.union(piece);
+      if (role === 'wall') {
+        sh.walls.add(node.id);
+        for (const y of [piece.min.y, piece.max.y]) for (const [x, z] of [[piece.min.x, piece.min.z], [piece.max.x, piece.min.z], [piece.min.x, piece.max.z], [piece.max.x, piece.max.z]] as const) sh.outline.push([x, y, z]);
+      } else for (const [x, z] of [[piece.min.x, piece.min.z], [piece.max.x, piece.max.z]] as const) sh.outline.push([x, piece.max.y, z]);
+    });
+    let shell: Shell | null = null;
+    let size = 0;
+    for (const sh of shells.values()) {
+      const v = (sh.box.max.x - sh.box.min.x) * (sh.box.max.z - sh.box.min.z);
+      if (sh.walls.size > 0 && v > size) {
+        size = v;
+        shell = sh;
+      }
+    }
+    if (!shell) return null;
+    const walls = shell.walls;
+    const box = shell.box;
+    const c = box.getCenter(new Vector3());
+    // Rooms (their boxes): which side of an outside door is indoors.
+    const rooms: Box3[] = [];
+    this.sync.forEachNode((node) => {
+      if (node.entity.template || node.entity.arch?.role !== 'room' || rooms.length >= 64) return;
+      const b = new Box3();
+      this.sync.entityBounds(node.id, b);
+      if (!b.isEmpty()) rooms.push(b.expandByScalar(0.05));
+    });
+    const indoors = (x: number, y: number, z: number): number => rooms.reduce((n, r) => n + (x >= r.min.x && x <= r.max.x && z >= r.min.z && z <= r.max.z && y >= r.min.y - 0.5 && y <= r.max.y + 3 ? 1 : 0), 0);
+    const openings: ArchOpening[] = [];
+    const fwd = new Vector3();
+    const at = new Vector3();
+    const dims = new Vector3();
+    this.sync.forEachNode((node) => {
+      const e = node.entity;
+      const role = e.arch?.role;
+      if (e.template || (role !== 'window' && role !== 'opening') || !e.arch?.wall || !walls.has(e.arch.wall) || openings.length >= 160) return;
+      piece.setFromObject(node.object);
+      if (piece.isEmpty()) return;
+      piece.getCenter(at);
+      piece.getSize(dims);
+      node.object.getWorldDirection(fwd);
+      const len = Math.hypot(fwd.x, fwd.z);
+      if (!(len > 1e-3)) return;
+      let nx = fwd.x / len;
+      let nz = fwd.z / len;
+      const params = e.shape.kind === 'procedural' ? (e.shape.params as Record<string, unknown>) : {};
+      let out: number;
+      // A window says which side is indoors (`b` = its +Z); a door is outward on the side with fewer rooms.
+      if (role === 'window' && (params['interior'] === 'a' || params['interior'] === 'b')) out = params['interior'] === 'b' ? -1 : 1;
+      else {
+        const y = piece.min.y + 1;
+        const a = indoors(at.x + nx * 0.8, y, at.z + nz * 0.8);
+        const b = indoors(at.x - nx * 0.8, y, at.z - nz * 0.8);
+        out = a < b ? 1 : a > b ? -1 : (at.x - c.x) * nx + (at.z - c.z) * nz >= 0 ? 1 : -1;
+      }
+      nx *= out;
+      nz *= out;
+      openings.push({ center: [at.x, at.y, at.z], normal: [nx, nz], area: Math.max(dims.x, dims.z) * dims.y, kind: e.tags.includes('entrance') ? 'entrance' : role === 'opening' ? 'door' : 'window' });
+    });
+    // The approach: paths, roads and drives within reach of the house (their nearest point to it).
+    const approach: Array<[number, number]> = [];
+    const reach = Math.max(box.max.x - box.min.x, box.max.z - box.min.z) / 2 + 40;
+    this.sync.forEachNode((node) => {
+      const e = node.entity;
+      if (e.template || e.arch || approach.length >= 32 || !e.tags.some((t) => t === 'path' || t === 'road' || t === 'street' || t === 'driveway' || t === 'drive')) return;
+      this.sync.entityBounds(node.id, piece);
+      if (piece.isEmpty()) return;
+      const x = Math.min(piece.max.x, Math.max(piece.min.x, c.x));
+      const z = Math.min(piece.max.z, Math.max(piece.min.z, c.z));
+      if (Math.hypot(x - c.x, z - c.z) <= reach) approach.push([x, z]);
+    });
+    return { min: [box.min.x, box.min.y, box.min.z], max: [box.max.x, box.max.y, box.max.z], outline: shell.outline, openings, ...(approach.length > 0 ? { approach } : {}) };
   }
 
   /**

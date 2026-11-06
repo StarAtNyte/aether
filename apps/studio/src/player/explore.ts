@@ -167,8 +167,16 @@ export class ExploreController {
   setStops(stops: ViewStopPose[]): void {
     if (this.disposed || stops.length === 0) return;
     const keep = this.state.index === 0 ? 0 : -1;
+    const was = this.state.stops[0];
     this.set({ stops, index: keep });
     this.indexRooms();
+    // A building's hero view is chosen again once the scene has finished building (its windows, its garden's grass): a
+    // walk still holding the first picture moves to the new one.
+    const now = stops[0];
+    if (this.exp.explore === 'walk' && keep === 0 && this.holdAction === 'next' && was && now && Math.hypot(now.position[0] - was.position[0], now.position[1] - was.position[1], now.position[2] - was.position[2]) > 1) {
+      const p = this.stopPose(0);
+      if (p) this.moveWalk(p);
+    }
     // A city still on its opening view (the drone not started): move to street level now that there are stops to choose.
     if (this.exp.entry === 'street-drone' && this.holdAction === 'drone' && keep === 0) {
       const i = this.streetStop();

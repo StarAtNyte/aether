@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { boxSightTest, type FramingItem } from '../src/view/framing';
 import { NEAR_ZONE, nearestInView, type OpeningProbe } from '../src/view/opening-view';
-import { archStops, MAX_STOPS, MIN_STOPS, MIN_STOP_SPACING, orderStops, quickSceneStops, ROOM_EYE, roomStop, sceneStops, type QuickStopProbe, type RoomArea } from '../src/view/view-stops';
+import { archStops, MAX_STOPS, MIN_STOPS, MIN_STOP_SPACING, orderStops, quickSceneStops, ROOM_EYE, roomStop, sceneStops, viewpointName, type QuickStopProbe, type RoomArea } from '../src/view/view-stops';
 import { parseCookManifest, worldIrHash } from '../src/cook/format';
 
 const box = (min: [number, number, number], max: [number, number, number]): FramingItem => ({ min, max });
@@ -187,5 +187,20 @@ describe('cooked tour stops', () => {
   it('leaves the presentation fields out of the IR hash', async () => {
     const world = { id: 'w', name: 'W', entities: {} };
     expect(await worldIrHash({ ...world, profile: 'city', views: [{ position: [0, 0, 0], target: [1, 0, 0] }] })).toBe(await worldIrHash(world));
+  });
+});
+
+describe('viewpoint names', () => {
+  it('names a viewpoint by its subject and where it stands, never by a tree', () => {
+    expect(viewpointName('East slope cypress south')).toBeNull();
+    expect(viewpointName('West olive grove')).toBeNull();
+    expect(viewpointName('Broadleaf')).toBeNull();
+    expect(viewpointName('Temple', { standsOn: 'steps stairs' })).toBe('Temple steps');
+    expect(viewpointName('Harbour', { raised: true })).toBe('Harbour lookout');
+    expect(viewpointName('Doric temple', { raised: true })).toBe('Doric temple lookout');
+    expect(viewpointName('Three-tier aqueduct', { nearWater: true })).toBe('Three-tier aqueduct shore');
+    expect(viewpointName('Stone quay', { standsOn: 'quay focus Stone quay' })).toBe('Stone quay');
+    expect(viewpointName('Retaining wall east 2')).toBe('Retaining wall view');
+    expect(viewpointName(null)).toBeNull();
   });
 });

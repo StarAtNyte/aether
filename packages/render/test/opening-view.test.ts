@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { boxSightTest, type FramingItem } from '../src/view/framing';
-import { ARCH_COVER_ZONE, chooseOpeningView, horizonPitch, NEAR_ZONE, nearestInView, OPENING_HEIGHT, openingLandmark, type OpeningProbe } from '../src/view/opening-view';
+import { ARCH_COVER_ZONE, chooseOpeningView, horizonPitch, NEAR_ZONE, nearestInView, OPENING_HEIGHT, openingLandmark, vistaMeasure, vistaPoints, type OpeningProbe } from '../src/view/opening-view';
 
 const boxAt = (cx: number, cz: number, half: number, height: number, extra: Partial<FramingItem> = {}): FramingItem => ({ min: [cx - half, 0, cz - half], max: [cx + half, height, cz + half], ...extra });
 
@@ -115,5 +115,24 @@ describe('opening view', () => {
     // Without the ground cover counted the same search stands in the grass.
     const blind = chooseOpeningView(input, { ...probe, cover: undefined });
     expect(nearestInView(probe.cover!, blind!.position, blind!.target, 50, 16 / 9, ARCH_COVER_ZONE)).toBeLessThan(ARCH_COVER_ZONE);
+  });
+});
+
+describe('grand view of a scene', () => {
+  it('scores an open, lit view of the sights over a cramped, dark spot', () => {
+    const temple: FramingItem = { min: [-10, 0, 60], max: [10, 12, 80], landmark: true };
+    const falls: FramingItem = { min: [30, 0, 90], max: [36, 30, 91], landmark: true };
+    const overhang: FramingItem = { min: [-20, 6, -6], max: [20, 8, 4] };
+    const rock: FramingItem = { min: [-20, 0, 4], max: [20, 5, 6] };
+    const items = [temple, falls];
+    const vHalf = (50 * Math.PI) / 360;
+    const hHalf = Math.atan(Math.tan(vHalf) * (16 / 9));
+    const open = vistaMeasure([0, 3, 20], 0.15, -0.05, boxSightTest([temple, falls, overhang]), items, vHalf, hHalf, 60);
+    const dark = vistaMeasure([0, 3, 0], 0.15, -0.05, boxSightTest([temple, falls, overhang, rock]), items, vHalf, hHalf, 60);
+    expect(open.sights).toBe(2);
+    expect(open.enclosed).toBe(0);
+    expect(dark.enclosed).toBeGreaterThan(0.5);
+    expect(dark.cramped).toBeGreaterThan(0.2);
+    expect(vistaPoints(open)).toBeGreaterThan(vistaPoints(dark) + 3);
   });
 });

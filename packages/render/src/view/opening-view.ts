@@ -10,9 +10,14 @@
  * - close to the content's middle,
  * and from which the landmark is in sight and the view is full of content with an open foreground. The camera faces
  * the landmark with the horizon in the upper third of the frame. Deterministic: the same world gives the same view.
+ *
+ * A building (`input.building`) is shot as an architectural photographer would first (see `arch-hero.ts`): its front at
+ * a three-quarter angle. A scene is scored as a grand view as well ({@link vistaScore}: depth, its sights in view, never a
+ * cramped or enclosed, dark spot), and with several sights spread out, views aimed at all of them together are tried too.
  */
 import type { Vec3 } from '@aether/core';
 import type { Framing, FramingItem, SightTest } from './framing';
+import { archHeroViewsSteps, type ArchBuilding } from './arch-hero';
 
 /** What lies at the top of the scene at a point in plan. */
 export interface OpeningSurface {
@@ -20,6 +25,8 @@ export interface OpeningSurface {
   y: number;
   /** `ground`: open, walkable (terrain, a street, a plaza); `water`: a water surface or ground under water; `blocked`: a roof, a wall top, a rock, a tree. */
   kind: 'ground' | 'water' | 'blocked';
+  /** Ground that is a path, a road, a terrace or a deck (a building's hero view prefers it to the lawn). */
+  paved?: boolean;
 }
 
 /** The renderer's view of its scene for {@link chooseOpeningView}. */
@@ -50,6 +57,8 @@ export interface OpeningInput {
   arch?: boolean;
   /** Azimuth (degrees, the framing convention: the camera sits at `center + (sin a, ·, cos a)`) tried first. */
   azimuthDeg?: number;
+  /** The building of an `arch` world: its hero view is searched first (see `arch-hero.ts`). */
+  building?: ArchBuilding;
 }
 
 /** A chosen opening view. */
@@ -81,17 +90,17 @@ export const NEAR_ZONE = 2;
  */
 export const ARCH_COVER_ZONE = 3;
 /** Smallest downward pitch (radians) of an opening view: the orbit camera never looks level or up. */
-const MIN_DOWN = 0.035;
+export const MIN_DOWN = 0.035;
 /** Directions tried on each ring. */
 const AZIMUTHS = 16;
 
 const deg = Math.PI / 180;
 
 /** The landmark of the content: the biggest focus item, else the tallest solid set-piece near the middle; null for no items. */
-export function openingLandmark(framing: Framing, items: readonly FramingItem[]): { center: Vec3; top: number; base: number } | null {
+export function openingLandmark(framing: Framing, items: readonly FramingItem[]): { center: Vec3; top: number; base: number; min?: Vec3; max?: Vec3 } | null {
   const c = framing.center;
   const r = Math.max(1, framing.radius);
-  let best: { center: Vec3; top: number; base: number; score: number } | null = null;
+  let best: { center: Vec3; top: number; base: number; min: Vec3; max: Vec3; score: number } | null = null;
   for (const it of items) {
     if (![...it.min, ...it.max].every(Number.isFinite)) continue;
     const sx = it.max[0] - it.min[0];
@@ -103,9 +112,9 @@ export function openingLandmark(framing: Framing, items: readonly FramingItem[])
     if (sy < 1 || off > 1.2) continue;
     const size = Math.cbrt(Math.max(1e-3, sx * sy * sz));
     const score = (it.focus ? 1000 : 0) + (sy + size) * (it.weight ?? 1) * (1.2 - off);
-    if (!best || score > best.score) best = { center, top: it.max[1], base: it.min[1], score };
+    if (!best || score > best.score) best = { center, top: it.max[1], base: it.min[1], min: it.min, max: it.max, score };
   }
-  return best ? { center: best.center, top: best.top, base: best.base } : null;
+  return best ? { center: best.center, top: best.top, base: best.base, min: best.min, max: best.max } : null;
 }
 
 /** Eye height above the ground for content of radius `radius`: standing height for a house or a room, a little higher over a wide landscape. */
@@ -167,6 +176,11 @@ export function drainSteps<T>(steps: Generator<void, T, void>): T {
 export function* rankOpeningViewsSteps(input: OpeningInput, probe: OpeningProbe, limit = 1, stats?: OpeningStats): Generator<void, OpeningPose[], void> {
   const { framing, items } = input;
   if (!framing.center.every(Number.isFinite) || !(framing.radius > 0)) return [];
+  // A building: the architectural photographer's view of its front first; the general search only when no spot passes.
+  if (input.arch && input.building) {
+    const hero = yield* archHeroViewsSteps(input, input.building, probe, limit, stats);
+    if (hero.length > 0) return hero;
+  }
   const r = Math.max(6, framing.radius);
   const vHalf = (Math.max(10, Math.min(120, input.fovDeg || 50)) * deg) / 2;
   const hHalf = Math.atan(Math.tan(vHalf) * (input.aspect > 0 ? input.aspect : 16 / 9));
@@ -182,51 +196,67 @@ export function* rankOpeningViewsSteps(input: OpeningInput, probe: OpeningProbe,
   const fit = markHeight > 0 ? markHeight / (2 * Math.tan(vHalf) * 0.5) : 0;
   const far = Math.min(120, r + 8);
   const rings = [...new Set([...RING_SHARES.map((f) => r * f), ...(fit > 0 ? [fit, fit * 1.5] : [])].map((d) => Math.round(Math.max(8, Math.min(far, d)))))].sort((a, b) => a - b);
+  // A scene with several sights spread out (a temple on a cliff, waterfalls across the lagoon): also the views of all of
+  // them together, aimed at their middle, from rings round it; the grand-view score (`vistaScore`) weighs them.
+  const aims: Array<{ at: Vec3; mark: typeof mark; rings: number[] }> = [{ at: lc, mark, rings }];
+  const sights = input.arch ? [] : items.filter((it) => it.landmark && [...it.min, ...it.max].every(Number.isFinite));
+  if (sights.length >= 2) {
+    const mids = sights.map((it): Vec3 => [(it.min[0] + it.max[0]) / 2, (it.min[1] + it.max[1]) / 2, (it.min[2] + it.max[2]) / 2]);
+    const at: Vec3 = [0, 1, 2].map((i) => mids.reduce((a, m) => a + (m[i] as number), 0) / mids.length) as Vec3;
+    const spread = Math.max(...mids.map((m) => Math.hypot(m[0] - at[0], m[2] - at[2])));
+    if (spread > 15 && Math.hypot(at[0] - lc[0], at[2] - lc[2]) > 12) {
+      const top = Math.max(...sights.map((it) => it.max[1]));
+      const base = Math.min(...sights.map((it) => it.min[1]));
+      aims.push({ at, mark: { center: at, top, base }, rings: [...new Set(RING_SHARES.map((f) => Math.round(Math.max(8, Math.min(far, r * f)))))] });
+    }
+  }
   const all: Array<OpeningPose & { covered: boolean }> = [];
-  for (const d of rings) {
-    for (let k = 0; k < AZIMUTHS; k++) {
-      // From the preferred side outward, alternating left and right.
-      const step = Math.ceil(k / 2) * (k % 2 === 1 ? 1 : -1);
-      const az = (az0 + (step * 360) / AZIMUTHS) * deg;
-      const x = lc[0] + Math.sin(az) * d;
-      const z = lc[2] + Math.cos(az) * d;
-      if (stats) stats.tried++;
-      const ground = standable(probe, x, z, stats);
-      if (ground === null) continue;
-      let placed = false;
-      for (const [hi, h] of heights.entries()) {
-        // The raised eye only where standing height does not work (cramped, or the landmark hidden).
-        if (placed) break;
-        const eye: Vec3 = [x, ground + h, z];
-        const cramped = crampedBy(probe, eye, ground, hi === 0 ? CLEARANCE : CLEARANCE * 0.8);
-        if (cramped) {
-          if (stats) {
-            stats.cramped++;
-            stats[cramped] = (stats[cramped] ?? 0) + 1;
+  for (const { at: aim, mark: aimMark, rings: aimRings } of aims) {
+    for (const d of aimRings) {
+      for (let k = 0; k < AZIMUTHS; k++) {
+        // From the preferred side outward, alternating left and right.
+        const step = Math.ceil(k / 2) * (k % 2 === 1 ? 1 : -1);
+        const az = (az0 + (step * 360) / AZIMUTHS) * deg;
+        const x = aim[0] + Math.sin(az) * d;
+        const z = aim[2] + Math.cos(az) * d;
+        if (stats) stats.tried++;
+        const ground = standable(probe, x, z, stats);
+        if (ground === null) continue;
+        let placed = false;
+        for (const [hi, h] of heights.entries()) {
+          // The raised eye only where standing height does not work (cramped, or the landmark hidden).
+          if (placed) break;
+          const eye: Vec3 = [x, ground + h, z];
+          const cramped = crampedBy(probe, eye, ground, hi === 0 ? CLEARANCE : CLEARANCE * 0.8);
+          if (cramped) {
+            if (stats) {
+              stats.cramped++;
+              stats[cramped] = (stats[cramped] ?? 0) + 1;
+            }
+            continue;
           }
-          continue;
+          let pose = scoreView(eye, aim, aimMark, input, probe.sight, items, totalWeight, vHalf, hHalf, r);
+          // Nothing in the near zone of the lens (a leaf, a branch, a wall edge a metre away fills the frame), never under water.
+          if (pose && (probe.underWater?.(eye) || nearZone(probe.sight, pose.position, pose.target, input.fovDeg, input.aspect) < NEAR_ZONE)) {
+            if (stats) stats.near = (stats.near ?? 0) + 1;
+            pose = null;
+          }
+          if (!pose) {
+            if (stats) stats.noAim++;
+            continue;
+          }
+          // A building is framed over its garden, not through the grass at the camera's feet: a spot with ground cover close
+          // to the lens tries the raised eye, and is kept only for when no spot is clear.
+          const covered = input.arch === true && nearestInView(probe.cover ?? probe.sight, pose.position, pose.target, input.fovDeg, input.aspect, ARCH_COVER_ZONE) < ARCH_COVER_ZONE;
+          if (covered && stats) stats.cover = (stats.cover ?? 0) + 1;
+          // A raised eye is the second choice; a spot far from the middle is less of a place.
+          const central = Math.hypot(x - framing.center[0], z - framing.center[2]) / r;
+          placed = pose.sees && !covered;
+          all.push({ ...pose, covered, score: pose.score - hi * 0.4 - central * 0.8 - Math.max(0, central - 1) * 1.5 - (d / r) * 0.2 });
+          if (stats) stats.kept++;
         }
-        let pose = scoreView(eye, lc, mark, input, probe.sight, items, totalWeight, vHalf, hHalf, r);
-        // Nothing in the near zone of the lens (a leaf, a branch, a wall edge a metre away fills the frame), never under water.
-        if (pose && (probe.underWater?.(eye) || nearZone(probe.sight, pose.position, pose.target, input.fovDeg, input.aspect) < NEAR_ZONE)) {
-          if (stats) stats.near = (stats.near ?? 0) + 1;
-          pose = null;
-        }
-        if (!pose) {
-          if (stats) stats.noAim++;
-          continue;
-        }
-        // A building is framed over its garden, not through the grass at the camera's feet: a spot with ground cover close
-        // to the lens tries the raised eye, and is kept only for when no spot is clear.
-        const covered = input.arch === true && nearestInView(probe.cover ?? probe.sight, pose.position, pose.target, input.fovDeg, input.aspect, ARCH_COVER_ZONE) < ARCH_COVER_ZONE;
-        if (covered && stats) stats.cover = (stats.cover ?? 0) + 1;
-        // A raised eye is the second choice; a spot far from the middle is less of a place.
-        const central = Math.hypot(x - framing.center[0], z - framing.center[2]) / r;
-        placed = pose.sees && !covered;
-        all.push({ ...pose, covered, score: pose.score - hi * 0.4 - central * 0.8 - Math.max(0, central - 1) * 1.5 - (d / r) * 0.2 });
-        if (stats) stats.kept++;
+        yield;
       }
-      yield;
     }
   }
   // Clear spots that see the landmark first, then spots that see it, if there are any; then best first, ties in the order
@@ -245,7 +275,7 @@ export function* rankOpeningViewsSteps(input: OpeningInput, probe: OpeningProbe,
 }
 
 /** The ground height at (x, z) when the spot is open, flat enough and dry; null otherwise. */
-function standable(probe: OpeningProbe, x: number, z: number, stats?: OpeningStats): number | null {
+export function standable(probe: OpeningProbe, x: number, z: number, stats?: OpeningStats): number | null {
   const s = probe.surface(x, z);
   if (!s || s.kind !== 'ground' || !Number.isFinite(s.y)) {
     if (stats) stats.notGround++;
@@ -266,7 +296,7 @@ function standable(probe: OpeningProbe, x: number, z: number, stats?: OpeningSta
  * waist rays follow the slope, so a hillside street is not taken for a wall), and headroom above. Returns the reason
  * a spot fails, or null when it is clear.
  */
-function crampedBy(probe: OpeningProbe, eye: Vec3, ground: number, room: number): 'headroom' | 'eye' | 'waist' | null {
+export function crampedBy(probe: OpeningProbe, eye: Vec3, ground: number, room: number): 'headroom' | 'eye' | 'waist' | null {
   const sight = probe.near ?? probe.sight;
   // A roof or a canopy covers the spot; one thin overhead line (a tram wire, a cable) does not.
   let covered = 0;
@@ -287,7 +317,7 @@ function crampedBy(probe: OpeningProbe, eye: Vec3, ground: number, room: number)
 }
 
 /** Aim from `eye` at the landmark with the horizon in the upper third, and score what the view holds; null when the landmark is out of reach of the frame. */
-function scoreView(eye: Vec3, lc: Vec3, mark: { top: number; base: number } | null, input: OpeningInput, sight: SightTest, items: readonly FramingItem[], total: number, vHalf: number, hHalf: number, r: number): Omit<OpeningPose, 'score'> & { score: number } | null {
+function scoreView(eye: Vec3, lc: Vec3, mark: { top: number; base: number; min?: Vec3; max?: Vec3 } | null, input: OpeningInput, sight: SightTest, items: readonly FramingItem[], total: number, vHalf: number, hHalf: number, r: number): Omit<OpeningPose, 'score'> & { score: number } | null {
   const dx = lc[0] - eye[0];
   const dz = lc[2] - eye[2];
   const flat = Math.hypot(dx, dz);
@@ -314,9 +344,16 @@ function scoreView(eye: Vec3, lc: Vec3, mark: { top: number; base: number } | nu
     else if (share < 0.08) score -= 1;
   }
   // The landmark itself in sight (its middle and its top).
-  const sees = sight(eye, lc) >= Math.hypot(flat, lc[1] - eye[1]) * 0.9;
+  // A large landmark (a temple 40 m long) is in sight when the ray reaches its own box: its middle is inside it.
+  const reach = (p: Vec3): number => {
+    const d = Math.hypot(p[0] - eye[0], p[1] - eye[1], p[2] - eye[2]);
+    const entry = mark?.min && mark.max ? boxEntryDistance(eye, p, mark.min, mark.max) : null;
+    return Math.min(d * 0.9, entry !== null ? entry - 0.5 : d * 0.9);
+  };
+  const sees = sight(eye, lc) >= reach(lc);
   if (sees) score += 4;
-  if (sight(eye, [lc[0], top - 0.3, lc[2]]) >= Math.hypot(flat, top - 0.3 - eye[1]) * 0.9) score += 1.5;
+  const topPoint: Vec3 = [lc[0], top - 0.3, lc[2]];
+  if (sight(eye, topPoint) >= reach(topPoint)) score += 1.5;
   // An open foreground: five rays across the view at eye height (a wall or a trunk a few metres ahead is a poor first picture).
   let open = 0;
   for (let i = -2; i <= 2; i++) {
@@ -340,9 +377,108 @@ function scoreView(eye: Vec3, lc: Vec3, mark: { top: number; base: number } | nu
     seen += it.weight ?? 1;
   }
   score += (seen / total) * 3;
+  // A scene's opening is a grand view: depth, its sights in view, open sky over the eye (see `vistaScore`).
+  if (!input.arch) score += vistaScore(eye, yaw, pitch, sight, items, vHalf, hHalf, r);
   // The orbit pivot at the landmark's horizontal distance: orbiting turns round what is looked at.
   const target: Vec3 = [eye[0] + fx * flat, eye[1] + Math.tan(pitch) * flat, eye[2] + fz * flat];
   return { position: eye, target, landmark: [lc[0], lc[1], lc[2]], score, sees };
+}
+
+/** Distance along `a` → `b` at which the segment enters the box (0 inside it), or null when it misses (slab test). */
+export function boxEntryDistance(a: Vec3, b: Vec3, min: Vec3, max: Vec3): number | null {
+  let t0 = 0;
+  let t1 = 1;
+  for (let i = 0; i < 3; i++) {
+    const d = (b[i] as number) - (a[i] as number);
+    if (Math.abs(d) < 1e-9) {
+      if ((a[i] as number) < (min[i] as number) || (a[i] as number) > (max[i] as number)) return null;
+      continue;
+    }
+    let ta = ((min[i] as number) - (a[i] as number)) / d;
+    let tb = ((max[i] as number) - (a[i] as number)) / d;
+    if (ta > tb) [ta, tb] = [tb, ta];
+    t0 = Math.max(t0, ta);
+    t1 = Math.min(t1, tb);
+    if (t0 > t1) return null;
+  }
+  return t0 * Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+}
+
+/** The parts of {@link vistaScore}, for tests and diagnostics. */
+export interface VistaMeasure {
+  /** Share of the frame's rays that run out far (an open view into the distance). */
+  far: number;
+  /** Median free distance of the frame's rays (m). */
+  median: number;
+  /** Share of the frame's rays blocked within {@link VISTA_CRAMPED} m (a rock face, a wall before the lens). */
+  cramped: number;
+  /** Share of the rays over the eye that are blocked (an overhang, a canopy, a gorge: a dark spot). */
+  enclosed: number;
+  /** Landmarks (`FramingItem.landmark`) in the frame and in sight. */
+  sights: number;
+}
+
+/** Rays shorter than this (m) make a view cramped. */
+export const VISTA_CRAMPED = 8;
+
+/** What the view from `eye` along `yaw` / `pitch` holds of a grand view (see {@link vistaScore}). */
+export function vistaMeasure(eye: Vec3, yaw: number, pitch: number, sight: SightTest, items: readonly FramingItem[], vHalf: number, hHalf: number, r: number): VistaMeasure {
+  const cap = Math.max(150, r * 3);
+  const ds: number[] = [];
+  for (const v of [0.3, 0, -0.3]) {
+    for (const u of [-0.8, -0.4, 0, 0.4, 0.8]) {
+      const a = yaw + Math.atan(Math.tan(hHalf) * u);
+      const b = pitch + Math.atan(Math.tan(vHalf) * v);
+      const c = Math.cos(b);
+      ds.push(Math.min(cap, sight(eye, [eye[0] + Math.sin(a) * c * cap, eye[1] + Math.sin(b) * cap, eye[2] + Math.cos(a) * c * cap])));
+    }
+  }
+  const sorted = [...ds].sort((p, q) => p - q);
+  const median = sorted[Math.floor(sorted.length / 2)] as number;
+  const far = ds.filter((d) => d >= Math.min(cap, 60)).length / ds.length;
+  const cramped = ds.filter((d) => d < VISTA_CRAMPED).length / ds.length;
+  // Over the eye: straight up and four rays at 50 degrees.
+  let blocked = 0;
+  const up = 60;
+  const dirs: Vec3[] = [[0, 1, 0]];
+  for (let i = 0; i < 4; i++) {
+    const a = yaw + (i * Math.PI) / 2;
+    dirs.push([Math.sin(a) * Math.cos(50 * deg), Math.sin(50 * deg), Math.cos(a) * Math.cos(50 * deg)]);
+  }
+  for (const d of dirs) if (sight(eye, [eye[0] + d[0] * up, eye[1] + d[1] * up, eye[2] + d[2] * up]) < up) blocked++;
+  // The sights: in the frame and in sight (their middle, or a third of the way up).
+  const fx = Math.sin(yaw);
+  const fz = Math.cos(yaw);
+  let sights = 0;
+  for (const it of items) {
+    if (!it.landmark) continue;
+    const mid: Vec3 = [(it.min[0] + it.max[0]) / 2, it.min[1] + (it.max[1] - it.min[1]) * 0.4, (it.min[2] + it.max[2]) / 2];
+    const cx = mid[0] - eye[0];
+    const cy = mid[1] - eye[1];
+    const cz = mid[2] - eye[2];
+    const fwd = cx * fx + cz * fz;
+    if (fwd < 2) continue;
+    const side = cx * fz - cz * fx;
+    if (Math.abs(Math.atan2(side, fwd)) > hHalf * 0.95 || Math.abs(Math.atan2(cy, fwd) - pitch) > vHalf * 0.95) continue;
+    const d = Math.hypot(cx, cy, cz);
+    // In sight: the ray reaches the sight's own box (it may enter it a half-size before its middle).
+    if (sight(eye, mid) >= Math.min(d * 0.85, d - Math.max(it.max[0] - it.min[0], it.max[2] - it.min[2]) / 2 - 1)) sights++;
+  }
+  return { far, median, cramped, enclosed: blocked / dirs.length, sights };
+}
+
+/**
+ * Score of a scene view as a grand view: depth (a far share up to 1.5 and a long median up to 1), its sights in view (0.8
+ * each, up to 3), less a cramped frame (up to −2.5) and a dark, enclosed spot (up to −2.5).
+ */
+export function vistaPoints(m: VistaMeasure): number {
+  const depth = 1.5 * m.far + Math.max(0, Math.min(1, Math.log10(Math.max(1, m.median) / 5) / 1.5));
+  return depth + 0.8 * Math.min(3, m.sights) - 2.5 * m.cramped - 2.5 * m.enclosed;
+}
+
+/** {@link vistaPoints} of {@link vistaMeasure}. */
+export function vistaScore(eye: Vec3, yaw: number, pitch: number, sight: SightTest, items: readonly FramingItem[], vHalf: number, hHalf: number, r: number): number {
+  return vistaPoints(vistaMeasure(eye, yaw, pitch, sight, items, vHalf, hHalf, r));
 }
 
 /**

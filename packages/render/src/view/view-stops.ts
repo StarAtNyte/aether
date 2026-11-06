@@ -242,6 +242,44 @@ export function* archStopsSteps(rooms: readonly RoomArea[], probe: RoomProbe, fo
   return orderStops(out);
 }
 
+/** Words of a subject's name that say where it is, not what it is ("East slope cypress south", "Upper terrace 2"). */
+const PLACE_WORDS = /\b(north|south|east|west|northern|southern|eastern|western|ne|nw|se|sw|upper|lower|left|right|front|back|rear|near|far|middle|centre|center|slope|side|edge|corner|row|group|cluster|line|no|\d+[a-z]?)\b/gi;
+/** Planting: never what a viewpoint is named after. */
+export const VEGETATION_NAME = /\b(cypress(es)?|pines?|palms?|oaks?|olives?|trees?|hedges?|bush(es)?|cedars?|birch(es)?|willows?|poplars?|plane trees?|vegetation|plants?|planting|foliage|shrubs?|grass|flowers?|vines?|ivy|reeds?|ferns?|lavender|rosemary|boxwood|topiary|orchard|grove|broadleaf|conifers?|spruces?|firs?|eucalyptus|bamboo|scrub|maquis|woods?|forest|copse)\b/i;
+/** What a viewpoint stands on (a tag or a word of its name) and the word that names the place. */
+const PLACE_KINDS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\b(steps|stairs?|staircase|stairway)\b/i, 'steps'],
+  [/\b(terrace|deck|patio)\b/i, 'terrace'],
+  [/\b(bridge|viaduct|aqueduct)\b/i, 'bridge'],
+  [/\b(plaza|square|piazza|forum)\b/i, 'square'],
+  [/\b(beach|sand|shore)\b/i, 'shore'],
+  [/\b(dock|pier|quay|jetty|harbou?r|wharf)\b/i, 'quay'],
+  [/\b(road|street|avenue|lane)\b/i, 'street'],
+  [/\b(path|trail|walk|promenade)\b/i, 'path'],
+  [/\b(garden|lawn|park|courtyard)\b/i, 'garden'],
+];
+
+/**
+ * A viewpoint's label from what it looks at and where it stands: the subject's noun (place words and numbers dropped:
+ * "Marble temple", "Harbour") and the place ("Temple steps", "Harbour lookout"): what the eye stands on (steps, a terrace,
+ * a bridge, a quay, a street, a path), else "lookout" from high over the subject, "shore" by the water, else "view".
+ * Never a tree: a planting subject is refused (null). Null when there is no subject.
+ */
+export function viewpointName(subject: string | null | undefined, place: { standsOn?: string | null; raised?: boolean; nearWater?: boolean } = {}): string | null {
+  if (!subject || VEGETATION_NAME.test(subject)) return null;
+  const noun = subject.replace(PLACE_WORDS, ' ').replace(/[^\p{L}\p{N}' -]/gu, ' ').replace(/\s+/g, ' ').trim();
+  if (noun.length < 3) return null;
+  const words = noun.split(' ');
+  const head = words.slice(0, 3).join(' ');
+  const kind = place.standsOn ? PLACE_KINDS.find(([re]) => re.test(place.standsOn as string))?.[1] : undefined;
+  const suffix = kind ?? (place.raised ? 'lookout' : place.nearWater ? 'shore' : 'view');
+  // The subject already names the place ("Harbour quay", "Temple steps"): no second word for it.
+  if (new RegExp(`\\b${suffix}\\b`, 'i').test(head) || PLACE_KINDS.some(([re, k]) => k === suffix && re.test(head))) return cap(head);
+  return cap(`${head} ${suffix}`);
+}
+
+const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
+
 /** What the quick viewpoints ask of the scene: a few rays each, no opening-view search. */
 export interface QuickStopProbe {
   /** Height of the topmost surface at (x, z) and whether it is water; null where there is nothing. */
@@ -264,7 +302,7 @@ export interface StopSection {
  * the scene's middle first) over dry ground. `street`: at eye height in the street (a city), with {@link NEAR_ZONE} clear
  * in the frame; otherwise raised over the section, a drone's viewpoint. Ordered as a walk from `first`.
  */
-export function* quickSceneStopsSteps(sections: readonly StopSection[], center: Vec3, probe: QuickStopProbe, opts: { first?: ViewStopPose | null; street?: boolean; limit?: number; name?: (at: Vec3) => string | null } = {}): Generator<void, ViewStopPose[], void> {
+export function* quickSceneStopsSteps(sections: readonly StopSection[], center: Vec3, probe: QuickStopProbe, opts: { first?: ViewStopPose | null; street?: boolean; limit?: number; name?: (at: Vec3, eye?: Vec3) => string | null } = {}): Generator<void, ViewStopPose[], void> {
   const limit = Math.max(1, Math.min(MAX_STOPS, opts.limit ?? MAX_STOPS));
   const out: ViewStopPose[] = [];
   if (opts.first) out.push({ ...opts.first, position: [...opts.first.position], target: [...opts.first.target] });
@@ -285,7 +323,7 @@ export function* quickSceneStopsSteps(sections: readonly StopSection[], center: 
         const target: Vec3 = [s.center[0], street ? Math.max(s.center[1], g.y + 1.2) : s.center[1], s.center[2]];
         if (!probe.clear(eye, target)) continue;
         if (street && probe.near && probe.near(eye, target) < NEAR_ZONE) continue;
-        const name = opts.name?.(s.center) ?? null;
+        const name = opts.name?.(s.center, eye) ?? null;
         found = { position: eye, target, ...(name ? { name } : {}) };
         break;
       }
@@ -297,6 +335,6 @@ export function* quickSceneStopsSteps(sections: readonly StopSection[], center: 
 }
 
 /** {@link quickSceneStopsSteps} at once. */
-export function quickSceneStops(sections: readonly StopSection[], center: Vec3, probe: QuickStopProbe, opts: { first?: ViewStopPose | null; street?: boolean; limit?: number; name?: (at: Vec3) => string | null } = {}): ViewStopPose[] {
+export function quickSceneStops(sections: readonly StopSection[], center: Vec3, probe: QuickStopProbe, opts: { first?: ViewStopPose | null; street?: boolean; limit?: number; name?: (at: Vec3, eye?: Vec3) => string | null } = {}): ViewStopPose[] {
   return drainSteps(quickSceneStopsSteps(sections, center, probe, opts));
 }

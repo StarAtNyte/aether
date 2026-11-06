@@ -15,6 +15,8 @@ const GROUND_TAGS: ReadonlySet<string> = new Set([
   'ground', 'terrain', 'land', 'hill', 'island', 'road', 'roads', 'street', 'plaza', 'square', 'path', 'paths', 'floor', 'deck', 'beach',
   'sand', 'grass', 'lawn', 'park', 'garden', 'courtyard', 'terrace', 'pavement', 'sidewalk', 'bridge', 'dock', 'pier', 'quay', 'steps', 'stairs',
 ]);
+/** Ground tags that are hard standing (a path, a road, a terrace): where a building's hero view prefers to stand. */
+const PAVED_TAGS: ReadonlySet<string> = new Set(['road', 'roads', 'street', 'plaza', 'square', 'path', 'paths', 'floor', 'deck', 'courtyard', 'terrace', 'pavement', 'sidewalk', 'bridge', 'dock', 'pier', 'quay', 'steps', 'stairs', 'driveway', 'drive', 'patio']);
 /** Building roles one never opens on (a roof, a wall top, inside a room). */
 const STANDABLE_ARCH_ROLES: ReadonlySet<string> = new Set(['site']);
 /** Below this height an entity is a slab (a plaza, a platform, a road): a place to stand. */
@@ -44,8 +46,8 @@ export function sceneOpeningProbe(sync: SceneSync, ground: Object3D | null, top:
     k = 'size';
     if (e.arch) k = STANDABLE_ARCH_ROLES.has(e.arch.role) ? 'ground' : 'blocked';
     else if (e.tags.some((t) => GROUND_TAGS.has(t)) || (e.shape.kind === 'procedural' && SCENERY_GENERATORS.has(e.shape.generator))) k = 'ground';
-    // A piece of a building (a part under it) is never ground.
-    for (let p = e.parent && world ? world.entities[e.parent] : undefined, hops = 0; p && hops < 8 && k !== 'blocked'; p = p.parent && world ? world.entities[p.parent] : undefined, hops++) {
+    // A piece of a building (a part under it) is never ground; its site (the land, a terrace, a lawn) is, whatever it hangs under.
+    for (let p = e.parent && world ? world.entities[e.parent] : undefined, hops = 0; p && hops < 8 && k !== 'blocked' && e.arch?.role !== 'site'; p = p.parent && world ? world.entities[p.parent] : undefined, hops++) {
       if (p.arch && !STANDABLE_ARCH_ROLES.has(p.arch.role)) k = 'blocked';
     }
     kinds.set(id, k);
@@ -98,6 +100,7 @@ export function sceneOpeningProbe(sync: SceneSync, ground: Object3D | null, top:
       }
       const k = id && e ? kindOf(id, e) : 'size';
       out = { y, kind: k === 'ground' || (k === 'size' && (!node || flatOrWide(id as EntityId, node.object))) ? 'ground' : 'blocked' };
+      if (out.kind === 'ground' && e && (e.arch?.role === 'site' ? /terrace|deck|patio|path|pav|drive|court|plaza|steps|stair|jetty|dock/.test(e.arch.kind ?? '') : e.tags.some((t) => PAVED_TAGS.has(t)))) out.paved = true;
       break;
     }
     hits.length = 0;

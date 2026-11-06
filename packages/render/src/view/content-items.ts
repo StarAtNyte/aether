@@ -30,6 +30,9 @@ const _box = new Box3();
  * Framing items for every visible, non-template document entity. `focus`
  * marks additional entities as focused (e.g. the ones an edit just changed).
  */
+/** Tags of the sights a viewpoint looks for (see `FramingItem.landmark`). */
+const LANDMARK_TAGS: ReadonlySet<string> = new Set(['landmark', 'waterfall', 'temple', 'statue', 'monument', 'tower', 'lighthouse', 'castle', 'cathedral', 'church', 'shrine', 'pagoda', 'fountain', 'bridge']);
+
 export function collectFramingItems(sync: SceneSync, focus: ReadonlySet<EntityId> = new Set()): FramingItem[] {
   const items: FramingItem[] = [];
   const scenery: FramingItem[] = [];
@@ -65,6 +68,7 @@ export function collectFramingItems(sync: SceneSync, focus: ReadonlySet<EntityId
       scenery.push(item);
       return;
     }
+    if (node.entity.tags.some((t) => LANDMARK_TAGS.has(t))) item.landmark = true;
     if (focused) item.focus = true;
     else if (node.instances > 0) {
       item.weight = 0.4;

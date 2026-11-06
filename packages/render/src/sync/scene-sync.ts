@@ -1380,9 +1380,18 @@ export class SceneSync {
 
   private track(p: Promise<void>): Promise<void> {
     this.inflight.add(p);
-    void p.finally(() => this.inflight.delete(p));
+    void p.finally(() => {
+      this.inflight.delete(p);
+      this.settled++;
+    });
     return p;
   }
+
+  /** Builds settled so far: what the scene holds changed since a reading when this differs. */
+  get buildsSettled(): number {
+    return this.settled;
+  }
+  private settled = 0;
 
   private isCurrent(node: EntityNode, token: number): boolean {
     return !this.disposed && node.token === token && this.nodes.get(node.id) === node;
