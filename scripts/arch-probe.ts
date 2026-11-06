@@ -294,6 +294,7 @@ try {
           const per: Array<[number, number, number, number, number, number]> = [];
           const poses: number[][] = [];
           const ms = seconds * 1000;
+          const links0 = P0.gl?.linkProgram?.n ?? 0;
           const t0 = performance.now();
           let last = t0;
           const hold = (): void => {
@@ -317,7 +318,7 @@ try {
           }
           const P = (globalThis as unknown as { __probe: any }).__probe;
           const slowFrames = (P.loaf as Array<{ t: number; d: number; scripts: Array<{ u: string; f: string; c: number; i: string; d: number }> }>).filter((x) => x.d > 40).map((x) => ({ d: Math.round(x.d), s: x.scripts.filter((y) => y.d > 3).map((y) => `${String(y.u).split('/').pop()}:${y.c}:${y.f || y.i}:${Math.round(y.d)}`) }));
-          return { poses: poses.slice(1), slowFrames, sunRedraws: (r.sunMapDraws ?? 0) - sun0, sunReasons: r.sunMapReasons ?? null, casterDraws: r.sunCasterDraws ?? null, batches: { ...(r.sync?.batchStats?.() ?? {}), ...(r.sync?.cellBatchStats?.() ?? {}) }, per: per.slice(1), dts: dts.slice(1), lt: (P.lt as Array<{ d: number }>).map((x) => Math.round(x.d)), glSlow: P.glSlow };
+          return { links: (P0.gl?.linkProgram?.n ?? 0) - links0, poses: poses.slice(1), slowFrames, sunRedraws: (r.sunMapDraws ?? 0) - sun0, sunReasons: r.sunMapReasons ?? null, casterDraws: r.sunCasterDraws ?? null, batches: { ...(r.sync?.batchStats?.() ?? {}), ...(r.sync?.cellBatchStats?.() ?? {}) }, per: per.slice(1), dts: dts.slice(1), lt: (P.lt as Array<{ d: number }>).map((x) => Math.round(x.d)), glSlow: P.glSlow };
         }, [orbitS, fixedScale] as const);
         if (cdp) writeFileSync(join(out, `orbit.v${v}.cpuprofile`), JSON.stringify((await cdp.send('Profiler.stop')).profile));
         // --after=<file>: a page expression evaluated right after the orbit (diagnostics gathered during it).
@@ -348,11 +349,11 @@ try {
           log(`draw breakdown at the heaviest heading (${orbit.per[worst]![0]} draws) ${JSON.stringify((rec['drawBreakdownWorst'] as { totals?: unknown })?.totals ?? rec['drawBreakdownWorst'])}`);
         }
         log(`sun map redraws ${orbit.sunRedraws}, last caster draws ${orbit.casterDraws}, batches ${JSON.stringify(orbit.batches)}`);
-        rec['orbit'] = { calls, sunRedraws: orbit.sunRedraws, sunReasons: orbit.sunReasons, casterDraws: orbit.casterDraws, batches: orbit.batches, frames: d.length, p50: q(0.5), p95: q(0.95), p99: q(0.99), max: q(1), over33: d.filter((x) => x > 33.4).length, over50: d.filter((x) => x > 50).length, longTasks: orbit.lt, glSlow: orbit.glSlow,
+        rec['orbit'] = { links: orbit.links, calls, sunRedraws: orbit.sunRedraws, sunReasons: orbit.sunReasons, casterDraws: orbit.casterDraws, batches: orbit.batches, frames: d.length, p50: q(0.5), p95: q(0.95), p99: q(0.99), max: q(1), over33: d.filter((x) => x > 33.4).length, over50: d.filter((x) => x > 50).length, longTasks: orbit.lt, glSlow: orbit.glSlow,
           // Per frame: interval (ms), then draws, useProgram and uniform-buffer writes counted at that callback.
           slowFrames: orbit.slowFrames,
           series: orbit.dts.map((t, i) => [Math.round(t * 10) / 10, orbit.per[i]?.[0] ?? 0, orbit.per[i]?.[1] ?? 0, orbit.per[i]?.[2] ?? 0]) };
-        log(`orbit ${JSON.stringify({ p50: q(0.5), p95: q(0.95), p99: q(0.99), max: q(1), over33: d.filter((x) => x > 33.4).length, longTasks: orbit.lt.length })}`);
+        log(`orbit ${JSON.stringify({ links: orbit.links, p50: q(0.5), p95: q(0.95), p99: q(0.99), max: q(1), over33: d.filter((x) => x > 33.4).length, longTasks: orbit.lt.length })}`);
       }
       rec['cgPeakMB'] = Math.round(cgPeak / 1048576);
       results.push(rec);

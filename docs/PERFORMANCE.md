@@ -861,3 +861,66 @@ unchanged (203 / 203 kB).
 template) load with the new runtime and get its gains (the Lisbon rows above "package of the base cook"). A re-cook
 brings the smaller program files and exact boot sets. A build from before this change reads a format 3 file as no
 program set and loads without the pre-warm.
+
+## The player's person behind the load screen, and a first-use pass that draws (6 November 2026)
+
+What was left after the first picture of a cold visit to Kestrel Outpost: six links when play starts (four of them the
+skinned person, two programs of the world the first-use pass should have drawn), and the driver's first use of them.
+
+- **The person loads with the world** (`SimulationOptions.preloadPlayer`, `WorldRenderer.preloadPlayer`, `Avatar.preload`).
+  A world that opens into play (a launched game template in the studio, `startMode: 'play'` in the player) mounts the
+  player's person when its sync starts, with the world's look; the group stays hidden until play places it. On Kestrel the
+  rig is in at 3.4-4.1 s, long before the load gate (10-14 s). The first-use pass waits for a person still loading.
+- **The first-use pass draws the person**: 4 m behind the camera (clipped), the whole body even where the editor's
+  eye-level view hides it, after a step of the character system at that place (detail and shadow casting are picked by
+  distance).
+- **The first-use pass draws at all.** Its draws ran in the animation frame of the last viewport frame and reused that
+  frame's scene pass: one composite draw, nothing met, and the round ended "clean" (Kestrel: 1 GL draw in the pass, the
+  person's meshes never drawn; most programs first used on the first turn of the camera). The pass now advances the node
+  frame before each of its draws, and draws only its representatives (one object per program, and the person): everything
+  else the camera draws is hidden for that draw (the view's own objects drew in the frames before), and casters the camera
+  does not draw stay.
+- **The tier's own unlinked programs go into the pool at rest** (`ProgramCache.prime`): after the first picture, while
+  the view rests, the rest of the tier's set (the browser's own entries, then a cooked world's `later` pairs) is linked
+  one at a time and kept in the pool (`stats.pooledLater`), not deleted, until a mesh that comes into view takes it; the
+  20 s trim leaves them, a tier change drops them. Linking them whenever nothing else linked (the view moving) was
+  measured first and not kept: on a cooked cold visit to Lisbon Hills 12-18 of them landed in the orbit, p95 133 to
+  233-333 ms. The neighbouring tiers are primed after them, as before.
+- Probes: `first-picture-probe` reports the links in the first 10 s of play (it waits for them); `arch-probe` reports
+  the links during the orbit.
+
+Intel UHD 770, `GEN_GPU=intel`, headless Chrome, 5 GB scope, one browser at a time, interleaved with the base
+(`3ee9ca0d`); the machine ran the cook of every template and other jobs (load average 4-40), so times are noisy.
+
+Kestrel Outpost, studio, cold (`first-picture-probe --runs=cold`; base 8 runs, this build 4):
+
+| | First picture | Links in the first 10 s of play | GPU-process tasks > 50 ms after the first picture | Longest orbit frame |
+|---|---|---|---|---|
+| Base | 13.8-16.3 s (median 15.3) | 6 (all runs) | 24-67 (median 40), 1.8-5.5 s | 233-650 ms (median 417) |
+| This build | 16.4-19.8 s (median 17.1) | 0 (all runs) | 0-44 (median 16), 0-2.7 s | 50-133 ms (median 108) |
+| Whole scene drawn in each pass draw (not kept) | 15.5-23.4 s (median 18.6) | 0 | 1-26 (median 8.5) | 66-150 ms |
+
+The pass of this build takes 3.4-5.0 s against 2.2-4.6 s: the driver's first use of the programs out of view now
+happens behind the load screen, as the pass was meant to do, and the first picture comes about 1.8 s later on a cold
+visit. The tasks over 50 ms left after it are short (longest 74-112 ms), not links. Drawing the whole scene in each draw
+of the pass took 1-2 s more.
+
+Lisbon Hills, studio, cold, 20 s orbit at resolution 0.5 (`arch-probe`): links during the orbit 0 in every run of both
+builds (the lone street lamp of "CPU copies after upload" no longer links mid-orbit in the base either); orbit p99 base
+50-167 ms (median 133, seven runs; one more ran out of the scope), this build 83-150 ms (median 117, three runs, and
+four of the variant above: 100-133); first picture 29.7-36.0 s against 32.0-33.0 s. Lisbon Hills cooked in the player,
+cold and warm, two interleaved pairs: first picture cold 31.3, 31.4 s against 32.5, 29.7 s, warm 18.0, 19.0 s against
+24.0, 23.8 s, and in two more pairs at a load average near 40 (the hero runs below) warm 57.6, 36.7 s against 48.3,
+44.3 s; no link during the orbit in either build, and 0-1 programs pooled at rest per visit (the probe's orbit starts at
+once).
+
+Hero shots (`--player --shots`, cooked packages, two runs per build): Kestrel's first view 0.48-0.58 / 255 against the
+base, 0.45-0.52 against itself (its other two views move from run to run, as noted before); Lisbon Hills 0.96-7.31
+against the base, 0.26-8.73 within either build. Typecheck passes. The test suite passes except four timing and
+time-out tests in packages this change does not touch (mock provider speed, generator speed, a 30-house stair check, the
+Orbital Lab bot), which failed the same way when run alone at a load average of 36-40. The studio's initial download is
+the base's: 203.01 kB gzip with either build (`check-budget.ts` rounds it to 203 and reports both over the limit).
+
+Gate of this step: no link in the first 10 s of play, met; Lisbon cold orbit without links, met (as was the base), p99
+within the noise; hero shots, met; cold GPU tasks after the first picture at most 9, not met (median 16 of 4 runs, from
+40); first picture not slower, not met (Kestrel cold about 1.8 s later).

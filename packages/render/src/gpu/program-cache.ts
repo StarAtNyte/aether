@@ -14,11 +14,14 @@
  * - **No duplicate links**: a set entry three asks for before the pre-warm reached it is dropped from the pre-warm.
  *   The boot pre-warm stops submitting when the world's own compile begins ({@link ProgramCache.worldCompiling}): what is
  *   left would only queue in front of what the world needs.
- * - **Idle priming** ({@link ProgramCache.prime}): after the first picture, while the view is at rest, the rest of the set
- *   and the neighbouring tiers' sets are linked one at a time and deleted at once. That fills the browser's program cache
- *   (memory and disk), so a later tier change or a returning visit links from it.
- * - Pooled programs no pipeline took are deleted {@link POOL_TRIM_MS} after the first picture (a program costs memory in
- *   the GPU process, megabytes on Mesa).
+ * - **Idle priming** ({@link ProgramCache.prime}): after the first picture, the rest of the tier's set (the browser's own
+ *   entries, then a cooked world's later pairs) is linked one at a time into the pool while the view is at rest, and kept
+ *   there until a mesh that comes into view takes it; then, while the view is at rest, the neighbouring tiers' sets are
+ *   linked one at a time and deleted at once. That fills the browser's program cache (memory and disk), so a later tier
+ *   change or a returning visit links from it.
+ * - Pooled programs of the boot pre-warm no pipeline took are deleted {@link POOL_TRIM_MS} after the first picture (a
+ *   program costs memory in the GPU process, megabytes on Mesa); those linked after it for the tier in effect stay until
+ *   taken or the tier changes.
  *
  * - **A cooked world's boot set** ({@link ProgramStore.boot}): the programs its load is known to use on the tier (recorded by
  *   the cook, cook/format.ts) are linked first and keep being submitted after the world's compile begins: the compile then
@@ -100,6 +103,8 @@ export interface ProgramCacheStats {
   trimmed: number;
   /** Programs linked and deleted at rest to fill the browser's program cache. */
   primed: number;
+  /** Programs of the tier in effect linked into the pool after the first picture, for meshes that come into view later. */
+  pooledLater: number;
   /** When the pre-warm started and when its last link finished (ms, page clock). */
   startedAt: number;
   doneAt: number;
@@ -153,6 +158,8 @@ interface Pooled {
   program: WebGLProgram;
   shaders: WebGLShader[];
   ready: boolean;
+  /** Linked after the first picture for meshes still to come: not trimmed with the boot pool. */
+  keep?: boolean;
 }
 
 /** The WebGL2 calls the cache makes, called on the context with `call`. */
@@ -186,7 +193,7 @@ export class ProgramCache {
   private generation = 0;
   /** The session number this page saves each tier under. */
   private readonly sessions = new Map<RenderTier, number>();
-  readonly stats: ProgramCacheStats = { tier: null, set: 0, eager: 0, submitted: 0, linked: 0, failed: 0, adopted: 0, linkedOwn: 0, missedAfterFirstPicture: 0, trimmed: 0, primed: 0, startedAt: 0, doneAt: 0, log: [] };
+  readonly stats: ProgramCacheStats = { tier: null, set: 0, eager: 0, submitted: 0, linked: 0, failed: 0, adopted: 0, linkedOwn: 0, missedAfterFirstPicture: 0, trimmed: 0, primed: 0, pooledLater: 0, startedAt: 0, doneAt: 0, log: [] };
   /** Pairs of the boot set (source strings): a link outside them after the first picture is a miss. */
   private readonly inSet = new Map<string, Set<string>>();
 
@@ -200,6 +207,8 @@ export class ProgramCache {
   /** The tier whose programs are being recorded (null: none, e.g. while a still renders). */
   setTier(tier: RenderTier | null): void {
     if (tier !== this.tier) this.logEvent(`tier ${tier}`);
+    // After the first picture the pool holds only programs kept for the tier in effect: another tier builds other ones.
+    if (tier !== this.tier && this.firstPicture && this.tier !== null && tier !== null) this.trim(true);
     this.tier = tier;
     if (tier) this.stats.tier ??= tier;
     // The world settled on another tier than the boot guess (a heavy world starts lower): pre-warm that tier's set instead
@@ -314,27 +323,38 @@ export class ProgramCache {
   }
 
   /**
-   * At rest, link the rest of the boot set and the sets of `tiers` one at a time and delete each at once: the browser's
-   * program cache then holds them for a tier change or the next visit. `atRest` is asked before each link.
+   * After the first picture: the tier's programs this load has not linked (the rest of the stored set, then the rest of a
+   * cooked world's set) are linked one at a time into the pool while `idle` holds, and kept there, so a mesh that comes into
+   * view later (a region streamed in, a lamp alone in its cell) takes its program instead of linking it mid-move. Then, at
+   * rest, the sets of `tiers` are linked one at a time and deleted at once: the browser's program cache then holds them for
+   * a tier change or the next visit. `idle` and `atRest` are asked before each link.
    */
-  async prime(tiers: readonly RenderTier[], atRest: () => boolean): Promise<void> {
+  async prime(tiers: readonly RenderTier[], atRest: () => boolean, idle: () => boolean = atRest): Promise<void> {
     if (!this.store || this.disposed) return;
-    const todo: Array<{ v: string; f: string }> = [...this.queue];
+    const tier = this.tier;
+    const own: Array<{ v: string; f: string }> = this.queue.map((q) => ({ v: q.v, f: q.f }));
     this.queue = [];
-    // The rest of a cooked world's set of the tier in effect (its orbit and play), before the neighbouring tiers' sets.
-    const own = this.tier && this.store.later ? await this.store.later(this.tier).catch(() => null) : null;
-    if (own && own.size > 0 && !this.disposed) {
-      const pairs = [...own].map((k) => k.split(':') as [string, string]);
+    // The rest of a cooked world's set of the tier in effect (its orbit and play), after the browser's own entries.
+    const later = tier && this.store.later ? await this.store.later(tier).catch(() => null) : null;
+    if (later && later.size > 0 && !this.disposed) {
+      const pairs = [...later].map((k) => k.split(':') as [string, string]);
       const sources = await this.store.getSources([...new Set(pairs.flat())]).catch(() => new Map<string, string>());
       for (const [hv, hf] of pairs) {
         const v = sources.get(hv), f = sources.get(hf);
-        if (v !== undefined && f !== undefined && !this.usedNow(v, f)) todo.push({ v, f });
+        if (v === undefined || f === undefined) continue;
+        this.hashes.set(v, hv);
+        this.hashes.set(f, hf);
+        let fs = this.inSet.get(v);
+        if (!fs) this.inSet.set(v, (fs = new Set()));
+        fs.add(f);
+        own.push({ v, f });
       }
     }
-    for (const tier of tiers) {
-      const set = await this.store.getSet(tier).catch(() => null);
+    const todo: Array<{ v: string; f: string }> = [];
+    for (const t of tiers) {
+      const set = await this.store.getSet(t).catch(() => null);
       if (!set || this.disposed) continue;
-      const order = prewarmOrder(set, SET_CAP[tier]);
+      const order = prewarmOrder(set, SET_CAP[t]);
       const sources = await this.store.getSources([...new Set(order.flatMap((e) => [e.v, e.f]))]).catch(() => new Map<string, string>());
       for (const e of order) {
         const v = sources.get(e.v), f = sources.get(e.f);
@@ -343,7 +363,36 @@ export class ProgramCache {
     }
     const step = (): void => {
       this.primeTimer = undefined;
-      if (this.disposed || todo.length === 0) return;
+      if (this.disposed) return;
+      // The tier in effect first, kept in the pool; given up when the tier changed (its materials are built again).
+      if (own.length > 0 && this.tier === tier) {
+        if (!idle() || this.linking.size > 0) {
+          this.primeTimer = setTimeout(step, 250);
+          return;
+        }
+        const next = own.shift()!;
+        if (this.usedNow(next.v, next.f) || this.pool.get(next.v)?.has(next.f)) {
+          this.primeTimer = setTimeout(step, 0);
+          return;
+        }
+        const p = this.poolLink(next.v, next.f, true);
+        if (!p) return;
+        this.stats.pooledLater++;
+        const wait = (): void => {
+          this.primeTimer = undefined;
+          if (this.disposed) return;
+          if (!this.complete(p.program)) {
+            this.primeTimer = setTimeout(wait, 50);
+            return;
+          }
+          this.settle(p);
+          this.primeTimer = setTimeout(step, 16);
+        };
+        this.primeTimer = setTimeout(wait, 50);
+        return;
+      }
+      own.length = 0;
+      if (todo.length === 0) return;
       if (!atRest() || this.linking.size > 0) {
         this.primeTimer = setTimeout(step, 1000);
         return;
@@ -420,7 +469,7 @@ export class ProgramCache {
     void this.save();
     this.disposed = true;
     for (const t of [this.timer, this.trimTimer, this.saveTimer, this.primeTimer]) if (t !== undefined) clearTimeout(t);
-    this.trim();
+    this.trim(true);
   }
 
   private usedNow(v: string, f: string): boolean {
@@ -479,33 +528,43 @@ export class ProgramCache {
   private pump(): void {
     this.timer = undefined;
     if (this.disposed) return;
-    for (const p of [...this.linking]) {
-      if (!this.complete(p.program)) continue;
-      this.linking.delete(p);
-      p.ready = true;
-      if (this.api && !this.gl.isContextLost() && this.api.getProgramParameter.call(this.gl, p.program, this.gl.LINK_STATUS) !== true) {
-        this.stats.failed++;
-        this.drop(p);
-        continue;
-      }
-      this.stats.linked++;
-      this.stats.doneAt = performance.now();
-      this.detach(p);
-    }
+    for (const p of [...this.linking]) if (this.complete(p.program)) this.settle(p);
     const inFlight = this.queue[0]?.eager === true ? EAGER_IN_FLIGHT() : PREWARM_IN_FLIGHT;
     while (this.linking.size < inFlight && this.queue.length > 0 && (!this.stopped || this.queue[0]!.eager === true)) {
       const next = this.queue.shift()!;
-      const p = this.link(next.v, next.f);
+      const p = this.poolLink(next.v, next.f, false);
       if (!p) break;
       this.stats.submitted++;
-      let fs = this.pool.get(next.v);
-      if (!fs) this.pool.set(next.v, (fs = new Map()));
-      fs.set(next.f, p);
-      this.cover(next.v);
-      this.cover(next.f);
-      this.linking.add(p);
     }
     if (this.linking.size > 0 || (this.queue.length > 0 && (!this.stopped || this.queue[0]!.eager === true))) this.timer = setTimeout(() => this.pump(), 16);
+  }
+
+  /** Link a pair into the pool (in flight until {@link settle}); `keep`: not trimmed (see {@link prime}). */
+  private poolLink(v: string, f: string, keep: boolean): Pooled | null {
+    const p = this.link(v, f);
+    if (!p) return null;
+    if (keep) p.keep = true;
+    let fs = this.pool.get(v);
+    if (!fs) this.pool.set(v, (fs = new Map()));
+    fs.set(f, p);
+    this.cover(v);
+    this.cover(f);
+    this.linking.add(p);
+    return p;
+  }
+
+  /** A pooled link is complete: a failed one leaves the pool, a linked one lets its shaders go. */
+  private settle(p: Pooled): void {
+    if (!this.linking.delete(p)) return;
+    p.ready = true;
+    if (this.api && !this.gl.isContextLost() && this.api.getProgramParameter.call(this.gl, p.program, this.gl.LINK_STATUS) !== true) {
+      this.stats.failed++;
+      this.drop(p);
+      return;
+    }
+    this.stats.linked++;
+    this.stats.doneAt = performance.now();
+    this.detach(p);
   }
 
   /** A linked program needs no shaders: detach and delete them (their compiled form is large on Mesa). */
@@ -539,19 +598,29 @@ export class ProgramCache {
     this.api.deleteProgram.call(this.gl, p.program);
   }
 
-  /** Delete pooled programs nobody took (in-flight ones once their link is done). */
-  private trim(): void {
+  /**
+   * Delete pooled programs nobody took; those linked after the first picture for the tier in effect ({@link prime}) only
+   * with `all` (a tier change, dispose). One still linking stays pooled (a later trim, or a pipeline, takes it).
+   */
+  private trim(all = false): void {
     this.trimTimer = undefined;
-    for (const fs of this.pool.values()) {
-      for (const p of fs.values()) {
+    for (const [v, fs] of [...this.pool]) {
+      for (const [f, p] of [...fs]) {
+        if (p.keep && !all) continue;
         if (!p.ready && !this.complete(p.program) && !this.disposed) continue;
         this.linking.delete(p);
         this.release(p);
         this.stats.trimmed++;
+        fs.delete(f);
+        this.uncover(v);
+        this.uncover(f);
       }
+      if (fs.size === 0) this.pool.delete(v);
     }
-    this.pool.clear();
-    this.covered.clear();
+    if (this.disposed) {
+      this.pool.clear();
+      this.covered.clear();
+    }
   }
 
   private cover(code: string): void {

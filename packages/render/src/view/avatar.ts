@@ -140,6 +140,41 @@ export class Avatar {
     }
   }
 
+  /**
+   * Load the person now, before the avatar is placed (a world that opens into play): its model, materials and programs are
+   * then ready for the renderer's first-use pass behind the load screen, not linked in the first frames of play. The group
+   * stays hidden until {@link set} places it.
+   */
+  preload(): void {
+    if (!this.placed) void this.mount();
+  }
+
+  /** The person is being loaded. */
+  get loading(): boolean {
+    return this.mounting;
+  }
+
+  /**
+   * Show the loaded but not yet placed person at a point for one warm-up draw (the renderer's first-use pass puts it behind
+   * the camera, where it is clipped). Returns the restore; a no-op when there is no rig or the avatar is placed.
+   */
+  showForWarmup(x: number, y: number, z: number): () => void {
+    const rig = this.rig;
+    if (this.placed || !rig) return () => undefined;
+    const p = this.group.position.clone();
+    this.group.position.set(x, y, z);
+    this.group.visible = true;
+    // The whole body, as a third-person game draws it (an editor's eye-level view hides it, shadow-only).
+    rig.setVisibleBody(true);
+    this.group.updateMatrixWorld(true);
+    return () => {
+      this.group.position.copy(p);
+      if (!this.placed) this.group.visible = false;
+      if (this.rig === rig) rig.setVisibleBody(!(this.hidden || this.camClose));
+      this.group.updateMatrixWorld(true);
+    };
+  }
+
   /** The person's rig once loaded (tests, HUD). */
   get character(): CharacterRig | null {
     return this.rig;

@@ -129,6 +129,8 @@ export interface StudioOptions {
   projectId?: string;
   /** AI connection manager (default: the page-wide one). */
   ai?: AiConnection;
+  /** The project opens straight into play (a launched game template): see `SimulationOptions.preloadPlayer`. */
+  playOnOpen?: boolean;
 }
 
 /** Options of {@link Studio.send}. */
@@ -245,6 +247,7 @@ export class Studio {
   readonly ai: AiConnection;
   /** Id of the open project (null: the legacy single world). */
   readonly projectId: string | null;
+  private readonly playOnOpen: boolean;
   private abort: AbortController | null = null;
   /** The last prompt was a small edit applied locally (no quality loop, no proof replay for cosmetic ones). */
   private localEdit: { cosmetic: boolean; head: number } | null = null;
@@ -293,6 +296,7 @@ export class Studio {
       this.history = new History(initial, { maxEntries: historyCap });
     }
     this.projectId = opts.projectId ?? null;
+    this.playOnOpen = opts.playOnOpen === true;
     this.ai = opts.ai ?? aiConnection();
     this.store = createStudioStore({ chat: opts.project ? [...opts.project.chat] : loadChat(this.storage), settings, panels: initialPanels(), aiPrefs: loadAiPrefs(this.storage, this.projectId) });
     this.store.getState().setMemory({ lowMemory: memory.on, reason: memory.reason, automatic: memory.automatic });
@@ -511,6 +515,7 @@ export class Studio {
           scaleGeometry: !classicEngineRequested(),
           compressedTextures: !uncompressedTexturesRequested(),
           saveBase: this.projectId ?? 'scratch',
+          ...(this.playOnOpen ? { preloadPlayer: true } : {}),
           lightmapBase: `${import.meta.env.BASE_URL ?? '/'}templates/lightmaps/`,
           ...(this.sandbox ? { sandbox: this.sandbox } : {}),
           onProgress: (msg) => this.store.getState().setLoading(msg),

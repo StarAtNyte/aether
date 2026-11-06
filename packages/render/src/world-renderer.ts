@@ -1403,8 +1403,9 @@ export class WorldRenderer {
 
   /**
    * The first picture of the world is on screen (the host lifted its load screen). Pre-warmed programs nobody took are let
-   * go a little later, and, while the view is at rest, the rest of the tier's set and the neighbouring tiers' sets are
-   * linked once into the browser's program cache, so a tier change links from it.
+   * go a little later; while the view is at rest, the rest of the tier's set (recorded or cooked) is linked into the pool,
+   * for meshes that come into view later, and then the neighbouring tiers' sets are linked once into the browser's program
+   * cache, so a tier change links from it.
    */
   markFirstPicture(): void {
     const cache = this.programCache;
@@ -1412,6 +1413,7 @@ export class WorldRenderer {
     cache.markFirstPicture();
     const i = RENDER_TIERS.indexOf(this.renderTier);
     const neighbours = [RENDER_TIERS[i + 1], RENDER_TIERS[i - 1]].filter((t): t is RenderTier => t !== undefined);
+    // At rest only: links beside a moving view cost its frames (Lisbon Hills, a cooked cold orbit: p95 133 to 233-333 ms).
     void cache.prime(neighbours, () => !this.disposed && !this.lost && !this.loadingScreen && this.programs.pending === 0 && this.preparation.pending === 0 && now() - this.viewMovedAt > IDLE_PRIME_MS);
   }
 
@@ -1600,7 +1602,8 @@ export class WorldRenderer {
     if ((this.renderer as unknown as { backend?: { isWebGPUBackend?: boolean } }).backend?.isWebGPUBackend === true) return;
     const end = now() + boundMs;
     const left = (): number => Math.max(0, end - now());
-    const idle = (): boolean => this.programs.pending === 0 && this.preparation.pending === 0 && !this.postPending;
+    // The player's person, loaded ahead for a world that opens into play (preloadPlayer), takes part once it is in.
+    const idle = (): boolean => this.programs.pending === 0 && this.preparation.pending === 0 && !this.postPending && !this.avatar.loading;
     // The motion phase first, the rest phase last: the view rests when the load screen lifts.
     const phases: Array<'rest' | 'motion' | null> = this.qualityPlan.moveEffects !== null && this.budget.post ? ['motion', 'rest'] : [null];
     try {
@@ -1619,7 +1622,7 @@ export class WorldRenderer {
       stats.startedAt ||= Math.round(now());
       while (left() > 0 && !this.disposed && !this.lost && clean < phases.length) {
         const busy = !idle();
-        const pending = this.preparation.pending + this.programs.pending;
+        const pending = this.preparation.pending + this.programs.pending + (this.avatar.loading ? 1 : 0);
         if (busy && pending === lastPending) {
           await new Promise<void>((resolve) => setTimeout(resolve, FIRST_USE_PERIOD_MS));
           continue;
@@ -1627,7 +1630,7 @@ export class WorldRenderer {
         lastPending = pending;
         const round = busy ? phases.filter((p) => p !== 'rest' || !restDrawn) : phases;
         // Gathered again each round: models that arrived since take part.
-        const restore = this.everyProgramInView();
+        const { restore, keep } = this.everyProgramInView();
         try {
           for (const phase of round) {
             if (this.disposed || this.lost) break;
@@ -1643,9 +1646,15 @@ export class WorldRenderer {
             const linking = this.programs.draws.linking, deferred = this.preparation.deferred, wasIdle = idle();
             if (shadows) this.sunMapDirty = true;
             this.linkPostAsync = true;
+            // Only the representatives are drawn (everything else hidden: the view's own objects drew in the frames before),
+            // and the scene pass always renders: a draw in the animation frame of the last viewport frame reused that frame's
+            // scene pass and drew nothing (one composite draw, the round ended "clean" with nothing used).
+            const unhide = this.hideAllBut(keep);
             try {
+              this.advanceNodeFrame();
               this.drawOnce(false);
             } finally {
+              unhide();
               this.linkPostAsync = false;
             }
             const fresh = this.programs.draws.linking !== linking || this.preparation.deferred !== deferred || !wasIdle || !idle();
@@ -1681,7 +1690,16 @@ export class WorldRenderer {
    * not culled one by one. Only meshes the camera draws: the sources of merged batches (on their own layer) keep their flags,
    * which the batches key their members on. Returns the restore.
    */
-  private everyProgramInView(): () => void {
+  private everyProgramInView(): { restore: () => void; keep: Set<Object3D> } {
+    // The player's person when loaded ahead and not placed yet (preloadPlayer): 4 m behind the camera, where it is clipped.
+    const cam = this.perspective;
+    const back = cam.getWorldDirection(new Vector3()).multiplyScalar(-4).add(cam.position);
+    const unstage = this.avatar.showForWarmup(back.x, back.y - 1, back.z);
+    // The character system picks detail and shadow casting by distance on its next step: that step now, at the new place,
+    // so the person draws (and casts) as it will in play.
+    if (this.avatar.group.visible && !this.avatar.isPlaced) this.characters.update(1 / 1000);
+    const keep = new Set<Object3D>();
+    if (this.avatar.group.visible && !this.avatar.isPlaced) keep.add(this.avatar.group);
     const seen = new Set<string>();
     const changed: Array<{ o: Mesh & { perObjectFrustumCulled?: boolean }; culled: boolean; perObject: boolean | undefined }> = [];
     const layers = this.perspective.layers;
@@ -1692,16 +1710,41 @@ export class WorldRenderer {
       const key = programKey(o) + o.layers.mask;
       if (seen.has(key)) return;
       seen.add(key);
+      keep.add(m);
       if (!m.frustumCulled && m.perObjectFrustumCulled !== true) return;
       changed.push({ o: m, culled: m.frustumCulled, perObject: m.perObjectFrustumCulled });
       m.frustumCulled = false;
       if (m.perObjectFrustumCulled === true) m.perObjectFrustumCulled = false;
     });
-    return () => {
+    const restore = (): void => {
       for (const c of changed) {
         c.o.frustumCulled = c.culled;
         if (c.perObject !== undefined) c.o.perObjectFrustumCulled = c.perObject;
       }
+      unstage();
+    };
+    return { restore, keep };
+  }
+
+  /**
+   * Hide every visible drawable the camera draws except those in `keep` (and what they hold); those on layers the camera
+   * leaves out (casters drawn only into the sun map) stay. Returns the restore.
+   */
+  private hideAllBut(keep: ReadonlySet<Object3D>): () => void {
+    const hidden: Object3D[] = [];
+    const layers = this.perspective.layers;
+    const walk = (o: Object3D): void => {
+      if (!o.visible || keep.has(o)) return;
+      const d = o as Object3D & { isMesh?: boolean; isPoints?: boolean; isLine?: boolean; isSprite?: boolean };
+      if ((d.isMesh === true || d.isPoints === true || d.isLine === true || d.isSprite === true) && layers.test(o.layers)) {
+        o.visible = false;
+        hidden.push(o);
+      }
+      for (const c of o.children) walk(c);
+    };
+    walk(this.scene);
+    return () => {
+      for (const o of hidden) o.visible = true;
     };
   }
 
@@ -3254,6 +3297,14 @@ export class WorldRenderer {
     this.voxelZenithHex = hex;
     this.voxelZenith.set(hex);
     vox.setSkyZenith(this.voxelZenith);
+  }
+
+  /**
+   * Load the player's person now (a world that opens into play, before play starts): its programs then link and are first
+   * drawn in the first-use pass behind the load screen ({@link prepareFirstUse}), not in the first frames of play.
+   */
+  preloadPlayer(): void {
+    if (!this.disposed) this.avatar.preload();
   }
 
   /** Show or hide the player avatar (e.g. the voxel game's first/third-person switch). */

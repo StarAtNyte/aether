@@ -432,6 +432,8 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
             saveBase: `game-${musicSeed(JSON.stringify(world.voxel ?? world.name)).toString(36)}`,
             ...(sandbox ? { sandbox } : {}),
             ...(cooked ? { cooked } : {}),
+            // A game the visitor plays: the person loads with the world (its programs are drawn behind the load screen).
+            ...(game.startMode === 'play' ? { preloadPlayer: true } : {}),
             onProgress: (msg) => setLoading(msg),
           },
         );

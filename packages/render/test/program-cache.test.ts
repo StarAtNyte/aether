@@ -173,6 +173,52 @@ describe('program cache', () => {
     expect(f.deletedPrograms).toEqual([f.programs[0]]);
     cache.dispose();
   });
+  it("links the tier's own unlinked set into the pool when idle, keeps it past the trim, and hands it to a later pipeline", async () => {
+    vi.useFakeTimers();
+    const f = fakeGl();
+    const store = storeOf('low', [['A', 'B'], ['C', 'D']]);
+    const cache = new ProgramCache(f.gl as unknown as WebGL2RenderingContext, { COMPLETION_STATUS_KHR: 42 }, store, f.gl as unknown as GlApi);
+    // The world's compile began before the set loaded: the set stays queued.
+    cache.worldCompiling();
+    await cache.prewarm('low');
+    cache.take('A', 'B');
+    await settle(20);
+    expect(f.linked.length).toBe(0);
+    cache.markFirstPicture();
+    let idle = false;
+    await cache.prime([], () => false, () => idle);
+    await settle(500);
+    expect(f.linked.length).toBe(0);
+    idle = true;
+    await settle(300);
+    expect(f.linked.length).toBe(1);
+    f.finishAll();
+    await settle(30_000);
+    expect(cache.stats.pooledLater).toBe(1);
+    expect(f.deletedPrograms.length).toBe(0);
+    const p = cache.take('C', 'D');
+    expect(p?.program).toBe(f.programs[0]);
+    expect(f.linked.length).toBe(1);
+    cache.dispose();
+  });
+  it('drops programs kept for the tier in effect when the tier changes', async () => {
+    vi.useFakeTimers();
+    const f = fakeGl();
+    const store = storeOf('low', [['A', 'B']]);
+    const cache = new ProgramCache(f.gl as unknown as WebGL2RenderingContext, { COMPLETION_STATUS_KHR: 42 }, store, f.gl as unknown as GlApi);
+    cache.worldCompiling();
+    await cache.prewarm('low');
+    cache.markFirstPicture();
+    await cache.prime([], () => false, () => true);
+    await settle(300);
+    f.finishAll();
+    await settle(200);
+    expect(cache.stats.pooledLater).toBe(1);
+    cache.setTier('medium');
+    expect(f.deletedPrograms).toEqual([f.programs[0]]);
+    expect(cache.take('A', 'B')).toBeNull();
+    cache.dispose();
+  });
 });
 
 describe('lazy stages', () => {

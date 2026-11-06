@@ -253,6 +253,11 @@ export interface SimulationOptions {
   compressedTextures?: boolean;
   /** Namespace of voxel game saves (the project id; default 'scratch'). */
   saveBase?: string;
+  /**
+   * The world opens into play: the player's person loads with the world, so its programs are drawn behind the load screen
+   * (the renderer's first-use pass) and do not link in the first frames of play.
+   */
+  preloadPlayer?: boolean;
 }
 
 /** Session state the logic host needs (everything except the runtime itself). */
@@ -291,6 +296,7 @@ function isTypingElement(el: Element | null): boolean {
 export class Simulation {
   readonly renderer: WorldRenderer;
   private readonly history: History;
+  private readonly preloadPlayer: boolean;
   private readonly listener: SimulationListener;
   private readonly stepper = new FixedStepper(FIXED_DT, MAX_SUBSTEPS, MAX_FRAME_DT);
   private readonly table = new TransformTable();
@@ -400,6 +406,7 @@ export class Simulation {
     this.pointerLock = opts.pointerLock === true;
     this.statsWhileEditing = opts.statsWhileEditing !== false;
     this.saveBase = opts.saveBase ?? 'scratch';
+    this.preloadPlayer = opts.preloadPlayer === true;
     renderer.onFootstep((id, _foot, speed, position) => this.footstep(id, speed, position));
     this.unsubscribe = history.subscribe((world) => {
       if (!this.session) this.requestSync(world);
@@ -604,7 +611,10 @@ export class Simulation {
         if (!this.pendingWorld || this.disposed) break;
         const next = this.pendingWorld;
         try {
-          await this.renderer.setWorld(next);
+          // setWorld applies the world's player look before its first await: the person loads in that look.
+          const synced = this.renderer.setWorld(next);
+          if (this.preloadPlayer && usesBuiltInAvatar(next)) this.renderer.preloadPlayer();
+          await synced;
           if (next.voxel || this.voxel) await (await this.voxelSession()).sync(next);
           this.syncedWorldDoc = next;
         } catch (err) {
@@ -2481,4 +2491,9 @@ export function prefersReducedMotion(): boolean {
 function hasBuilding(world: WorldDoc): boolean {
   for (const id in world.entities) if (world.entities[id]?.arch?.role === 'building') return true;
   return false;
+}
+
+/** Play draws the built-in person (no avatar entity, not orbit, vehicle or a voxel game): see {@link SimulationOptions.preloadPlayer}. */
+function usesBuiltInAvatar(world: WorldDoc): boolean {
+  return world.voxel === undefined && world.player.mode !== 'orbit' && world.player.mode !== 'vehicle' && findAvatar(world) === null;
 }

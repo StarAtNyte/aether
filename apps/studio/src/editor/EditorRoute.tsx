@@ -114,8 +114,11 @@ export const EditorRoute = memo(function EditorRoute({ id }: { id: string }): Re
         setError(r.error);
         return;
       }
+      // A game template marked `launch` opens straight into play: its title card is the first screen.
+      const launch = takeLaunch(id);
       const s = new Studio({
         projectId: id,
+        playOnOpen: launch,
         project: { world: r.value.world, chat: r.value.chat, session: r.value.session },
         onSave: async (world, chat, session) => {
           const x = await repo.save(id, world, chat, session ?? undefined);
@@ -140,8 +143,7 @@ export const EditorRoute = memo(function EditorRoute({ id }: { id: string }): Re
         }, ms);
       };
       let sentPending = pending === null;
-      // A game template marked `launch` opens straight into play: its title card is the first screen.
-      let launched = !takeLaunch(id);
+      let launched = !launch;
       let abandonChecked = false;
       const abandon = async (reply: string): Promise<void> => {
         await s.flush();

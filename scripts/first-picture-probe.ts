@@ -125,6 +125,9 @@ const INSTR = `(() => {
     if (!last || last[1] !== s) S.states.push([Math.round(performance.now()), s]);
     if (S.firstPicture > 0) clearInterval(sample);
   }, 100);
+  // When play starts (the simulation's mode turns to play): links in the first seconds of play are reported.
+  S.playAt = -1;
+  const playWatch = setInterval(() => { try { if (window.__aether.simulation.mode === 'play') { S.playAt = performance.now(); clearInterval(playWatch); } } catch {} }, 50);
   // Long animation frames until the first picture (the load screen lifts after a few smooth ones).
   S.slowFrames = [];
   let lastFrame = 0;
@@ -248,6 +251,7 @@ async function main(): Promise<void> {
             programs: r.renderer.info.memory.programs,
             linkCalls: P.gl['linkProgram']?.n ?? 0,
             linksAfterFirst: (P.gl['linkProgram']?.n ?? 0) - P.linksAtFirst,
+            playAtMs: Math.round((P as unknown as { playAt: number }).playAt),
             compileShaderCalls: P.gl['compileShader']?.n ?? 0,
             glProgramMainMs: Math.round((P.gl['linkProgram']?.ms ?? 0) + (P.gl['compileShader']?.ms ?? 0) + (P.gl['getProgramParameter']?.ms ?? 0)),
             linkLatency: { beforeFirst: { n: before.length, sumMs: sum(before), maxMs: Math.max(0, ...before.map((l) => l.ms)) }, afterFirst: { n: after.length, sumMs: sum(after), maxMs: Math.max(0, ...after.map((l) => l.ms)) } },
@@ -296,6 +300,15 @@ async function main(): Promise<void> {
           const q = (p: number): number => Math.round((s[Math.min(s.length - 1, Math.floor(s.length * p))] ?? 0) * 10) / 10;
           return { frames, p50: q(0.5), p95: q(0.95), max: q(1), useProgramPerFrame: Math.round((n('useProgram') - u0) / frames), drawsPerFrame: Math.round((draws() - d0) / frames), linksDuringOrbit: n('linkProgram') - l0, busy, programsAdded: r.renderer.info.memory.programs - prog0 };
         });
+        // Links submitted in the first 10 s of play (and after the first picture), whatever happened in them (orbit included).
+        await page.waitForFunction(() => { const P = (globalThis as unknown as { __probe: { playAt: number } }).__probe; return P.playAt < 0 || performance.now() - P.playAt >= 10_000; }, null, { timeout: 15_000, polling: 250 }).catch(() => undefined);
+        const playLinks = await page.evaluate(() => {
+          const P = (globalThis as unknown as { __probe: { playAt: number; firstPicture: number; links: Array<{ at: number }>; gl: Record<string, { n: number }> } }).__probe;
+          if (P.playAt < 0) return null;
+          const from = Math.max(P.playAt, P.firstPicture);
+          return { playAt: Math.round(P.playAt), firstPicture: Math.round(P.firstPicture), links: P.links.filter((l) => l.at >= from && l.at < P.playAt + 10_000).length, elapsed: Math.round(performance.now() - P.playAt) };
+        });
+        if (playLinks) log(`${run}: play started at ${(playLinks.playAt / 1000).toFixed(1)} s, links in its first 10 s (after the first picture) ${playLinks.links}${playLinks.elapsed < 10_000 ? ` (only ${playLinks.elapsed} ms of play so far)` : ''}`);
         log(`${run}: orbit p50 ${orbit.p50} p95 ${orbit.p95} max ${orbit.max}, useProgram/frame ${orbit.useProgramPerFrame}, draws/frame ${orbit.drawsPerFrame}, links ${orbit.linksDuringOrbit}`);
         if (wantLinks) {
           const links = await page.evaluate(() => {
@@ -364,7 +377,7 @@ async function main(): Promise<void> {
         if (gpuMain) log(`${run}: GPU-process tasks > 50 ms before the first picture ${gpuMain.before.n} (${gpuMain.before.ms} ms, longest ${gpuMain.before.max}), after ${gpuMain.after.n} (${gpuMain.after.ms} ms, longest ${gpuMain.after.max})`);
         const cgPeakMB = Math.round(cgPeak / 1048576);
         log(`${run}: JS heap peak ${load.heapMaxMB} MB, scope peak ${cgPeakMB} MB`);
-        results[run] = { ...load, orbit, gpuMain, cgPeakMB };
+        results[run] = { ...load, orbit, playLinks, gpuMain, cgPeakMB };
       } finally {
         await ctx.close().catch(() => undefined);
       }
