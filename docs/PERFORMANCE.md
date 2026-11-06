@@ -187,9 +187,9 @@ about 1.2 GB (JS heap 0.5 GB, texture sources 226 MB, geometry 115 MB, workers).
 
   Start one only with at least the cap plus 1 GB of RAM available, one world at a time, and keep the browser profile off
   `/tmp` when it is RAM-backed (`TMPDIR=~/.cache/aether-e2e-tmp`).
-- **Load marks** (`performance.getEntriesByType('mark')`): `aether:compile-start/end`, `aether:sweep-start/end`,
+- **Load marks** (`performance.getEntriesByType('mark')`): `aether:compile-start/end`, `aether:sweep-start/end`, `aether:first-use-end`,
   `aether:bake-wait`, `aether:wait-<stage>`, `aether:fully-loaded`, `aether:load-timeout`.
-- **Switches** (set on `globalThis` before the studio starts): `__AETHER_SWEEP` (opt-in), `__AETHER_PROGRAM_CACHE`, `__AETHER_SWEEP_MOTION`,
+- **Switches** (set on `globalThis` before the studio starts): `__AETHER_SWEEP` (opt-in), `__AETHER_FIRST_USE`, `__AETHER_PROGRAM_CACHE`, `__AETHER_SWEEP_MOTION`,
   `__AETHER_SHADER_RELEASE`, `__AETHER_PIPELINE_RELEASE`, `__AETHER_PASS_FIRST`, `__AETHER_COMPILE_TARGET`, `__AETHER_FULL_WARMUP` (opt-in),
   `__AETHER_MATRIX_CHECK`, `__AETHER_CELL_SHADOWS`, `__AETHER_CELL_VIRTUAL`, `__AETHER_SORT_BY_MATERIAL`, `__AETHER_MERGE_VIRTUAL_PARTS`,
   `__AETHER_ASSET_INSTANCES`, `__AETHER_MATERIAL_DEDUPE`, `__AETHER_MERGE_SMALL_COPIES` (all on by default), `__AETHER_VIRTUAL_PART_CELL`
@@ -243,6 +243,45 @@ against itself, from wind and particles).
 ```sh
 STATIC_DIR=/tmp/s2-dist GEN_GPU=intel npx tsx scripts/first-picture-probe.ts --out=<dir> [--runs=cold,warm] [--shots] [--profile] kestrel-outpost
 ```
+
+## Each material links once; first use behind the load screen (6 November 2026)
+
+- **The lamp slots before the compile walk.** The 23 links of a load that went unused were lit materials built twice:
+  the compile walk saw the entity lamps (three point lights), the first draw then moved them behind the lamp slots (four),
+  and every lit material was built again for that light set, with the same code under other node numbers. The slots are
+  now synced before every compile walk (`syncLampSlots`). `first-picture-probe --dead` lists the links a load threw
+  away and how each differs from the nearest program still in use, numbering taken out; 10-12 remain (sky and
+  environment converters, two materials whose graph changes when a texture lands).
+- **First use behind the load screen** (`WorldRenderer.prepareFirstUse`, from the load gate). A linked program still
+  costs its first draw on Mesa. One object per program is drawn with frustum culling off (clipped out of view, the
+  picture does not change) with the sun map, in the motion and then the rest phase of the split chain; the post chain's
+  programs link off the frame there (the rest phase's used to link inside the first frame at rest). Rounds repeat until
+  a draw of each phase meets nothing new; while objects prepare, a round draws only when some finished. A pass that
+  ended clean is not repeated unless programs were added. The sources of merged batches keep their flags (the batches
+  key their members on them). Off: `__AETHER_FIRST_USE = false`. Diagnostics: `WorldRenderer.firstUseStats`.
+- **Measured and not kept.** Starting the pass right after the compile walk, beside the preparation of objects: the
+  GPU process was busy 100 % from then to the first picture anyway (main thread idle), so the first picture did not come
+  sooner, and in 3 of 10 warm visits Kestrel's cliffs were missing from the picture (not seen with the pass at the load
+  gate, 12 of 12). Drawing the player's person (loaded ahead, far behind the camera) in the pass removed the six
+  links of the first frames of play (GPU-process tasks after the first picture 1-4 on a cold visit), but only in the
+  early-start variant; from the load gate the person had not loaded yet.
+
+Kestrel Outpost, Intel UHD 770, medium (automatic), headless Chrome, before = `35dd310a`, interleaved on a shared machine
+(load average 6-20 from other jobs; one browser at a time). Before: 14 cold and 12 warm visits; after: 6 of each.
+
+| | First picture cold | First picture warm | Links per load (cold / warm) | GPU-process tasks > 50 ms after the first picture, cold | Longest orbit frame, cold |
+|---|---|---|---|---|---|
+| Before | 17.3-24.8 s (median 19.9) | 8.2-12.5 s (median 9.1) | 78-96 / 85-101 | 7-18 (median 11.5) | 117-517 ms (median 330) |
+| After | 15.6-23.9 s (median 15.7) | 8.1-19.2 s (median 8.5) | 60-66 / 65-68 | 5-23 (median 12.5) | 100-400 ms (median 133) |
+
+Links per load fall by 22-25 (both visits). The first picture comes about 4 s sooner cold (one build of each lit
+material instead of two); warm it is unchanged within the noise. The orbit after the load no longer meets programs (it
+met 4-6 before, each a 300-500 ms frame cold). The GPU-process tasks after the first picture did not fall: most of
+those left are the six programs of the player's person, linked when play starts (see above), and the driver's first use
+of them. Hero shots (the settled picture of the warm visit) differ from the old build's by 3.9-4.4 / 255, its own runs by
+3.5-4.3 / 255. The gate of this step (cold GPU tasks after the first picture at most 9, warm first picture under 6 s) is
+not met; links per load is. What the warm first picture waits for is the GPU process: about 4 s of it busy before the
+first picture (first use of the programs, the frames themselves), with the main thread idle for 1.5 s of that.
 
 ## Picture stability and sharpness (5 November 2026)
 
