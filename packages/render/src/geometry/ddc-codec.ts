@@ -6,12 +6,13 @@
  * Every typed array of the output is stored on its own, chosen by the property that holds it:
  *
  * - `positions` and hull `points`: snapped to a 2^-11 m grid (error at most 0.25 mm) and stored with meshopt's
- *   exponential filter (one exponent per component) and vertex codec. Arrays reaching past 4,096 m are stored losslessly.
+ *   exponential filter (one exponent per component) and vertex codec. Arrays reaching past 4,096 m, and the positions of
+ *   parts big enough for virtual geometry (their cluster simplification is sensitive to the input), are stored losslessly.
  * - `normals`: octahedral, 12 bits a component (angle error under 0.05°), meshopt filter and vertex codec. Arrays that are
  *   not unit length (zero normals) take the exponential path on a 2^-14 grid instead.
  * - `uvs` (2^-16 grid, which a 4,096 px atlas reads to a sixteenth of a texel), `colors` and `splat` (2^-12),
  *   heightfield `heights` (2^-16): exponential filter and vertex codec.
- * - Triangle `indices`: meshopt index codec (triangles may come back rotated, winding kept).
+ * - `indices`: meshopt index sequence codec (every index in place).
  * - An array whose values equal an earlier array's (a prepared part's 16-bit indices and the 32-bit ones they came from,
  *   split indices, a trimesh collider's copy of the part's streams) is stored as a reference to it.
  * - Anything else: meshopt's lossless vertex codec, or raw bytes.
@@ -26,6 +27,7 @@ import { MeshoptEncoder } from 'meshoptimizer/encoder';
 import { MeshoptDecoder } from 'meshoptimizer/decoder';
 import type { GeneratorOutput } from '../types';
 import { decodeOutput, encodeOutput, type EncodedOutput } from './ddc';
+import { VIRTUAL_MIN_TRIANGLES } from '../virtual/kit';
 
 /** `AEQ2`, little-endian. A format 1 entry starts with its header length, which is far smaller. */
 export const ENTRY_MAGIC = 0x32514541;
@@ -54,9 +56,9 @@ function tagOf(a: ArrayBufferView): Tag | null {
 
 /**
  * Codecs: `r` raw bytes; `v` lossless vertex codec (a = stride); `x` exponential filter + vertex codec (a = stride);
- * `o` octahedral normals (12 bits, decoded to float xyz); `t` triangle index codec (a = 2 | 4); `=` same values as row a.
+ * `o` octahedral normals (12 bits, decoded to float xyz); `s` index sequence codec, order kept (a = 2 | 4); `t` triangle index codec, corners may rotate (read only); `=` same values as row a.
  */
-type Codec = 'r' | 'v' | 'x' | 'o' | 't' | '=';
+type Codec = 'r' | 'v' | 'x' | 'o' | 's' | 't' | '=';
 type Row = [Tag, number, number, number, Codec, number];
 
 let ready: Promise<void> | null = null;
@@ -67,6 +69,8 @@ export function codecReady(): Promise<void> {
 }
 
 const bytesOf = (a: ArrayBufferView): Uint8Array => new Uint8Array(a.buffer, a.byteOffset, a.byteLength);
+
+const NONE: ReadonlySet<string> = new Set();
 
 /** Grid (log2 of the step, negated) and components per vertex of the lossy float roles. */
 const FLOAT_ROLES: Readonly<Record<string, { grid: number; size: number }>> = {
@@ -166,13 +170,22 @@ export interface InnerEntry {
 }
 
 /** First, synchronous half of {@link encodeEntry}; {@link codecReady} must have resolved. */
-export function encodeInner(out: GeneratorOutput): InnerEntry {
+export function encodeInner(out: GeneratorOutput, lossless: ReadonlySet<string> = NONE): InnerEntry {
   const arrays: Typed[] = [];
   const rows: Row[] = [];
   const blobs: Uint8Array[] = [];
   const index = new Map<ArrayBufferView, number>();
   let offset = 0;
   let rawBytes = 0;
+  // Parts big enough for virtual geometry keep exact positions: their cluster simplification turns a quarter-millimetre
+  // shift into a different level of detail near the camera (Cliff Sanctuary's terrain changed visibly).
+  const exact = new Set<ArrayBufferView>();
+  for (const p of out.parts) {
+    if (p.indices.length / 3 < VIRTUAL_MIN_TRIANGLES) continue;
+    exact.add(p.positions);
+    if (p.prepared) exact.add(p.prepared.positions);
+    if (p.prepared?.soft?.prepared) exact.add(p.prepared.soft.prepared.positions);
+  }
   const json = JSON.stringify({ v: 1, out }, (key: string, value: unknown) => {
     if (!ArrayBuffer.isView(value)) return value;
     let i = index.get(value);
@@ -201,8 +214,8 @@ export function encodeInner(out: GeneratorOutput): InnerEntry {
       }
     }
     if (!blob && a.length > 0) {
-      const role = FLOAT_ROLES[key];
-      if (tag === 'f32' && key === 'normals') {
+      const role = lossless.has(key) || exact.has(value) ? undefined : FLOAT_ROLES[key];
+      if (tag === 'f32' && key === 'normals' && !lossless.has(key)) {
         blob = encodeOct(a as Float32Array);
         if (blob) codec = 'o';
         else {
@@ -214,8 +227,10 @@ export function encodeInner(out: GeneratorOutput): InnerEntry {
         if (blob) [codec, param] = ['x', role.size * 4];
       } else if (isIndexTag(tag) && key === 'indices' && a.length % 3 === 0) {
         const size = a.BYTES_PER_ELEMENT;
-        blob = MeshoptEncoder.encodeIndexBuffer(bytesOf(a), a.length, size);
-        [codec, param] = ['t', size];
+        // The sequence codec keeps every index in place: the triangle codec rotates corners, which moves what samples a
+        // mesh by corner order (scatter placement on terrain changed visibly).
+        blob = MeshoptEncoder.encodeIndexSequence(bytesOf(a), a.length, size);
+        [codec, param] = ['s', size];
       }
       if (!blob && a.byteLength % 4 === 0 && tag !== 'f64') {
         blob = MeshoptEncoder.encodeVertexBuffer(bytesOf(a), a.byteLength / 4, 4);
@@ -267,8 +282,16 @@ export async function decodeEntry(buf: ArrayBuffer, at = 0, size = buf.byteLengt
   await codecReady();
   const innerLen = new DataView(buf, at, 8).getUint32(4, true);
   if (innerLen > 1 << 30) throw new Error('bad inner length');
-  const inner = await gunzip(new Uint8Array(buf, at + 8, size - 8), innerLen);
-  const len = new DataView(inner.buffer).getUint32(0, true);
+  return decodeInner(await gunzip(new Uint8Array(buf, at + 8, size - 8), innerLen));
+}
+
+/**
+ * The output of an inner part ({@link encodeInner}), synchronous; {@link codecReady} must have resolved. The lanes reply with
+ * this rather than with the generator's own arrays, so a first visit draws exactly what the cache and the cooked package
+ * give later (the same quantized values and rotated triangles: lightmap keys and pixels match across visits).
+ */
+export function decodeInner(inner: Uint8Array): GeneratorOutput {
+  const len = new DataView(inner.buffer, inner.byteOffset, inner.byteLength).getUint32(0, true);
   if (4 + len > inner.byteLength) throw new Error('bad header length');
   const { table, json } = JSON.parse(new TextDecoder().decode(inner.subarray(4, 4 + len))) as { table: Row[]; json: string };
   if (!Array.isArray(table) || typeof json !== 'string') throw new Error('bad header');
@@ -323,6 +346,13 @@ export async function decodeEntry(buf: ArrayBuffer, at = 0, size = buf.byteLengt
           f[i * 3 + 2] = z / l;
         }
         view = f;
+        break;
+      }
+      case 's': {
+        if ((a !== 2 && a !== 4) || a !== C.BYTES_PER_ELEMENT) throw new Error('bad index array');
+        const target = new Uint8Array(outBytes);
+        MeshoptDecoder.decodeIndexSequence(target, count, a, src);
+        view = new C(target.buffer);
         break;
       }
       case 't': {

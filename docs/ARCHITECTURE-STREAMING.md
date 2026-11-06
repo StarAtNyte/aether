@@ -594,17 +594,23 @@ into a table), table rows `[type, offset, bytes, count, codec, param]`. Each arr
 
 | Property | Codec | Error |
 |---|---|---|
-| `positions`, hull `points` | snapped to a 2^-11 m grid, meshopt exponential filter (one exponent per component), vertex codec; past 4,096 m lossless | at most 0.25 mm |
+| `positions`, hull `points` | snapped to a 2^-11 m grid, meshopt exponential filter (one exponent per component), vertex codec; past 4,096 m, and parts of 20,000 triangles or more (virtual geometry), lossless | at most 0.25 mm |
 | `normals` | meshopt octahedral filter, 12 bits a component, vertex codec; not unit length (zero normals): exponential on a 2^-14 grid | under 0.06° |
 | `uvs` (metre UVs, atlases) | 2^-16 grid, exponential filter, vertex codec | 7.6e-6 (a 4,096 px atlas: 1/32 texel) |
 | `colors`, `splat` | 2^-12 grid, exponential filter, vertex codec | 1.2e-4 |
 | heightfield `heights` | 2^-16 grid | 7.6e-6 of the height |
-| triangle `indices` | meshopt index codec (triangles may come back rotated; order and winding kept) | none |
+| `indices` | meshopt index sequence codec (every index in place) | none |
 | values equal to an earlier array (16-bit indices and the 32-bit ones they came from, trimesh copies of a part's streams) | a reference to it (the same type shares the decoded array) | none |
 | anything else | meshopt vertex codec, lossless, or raw | none |
 
 The values are snapped before the filter, so a part's raw positions and its split prepared positions decode to the same
-numbers and no crack opens between them. The codec (meshopt encoder and decoder, about 15 kB gzip) is imported only by the
+numbers and no crack opens between them. A lane replies with the decoded inner part, not with the generator's own arrays,
+so a first visit draws exactly what the cache and the package give later: lightmap keys (geometry rounded to 2 cm) and
+pixels match across visits. Three things the first version did were taken back after hero shots of Cliff Sanctuary moved:
+the triangle index codec (it rotates corners, and placement that samples a mesh by corner order moved), quantized positions
+on virtual-geometry parts (their cluster simplification chose different levels of detail near the camera) and replying
+with exact arrays while the cache held quantized ones (a warm visit missed the cold visit's lightmap).
+`__AETHER_GEOMETRY_LOSSLESS = ['normals', …]` keeps named properties lossless (diagnostics). The codec (meshopt encoder and decoder, about 15 kB gzip) is imported only by the
 generation lanes, the cook script and tests; the page bundle does not grow. Encoding runs in the lane before the reply (the
 arrays are quantized and copied), the deflate after it. Prepared parts no longer carry a 32-bit copy of 16-bit split
 indices (`PREPARE_VERSION` 3): the one reader, cluster LOD of big parts, widens the geometry's index when it needs it.

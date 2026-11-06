@@ -3,7 +3,7 @@ import { generateBuiltinSync, validateOutput, type GeneratorOutput, type MeshPar
 import { partToBufferGeometry, prepareOutputParts, preparePart } from '../src/geometry/buffer-geometry';
 import { prepareSoft } from '../src/geometry/soften';
 import { encodeOutput } from '../src/geometry/ddc';
-import { decodeEntry, encodeEntry, isCompressedEntry } from '../src/geometry/ddc-codec';
+import { codecReady, decodeEntry, decodeInner, encodeEntry, encodeInner, isCompressedEntry, packEntry } from '../src/geometry/ddc-codec';
 import { checkOutputShape, outputTransfer } from '../src/geometry/gen-protocol';
 import { LaneCookSource } from '../src/cook/lane-source';
 
@@ -62,11 +62,11 @@ describe('compressed geometry-cache entries', () => {
         expect(maxAngle(p.normals, q.normals)).toBeLessThan(0.1);
         if (p.uvs) expect(maxDiff(p.uvs, q.uvs!)).toBeLessThanOrEqual(2 ** -17 + 1e-6);
         if (p.colors) expect(maxDiff(p.colors, q.colors!)).toBeLessThanOrEqual(2 ** -13 + 1e-6);
-        sameTriangles(p.indices, q.indices);
+        expect(Array.from(q.indices)).toEqual(Array.from(p.indices));
         expect(q.material).toEqual(p.material);
         const r = p.prepared!, s = q.prepared!;
         expect(s.indices.constructor).toBe(r.indices.constructor);
-        sameTriangles(r.indices, s.indices);
+        expect(Array.from(s.indices)).toEqual(Array.from(r.indices));
         if (r.splitIndices) expect(Array.from(s.splitIndices!)).toEqual(Array.from(s.indices));
         expect(maxDiff(r.uvs, s.uvs)).toBeLessThanOrEqual(2 ** -17 + 1e-6);
         expect(Array.from(s.bounds!)).toEqual(Array.from(r.bounds!));
@@ -94,6 +94,21 @@ describe('compressed geometry-cache entries', () => {
     expect(maxDiff(normals, q.normals)).toBeLessThanOrEqual(2 ** -15);
     expect(Number.isNaN(q.colors![0])).toBe(true);
     expect(Array.from(q.colors!).slice(1)).toEqual(Array.from(colors).slice(1));
+  });
+
+  it('gives the lanes the same arrays a later visit reads back', async () => {
+    await codecReady();
+    const out = builtin('classical-temple');
+    const inner = encodeInner(out);
+    const first = decodeInner(inner.inner);
+    const later = await decodeEntry(await (await packEntry(inner)).blob.arrayBuffer());
+    first.parts.forEach((p, i) => {
+      const q = later.parts[i] as MeshPart;
+      expect(Array.from(q.positions)).toEqual(Array.from(p.positions));
+      expect(Array.from(q.normals)).toEqual(Array.from(p.normals));
+      expect(Array.from(q.indices)).toEqual(Array.from(p.indices));
+      expect(Array.from(q.prepared!.uvs)).toEqual(Array.from(p.prepared!.uvs));
+    });
   });
 
   it('reads format 1 entries, writes them with the switch off, and rejects malformed ones', async () => {

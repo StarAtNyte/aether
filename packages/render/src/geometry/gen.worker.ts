@@ -16,7 +16,7 @@ import type { GeneratorOutput } from '../types';
 import { prepareOutputParts, preparePart } from './buffer-geometry';
 import { prepareSoft } from './soften';
 import { Ddc, ddcKey, encodeOutput, type EncodedOutput } from './ddc';
-import { codecReady, decodeEntry, encodeInner, packEntry, type InnerEntry } from './ddc-codec';
+import { codecReady, decodeEntry, decodeInner, encodeInner, packEntry, type InnerEntry } from './ddc-codec';
 import { checkOutputShape, outputTransfer, parseGenRequest, type GenReply, type LaneTimes } from './gen-protocol';
 import { LaneCookSource } from '../cook/lane-source';
 import type { LaneCookConfig } from '../cook/format';
@@ -47,11 +47,14 @@ let cook: LaneCookSource | null = null;
 let keepAll = false;
 /** Whether entries are written compressed (the page's `__AETHER_GEOMETRY_COMPRESS`, sent with the cook configuration). */
 let compress = true;
+/** Properties stored without quantization (`__AETHER_GEOMETRY_LOSSLESS`, diagnostics). */
+let lossless: ReadonlySet<string> = new Set();
 
 /** Apply a `cook` configuration message (validated loosely: a malformed index only means misses). */
 function configure(cfg: LaneCookConfig): void {
   keepAll = cfg.keepAll === true;
   compress = cfg.compress !== false;
+  lossless = new Set(Array.isArray(cfg.lossless) ? cfg.lossless.filter((k): k is string => typeof k === 'string').slice(0, 16) : []);
   const index = cfg.index;
   cook = index && Array.isArray(index.packs) && index.packs.every((u) => typeof u === 'string') && typeof index.entries === 'object' && index.entries !== null ? new LaneCookSource(index) : null;
 }
@@ -129,7 +132,7 @@ async function finish(id: number, key: string | null, out: GeneratorOutput, ms: 
     t0 = performance.now();
     try {
       // Compressed (ddc-codec.ts): the arrays are quantized and copied now, deflated after the reply.
-      if (compress && (await codec)) inner = encodeInner(out);
+      if (compress && (await codec)) inner = encodeInner(out, lossless);
       else entry = encodeOutput(out);
     } catch {
       entry = null;
@@ -137,7 +140,19 @@ async function finish(id: number, key: string | null, out: GeneratorOutput, ms: 
     }
     t.encode += performance.now() - t0;
   }
-  reply({ type: 'result', id, ok: true, output: out, hit: false, times: t }, out);
+  // The reply carries what the cache will hold: decoded from the inner part, so later visits match the first one exactly.
+  let sent = out;
+  if (inner) {
+    t0 = performance.now();
+    try {
+      sent = decodeInner(inner.inner);
+    } catch {
+      sent = out;
+      inner = null;
+    }
+    t.encode += performance.now() - t0;
+  }
+  reply({ type: 'result', id, ok: true, output: sent, hit: false, times: t }, sent);
   if (ddc && key) {
     if (entry) queueWrite(ddc, key, entry);
     else if (inner) {

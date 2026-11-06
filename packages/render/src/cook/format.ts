@@ -255,4 +255,6 @@ export interface LaneCookConfig {
   index?: LaneCookIndex | null;
   /** Write geometry-cache entries compressed (ddc-codec.ts; `__AETHER_GEOMETRY_COMPRESS`, default true). */
   compress?: boolean;
+  /** Properties kept lossless in compressed entries (`__AETHER_GEOMETRY_LOSSLESS`, e.g. `['normals']`; diagnostics). */
+  lossless?: string[];
 }

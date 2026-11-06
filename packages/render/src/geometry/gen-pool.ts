@@ -18,6 +18,12 @@ import type { GeneratorOutput, SandboxRunner } from '../types';
 import { checkOutputShape, parseGenReply, rawTransfer, type GenRequest, type LaneTimes } from './gen-protocol';
 import type { LaneCookConfig } from '../cook/format';
 
+/** `__AETHER_GEOMETRY_LOSSLESS` (page global): properties the lanes store without quantization (diagnostics). */
+function losslessSwitch(): string[] {
+  const v = (globalThis as { __AETHER_GEOMETRY_LOSSLESS?: unknown }).__AETHER_GEOMETRY_LOSSLESS;
+  return Array.isArray(v) ? v.filter((k): k is string => typeof k === 'string') : [];
+}
+
 /** `__AETHER_GEOMETRY_COMPRESS` (page global, on unless false): the lanes write compressed cache entries (ddc-codec.ts). */
 function compressSwitch(): boolean {
   return (globalThis as { __AETHER_GEOMETRY_COMPRESS?: unknown }).__AETHER_GEOMETRY_COMPRESS !== false;
@@ -124,7 +130,7 @@ export class GenPool {
 
   private postCook(w: WorkerLike): void {
     try {
-      w.postMessage({ type: 'cook', config: { ...(this.cook ?? {}), compress: compressSwitch() } }, []);
+      w.postMessage({ type: 'cook', config: { ...(this.cook ?? {}), compress: compressSwitch(), lossless: losslessSwitch() } }, []);
     } catch {
       // The lane is gone: its replacement gets the configuration.
     }
@@ -231,7 +237,7 @@ export class GenPool {
         w.onerror = () => this.crash(lane, new LaneFailure('a generation worker crashed'));
         lane.worker = w;
         lane.ready = false;
-        if (this.cook || !compressSwitch()) this.postCook(w);
+        if (this.cook || !compressSwitch() || losslessSwitch().length > 0) this.postCook(w);
       } catch (e) {
         job.reject(new LaneFailure(`no generation worker: ${e instanceof Error ? e.message : String(e)}`));
         this.pumpSoon();
