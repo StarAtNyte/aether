@@ -24,7 +24,7 @@ import { ACESFilmicToneMapping, AgXToneMapping, LinearToneMapping, NeutralToneMa
 import type { WebGPURenderer } from 'three/webgpu';
 import type { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { buildStructure } from '@aether/arch';
-import { gateWorker, MOTION_PAUSED, workerScheduler, Entity, deepEqual, type EntityId, type Json, type ProceduralShape, type Vec3, type WorldDoc } from '@aether/core';
+import { gateWorker, MOTION_PAUSED, workerScheduler, Entity, deepEqual, findWaterBodies, isWaterEntity, waterAt, type EntityId, type Json, type ProceduralShape, type Vec3, type WorldDoc } from '@aether/core';
 import type { CameraMode, GeneratorOutput, GeometrySource, RenderDiagnostic, SandboxRunner } from './types';
 import { leanShading } from './materials/anti-tile';
 import { MaterialCache } from './materials/material-cache';
@@ -94,7 +94,8 @@ import { ArchView, type ArchViewState } from './view/arch-view';
 import { daylightLampFactor, FORWARD_LIGHTS, LAMP_CUTOFF } from './sync/lights';
 import { installFirstDrawPacer, type FirstDrawPacer } from './gpu/first-draw-pacer';
 import { collectFramingItems, FOCUS_TAG } from './view/content-items';
-import { nearZone, rankOpeningViews, type OpeningPose, type OpeningStats } from './view/opening-view';
+import { drainSteps, nearestInView, nearZone, rankOpeningViews, rankOpeningViewsSteps, type OpeningPose, type OpeningStats } from './view/opening-view';
+import { archStopsSteps, MAX_STOPS, quickSceneStopsSteps, sceneStopsSteps, type QuickStopProbe, type RoomArea, type ViewStopPose } from './view/view-stops';
 import { sceneOpeningProbe } from './view/opening-probe';
 import { GROW_OVERSHOOT_MAX_RADIUS, GrowIn, growDelay } from './view/grow-in';
 import { installRenderPatches } from './three-patches';
@@ -487,6 +488,18 @@ const _ndc = new Vector2();
 const _bounds = new Box3();
 /** Vertical field of view (degrees) of the first-person walk camera. */
 export const WALK_FOV = 70;
+
+/** A label from an entity name: parentheses dropped, generated names ("6 x bollard along a line", "Invisible …") refused. */
+export function cleanStopName(raw: string | undefined): string | null {
+  if (!raw) return null;
+  const name = raw.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s+/g, ' ').trim();
+  if (name.length < 3 || name.length > 40) return null;
+  if (/^\d+\s*x\s|\balong a line\b|^invisible\b|\bboundary\b|\bbarrier\b|^entity\b/i.test(name)) return null;
+  // Planting and ground cover make poor labels for a viewpoint.
+  if (/\b(shrubs?|scrub|grass|tufts?|flowers?|wildflowers|ferns?|ivy|weeds|moss|row of|kerbs?|paving|pavement|scatter)\b/i.test(name)) return null;
+  if (/^[a-z0-9_-]+$/.test(name) && /[-_\d]/.test(name)) return null;
+  return name;
+}
 const _center = new Vector3();
 const _up = new Vector3(0, 1, 0);
 const _size = new Vector2();
@@ -3754,6 +3767,154 @@ export class WorldRenderer {
       const probe = sceneOpeningProbe(this.sync, this.env.groundMesh, framing.center[1] + reach, framing.center[1] - reach);
       return rankOpeningViews({ framing, items, fovDeg: cam.fov, aspect: cam.aspect, arch, azimuthDeg: front ?? DEFAULT_FRAMING_AZIMUTH }, probe, limit, stats);
     });
+  }
+
+  /**
+   * Tour stops of the content when the world has none of its own (see `view/view-stops.ts`): the opening view first, then
+   * one stop per room at eye height for a building, else the best viewpoint of each section of a large scene and the next
+   * best views. At most `limit` (default 8), ordered as a walk. Empty before there is content. Runs the whole search at
+   * once (the cook); a viewer uses {@link viewStopsAsync}.
+   */
+  viewStops(limit = MAX_STOPS): ViewStopPose[] {
+    if (this.disposed) return [];
+    const steps = this.viewStopsSteps(limit);
+    return this.grow.withFullScale(() => {
+      this.sync.root.updateMatrixWorld(true);
+      return drainSteps(steps);
+    });
+  }
+
+  /**
+   * Tour stops for a viewer, spread over tasks of about `sliceMs` each so the page keeps drawing: a building's rooms as
+   * {@link viewStops}; a scene's viewpoints from a few rays per section instead of the opening-view search (which takes up
+   * to a minute on a large live world; the cook runs it and stores the result). `street`: viewpoints at eye height in the
+   * street where they can be had (a city). Resolves to [] when the renderer is disposed meanwhile.
+   */
+  async viewStopsAsync(limit = MAX_STOPS, opts: { street?: boolean; sliceMs?: number } = {}): Promise<ViewStopPose[]> {
+    const sliceMs = opts.sliceMs ?? 12;
+    const steps = this.viewStopsSteps(limit, { quick: true, street: opts.street === true });
+    for (;;) {
+      if (this.disposed) return [];
+      const t0 = performance.now();
+      const r = this.grow.withFullScale(() => {
+        this.sync.root.updateMatrixWorld(true);
+        let x = steps.next();
+        while (!x.done && performance.now() - t0 < sliceMs) x = steps.next();
+        return x;
+      });
+      if (r.done) return r.value;
+      await new Promise<void>((done) => setTimeout(done, 0));
+    }
+  }
+
+  /** The search of {@link viewStops} in steps; each step runs with the content at full scale and current matrices. */
+  private *viewStopsSteps(limit: number, mode: { quick?: boolean; street?: boolean } = {}): Generator<void, ViewStopPose[], void> {
+    const items = collectFramingItems(this.sync);
+    const framing = contentFraming(items);
+    if (!framing) return [];
+    const open = this.openingPose();
+    const first: ViewStopPose | null = open ? { position: open.position, target: open.target, ...(open.fov !== undefined ? { fov: open.fov } : {}) } : null;
+    const cam = this.perspective;
+    const reach = framing.radius * 2 + 100;
+    const probe = sceneOpeningProbe(this.sync, this.env.groundMesh, framing.center[1] + reach, framing.center[1] - reach);
+    const rooms: RoomArea[] = [];
+    const box = new Box3();
+    this.sync.forEachNode((node) => {
+      const e = node.entity;
+      if (e.template || e.arch?.role !== 'room' || rooms.length >= 64) return;
+      this.sync.entityBounds(node.id, box);
+      if (box.isEmpty()) return;
+      rooms.push({ id: node.id, name: cleanStopName(e.arch.name ?? e.name) ?? 'Room', min: [box.min.x, box.min.y, box.min.z], max: [box.max.x, box.max.y, box.max.z], floorY: box.max.y });
+    });
+    const front = this.archView.active ? this.archFrontAzimuth() : null;
+    const input = { framing, items, fovDeg: cam.fov, aspect: cam.aspect, arch: this.archView.active, azimuthDeg: front ?? DEFAULT_FRAMING_AZIMUTH };
+    if (rooms.length > 0) {
+      const inRoom = (r: RoomArea, x: number, z: number): boolean => {
+        const hit = this.raycastWorld([x, r.floorY + 1, z], [0, -1, 0], 1.6, undefined, r.id);
+        return !!hit && Math.abs(hit.point[1] - r.floorY) < 0.3;
+      };
+      const extra = rooms.length < 3 ? (yield* rankOpeningViewsSteps(input, probe, 4)).map((v) => ({ position: v.position, target: v.target })) : [];
+      // Indoors the coarse scatter boxes (a garden's shrubs) say nothing: the solid meshes only, which is also faster.
+      const sight = probe.near ?? probe.sight;
+      return yield* archStopsSteps(rooms, { sight, near: sight, inRoom }, WALK_FOV, cam.aspect, { first, extra, limit });
+    }
+    // A landmark names one stop only (two views of the same temple: the second is a plain viewpoint).
+    const used = new Set<string>();
+    const nameAt = (at: Vec3): string | null => {
+      const n = this.landmarkName(at);
+      if (!n || used.has(n)) return null;
+      used.add(n);
+      return n;
+    };
+    const name = (p: { landmark: Vec3 }): string | null => nameAt(p.landmark);
+    if (mode.quick) {
+      const sections = tourSections(items, framing.radius, 7);
+      const parts = sections.length > 0 ? sections : [{ center: framing.center, size: Math.max(6, framing.radius * 0.5) }];
+      return yield* quickSceneStopsSteps(parts, framing.center, this.quickStopProbe(framing), { first, limit, name: nameAt, ...(mode.street ? { street: true } : {}) });
+    }
+    const all = yield* sceneStopsSteps(input, probe, { first, limit: MAX_STOPS, name });
+    // The opening search takes a wide set-piece (a temple 40 m long) for landscape: a viewpoint must not stand on its roof.
+    return all.filter((s, i) => i === 0 || !this.standsOnStructure(s.position)).slice(0, limit);
+  }
+
+  /** The few rays of the viewer's quick viewpoints (see `quickSceneStopsSteps`). */
+  private quickStopProbe(f: { center: Vec3; radius: number }): QuickStopProbe {
+    const water = this.sync.world ? findWaterBodies(this.sync.world) : [];
+    const top = f.center[1] + f.radius * 3 + 500;
+    // Trees and shrubs count here: a street spot behind a cypress trunk is no viewpoint.
+    const near = sceneSightTest(this.sync);
+    const cam = this.perspective;
+    return {
+      ground: (x, z) => {
+        const hit = this.raycastWorld([x, top, z], [0, -1, 0], top - f.center[1] + f.radius * 3 + 500);
+        if (!hit) return Number.isFinite(this.rig.floorY) ? { y: 0, water: waterAt(water, x, z, 0) !== null } : null;
+        const e = this.sync.node(hit.id)?.entity;
+        const w = waterAt(water, x, z, hit.point[1]);
+        return { y: hit.point[1], water: (!!e && (isWaterEntity(e) || e.arch?.role === 'pool')) || (!!w && w.y > hit.point[1] + 0.05) };
+      },
+      clear: (a, b) => {
+        const d = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+        const hit = this.raycastWorld(a, [b[0] - a[0], b[1] - a[1], b[2] - a[2]], d);
+        return !hit || Math.hypot(hit.point[0] - b[0], hit.point[1] - b[1], hit.point[2] - b[2]) < d * 0.25;
+      },
+      near: (eye, target) => nearestInView(near, eye, target, cam.fov, cam.aspect),
+    };
+  }
+
+  /** The eye at `eye` stands on top of a tall built piece (a roof, a temple), not on the ground or a terrace. */
+  private standsOnStructure(eye: Vec3): boolean {
+    const hit = this.raycastWorld(eye, [0, -1, 0], 30);
+    if (!hit) return false;
+    const box = new Box3();
+    this.sync.entityBounds(hit.id, box);
+    if (box.isEmpty()) return false;
+    const height = box.max.y - box.min.y;
+    const wide = Math.max(box.max.x - box.min.x, box.max.z - box.min.z);
+    const node = this.sync.node(hit.id);
+    const groundish = !!node && node.entity.tags.some((t) => t === 'terrain' || t === 'ground' || t === 'land' || t === 'hill');
+    return !groundish && wide < 150 && height > 6 && hit.point[1] > box.min.y + 4;
+  }
+
+  /** Name of the smallest named entity whose box holds `p` (a viewpoint's landmark), cleaned for a label; null when none reads well. */
+  private landmarkName(p: Vec3): string | null {
+    const box = new Box3();
+    const size = new Vector3();
+    const at = new Vector3(p[0], p[1], p[2]);
+    let best: { name: string; volume: number } | null = null;
+    this.sync.forEachNode((node) => {
+      const e = node.entity;
+      if (e.template || node.transient) return;
+      const name = cleanStopName(e.name);
+      if (!name) return;
+      this.sync.entityBounds(node.id, box);
+      if (box.isEmpty() || !box.expandByScalar(0.5).containsPoint(at)) return;
+      box.getSize(size);
+      // Landscape (a hillside, the terrain) holds every point: not a landmark.
+      if (Math.max(size.x, size.z) > 120) return;
+      const volume = size.x * size.y * size.z;
+      if (!best || volume < best.volume) best = { name, volume };
+    });
+    return (best as { name: string } | null)?.name ?? null;
   }
 
   /**

@@ -1020,6 +1020,29 @@ export const OpeningView = z.object({
 });
 export type OpeningView = z.infer<typeof OpeningView>;
 
+/**
+ * Additive: one stop of a published world's tour (an architectural walkthrough's rooms, a showcase's or a city's
+ * viewpoints): a camera pose like {@link OpeningView} with an optional label. Absent: the player computes 4 to 8 stops from
+ * the scene (the cook stores them in its manifest).
+ */
+export const ViewStop = OpeningView.extend({
+  /** Label shown on the stop (a room's name, a landmark's). */
+  name: z.string().min(1).max(60).optional(),
+});
+export type ViewStop = z.infer<typeof ViewStop>;
+
+/** Most tour stops a world carries. */
+export const MAX_VIEW_STOPS = 12;
+
+/**
+ * Publish profile of a world: how the player presents it. `game`: title card, then play; `walkthrough`: an
+ * architectural tour at eye level (click the floor to glide, dollhouse view); `showcase`: a cinematic fly-in, then an orbit
+ * camera with viewpoints; `city`: a street-level hero view, then a drone tour. Every profile can still be played as the
+ * character (P) and explored with an orbit camera (Tab).
+ */
+export const WorldProfile = z.enum(['game', 'walkthrough', 'showcase', 'city']);
+export type WorldProfile = z.infer<typeof WorldProfile>;
+
 // ---------------------------------------------------------------------------
 // World document
 // ---------------------------------------------------------------------------
@@ -1096,6 +1119,10 @@ export const WorldDoc = z.object({
    * from the world. The editor ignores it.
    */
   startMode: z.enum(['play', 'walkthrough', 'orbit']).optional(),
+  /** Additive: the publish profile (see {@link WorldProfile}). Absent: the player derives it from `startMode`. The editor ignores it. */
+  profile: WorldProfile.optional(),
+  /** Additive: authored tour stops (see {@link ViewStop}). Absent: computed by the player or the cook. The editor ignores them. */
+  views: z.array(ViewStop).max(MAX_VIEW_STOPS).optional(),
   /** Additive: game feel — feedback tier and per-event cues (visual only; absent = the `normal` tier). See `feel-schema.ts`. */
   feel: FeelSpec.optional(),
   /** Additive: texture sets of the project (see {@link TextureSetDef}); absent for worlds without photographed or generated maps. */

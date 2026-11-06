@@ -796,3 +796,265 @@ kbd {
 .interact__prompt { position: absolute; top: 18px; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--overlay-border); border-radius: 10px; background: var(--glass-strong); color: var(--text); font-size: 13px; white-space: nowrap; }
 .interact__prompt kbd { display: inline-block; min-width: 18px; padding: 0 5px; border: 1px solid var(--edge); border-radius: 4px; font: inherit; font-weight: 600; text-align: center; }
 .interact__hint { margin-left: 6px; color: var(--text-2); }
+
+/* ---------------------------------------------------------------- explore mode (tour, viewpoints, dollhouse) */
+
+.pl-xbar {
+  position: absolute;
+  left: 50%;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  z-index: 12;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: max-content;
+  max-width: calc(100% - 24px);
+  padding: 8px;
+  border: 1px solid var(--edge);
+  border-radius: 16px;
+  background: var(--glass);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.35);
+  transform: translateX(-50%);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  animation: pl-fadein 0.22s ease both;
+}
+
+.pl-xbar__group {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.pl-xbar__group + .pl-xbar__group {
+  padding-left: 8px;
+  border-left: 1px solid var(--edge);
+}
+
+.pl-xbar__stops {
+  flex: 0 1 auto;
+  max-width: 560px;
+}
+
+.pl-xbar__label {
+  padding: 0 6px 0 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.pl-xbar__chips {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.pl-xbar__chips::-webkit-scrollbar {
+  display: none;
+}
+
+.pl-xbar__play {
+  min-height: 36px;
+}
+
+.pl-chip,
+.pl-xbtn {
+  flex: none;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.06);
+  color: var(--text-2);
+  font: 600 13px/1 var(--font);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.pl-xbtn {
+  min-width: 32px;
+  padding: 0 8px;
+  font-size: 15px;
+}
+
+.pl-xbtn--label {
+  padding: 0 12px;
+  font-size: 13px;
+}
+
+.pl-chip:hover,
+.pl-xbtn:hover {
+  background: rgb(255 255 255 / 0.12);
+  color: var(--text);
+}
+
+.pl-chip.is-on,
+.pl-xbtn.is-on {
+  border-color: rgb(255 255 255 / 0.3);
+  background: rgb(255 255 255 / 0.18);
+  color: var(--text);
+}
+
+.pl-chip:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.pl-chip:focus-visible,
+.pl-xbtn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.pl-xpop {
+  position: absolute;
+  bottom: calc(100% + 14px);
+  left: 50%;
+  display: grid;
+  gap: 10px;
+  width: 280px;
+  padding: 14px;
+  border: 1px solid var(--edge);
+  border-radius: 14px;
+  background: var(--glass-strong);
+  transform: translateX(-50%);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  animation: pl-fadein 0.18s ease both;
+}
+
+.pl-xpop input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.pl-xpop__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pl-xtitle {
+  position: absolute;
+  top: calc(16px + env(safe-area-inset-top, 0px));
+  left: 16px;
+  z-index: 8;
+  display: grid;
+  gap: 2px;
+  max-width: min(420px, calc(100% - 90px));
+  pointer-events: none;
+  text-shadow: 0 1px 12px rgb(0 0 0 / 0.55);
+}
+
+.pl-xtitle__name {
+  font: 700 18px/1.2 var(--font-display);
+  letter-spacing: -0.01em;
+}
+
+.pl-xtitle__by {
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.pl-hint {
+  position: absolute;
+  left: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  z-index: 11;
+  max-width: min(360px, 40%);
+  margin: 0;
+  color: rgb(243 241 236 / 0.62);
+  font-size: 12px;
+  line-height: 1.45;
+  pointer-events: none;
+  text-shadow: 0 1px 8px rgb(0 0 0 / 0.6);
+}
+
+/* In explore mode the bar owns the bottom: the hint sits under the title. */
+.pl-root.is-exploring .pl-hint {
+  top: calc(52px + env(safe-area-inset-top, 0px));
+  bottom: auto;
+}
+
+.pl-fade {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.26s ease;
+}
+
+.pl-fade.is-on {
+  opacity: 1;
+}
+
+.pl-photo {
+  position: absolute;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  z-index: 12;
+  display: flex;
+  gap: 8px;
+  opacity: 0.35;
+  transition: opacity 0.2s ease;
+}
+
+.pl-photo:hover,
+.pl-photo:focus-within {
+  opacity: 1;
+}
+
+@keyframes pl-fadein {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (max-width: 1100px) {
+  .pl-xbar {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 720px) {
+  .pl-xbar {
+    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+    gap: 6px;
+    padding: 6px;
+  }
+
+  .pl-xbar__group + .pl-xbar__group {
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .pl-xbar__stops {
+    flex-basis: 100%;
+  }
+
+  .pl-chip,
+  .pl-xbtn {
+    min-height: 40px;
+  }
+
+  .pl-hint {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pl-fade {
+    transition: none;
+  }
+}

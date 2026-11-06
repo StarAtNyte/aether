@@ -46,10 +46,11 @@ export async function sha256Hex(s: string): Promise<string> {
 
 /**
  * The IR hash of a world: SHA-256 of its canonical JSON (sorted keys) after parsing. The `opening` and `startMode` a
- * cooked load fills in are taken out, so a world and its cooked copy hash alike.
+ * cooked load fills in are taken out, so a world and its cooked copy hash alike; so are the presentation fields (`profile`,
+ * the tour stops `views`), which change no geometry.
  */
 export function worldIrHash(world: object): Promise<string> {
-  const { opening: _o, startMode: _s, ...rest } = world as Record<string, unknown>;
+  const { opening: _o, startMode: _s, profile: _p, views: _v, ...rest } = world as Record<string, unknown>;
   return sha256Hex(stableStringify(rest));
 }
 

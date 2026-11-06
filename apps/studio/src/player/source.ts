@@ -150,6 +150,7 @@ export async function loadPublished(route: NonNullable<ReturnType<typeof sharedC
     const { world, meta, proof } = r.payload;
     if ((await worldIrHash(world)) !== m.irHash) return damaged;
     const startMode = world.startMode ?? route.startMode ?? m.startMode;
+    const profile = world.profile ?? m.profile;
     return {
       kind: 'game',
       from: 'link',
@@ -162,6 +163,7 @@ export async function loadPublished(route: NonNullable<ReturnType<typeof sharedC
         ...(proof !== undefined ? { proof } : {}),
         world,
         startMode,
+        profile,
         cook: url,
       },
     };
@@ -191,6 +193,7 @@ export async function loadGame(hash: string, fetchFn: typeof fetch = fetch, path
         ...(proof !== undefined ? { proof } : {}),
         world,
         ...(startMode ? { startMode } : {}),
+        ...(world.profile ? { profile: world.profile } : {}),
         ...(cooked ? { cook: sharedCookUrl(cooked.anon, cooked.world) } : {}),
       },
     };
@@ -215,6 +218,7 @@ export async function loadGame(hash: string, fetchFn: typeof fetch = fetch, path
         music: null,
         world,
         startMode: world.startMode ?? templatePublish(template.slug, entry?.kind).startMode,
+        profile: world.profile ?? templatePublish(template.slug, entry?.kind).profile,
         ...(template.cook === 'use' ? { cook: templateCookUrl(template.slug) } : template.cook === 'local' ? { cook: templateCookUrl(template.slug, LOCAL_COOKED_BASE) } : {}),
       },
     };

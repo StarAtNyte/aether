@@ -49,6 +49,7 @@ interface Recorded {
   world: WorldDoc;
   startMode: StartMode;
   opening: CookManifest['opening'];
+  views?: CookManifest['views'];
 }
 
 type Win = {
@@ -101,9 +102,11 @@ async function session(server: env.TestServer, profileDir: string, slug: string,
     const info = await page.evaluate(() => {
       const w = window as unknown as Win;
       const h = w.__aetherCook!;
-      const ren = w.__aetherPlayer!.simulation!.renderer as unknown as { openingPose(): { position: [number, number, number]; target: [number, number, number]; fov?: number } | null; renderTier: string };
+      const ren = w.__aetherPlayer!.simulation!.renderer as unknown as { openingPose(): { position: [number, number, number]; target: [number, number, number]; fov?: number } | null; viewStops?(): Array<{ position: [number, number, number]; target: [number, number, number]; fov?: number; name?: string }>; renderTier: string };
       const pose = ren.openingPose();
-      return { record: h.record!, startMode: h.startMode, path: h.path, tier: ren.renderTier, opening: pose ? { position: pose.position, target: pose.target, ...(pose.fov !== undefined ? { fov: pose.fov } : {}) } : null };
+      // Tour stops (the player's tour bar): the IR's own travel with it; otherwise the renderer's, stored so the player does not search again.
+      const views = h.record?.world.views ? undefined : ren.viewStops?.().map((v) => ({ position: v.position, target: v.target, ...(v.fov !== undefined ? { fov: v.fov } : {}), ...(v.name !== undefined ? { name: v.name } : {}) }));
+      return { record: h.record!, startMode: h.startMode, path: h.path, tier: ren.renderTier, opening: pose ? { position: pose.position, target: pose.target, ...(pose.fov !== undefined ? { fov: pose.fov } : {}) } : null, views };
     });
     if (!info.record) throw new Error('the page did not expose the recording (is this a build with the cook route?)');
     log(`${slug} ${tier}: loaded (${info.path}, tier in effect ${info.tier}, start ${info.startMode})`);
@@ -193,7 +196,7 @@ async function session(server: env.TestServer, profileDir: string, slug: string,
       }, DDC_CACHE_NAME);
       log(`${slug}: ${sent} geometry entries read`);
     }
-    return { rec: { irHash: info.record.irHash, genVersion: info.record.genVersion, world: info.record.world, startMode: (info.startMode ?? 'orbit') as StartMode, opening: info.opening }, tier: info.tier as RenderTier, boot, bootSources, programs };
+    return { rec: { irHash: info.record.irHash, genVersion: info.record.genVersion, world: info.record.world, startMode: (info.startMode ?? 'orbit') as StartMode, opening: info.opening, ...(info.views && info.views.length > 0 ? { views: info.views } : {}) }, tier: info.tier as RenderTier, boot, bootSources, programs };
   } finally {
     await ctx.close().catch(() => undefined);
   }

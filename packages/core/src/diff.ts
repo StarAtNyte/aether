@@ -79,7 +79,7 @@ export function diffWorlds(a: WorldDoc, b: WorldDoc): WorldDiff {
   diff.stateChanged = changed(a.state, b.state);
   diff.hudChanged = changed(a.hud, b.hud);
   diff.testsChanged = changed(a.tests, b.tests);
-  diff.metaChanged = a.name !== b.name || a.description !== b.description || a.seed !== b.seed || changed(a.intro, b.intro) || changed(a.opening, b.opening) || a.startMode !== b.startMode;
+  diff.metaChanged = a.name !== b.name || a.description !== b.description || a.seed !== b.seed || changed(a.intro, b.intro) || changed(a.opening, b.opening) || a.startMode !== b.startMode || a.profile !== b.profile || changed(a.views, b.views);
   diff.feelChanged = changed(a.feel, b.feel);
   diff.voxelChanged = changed(a.voxel, b.voxel);
   return diff;

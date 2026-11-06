@@ -17,6 +17,8 @@ export interface CookRecording {
   genVersion: string;
   startMode: StartMode;
   opening: CookManifest['opening'];
+  /** Tour stops (the IR's own, or computed by the renderer when cooking); absent: none recorded. */
+  views?: CookManifest['views'];
 }
 
 /** Render tiers in manifest order. */
@@ -282,6 +284,7 @@ export async function cookManifest(rec: CookRecording, profile: CookProfile, geo
     world: { id: rec.world.id, name: rec.world.name, entities: Object.keys(rec.world.entities).length },
     opening: rec.opening,
     startMode: rec.startMode,
+    ...(rec.views && rec.views.length > 0 ? { views: rec.views } : {}),
     profile,
     partition: geometry.partition,
     cells: geometry.cells,

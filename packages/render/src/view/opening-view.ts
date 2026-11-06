@@ -137,6 +137,22 @@ export function chooseOpeningView(input: OpeningInput, probe: OpeningProbe): Ope
 
 /** The best `limit` opening views, best first, at least 6 m apart (see {@link chooseOpeningView}). */
 export function rankOpeningViews(input: OpeningInput, probe: OpeningProbe, limit = 1, stats?: OpeningStats): OpeningPose[] {
+  return drainSteps(rankOpeningViewsSteps(input, probe, limit, stats));
+}
+
+/** Run a stepped search ({@link rankOpeningViewsSteps}) to its end at once. */
+export function drainSteps<T>(steps: Generator<void, T, void>): T {
+  for (;;) {
+    const r = steps.next();
+    if (r.done) return r.value;
+  }
+}
+
+/**
+ * {@link rankOpeningViews} in steps: it yields after each candidate spot, so a caller can spread the search over several
+ * tasks (the scene tests take a second or more on a large world) and keep the page drawing.
+ */
+export function* rankOpeningViewsSteps(input: OpeningInput, probe: OpeningProbe, limit = 1, stats?: OpeningStats): Generator<void, OpeningPose[], void> {
   const { framing, items } = input;
   if (!framing.center.every(Number.isFinite) || !(framing.radius > 0)) return [];
   const r = Math.max(6, framing.radius);
@@ -194,6 +210,7 @@ export function rankOpeningViews(input: OpeningInput, probe: OpeningProbe, limit
         all.push({ ...pose, score: pose.score - hi * 0.4 - central * 0.8 - Math.max(0, central - 1) * 1.5 - (d / r) * 0.2 });
         if (stats) stats.kept++;
       }
+      yield;
     }
   }
   // Spots that see the landmark first, if there are any; then best first, ties in the order tried (deterministic).

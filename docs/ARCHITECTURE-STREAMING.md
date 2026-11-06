@@ -565,13 +565,18 @@ cooked/<slug>/<id>/programs/<tier>.bin    program set of a tier, immutable (cook
 ```
 
 `<id>` is 16 hex of SHA-256(IR hash, geometry code version). The IR hash is SHA-256 of the parsed world's canonical JSON
-(sorted keys), without `opening` and `startMode`. The geometry code version is `DDC_CODE_VERSION`: `__AETHER_GEN_VERSION__`
+(sorted keys), without `opening`, `startMode` and the presentation fields `profile` and `views`. The geometry code version is `DDC_CODE_VERSION`: `__AETHER_GEN_VERSION__`
 (a build hash of procgen, arch, core and render's geometry code) plus the preparation version.
 
 **Manifest** (`CookManifest`, `cook/format.ts`; validated in full by `parseCookManifest`):
 - `format` (2), `irHash`, `genVersion`, `dir` (`<id>/`), `cookedAt`, `world` (id, name, entity count);
 - `opening` (position, target, fov) and `startMode` (`play` | `walkthrough` | `orbit`, also an additive IR field next to
-  `opening`), `profile` (`game` | `walkthrough` | `showcase` | `vr`);
+  `opening`), `profile` (`game` | `walkthrough` | `showcase` | `city` | `vr`; also an additive IR field);
+- `views` (optional, at most 12): the tour stops of the player's tour bar (position, target, fov, name). The IR's own
+  `views` travel with the IR; otherwise the cook stores the 4 to 8 the renderer computes (`WorldRenderer.viewStops`,
+  `view/view-stops.ts`: the opening view, then one stop per room at eye height for a building, else the best viewpoint
+  of each section of the scene and the next best views, with the opening view's checks). Older cooks have none: the
+  player computes them;
 - `partition`: the world's grid (`streaming/cell-grid.ts` `partitionFor`, from the top-level entities, as scene-sync);
 - `cells`: per cell its key (`level:ix,iz`, or `p` for the persistent layer), XZ bounds of its entities, entry count,
   bytes and packs. Cells are ordered nearest the opening first;
@@ -725,7 +730,13 @@ The low and high sets reach the set cap (`SET_CAP` 64 / 128), so some programs o
     (checked). `--readme` uploads the dataset card (`scripts/cook-dataset/README.md`).
 - **Start mode and profile per template**: `apps/studio/src/showcase/publish.ts` (not in the studio's first download).
   Games, the stories and the bowling alley start in `play` (`game`); houses, venues, interiors and photo rooms in
-  `walkthrough`; scenes, landscapes and the physics machines in `orbit` (`showcase`). The IR's own `startMode` wins.
+  `walkthrough`; scenes, landscapes and the physics machines in `orbit` (`showcase`); Lisbon Hills in `orbit` (`city`);
+  Neon Rain City, a city with a game goal, in `play` (`city`). The IR's own `startMode` and `profile` win.
+- **How the player presents each kind** (`apps/studio/src/player/experience.ts`, the explore controller and bar in
+  `explore.ts` and `ExploreUI.tsx`, loaded lazily): a game opens on its title card; architecture on its hero view, then a
+  guided tour of its rooms at eye level (click the floor to glide, WASD, dollhouse and plan, time of day); a showcase
+  with a fly-in, then orbit and viewpoints; a city on a street-level view, then the drone tour. P plays any kind as the
+  character, Tab or O explores, Esc pauses.
 - **Gallery**: a template card links to `/play#t=<slug>` (cooked where a package exists, live otherwise). Its Remix
   button makes a project of the template and opens it in the editor.
 
@@ -810,7 +821,7 @@ with the hub; `api/cook-upload.ts`):
   bytes (tens of thousands of entries) cannot be committed in one request.
 
 Hooks left for later work: `cells`/`packs` per cell, for cell streaming and unloading; `lightmap`, for the publish bake;
-`profile`, for the publish UI of kinds; `GameManifest.cook`, for a self-hosted game build that ships its package.
+`GameManifest.cook`, for a self-hosted game build that ships its package.
 
 ### 3.6 Worker generation plan
 

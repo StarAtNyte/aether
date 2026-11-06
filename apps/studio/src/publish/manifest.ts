@@ -74,6 +74,8 @@ export interface GameManifest {
   cook?: string;
   /** How the player starts the world (the IR's `startMode`, else the cook's). */
   startMode?: 'play' | 'walkthrough' | 'orbit';
+  /** How the player presents it (the IR's `profile`, else the template's or the cook's; absent: from `startMode`). */
+  profile?: 'game' | 'walkthrough' | 'showcase' | 'city' | 'vr';
   world: WorldDoc;
 }
 

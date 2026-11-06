@@ -5,7 +5,10 @@
  *
  * - `play` / `game`: a world with a player, goals or a title card (games, stories with chapters, physics with a goal);
  * - `walkthrough` / `walkthrough`: houses, venues and interiors, walked at eye level;
- * - `orbit` / `showcase`: scenes, landscapes and machines to look at (Lisbon, the sanctuaries, the domino runs).
+ * - `orbit` / `showcase`: scenes, landscapes and machines to look at (the sanctuaries, the domino runs);
+ * - `orbit` / `city`: cities and districts (Lisbon): a street-level hero view, then a drone tour. A city with a game goal
+ *   (Neon Rain City: find the five neon cats) starts as a game (`play` / `city`): title card, then play, and its explore
+ *   mode is the city's drone camera.
  *
  * Kept apart from showcase/manifest.ts so the studio's first download does not carry it: only the player route and the
  * cook read it. Every manifest entry has a row (a test checks it).
@@ -14,7 +17,7 @@
 /** Start mode of a published world (as render `cook/format.ts` `StartMode`). */
 export type TemplateStartMode = 'play' | 'walkthrough' | 'orbit';
 /** Publish profile (as render `cook/format.ts` `CookProfile`). */
-export type TemplateProfile = 'game' | 'walkthrough' | 'showcase' | 'vr';
+export type TemplateProfile = 'game' | 'walkthrough' | 'showcase' | 'city' | 'vr';
 
 /** One template's publish settings. */
 export interface TemplatePublish {
@@ -25,6 +28,9 @@ export interface TemplatePublish {
 const GAME: TemplatePublish = Object.freeze({ startMode: 'play', profile: 'game' });
 const WALK: TemplatePublish = Object.freeze({ startMode: 'walkthrough', profile: 'walkthrough' });
 const SHOW: TemplatePublish = Object.freeze({ startMode: 'orbit', profile: 'showcase' });
+const CITY: TemplatePublish = Object.freeze({ startMode: 'orbit', profile: 'city' });
+/** A city with a game goal: played from its title card, explored as a city. */
+const CITY_GAME: TemplatePublish = Object.freeze({ startMode: 'play', profile: 'city' });
 
 /** Publish settings by template slug. */
 export const TEMPLATE_PUBLISH: Readonly<Record<string, TemplatePublish>> = Object.freeze({
@@ -36,7 +42,7 @@ export const TEMPLATE_PUBLISH: Readonly<Record<string, TemplatePublish>> = Objec
   'chain-reaction': GAME,
   'kart-canyon': GAME,
   blockfall: GAME,
-  'neon-rain-city': GAME,
+  'neon-rain-city': CITY_GAME,
   'kyoto-temple': GAME,
   'painterly-meadow': GAME,
   'cloudwatch-harbour': SHOW,
@@ -74,7 +80,7 @@ export const TEMPLATE_PUBLISH: Readonly<Record<string, TemplatePublish>> = Objec
   'starlight-cinema': WALK,
   'orion-cinema': WALK,
   'evening-bistro': WALK,
-  'lisbon-hills': SHOW,
+  'lisbon-hills': CITY,
   'cliff-sanctuary': SHOW,
   'sanctuary-falls': SHOW,
   'sanctuary-terraces': SHOW,

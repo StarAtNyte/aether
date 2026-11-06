@@ -6,6 +6,11 @@
  * sensitivity, graphics quality — remembered in this browser), credits
  * generated from the assets the world uses, touch controls on phones and
  * controller support. Block worlds get the full block-game HUD.
+ *
+ * Every kind of world opens its own way (`experience.ts`): a game on its title card; architecture on a hero view and a
+ * guided tour of its rooms at eye level (click the floor to glide, dollhouse, plan); a showcase with a fly-in, then
+ * orbit and viewpoints; a city on a street-level view, then a drone tour. P plays any of them as the character, Tab or
+ * O explores (the explore controller and bar load lazily), Esc pauses.
  */
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { History, type Json, type WorldDoc } from '@aether/core';
@@ -28,8 +33,29 @@ import type { GameManifest } from '../publish/manifest';
 import { ProofBadge } from './ProofBadge';
 import { loadGame, loadSave, registerBundledImports, templateRoute, type GameSource } from './source';
 import { browserSettingsStorage, defaultSettings, loadSettings, qualityPlan, QUALITIES, saveSettings, type PlayerSettings, type Quality } from './settings';
+import { experienceFor, keyAction, keyHint, type Experience, type PlayerPhase } from './experience';
+import type { ExploreController, ExploreState } from './explore';
+import type { CookView, ViewStopPose } from '@aether/render';
+import { TIME_PRESETS } from '../state/archUi';
 
-type Phase = 'booting' | 'title' | 'starting' | 'playing' | 'paused' | 'over' | 'failed';
+/** Hour of each time-of-day key (Digit1 … Digit4). */
+const TIME_PRESETS_BY_DIGIT: Readonly<Record<string, number>> = Object.freeze(Object.fromEntries(TIME_PRESETS.map((p) => [`Digit${p.key}`, p.hour])));
+
+type Phase = PlayerPhase;
+/** The lazily loaded explore module (controller and bar). */
+type ExploreModule = typeof import('./ExploreUI');
+
+/** The world shows a building (architecture: the dollhouse applies). */
+function hasBuilding(world: WorldDoc): boolean {
+  for (const id in world.entities) if (world.entities[id]?.arch?.role === 'building') return true;
+  return false;
+}
+
+/** The focus is in a text field (keys belong to it). */
+function typingTarget(t: EventTarget | null): boolean {
+  const el = t as HTMLElement | null;
+  return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
+}
 type Panel = 'main' | 'settings' | 'credits';
 
 interface Toast {
@@ -46,7 +72,15 @@ interface PlayerHandle {
   readonly world: WorldDoc;
   /** The running simulation (test drivers: aim, fire, read the game state). */
   readonly simulation: Simulation | null;
+  /** How the world is presented (kind, entry, explore camera). */
+  readonly experience: Experience;
+  /** Explore mode's state (stops, view, autoplay), null outside it. */
+  readonly explore: ExploreState | null;
+  /** The explore controller (test drivers: stops, dollhouse, glides), null outside explore mode. */
+  readonly exploreController: ExploreController | null;
   start(): void;
+  /** Tab: explore mode. */
+  enterExplore(): void;
 }
 
 /**
@@ -223,6 +257,18 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const world = game.world;
+  const exp = useMemo(() => experienceFor(game.startMode, game.profile, hasBuilding(world)), [game.startMode, game.profile, world]);
+  const [explore, setExplore] = useState<ExploreState | null>(null);
+  const [exploreMod, setExploreMod] = useState<ExploreModule | null>(null);
+  const exploreRef = useRef<ExploreController | null>(null);
+  /** Stops of the cooked package (computed by the cook); the world's own `views` win. */
+  const cookedViews = useRef<CookView[] | undefined>(undefined);
+  /** Stops once chosen (computing them is a scene search: once per page). */
+  const stopsRef = useRef<ViewStopPose[] | null>(null);
+  /** The running search of computed stops (`renderer.viewStopsAsync`). */
+  const stopsSearch = useRef<Promise<void> | null>(null);
+  /** Where the pause menu returns to. */
+  const pausedFrom = useRef<'playing' | 'exploring'>('playing');
 
   const go = useCallback((p: Phase) => {
     phaseRef.current = p;
@@ -276,12 +322,64 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
     [applySettings, startMusic, storage],
   );
 
+  const leaveExplore = useCallback(() => {
+    exploreRef.current?.dispose();
+    exploreRef.current = null;
+    setExplore(null);
+  }, []);
+
+  /**
+   * Explore mode: the kind's camera and the tour bar. `entry`: the kind's opening (hero view and tour, fly-in, street
+   * view and drone); `from`: stand there (Tab from play in a walk).
+   */
+  const enterExplore = useCallback(
+    async (entry: boolean, from: { feet: [number, number, number]; yaw: number } | null = null) => {
+      const sim = simRef.current;
+      if (!sim) return;
+      const mod = await import('./ExploreUI');
+      if (simRef.current !== sim) return;
+      setExploreMod(() => mod);
+      leaveExplore();
+      // The world's own stops or the cook's at once; computed ones (a scene search of a second or more on a large world)
+      // after the entry has started on the hero view alone.
+      let pending = false;
+      if (!stopsRef.current) {
+        const known = mod.pickStops(world.views, cookedViews.current, () => []);
+        if (known.length > 0) stopsRef.current = known;
+        else pending = true;
+      }
+      const hero = sim.renderer.openingPose();
+      const initial = stopsRef.current ?? (hero ? [{ position: hero.position, target: hero.target, ...(hero.fov !== undefined ? { fov: hero.fov } : {}) }] : []);
+      const ctrl = new mod.ExploreController(sim, exp, initial, (st) => setExplore(st), { reduceMotion: settingsRef.current.reduceMotion });
+      exploreRef.current = ctrl;
+      go('exploring');
+      ctrl.start(entry, from);
+      if (pending && !stopsSearch.current) {
+        // Once per page, in slices that keep the view drawing; whichever explore controller is up then takes them.
+        stopsSearch.current = new Promise<void>((done) => setTimeout(done, 700))
+          .then(() => sim.renderer.viewStopsAsync(undefined, { street: exp.kind === 'city' || exp.explore === 'drone' }))
+          .then((stops) => {
+            if (simRef.current !== sim || stops.length === 0) return;
+            stopsRef.current = stops;
+            exploreRef.current?.setStops(stops);
+          });
+      }
+    },
+    [exp, go, leaveExplore, world.views],
+  );
+
   const attract = useCallback(async () => {
     const sim = simRef.current;
     if (!sim) return;
-    // A walkthrough or a showcase stays on its opening view (the play-mode UI of those kinds is later work).
-    if (game.startMode === 'orbit' || game.startMode === 'walkthrough') {
+    // Architecture, showcases and cities open in explore mode on their own entry; games on the title card. The cook's
+    // recording run stays on the opening view (it measures the load there).
+    if (exp.kind !== 'game' && templateRoute(location.hash)?.cook === 'record') {
       await sim.openWorld({ duration: 0 });
+      return;
+    }
+    if (exp.kind !== 'game') {
+      await sim.openWorld({ duration: 0 });
+      await enterExplore(true);
       return;
     }
     await sim.frameWorld();
@@ -289,11 +387,15 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
     setTimeout(() => {
       if (phaseRef.current === 'title' && simRef.current === sim) sim.renderer.startTour(60);
     }, 900);
-  }, [game.startMode]);
+  }, [enterExplore, exp.kind]);
 
   const start = useCallback(async () => {
     const sim = simRef.current;
-    if (!sim || (phaseRef.current !== 'title' && phaseRef.current !== 'over')) return;
+    const from = phaseRef.current;
+    if (!sim || (from !== 'title' && from !== 'over' && from !== 'exploring' && !(from === 'paused' && pausedFrom.current === 'exploring'))) return;
+    // Play from explore mode: a walk hands its spot over (the character stands where the visitor stood).
+    const standing = exploreRef.current?.standing ?? null;
+    leaveExplore();
     go('starting');
     sim.renderer.stopTour();
     sim.renderer.stopGhost();
@@ -303,22 +405,56 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
     if (sim.mode === 'play') await sim.restart();
     else await sim.play();
     if (sim.mode !== 'play') {
-      go('title');
+      if (exp.kind === 'game') go('title');
+      else void enterExplore(false);
       return;
+    }
+    if (exp.kind !== 'game') {
+      // Any kind plays as the human character, seen from behind (a walkthrough world's first person would hide them).
+      if (standing) sim.placePlayer(standing.feet, standing.yawDeg);
+      sim.setCameraView('follow');
     }
     go('playing');
     startMusic();
-  }, [go, startMusic]);
+  }, [enterExplore, exp.kind, go, leaveExplore, startMusic]);
+
+  /** Tab or O: explore mode from play or from the title card. */
+  const toExplore = useCallback(async () => {
+    const sim = simRef.current;
+    if (!sim) return;
+    const p = phaseRef.current;
+    if (p === 'title') {
+      sim.renderer.stopTour();
+      await enterExplore(false);
+      return;
+    }
+    if (p !== 'playing') return;
+    const feet = sim.playerPosition;
+    const from = feet ? { feet: [feet[0], feet[1], feet[2]] as [number, number, number], yaw: (-sim.playerHeading() * Math.PI) / 180 } : null;
+    stopMusic();
+    setCombat(null);
+    await sim.stop();
+    await enterExplore(false, from);
+  }, [enterExplore, stopMusic]);
 
   const pause = useCallback(
     (on: boolean) => {
       const sim = simRef.current;
       if (!sim) return;
       if (on && phaseRef.current === 'playing') {
+        pausedFrom.current = 'playing';
         sim.setPaused(true);
         setPanel('main');
         go('paused');
+      } else if (on && phaseRef.current === 'exploring') {
+        pausedFrom.current = 'exploring';
+        setPanel('main');
+        go('paused');
       } else if (!on && phaseRef.current === 'paused') {
+        if (pausedFrom.current === 'exploring') {
+          go('exploring');
+          return;
+        }
         sim.setPaused(false);
         go('playing');
       }
@@ -330,13 +466,14 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
     const sim = simRef.current;
     if (!sim) return;
     stopMusic();
+    leaveExplore();
     await sim.stop();
     setOver(null);
     setVoxelHud(null);
     setPanel('main');
-    go('title');
+    if (exp.kind === 'game') go('title');
     void attract();
-  }, [attract, go, stopMusic]);
+  }, [attract, exp.kind, go, leaveExplore, stopMusic]);
 
   const restart = useCallback(async () => {
     const sim = simRef.current;
@@ -345,20 +482,23 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
     setHud({});
     setTime(0);
     setCombat(null);
-    if (world.intro) {
-      // As in the studio: a game with a title card starts every run from it (Play builds a fresh session).
+    if (world.intro || exp.kind !== 'game') {
+      // As in the studio: a game with a title card starts every run from it (Play builds a fresh session); other kinds
+      // return to explore mode.
       stopMusic();
       sim.setPaused(false);
       await sim.stop();
       setPanel('main');
-      go('title');
-      void attract();
+      if (exp.kind === 'game') {
+        go('title');
+        void attract();
+      } else await enterExplore(false);
       return;
     }
     await sim.restart();
     sim.setPaused(false);
     go('playing');
-  }, [attract, go, stopMusic, world.intro]);
+  }, [attract, enterExplore, exp.kind, go, stopMusic, world.intro]);
 
   // Boot: renderer, world, attract mode.
   useEffect(() => {
@@ -379,6 +519,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
         if (route?.cook === 'record') cookHandle.record = { irHash: await worldIrHash(world), genVersion: DDC_CODE_VERSION, world };
         // The view the cook opened on, where the IR has none of its own (the renderer then skips choosing one).
         const opening = cooked?.manifest.opening;
+        cookedViews.current = cooked?.manifest.views;
         const doc: WorldDoc = opening && !world.opening ? { ...world, opening } : world;
         const history = new History(doc, { maxEntries: 4 });
         const s0 = settingsRef.current;
@@ -417,9 +558,10 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
             onVoxelHud: (state) => setVoxelHud(state),
             onPauseRequest: () => pause(phaseRef.current === 'playing'),
             onModeChange: (mode) => {
-              if (mode === 'edit' && (phaseRef.current === 'playing' || phaseRef.current === 'paused')) {
+              if (mode === 'edit' && (phaseRef.current === 'playing' || (phaseRef.current === 'paused' && pausedFrom.current === 'playing'))) {
                 stopMusic();
-                go('title');
+                if (exp.kind === 'game') go('title');
+                else void enterExplore(false);
               }
             },
           },
@@ -480,7 +622,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
         const catalog = await loadCatalog();
         setCredits(creditsFor(world, catalog));
         if (disposed) return;
-        go('title');
+        if (exp.kind === 'game' || route?.cook === 'record') go('title');
         cookHandle.ready = true;
         void attract();
       } catch (err) {
@@ -492,6 +634,8 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
     return () => {
       disposed = true;
       stopMusic();
+      exploreRef.current?.dispose();
+      exploreRef.current = null;
       simRef.current?.dispose();
       simRef.current = null;
       sandbox?.dispose();
@@ -501,20 +645,60 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Keyboard: Esc pauses / resumes; Enter starts from the title screen.
+  // Keyboard (experience.ts keyAction): Esc pauses / resumes, P plays, Tab or O explores, Enter starts from the title
+  // screen; in explore mode ] and [ move between stops, Space autoplays, M the dollhouse, F photo mode, 1–4 the hour.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       const p = phaseRef.current;
-      if (e.key === 'Escape') {
-        if (p === 'playing' && !world.voxel) {
+      const typing = typingTarget(e.target);
+      if (e.key === 'Enter' && p === 'title' && document.activeElement === document.body) {
+        void start();
+        return;
+      }
+      // Tab moves the focus between buttons; it explores only from the page itself (not from a focused control).
+      if (e.code === 'Tab' && document.activeElement && document.activeElement !== document.body && !(document.activeElement instanceof HTMLCanvasElement)) return;
+      const action = keyAction(e, p, exp, typing, !!world.voxel);
+      if (!action) return;
+      const ctrl = exploreRef.current;
+      switch (action) {
+        case 'pause':
           e.preventDefault();
-          pause(true);
-        } else if (p === 'paused') {
+          if (ctrl?.snapshot.photo) ctrl.setPhoto(false);
+          else pause(true);
+          break;
+        case 'resume':
           e.preventDefault();
           pause(false);
+          break;
+        case 'play':
+          e.preventDefault();
+          void start();
+          break;
+        case 'explore':
+          e.preventDefault();
+          void toExplore();
+          break;
+        case 'next':
+          ctrl?.next();
+          break;
+        case 'prev':
+          ctrl?.prev();
+          break;
+        case 'autoplay':
+          e.preventDefault();
+          if (ctrl) ctrl.setAutoplay(!ctrl.snapshot.autoplay);
+          break;
+        case 'dollhouse':
+          ctrl?.toggleDollhouse();
+          break;
+        case 'photo':
+          if (ctrl) ctrl.setPhoto(!ctrl.snapshot.photo);
+          break;
+        case 'time': {
+          const preset = TIME_PRESETS_BY_DIGIT[e.code];
+          if (ctrl && preset !== undefined) ctrl.setHour(preset);
+          break;
         }
-      } else if (e.key === 'Enter' && p === 'title' && document.activeElement === document.body) {
-        void start();
       }
     };
     // Losing pointer lock (Esc in first person) pauses the game.
@@ -527,7 +711,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
       window.removeEventListener('keydown', onKey);
       document.removeEventListener('pointerlockchange', onLock);
     };
-  }, [pause, start, world]);
+  }, [exp, pause, start, toExplore, world]);
 
   // Test / debug handle.
   useEffect(() => {
@@ -544,16 +728,39 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
       get simulation() {
         return simRef.current;
       },
+      experience: exp,
+      get explore() {
+        return exploreRef.current?.snapshot ?? null;
+      },
+      get exploreController() {
+        return exploreRef.current;
+      },
       start: () => void start(),
+      enterExplore: () => void toExplore(),
     };
     return () => {
       delete window.__aetherPlayer;
     };
-  }, [game.title, start, world]);
+  }, [exp, game.title, start, toExplore, world]);
 
   const menu = (inGame: boolean): ReactElement => {
     if (panel === 'settings') return <SettingsPanel settings={settings} onChange={updateSettings} onBack={() => setPanel('main')} hasMusic={game.music !== null} />;
     if (panel === 'credits') return <CreditsPanel game={game} credits={credits} onBack={() => setPanel('main')} />;
+    if (inGame && pausedFrom.current === 'exploring')
+      return (
+        <div className="pl-panel" role="group" aria-label="Menu">
+          <h2 className="pl-panel__title">{game.title}</h2>
+          <div className="pl-stack">
+            <Button primary onClick={() => pause(false)} autoFocus testId="pl-resume">
+              Resume
+            </Button>
+            <Button onClick={() => void start()}>Play as the character</Button>
+            <Button onClick={() => setPanel('settings')}>Settings</Button>
+            <Button onClick={() => setPanel('credits')}>Credits</Button>
+            {exp.kind === 'game' && <Button onClick={() => void quitToTitle()}>Title screen</Button>}
+          </div>
+        </div>
+      );
     return inGame ? (
       <div className="pl-panel" role="group" aria-label="Paused">
         <h2 className="pl-panel__title">Paused</h2>
@@ -562,9 +769,10 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
             Resume
           </Button>
           <Button onClick={() => void restart()}>Restart</Button>
+          {!world.voxel && <Button onClick={() => void toExplore()}>Explore</Button>}
           <Button onClick={() => setPanel('settings')}>Settings</Button>
           <Button onClick={() => setPanel('credits')}>Credits</Button>
-          <Button onClick={() => void quitToTitle()}>Quit to title</Button>
+          {exp.kind === 'game' ? <Button onClick={() => void quitToTitle()}>Quit to title</Button> : <Button onClick={() => void quitToTitle()}>Back to the tour</Button>}
         </div>
       </div>
     ) : (
@@ -578,10 +786,13 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
     );
   };
 
-  const playing = phase === 'playing' || phase === 'paused' || phase === 'over';
+  const playing = (phase === 'playing' || phase === 'paused' || phase === 'over') && !(phase === 'paused' && pausedFrom.current === 'exploring');
   const sim = simRef.current;
+  const touch = isTouchScreen();
+  const hint = explore?.photo ? '' : keyHint(phase, exp, touch);
+  const showTime = exp.kind === 'game' || world.hud.length > 0;
   return (
-    <div className={`pl-root is-${phase}`} ref={hostRef}>
+    <div className={`pl-root is-${phase}${explore?.photo && phase === 'exploring' ? ' is-photo' : ''}`} ref={hostRef}>
       {phase === 'booting' && (
         <div className="pl-loading" role="status">
           <span className="pl-spinner" aria-hidden="true" />
@@ -627,11 +838,35 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
               <span className="pl-stat__value">{hud[b.key] ?? '–'}</span>
             </div>
           ))}
-          <div className="pl-stat">
-            <span className="pl-stat__label">Time</span>
-            <span className="pl-stat__value">{clock(time)}</span>
-          </div>
+          {showTime && (
+            <div className="pl-stat">
+              <span className="pl-stat__label">Time</span>
+              <span className="pl-stat__value">{clock(time)}</span>
+            </div>
+          )}
         </div>
+      )}
+      {phase === 'exploring' && explore && exploreMod && exploreRef.current && (
+        <>
+          {!explore.photo && (
+            <div className="pl-xtitle" aria-hidden={exp.kind === 'game'}>
+              <span className="pl-xtitle__name">{game.title}</span>
+              {game.author && <span className="pl-xtitle__by">by {game.author}</span>}
+            </div>
+          )}
+          <exploreMod.ExploreBar state={explore} ctrl={exploreRef.current} exp={exp} onPlay={() => void start()} canPlay={!world.voxel} />
+          {!explore.photo && (
+            <button type="button" className="pl-pausebtn" aria-label="Menu" onClick={() => pause(true)}>
+              ☰
+            </button>
+          )}
+        </>
+      )}
+      <div className={`pl-fade${explore?.fading && phase === 'exploring' ? ' is-on' : ''}`} aria-hidden="true" />
+      {hint && (phase === 'exploring' || phase === 'playing' || phase === 'title') && (
+        <p className="pl-hint" data-testid="pl-hint">
+          {hint}
+        </p>
       )}
       {playing && world.voxel && voxelHud && <VoxelHudView hud={voxelHud} play={sim?.voxel?.game ?? null} toast={(t) => toast(t)} />}
       {phase === 'playing' && !world.voxel && <NpcSpeechView frame={npc} actions={sim} />}

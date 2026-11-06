@@ -92,6 +92,7 @@ export { DEFAULT_FIELD_BUDGET, type FieldBudget } from './sync/field-mount';
 export { DEFAULT_VIRTUAL_TRIANGLES, VIEW_INTERVAL_MS } from './sync/scene-sync';
 export { gradeFor, NEUTRAL_GRADE, type Grade } from './gpu/grade';
 export { CameraTour, tourKeys, TOUR_SECONDS, type TourKey } from './view/tour';
+export { archStops, archStopsSteps, orderStops, quickSceneStops, quickSceneStopsSteps, roomStop, roomStopSteps, sceneStops, sceneStopsSteps, type QuickStopProbe, type StopSection, MAX_STOPS, MIN_STOPS, MIN_STOP_SPACING, ROOM_EYE, type RoomArea, type RoomProbe, type SceneStopOptions, type ViewStopPose } from './view/view-stops';
 // Publishing: posed capture sessions, tiled stills, glTF export, camera-path overlay.
 export { openCaptureSession, captureStill, type CameraPose, type CaptureFrameOptions, type CaptureHost, type CaptureSession, type StillImage, type StillOptions } from './view/capture-session';
 export { tileLayout, normalizePixels, blitTile, applyVignette, stillSize, MAX_STILL_SIZE, MAX_TILE_SIZE, TILE_MARGIN, type StillTile } from './view/still';
@@ -121,7 +122,7 @@ export { atlasPixels, ATLAS_CELLS } from './vfx/atlas';
 
 export { BlackScreenWatchdog, GpuLogCapture, isBlackFrame, isShaderFailure, measureFrame, WATCHDOG_STEPS } from './gpu/watchdog';
 export { openCookedPackage, cookedProgramStore, MANIFEST_TIMEOUT_MS, type CookedPackage, type CookedOpen, type CookedStats } from './cook/cooked';
-export { COOK_FORMAT, PACK_TARGET_BYTES, START_MODES, COOK_PROFILES, cookFiles, cookPackageId, encodeProgramSetFile, WORLD_FILE, MAX_MANIFEST_BYTES, parseCookManifest, parseCookedProgramSet, sha256Hex, worldIrHash, type CookManifest, type CookCell, type CookFile, type CookProfile, type CookedProgramSet, type StartMode, type LaneCookConfig, type LaneCookIndex } from './cook/format';
+export { COOK_FORMAT, PACK_TARGET_BYTES, START_MODES, COOK_PROFILES, MAX_COOK_VIEWS, cookFiles, cookPackageId, encodeProgramSetFile, WORLD_FILE, MAX_MANIFEST_BYTES, parseCookManifest, parseCookedProgramSet, sha256Hex, worldIrHash, type CookManifest, type CookCell, type CookFile, type CookProfile, type CookView, type CookedProgramSet, type StartMode, type LaneCookConfig, type LaneCookIndex } from './cook/format';
 export { DDC_CACHE_NAME, DDC_CODE_VERSION, decodeOutput, encodeOutput } from './geometry/ddc';
 export { cookManifest, packGeometry, profileForStartMode, programSetBody, worldOutputKeys, worldOutputShapes, type AssetShapeResolver, type CookRecording, type PackedGeometry } from './cook/pack';
 export { assetGeneratorShape } from './cook/asset-shape';

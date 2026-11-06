@@ -21,9 +21,21 @@ export const PROGRAM_SET_FORMAT = 3;
 /** How a published world starts (next to the IR's `opening`). */
 export type StartMode = 'play' | 'walkthrough' | 'orbit';
 export const START_MODES: readonly StartMode[] = ['play', 'walkthrough', 'orbit'];
-/** Publish kinds: profiles on one cook (only recorded today; the publish UI for kinds is later work). */
-export type CookProfile = 'game' | 'walkthrough' | 'showcase' | 'vr';
-export const COOK_PROFILES: readonly CookProfile[] = ['game', 'walkthrough', 'showcase', 'vr'];
+/**
+ * Publish kinds: profiles on one cook. The player presents each its own way: `game` (title card, then play),
+ * `walkthrough` (eye-level tour of rooms), `showcase` (fly-in, orbit, viewpoints), `city` (street hero view, drone tour).
+ */
+export type CookProfile = 'game' | 'walkthrough' | 'showcase' | 'city' | 'vr';
+export const COOK_PROFILES: readonly CookProfile[] = ['game', 'walkthrough', 'showcase', 'city', 'vr'];
+/** Most tour stops a manifest carries (as the IR's `MAX_VIEW_STOPS`). */
+export const MAX_COOK_VIEWS = 12;
+/** One tour stop the cook computed (the IR's `ViewStop`). */
+export interface CookView {
+  position: [number, number, number];
+  target: [number, number, number];
+  fov?: number;
+  name?: string;
+}
 const TIERS: readonly RenderTier[] = ['low', 'medium', 'high', 'ultra'];
 
 /** One grid cell of the cook. */
@@ -60,6 +72,11 @@ export interface CookManifest {
   /** The view the world opens on (the IR's own `opening`, or the one the renderer computed when cooking). */
   opening: { position: [number, number, number]; target: [number, number, number]; fov?: number } | null;
   startMode: StartMode;
+  /**
+   * Tour stops: the IR's own `views`, or the 4 to 8 the renderer computed when cooking (rooms at eye level, viewpoints).
+   * Absent in older cooks (the player computes them).
+   */
+  views?: CookView[];
   /** The publish profile it was cooked for (game, arch walkthrough, scene showcase, VR). */
   profile: CookProfile;
   /** The world's grid (streaming/cell-grid.ts `partitionFor`), null when nothing is placed. */
@@ -123,6 +140,15 @@ export function parseCookManifest(v: unknown): ManifestResult {
     if (!isObj(o) || !vec3(o.position) || !vec3(o.target) || (o.fov !== undefined && !(fin(o.fov) && o.fov >= 20 && o.fov <= 100))) return bad('bad opening');
     opening = { position: [...o.position], target: [...o.target], ...(o.fov !== undefined ? { fov: o.fov as number } : {}) };
   }
+  let views: CookView[] | null = null;
+  if (v.views !== null && v.views !== undefined) {
+    if (!Array.isArray(v.views) || v.views.length > MAX_COOK_VIEWS) return bad('bad views');
+    views = [];
+    for (const o of v.views) {
+      if (!isObj(o) || !vec3(o.position) || !vec3(o.target) || (o.fov !== undefined && !(fin(o.fov) && o.fov >= 20 && o.fov <= 100)) || (o.name !== undefined && (typeof o.name !== 'string' || o.name.length < 1 || o.name.length > 60))) return bad('bad view');
+      views.push({ position: [...o.position], target: [...o.target], ...(o.fov !== undefined ? { fov: o.fov as number } : {}), ...(o.name !== undefined ? { name: o.name as string } : {}) });
+    }
+  }
   if (!START_MODES.includes(v.startMode as StartMode)) return bad('bad startMode');
   if (!COOK_PROFILES.includes(v.profile as CookProfile)) return bad('bad profile');
   let partition: CookManifest['partition'] = null;
@@ -183,6 +209,7 @@ export function parseCookManifest(v: unknown): ManifestResult {
       world: { id: w.id.slice(0, 80), name: w.name.slice(0, 120), entities: w.entities },
       opening,
       startMode: v.startMode as StartMode,
+      ...(views ? { views } : {}),
       profile: v.profile as CookProfile,
       partition,
       cells,

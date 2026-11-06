@@ -37,6 +37,8 @@ const WRITE_WAIT_MS = 15_000;
 /** What the cook reads from the renderer. */
 export interface CookRenderer {
   openingPose(): { position: [number, number, number]; target: [number, number, number]; fov?: number } | null;
+  /** Tour stops of the player's tour bar (WorldRenderer.viewStops); absent: the player computes them. */
+  viewStops?(): Array<{ position: [number, number, number]; target: [number, number, number]; fov?: number; name?: string }>;
   sessionPrograms(): Array<{ tier: 'low' | 'medium' | 'high' | 'ultra'; boot: number; pairs: Array<[string, string]> }>;
   /** Generate into the geometry cache the outputs named (WorldRenderer.storeOutputsForCook); absent: they are left out. */
   storeOutputsForCook?(missing: ReadonlySet<string>, opts: { signal?: AbortSignal; onProgress?(done: number, total: number): void }): Promise<{ generated: number; failed: number }>;
@@ -118,7 +120,8 @@ export async function cookInBrowser(input: Pick<CookPublishInput, 'world' | 'met
   const irHash = await worldIrHash(world);
   const pose = renderer.openingPose();
   const opening: CookManifest['opening'] = pose ? { position: [...pose.position], target: [...pose.target], ...(pose.fov !== undefined ? { fov: pose.fov } : {}) } : null;
-  const rec = { world, irHash, genVersion, startMode, opening };
+  const views = world.views ? undefined : renderer.viewStops?.().map((v) => ({ position: v.position, target: v.target, ...(v.fov !== undefined ? { fov: v.fov } : {}), ...(v.name !== undefined ? { name: v.name } : {}) }));
+  const rec = { world, irHash, genVersion, startMode, opening, ...(views && views.length > 0 ? { views } : {}) };
 
   // Every output the world draws: those this page's lanes stored, then the rest generated into the cache.
   await loadCatalog().catch(() => undefined);
