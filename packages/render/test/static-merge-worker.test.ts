@@ -58,6 +58,17 @@ describe('worker merge lifecycle', () => {
     expect(f.geometry.getAttribute('position').array.byteLength).toBeGreaterThan(0); expect(f.changed).toHaveBeenCalled();
     reference.dispose(); f.dispose();
   });
+  it('keeps a pending merge hidden until its geometry arrives, so no pass draws it without attributes', async () => {
+    // Drawn while empty (a pass with frustum culling off), three kept the attribute-less program state after the
+    // geometry arrived and the merge never drew: Casa del Patio's walls, ceilings and roof were missing in the player.
+    const f = scene(); f.merges.rebuild(f.nodes);
+    expect(f.drawn().geometry.getAttribute('position')).toBeUndefined(); expect(f.drawn().visible).toBe(false);
+    const visibleEmpty: Mesh[] = [];
+    f.parent.traverseVisible((o) => { const m = o as Mesh; if (m.isMesh && m.geometry.getAttribute('position') === undefined) visibleEmpty.push(m); });
+    expect(visibleEmpty).toHaveLength(0);
+    f.reply(0); await f.merges.idle();
+    expect(f.drawn().visible).toBe(true); expect(f.drawn().geometry.getAttribute('position')).toBeDefined(); f.dispose();
+  });
   it('cancels cleared jobs and ignores old replies after a new group takes ownership', async () => {
     const f = scene(); f.merges.rebuild(f.nodes); f.merges.clear();
     expect(f.merges.pending).toBe(0); expect(f.nodes.every(n => n.bindings[0]!.mesh.layers.isEnabled(0))).toBe(true);

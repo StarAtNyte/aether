@@ -1729,6 +1729,9 @@ export class WorldRenderer {
       const m = o as Mesh & { perObjectFrustumCulled?: boolean };
       if (m.isMesh !== true && (o as { isPoints?: boolean }).isPoints !== true && (o as { isLine?: boolean }).isLine !== true) return;
       if (!layers.test(o.layers)) return;
+      // Geometry without positions (a placeholder waiting for its data) has nothing to draw, and drawing it with culling off
+      // would leave three a program state without attributes for the object once its data arrives.
+      if ((m.geometry as BufferGeometry | undefined)?.getAttribute?.('position') === undefined) return;
       const key = programKey(o) + o.layers.mask;
       if (seen.has(key)) return;
       seen.add(key);

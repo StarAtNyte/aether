@@ -493,6 +493,11 @@ export class StaticMerges {
     mesh.matrixAutoUpdate = false;
     // Picking goes through the members (BATCHED_LAYER); the merged copy is never hit.
     mesh.raycast = () => undefined;
+    // A merge built in the background has no attributes until its geometry comes back: hidden until then. Drawn once
+    // without them (a pass with frustum culling off, such as the first-use pass), three would keep that attribute-less
+    // program state for the object after the geometry arrives, and the merge would never draw (walls, ceilings and
+    // roofs of a house missing).
+    if (request) mesh.visible = false;
     for (const m of meshes) m.layers.set(BATCHED_LAYER);
     parent.add(mesh);
     mesh.updateMatrixWorld(true);
@@ -556,6 +561,7 @@ export class StaticMerges {
   private publish(merge: Merge, geometry: BufferGeometry): void {
     const refresh = merge.built;
     merge.mesh.geometry.dispose(); merge.mesh.geometry = geometry; merge.built = true;
+    merge.mesh.visible = true;
     this.releaseCopy(merge, geometry);
     if (refresh) refreshProgram(merge.mesh);
     else { this.readyCount++; this.saved += drawsMerged(merge) - 1; }
