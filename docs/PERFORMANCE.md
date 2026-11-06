@@ -52,7 +52,9 @@ Before this work: Linden Row on Intel medium had a 9.7 s freeze on the first mov
   screen: every heading's compile is queued at once (the driver links them side by side), then each heading is drawn
   (shadow variants, distance-culled meshes). A split chain (see below) also builds and draws its motion phase, so the first
   turn of the camera links nothing. Far interiors and specks come back for the compile one mesh per program only.
-  Memory-aware: worlds holding a large share of the heap sweep fewer headings or none.
+  Memory-aware: worlds holding a large share of the heap sweep fewer headings or none. **Off by default since
+  6 November 2026** (see [Pre-warmed program set](#pre-warmed-program-set-6-november-2026)); `__AETHER_SWEEP = true`
+  turns it back on.
 - **Opaque load screen, held until smooth.** The canvas behind the load screen is busy (hidden headings, long preparation
   slices), so the screen is opaque; after the gate it stays up until four frames in a row come at the running rate
   (at most 4 s), then fades out in 320 ms (`Viewport.tsx`, `.vp-loading.is-leaving`).
@@ -187,9 +189,58 @@ about 1.2 GB (JS heap 0.5 GB, texture sources 226 MB, geometry 115 MB, workers).
   `/tmp` when it is RAM-backed (`TMPDIR=~/.cache/aether-e2e-tmp`).
 - **Load marks** (`performance.getEntriesByType('mark')`): `aether:compile-start/end`, `aether:sweep-start/end`,
   `aether:bake-wait`, `aether:wait-<stage>`, `aether:fully-loaded`, `aether:load-timeout`.
-- **Switches** (set on `globalThis` before the studio starts): `__AETHER_SWEEP`, `__AETHER_SWEEP_MOTION`,
+- **Switches** (set on `globalThis` before the studio starts): `__AETHER_SWEEP` (opt-in), `__AETHER_PROGRAM_CACHE`, `__AETHER_SWEEP_MOTION`,
   `__AETHER_SHADER_RELEASE`, `__AETHER_PIPELINE_RELEASE`, `__AETHER_PASS_FIRST`, `__AETHER_COMPILE_TARGET`, `__AETHER_FULL_WARMUP` (opt-in),
   `__AETHER_MATRIX_CHECK`, `__AETHER_CELL_SHADOWS`, `__AETHER_CELL_VIRTUAL`, `__AETHER_SORT_BY_MATERIAL` (all on by default), `__AETHER_MERGE_VIRTUAL_PARTS` (opt-in).
+
+## Pre-warmed program set (6 November 2026)
+
+Part of stage 2 of [ARCHITECTURE-STREAMING.md](ARCHITECTURE-STREAMING.md): the equivalent of a pipeline-state cache.
+
+- **The tier's program set** (`gpu/program-cache.ts`). Every pipeline three creates is recorded by its exact vertex and
+  fragment sources under the realtime tier in effect, and the set is kept in IndexedDB (`aether-programs`: sources by hash,
+  one set per tier, at most 64/96/128/160 programs, most recently used first, an entry unused for 12 sessions dropped). When
+  the renderer starts, the tier's set is compiled and linked with `KHR_parallel_shader_compile`, six at a time, while the
+  world is generated. A pipeline whose two sources are pooled takes the pooled program (linked or still linking) instead of
+  linking its own, and its stages are never compiled by three (`installLazyStages`). The boot pre-warm stops submitting when
+  the world's own compile starts; unused pooled programs are deleted 20 s after the first picture. A world that settles on
+  another tier (a heavy world starts lower) pre-warms that tier's set instead. Opt out: `__AETHER_PROGRAM_CACHE = false`.
+- **Neighbouring tiers in idle time.** After the first picture, while the view has been still for 2 s and nothing links or
+  prepares, the rest of the set and the sets of the tiers above and below are linked one at a time and deleted at once: the
+  browser's program cache then holds them for a tier change or the next visit.
+- **No hidden sweep.** `prepareSurroundings` is opt-in. Programs met later link off the frame (the view keeps its last
+  complete picture meanwhile) and objects prepare in time slices.
+- **The opening view and the programs side by side.** The world's compile starts as soon as generation is done and links on
+  the driver's threads while the opening view is chosen; late warm-up rounds no longer hold the draws.
+- **Diagnostics:** `WorldRenderer.prewarmStats` (set size, pre-warm links, programs taken from the pool, own links, own links
+  after the first picture that the set did not hold, trimmed, primed).
+
+Kestrel Outpost, Intel UHD 770, medium (automatic), Chrome, two runs each on a shared machine, before = `6de94eef`
+(`scripts/first-picture-probe.ts`; the first picture is the load screen starting to leave):
+
+| | First picture cold | First picture warm | Programs | Link latency warm: sum, longest | `useProgram` / draws per orbit frame | GPU-process tasks > 50 ms after the first picture, cold |
+|---|---|---|---|---|---|---|
+| Before | 21.7 / 17.8 s | 11.6 / 9.2 s | 124-128 | 22.6-24.0 s, 3.1-3.7 s | 55-57 / 132-142 | 7-9 |
+| After | 21.0 / 18.2 s | 9.5 / 8.7 s | 110-126 | 5.9-11.9 s, 0.2-1.6 s (21-22 taken from the pool) | 51-57 / 117-136 | 19-30 |
+
+Links get cheaper and shorter (the pool takes a quarter of them; the longest wait for one drops from 3-4 s to under 2 s),
+the first picture comes 0.5-2 s sooner warm and about the same cold. Cold, part of what the sweep did behind the load screen
+now happens after it: more GPU-process tasks over 50 ms after the first picture (most of them short). The gate of the plan
+(first picture under 3 s warm and under 8 s cold) is not met. What the first picture still waits for on Kestrel (warm):
+generation (1.35 s), the compile walk (1.2 s), render-object preparation (1.4-1.9 s of JavaScript), the first real draws
+(two GPU-process tasks of about 1.3 s each in `GLContextEGL::MakeCurrent`: the driver's first use of the new programs and
+targets), seven programs of the split chain's rest phase that link only once the view rests (1.4 s warm, 3.2 s cold), and
+the frames that must come at the running rate before the load screen lifts (1.5-2 s). Cold, the links themselves dominate
+(about 89 of them, GPU-process bound), and the fly-in plays out behind the load screen once the first frame is drawn
+(3.3 s). Collapsing permutations was measured first: of the 66 pipelines alive after Kestrel's load, 64 stay distinct when
+constants and node names are ignored, so turning constants into uniforms would remove two programs; and 23 of the 88-94 links
+of a load are of programs no longer in use at its end (materials rebuilt during the load), the next thing to remove. Hero
+shots are unchanged within run-to-run noise (`scripts/image-diff.py`, mean 2.0-7.6 / 255 against 1.5-9.3 for the old build
+against itself, from wind and particles).
+
+```sh
+STATIC_DIR=/tmp/s2-dist GEN_GPU=intel npx tsx scripts/first-picture-probe.ts --out=<dir> [--runs=cold,warm] [--shots] [--profile] kestrel-outpost
+```
 
 ## Picture stability and sharpness (5 November 2026)
 

@@ -1,8 +1,9 @@
 # Streaming architecture: design (draft for review)
 
 Status: design, partly implemented. Stage 3 (worker generation, geometry cache), the first part of stage 1 (frame
-budget, sliced vertex uploads, `scripts/arch-probe.ts`) and stage 4a (the cell grid, per-cell shadow and virtual batches,
-material-grouped draw order) are in; their numbers are in [PERFORMANCE.md](PERFORMANCE.md).
+budget, sliced vertex uploads, `scripts/arch-probe.ts`), stage 4a (the cell grid, per-cell shadow and virtual batches,
+material-grouped draw order) and part of stage 2 (the recorded program set of each tier pre-warmed at boot, the sweep off,
+neighbouring tiers primed at rest; its gate is not met yet) are in; their numbers are in [PERFORMANCE.md](PERFORMANCE.md).
 Profiling: 6 November 2026, on the build of `ec8b9593` plus the uncommitted work in the tree at the time. This document
 covers measured baselines, the target architecture and a staged plan.
 
