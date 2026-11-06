@@ -497,3 +497,41 @@ retaining walls and copings lost their stone-to-stone tone (Lisbon establishing 
 Memory: the Lisbon hero shots run near the 5 GB scope with both builds, and the after builds ran out of it in 4 of 8 Lisbon
 runs against 1 of 5 for the base. The merged copy is the cost: uncapped, these merges doubled merged geometry (143 MB);
 the 30,000-vertex cap keeps 412 draws for 120 MB (433 draws for 103 MB at 10,000).
+
+## Time-of-day drags (6 November 2026)
+
+Measured with `scripts/daylight-drag-probe.ts` (Casa del Patio, `GEN_GPU=intel`, low tier, shared office PC, niced, 5 GB
+scope). Each slider is dragged slowly for 3 s (10:00 to 16:00), then fast across dawn, day, sunset and night and back
+(2.4 s).
+
+- **Cause.** The daylight study's slider applied the whole environment on every input event. Most of it is cheap (sun,
+  sky, ambient and fog are uniforms), but when the sun crosses the lamps' cutoff at dusk or dawn the building's lamps
+  are switched on or off. That changes the scene's set of lights, so every lit material needs a new program: 29-32 links
+  of 85-130 KB of GLSL. Linking them on the frame held the GPU process for 1.7-5.1 s while the main thread sat idle (no
+  long task). Input then queued behind the frozen frames: 7-9 input events reached the page in 5.5-7.8 s. On high and
+  ultra tiers, each preset change also unbinds the photographed sky, shows the analytic sky until the next map has loaded,
+  then rebinds. That changes the scene's environment twice, and every material follows each change.
+- **Drag.** `setEnvironmentOverride(env, { live: true })`: once a frame (the studio coalesces input to
+  `requestAnimationFrame`), only the cheap part follows. The lamps keep their on or off state, at the nearest intensity
+  that state allows. The photographed sky keeps its map, and the analytic sky's reflection image is redrawn at most every
+  120 ms. Bakes under way stop at the first value. The full environment follows 250 ms after the last value, or at once
+  when the slider is let go. The inspector's time slider previews the same way and commits one edit when let go.
+- **Photographed sky.** One automatic map stays bound until the next has arrived, and two of them stay parked, so moving
+  between the day, low-sun and night maps reuses them.
+- **The switch after the drag.** On this driver a linked program is compiled again on its first draw: all lamp
+  programs drawn in the same frame made one 2.1-2.9 s frame, with no link in that second. `gpu/first-draw-pacer.ts`
+  draws one never-drawn pipeline per frame once the world is shown (not behind the load screen, not in captures). The
+  same switch now takes about 30 frames of 100-170 ms, with the longest frame at 400-620 ms. Opt out with
+  `__AETHER_FIRST_DRAW_PACE = false`.
+
+| Daylight study, fast drag | before | after |
+| --- | --- | --- |
+| frame p95 / max (idle p95 33 ms) | 1750 / 1750 ms (other runs 1383-4233 / 2066-5100) | 16.7 / 16.8 ms |
+| input events delivered | 8 in 7.8 s | 122 in 2.5 s |
+| program links during the drag | 32 | 1 |
+| longest frame after it is let go | 2083 ms | 400 ms |
+
+Slow drags and the inspector's drags stayed within 2x the idle p95, with no task over 100 ms, before and after. Before,
+the inspector showed nothing until the slider was let go. Both commit one undo entry per drag. Settled shots of a fixed
+view at 06:30, 12:00, 18:30 and 22:00 on fresh loads differ from the previous build by a mean of 0.15-0.33 / 255, about
+the same as two runs of one build.

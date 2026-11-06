@@ -132,7 +132,7 @@ export const ArchBar = memo(function ArchBar(): ReactElement | null {
             <span>Sun</span>
             <span className="arch-pop__value">{a.sunHour === null ? 'as built' : hourLabel(a.sunHour)}</span>
           </div>
-          <input className="arch-pop__range" type="range" aria-label="Time of day" min={5} max={23} step={0.1} value={a.sunHour ?? 14} onChange={(e) => set({ sunHour: Number(e.target.value) })} />
+          <input className="arch-pop__range" type="range" aria-label="Time of day" min={5} max={23} step={0.1} value={a.sunHour ?? 14} onPointerDown={() => studio.arch.beginSunDrag()} onPointerUp={() => studio.arch.endSunDrag()} onPointerCancel={() => studio.arch.endSunDrag()} onBlur={() => studio.arch.endSunDrag()} onChange={(e) => set({ sunHour: Number(e.target.value) })} />
           <div className="arch-pop__chips">
             {TIME_PRESETS.map((p) => (
               <button key={p.key} type="button" className={`chip${a.sunHour === p.hour ? ' is-on' : ''}`} onClick={() => set({ sunHour: p.hour })}>

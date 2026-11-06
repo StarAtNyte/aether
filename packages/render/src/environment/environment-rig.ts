@@ -71,6 +71,8 @@ export const AUTO_HDRI: Readonly<Record<string, string>> = Object.freeze({
   night: 'sky-moonlit',
   studio: 'sky-photo-studio',
 });
+/** Least time (ms) between two redraws of the analytic sky's reflection image while a time-of-day slider is dragged. */
+export const LIVE_ENV_MAP_MS = 120;
 /** Content radius assumed before the first content bounds arrive. */
 const DEFAULT_CONTENT_RADIUS = 20;
 
@@ -372,8 +374,16 @@ export class EnvironmentRig {
     return this.state.hemiIntensity * HEMI_SHARE_WITH_IBL * (mapped ? HDRI_HEMI_SCALE : 1);
   }
 
-  /** Apply an environment (sky, lights, reflections, fog on `scene`, ground, weather). */
-  apply(env: Environment, scene: Scene): void {
+  /**
+   * Apply an environment (sky, lights, reflections, fog on `scene`, ground, weather).
+   *
+   * `live` (a time-of-day slider being dragged): the sun, sky, ambient and fog follow at once, as uniforms; what is costly
+   * waits for the call without `live` that ends the drag. The photographed sky that lights the scene keeps the map it has
+   * (another preset's map is a fetch, a decode, a prefilter and every material's environment changing), and the analytic
+   * sky's reflection image (pixels and a prefilter) is redrawn at most every {@link LIVE_ENV_MAP_MS}.
+   */
+  apply(env: Environment, scene: Scene, live = false): void {
+    this.live = live;
     this.env = env;
     this.scene = scene;
     const s = computeSkyState(env);
@@ -405,10 +415,16 @@ export class EnvironmentRig {
     const explicit = env.hdri;
     const id = explicit ?? (this.autoHdri ? AUTO_HDRI[s.preset] : undefined);
     // An automatic HDRI only lights and reflects (the dome and clouds stay the background) and loses its sun.
-    this.hdri.set(id, { intensity: env.hdriIntensity, background: explicit ? env.hdriBackground : false, lightOnly: !explicit });
+    if (!live || (id ?? null) === this.hdri.requested) this.hdri.set(id, { intensity: env.hdriIntensity, background: explicit ? env.hdriBackground : false, lightOnly: !explicit });
     this.applyFog();
     this.weather.set(env.weather);
+    this.live = false;
   }
+
+  /** Inside a live {@link apply}. */
+  private live = false;
+  /** When the analytic reflection image was last redrawn by a live apply (ms, `performance.now`). */
+  private liveEnvMapAt = Number.NEGATIVE_INFINITY;
 
   /**
    * Tell the rig how large the meaningful content is (framing radius, metres).
@@ -517,6 +533,15 @@ export class EnvironmentRig {
     scene.backgroundRotation.set(0, 0, 0);
     this.sky.group.visible = true;
     this.hemi.intensity = this.state.hemiIntensity * HEMI_SHARE_WITH_IBL;
+    this.envBase = this.state.envIntensity;
+    if (this.live && this.envMap && scene.environment === this.envMap) {
+      const now = performance.now();
+      if (now - this.liveEnvMapAt < LIVE_ENV_MAP_MS) {
+        scene.environmentIntensity = this.envBase * this.envScale;
+        return;
+      }
+      this.liveEnvMapAt = now;
+    } else this.liveEnvMapAt = Number.NEGATIVE_INFINITY;
     const groundSpec = this.state.showGround ? this.env?.ground : null;
     const groundColor = groundSpec ? resolveMaterial(groundSpec.material).color : null;
     const pixels = skyEnvironmentPixels(this.state, groundColor, horizon);

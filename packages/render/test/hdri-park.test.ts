@@ -9,7 +9,7 @@ const CATALOG: CatalogInput = {
   version: 1,
   base: '/assets/lib/',
   packs: [{ id: 'p', title: 'P', author: 'A', licence: 'CC0-1.0', licenceUrl: 'https://creativecommons.org/publicdomain/zero/1.0/', url: 'https://example.org', version: '1' }],
-  entries: [entry('sky-a'), entry('sky-b')],
+  entries: [entry('sky-a'), entry('sky-b'), entry('sky-c'), entry('sky-d')],
 };
 
 class FakeHdr implements HdriSource {
@@ -59,7 +59,7 @@ describe('automatic HDRI parking', () => {
     expect(state.disposed).toBe(false);
   });
 
-  it('disposes the parked map when another map takes its place, when a world HDRI is requested, and with the controller', async () => {
+  it('disposes the oldest parked map when the park is full, every parked map when a world HDRI is requested, and with the controller', async () => {
     const src = new FakeHdr();
     const c = new HdriController(src, () => undefined);
     c.set('sky-a', { lightOnly: true });
@@ -68,26 +68,73 @@ describe('automatic HDRI parking', () => {
     c.set(undefined, {});
     expect(a.disposed).toBe(false);
     c.set('sky-b', { lightOnly: true });
-    expect(a.disposed).toBe(true);
+    expect(a.disposed).toBe(false);
     await tick(10);
     const b = watch(src.loaded[1]!);
+    c.set('sky-c', { lightOnly: true });
+    await tick(10);
+    const cc = watch(src.loaded[2]!);
+    c.set('sky-d', { lightOnly: true });
+    await tick(10);
+    // a, b and c were shown in turn: two of them stay parked (PARK_CAP), the oldest went.
+    expect(a.disposed).toBe(true);
+    expect(b.disposed).toBe(false);
+    expect(cc.disposed).toBe(false);
+    c.set('sky-b', { lightOnly: true });
+    expect(c.texture).toBe(src.loaded[1]);
+    expect(src.urls).toHaveLength(4);
     c.set(undefined, {});
     expect(b.disposed).toBe(false);
-    // A world's own HDRI (not light-only) never reuses the clamped automatic map.
+    // A world's own HDRI (not light-only) never reuses the clamped automatic maps.
     c.set('sky-b', {});
     expect(b.disposed).toBe(true);
+    expect(cc.disposed).toBe(true);
     await tick(10);
-    expect(src.urls).toHaveLength(3);
-    const explicit = watch(src.loaded[2]!);
+    expect(src.urls).toHaveLength(5);
+    const explicit = watch(src.loaded[4]!);
     c.set(undefined, {});
     expect(explicit.disposed).toBe(true);
     c.set('sky-a', { lightOnly: true });
     await tick(10);
-    const last = watch(src.loaded[3]!);
+    const last = watch(src.loaded[5]!);
     c.set(undefined, {});
     expect(last.disposed).toBe(false);
     c.dispose();
     expect(last.disposed).toBe(true);
+  });
+
+  it('keeps the shown automatic map bound until the next one has arrived, then parks it', async () => {
+    const src = new FakeHdr();
+    const changes: Array<Texture | null> = [];
+    const scene = new Scene();
+    const c: HdriController = new HdriController(src, () => {
+      c.bind(scene, 1);
+      changes.push(c.texture);
+    });
+    c.set('sky-a', { lightOnly: true });
+    await tick(10);
+    const a = src.loaded[0]!;
+    expect(scene.environment).toBe(a);
+    c.set('sky-b', { lightOnly: true });
+    // Loading: the scene keeps sky-a (no interval on the analytic sky, one change of environment).
+    expect(scene.environment).toBe(a);
+    expect(c.texture).toBe(a);
+    expect(c.requested).toBe('sky-b');
+    await tick(10);
+    const b = src.loaded[1]!;
+    expect(scene.environment).toBe(b);
+    expect(changes).toEqual([a, b]);
+    // Back to a: straight from the park, no load.
+    c.set('sky-a', { lightOnly: true });
+    expect(scene.environment).toBe(a);
+    expect(src.urls).toHaveLength(2);
+    // A request for b, then a again before b arrives: a stays, the late b is discarded.
+    c.set('sky-c', { lightOnly: true });
+    c.set('sky-a', { lightOnly: true });
+    await tick(10);
+    expect(c.texture).toBe(a);
+    expect(src.urls).toHaveLength(3);
+    c.dispose();
   });
 
   it('a switch while the map is still loading does not park or leak anything', async () => {

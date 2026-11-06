@@ -744,6 +744,34 @@ export class Studio {
     this.sim?.focus(id);
   }
 
+  /** Environment fields waiting for the next frame's preview ({@link previewEnvironment}). */
+  private envPreview: Partial<WorldDoc['environment']> | null = null;
+  private envPreviewFrame: number | null = null;
+
+  /**
+   * Show environment fields live while a slider is dragged, without an edit: at most once a frame, and only what is
+   * cheap follows (the renderer's live environment). The drag ends with a commit of the value, one undo entry, or with
+   * {@link endEnvironmentPreview}.
+   */
+  previewEnvironment(set: Partial<WorldDoc['environment']>): void {
+    this.envPreview = set;
+    if (this.envPreviewFrame !== null || typeof requestAnimationFrame !== 'function') return;
+    this.envPreviewFrame = requestAnimationFrame(() => {
+      this.envPreviewFrame = null;
+      const fields = this.envPreview;
+      this.envPreview = null;
+      if (fields) this.sim?.renderer.setEnvironmentOverride({ ...this.history.current.environment, ...fields }, { live: true });
+    });
+  }
+
+  /** Stop a preview: `restore` shows the document's environment again (the drag ended without an edit). */
+  endEnvironmentPreview(restore: boolean): void {
+    if (this.envPreviewFrame !== null) cancelAnimationFrame(this.envPreviewFrame);
+    this.envPreviewFrame = null;
+    this.envPreview = null;
+    if (restore) this.sim?.renderer.restoreEnvironment();
+  }
+
   /** Commit editor patches (source 'user'). Returns error text, or null on success. */
   commitUser(patches: Patch[] | unknown[], message: string): string | null {
     if (this.store.getState().mode === 'play') return 'Stop the simulation before editing.';

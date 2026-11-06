@@ -956,6 +956,11 @@ export class SceneSync {
     if (Number.isFinite(this.lightBudget)) this.applyLightBudget();
   }
 
+  /** The daylight scale of architectural lamps now ({@link setArchLampScale}). */
+  get lampScale(): number {
+    return this.archLampScale;
+  }
+
   /**
    * Intensity of an architectural lamp under the daylight scale. Below
    * {@link LAMP_CUTOFF} the light is switched off entirely (invisible lights

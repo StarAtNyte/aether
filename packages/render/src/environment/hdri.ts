@@ -185,6 +185,9 @@ export const HDRI_SUN_CLAMP = 12;
  */
 export const HDRI_BACKDROP_MIN_WIDTH = 2048;
 
+/** Automatic maps kept for reuse after they are unbound (with the shown one, the day, low-sun and night skies). */
+export const PARK_CAP = 2;
+
 /** Width (texels) of a texture's image, or 0. */
 function imageWidth(tex: Texture): number {
   const w = (tex.image as { width?: unknown } | null | undefined)?.width;
@@ -208,12 +211,20 @@ export class HdriController {
   /** The current request is for light alone, so it may be served by the library's half-resolution copy. */
   private reqLite = false;
   /**
-   * The last automatic (light-only) map, kept after it is unbound. Switching quality tiers turns automatic
-   * HDRIs off and on again; re-creating a map means loading it again and prefiltering it again (a burst
-   * of GPU objects each time). One map is kept; it is disposed when another map takes its place, when a
-   * world HDRI is requested, and with the controller.
+   * The last automatic (light-only) maps, kept after they are unbound, most recent last. Switching quality tiers turns
+   * automatic HDRIs off and on again, and the hour of a daylight study moves between the day, low-sun and night maps;
+   * re-creating a map means loading it again and prefiltering it again (a burst of GPU objects each time). Up to
+   * {@link PARK_CAP} maps are kept; the oldest is disposed when another takes its place, and all of them when a world
+   * HDRI is requested and with the controller.
    */
-  private parked: { id: string; tex: Texture; sun: HdriSun | null; level: number | null } | null = null;
+  private parked: Array<{ id: string; tex: Texture; sun: HdriSun | null; level: number | null }> = [];
+  /** Id of the map in {@link tex} (it differs from the requested id while an automatic map is held for the next one). */
+  private texId: string | null = null;
+
+  /** The id asked for last (null: none), whether or not its map has arrived. */
+  get requested(): string | null {
+    return this.id;
+  }
 
   /** The loaded map's sky brightness as light ({@link hdriSkyLevel}, after its sun was cut down), when its pixels were readable. */
   get level(): number | null {
@@ -301,28 +312,39 @@ export class HdriController {
     const lite = !this.background || lightOnly;
     if (next === this.id && !(this.reqLite && !lite)) return;
     this.reqLite = lite;
-    const previous = this.id;
     this.id = next;
     const token = ++this.token;
-    this.drop(previous);
     this.error = null;
+    const parkedAt = lightOnly && next !== null ? this.parked.findIndex((p) => p.id === next) : -1;
+    // One automatic map to another (the hour moved the sky to another preset): the shown map stays until the next one is
+    // ready, so the scene's environment changes once (every material follows a change of it) and never shows the
+    // analytic sky's reflections for the length of a load.
+    const hold = lightOnly && this.texAuto && this.tex !== null && next !== null && parkedAt < 0;
+    if (hold && next === this.texId) {
+      // Back to the map still shown (a load for another one was under way): keep it; the late load is discarded.
+      this.onChange();
+      return;
+    }
+    // Take a parked map out before the shown one is parked in its place (a full park would dispose the oldest).
+    const p = parkedAt >= 0 ? this.parked.splice(parkedAt, 1)[0] : undefined;
+    if (!hold) this.drop();
     if (next === null) {
       this.onChange();
       return;
     }
-    if (this.parked) {
-      if (lightOnly && this.parked.id === next) {
-        // The automatic map of this tier comes straight back: no load, no new prefiltering.
-        this.tex = this.parked.tex;
-        this.sunInfo = this.parked.sun;
-        this.skyLevel = this.parked.level;
+    {
+      // This automatic map was shown before: it comes straight back, with no load and no new prefiltering.
+      if (p) {
+        this.tex = p.tex;
+        this.texId = p.id;
+        this.sunInfo = p.sun;
+        this.skyLevel = p.level;
         this.texAuto = true;
-        this.parked = null;
         this.onChange();
         return;
       }
-      this.releaseParked();
     }
+    if (!lightOnly) this.releaseParked();
     this.pending++;
     void loadCatalog()
       .then(() => {
@@ -337,6 +359,7 @@ export class HdriController {
             tex.dispose();
             return;
           }
+          this.drop();
           tex.mapping = EquirectangularReflectionMapping;
           this.sunInfo = hdriSun(tex);
           clampRadiance(tex, HDRI_SUN_CLAMP);
@@ -344,12 +367,14 @@ export class HdriController {
           // The loader leaves flipY on; the sun above was read with rows top first. Flip the rows now so the upload sets no flag.
           bakeFlipY(tex);
           this.tex = tex;
+          this.texId = next;
           this.texAuto = this.lightOnly;
           this.onChange();
         },
         (e: unknown) => {
           this.settle();
           if (token !== this.token) return;
+          this.drop();
           this.error = e instanceof Error ? e.message.slice(0, 160) : 'HDRI failed to load';
           this.onChange();
         },
@@ -377,20 +402,20 @@ export class HdriController {
   }
 
   private releaseParked(): void {
-    this.parked?.tex.dispose();
-    this.parked = null;
+    for (const p of this.parked.splice(0)) p.tex.dispose();
   }
 
-  /** Unbind and release the current map; an automatic one (`previous` is its id) is parked for reuse instead of disposed. */
-  private drop(previous: string | null): void {
+  /** Unbind and release the current map; an automatic one is parked for reuse instead of disposed. */
+  private drop(park = true): void {
     if (this.scene) this.unbind(this.scene);
     if (this.tex) {
-      if (this.texAuto && previous !== null) {
-        this.releaseParked();
-        this.parked = { id: previous, tex: this.tex, sun: this.sunInfo, level: this.skyLevel };
+      if (park && this.texAuto && this.texId !== null) {
+        this.parked.push({ id: this.texId, tex: this.tex, sun: this.sunInfo, level: this.skyLevel });
+        while (this.parked.length > PARK_CAP) this.parked.shift()?.tex.dispose();
       } else this.tex.dispose();
     }
     this.tex = null;
+    this.texId = null;
     this.sunInfo = null;
     this.skyLevel = null;
     this.texAuto = false;
@@ -400,7 +425,7 @@ export class HdriController {
     this.token++;
     this.pending = 0;
     for (const w of this.waiters.splice(0)) w();
-    this.drop(null);
+    this.drop(false);
     this.releaseParked();
   }
 }

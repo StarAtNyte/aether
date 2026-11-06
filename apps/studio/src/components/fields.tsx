@@ -2,7 +2,7 @@
  * Small form controls for the Inspector. Fields keep a local draft and only
  * commit on blur / Enter, so every edit is one undoable patch.
  */
-import { memo, useEffect, useId, useState, type ReactElement, type ReactNode } from 'react';
+import { memo, useEffect, useId, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { fieldNumber } from '../lib/format';
 
 /** Labeled on/off switch row (label left, switch right). */
@@ -262,6 +262,7 @@ export const SliderField = memo(function SliderField({
   max,
   step,
   onCommit,
+  onPreview,
   disabled,
   format,
 }: {
@@ -271,14 +272,23 @@ export const SliderField = memo(function SliderField({
   max: number;
   step: number;
   onCommit: (v: number) => void;
+  /**
+   * Show a value live while the slider moves, with no edit (`null`: the slider was let go without a change, show the
+   * committed value again). The edit itself is still one {@link onCommit} when it is let go: one undo entry per drag.
+   */
+  onPreview?: (v: number | null) => void;
   disabled?: boolean;
   format?: (v: number) => string;
 }): ReactElement {
   const [draft, setDraft] = useState(value);
+  const previewing = useRef(false);
   useEffect(() => setDraft(value), [value]);
   const commit = (v: number): void => {
     const n = Math.min(max, Math.max(min, v));
+    const shown = previewing.current;
+    previewing.current = false;
     if (n !== value) onCommit(n);
+    else if (shown) onPreview?.(null);
   };
   const pct = max > min ? ((draft - min) / (max - min)) * 100 : 0;
   return (
@@ -293,7 +303,14 @@ export const SliderField = memo(function SliderField({
         disabled={disabled}
         aria-label={label}
         style={{ ['--pct' as string]: `${pct}%` }}
-        onChange={(e) => setDraft(Number(e.target.value))}
+        onChange={(e) => {
+          const v = Number(e.target.value);
+          setDraft(v);
+          if (onPreview) {
+            previewing.current = true;
+            onPreview(Math.min(max, Math.max(min, v)));
+          }
+        }}
         onPointerUp={() => commit(draft)}
         onKeyUp={() => commit(draft)}
         onBlur={() => commit(draft)}

@@ -89,7 +89,8 @@ import { ContactShadows, planContactShadows } from './view/contact-shadows';
 import { contentFraming, DEFAULT_FRAMING_AZIMUTH, framingPose, frontAzimuthDeg, pickClearView, viewCandidates, type Framing, type FramingPoseOptions } from './view/framing';
 import { isOpaqueVisible, sceneSightTest } from './view/sightline';
 import { ArchView, type ArchViewState } from './view/arch-view';
-import { daylightLampFactor, FORWARD_LIGHTS } from './sync/lights';
+import { daylightLampFactor, FORWARD_LIGHTS, LAMP_CUTOFF } from './sync/lights';
+import { installFirstDrawPacer, type FirstDrawPacer } from './gpu/first-draw-pacer';
 import { collectFramingItems, FOCUS_TAG } from './view/content-items';
 import { nearZone, rankOpeningViews, type OpeningPose, type OpeningStats } from './view/opening-view';
 import { sceneOpeningProbe } from './view/opening-probe';
@@ -663,6 +664,11 @@ const KTX2_SETUP_DELAY_MS = 4000;
 
 /** Longest the load screen waits for the first frame's shader programs to link (ms). */
 const SHADER_WARMUP_MS = 15_000;
+/**
+ * Quiet time (ms) after the last live environment ({@link WorldRenderer.setEnvironmentOverride} with `live`) before the
+ * deferred work runs: the photographed sky of the new preset, the analytic sky's reflections, the bakes, the lamps.
+ */
+export const LIVE_ENVIRONMENT_SETTLE_MS = 250;
 /** The view must have been still this long before idle program priming links anything (ms). */
 const IDLE_PRIME_MS = 2_000;
 /**
@@ -843,6 +849,8 @@ export class WorldRenderer {
   private readonly onProgress: ((msg: string) => void) | null;
   /** Programs discovered by actual post/shadow passes link without blocking a draw. */
   private readonly programs: ParallelPrograms;
+  /** First draws of new pipelines, one per frame once the world is shown (gpu/first-draw-pacer.ts). */
+  private readonly firstDraws: FirstDrawPacer;
   /** The pre-warmed program set of the tier (null on WebGPU, without parallel linking, or opted out). */
   private readonly programCache: ProgramCache | null;
   /** Last time the view changed (a drawn frame that was not a refinement): idle work waits for a still view. */
@@ -1079,6 +1087,13 @@ export class WorldRenderer {
     const releaseShaders = this.releaseShaders;
     this.releaseShaders = () => { lazyStages(); releasePipelines(); releaseShaders(); };
     this.programs = parallelPrograms(renderer.backend as unknown as Parameters<typeof parallelPrograms>[0], () => this.requestPreparedFrame(false), e => log.warn(`parallel shader linking failed: ${errorMessage(e)}`), this.programCache);
+    this.firstDraws = installFirstDrawPacer(renderer.backend as unknown as Parameters<typeof installFirstDrawPacer>[0], {
+      frame: () => this.framesDrawn,
+      active: () => !this.loadingScreen && this.framesDrawn > 0 && !this.captureActive && !this.tracing,
+      again: () => {
+        if (!this.disposed) this.needsDraw = true;
+      },
+    });
     this.gpuCost = gpuFrameCost(renderer.backend as unknown as Parameters<typeof gpuFrameCost>[0]);
     const webgpuBackend = (renderer.backend as unknown as { isWebGPUBackend?: boolean }).isWebGPUBackend === true;
     // Opt-in (`__AETHER_SLICED_UPLOAD = true`): in runs that load two heavy worlds in one page, buffers handed to three this
@@ -1535,7 +1550,7 @@ export class WorldRenderer {
     if (this.captureActive || this.tracing) return 'capture';
     if (this.syncing > 0 || !this.sync.idle) return 'scene';
     if (this.foliagePending || (this.compute?.pendingCount ?? 0) > 0 || textureWork.pending > 0) return 'materials';
-    if (this.warming || this.postPending || this.preparation.pending > 0 || this.programs.pending > 0 || this.sync.batchPreparationPending > 0) return 'render';
+    if (this.warming || (this.firstDraws?.pending ?? 0) > 0 || this.postPending || this.preparation.pending > 0 || this.programs.pending > 0 || this.sync.batchPreparationPending > 0) return 'render';
     // Background light bakes have their own progress/cancel control. The viewport
     // remains usable and must not look blocked for the duration of a path trace.
     return null;
@@ -2711,6 +2726,7 @@ export class WorldRenderer {
 
   private applyEnvironment(world: WorldDoc): void {
     const env = world.environment;
+    this.endLiveEnvironment();
     this.shaftsUnavailable = false;
     this.env.apply(env, this.scene);
     this.applyWind(env.wind);
@@ -2729,7 +2745,7 @@ export class WorldRenderer {
     }
     this.applyLightBake(env.lightBake);
     this.syncInteriorLight();
-    this.sync.setArchLampScale(daylightLampFactor(this.env.skyState.elevation));
+    this.applyLampScale(false);
     this.applyLook();
     this.fx.setLighting(this.env.sun, this.env.hemi);
     this.rig.floorY = env.ground && this.env.skyState.showGround ? MIN_ORBIT_HEIGHT : Number.NEGATIVE_INFINITY;
@@ -3208,15 +3224,70 @@ export class WorldRenderer {
    * day/night clock). The document environment comes back on the next
    * {@link setWorld} that changes it, or with {@link restoreEnvironment}.
    */
-  setEnvironmentOverride(env: Environment): void {
+  setEnvironmentOverride(env: Environment, opts: { live?: boolean } = {}): void {
     if (this.disposed) return;
+    const live = opts.live === true;
+    if (live) {
+      // The first value of a drag stops the bakes under way (they would bake an hour already left behind); the rest wait.
+      if (this.liveEnvTimer === null) {
+        this.lightVolume.invalidate();
+        this.lightmap.invalidate('light');
+      } else clearTimeout(this.liveEnvTimer);
+      this.liveEnv = env;
+      this.liveEnvTimer = setTimeout(() => {
+        this.liveEnvTimer = null;
+        const last = this.liveEnv;
+        this.liveEnv = null;
+        if (last && !this.disposed) this.setEnvironmentOverride(last);
+      }, LIVE_ENVIRONMENT_SETTLE_MS);
+      this.env.apply(env, this.scene, true);
+      this.applyLampScale(true);
+      this.applyLook();
+      this.needsDraw = true;
+      return;
+    }
+    this.endLiveEnvironment();
     this.env.apply(env, this.scene);
     this.lightVolume.invalidate();
     this.lightmap.invalidate('light');
     this.syncInteriorLight();
-    this.sync.setArchLampScale(daylightLampFactor(this.env.skyState.elevation));
+    this.applyLampScale(false);
     this.applyLook();
     this.needsDraw = true;
+  }
+
+  /** The last live environment, applied in full once {@link liveEnvTimer} fires. */
+  private liveEnv: Environment | null = null;
+  private liveEnvTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Forget a live environment still waiting to settle (a full environment replaces it). */
+  private endLiveEnvironment(): void {
+    if (this.liveEnvTimer !== null) clearTimeout(this.liveEnvTimer);
+    this.liveEnvTimer = null;
+    this.liveEnv = null;
+  }
+
+  /** True while a time-of-day drag's live environment waits to settle. */
+  get liveEnvironment(): boolean {
+    return this.liveEnvTimer !== null;
+  }
+
+  /**
+   * Scale the architectural lamps for the sun's elevation (bright at night, dim in daylight, off under
+   * {@link LAMP_CUTOFF}). The intensity is a uniform and follows at once. Switching the lamps on or off changes the
+   * scene's set of lights, and with it the program of every lit material: during a drag (`live`) the lamps keep their
+   * state, at the nearest intensity it allows, so dragging back and forth over dusk links nothing; the switch comes with
+   * the settled hour, and its new programs are drawn for the first time one per frame (gpu/first-draw-pacer.ts).
+   */
+  private applyLampScale(live: boolean): void {
+    const want = daylightLampFactor(this.env.skyState.elevation);
+    const on = this.sync.lampScale >= LAMP_CUTOFF;
+    if (!live || on === want >= LAMP_CUTOFF) {
+      this.sync.setArchLampScale(want);
+      return;
+    }
+    // Keep the state: on, no dimmer than the cutoff; off, just under it (an off lamp has no intensity to show).
+    this.sync.setArchLampScale(on ? Math.max(want, LAMP_CUTOFF) : Math.min(want, LAMP_CUTOFF * 0.99));
   }
 
   /** Re-apply the current document's environment (after {@link setEnvironmentOverride}). */
@@ -6827,10 +6898,12 @@ export class WorldRenderer {
   /** Dispose every GPU resource, control and listener. The renderer is unusable afterwards. */
   dispose(): void {
     if (this.disposed) return;
+    this.endLiveEnvironment();
     this.compileTextures.dispose();
     this.presentation.dispose();
     this.preparation.dispose();
     this.programs.dispose();
+    this.firstDraws.dispose();
     this.programCache?.dispose();
     this.releaseShaders();
     this.gpuCost.dispose();

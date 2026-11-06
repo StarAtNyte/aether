@@ -44,7 +44,11 @@ const SceneInspector = memo(function SceneInspector({ playing }: { playing: bool
         </FieldRow>
         {hasClock && (
           <FieldRow label="Time">
-            <SliderField label="Time of day" value={env.timeOfDay ?? 12} min={0} max={24} step={0.25} disabled={playing} format={formatHour} onCommit={(v) => setEnv({ timeOfDay: v }, `Time of day ${formatHour(v)}`)} />
+            <SliderField label="Time of day" value={env.timeOfDay ?? 12} min={0} max={24} step={0.25} disabled={playing} format={formatHour} onPreview={(v) => (v === null ? studio.endEnvironmentPreview(true) : studio.previewEnvironment({ timeOfDay: v }))} onCommit={(v) => {
+                // One edit when the slider is let go; the frames in between were previews.
+                studio.endEnvironmentPreview(false);
+                setEnv({ timeOfDay: v }, `Time of day ${formatHour(v)}`);
+              }} />
           </FieldRow>
         )}
         <FieldRow label="Weather">

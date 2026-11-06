@@ -127,11 +127,65 @@ export class ArchController {
         if (prev) st.toast('Studio render is not available on this device (low memory mode or no post-processing). Showing the realtime view.', 'info', 5);
       } else if (st.arch.studioAvailable !== r.studioQualityAvailable) st.setArch({ studioAvailable: r.studioQualityAvailable });
     }
-    if (!prev || a.sunHour !== prev.sunHour) this.applySun();
+    if (!prev || a.sunHour !== prev.sunHour) this.queueSun();
   }
 
-  /** Daylight study: show the chosen sun hour without touching the document. */
-  private applySun(): void {
+  /** The daylight slider is held (between {@link beginSunDrag} and {@link endSunDrag}). */
+  private sunDragging = false;
+  private sunFrame: number | null = null;
+
+  /**
+   * The daylight slider was grabbed: until {@link endSunDrag} the hour is shown live, at most once a frame, and only
+   * what is cheap follows it (sun, sky, ambient, fog); the photographed sky, the bakes and the lamps settle at the end.
+   */
+  beginSunDrag(): void {
+    if (this.sunDragging) return;
+    this.sunDragging = true;
+    // The pointer may be let go outside the slider, or the slider may close under it.
+    if (typeof window !== 'undefined') {
+      const end = (): void => {
+        window.removeEventListener('pointerup', end, true);
+        window.removeEventListener('pointercancel', end, true);
+        this.endSunDrag();
+      };
+      window.addEventListener('pointerup', end, true);
+      window.addEventListener('pointercancel', end, true);
+    }
+  }
+
+  /** The daylight slider was let go: the hour it shows is applied in full. */
+  endSunDrag(): void {
+    if (!this.sunDragging) return;
+    this.sunDragging = false;
+    this.cancelSunFrame();
+    this.applySun();
+  }
+
+  private cancelSunFrame(): void {
+    if (this.sunFrame !== null) cancelAnimationFrame(this.sunFrame);
+    this.sunFrame = null;
+  }
+
+  /** Show the hour: in full, or during a drag on the next frame (input events come faster than frames). */
+  private queueSun(): void {
+    if (!this.sunDragging || typeof requestAnimationFrame !== 'function') {
+      this.cancelSunFrame();
+      this.applySun();
+      return;
+    }
+    if (this.sunFrame !== null) return;
+    this.sunFrame = requestAnimationFrame(() => {
+      this.sunFrame = null;
+      try {
+        this.applySun(true);
+      } catch (e) {
+        log.warn('daylight study update failed', e);
+      }
+    });
+  }
+
+  /** Daylight study: show the chosen sun hour without touching the document (`live`: a drag, see {@link beginSunDrag}). */
+  private applySun(live = false): void {
     const sim = this.host.simulation;
     if (!sim) return;
     const hour = this.host.store.getState().arch.sunHour;
@@ -141,7 +195,7 @@ export class ArchController {
     }
     const env = this.host.history.current.environment;
     const sky = skyForHour(hour);
-    sim.renderer.setEnvironmentOverride({ ...env, sky: sky.sky, timeOfDay: sky.timeOfDay, fog: env.fog, bloom: sky.sky === 'night' ? Math.max(env.bloom, 0.9) : env.bloom });
+    sim.renderer.setEnvironmentOverride({ ...env, sky: sky.sky, timeOfDay: sky.timeOfDay, fog: env.fog, bloom: sky.sky === 'night' ? Math.max(env.bloom, 0.9) : env.bloom }, { live: live && this.sunDragging });
   }
 
   /** Play hides the view modes (the walkthrough needs walls and ceilings); Stop brings them back. */
@@ -253,6 +307,7 @@ export class ArchController {
   }
 
   dispose(): void {
+    this.cancelSunFrame();
     this.walk?.dispose();
     this.walk = null;
     for (const c of this.cleanups.splice(0)) c();
