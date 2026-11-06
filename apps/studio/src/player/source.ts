@@ -2,7 +2,7 @@
  * Where a published game comes from: the URL fragment of a share link
  * (`#w=…`, decoded and validated by `publish/share.ts`), a bundled template
  * (`#t=<slug>`, a published world of this site with its cooked package at
- * `cooked/<slug>/manifest.json`), or the `game.json` next to a downloaded /
+ * `<cooked base><slug>/manifest.json`, the hosted dataset by default), or the `game.json` next to a downloaded /
  * self-hosted build. All are untrusted and fully validated; a failure becomes
  * a readable message, never a crash.
  */
@@ -16,12 +16,14 @@ export type GameSource = { kind: 'game'; game: GameManifest; from: 'link' | 'bui
 const TEMPLATE_SLUG = /^(?=.{1,64}$)[a-z0-9]+(?:-[a-z0-9]+){0,7}$/;
 
 /**
- * The options of a `#t=<slug>` fragment: `cook=0` opens the template live (no cooked package), `cook=record` is the cook's
- * own recording run (scripts/cook.ts: live, and the page exposes what the cook reads), `tier=<tier>` starts on that render tier.
+ * The options of a `#t=<slug>` fragment: `cook=0` opens the template live (no cooked package), `cook=local` reads the
+ * package from the page's own `cooked/` folder instead of the hosted one (a dist with `scripts/cook.ts --install`),
+ * `cook=record` is the cook's own recording run (scripts/cook.ts: live, and the page exposes what the cook reads),
+ * `tier=<tier>` starts on that render tier.
  */
 export interface TemplateRoute {
   slug: string;
-  cook: 'use' | 'off' | 'record';
+  cook: 'use' | 'off' | 'record' | 'local';
   tier: 'low' | 'medium' | 'high' | 'ultra' | null;
 }
 
@@ -33,15 +35,36 @@ export function templateRoute(hash: string): TemplateRoute | null {
   if (!TEMPLATE_SLUG.test(slug)) return null;
   const c = q.get('cook');
   const t = q.get('tier');
-  return { slug, cook: c === '0' || c === 'off' ? 'off' : c === 'record' ? 'record' : 'use', tier: t === 'low' || t === 'medium' || t === 'high' || t === 'ultra' ? t : null };
+  return { slug, cook: c === '0' || c === 'off' ? 'off' : c === 'record' ? 'record' : c === 'local' ? 'local' : 'use', tier: t === 'low' || t === 'medium' || t === 'high' || t === 'ultra' ? t : null };
 }
 
-/** The manifest of a template's cooked package. */
-export function templateCookUrl(slug: string): string {
-  return `./cooked/${slug}/manifest.json`;
+/** Where the published templates' cooked packages are hosted (a public dataset; scripts/cook-upload.ts fills it). */
+export const HOSTED_COOKED_BASE = 'https://huggingface.co/datasets/StarAtNyte1/aether-cooked/resolve/main/';
+/** The page's own folder of cooked packages (the dev server, a dist with installed packages). */
+export const LOCAL_COOKED_BASE = './cooked/';
+
+/** Build-time base of the cooked packages (vite.config.ts: `AETHER_COOKED_BASE`, else hosted for builds, local in dev). */
+declare const __AETHER_COOKED_BASE__: string | undefined;
+
+/** A usable base: an https URL or a path, ending in `/` (anything else: null). */
+export function normalizeCookedBase(base: string | undefined | null): string | null {
+  const b = (base ?? '').trim();
+  if (!b) return null;
+  if (!/^https:\/\/[^/\s]+\//.test(b) && !/^\.{0,2}\/(?!\/)/.test(b)) return null;
+  return b.endsWith('/') ? b : `${b}/`;
 }
 
-/** Start mode of a template kind (the cook records it; the IR's own `startMode` wins). */
+/** The base this build reads cooked packages from. */
+export function cookedBase(): string {
+  return normalizeCookedBase(typeof __AETHER_COOKED_BASE__ === 'string' ? __AETHER_COOKED_BASE__ : null) ?? LOCAL_COOKED_BASE;
+}
+
+/** The manifest of a template's cooked package under `base` (this build's by default). */
+export function templateCookUrl(slug: string, base: string = cookedBase()): string {
+  return `${normalizeCookedBase(base) ?? LOCAL_COOKED_BASE}${slug}/manifest.json`;
+}
+
+/** Start mode of a template kind (a slug without a row in showcase/publish.ts; the IR's own `startMode` wins). */
 export function startModeForKind(kind: string | undefined): 'play' | 'walkthrough' | 'orbit' {
   return kind === 'game' ? 'play' : kind === 'architecture' ? 'walkthrough' : 'orbit';
 }
@@ -72,7 +95,7 @@ export async function loadGame(hash: string, fetchFn: typeof fetch = fetch, path
   }
   const template = templateRoute(hash);
   if (template) {
-    const [{ loadTemplateWorld }, { SHOWCASE }] = await Promise.all([import('../showcase/load'), import('../showcase/manifest')]);
+    const [{ loadTemplateWorld }, { SHOWCASE }, { templatePublish }] = await Promise.all([import('../showcase/load'), import('../showcase/manifest'), import('../showcase/publish')]);
     const r = await loadTemplateWorld(template.slug, (u, i) => fetchFn(u, i));
     if (!r.ok) return { kind: 'error', message: r.error };
     const entry = SHOWCASE.find((e) => e.slug === template.slug);
@@ -87,8 +110,8 @@ export async function loadGame(hash: string, fetchFn: typeof fetch = fetch, path
         controls: defaultControls(world),
         music: null,
         world,
-        startMode: world.startMode ?? startModeForKind(entry?.kind),
-        ...(template.cook === 'use' ? { cook: templateCookUrl(template.slug) } : {}),
+        startMode: world.startMode ?? templatePublish(template.slug, entry?.kind).startMode,
+        ...(template.cook === 'use' ? { cook: templateCookUrl(template.slug) } : template.cook === 'local' ? { cook: templateCookUrl(template.slug, LOCAL_COOKED_BASE) } : {}),
       },
     };
   }

@@ -74,8 +74,9 @@ async function homeFlow(page: Page, base: string): Promise<void> {
   await page.getByText('No projects yet').waitFor();
   log(`  home: ${FEATURED_TEMPLATES.length} featured templates with thumbnails, empty state`);
 
-  // 2. Template → editor → built world → autosave.
-  await templates.filter({ hasText: 'Lantern Isles' }).click();
+  // 2. Template card → the player route; Remix → editor → built world → autosave.
+  check((await templates.filter({ hasText: 'Lantern Isles' }).locator('a.card__hit').getAttribute('href')) === '/play#t=lantern-isles', 'template card does not open the player route');
+  await templates.filter({ hasText: 'Lantern Isles' }).locator('.card__remix').click();
   await page.waitForURL(/#\/p\/[a-z0-9]+$/, { timeout: 20_000 });
   await waitEditorBuilt(page);
   const entities = await page.evaluate(() => Object.keys(window.__aether?.history.current.entities ?? {}).length);
@@ -220,7 +221,7 @@ async function phoneFlow(browser: Browser, name: string, base: string, errors: s
     await page.goto(`${base}/?debug=1#/`);
     await page.locator('.tabbar').waitFor();
     check(!(await page.locator('.sidebar').isVisible()), 'sidebar visible on a phone');
-    await page.locator('.card--template', { hasText: 'Chain Reaction' }).click();
+    await page.locator('.card--template', { hasText: 'Chain Reaction' }).locator('.card__remix').click();
     await page.waitForURL(/#\/p\/[a-z0-9]+$/, { timeout: 20_000 });
     await waitEditorBuilt(page);
     await page.locator('.sheet').waitFor();

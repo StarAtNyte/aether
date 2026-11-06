@@ -13,7 +13,7 @@ import { createWorld } from '@aether/core';
 import { LocalAi } from '@aether/bridge';
 import { writeZip, type ZipEntry } from '@aether/assets/zip';
 import { serviceWorkerSource } from '@aether/assets/offline-sw';
-import { PLAY_CSP } from '../src/middleware';
+import { BUILD_PLAY_CSP } from '../src/middleware';
 import { checkGameJson, PublishStore } from '../src/publish/store';
 import { deploySteps, findUrl, netlifyUrl, parseStatus, substitute, vercelUrl } from '../src/publish/hosts';
 import { butlerCredsPath, cleanLine, DeployJobs, type DeployEvent } from '../src/publish/jobs';
@@ -248,7 +248,7 @@ describe.runIf(posix)('publishing routes with fake CLIs', () => {
     expect(url).toBe(`/published/${build.id}/`);
     const page = await app.request(url, { headers: host });
     expect(page.status).toBe(200);
-    expect(page.headers.get('content-security-policy')).toBe(PLAY_CSP);
+    expect(page.headers.get('content-security-policy')).toBe(BUILD_PLAY_CSP);
     expect(page.headers.get('x-frame-options')).toBeNull();
     expect(await page.text()).toContain('Coin Island');
     expect((await app.request(`/published/${build.id}/aether-build.json`, { headers: host })).status).toBe(404);
@@ -356,7 +356,7 @@ describe.runIf(posix)('publishing routes with fake CLIs', () => {
     const local = url.replace('192.168.1.20', '127.0.0.1');
     const ok = await fetch(local);
     expect(ok.status).toBe(200);
-    expect(ok.headers.get('content-security-policy')).toBe(PLAY_CSP);
+    expect(ok.headers.get('content-security-policy')).toBe(BUILD_PLAY_CSP);
     expect(await ok.text()).toContain('Coin Island');
     const wrong = local.replace(/\/s\/[^/]+\//, '/s/AAAAAAAAAAAAAAAAAAAAAA/');
     expect((await fetch(wrong)).status).toBe(404);

@@ -190,13 +190,28 @@ export const DAG_WORKER_CSP = "default-src 'none'; script-src 'self'";
 export const DAG_WORKER_PATH = /^\/assets\/dag\.worker-[A-Za-z0-9_-]{4,32}\.js$/;
 
 /**
- * Content-Security-Policy of the standalone player (`/play`, published
- * builds): the same strict script policy as the studio, but no third-party
- * hosts at all (the player talks to no AI and no bridge) and embeddable in
- * other sites (`frame-ancestors *`), so a published game can be put in an
- * `<iframe>`. It runs no editor and holds no keys.
+ * Hosts the player reads templates' cooked packages from (`/play#t=<slug>`): the dataset's `resolve` URLs on
+ * huggingface.co (a manifest answers with a same-host redirect) and the CDN its packs redirect to. GET only, no
+ * credentials; a failure loads the world live.
+ */
+export const COOKED_HOSTS: readonly string[] = Object.freeze(['https://huggingface.co', ...HF_CDN_HOSTS]);
+
+/**
+ * Content-Security-Policy of the standalone player (`/play`): the same strict
+ * script policy as the studio, no AI host and no bridge (the player talks to
+ * neither), only the cooked-package hosts above in `connect-src`, and
+ * embeddable in other sites (`frame-ancestors *`), so a published game can be
+ * put in an `<iframe>`. It runs no editor and holds no keys. A downloaded
+ * build (publish/gameBuild.ts) keeps its own policy with no third-party host.
  */
 export const PLAY_CSP =
+  "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob: data: https://huggingface.co https://us.aws.cdn.hf.co; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors *";
+/**
+ * Content-Security-Policy of a published build (the local library's `/published/<id>/…`, a build served on the LAN): the
+ * player's policy with no third-party host at all, as a downloaded build's own (publish/gameBuild.ts). A build ships its
+ * cooked package (if any) beside its page.
+ */
+export const BUILD_PLAY_CSP =
   "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors *";
 /** Paths of the player page (the static `play.html` and its clean URL). */
 export const PLAY_PATH = /^\/play(\.html)?$/;
@@ -220,7 +235,7 @@ export function securityHeaders(production: boolean): MiddlewareHandler<AppEnv> 
     await base(c, next);
     if (TRANSCODER_WORKER_PATH.test(c.req.path)) c.res.headers.set('Content-Security-Policy', TRANSCODER_WORKER_CSP);
     else if (PLAY_PATH.test(c.req.path) || (PUBLISHED_PATH.test(c.req.path) && !/\/sandbox\.worker-[A-Za-z0-9_-]{4,32}\.js$/.test(c.req.path))) {
-      c.res.headers.set('Content-Security-Policy', PLAY_CSP);
+      c.res.headers.set('Content-Security-Policy', PLAY_PATH.test(c.req.path) ? PLAY_CSP : BUILD_PLAY_CSP);
       // Embeddable: the frame policy lives in frame-ancestors.
       c.res.headers.delete('X-Frame-Options');
       c.res.headers.set('Cross-Origin-Resource-Policy', 'cross-origin');

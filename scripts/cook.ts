@@ -11,7 +11,8 @@
  *   STATIC_DIR=<dist> GEN_GPU=intel npx tsx scripts/cook.ts [--out=cooked] [--tiers=low,medium,high,ultra] [--profile=game|walkthrough|showcase|vr] [--install=<dist>] <slug> [<slug> …]
  *
  * The package is keyed by the IR hash and the build's geometry code version (`__AETHER_GEN_VERSION__`): cook with the
- * dist that will serve it. `--install` copies the package into a dist's `cooked/` folder. Output goes to `cooked/` at
+ * dist that will serve it. `--install` copies the package into a dist's `cooked/` folder (open it there with `play.html#t=<slug>&cook=local`;
+ * scripts/cook-upload.ts pushes it to the hosted dataset). Output goes to `cooked/` at
  * the repository root (git-ignored). Run it in a capped scope (docs/PERFORMANCE.md, Measuring).
  */
 import { createHash } from 'node:crypto';
@@ -27,6 +28,7 @@ import { DDC_CACHE_NAME } from '../packages/render/src/geometry/ddc';
 import { assignCell, cellBounds, partitionFor, PERSISTENT_CELL, type CellPartition } from '../packages/render/src/streaming/cell-grid';
 import { COOK_FORMAT, COOK_PROFILES, cookPackageId, PACK_TARGET_BYTES, type CookCell, type CookedProgramSet, type CookFile, type CookManifest, type CookProfile, type StartMode } from '../packages/render/src/cook/format';
 import type { RenderTier } from '../packages/render/src/gpu/finishing';
+import { TEMPLATE_PUBLISH } from '../apps/studio/src/showcase/publish';
 import * as env from '../tests/e2e/support/env';
 
 const args = process.argv.slice(2);
@@ -413,7 +415,8 @@ async function pack(slug: string, rec: Recorded, programs: NonNullable<Awaited<R
     world: { id: world.id, name: world.name, entities: Object.keys(world.entities).length },
     opening: rec.opening,
     startMode,
-    profile: PROFILE ?? (startMode === 'play' ? 'game' : startMode === 'walkthrough' ? 'walkthrough' : 'showcase'),
+    // --profile, else the template's row in showcase/publish.ts, else from the start mode.
+    profile: PROFILE ?? TEMPLATE_PUBLISH[slug]?.profile ?? (startMode === 'play' ? 'game' : startMode === 'walkthrough' ? 'walkthrough' : 'showcase'),
     partition: grid ? { cellSize: grid.cellSize, origin: [grid.origin[0], grid.origin[1]] } : null,
     cells,
     packs,

@@ -257,7 +257,7 @@
   box-shadow: var(--shadow-1);
 }
 
-.card--template:active,
+.card--template:has(.card__hit:active),
 .card--project:has(.card__hit:active) {
   transform: scale(0.995);
 }
@@ -346,8 +346,35 @@
 
 .card__tools .card__menu,
 .card__tools .card__trash,
+.card__tools .card__remix,
 .card__tools .select-box {
   box-shadow: 0 1px 3px oklch(0% 0 0 / 0.28);
+}
+
+/* A template card's Remix: the same frosted pill, with its label. */
+.card__remix {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 var(--s-2) 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-2);
+  background: color-mix(in oklab, var(--surface) 88%, transparent);
+  color: var(--text);
+  font-size: var(--fs-12);
+  line-height: var(--lh-12);
+  font-weight: 600;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  transition:
+    background-color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
+}
+
+.card__remix:hover {
+  border-color: var(--border-hover);
+  background: var(--surface);
 }
 
 .card__menu,
@@ -375,6 +402,7 @@
 
 .card__menu:focus-visible,
 .card__trash:focus-visible,
+.card__remix:focus-visible,
 .select-box:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -1240,7 +1268,7 @@
 }
 
 .card--template:hover .thumb img,
-.card--template:focus-visible .thumb img {
+.card--template:has(.card__hit:focus-visible) .thumb img {
   transform: scale(1.045);
 }
 
@@ -1250,7 +1278,7 @@
   }
 
   .card--template:hover .thumb img,
-  .card--template:focus-visible .thumb img {
+  .card--template:has(.card__hit:focus-visible) .thumb img {
     transform: none;
   }
 }

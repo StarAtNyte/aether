@@ -195,6 +195,10 @@ describe('opening a cooked package', () => {
     if (!r.ok) return;
     expect(r.pkg.laneIndex.packs).toEqual(['https://h.test/cooked/w/0123456789abcdef/packs/0000.bin']);
     expect(r.pkg.lightmapBase).toBeNull();
+    // Hugging Face serves a dataset's .json files as text/plain, from a redirect: files resolve against the final URL's request.
+    const hf = 'https://huggingface.co/datasets/o/d/resolve/main/w/manifest.json';
+    const remote = await openCookedPackage(hf, world, { genVersion: 'gen1.p3', fetch: async () => respond(m, 'text/plain; charset=utf-8') });
+    expect(remote.ok && remote.pkg.laneIndex.packs).toEqual(['https://huggingface.co/datasets/o/d/resolve/main/w/0123456789abcdef/packs/0000.bin']);
   });
 
   it('falls back on a stale cook, a missing one or an HTML answer', async () => {
@@ -204,5 +208,7 @@ describe('opening a cooked package', () => {
     expect((await openCookedPackage(url, { ...world, name: 'X' }, { genVersion: 'gen1.p3', fetch: async () => respond(m) })).ok).toBe(false);
     expect((await openCookedPackage(url, world, { genVersion: 'gen1.p3', fetch: async () => new Response('nope', { status: 404 }) })).ok).toBe(false);
     expect((await openCookedPackage(url, world, { genVersion: 'gen1.p3', fetch: async () => respond(m, 'text/html') })).ok).toBe(false);
+    expect((await openCookedPackage(url, world, { genVersion: 'gen1.p3', fetch: async () => Promise.reject(new TypeError('Failed to fetch')) })).ok).toBe(false);
+    expect((await openCookedPackage(url, world, { genVersion: 'gen1.p3', fetch: async () => new Response('{', { headers: { 'content-type': 'text/plain' } }) })).ok).toBe(false);
   });
 });

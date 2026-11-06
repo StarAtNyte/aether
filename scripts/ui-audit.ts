@@ -25,7 +25,7 @@ async function main() {
       await page.waitForTimeout(1500);
       await shot('home');
       await step('card-menu', async () => { /* template hover */ await page.locator('.card--template').first().hover(); await shot('home-hover'); });
-      await page.locator('.card--template').filter({ hasText: 'Lantern Isles' }).click({ timeout: 30000 });
+      await page.locator('.card--template').filter({ hasText: 'Lantern Isles' }).locator('.card__remix').click({ timeout: 30000 });
       await page.waitForURL(/#\/p\//, { timeout: 30000 });
       await page.waitForFunction(() => !!(window as any).__aether, null, { timeout: 60000 }).catch(() => {});
       await page.waitForTimeout(6000);
@@ -47,7 +47,7 @@ async function main() {
       await step('play', async () => { await page.getByRole('button', { name: /^play/i }).first().click(); await page.waitForTimeout(4000); await shot('play'); });
       await step('arch', async () => {
         await page.goto(`${server.url}/?debug=1#/templates`);
-        await page.locator('.card--template').filter({ hasText: /Skyline Penthouse/ }).first().click({ timeout: 30000 });
+        await page.locator('.card--template').filter({ hasText: /Skyline Penthouse/ }).first().locator('.card__remix').click({ timeout: 30000 });
         await page.waitForURL(/#\/p\//, { timeout: 30000 });
         await page.waitForTimeout(9000);
         await shot('arch');

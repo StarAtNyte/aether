@@ -70,7 +70,8 @@ export async function openCookedPackage(manifestUrl: string, world: object, opts
     url = new URL(manifestUrl, typeof document !== 'undefined' ? document.baseURI : undefined);
     const res = await doFetch(url.href, { signal: ctrl.signal, credentials: 'same-origin', cache: 'no-cache' });
     if (!res.ok) return { ok: false, reason: `no cooked package (HTTP ${res.status})` };
-    if (!/json/i.test(res.headers.get('content-type') ?? '')) return { ok: false, reason: 'no cooked package' };
+    // JSON, or plain text as Hugging Face serves a dataset's .json files; an HTML page (a static host's fallback) is no package.
+    if (!/json|text\/plain/i.test(res.headers.get('content-type') ?? '')) return { ok: false, reason: 'no cooked package' };
     raw = await readJson(res, MAX_MANIFEST_BYTES);
   } catch (e) {
     return { ok: false, reason: `no cooked package (${e instanceof Error ? e.message.slice(0, 80) : 'error'})` };

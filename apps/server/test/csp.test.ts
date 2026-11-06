@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { BYOK_ORIGINS } from '../../studio/src/ai/byokCatalog';
-import { BYOK_API_HOSTS, CSP_DIRECTIVES, HUB_IMAGE_HOSTS, DAG_WORKER_CSP, DAG_WORKER_PATH, PLAY_CSP, SANDBOX_WORKER_CSP, SANDBOX_WORKER_PATH, TRANSCODER_WORKER_CSP, TRANSCODER_WORKER_PATH, VERIFY_WORKER_CSP, VERIFY_WORKER_PATH } from '../src/middleware';
+import { BUILD_PLAY_CSP, BYOK_API_HOSTS, COOKED_HOSTS, CSP_DIRECTIVES, HUB_IMAGE_HOSTS, DAG_WORKER_CSP, DAG_WORKER_PATH, PLAY_CSP, SANDBOX_WORKER_CSP, SANDBOX_WORKER_PATH, TRANSCODER_WORKER_CSP, TRANSCODER_WORKER_PATH, VERIFY_WORKER_CSP, VERIFY_WORKER_PATH } from '../src/middleware';
 import { cleanupDirs, makeApp, makeConfig } from './helpers';
 
 type Policy = Map<string, string[]>;
@@ -167,17 +167,23 @@ describe('geometry worker policy', () => {
 });
 
 describe('player page policy (/play, published builds)', () => {
-  it('is strict, talks to no third-party host and may be embedded', () => {
+  it('is strict, reads only the cooked-package hosts and may be embedded', () => {
     const p = parsePolicy(PLAY_CSP);
     expect(p.get('script-src')).toEqual(["'self'", "'wasm-unsafe-eval'"].sort());
-    expect(p.get('connect-src')).toEqual(["'self'", 'blob:', 'data:'].sort());
+    expect(p.get('connect-src')).toEqual(["'self'", 'blob:', 'data:', ...COOKED_HOSTS].sort());
+    // The dataset's resolve URLs, and the CDN host its packs redirect to (checked against the live dataset).
+    expect([...COOKED_HOSTS].sort()).toEqual(['https://huggingface.co', 'https://us.aws.cdn.hf.co']);
     expect(p.get('object-src')).toEqual(["'none'"]);
     expect(p.get('frame-ancestors')).toEqual(['*']);
     for (const [name, sources] of p) {
       expect(sources, name).not.toContain("'unsafe-eval'");
       if (name !== 'style-src') expect(sources, name).not.toContain("'unsafe-inline'");
-      if (name !== 'frame-ancestors') for (const s of sources) expect(s, `${name} ${s}`).not.toMatch(/^https?:|\*/);
+      if (name !== 'frame-ancestors' && name !== 'connect-src') for (const s of sources) expect(s, `${name} ${s}`).not.toMatch(/^https?:|\*/);
     }
+    // The generation lanes fetch the packs from their worker, which is served under /assets/ with the studio policy.
+    for (const h of COOKED_HOSTS) expect(serverPolicy().get('connect-src'), h).toContain(h);
+    // A published build's page is the same policy without any third-party host.
+    expect(BUILD_PLAY_CSP).toBe(PLAY_CSP.replace(` ${COOKED_HOSTS.join(' ')}`, ''));
   });
 
   it('is the same on the static deployment and the Node server, which also serves /play', async () => {
@@ -218,9 +224,9 @@ describe('asset hub (Hugging Face dataset)', () => {
     for (const d of ['script-src', 'worker-src', 'media-src', 'font-src', 'style-src', 'default-src']) expect((p.get(d) ?? []).filter((s) => /huggingface|hf\.co/.test(s)), d).toEqual([]);
   });
 
-  it('keeps the player closed: published games embed the hub models they use and never talk to Hugging Face', () => {
-    expect(PLAY_CSP).not.toMatch(/huggingface|hf\.co/);
-    expect(parsePolicy(PLAY_CSP).get('connect-src')).toEqual(["'self'", 'blob:', 'data:'].sort());
+  it('keeps published builds closed: they embed the hub models they use and never talk to Hugging Face', () => {
+    expect(BUILD_PLAY_CSP).not.toMatch(/huggingface|hf\.co/);
+    expect(parsePolicy(BUILD_PLAY_CSP).get('connect-src')).toEqual(["'self'", 'blob:', 'data:'].sort());
     expect(parsePolicy(PLAY_CSP).get('img-src')).toEqual(["'self'", 'data:', 'blob:'].sort());
     expect(readFileSync(fileURLToPath(new URL('../../studio/src/publish/gameBuild.ts', import.meta.url)), 'utf8')).not.toMatch(/Content-Security-Policy[^\n]*huggingface/i);
   });

@@ -21,7 +21,7 @@
  * With `--shots` the last run also writes screenshots of the page at the first picture and once settled (hero shots:
  * scripts/hero-shots.ts).
  * With `--player` it opens the world in the standalone player (`play.html#t=<slug>`), from its cooked package when the
- * dist has one (`cooked/<slug>/`, scripts/cook.ts); `--live` adds `cook=0`, the player's live path. Each run then reports
+ * dist has one (`cooked/<slug>/`, scripts/cook.ts, read with `cook=local`); `--live` adds `cook=0`, the player's live path. Each run then reports
  * the path taken and the generator runs (`generated`, `posted` and `fallbacks` of the generation pool; `cooked` hits).
  * Run it in a capped scope, one browser at a time (see docs/PERFORMANCE.md, Measuring).
  */
@@ -180,7 +180,7 @@ async function main(): Promise<void> {
           await cdp.send('Profiler.setSamplingInterval', { interval: 500 });
           await cdp.send('Profiler.start');
         }
-        await page.goto(player ? `${server.url}/play.html#t=${slug}${live ? '&cook=0' : ''}` : `${server.url}/?debug=1#/new/${slug}`, { waitUntil: 'domcontentloaded' });
+        await page.goto(player ? `${server.url}/play.html#t=${slug}${live ? '&cook=0' : '&cook=local'}` : `${server.url}/?debug=1#/new/${slug}`, { waitUntil: 'domcontentloaded' });
         await page.waitForFunction(() => (globalThis as unknown as { __probe: { firstPicture: number } }).__probe.firstPicture > 0, null, { timeout: 240_000, polling: 100 });
         if (profiling) writeFileSync(join(out, `${run}.cpuprofile`), JSON.stringify((await cdp.send('Profiler.stop')).profile));
         if (wantShots && run === runs[runs.length - 1]) await page.screenshot({ path: join(out, `${run}-first-picture.png`) });

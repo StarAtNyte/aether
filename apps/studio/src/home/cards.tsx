@@ -24,36 +24,52 @@ export const Thumb = memo(function Thumb({ src, alt, eager }: { src: string | nu
   );
 });
 
-/** A template card (click creates a project from it). */
+/** The player route of a template: its published world, cooked where a package exists (player/source.ts falls back to live). */
+export function templatePlayUrl(slug: string): string {
+  return `/play#t=${slug}`;
+}
+
+/**
+ * A template card: the card opens the template in the player as a published world; Remix makes a project of your own
+ * from it and opens that in the editor.
+ */
 export const TemplateCard = memo(function TemplateCard({ template, onPick, eager }: { template: WorldTemplate; onPick: (slug: string) => void; eager?: boolean }): ReactElement {
   return (
-    <button type="button" className="card card--template" onClick={() => onPick(template.slug)} aria-label={`New project from template: ${template.title}`}>
-      <Thumb src={templateThumbnail(template.slug)} alt="" eager={eager} />
-      <span className="card__body">
-        <span className="card__title-row">
-          <span className="card__title">{template.title}</span>
-          <span className="card__label">{TEMPLATE_KIND_LABEL[template.kind]}</span>
+    <div className="card card--template">
+      <a className="card__hit" href={templatePlayUrl(template.slug)} aria-label={`Play ${template.title}`}>
+        <Thumb src={templateThumbnail(template.slug)} alt="" eager={eager} />
+        <span className="card__body">
+          <span className="card__title-row">
+            <span className="card__title">{template.title}</span>
+            <span className="card__label">{TEMPLATE_KIND_LABEL[template.kind]}</span>
+          </span>
+          <span className="card__desc" title={`${template.description}\nPrompt: “${template.prompt}”`}>
+            {template.description}
+          </span>
+          {template.origin === 'agent' && template.provenance && (
+            <span className="card__desc" title={`${PROVENANCE_LABEL[template.provenance]}, from the prompt: “${template.prompt}”`}>
+              {PROVENANCE_LABEL[template.provenance]}
+            </span>
+          )}
+          {template.origin === 'agent' && (
+            <span className="card__desc" title={`Prompt: “${template.prompt}”`}>
+              Prompt: “{template.prompt}”
+            </span>
+          )}
+          {template.photo && (
+            <span className="card__desc" title={`Photo: ${template.photo.author}, ${template.photo.licence}\n${template.photo.url}`}>
+              Rebuilt from a photo by {template.photo.author} ({template.photo.licence})
+            </span>
+          )}
         </span>
-        <span className="card__desc" title={`${template.description}\nPrompt: “${template.prompt}”`}>
-          {template.description}
-        </span>
-        {template.origin === 'agent' && template.provenance && (
-          <span className="card__desc" title={`${PROVENANCE_LABEL[template.provenance]}, from the prompt: “${template.prompt}”`}>
-            {PROVENANCE_LABEL[template.provenance]}
-          </span>
-        )}
-        {template.origin === 'agent' && (
-          <span className="card__desc" title={`Prompt: “${template.prompt}”`}>
-            Prompt: “{template.prompt}”
-          </span>
-        )}
-        {template.photo && (
-          <span className="card__desc" title={`Photo: ${template.photo.author}, ${template.photo.licence}\n${template.photo.url}`}>
-            Rebuilt from a photo by {template.photo.author} ({template.photo.licence})
-          </span>
-        )}
-      </span>
-    </button>
+      </a>
+      <div className="card__tools">
+        <button type="button" className="card__remix" onClick={() => onPick(template.slug)} title="Open a copy in the editor" aria-label={`Remix ${template.title}`}>
+          <Icon name="pencil" />
+          <span>Remix</span>
+        </button>
+      </div>
+    </div>
   );
 });
 

@@ -20,7 +20,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { extname } from 'node:path';
 import { TokenBucketLimiter } from '../rate-limit';
-import { PLAY_CSP } from '../middleware';
+import { BUILD_PLAY_CSP } from '../middleware';
 import { BUILD_ID_RE, type PublishStore } from './store';
 
 /** Content types of build files. */
@@ -54,7 +54,7 @@ export function buildHeaders(path: string): Record<string, string> {
   const sandbox = /(^|\/)sandbox\.worker-[A-Za-z0-9_-]{4,32}\.js$/.test(path);
   return {
     'Content-Type': BUILD_TYPES[extname(path).toLowerCase()] ?? 'application/octet-stream',
-    'Content-Security-Policy': sandbox ? "default-src 'none'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'" : PLAY_CSP,
+    'Content-Security-Policy': sandbox ? "default-src 'none'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'" : BUILD_PLAY_CSP,
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
     'Cross-Origin-Resource-Policy': 'same-origin',

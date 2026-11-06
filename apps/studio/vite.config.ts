@@ -13,6 +13,9 @@ import { generationCodeVersion } from '../../scripts/vite/gen-version.ts';
 /** The curated asset library (`npm run assets:build`), served at `/assets/lib/`. */
 const LIBRARY_DIR = fileURLToPath(new URL('../../assets/lib', import.meta.url));
 
+/** Hosted cooked packages of the templates (equal to player/source.ts `HOSTED_COOKED_BASE`; a test checks it). */
+const HOSTED_COOKED_BASE = 'https://huggingface.co/datasets/StarAtNyte1/aether-cooked/resolve/main/';
+
 /** Backend (apps/server) used for `/api` during `vite dev` and `vite preview`. */
 const API_TARGET = process.env.AETHER_API_TARGET ?? 'http://localhost:8787';
 
@@ -50,7 +53,9 @@ export default defineConfig(async ({ command }) => {
   const libCdn = command === 'build' ? await libraryCdn(process.env, LIBRARY_DIR) : undefined;
   return {
   // __AETHER_GEN_VERSION__ salts the persistent geometry cache (scripts/vite/gen-version.ts).
-  define: { __AETHER_LIB_LEAN__: JSON.stringify(libCdn !== undefined), __AETHER_GEN_VERSION__: JSON.stringify(generationCodeVersion()) },
+  // __AETHER_COOKED_BASE__: where the player reads templates' cooked packages (player/source.ts): AETHER_COOKED_BASE, else the
+  // hosted dataset for builds and the dev server's own cooked/ folder in dev.
+  define: { __AETHER_LIB_LEAN__: JSON.stringify(libCdn !== undefined), __AETHER_GEN_VERSION__: JSON.stringify(generationCodeVersion()), __AETHER_COOKED_BASE__: JSON.stringify(process.env['AETHER_COOKED_BASE'] ?? (command === 'build' ? HOSTED_COOKED_BASE : './cooked/')) },
   // Rapier's wasm ships as a cached `.wasm` file (streaming compile) instead of a 4 MB base64 string.
   plugins: [react(), rapierWasm({ warn: (m) => console.warn(m) }), assetLibrary(LIBRARY_DIR, libCdn), playRoute(), hubProxy(hubConfig.dataset), playerManifest(), siteMeta(), editorPrefetch()],
   experimental: {

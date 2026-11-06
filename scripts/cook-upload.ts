@@ -1,0 +1,149 @@
+/**
+ * Push cooked packages to the hosted dataset (scripts/lib/cook-upload.ts: the `<id>/` files first, the manifest last;
+ * ids already complete there are skipped), or cook and push every template.
+ *
+ *   npx tsx scripts/cook-upload.ts [--out=cooked] <slug> [<slug> …]       upload packages already cooked into --out
+ *   npx tsx scripts/cook-upload.ts --readme                               upload the dataset card (scripts/cook-dataset/README.md)
+ *   STATIC_DIR=<dist> GEN_GPU=intel npx tsx scripts/cook-upload.ts --all [--only=a,b] [--retry-failed] [--clean] [--no-scope] [--tiers=…]
+ *
+ * `--all` takes every template in apps/studio/src/showcase/manifest.ts, one at a time. Each cook runs as its own capped
+ * process (`systemd-run --user --scope -p MemoryMax=5000M -p MemorySwapMax=0 nice -n 10`, unless `--no-scope`), then
+ * its package is uploaded. Progress is kept in `<out>/.cook-all-state.json`: a rerun skips templates already uploaded
+ * from the same world file by the same generator code, and templates that failed unless `--retry-failed`. `--clean`
+ * deletes a package's local copy once it is uploaded. The dist must be built from this tree (the generator code version
+ * is checked against it), and its cooked base does not matter (cooking runs live).
+ *
+ * The write token comes from ~/.config/aether/hf-write.token, else `HF_TOKEN`; it is passed to the `hf` CLI as `HF_TOKEN`
+ * through its environment only and never printed.
+ */
+import { spawn, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { DDC_CODE_VERSION } from '../packages/render/src/geometry/ddc';
+import { SHOWCASE } from '../apps/studio/src/showcase/manifest';
+import { generationCodeVersion } from './vite/gen-version';
+import { COOKED_REPO, hfCliOps, readLocalPackage, uploadPackage } from './lib/cook-upload';
+
+const ROOT = fileURLToPath(new URL('../', import.meta.url));
+const args = process.argv.slice(2);
+const flag = (k: string): string | undefined => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3);
+const has = (k: string): boolean => args.includes(`--${k}`);
+const OUT = resolve(flag('out') ?? join(ROOT, 'cooked'));
+const T0 = Date.now();
+const log = (s: string): void => void process.stdout.write(`[${((Date.now() - T0) / 1000).toFixed(1)}s] ${s}\n`);
+
+interface SlugState {
+  status: 'uploaded' | 'failed';
+  id?: string;
+  genVersion: string;
+  worldSha: string;
+  at: string;
+  error?: string;
+}
+
+/** The generator code version a dist built from this tree carries (ddc.ts `DDC_CODE_VERSION` with the build hash). */
+function expectedGenVersion(): string {
+  return DDC_CODE_VERSION.replace(/^dev(?=\.)/, generationCodeVersion());
+}
+
+/** Throw unless the dist's bundles carry this tree's generator code hash (a stale dist would cook packages no build reads). */
+function checkDist(dist: string, gen: string): void {
+  const hash = gen.split('.')[0] ?? '';
+  const dir = join(dist, 'assets');
+  if (!existsSync(dir)) throw new Error(`${dist} has no assets/ folder: build the studio first`);
+  for (const f of readdirSync(dir)) if (f.endsWith('.js') && readFileSync(join(dir, f), 'utf8').includes(hash)) return;
+  throw new Error(`${dist} was not built from this tree (no bundle carries generator code ${hash}): rebuild it`);
+}
+
+const worldSha = (slug: string): string => createHash('sha256').update(readFileSync(join(ROOT, 'apps/studio/public/templates/worlds', `${slug}.json`))).digest('hex');
+
+/** Run one cook as its own process (capped scope unless --no-scope). */
+function cookOne(slug: string): Promise<void> {
+  const tsx = join(ROOT, 'node_modules/.bin/tsx');
+  const cookArgs = [existsSync(tsx) ? tsx : 'tsx', join(ROOT, 'scripts/cook.ts'), `--out=${OUT}`, ...(flag('tiers') ? [`--tiers=${flag('tiers')}`] : []), slug];
+  const scoped = !has('no-scope') && spawnSync('systemd-run', ['--version'], { stdio: 'ignore' }).status === 0;
+  const [cmd, ...rest] = scoped
+    ? ['systemd-run', '--user', '--scope', '--quiet', '-p', 'MemoryMax=5000M', '-p', 'MemorySwapMax=0', 'nice', '-n', '10', ...cookArgs]
+    : ['nice', '-n', '10', ...cookArgs];
+  return new Promise((res, rej) => {
+    // The cook never needs the token: it is not passed on.
+    const env = { ...process.env };
+    delete env['HF_TOKEN'];
+    const child = spawn(cmd!, rest, { cwd: ROOT, env, stdio: ['ignore', 'inherit', 'inherit'] });
+    child.on('error', rej);
+    child.on('close', (code, signal) => (code === 0 ? res() : rej(new Error(`cook exited with ${code ?? signal}`))));
+  });
+}
+
+async function all(): Promise<number> {
+  const dist = process.env['STATIC_DIR'];
+  if (!dist) throw new Error('--all needs STATIC_DIR=<dist> (the build that serves the packages)');
+  const gen = expectedGenVersion();
+  checkDist(resolve(dist), gen);
+  const only = flag('only')?.split(',').filter(Boolean);
+  const slugs = SHOWCASE.map((e) => e.slug).filter((s) => !only || only.includes(s));
+  const stateFile = join(OUT, '.cook-all-state.json');
+  const state: Record<string, SlugState> = existsSync(stateFile) ? JSON.parse(readFileSync(stateFile, 'utf8')) : {};
+  const save = (): void => writeFileSync(stateFile, JSON.stringify(state, null, 1));
+  const ops = hfCliOps({ log });
+  let failed = 0;
+  log(`cook and upload ${slugs.length} templates to ${COOKED_REPO} (generator code ${gen})`);
+  for (const [i, slug] of slugs.entries()) {
+    const sha = worldSha(slug);
+    const prev = state[slug];
+    const same = prev && prev.genVersion === gen && prev.worldSha === sha;
+    if (same && prev.status === 'uploaded') {
+      log(`[${i + 1}/${slugs.length}] ${slug}: done (${prev.id}), skipped`);
+      continue;
+    }
+    if (same && prev.status === 'failed' && !has('retry-failed')) {
+      log(`[${i + 1}/${slugs.length}] ${slug}: failed before (${prev.error ?? ''}), skipped (--retry-failed to try again)`);
+      failed++;
+      continue;
+    }
+    log(`[${i + 1}/${slugs.length}] ${slug}: cooking`);
+    try {
+      await cookOne(slug);
+      const local = readLocalPackage(OUT, slug);
+      if (local.manifest.genVersion !== gen) throw new Error(`cooked with generator code ${local.manifest.genVersion}, expected ${gen}`);
+      const r = await uploadPackage(OUT, slug, ops, log);
+      state[slug] = { status: 'uploaded', id: r.id, genVersion: gen, worldSha: sha, at: new Date().toISOString() };
+      if (has('clean')) rmSync(join(OUT, slug), { recursive: true, force: true });
+    } catch (e) {
+      failed++;
+      const error = (e instanceof Error ? e.message : String(e)).slice(0, 300);
+      log(`${slug}: FAILED ${error}`);
+      state[slug] = { status: 'failed', genVersion: gen, worldSha: sha, at: new Date().toISOString(), error };
+    }
+    save();
+  }
+  log(`${slugs.length - failed} of ${slugs.length} templates on the dataset${failed ? `, ${failed} failed (see ${stateFile})` : ''}`);
+  return failed ? 1 : 0;
+}
+
+async function main(): Promise<number> {
+  if (has('readme')) {
+    await hfCliOps({ log }).uploadFile(join(ROOT, 'scripts/cook-dataset/README.md'), 'README.md', 'Dataset card');
+    log('README.md uploaded');
+    return 0;
+  }
+  if (has('all')) return all();
+  const slugs = args.filter((a) => !a.startsWith('--'));
+  if (slugs.length === 0) throw new Error('usage: scripts/cook-upload.ts [--out=cooked] <slug> … | --all | --readme');
+  const ops = hfCliOps({ log });
+  for (const slug of slugs) {
+    const r = await uploadPackage(OUT, slug, ops, log);
+    log(`${slug}: ${r.id} ${r.files ? 'files uploaded' : 'files already there'}, ${r.manifest ? 'manifest uploaded' : 'manifest unchanged'}`);
+  }
+  return 0;
+}
+
+main().then(
+  (code) => process.exit(code),
+  (e) => {
+    console.error(e instanceof Error ? e.message : e);
+    process.exit(1);
+  },
+);

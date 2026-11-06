@@ -685,7 +685,33 @@ The low and high sets reach the set cap (`SET_CAP` 64 / 128), so some programs o
   2. Precompressed `.bin.br` siblings, served with `content-encoding: br` (the local server already serves `.br`
      siblings; `scripts/precompress.ts`).
   3. Quantization plus meshopt (format 2, above): done, Lisbon's geometry 520 to 72 MB.
-- Until then, packages stay out of git (`cooked/` is ignored) and are installed into a dist by hand.
+- **Hosted** on the public dataset `StarAtNyte1/aether-cooked` (Hugging Face), laid out as `cooked/`. Packages stay out
+  of git (`cooked/` is ignored).
+  - The player reads `<base><slug>/manifest.json`. `<base>` is `__AETHER_COOKED_BASE__` (vite.config.ts): the build
+    env `AETHER_COOKED_BASE`, else `https://huggingface.co/datasets/StarAtNyte1/aether-cooked/resolve/main/` for builds
+    and `./cooked/` in dev. `#t=<slug>&cook=local` reads the dist's own `cooked/` (`cook.ts --install`; first-picture-probe
+    uses it). A missing, unreachable, stale or malformed package loads live, as before.
+  - Measured from headless Chrome on a `127.0.0.1` page, with a probe file on the dataset (since removed): a `.json`
+    answers 307 to `huggingface.co/api/resolve-cache/…` and arrives as `text/plain` (now accepted next to JSON); a `.bin`
+    answers 302 to `us.aws.cdn.hf.co` (Xet). Both carry `access-control-allow-origin` for the requesting origin;
+    `Range: bytes=…` answers 206 with `Content-Range`. The player's policy (`PLAY_CSP`) allows `connect-src
+    https://huggingface.co https://us.aws.cdn.hf.co` (`COOKED_HOSTS`); the lanes' worker is served with the studio's
+    policy, which already has both. Published builds (`/published/…`, LAN) keep a policy with no third-party host
+    (`BUILD_PLAY_CSP`).
+  - Upload: `scripts/cook-upload.ts <slug>` pushes `cooked/<slug>/` with the `hf` CLI. It uploads `<slug>/<id>/` first,
+    checks that every file the manifest names is on the dataset, then uploads `<slug>/manifest.json`, so a reader never
+    meets a manifest pointing at missing files. An id already complete there is skipped; older ids are kept. The token
+    is `~/.config/aether/hf-write.token` (else `HF_TOKEN`), passed to `hf` through its environment only.
+  - `STATIC_DIR=<dist> GEN_GPU=intel npx tsx scripts/cook-upload.ts --all` cooks and uploads every template, one at a
+    time, each cook in its own `systemd-run --user --scope -p MemoryMax=5000M -p MemorySwapMax=0 nice -n 10` process.
+    It is resumable: `cooked/.cook-all-state.json` records each template's id, world-file hash and generator code, and
+    a rerun skips the ones done (and failed ones unless `--retry-failed`). The dist must be built from the same tree
+    (checked). `--readme` uploads the dataset card (`scripts/cook-dataset/README.md`).
+- **Start mode and profile per template**: `apps/studio/src/showcase/publish.ts` (not in the studio's first download).
+  Games, the stories and the bowling alley start in `play` (`game`); houses, venues, interiors and photo rooms in
+  `walkthrough`; scenes, landscapes and the physics machines in `orbit` (`showcase`). The IR's own `startMode` wins.
+- **Gallery**: a template card links to `/play#t=<slug>` (cooked where a package exists, live otherwise). Its Remix
+  button makes a project of the template and opens it in the editor.
 
 Hooks left for later work: `cells`/`packs` per cell, for cell streaming and unloading; `lightmap`, for the publish bake;
 `profile`, for the publish UI of kinds; `GameManifest.cook`, for a self-hosted game build that ships its package.
