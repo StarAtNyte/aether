@@ -687,3 +687,80 @@ the drags differ from the current build by a mean of 0.07-0.13 / 255 on Casa del
 differ by 0.15-0.32). On fresh loads (shots only) 12:00, 18:30 and 22:00 differ by 0.11-0.31; the first shot, 06:30, by
 5.4, in edges only: the current build crosses dawn on that shot, links the lamp programs and lowers its resolution scale.
 The penthouse differs by 2.6-7.8, inside the 4.5-8.1 that two runs of the current build differ by there.
+
+## Compressed geometry entries (6 November 2026)
+
+The geometry cache and the cooked packs stored every generator output as raw float32 and 32-bit arrays (Lisbon Hills:
+520 MB of packs, all downloaded raw, since static hosts do not compress `.bin`). Entries are now format 2
+(`geometry/ddc-codec.ts`, ARCHITECTURE-STREAMING.md 3.5.1): each array quantized by its role and coded with meshopt, then
+gzip. `__AETHER_GEOMETRY_COMPRESS = false` writes the old format.
+
+**Where Lisbon's 545 MB of entry arrays went** (base cook, 270 entries; `raw` the generator's streams, `prep` the
+prepared render streams the page draws):
+
+| Stream | MB | Share |
+|---|---|---|
+| Positions (raw 66.6, prepared 52.5) | 119 | 22 % |
+| Normals (raw 66.6, prepared 52.5, soft 4.9) | 124 | 23 % |
+| Indices (raw 66.5, prepared 16-bit 41.0, 32-bit split copies 31.1, soft 1.2) | 140 | 26 % |
+| UVs (raw 44.4, prepared 53.4, soft 3.3) | 101 | 19 % |
+| Colours (raw 38.6, prepared 19.5) | 58 | 11 % |
+| Colliders, splat weights, bounds | 2 | 0.4 % |
+
+- Prepared streams are a second copy wherever metre UVs split corners (most parts). 42 MB are index arrays whose values
+  equal another array of the entry (16-bit prepared indices and their 32-bit source, split indices).
+- Identical arrays in different entries: 52 MB (raw indices 15, UVs 11, normals 8, colours 4: same topology or
+  attributes on differently shaped outputs). Identical whole entries: 2 (4.3 MB). Library models are not in the cache at
+  all; they load as glTF and instance per part (`2cdc54b4`).
+
+**Sizes** (Lisbon Hills, `cook-report.json`):
+
+| | Base | This build |
+|---|---|---|
+| Geometry packs (also the cache's bytes) | 520 MB, 87 packs | 99.4 MB, 48 packs (5.2x) |
+| Whole package, raw | 556.6 MB | 137.0 MB (4.1x; the program sets, 37.5 MB of JSON, are now most of it and compress about 20 times when served) |
+| Entry arrays after decoding | 545 MB | 480 MB (no 32-bit copy of 16-bit split indices) |
+
+With every position quantized the packs were 72 MB (7.2x); parts big enough for virtual geometry keep exact positions (see
+below), which costs 27 MB. Errors: positions at most 0.25 mm, normals under 0.06°, UVs 7.6e-6.
+
+**Memory and load** (`first-picture-probe --player`, Intel UHD 770, `GEN_GPU=intel`, 5 GB scope, base `f717984e`
+cooked, this build cooked and live, two interleaved rounds of cold then warm, plus an earlier round of the first version):
+
+| | Base cooked | This build cooked | This build live |
+|---|---|---|---|
+| First picture, cold | 46.2, 44.1 s | 42.9, 43.0 s | 47.4, 45.6 s |
+| First picture, warm | 36.6, 35.0 s | 36.7, 32.3 s | 31.1, 29.3 s |
+| Entries read from the packs again, warm | 97, 49 (of 270) | 0, 0 | — |
+| JS heap peak | 1,537-1,745 MB | 1,530-1,694 MB | 1,485-1,707 MB |
+| Scope peak | 4,749-5,000 MB | 4,367-4,614 MB | 4,287-4,474 MB |
+| Out of the 5 GB scope | 1 of 4 runs | 0 of 6 | 0 of 4 |
+
+- The cold cooked load is 1-3 s sooner than the base's, and its peak is 300-450 MB lower: the lanes fetch 99 MB of packs
+  instead of 520. The base reached the 5 GB cap in two runs and was killed in one.
+- A warm cooked load no longer reads entries from the packs again: a seed that meets a full write backlog waits and reads
+  its entry then. It is still 3-5 s slower than a warm live load, as before this change. Both read all their geometry
+  from the cache; the cooked load spends 22-27 s of GPU-process tasks before its first picture against 16-21 s live
+  (its boot program set links more at once). That is program work, not geometry, and is not fixed here.
+- The JS heap peak did not move. The page holds the same decoded float32 streams as before (raw and prepared), and the
+  entries are decoded in the lanes. Quantized attributes on the GPU and the CPU (normalized int16 positions with the scale
+  in the matrix, octahedral or snorm8 normals) were not done: every reader of geometry (merges, cell batches, picking,
+  physics, lightmaps, export, virtual geometry) would have to read them.
+
+**Hero shots** (`--player --live --shots`, warm visit, so the geometry comes from the cache; mean pixel difference 0-255):
+Cliff Sanctuary this build against the base 0.03-0.57, the base against itself 0.00-0.59. Kestrel Outpost against the
+base's steady run 0.25-0.90, this build against itself 0.24-0.40. Lisbon Hills against the base's steady run 0.9-6.2
+(swaying foliage and far buildings streamed in at a different moment), this build against itself 0.25-1.64. Each world
+also had runs in a different light or camera pose with either build (10-45), as before. The first version of the format
+failed this: on Cliff Sanctuary the terrain near the camera changed (2.4-6.8 against 0.3-0.6). Three causes, each found by
+keeping one property lossless (`__AETHER_GEOMETRY_LOSSLESS`):
+1. a warm visit drew quantized geometry while the cold one had drawn exact arrays, so the lightmap baked on the first
+   visit was missed: lanes now reply with the decoded entry;
+2. the triangle index codec rotates corners: indices now go through the order-keeping sequence codec (75.7 to 75.8 MB);
+3. cluster simplification of virtual-geometry parts chose different levels of detail from positions a quarter-millimetre
+   off: parts of 20,000 triangles or more keep exact positions.
+
+Not done: identical arrays across entries (52 MB raw) are still stored per entry, and the cache stores identical entries
+per key (2 in Lisbon). The tests and typecheck pass and the studio bundle is unchanged (203 / 203 kB; the meshopt codec is
+in the generation worker only). Picking, physics, edits and export read the same float32 arrays as before and were covered
+by the unit tests, not by a browser run.
