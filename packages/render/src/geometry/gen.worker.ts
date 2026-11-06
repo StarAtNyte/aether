@@ -7,10 +7,17 @@
  * - `cook` (configuration, no reply): a cooked package to read before generating, and the cook's "keep everything" switch
  *   (cook/format.ts `LaneCookConfig`).
  *
+ * Spot check: the first few package entries a lane serves for built-in generators (distinct generators, entries up to
+ * {@link SPOT_CHECK_MAX_BYTES}) are generated again live a little later and their geometry fingerprints compared
+ * (fingerprint.ts; the manifest's, else the served entry's). A mismatch means the generator code version missed a change
+ * that alters geometry: the lane stops reading the package, removes its entries from the geometry cache and tells the page
+ * (`cook-mismatch`), which loads the world live.
+ *
  * Every output is validated, its render-ready streams are prepared (metre UVs, 16-bit indices, bounds; see
  * buffer-geometry.ts `preparePart`), it is stored in the generated-geometry cache (ddc.ts) when it was worth
  * generating, and it goes back to the page with zero-copy transfers. `gen` and `post` look the cache up first.
  */
+import type { Json } from '@aether/core';
 import { generateBuiltinSync, outputBytes, validateOutput } from '@aether/procgen';
 import type { GeneratorOutput } from '../types';
 import { prepareOutputParts, preparePart } from './buffer-geometry';
@@ -19,7 +26,8 @@ import { Ddc, ddcKey, encodeOutput, type EncodedOutput } from './ddc';
 import { codecReady, decodeEntry, decodeInner, encodeInner, packEntry, type InnerEntry } from './ddc-codec';
 import { checkOutputShape, outputTransfer, parseGenRequest, type GenReply, type LaneTimes } from './gen-protocol';
 import { LaneCookSource } from '../cook/lane-source';
-import type { LaneCookConfig } from '../cook/format';
+import { COOK_SPOT_CHECKS, type LaneCookConfig } from '../cook/format';
+import { geometryFingerprint } from './fingerprint';
 
 interface Scope {
   onmessage: ((e: MessageEvent) => void) | null;
@@ -50,13 +58,81 @@ let compress = true;
 /** Properties stored without quantization (`__AETHER_GEOMETRY_LOSSLESS`, diagnostics). */
 let lossless: ReadonlySet<string> = new Set();
 
+/** Spot checks this lane may still run, the generators it has checked, and the package keys it seeded into the cache. */
+let spotChecks = COOK_SPOT_CHECKS;
+const spotChecked = new Set<string>();
+let seeded = new Set<string>();
+/** Largest package entry a spot check regenerates (bytes in the pack): cheap outputs only. */
+const SPOT_CHECK_MAX_BYTES = 1024 * 1024;
+/** How long after serving an entry its spot check runs (the load's first jobs go first). */
+const SPOT_CHECK_DELAY_MS = 1500;
+
 /** Apply a `cook` configuration message (validated loosely: a malformed index only means misses). */
 function configure(cfg: LaneCookConfig): void {
   keepAll = cfg.keepAll === true;
   compress = cfg.compress !== false;
   lossless = new Set(Array.isArray(cfg.lossless) ? cfg.lossless.filter((k): k is string => typeof k === 'string').slice(0, 16) : []);
+  spotChecks = typeof cfg.spotChecks === 'number' && Number.isFinite(cfg.spotChecks) ? Math.max(0, Math.min(16, Math.floor(cfg.spotChecks))) : COOK_SPOT_CHECKS;
+  if (cfg.distrust === true) {
+    // Another lane's spot check failed: drop the package and what this lane seeded from it.
+    cook = null;
+    const keys = seeded;
+    seeded = new Set();
+    void purge(keys).then(() => scope.postMessage({ type: 'cook-purged' }, []));
+    return;
+  }
   const index = cfg.index;
   cook = index && Array.isArray(index.packs) && index.packs.every((u) => typeof u === 'string') && typeof index.entries === 'object' && index.entries !== null ? new LaneCookSource(index) : null;
+}
+
+/** Remove `keys` from the geometry cache once this lane's writes ahead of it are done. */
+function purge(keys: Iterable<string>): Promise<void> {
+  const list = [...keys];
+  writes = writes.catch(() => undefined).then(async () => {
+    if (ddc) for (const k of list) await ddc.remove(k).catch(() => undefined);
+  });
+  return writes;
+}
+
+/**
+ * Queue the spot check of a package entry just served for a built-in generator (see the module comment). `served` is the
+ * output before its buffers are transferred: its fingerprint is the expectation when the manifest has none.
+ */
+function spotCheck(key: string, req: { generator: string; params: Record<string, Json>; seed: number }, served: GeneratorOutput): void {
+  const source = cook;
+  if (!source || spotChecks <= 0 || spotChecked.has(req.generator) || lossless.size > 0 || !compress) return;
+  const bytes = source.entryBytes(key);
+  if (bytes <= 0 || bytes > SPOT_CHECK_MAX_BYTES) return;
+  spotChecks--;
+  spotChecked.add(req.generator);
+  const expected = source.fingerprint(key) ?? geometryFingerprint(served);
+  setTimeout(() => {
+    void (async () => {
+      if (cook !== source || !(await codec)) return;
+      let got: string;
+      try {
+        const v = validateOutput(generateBuiltinSync(req.generator, req.params, req.seed));
+        if (!v.ok) return;
+        prepare(v.output);
+        // Compared as stored: encoded and decoded (quantized) like the package's entry.
+        got = geometryFingerprint(decodeInner(encodeInner(v.output, lossless).inner));
+      } catch {
+        return;
+      }
+      if (got === expected || cook !== source) return;
+      cook = null;
+      seeded = new Set();
+      // Every entry of the package goes, also those seeded on earlier visits.
+      await purge(source.keys());
+      scope.postMessage({ type: 'cook-mismatch', key, generator: req.generator, expected, got }, []);
+    })();
+  }, SPOT_CHECK_DELAY_MS);
+}
+
+/** Render-ready streams of an output's parts (in place). */
+function prepare(out: GeneratorOutput): void {
+  prepareOutputParts(out.parts);
+  for (const part of out.parts) prepareSoft(part, preparePart);
 }
 
 /**
@@ -82,6 +158,7 @@ async function cached(key: string, t: LaneTimes, from?: { cooked: boolean }): Pr
       // Seeded behind the reply. While writes are backed up the bytes are not held: the seed reads its entry again from the
       // package when its turn comes (from the lane's packs or the HTTP cache), so a later visit still finds every entry here.
       if (ddc) {
+        seeded.add(key);
         if (writeBacklog <= MAX_WRITE_BACKLOG) queueWrite(ddc, key, { blob: new Blob([entry.encoded as Uint8Array<ArrayBuffer>]), bytes: entry.encoded.byteLength });
         else queueSeed(ddc, cook, key);
       }
@@ -118,8 +195,7 @@ function reply(msg: GenReply, out?: GeneratorOutput): void {
 
 async function finish(id: number, key: string | null, out: GeneratorOutput, ms: number, t: LaneTimes, always = false): Promise<void> {
   let t0 = performance.now();
-  prepareOutputParts(out.parts);
-  for (const part of out.parts) prepareSoft(part, preparePart);
+  prepare(out);
   t.prepare += performance.now() - t0;
   // The entry is encoded before the buffers are transferred away: a Blob holds its own copy of the bytes, so this is the
   // only copy kept, and it is written after the reply, so the page never waits on the cache.
@@ -183,6 +259,7 @@ scope.onmessage = (e: MessageEvent): void => {
         const from = { cooked: false };
         const hit = await cached(key, t, from);
         if (hit) {
+          if (from.cooked && req.type === 'gen') spotCheck(key, req, hit);
           reply({ type: 'result', id: req.id, ok: true, output: hit, hit: true, ...(from.cooked ? { cooked: true } : {}), times: t }, hit);
           return;
         }

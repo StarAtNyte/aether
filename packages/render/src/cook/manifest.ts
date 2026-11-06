@@ -85,6 +85,12 @@ export interface CookManifest {
   packs: CookFile[];
   /** Geometry-cache key (64 hex) to `[pack, byte offset, byte length, cell]`. */
   entries: Record<string, [number, number, number, number]>;
+  /**
+   * Geometry fingerprint (geometry/fingerprint.ts, 16 hex) of each entry's decoded output, by entry key. The generation
+   * lanes regenerate a few entries live and compare (the spot check); a mismatch drops the package and loads live. Absent
+   * in older cooks and the editor's publishes (the lanes then compare against the served entry itself).
+   */
+  fingerprints?: Record<string, string>;
   /** Program set per tier ({@link CookedProgramSet}). */
   programs: Partial<Record<RenderTier, CookFile & { programs: number }>>;
   /** A bundled baked lightmap folder (lightmap-controller `staticBase`, relative to the cook folder), when there is one. */
@@ -180,6 +186,15 @@ export function parseCookManifest(v: unknown): ManifestResult {
     if (!nat(pack, packs.length - 1) || !nat(off) || !nat(len) || !nat(cell, Math.max(0, cells.length - 1)) || off % 8 !== 0 || len < 8 || off + len > (packs[pack] as CookFile).bytes) return bad('entry out of range');
     entries[k] = [pack, off, len, cell];
   }
+  let fingerprints: Record<string, string> | null = null;
+  if (v.fingerprints !== null && v.fingerprints !== undefined) {
+    if (!isObj(v.fingerprints)) return bad('bad fingerprints');
+    fingerprints = {};
+    for (const [k, f] of Object.entries(v.fingerprints)) {
+      if (!Object.hasOwn(entries, k) || typeof f !== 'string' || !/^[0-9a-f]{16}$/.test(f)) return bad('bad fingerprint');
+      fingerprints[k] = f;
+    }
+  }
   if (!isObj(v.programs)) return bad('bad programs');
   const programs: CookManifest['programs'] = {};
   for (const [tier, p] of Object.entries(v.programs)) {
@@ -215,6 +230,7 @@ export function parseCookManifest(v: unknown): ManifestResult {
       cells,
       packs,
       entries,
+      ...(fingerprints ? { fingerprints } : {}),
       programs,
       lightmap,
       ...(ir ? { ir } : {}),

@@ -27,7 +27,7 @@ import type { CharacterController, ColliderProvider, PhysicsWorld } from '@aethe
 import { assetColliderDescs } from '@aether/physics/asset-colliders';
 import { entityColliderBounds, entityWorldBounds } from '@aether/physics/bounds';
 import type { SandboxRunner } from '@aether/procgen';
-import { WorldRenderer, type LightmapStatus, type BackendPreference, type BackendReason, type ContextLossInfo, type WatchdogEvent, type GizmoCommit, type GizmoMode, type GizmoOptions, type ProofTrace, type RenderDiagnostic, type RenderProcessingStage, type RenderMemoryStats, type CookedPackage } from '@aether/render';
+import { WorldRenderer, type LightmapStatus, type BackendPreference, type BackendReason, type ContextLossInfo, type WatchdogEvent, type GizmoCommit, type GizmoMode, type GizmoOptions, type ProofTrace, type RenderDiagnostic, type RenderProcessingStage, type RenderMemoryStats, type CookedPackage, type CookMismatch } from '@aether/render';
 import { FIXED_DT, MAX_FRAME_DT, MAX_SUBSTEPS, PLAYER_CAPSULE, PLAYER_PSEUDO_ID, STATS_INTERVAL_MS } from '../config';
 import { CROUCH_CAMERA_DROP, paceSpeed, playerPace } from './playerPace';
 import { createLogger, errorMessage } from '../lib/log';
@@ -230,6 +230,8 @@ export interface SimulationOptions {
   lightmapBase?: string | null;
   /** The world's cooked package (see the render package's `cooked`): geometry and programs from the package, not made here. */
   cooked?: CookedPackage | null;
+  /** A spot check of the cooked package failed (see the render package's `onCookMismatch`). */
+  onCookMismatch?: (m: CookMismatch, purged: Promise<void>) => void;
   /** Backend policy (default 'auto'). */
   backend?: BackendPreference;
   /** Why WebGL2 is forced (recorded in the backend report). */
@@ -447,6 +449,7 @@ export class Simulation {
       ...(opts.compressedTextures === false ? { transcoderPath: null } : {}),
       ...(opts.lightmapBase !== undefined ? { lightmapBase: opts.lightmapBase } : {}),
       ...(opts.cooked ? { cooked: opts.cooked } : {}),
+      ...(opts.onCookMismatch ? { onCookMismatch: opts.onCookMismatch } : {}),
       onLightmapStatus: (status) => listener.onLightmap?.(status),
       onContextLost: (info) => listener.onContextLost?.(info),
       ...(opts.sandbox ? { sandbox: opts.sandbox } : {}),

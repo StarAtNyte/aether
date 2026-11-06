@@ -52,10 +52,11 @@ export default defineConfig(async ({ command }) => {
   // A lean build (see scripts/vite/asset-library.ts) ships a subset of the library and fetches the rest from a pinned CDN copy.
   const libCdn = command === 'build' ? await libraryCdn(process.env, LIBRARY_DIR) : undefined;
   return {
-  // __AETHER_GEN_VERSION__ salts the persistent geometry cache (scripts/vite/gen-version.ts).
+  // __AETHER_GEN_VERSION__ salts the persistent geometry cache and cooked package ids: a hash of the code generator output
+  // depends on (scripts/vite/gen-version.ts).
   // __AETHER_COOKED_BASE__: where the player reads templates' cooked packages (player/source.ts): AETHER_COOKED_BASE, else the
   // hosted dataset for builds and the dev server's own cooked/ folder in dev.
-  define: { __AETHER_LIB_LEAN__: JSON.stringify(libCdn !== undefined), __AETHER_GEN_VERSION__: JSON.stringify(generationCodeVersion()), __AETHER_COOKED_BASE__: JSON.stringify(process.env['AETHER_COOKED_BASE'] ?? (command === 'build' ? HOSTED_COOKED_BASE : './cooked/')) },
+  define: { __AETHER_LIB_LEAN__: JSON.stringify(libCdn !== undefined), __AETHER_GEN_VERSION__: JSON.stringify(await generationCodeVersion()), __AETHER_COOKED_BASE__: JSON.stringify(process.env['AETHER_COOKED_BASE'] ?? (command === 'build' ? HOSTED_COOKED_BASE : './cooked/')) },
   // Rapier's wasm ships as a cached `.wasm` file (streaming compile) instead of a 4 MB base64 string.
   plugins: [react(), rapierWasm({ warn: (m) => console.warn(m) }), assetLibrary(LIBRARY_DIR, libCdn), playRoute(), hubProxy(hubConfig.dataset), playerManifest(), siteMeta(), editorPrefetch()],
   experimental: {

@@ -48,6 +48,33 @@ export type CookedOpen = { ok: true; pkg: CookedPackage } | { ok: false; reason:
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
+/** localStorage key of the packages whose spot check failed on this device (their `dir`s, newest last). */
+const DISTRUST_KEY = 'aether-cook-distrust';
+const MAX_DISTRUSTED = 32;
+
+function distrusted(): string[] {
+  try {
+    const v = JSON.parse(globalThis.localStorage?.getItem(DISTRUST_KEY) ?? '[]') as unknown;
+    return Array.isArray(v) ? v.filter((d): d is string => typeof d === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Remember that the package in `dir` failed a spot check here (gen-pool.ts `onCookMismatch`): later loads of it on this
+ * device go live without trying it. Never throws.
+ */
+export function distrustCookedPackage(dir: string): void {
+  try {
+    const list = distrusted().filter((d) => d !== dir);
+    list.push(dir);
+    globalThis.localStorage?.setItem(DISTRUST_KEY, JSON.stringify(list.slice(-MAX_DISTRUSTED)));
+  } catch {
+    // No storage: the next load tries the package again and its spot check fails again.
+  }
+}
+
 async function readJson(res: Response, max: number): Promise<unknown> {
   const declared = Number(res.headers.get('content-length') ?? '0');
   if (declared > max) throw new Error('too large');
@@ -91,6 +118,7 @@ export async function openCookedPackage(manifestUrl: string, world: object, opts
     return { ok: false, reason: 'the world cannot be hashed' };
   }
   if (ir !== m.irHash) return { ok: false, reason: 'stale cook: the world changed since it was cooked' };
+  if (distrusted().includes(m.dir)) return { ok: false, reason: 'cooked geometry failed a spot check on this device' };
   const base = new URL(m.dir.endsWith('/') ? m.dir : `${m.dir}/`, url).href;
   const stats: CookedStats = { openMs: Math.round(performance.now() - t0), programs: {} };
   const sets = new Map<RenderTier, Promise<CookedProgramSet | null>>();
@@ -119,7 +147,7 @@ export async function openCookedPackage(manifestUrl: string, world: object, opts
   const pkg: CookedPackage = {
     manifest: m,
     base,
-    laneIndex: { packs: m.packs.map((p) => new URL(p.file, base).href), entries: m.entries },
+    laneIndex: { packs: m.packs.map((p) => new URL(p.file, base).href), entries: m.entries, ...(m.fingerprints ? { fingerprints: m.fingerprints } : {}) },
     lightmapBase: m.lightmap ? new URL(m.lightmap.base.endsWith('/') ? m.lightmap.base : `${m.lightmap.base}/`, base).href : null,
     stats,
     programs,

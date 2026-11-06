@@ -40,6 +40,22 @@ export class LaneCookSource {
     private readonly capBytes = LANE_PACK_CACHE_BYTES,
   ) {}
 
+  /** The geometry fingerprint the manifest gives `key` (spot check), or null. */
+  fingerprint(key: string): string | null {
+    const f = this.index.fingerprints;
+    return f && Object.prototype.hasOwnProperty.call(f, key) ? (f[key] ?? null) : null;
+  }
+
+  /** Byte length of `key`'s entry in its pack (0: not cooked). */
+  entryBytes(key: string): number {
+    return this.has(key) ? (this.index.entries[key]?.[2] ?? 0) : 0;
+  }
+
+  /** Every entry key of the package. */
+  keys(): string[] {
+    return Object.keys(this.index.entries);
+  }
+
   /** True when the package holds `key` (a geometry-cache key). */
   has(key: string): boolean {
     return Object.prototype.hasOwnProperty.call(this.index.entries, key);

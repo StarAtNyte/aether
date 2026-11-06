@@ -330,7 +330,8 @@ visit that does not generate at all.
   16-bit indices, bounds, the kit-of-pieces test, soft normals), so the page only wraps typed arrays in geometry. A lane failure falls back
   to the old path.
 - **Geometry cache** (`render/geometry/ddc.ts`): Cache Storage `aether-ddc-v1`, keyed by SHA-256 of the output key (`proceduralOutputKey`) and
-  `__AETHER_GEN_VERSION__` (a build hash of procgen, arch, core and render's geometry code, `scripts/vite/gen-version.ts`); IndexedDB
+  `__AETHER_GEN_VERSION__` (a hash of the tree-shaken code generator output depends on, `scripts/vite/gen-version.ts`,
+  ARCHITECTURE-STREAMING.md §3.5.2); IndexedDB
   `aether-ddc-meta` for LRU under 1 GB or a quarter of the quota. Written by the lanes after the reply, read by the lanes; a hit skips the
   sandbox, validation and preparation. Keys are per output, so an edit misses only for the edited entity.
 - **Determinism** (`procgen/sandbox/determinism.ts`): `Math.random` seeded per run and the clock frozen in the worker and Node sandboxes.

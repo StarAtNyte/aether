@@ -29,6 +29,20 @@ function compressSwitch(): boolean {
   return (globalThis as { __AETHER_GEOMETRY_COMPRESS?: unknown }).__AETHER_GEOMETRY_COMPRESS !== false;
 }
 
+/** `__AETHER_COOK_SPOT_CHECKS` (page global): package entries each lane checks against a live run (gen.worker.ts). */
+function spotCheckSwitch(): number | undefined {
+  const v = (globalThis as { __AETHER_COOK_SPOT_CHECKS?: unknown }).__AETHER_COOK_SPOT_CHECKS;
+  return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+}
+
+/** A failed spot check of the cooked package (gen.worker.ts): the entry, its generator and both fingerprints. */
+export interface CookMismatch {
+  key: string;
+  generator: string;
+  expected: string;
+  got: string;
+}
+
 /** The generation machinery failed (not the generator): fall back. */
 export class LaneFailure extends Error {
   override name = 'LaneFailure';
@@ -113,6 +127,23 @@ export class GenPool {
   /** The cook configuration every lane gets before its first job (see {@link setCook}). */
   private cook: LaneCookConfig | null = null;
   private disposed = false;
+  /** The first failed spot check (null: none), and who to tell. */
+  private mismatch: CookMismatch | null = null;
+  private mismatchListener: ((m: CookMismatch, purged: Promise<void>) => void) | null = null;
+  private purgeWaits: Array<() => void> = [];
+
+  /**
+   * Be told when a spot check of the cooked package fails (once). `purged` resolves when every running lane has dropped the
+   * package and removed its entries from the geometry cache (or after a few seconds), so a reload then generates live.
+   */
+  onCookMismatch(listener: ((m: CookMismatch, purged: Promise<void>) => void) | null): void {
+    this.mismatchListener = listener;
+  }
+
+  /** The failed spot check, if one failed. */
+  get cookMismatch(): CookMismatch | null {
+    return this.mismatch;
+  }
 
   constructor(opts: GenPoolOptions = {}) {
     const n = Math.min(8, Math.max(1, Math.round(opts.lanes ?? 2)));
@@ -152,7 +183,8 @@ export class GenPool {
 
   private postCook(w: WorkerLike): void {
     try {
-      w.postMessage({ type: 'cook', config: { ...(this.cook ?? {}), ...(this.keepAllHolds > 0 ? { keepAll: true } : {}), compress: compressSwitch(), lossless: losslessSwitch() } }, []);
+      const spot = spotCheckSwitch();
+      w.postMessage({ type: 'cook', config: { ...(this.cook ?? {}), ...(this.keepAllHolds > 0 ? { keepAll: true } : {}), compress: compressSwitch(), lossless: losslessSwitch(), ...(spot !== undefined ? { spotChecks: spot } : {}) } }, []);
     } catch {
       // The lane is gone: its replacement gets the configuration.
     }
@@ -302,6 +334,14 @@ export class GenPool {
       lane.ready = true;
       return;
     }
+    if (msg.type === 'cook-purged') {
+      this.purgeWaits.shift()?.();
+      return;
+    }
+    if (msg.type === 'cook-mismatch') {
+      this.onMismatch(lane, msg);
+      return;
+    }
     const at = lane.jobs.findIndex((j) => j.id === msg.id);
     if (at < 0) return;
     const job = lane.jobs.splice(at, 1)[0] as Job;
@@ -329,6 +369,25 @@ export class GenPool {
       }
     }
     this.pump();
+  }
+
+  /** A lane's spot check failed: every other lane drops the package and its seeded entries; then the listener is told. */
+  private onMismatch(from: Lane, m: CookMismatch): void {
+    if (this.mismatch) return;
+    this.mismatch = { key: m.key, generator: m.generator, expected: m.expected, got: m.got };
+    this.cook = this.cook ? { ...this.cook, index: null } : null;
+    const waits: Array<Promise<void>> = [];
+    for (const lane of this.lanes) {
+      if (lane === from || !lane.worker) continue;
+      waits.push(new Promise<void>((res) => this.purgeWaits.push(res)));
+      try {
+        lane.worker.postMessage({ type: 'cook', config: { ...(this.cook ?? {}), distrust: true } }, []);
+      } catch {
+        this.purgeWaits.pop()?.();
+      }
+    }
+    const purged = Promise.race([Promise.all(waits).then(() => undefined), new Promise<void>((res) => setTimeout(res, 5000))]);
+    this.mismatchListener?.(this.mismatch, purged);
   }
 
   private crash(lane: Lane, err: Error): void {

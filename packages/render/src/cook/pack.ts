@@ -92,8 +92,11 @@ export interface PackGeometryOptions {
   keys: Iterable<string>;
   /** The stored bytes of an entry (null: gone, skipped). */
   read(key: string): Promise<Uint8Array | null>;
-  /** Check an entry: the bytes it decodes to; throws on a malformed one (left out). Omitted: not checked. */
-  decode?(bytes: Uint8Array): Promise<number>;
+  /**
+   * Check an entry: the bytes it decodes to, or those and its geometry fingerprint (geometry/fingerprint.ts, kept in the
+   * manifest for the player's spot check); throws on a malformed one (left out). Omitted: not checked.
+   */
+  decode?(bytes: Uint8Array): Promise<number | { bytes: number; fingerprint?: string }>;
   /** Write a pack (`packs/<nnnn>.bin`): the parts in order, `bytes` in all. */
   writePack(file: string, parts: Uint8Array[], bytes: number): Promise<void> | void;
   /** Pack size target ({@link PACK_TARGET_BYTES}). */
@@ -113,6 +116,8 @@ export interface PackedGeometry {
   cells: CookCell[];
   packs: CookFile[];
   entries: CookManifest['entries'];
+  /** Geometry fingerprint per entry key, when `decode` gave them. */
+  fingerprints: Record<string, string>;
   stats: {
     /** Entries that did not decode, or were missing. */
     malformed: number;
@@ -166,6 +171,7 @@ export async function packGeometry(rec: CookRecording, opts: PackGeometryOptions
   const packs: CookFile[] = [];
   const cells: CookCell[] = [];
   const entries: CookManifest['entries'] = {};
+  const fingerprints: Record<string, string> = {};
   const stats: PackedGeometry['stats'] = { malformed: 0, tooLarge: 0, unplaced: byCell.get(PERSISTENT_CELL)?.length ?? 0, shared: 0, sharedBytes: 0, decodedBytes: 0 };
   const stored = new Map<string, [number, number, number]>();
   let done = 0;
@@ -198,7 +204,9 @@ export async function packGeometry(rec: CookRecording, opts: PackGeometryOptions
       }
       if (opts.decode) {
         try {
-          stats.decodedBytes += await opts.decode(body);
+          const d = await opts.decode(body);
+          stats.decodedBytes += typeof d === 'number' ? d : d.bytes;
+          if (typeof d === 'object' && d.fingerprint) fingerprints[it.hex] = d.fingerprint;
         } catch {
           stats.malformed++;
           continue;
@@ -229,7 +237,7 @@ export async function packGeometry(rec: CookRecording, opts: PackGeometryOptions
     await flush();
     if (cell.entries > 0) cells.push(cell);
   }
-  return { partition: grid ? { cellSize: grid.cellSize, origin: [grid.origin[0], grid.origin[1]] } : null, cells, packs, entries, stats };
+  return { partition: grid ? { cellSize: grid.cellSize, origin: [grid.origin[0], grid.origin[1]] } : null, cells, packs, entries, fingerprints, stats };
 }
 
 async function bytesHex(bytes: Uint8Array): Promise<string> {
@@ -273,7 +281,7 @@ export function profileForStartMode(startMode: StartMode): CookProfile {
 }
 
 /** The manifest of a cook. */
-export async function cookManifest(rec: CookRecording, profile: CookProfile, geometry: Pick<PackedGeometry, 'partition' | 'cells' | 'packs' | 'entries'>, programs: CookManifest['programs'], cookedAt: string = new Date().toISOString()): Promise<CookManifest> {
+export async function cookManifest(rec: CookRecording, profile: CookProfile, geometry: Pick<PackedGeometry, 'partition' | 'cells' | 'packs' | 'entries'> & { fingerprints?: Record<string, string> }, programs: CookManifest['programs'], cookedAt: string = new Date().toISOString()): Promise<CookManifest> {
   const id = await cookPackageId(rec.irHash, rec.genVersion);
   return {
     format: COOK_FORMAT,
@@ -290,6 +298,7 @@ export async function cookManifest(rec: CookRecording, profile: CookProfile, geo
     cells: geometry.cells,
     packs: geometry.packs,
     entries: geometry.entries,
+    ...(geometry.fingerprints && Object.keys(geometry.fingerprints).length > 0 ? { fingerprints: geometry.fingerprints } : {}),
     programs,
     lightmap: null,
   };

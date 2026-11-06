@@ -26,6 +26,13 @@ export type GenReply =
   | { type: 'result'; id: number; ok: true; output: GeneratorOutput | null; hit: boolean; cooked?: boolean; times?: LaneTimes }
   | { type: 'result'; id: number; ok: false; error: string };
 
+/**
+ * Lane → page, outside any job. `cook-mismatch`: a package entry the lane regenerated live has another geometry fingerprint
+ * (the spot check); the lane has stopped reading the package and removed its entries from the geometry cache.
+ * `cook-purged`: the lane dropped the package and its seeded entries after a `distrust` configuration.
+ */
+export type LaneNotice = { type: 'cook-mismatch'; key: string; generator: string; expected: string; got: string } | { type: 'cook-purged' };
+
 function isObj(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
@@ -45,9 +52,14 @@ export function parseGenRequest(v: unknown): GenRequest | null {
 }
 
 /** Validate a reply on the page (the output's shape is checked separately, see {@link checkOutputShape}). */
-export function parseGenReply(v: unknown): GenReply | { type: 'ready' } | null {
+export function parseGenReply(v: unknown): GenReply | LaneNotice | { type: 'ready' } | null {
   if (!isObj(v)) return null;
   if (v.type === 'ready') return { type: 'ready' };
+  if (v.type === 'cook-purged') return { type: 'cook-purged' };
+  if (v.type === 'cook-mismatch') {
+    const str = (x: unknown, n: number): string => (typeof x === 'string' ? x.slice(0, n) : '');
+    return { type: 'cook-mismatch', key: str(v.key, 64), generator: str(v.generator, 64), expected: str(v.expected, 16), got: str(v.got, 16) };
+  }
   if (v.type !== 'result' || typeof v.id !== 'number') return null;
   if (v.ok === false) return { type: 'result', id: v.id, ok: false, error: typeof v.error === 'string' ? v.error.slice(0, 500) : 'unknown error' };
   if (v.ok !== true) return null;

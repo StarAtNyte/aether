@@ -181,6 +181,8 @@ export function parseCookedProgramSet(v: unknown, tier: RenderTier): CookedProgr
 export interface LaneCookIndex {
   packs: string[];
   entries: Record<string, [number, number, number, number]>;
+  /** Geometry fingerprint per entry (manifest `fingerprints`), for the spot check. */
+  fingerprints?: Record<string, string>;
 }
 
 /** What the page tells each generation lane about cooking (gen-pool.ts `setCook`). */
@@ -193,4 +195,14 @@ export interface LaneCookConfig {
   compress?: boolean;
   /** Properties kept lossless in compressed entries (`__AETHER_GEOMETRY_LOSSLESS`, e.g. `['normals']`; diagnostics). */
   lossless?: string[];
+  /**
+   * Package entries each lane regenerates live to compare fingerprints (`__AETHER_COOK_SPOT_CHECKS`; default
+   * {@link COOK_SPOT_CHECKS}, 0: none).
+   */
+  spotChecks?: number;
+  /** Stop reading the package and remove every entry of it seeded into the geometry cache (another lane's check failed). */
+  distrust?: boolean;
 }
+
+/** Package entries each generation lane checks against a live run by default (gen.worker.ts). */
+export const COOK_SPOT_CHECKS = 2;

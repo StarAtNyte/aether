@@ -16,7 +16,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactElem
 import { History, type Json, type WorldDoc } from '@aether/core';
 import { creditsFor, loadCatalog, setAboBase, setCatalog, setLibraryRemote, type Credit } from '@aether/assets';
 import { createWorkerSandbox, generationLanes, type SandboxRunner } from '@aether/procgen';
-import { DDC_CODE_VERSION, openCookedPackage, worldIrHash, type CookedPackage } from '@aether/render';
+import { DDC_CODE_VERSION, distrustCookedPackage, openCookedPackage, worldIrHash, type CookedPackage, type CookMismatch } from '@aether/render';
 import { prefersReducedMotion, Simulation, type CombatHud } from '../engine/Simulation';
 import { CombatHudView, ScoreLine } from '../components/viewport/CombatHud';
 import { recordScore } from '../lib/bestScore';
@@ -574,6 +574,21 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
             saveBase: `game-${musicSeed(JSON.stringify(world.voxel ?? world.name)).toString(36)}`,
             ...(sandbox ? { sandbox } : {}),
             ...(cooked ? { cooked } : {}),
+            // The package's geometry differs from what this build makes (a spot check in the generation lanes): remember it
+            // and load again, live, once the lanes have removed its entries from the geometry cache.
+            ...(cooked
+              ? {
+                  onCookMismatch: (m: CookMismatch, purged: Promise<void>) => {
+                    cookHandle.path = 'live';
+                    cookHandle.reason = `cooked geometry failed a spot check (${m.generator}: ${m.expected} cooked, ${m.got} live)`;
+                    console.warn(`[player] ${cookHandle.reason}; loading live`);
+                    distrustCookedPackage(cooked.manifest.dir);
+                    void purged.then(() => {
+                      if (!disposed) location.reload();
+                    });
+                  },
+                }
+              : {}),
             // A game the visitor plays: the person loads with the world (its programs are drawn behind the load screen).
             ...(game.startMode === 'play' ? { preloadPlayer: true } : {}),
             onProgress: (msg) => setLoading(msg),

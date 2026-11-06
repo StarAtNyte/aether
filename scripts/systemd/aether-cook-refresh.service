@@ -1,0 +1,18 @@
+# Re-cook the hosted template packages that main's code or worlds made stale (scripts/cook-refresh.sh).
+# Install: docs/ARCHITECTURE-STREAMING.md §3.5.2. AETHER_CHECKOUT is the working checkout whose script and node_modules
+# are used; the refresh itself runs in its own worktree (~/.cache/aether-cookall/repo) at origin/main.
+[Unit]
+Description=Aether: re-cook stale template packages
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=AETHER_CHECKOUT=%h/Projects/Nitiz/victoria-ar
+Environment=GEN_GPU=intel
+ExecStart=/bin/sh -c 'exec "$AETHER_CHECKOUT/scripts/cook-refresh.sh"'
+Nice=10
+# The build runs in this unit; each cook runs in its own capped scope (scripts/cook-upload.ts).
+MemoryMax=5000M
+MemorySwapMax=0
+TimeoutStartSec=16h

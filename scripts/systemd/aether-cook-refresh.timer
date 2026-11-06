@@ -1,0 +1,12 @@
+# Check for stale template packages every hour (a run with nothing stale reads the manifests and stops).
+# Install: docs/ARCHITECTURE-STREAMING.md §3.5.2.
+[Unit]
+Description=Aether: hourly check for stale template packages
+
+[Timer]
+OnBootSec=20min
+OnUnitInactiveSec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

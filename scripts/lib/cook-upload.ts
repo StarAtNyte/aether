@@ -33,7 +33,7 @@ export interface HubOps {
   /** Every file path under `dir` on the dataset (recursive, repository-relative), or an empty list when it does not exist. */
   listFiles(dir: string): Promise<string[]>;
   /** The dataset's `<slug>/manifest.json`, parsed, or null when there is none (or it does not parse). */
-  readManifest(slug: string): Promise<{ dir?: unknown } | null>;
+  readManifest(slug: string): Promise<{ dir?: unknown; genVersion?: unknown; irHash?: unknown } | null>;
   /** Upload a local folder to `pathInRepo` (one commit). */
   uploadFolder(localDir: string, pathInRepo: string, message: string): Promise<void>;
   /** Upload one local file to `pathInRepo` (one commit). */
@@ -161,7 +161,7 @@ export function hfCliOps(opts: { repo?: string; log?: (s: string) => void; fetch
       const res = await get(`https://huggingface.co/datasets/${repo}/resolve/main/${encodeURIComponent(slug)}/manifest.json`, { cache: 'no-store' });
       if (!res.ok) return null;
       try {
-        return JSON.parse(await res.text()) as { dir?: unknown };
+        return JSON.parse(await res.text()) as { dir?: unknown; genVersion?: unknown; irHash?: unknown };
       } catch {
         return null;
       }

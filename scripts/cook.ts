@@ -23,6 +23,7 @@ import { chromium, type BrowserContext, type Page } from 'playwright';
 import type { WorldDoc } from '@aether/core';
 import { outputBytes } from '@aether/procgen';
 import { decodeEntry } from '../packages/render/src/geometry/ddc-codec';
+import { geometryFingerprint } from '../packages/render/src/geometry/fingerprint';
 import { DDC_CACHE_NAME } from '../packages/render/src/geometry/ddc';
 import { COOK_FORMAT, COOK_PROFILES, cookPackageId, programSetLines, type CookManifest, type CookProfile, type StartMode } from '../packages/render/src/cook/format';
 import { cookManifest, packGeometry, profileForStartMode, programSetBody } from '../packages/render/src/cook/pack';
@@ -270,7 +271,11 @@ async function pack(slug: string, rec: Recorded, programs: NonNullable<Awaited<R
   const geometry = await packGeometry(rec, {
     keys: blobs.keys(),
     read: async (hex) => readFileSync(join(blobDir, hex)),
-    decode: async (body) => outputBytes(await decodeEntry(body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) as ArrayBuffer)),
+    // The decoded output's size, and its geometry fingerprint for the player's spot check (geometry/fingerprint.ts).
+    decode: async (body) => {
+      const out = await decodeEntry(body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) as ArrayBuffer);
+      return { bytes: outputBytes(out), fingerprint: geometryFingerprint(out) };
+    },
     writePack: (file, parts) => writeFileSync(join(dir, file), Buffer.concat(parts)),
   });
   const { cells, packs, entries } = geometry;

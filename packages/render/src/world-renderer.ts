@@ -136,7 +136,7 @@ import { assetGeneratorShape } from './cook/asset-shape';
 import { worldOutputShapes } from './cook/pack';
 import { sha256Hex } from './cook/format';
 import { DDC_CODE_VERSION } from './geometry/ddc';
-import { GenPool } from './geometry/gen-pool';
+import { GenPool, type CookMismatch } from './geometry/gen-pool';
 import { disposeProfileTextures, registerLightSupport, type IesSpotLightCtor } from './sync/lights';
 import { errorMessage, log } from './log';
 import { GameFeel } from './feel/game-feel';
@@ -253,6 +253,12 @@ export interface RendererOptions {
    * sets seed the boot pre-warm, and its bundled lightmap folder (if any) replaces `lightmapBase`. Absent: the live path.
    */
   cooked?: CookedPackage | null;
+  /**
+   * A spot check of the cooked package failed (gen-pool.ts `onCookMismatch`): its geometry differs from what this build's
+   * generators make. The lanes have stopped reading it; outputs already drawn from it stay until the world loads again
+   * (the player remembers the package as distrusted and reloads once `purged` resolves).
+   */
+  onCookMismatch?: (m: CookMismatch, purged: Promise<void>) => void;
   /** The baked lightmap started, progressed, applied, failed or was cancelled (a status line, a cancel button). */
   onLightmapStatus?: (status: LightmapStatus) => void;
 }
@@ -1231,6 +1237,7 @@ export class WorldRenderer {
     // A cooked world reads its geometry from the package; the cook's own recording run (`__AETHER_COOK_RECORD`, set by
     // scripts/cook.ts) keeps every output in the geometry cache, however cheap.
     const cookRecord = (globalThis as { __AETHER_COOK_RECORD?: boolean }).__AETHER_COOK_RECORD === true;
+    if (this.genPool && opts.cooked && opts.onCookMismatch) this.genPool.onCookMismatch(opts.onCookMismatch);
     if (this.genPool && (opts.cooked || cookRecord)) this.genPool.setCook({ ...(cookRecord ? { keepAll: true } : {}), ...(opts.cooked ? { index: opts.cooked.laneIndex } : {}) });
     this.cookSandbox = opts.sandbox ?? null;
     const source =

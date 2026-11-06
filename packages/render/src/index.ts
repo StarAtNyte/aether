@@ -121,7 +121,9 @@ export { VFX_PRESETS, CONTINUOUS_VFX, SPRITE, vfxBudget, type VfxDef, type VfxLa
 export { atlasPixels, ATLAS_CELLS } from './vfx/atlas';
 
 export { BlackScreenWatchdog, GpuLogCapture, isBlackFrame, isShaderFailure, measureFrame, WATCHDOG_STEPS } from './gpu/watchdog';
-export { openCookedPackage, cookedProgramStore, MANIFEST_TIMEOUT_MS, type CookedPackage, type CookedOpen, type CookedStats } from './cook/cooked';
+export { openCookedPackage, cookedProgramStore, distrustCookedPackage, MANIFEST_TIMEOUT_MS, type CookedPackage, type CookedOpen, type CookedStats } from './cook/cooked';
+export type { CookMismatch } from './geometry/gen-pool';
+export { geometryFingerprint } from './geometry/fingerprint';
 export { COOK_FORMAT, PACK_TARGET_BYTES, START_MODES, COOK_PROFILES, MAX_COOK_VIEWS, cookFiles, cookPackageId, encodeProgramSetFile, WORLD_FILE, MAX_MANIFEST_BYTES, parseCookManifest, parseCookedProgramSet, sha256Hex, worldIrHash, type CookManifest, type CookCell, type CookFile, type CookProfile, type CookView, type CookedProgramSet, type StartMode, type LaneCookConfig, type LaneCookIndex } from './cook/format';
 export { DDC_CACHE_NAME, DDC_CODE_VERSION, decodeOutput, encodeOutput } from './geometry/ddc';
 export { cookManifest, packGeometry, profileForStartMode, programSetBody, worldOutputKeys, worldOutputShapes, type AssetShapeResolver, type CookRecording, type PackedGeometry } from './cook/pack';
