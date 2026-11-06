@@ -12,7 +12,8 @@
  * stays a live uniform, so retiling a finish to its photo's real size later recompiles nothing.
  */
 import { staticShadowAlpha } from '../gpu/shadow-alpha';
-import { Fn, If, cameraPosition, clamp, dot, float, fract, materialColor, materialRoughness, mix, modelWorldMatrix, normalMap, normalView, normalWorld, positionWorld, sin, smoothstep, texture, uniform, uv, vec2, vec3, vec4 } from 'three/tsl';
+import { Fn, If, attribute, cameraPosition, clamp, dot, float, fract, materialColor, materialRoughness, mix, modelWorldMatrix, normalMap, normalView, normalWorld, positionWorld, sin, smoothstep, texture, uniform, uv, varying, vec2, vec3, vec4 } from 'three/tsl';
+import { PIECE_ORIGIN, PIECE_TONE_KEY } from '../sync/merge-geometries';
 import type { Material, Texture } from 'three';
 import type { Node } from 'three/webgpu';
 import { noise01 } from './noise-texture';
@@ -141,7 +142,21 @@ export function antiTileProgramKey(maps: AntiTileMaps, normalStrength: number, o
  * `normalStrength` is the normal map's scale (0 skips the normal blend). The material must not bind
  * the maps itself (`map`, `roughnessMap`, `aoMap`, `normalMap`): the nodes replace them.
  */
+/**
+ * World origin of the piece being shaded: its object's, or, in merged geometry, the copy the merge wrote per vertex
+ * ({@link PIECE_ORIGIN}: the same float32 translation, so the same tone), passed flat so every pixel of a piece hashes alike.
+ */
+function pieceOrigin(): Nd3 {
+  return Fn((builder: { geometry?: { hasAttribute(name: string): boolean } | null }) =>
+    builder.geometry?.hasAttribute(PIECE_ORIGIN) === true
+      ? varying(attribute(PIECE_ORIGIN, 'vec3')).setInterpolation('flat')
+      : modelWorldMatrix.mul(vec4(0, 0, 0, 1)).xyz)() as unknown as Nd3;
+}
+type Nd3 = ReturnType<typeof vec3>;
+
 export function applyAntiTile(material: Material, maps: AntiTileMaps, normalStrength: number, opts: AntiTileOptions = {}): void {
+  // Merged pieces keep their own tone (see `pieceOrigin`).
+  material.userData[PIECE_TONE_KEY] = true;
   const stochastic = opts.stochastic !== false;
   const detail = opts.detail === true;
   const repeat = uniform(maps.map.repeat);
@@ -212,7 +227,7 @@ export function applyAntiTile(material: Material, maps: AntiTileMaps, normalStre
   const warmth = patch.sub(0.5);
   // Every piece is cut from its own block: a per-object tone (hashed from the object's origin, no texture read) so a row
   // of steps, plinths or paving slabs laid as separate pieces never reads as one uniform pour.
-  const origin = modelWorldMatrix.mul(vec4(0, 0, 0, 1)).xyz;
+  const origin = pieceOrigin();
   const seed = fract(sin(dot(origin, vec3(12.9898, 78.233, 37.719))).mul(43758.5453));
   const piece = float(1).add(seed.sub(0.5).mul(PIECE_TONE));
   const pieceWarm = seed.sub(0.5).mul(PIECE_TONE * 0.5);

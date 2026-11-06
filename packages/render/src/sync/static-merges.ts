@@ -24,7 +24,7 @@
  * Merged geometry is owned here and disposed on regroup / clear; member
  * geometry and materials belong to the shared caches.
  */
-import { mergeGeometries } from './merge-geometries';
+import { mergeGeometries, PIECE_TONE_KEY } from './merge-geometries';
 export { mergeGeometries } from './merge-geometries';
 import { BufferGeometry, Matrix4, Mesh, type InstancedMesh, type Material, type Object3D } from 'three';
 import type { EntityNode } from './entity-node';
@@ -55,6 +55,28 @@ export const MAX_MERGE_VERTICES = 400_000;
 const MAX_PARTS = 32;
 /** Most copies a scatter layer may have to merge (bigger layers stay instanced: one draw per part for all copies). */
 export const MAX_MERGE_INSTANCES = 8;
+/**
+ * A bigger scatter layer still merges when all its copies together are this few vertices (flower cards along a balcony,
+ * pebbles): instanced, each such layer is a draw for a few hundred vertices. `__AETHER_MERGE_SMALL_COPIES = false` turns it off.
+ */
+export const SMALL_COPIES_VERTICES = 8192;
+
+/** Whether the copies of an instanced mesh are few, or small enough together, to merge (see {@link SMALL_COPIES_VERTICES}). */
+function copiesMerge(count: number, vertices: number, material: Material | Material[]): boolean {
+  if (count <= MAX_MERGE_INSTANCES) return true;
+  if ((globalThis as { __AETHER_MERGE_SMALL_COPIES?: boolean }).__AETHER_MERGE_SMALL_COPIES === false) return false;
+  // A vertex-displaced material (wind) reads the copy's own coordinates, which a merge replaces.
+  if (Array.isArray(material) || (material as { positionNode?: unknown }).positionNode) return false;
+  return count * vertices <= SMALL_COPIES_VERTICES;
+}
+
+/** Whether every part of a scatter node merges by {@link copiesMerge}. */
+function smallCopies(node: Readonly<EntityNode>): boolean {
+  if (node.instances <= MAX_MERGE_INSTANCES) return true;
+  let vertices = 0;
+  for (const b of node.bindings) vertices += b.mesh.geometry.getAttribute('position')?.count ?? Infinity;
+  return node.bindings.every((b) => copiesMerge(node.instances, vertices, b.mesh.material as Material));
+}
 
 /**
  * Behaviours that leave an entity where it is until someone uses it (a drawer, a cabinet or room door, a switch). With
@@ -68,15 +90,16 @@ const IDLE_BEHAVIORS: ReadonlySet<string> = new Set(['operable', 'door', 'toggle
  */
 export function mergeable(node: Readonly<EntityNode>, interactive = false): boolean {
   if (node.transient || node.placeholder || node.pending || node.failed || node.overridden) return false;
-  // An entity with virtual parts keeps its other parts as they are: merged per cell they would no longer be culled one
-  // by one, or left out when they cover a pixel or two (a hillside town's balconies and windows; measured slower on an
-  // integrated GPU). `__AETHER_MERGE_VIRTUAL_PARTS = true` merges them (the virtual sources stay out, see `virtualSource`).
+  // The other parts of an entity with virtual parts (a hillside town's balconies, windows, wall copings) merge too, per
+  // `virtualPartCell` (see `rebuild`). Merged, they are no longer culled one by one or left out as specks; measured on
+  // Lisbon Hills on an integrated GPU the frame pacing did not get worse (docs/PERFORMANCE.md, "Fewer materials").
+  // `__AETHER_MERGE_VIRTUAL_PARTS = false` keeps them as they are. The virtual sources stay out (see `virtualSource`).
   if (node.field) return false;
-  if ((node.virtual.length > 0 || node.bindings.some((b) => b.mesh.userData['aetherVirtualSource'] === true)) && !mergeVirtualParts()) return false;
+  if (hasVirtualParts(node) && !mergeVirtualParts()) return false;
   const e = node.entity;
   if (e.template || e.visible === false) return false;
   // A small scatter layer merges copy by copy; a big one is cheaper as it is (one instanced draw per part).
-  if (e.shape.kind === 'scatter' ? node.instances < 1 || node.instances > MAX_MERGE_INSTANCES || !node.instanceMatrix : e.shape.kind !== 'procedural' || node.instances > 0) return false;
+  if (e.shape.kind === 'scatter' ? node.instances < 1 || !smallCopies(node) || !node.instanceMatrix : e.shape.kind !== 'procedural' || node.instances > 0) return false;
   const idle = interactive && e.behaviors.length > 0 && e.behaviors.every((b) => IDLE_BEHAVIORS.has(b.type));
   if (e.behaviors.length > 0 && !idle) return false;
   if (e.physics && e.physics.body !== 'static' && !idle) return false;
@@ -85,7 +108,26 @@ export function mergeable(node: Readonly<EntityNode>, interactive = false): bool
 }
 
 function mergeVirtualParts(): boolean {
-  return (globalThis as { __AETHER_MERGE_VIRTUAL_PARTS?: boolean }).__AETHER_MERGE_VIRTUAL_PARTS === true;
+  return (globalThis as { __AETHER_MERGE_VIRTUAL_PARTS?: boolean }).__AETHER_MERGE_VIRTUAL_PARTS !== false;
+}
+
+/**
+ * Largest part (vertices) of an entity with virtual parts that merges: a merge copies its members' geometry, and a part this
+ * big is not bound by its draw call. Lisbon Hills, opening view: 412 view draws with this cap, 433 with 10,000, for 120 MB
+ * of merged geometry against 103 MB (74 MB without these merges; 143 MB uncapped).
+ */
+export const VIRTUAL_PART_MAX_VERTICES = 30_000;
+
+/** Edge (m) of the cells the other parts of entities with virtual parts merge in (`__AETHER_VIRTUAL_PART_CELL`, default {@link PROP_CELL}). */
+function virtualPartCell(gridCell: number): number {
+  const v = (globalThis as { __AETHER_VIRTUAL_PART_CELL?: number | 'grid' }).__AETHER_VIRTUAL_PART_CELL;
+  if (v === 'grid') return gridCell;
+  return typeof v === 'number' && v > 0 ? v : PROP_CELL;
+}
+
+/** Whether `node` has virtual parts (its other parts merge per grid cell, see {@link StaticMerges.rebuild}). */
+function hasVirtualParts(node: Readonly<EntityNode>): boolean {
+  return node.virtual.length > 0 || node.bindings.some((b) => b.mesh.userData['aetherVirtualSource'] === true);
 }
 
 /** Whether `mesh` is the full-detail source of one of the node's virtual stand-ins (raycast only; never merged). */
@@ -104,7 +146,7 @@ function mergeablePart(b: Readonly<EntityNode['bindings'][number]>): boolean {
   const g = b.mesh.geometry;
   if (instanced(b.mesh)) {
     const im = b.mesh as InstancedMesh;
-    if (im.instanceColor !== null || im.morphTexture !== null || im.count < 1 || im.count > MAX_MERGE_INSTANCES || im.instanceMatrix.count < im.count) return false;
+    if (im.instanceColor !== null || im.morphTexture !== null || im.count < 1 || !copiesMerge(im.count, g.getAttribute('position')?.count ?? Infinity, m) || im.instanceMatrix.count < im.count) return false;
   }
   return g.index !== null && g.getAttribute('position') !== undefined && g.getAttribute('normal') !== undefined;
 }
@@ -168,6 +210,8 @@ interface Member {
   rel: Float64Array;
   /** Last checked world transform; unchanged members need no matrix multiplication. */
   world: Matrix4;
+  /** World origin of the member's object, for materials with a per-piece tone (see `PIECE_ORIGIN`), else null. */
+  origin: number[] | null;
 }
 
 interface Merge {
@@ -195,6 +239,12 @@ export class StaticMerges {
   private lightmap: LightmapSource | null = null;
   /** Meshes evicted since the last rebuild (they draw themselves until content changes). */
   private readonly evicted = new WeakSet<Mesh>();
+  /**
+   * Members that keep their object's per-piece tone when merged (`PIECE_ORIGIN`): the parts of entities with virtual parts
+   * and the copies of small scatter layers over {@link MAX_MERGE_INSTANCES}, which drew unmerged before they merged. Props
+   * and few-copy layers keep the merged mesh's tone, as they always had.
+   */
+  private readonly ownTone = new WeakSet<Mesh>();
   private saved = 0;
   private readyCount = 0;
   /**
@@ -208,6 +258,8 @@ export class StaticMerges {
    * owner knows it, {@link COPY_CELL} before. Takes effect at the next {@link rebuild}.
    */
   copyCell = COPY_CELL;
+  /** Member meshes of the current merges (see {@link has}); null after a change, rebuilt on demand. */
+  private memberSet: Set<Mesh> | null = null;
   private inline = 0;
   private readonly builder: MergeBuildClient | null;
 
@@ -273,13 +325,20 @@ export class StaticMerges {
     for (const node of nodes) {
       const own = mergeable(node, this.interactive);
       const parts = own ? node.bindings.filter((b) => mergeablePart(b) && !virtualSource(node, b.mesh)).map((b) => ({ mesh: b.mesh, materialKey: b.materialKey })) : assetParts(node);
-      const edge = own && node.entity.shape.kind === 'procedural' ? PROP_CELL : this.copyCell;
+      // The parts of an entity with virtual parts (a row of houses' windows and balconies, a wall's copings) merge per
+      // `virtualPartCell()` metres: the merged mesh is culled as a whole and is not left out as a speck.
+      const edge = own && node.entity.shape.kind === 'procedural' ? (hasVirtualParts(node) ? virtualPartCell(this.copyCell) : PROP_CELL) : this.copyCell;
       if (!parts || !node.content.visible || !node.object.visible) continue;
       const parent = node.object.parent;
       if (!parent) continue;
+      const virtualParts = own && hasVirtualParts(node);
+      const ownTone = virtualParts || (own && node.entity.shape.kind === 'scatter' && node.instances > MAX_MERGE_INSTANCES);
       for (const b of parts) {
         const mesh = b.mesh;
         if (!mesh.visible) continue;
+        if (virtualParts && (mesh.geometry.getAttribute('position')?.count ?? Infinity) * Math.max(1, instanced(mesh) ? (mesh as InstancedMesh).count : 1) > VIRTUAL_PART_MAX_VERTICES) continue;
+        if (ownTone) this.ownTone.add(mesh);
+        else this.ownTone.delete(mesh);
         // Content changed since the eviction: an intact member may rejoin.
         this.evicted.delete(mesh);
         const g = mesh.geometry;
@@ -418,7 +477,8 @@ export class StaticMerges {
       const copies = instanced(mesh) ? (mesh as InstancedMesh).count : 0;
       for (let instance = copies > 0 ? 0 : -1; instance < copies; instance++) {
         _rel.multiplyMatrices(_inv, memberWorld(_world, mesh, instance));
-        members.push({ mesh, instance, instanceVersion: instance < 0 ? 0 : (mesh as InstancedMesh).instanceMatrix.version, geometry: mesh.geometry, material: mesh.material as Material, rel: Float64Array.from(_rel.elements), world: mesh.matrixWorld.clone() });
+        members.push({ mesh, instance, instanceVersion: instance < 0 ? 0 : (mesh as InstancedMesh).instanceMatrix.version, geometry: mesh.geometry, material: mesh.material as Material, rel: Float64Array.from(_rel.elements), world: mesh.matrixWorld.clone(),
+          origin: this.ownTone.has(mesh) && (mesh.material as Material).userData[PIECE_TONE_KEY] === true ? [mesh.matrixWorld.elements[12]!, mesh.matrixWorld.elements[13]!, mesh.matrixWorld.elements[14]!] : null });
       }
     }
     const request = this.backgroundRequest(members);
@@ -512,7 +572,17 @@ export class StaticMerges {
     m.mesh.geometry.dispose();
   }
 
+  /** Whether `mesh` is a member of a merge (drawn by it, or waiting for its geometry). */
+  has(mesh: Mesh): boolean {
+    if (!this.memberSet) {
+      this.memberSet = new Set();
+      for (const m of this.merges) for (const x of m.members) this.memberSet.add(x.mesh);
+    }
+    return this.memberSet.has(mesh);
+  }
+
   private recount(): void {
+    this.memberSet = null;
     this.saved = 0; this.readyCount = 0;
     for (const merge of this.merges) if (merge.built) { this.saved += drawsMerged(merge) - 1; this.readyCount++; }
   }
@@ -521,6 +591,7 @@ export class StaticMerges {
   clear(): void {
     for (const m of this.merges) this.release(m, new Set());
     this.merges = [];
+    this.memberSet = null;
     this.saved = 0;
     this.readyCount = 0;
     this.builder?.reset();

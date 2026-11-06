@@ -3,8 +3,20 @@ import { BufferAttribute, BufferGeometry, Matrix3, Matrix4 } from 'three';
 import { setPositionBounds } from '../geometry/position-bounds';
 const _nrm = new Matrix3();
 
-/** Merge member geometries, transformed into the parent's frame (positions, normals, uvs, colours, indices). */
-export function mergeGeometries(members: readonly { geometry: BufferGeometry; rel: Float64Array }[]): BufferGeometry {
+/**
+ * Vertex attribute of merged geometry holding each piece's world origin (its object's translation), for materials whose
+ * shading hashes the object's origin (the per-piece tone of anti-tiled finishes, `materials/anti-tile.ts`): merged, the
+ * pieces would otherwise share the merged mesh's origin and one tone.
+ */
+export const PIECE_ORIGIN = 'aetherPieceOrigin';
+/** `userData` flag of a material that reads {@link PIECE_ORIGIN} when the geometry has it. */
+export const PIECE_TONE_KEY = 'aetherPieceTone';
+
+/**
+ * Merge member geometries, transformed into the parent's frame (positions, normals, uvs, colours, indices). When every
+ * member has an `origin` (world translation of its object), the merged geometry carries it per vertex ({@link PIECE_ORIGIN}).
+ */
+export function mergeGeometries(members: readonly { geometry: BufferGeometry; rel: Float64Array; origin?: ArrayLike<number> | null }[]): BufferGeometry {
   let verts = 0;
   let idx = 0;
   const first = members[0]?.geometry;
@@ -18,6 +30,7 @@ export function mergeGeometries(members: readonly { geometry: BufferGeometry; re
   const nrm = new Float32Array(verts * 3);
   const uv = hasUv ? new Float32Array(verts * 2) : null;
   const col = hasColor ? new Float32Array(verts * 3) : null;
+  const org = members.length > 0 && members.every((m) => m.origin && m.origin.length === 3) ? new Float32Array(verts * 3) : null;
   const index = verts > 65535 ? new Uint32Array(idx) : new Uint16Array(idx);
   let vo = 0;
   let io = 0;
@@ -64,6 +77,14 @@ export function mergeGeometries(members: readonly { geometry: BufferGeometry; re
       col[(vo + i) * 3 + 1] = c.getY(i);
       col[(vo + i) * 3 + 2] = c.getZ(i);
     }
+    if (org) {
+      const t = m.origin as ArrayLike<number>;
+      for (let i = 0; i < count; i++) {
+        org[(vo + i) * 3] = t[0] as number;
+        org[(vo + i) * 3 + 1] = t[1] as number;
+        org[(vo + i) * 3 + 2] = t[2] as number;
+      }
+    }
     const gi = g.index;
     if (gi) for (let i = 0; i < gi.count; i++) index[io + i] = gi.getX(i) + vo;
     io += gi?.count ?? 0;
@@ -74,6 +95,7 @@ export function mergeGeometries(members: readonly { geometry: BufferGeometry; re
   out.setAttribute('normal', new BufferAttribute(nrm, 3));
   if (uv) out.setAttribute('uv', new BufferAttribute(uv, 2));
   if (col) out.setAttribute('color', new BufferAttribute(col, 3));
+  if (org) out.setAttribute(PIECE_ORIGIN, new BufferAttribute(org, 3));
   out.setIndex(new BufferAttribute(index, 1));
   setPositionBounds(out, pos);
   return out;

@@ -5,7 +5,7 @@ import { expandWithLightmap } from './lightmap-uv';
 /** Worker-side reconstruction and the same merge/lightmap math used by atomic captures. */
 export function runMergeRequest(request: MergeRequest): MergeOutput {
   const geometries = request.geometries.map(readMergeGeometry);
-  let result = mergeGeometries(request.members.map(m => ({ geometry: geometries[m.geometry]!, rel: m.rel })));
+  let result = mergeGeometries(request.members.map(m => ({ geometry: geometries[m.geometry]!, rel: m.rel, origin: m.origin ?? null })));
   if (request.lightmap) {
     const size = request.lightmap.reduce((n, uv) => n + uv.length, 0), uv = new Float32Array(size);
     let offset = 0; for (const part of request.lightmap) { uv.set(part, offset); offset += part.length; }

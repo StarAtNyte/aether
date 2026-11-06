@@ -1,8 +1,9 @@
+import { PIECE_ORIGIN } from './merge-geometries';
 import { Box3, BufferAttribute, BufferGeometry, Float16BufferAttribute, InterleavedBuffer, InterleavedBufferAttribute, Sphere, Vector3, type TypedArray } from 'three';
 
 interface AttributeWire { array: TypedArray; itemSize: number; normalized: boolean; count: number; stride?: number; offset?: number; half?: boolean }
 interface GeometryWire { attributes: Record<string, AttributeWire>; index: AttributeWire | null }
-export interface MergeRequest { geometries: GeometryWire[]; members: Array<{ geometry: number; rel: Float64Array }>; lightmap: Float32Array[] | null }
+export interface MergeRequest { geometries: GeometryWire[]; members: Array<{ geometry: number; rel: Float64Array; origin?: number[] | null }>; lightmap: Float32Array[] | null }
 export interface MergeOutput { attributes: Record<string, { array: Float32Array; itemSize: number }>; index: Uint16Array | Uint32Array | null; box: number[]; sphere: number[] }
 
 function attributeWire(attribute: BufferAttribute | InterleavedBufferAttribute): AttributeWire | null {
@@ -16,7 +17,7 @@ function attributeWire(attribute: BufferAttribute | InterleavedBufferAttribute):
 }
 
 /** Pack descriptors, not per-vertex copies. postMessage clones each shared source buffer once. */
-export function mergeRequest(members: readonly { geometry: BufferGeometry; rel: Float64Array }[], lightmap: Float32Array[] | null): MergeRequest | null {
+export function mergeRequest(members: readonly { geometry: BufferGeometry; rel: Float64Array; origin?: ArrayLike<number> | null }[], lightmap: Float32Array[] | null): MergeRequest | null {
   const geometries: GeometryWire[] = [], ids = new Map<BufferGeometry, number>(), entries: MergeRequest['members'] = [];
   for (const member of members) {
     let id = ids.get(member.geometry);
@@ -33,7 +34,7 @@ export function mergeRequest(members: readonly { geometry: BufferGeometry; rel: 
       if (member.geometry.index && !index) return null;
       id = geometries.length; ids.set(member.geometry, id); geometries.push({ attributes, index });
     }
-    entries.push({ geometry: id, rel: member.rel });
+    entries.push({ geometry: id, rel: member.rel, origin: member.origin ? Array.from(member.origin) : null });
   }
   return { geometries, members: entries, lightmap };
 }
@@ -77,6 +78,7 @@ export function readMergeOutput(raw: unknown, request: MergeRequest): BufferGeom
   if (first?.attributes.uv) expected.uv = 2;
   if (first?.attributes.color) expected.color = 3;
   if (lit) expected.aetherLM = 2;
+  if (request.members.length > 0 && request.members.every((m) => m.origin && m.origin.length === 3)) expected[PIECE_ORIGIN] = 3;
   if (Object.keys(output.attributes).length !== Object.keys(expected).length) return null;
   for (const [name, size] of Object.entries(expected)) {
     const a = output.attributes[name]; if (!a || a.itemSize !== size || !(a.array instanceof Float32Array) || a.array.length !== count * size) return null;

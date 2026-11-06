@@ -191,7 +191,9 @@ about 1.2 GB (JS heap 0.5 GB, texture sources 226 MB, geometry 115 MB, workers).
   `aether:bake-wait`, `aether:wait-<stage>`, `aether:fully-loaded`, `aether:load-timeout`.
 - **Switches** (set on `globalThis` before the studio starts): `__AETHER_SWEEP` (opt-in), `__AETHER_PROGRAM_CACHE`, `__AETHER_SWEEP_MOTION`,
   `__AETHER_SHADER_RELEASE`, `__AETHER_PIPELINE_RELEASE`, `__AETHER_PASS_FIRST`, `__AETHER_COMPILE_TARGET`, `__AETHER_FULL_WARMUP` (opt-in),
-  `__AETHER_MATRIX_CHECK`, `__AETHER_CELL_SHADOWS`, `__AETHER_CELL_VIRTUAL`, `__AETHER_SORT_BY_MATERIAL` (all on by default), `__AETHER_MERGE_VIRTUAL_PARTS` (opt-in).
+  `__AETHER_MATRIX_CHECK`, `__AETHER_CELL_SHADOWS`, `__AETHER_CELL_VIRTUAL`, `__AETHER_SORT_BY_MATERIAL`, `__AETHER_MERGE_VIRTUAL_PARTS`,
+  `__AETHER_ASSET_INSTANCES`, `__AETHER_MATERIAL_DEDUPE`, `__AETHER_MERGE_SMALL_COPIES` (all on by default), `__AETHER_VIRTUAL_PART_CELL`
+  (metres, or `'grid'`; default 160).
 
 ## Pre-warmed program set (6 November 2026)
 
@@ -432,3 +434,66 @@ Changing the scale only writes the uniform, so no program is recompiled. This pa
 Kestrel Outpost, ultra, scale pinned 0.7, three orbit frames against the same frames at scale 1 (`scripts/upscale-metrics.py`):
 bias on: detail ratio 0.87, SSIM after 4x down 0.9861; bias off: 0.80, 0.9839. Full-size PSNR 34.5 against 34.8 dB (the bias trades a
 little pixel match for detail). Lisbon Hills captures were unusable in this run (a crashed browser, one black frame).
+
+## Fewer materials, fewer view draws (6 November 2026)
+
+Follow-up to stage 4a: the view pass of Lisbon Hills drew about 700 draws from 188 materials, and per-cell batches cannot
+merge across materials.
+
+**What the materials are** (opening view, one frame, `--eval` over three's draw calls): 186 materials, 147 distinct by value
+(39 are copies of an equal material, nearly all the per-load copies of vehicle models that drive, so they cannot batch anyway),
+58 distinct by structure. Of the materials that share a structure, 5 differ only by colour, 67 by colour and scalars
+(roughness, metalness, emission), 40 only by texture (20 of them character skins, which are skinned and draw alone) and 26 by
+texture and values. `MaterialCache` already shares every material it makes; the duplicates are in library models. Colour
+alone is too rare to be worth a per-vertex colour variant, and texture arrays would mostly serve skinned characters, so
+neither was done. The draws were in four places instead: the other parts of entities with virtual parts (windows,
+balconies, wall copings: about 230 draws, never merged), models with levels of detail (street lamps and planters: about 100,
+never merged), copies of models further apart than a merge cell, and scatter layers of many tiny copies.
+
+- **Library-model instancing** (`sync/asset-instances.ts`, `__AETHER_ASSET_INSTANCES`): every static model's part draws as
+  one instanced mesh for all copies, levels of detail included (one instanced mesh per part of each level). Each instanced
+  mesh packs, for the camera drawing it, the copies that camera sees: at the level three's `LOD` picks for that camera, and
+  inside its frustum, so each copy is still culled on its own and a part with no copy in view makes no draw call. It packs
+  in the frustum test and again right before the draw, because three draws the shadow maps while it draws the view. Parts a
+  merge takes (three parts of one material in a cell, such as a car's four wheels) stay merged.
+- **Material dedupe** (`materialSignature`, `__AETHER_MATERIAL_DEDUPE`): instancing groups materials by what they draw
+  (class, every value, the image and sampling of every texture), so separate loads of one model instance together. A model's
+  body paint, tinted per entity, instances with the colour per copy (`instanceColor` times a white copy of the paint).
+  Materials with node graphs stay out (a graph may read the object's matrix).
+- **Virtual entities' other parts merge** (`__AETHER_MERGE_VIRTUAL_PARTS`, now on): per 160 m prop cell
+  (`__AETHER_VIRTUAL_PART_CELL`), parts up to 30,000 vertices (`VIRTUAL_PART_MAX_VERTICES`; bigger parts are not bound by
+  their draw call, and a merge copies its members). Merged pieces of anti-tiled finishes keep their own per-piece tone: the
+  merge writes each piece's world origin per vertex (`PIECE_ORIGIN`, the same float32 translation, passed flat) and the
+  anti-tile node reads it when the geometry has it. Props that merged before keep the merged mesh's tone, as they always had.
+- **Small scatter layers merge** (`__AETHER_MERGE_SMALL_COPIES`): a layer over 8 copies still merges when all its copies
+  together are at most 8,192 vertices (flower cards along a balcony), with the same per-piece origins.
+- `scripts/arch-probe.ts --init=<file>` runs a script before the app (switches for A/B runs).
+
+Measured with `scripts/arch-probe.ts` (Lisbon Hills, `GEN_GPU=intel`, low tier, shared office PC, niced, 5 GB scope,
+resolution held at 0.5, 20 s orbit), two runs of each build interleaved (base `35dd310a`), cold and second visit:
+
+| Lisbon Hills | Before | After |
+|---|---|---|
+| View draws, opening view (cold / second visit) | 696 / 686 | 412 / 412 |
+| View draws, heaviest heading of the orbit | 1,063-1,094 | 580-598 |
+| Draws per orbit frame, median / p95, second visit | 427 / 987, 360 / 1,000 | 304 / 567, 291 / 557 |
+| `useProgram` per orbit frame, median, second visit | 53, 44 | 61, 60 |
+| Orbit, second visit: p50 / p95 / p99 | 16.7 / 50 / 100, 33.3 / 66.7 / 133 ms | 16.7 / 33.4 / 50.1, 33.3 / 66.6 / 83.4 ms |
+| Orbit, second visit: frames over 33 ms | 129 of 779, 221 of 557 | 122 of 822, 199 of 626 |
+| Orbit, cold: p99 | 50.1, 99.9 ms | 100, 116.7 ms |
+| Merged geometry (CPU, the GPU holds the same) | 74 MB | 120 MB |
+| JS heap peak | 1,539-1,732 MB | 1,601-1,665 MB |
+
+The opening view draws 40 % fewer (41 % cold, 40 % on a second visit), the heaviest heading 45 % fewer, and the p95 of the
+orbit's draws per frame falls from about 1,000 to 560. The second visit's p99 improved in both pairs (two more runs of the
+base build earlier the same day: 66.7 and 167 ms); the cold orbit's p99 did not (base 50-100 ms over four runs), it is
+dominated by first-use preparation. Programs per frame rose slightly (the instanced variants).
+
+Hero shots (mean pixel difference, 0-255, against two runs of the base build; the base against itself in brackets): Lisbon
+Hills 0.2-2.1 (0.3-1.9), the establishing shot 1.0-1.2 (0.6-0.8) and identical by eye at twice the size; Cliff Sanctuary
+0.05-1.8 (0.03-1.0); Kestrel Outpost 4.8-18.5 (13.5-18.3, its scene moves). Without the per-piece origins the merged
+retaining walls and copings lost their stone-to-stone tone (Lisbon establishing 1.4, Cliff Sanctuary up to 3.7).
+
+Memory: the Lisbon hero shots run near the 5 GB scope with both builds, and the after builds ran out of it in 4 of 8 Lisbon
+runs against 1 of 5 for the base. The merged copy is the cost: uncapped, these merges doubled merged geometry (143 MB);
+the 30,000-vertex cap keeps 412 draws for 120 MB (433 draws for 103 MB at 10,000).

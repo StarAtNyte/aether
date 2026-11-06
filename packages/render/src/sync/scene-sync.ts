@@ -10,6 +10,7 @@
  */
 import { accelerateRaycast } from '../geometry/raycast-bvh';
 import { StaticBatches } from './static-batches';
+import { AssetInstances, assetInstancesEnabled } from './asset-instances';
 import type { LightmapSource } from './lightmap-uv';
 import { COPY_CELL, StaticMerges } from './static-merges';
 import {
@@ -297,6 +298,8 @@ export class SceneSync {
   private generationFocus: readonly [number, number, number] | null = null;
   /** Instanced batches of identical static props (null when disabled). */
   private readonly batches: StaticBatches | null;
+  /** Instanced copies of static library models (null when off, see asset-instances.ts). */
+  private readonly assetInstances: AssetInstances | null;
   /** Content changed since the batches were grouped. */
   private batchesStale = true;
   /** Merged building geometry (null when batching is disabled). */
@@ -359,6 +362,8 @@ export class SceneSync {
     this.placeholderMaterial = new MeshStandardMaterial({ color: '#9aa4b2', roughness: 0.9, transparent: true, opacity: 0.35, depthWrite: false });
     this.batches = this.variant === 'standard' && opts.staticBatching !== false ? new StaticBatches(this.root) : null;
     this.merges = this.variant === 'standard' && opts.staticBatching !== false ? new StaticMerges({ background: opts.backgroundMerges === true, changed: opts.onBatchesChanged }) : null;
+    const merges = this.merges;
+    this.assetInstances = this.variant === 'standard' && opts.staticBatching !== false && assetInstancesEnabled() ? new AssetInstances(this.root, (mesh) => merges?.has(mesh) === true) : null;
     const cells = opts.cellShadows ?? {};
     this.cellShadows = this.variant === 'standard' && opts.staticBatching !== false && cells !== false && (globalThis as { __AETHER_CELL_SHADOWS?: boolean }).__AETHER_CELL_SHADOWS !== false
       ? new CellShadowBatches(this.root, { intactLayers: cells.layers, changed: opts.onBatchesChanged }) : null;
@@ -484,13 +489,18 @@ export class SceneSync {
     const moved = b.count > 0 ? b.update() : false;
     let merged = false;
     const m = this.merges;
+    let mergesRegrouped = false;
     if (m && !this.mergesSuspended) {
       if (stale || this.mergesPending) {
         this.mergesPending = false;
         merged = m.rebuild(this.nodes.values());
+        mergesRegrouped = true;
       }
       if ((m.count > 0 || m.pending > 0) && m.update()) merged = true;
     }
+    // After the merges: library-model meshes they merge stay theirs (see asset-instances.ts).
+    const ai = this.assetInstances;
+    if (ai && (stale || mergesRegrouped || ai.needsRebuild) && ai.rebuild(this.nodes.values())) regrouped = true;
     return this.updateCellShadows(stale || regrouped || merged) || regrouped || moved || merged;
   }
 
@@ -585,6 +595,8 @@ export class SceneSync {
         for (const c of o.children) stack.push(c);
         const mesh = o as Mesh;
         if (mesh.isMesh !== true || !mesh.castShadow || mesh.name.endsWith(':virtual') || !plainCasterMesh(mesh)) continue;
+        // Instanced copies cast as their instanced mesh.
+        if (this.assetInstances?.owns(mesh)) continue;
         yield { mesh, id: node.id };
       }
     }
@@ -642,7 +654,8 @@ export class SceneSync {
   get batchesActive(): boolean {
     const merging = this.merges !== null && !this.mergesSuspended && (this.mergesPending || this.merges.count > 0 || this.merges.pending > 0);
     const cells = this.cellShadows !== null && (this.cellShadowsStale || this.cellShadows.count > 0 || this.cellShadows.pending > 0 || (this.virtualBatches?.count ?? 0) > 0);
-    return (this.batches !== null && (this.batchesStale || this.batches.count > 0 || this.batches.needsRebuild)) || merging || cells;
+    const instances = this.assetInstances !== null && (this.assetInstances.count > 0 || this.assetInstances.needsRebuild);
+    return (this.batches !== null && (this.batchesStale || this.batches.count > 0 || this.batches.needsRebuild)) || merging || cells || instances;
   }
 
   /** Merged building geometry carries the baked lightmap coordinates `source` gives (null: none). */
@@ -651,8 +664,8 @@ export class SceneSync {
   }
 
   /** Static-prop batches / building merges and the draw calls they save per pass. */
-  batchStats(): { batches: number; drawCallsSaved: number; merges: number } {
-    return { batches: this.batches?.count ?? 0, drawCallsSaved: (this.batches?.drawCallsSaved ?? 0) + (this.merges?.drawCallsSaved ?? 0), merges: this.merges?.count ?? 0 };
+  batchStats(): { batches: number; drawCallsSaved: number; merges: number; assetInstances: number } {
+    return { batches: this.batches?.count ?? 0, drawCallsSaved: (this.batches?.drawCallsSaved ?? 0) + (this.merges?.drawCallsSaved ?? 0) + (this.assetInstances?.drawCallsSaved ?? 0), merges: this.merges?.count ?? 0, assetInstances: this.assetInstances?.count ?? 0 };
   }
 
   /** Per-cell shadow and virtual batches and the draws they save per pass (see cell-shadow-batches, virtual-cell-batch). */
@@ -1148,6 +1161,7 @@ export class SceneSync {
   clear(): void {
     this.batches?.clear();
     this.merges?.clear();
+    this.assetInstances?.clear();
     // A new world gets a grid of its own.
     this.virtualBatches?.clear();
     this.cellShadows?.resetPartition();

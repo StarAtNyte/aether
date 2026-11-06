@@ -20,7 +20,7 @@ import { CHROME_ARGS, findChrome, HEADLESS, SKIP_FIRST_RUN, startServer } from '
 const args = process.argv.slice(2);
 const flag = (k: string): string | undefined => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3);
 const slug = args.find((a) => !a.startsWith('--'));
-if (!slug) throw new Error('usage: arch-probe.ts --out=<dir> [--visits=N] [--orbit=S] [--scale=S] [--profile] [--eval=<file>] <slug>');
+if (!slug) throw new Error('usage: arch-probe.ts --out=<dir> [--visits=N] [--orbit=S] [--scale=S] [--profile] [--eval=<file>] [--init=<file>] <slug>');
 const out = resolve(flag('out') ?? `probe-out/arch-${slug}`);
 const visits = Math.max(1, Number(flag('visits') ?? 1));
 const orbitS = Math.max(0, Number(flag('orbit') ?? 20));
@@ -197,6 +197,9 @@ try {
       await ctx.addInitScript({ content: 'globalThis.__name = (f) => f;' });
       if (process.env['GEN_GPU'] === 'intel') await ctx.addInitScript({ content: 'delete Navigator.prototype.gpu; try { delete navigator.gpu; } catch {}' });
       await ctx.addInitScript({ content: INSTR });
+      // --init=<file>: a script run before the app (switches such as `globalThis.__AETHER_MATERIAL_DEDUPE = false`).
+      const initFile = flag('init');
+      if (initFile) await ctx.addInitScript({ content: readFileSync(initFile, 'utf8') });
       const page = ctx.pages()[0] ?? (await ctx.newPage());
       page.on('pageerror', (e) => log(`pageerror ${e.message.slice(0, 200)}`));
       const cdp = profile ? await ctx.newCDPSession(page) : null;

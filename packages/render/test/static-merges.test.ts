@@ -3,8 +3,9 @@ import { BufferAttribute, BufferGeometry, Group, InstancedBufferAttribute, Insta
 import { applyPatches, createWorld, type WorldDoc } from '@aether/core';
 import { compileBuilding } from '@aether/arch';
 import { BATCHED_LAYER } from '../src/sync/static-batches';
-import { MAX_MERGE_INSTANCES, MAX_MERGE_VERTICES, MIN_MERGE, StaticMerges, mergeGeometries } from '../src/sync/static-merges';
+import { MAX_MERGE_INSTANCES, MAX_MERGE_VERTICES, MIN_MERGE, SMALL_COPIES_VERTICES, StaticMerges, mergeGeometries } from '../src/sync/static-merges';
 import { createEntityNode } from '../src/sync/entity-node';
+import { PIECE_ORIGIN, PIECE_TONE_KEY } from '../src/sync/merge-geometries';
 import { box, makeSync, tick, world } from './helpers';
 
 function house(): WorldDoc {
@@ -208,7 +209,8 @@ describe('small scatter layers', () => {
     const geometry = triangle();
     const material = new MeshBasicMaterial();
     const parent = new Group();
-    const nodes = [layer('house-1', 1, 0, geometry, material, parent), layer('house-2', 1, 20, geometry, material, parent), layer('fence', 2, 10, geometry, material, parent), layer('forest', MAX_MERGE_INSTANCES + 1, 0, geometry, material, parent),
+    const nodes = [layer('house-1', 1, 0, geometry, material, parent), layer('house-2', 1, 20, geometry, material, parent), layer('fence', 2, 10, geometry, material, parent), // Many copies of a triangle: more vertices together than a small layer may have.
+      layer('forest', Math.max(MAX_MERGE_INSTANCES + 1, Math.ceil(SMALL_COPIES_VERTICES / 3) + 1), 0, geometry, material, parent),
       // In another cell of copies: culled on its own.
       layer('far-house', 1, 300, geometry, material, parent)];
     parent.updateMatrixWorld(true);
@@ -322,6 +324,68 @@ describe('static library models', () => {
     parent.updateMatrixWorld(true);
     expect(merges.update()).toBe(true);
     expect(lamps[0]!.mesh.layers.isEnabled(0)).toBe(true);
+    merges.clear();
+  });
+});
+
+describe('piece origins', () => {
+  it("writes each piece's world origin per vertex when every member has one, so a per-piece tone survives the merge", () => {
+    const g = new BufferGeometry();
+    g.setAttribute('position', new BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]), 3));
+    g.setAttribute('normal', new BufferAttribute(new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]), 3));
+    g.setIndex([0, 1, 2]);
+    const rel = Float64Array.from(new Matrix4().elements);
+    const out = mergeGeometries([{ geometry: g, rel, origin: [1.1, 2, 3] }, { geometry: g, rel, origin: [4, 5, 6.3] }]);
+    const o = out.getAttribute(PIECE_ORIGIN);
+    expect(o.count).toBe(6);
+    expect(o.getX(0)).toBe(Math.fround(1.1));
+    expect(o.getZ(5)).toBe(Math.fround(6.3));
+    // A member without one: no attribute (the material then uses the merged mesh's origin, as before).
+    expect(mergeGeometries([{ geometry: g, rel, origin: [1, 2, 3] }, { geometry: g, rel }]).getAttribute(PIECE_ORIGIN)).toBeUndefined();
+  });
+
+  it('merges the other parts of entities with virtual parts with their origins (props keep the merged tone)', () => {
+    const geometry = new BufferGeometry();
+    geometry.setAttribute('position', new BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]), 3));
+    geometry.setAttribute('normal', new BufferAttribute(new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]), 3));
+    geometry.setIndex([0, 1, 2]);
+    const material = new MeshBasicMaterial();
+    material.userData[PIECE_TONE_KEY] = true;
+    const parent = new Group();
+    const nodes = [0, 10, 20].map((x) => {
+      const w = world([{ id: `slab-${x}`, shape: { kind: 'procedural', generator: 'slab' } } as never]);
+      const node = createEntityNode(w.entities[`slab-${x}`]!, false);
+      node.object.position.x = x;
+      node.object.updateMatrix();
+      const mesh = new Mesh(geometry, material);
+      node.content.add(mesh);
+      node.bindings.push({ mesh, partMaterial: {}, hasColors: false, doubleSided: false, materialKey: 'slab', seeThrough: false, ownedMaterial: null } as never);
+      // A virtual stand-in elsewhere in the entity (its source mesh is marked so and never merged).
+      const source = new Mesh(geometry, material);
+      source.userData['aetherVirtualSource'] = true;
+      node.content.add(source);
+      node.bindings.push({ mesh: source, partMaterial: {}, hasColors: false, doubleSided: false, materialKey: 'slab', seeThrough: false, ownedMaterial: null } as never);
+      node.geometryKeys.push('slab');
+      node.geometryKeys.push('slab');
+      parent.add(node.object);
+      return node;
+    });
+    parent.updateMatrixWorld(true);
+    const merges = new StaticMerges();
+    merges.rebuild(nodes);
+    const m = parent.children.find((o): o is Mesh => o.name === 'aether:merged')!;
+    const o = m.geometry.getAttribute(PIECE_ORIGIN);
+    expect([o.getX(0), o.getX(3), o.getX(6)]).toEqual([0, 10, 20]);
+    merges.clear();
+    // The same pieces as plain props: merged without origins (one tone, as before).
+    for (const n of nodes) {
+      n.bindings.pop();
+      n.geometryKeys.pop();
+      n.content.children[1]!.removeFromParent();
+    }
+    merges.rebuild(nodes);
+    const p = parent.children.find((x): x is Mesh => x.name === 'aether:merged')!;
+    expect(p.geometry.getAttribute(PIECE_ORIGIN)).toBeUndefined();
     merges.clear();
   });
 });
