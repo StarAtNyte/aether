@@ -717,6 +717,10 @@ const INTEGRATED_TEXTURE_CAP = 512;
 const SWEEP_LEAN_HEAP_SHARE = 0.22;
 /** Share above which it is skipped. */
 const SWEEP_SKIP_HEAP_SHARE = 0.4;
+/** Longest the first-use pass behind the load screen may take (ms). */
+const FIRST_USE_MS = 15_000;
+/** Time between the first-use pass's draws while objects still prepare (ms). */
+const FIRST_USE_PERIOD_MS = 400;
 /**
  * Projected radius (pixels of the drawn picture) under which a mesh is not drawn on an integrated GPU in the realtime
  * view: a window bar, a tile, a flower pot across the valley. Each is a draw call and its triangles for a speck.
@@ -1009,6 +1013,16 @@ export class WorldRenderer {
   private atRest = true;
   /** The load sweep draws with the motion phase of a split chain (see prepareSurroundings). */
   private sweepMotion = false;
+  /** The phase of a split chain to draw whatever the view does (the first-use pass behind the load screen; null: as the view says). */
+  private phaseOverride: 'rest' | 'motion' | null = null;
+  /** Post-chain programs link off the frame, the draw skipped meanwhile (the first-use pass: nothing on screen to keep). */
+  private linkPostAsync = false;
+  /** The first-use pass under way (see {@link prepareFirstUse}). */
+  private firstUse: Promise<void> | null = null;
+  /** Programs in use when the last first-use pass ended clean. */
+  private firstUsePrograms = -1;
+  /** What the first-use passes did (diagnostics): rounds, draws, draws put off while a phase's chain was built, times. */
+  readonly firstUseStats = { rounds: 0, draws: 0, waits: 0, clean: false, startedAt: 0, endedAt: 0 };
   /** The current motion phase has displayed an actual completed frame. */
   private motionFrameReady = false;
   /** Measurement hook (tests): true draws every frame with the lean surface shading, null follows the view's motion. */
@@ -1542,6 +1556,135 @@ export class WorldRenderer {
       this.sunMapDirty = true;
       this.needsDraw = true;
     }
+  }
+
+  /**
+   * Use every program once behind the load screen. A program the driver has linked still costs its first draw: on Mesa the
+   * first frame that used Kestrel Outpost's programs took two GPU-process tasks of 1.3 s each, and every object first seen on
+   * the first turn of the camera cost another (19-30 GPU-process tasks over 50 ms after the first picture on a cold visit).
+   * One object of each program is drawn with frustum culling off (out of view it is clipped: the picture does not change),
+   * the sun map with it, in each phase of a split chain; the post chain's own programs link off the frame here (the rest
+   * phase's used to link inside the first frame at rest, 1.4-3.2 s). Cheaper than the four-heading sweep
+   * ({@link prepareSurroundings}, which this replaces when that is off): no hidden canvas, one walk, one view.
+   * WebGL only; bounded; never throws. Off with `__AETHER_FIRST_USE = false`.
+   */
+  prepareFirstUse(boundMs = FIRST_USE_MS): Promise<void> {
+    // One at a time; nothing to do when the last pass ended clean and no program was created since.
+    if (!this.firstUse && this.firstUseStats.clean && this.renderer.info.memory.programs === this.firstUsePrograms && this.programs.pending === 0 && this.preparation.pending === 0) return Promise.resolve();
+    this.firstUse ??= this.runFirstUse(boundMs).finally(() => {
+      this.firstUse = null;
+    });
+    return this.firstUse;
+  }
+
+  private async runFirstUse(boundMs: number): Promise<void> {
+    if (this.disposed || this.lost || (globalThis as { __AETHER_FIRST_USE?: boolean }).__AETHER_FIRST_USE === false || (globalThis as { __AETHER_SWEEP?: boolean }).__AETHER_SWEEP === true) return;
+    if ((this.renderer as unknown as { backend?: { isWebGPUBackend?: boolean } }).backend?.isWebGPUBackend === true) return;
+    const end = now() + boundMs;
+    const left = (): number => Math.max(0, end - now());
+    const idle = (): boolean => this.programs.pending === 0 && this.preparation.pending === 0 && !this.postPending;
+    // The motion phase first, the rest phase last: the view rests when the load screen lifts.
+    const phases: Array<'rest' | 'motion' | null> = this.qualityPlan.moveEffects !== null && this.budget.post ? ['motion', 'rest'] : [null];
+    try {
+      // Each draw uses what is ready and starts what it met for the first time (objects prepare, the post chain's programs
+      // link). A frame drawn with work pending is not presented (gpu/presentation.ts), so the canvas keeps its last
+      // picture. Until a draw of each phase meets nothing new. While objects prepare, a round draws only when some finished
+      // since the last, and the rest phase once (its chain's links start): every draw is a full frame on the GPU process.
+      // Started from the load gate only (Simulation.loadFully): started right after the compile walk, beside the
+      // preparation, it gained nothing (the GPU process was the bottleneck) and now and then left the cliffs of Kestrel
+      // Outpost undrawn on a warm visit.
+      let clean = 0;
+      let shadows = true;
+      let lastPending = -1;
+      let restDrawn = false;
+      const stats = this.firstUseStats;
+      stats.startedAt ||= Math.round(now());
+      while (left() > 0 && !this.disposed && !this.lost && clean < phases.length) {
+        const busy = !idle();
+        const pending = this.preparation.pending + this.programs.pending;
+        if (busy && pending === lastPending) {
+          await new Promise<void>((resolve) => setTimeout(resolve, FIRST_USE_PERIOD_MS));
+          continue;
+        }
+        lastPending = pending;
+        const round = busy ? phases.filter((p) => p !== 'rest' || !restDrawn) : phases;
+        // Gathered again each round: models that arrived since take part.
+        const restore = this.everyProgramInView();
+        try {
+          for (const phase of round) {
+            if (this.disposed || this.lost) break;
+            this.phaseOverride = phase;
+            this.syncPost();
+            const want = this.wantedEffects();
+            if (want && this.post?.key !== effectsKey(want)) {
+              // That phase's chain is still being built: drawn on a later round.
+              clean = 0;
+              stats.waits++;
+              continue;
+            }
+            const linking = this.programs.draws.linking, deferred = this.preparation.deferred, wasIdle = idle();
+            if (shadows) this.sunMapDirty = true;
+            this.linkPostAsync = true;
+            try {
+              this.drawOnce(false);
+            } finally {
+              this.linkPostAsync = false;
+            }
+            const fresh = this.programs.draws.linking !== linking || this.preparation.deferred !== deferred || !wasIdle || !idle();
+            clean = fresh ? 0 : clean + 1;
+            stats.draws++;
+            if (phase === 'rest') restDrawn = true;
+            // The sun map again only while new objects keep coming in (it draws every caster).
+            shadows = fresh;
+          }
+        } finally {
+          restore();
+        }
+        stats.rounds++;
+        await new Promise<void>((resolve) => setTimeout(resolve, idle() ? 0 : FIRST_USE_PERIOD_MS));
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      }
+      stats.clean = clean >= phases.length;
+      this.firstUsePrograms = this.renderer.info.memory.programs;
+    } catch (e) {
+      log.warn(`first-use pass failed: ${errorMessage(e)}`);
+    } finally {
+      this.firstUseStats.endedAt = Math.round(now());
+      this.linkPostAsync = false;
+      this.phaseOverride = null;
+      this.syncPost();
+      this.sunMapDirty = true;
+      this.needsDraw = true;
+    }
+  }
+
+  /**
+   * One object of each program (see {@link programKey}) drawn whatever the camera sees: frustum culling off, batched copies
+   * not culled one by one. Only meshes the camera draws: the sources of merged batches (on their own layer) keep their flags,
+   * which the batches key their members on. Returns the restore.
+   */
+  private everyProgramInView(): () => void {
+    const seen = new Set<string>();
+    const changed: Array<{ o: Mesh & { perObjectFrustumCulled?: boolean }; culled: boolean; perObject: boolean | undefined }> = [];
+    const layers = this.perspective.layers;
+    this.scene.traverseVisible((o) => {
+      const m = o as Mesh & { perObjectFrustumCulled?: boolean };
+      if (m.isMesh !== true && (o as { isPoints?: boolean }).isPoints !== true && (o as { isLine?: boolean }).isLine !== true) return;
+      if (!layers.test(o.layers)) return;
+      const key = programKey(o) + o.layers.mask;
+      if (seen.has(key)) return;
+      seen.add(key);
+      if (!m.frustumCulled && m.perObjectFrustumCulled !== true) return;
+      changed.push({ o: m, culled: m.frustumCulled, perObject: m.perObjectFrustumCulled });
+      m.frustumCulled = false;
+      if (m.perObjectFrustumCulled === true) m.perObjectFrustumCulled = false;
+    });
+    return () => {
+      for (const c of changed) {
+        c.o.frustumCulled = c.culled;
+        if (c.perObject !== undefined) c.o.perObjectFrustumCulled = c.perObject;
+      }
+    };
   }
 
   /** Pending asynchronous work, independent of optional performance-stat collection. */
@@ -2494,6 +2637,10 @@ export class WorldRenderer {
   private async compileScene(boundMs = SHADER_WARMUP_MS): Promise<void> {
     // From here the world asks for its own programs: the rest of the pre-warmed set would only queue in front of them.
     this.programCache?.worldCompiling();
+    // The lamp slots first: the first draw moves the entity lamps behind them, and a walk that saw the lamps themselves
+    // built every lit material for another light set (Kestrel Outpost: 25 lit programs linked during the load and thrown
+    // away at its first draw).
+    this.syncLampSlots();
     const webgpu = (this.renderer as unknown as { backend?: { isWebGPUBackend?: boolean } }).backend?.isWebGPUBackend === true;
     const restoreEffects = this.fx.vfx.prepareForCompile();
     const changed: Array<{ o: Object3D; visible: boolean; culled: boolean }> = [];
@@ -4542,7 +4689,12 @@ export class WorldRenderer {
    * bloom. Null: render directly.
    */
   private wantedEffects(): PostEffects | null {
-    return this.effectsFor(this.qualityPlan.moveEffects === null || (this.atRest && !this.sweepMotion) || this.captureActive);
+    return this.effectsFor(this.qualityPlan.moveEffects === null || this.restPhase() || this.captureActive);
+  }
+
+  /** The split chain draws its rest phase now (see {@link phaseOverride}). */
+  private restPhase(): boolean {
+    return this.phaseOverride !== null ? this.phaseOverride === 'rest' : this.atRest && !this.sweepMotion;
   }
 
   /** The effect set of the rest phase (`rest`) or of the motion phase of a split chain (see {@link wantedEffects}). */
@@ -5624,7 +5776,7 @@ export class WorldRenderer {
     this.postShadowSize = this.env.shaftMapSize;
     const gen = ++this.postGen;
     const builtAt = this.postShadowSize;
-    createPostPipeline(this.renderer, this.scene, this.perspective, this.env.bloom, postQualityOf(want) ?? 'standard', { effects: want, sun: this.env.shaftLight ?? this.env.sun, contactLight: this.env.sun, aoScale: this.qualityPlan.moveEffects !== null ? 0.5 : undefined, screenOcclusion: this.qualityPlan.moveEffects !== null && (globalThis as { __AETHER_SCREEN_OCCLUSION?: boolean }).__AETHER_SCREEN_OCCLUSION !== false, linkNow: (run) => this.preparation.synchronous(() => this.programs.synchronous(run)) })
+    createPostPipeline(this.renderer, this.scene, this.perspective, this.env.bloom, postQualityOf(want) ?? 'standard', { effects: want, sun: this.env.shaftLight ?? this.env.sun, contactLight: this.env.sun, aoScale: this.qualityPlan.moveEffects !== null ? 0.5 : undefined, screenOcclusion: this.qualityPlan.moveEffects !== null && (globalThis as { __AETHER_SCREEN_OCCLUSION?: boolean }).__AETHER_SCREEN_OCCLUSION !== false, linkNow: (run) => (this.linkPostAsync ? run() : this.preparation.synchronous(() => this.programs.synchronous(run))) })
       .then((p) => {
         this.postPending = false;
         if (!p) {
@@ -5684,14 +5836,14 @@ export class WorldRenderer {
    */
   private prepareOtherPhase(): void {
     if (this.qualityPlan.moveEffects === null || this.postStash || this.postPending || !this.post || this.disposed) return;
-    const rest = this.atRest && !this.sweepMotion;
+    const rest = this.restPhase();
     const other = this.effectsFor(!rest);
     if (!other || effectsKey(other) === this.post.key || (other.shafts && !this.env.shaftLight)) return;
     this.postPending = true;
     const gen = this.postGen;
     const builtAt = this.env.shaftMapSize;
     this.postShadowSize = builtAt;
-    createPostPipeline(this.renderer, this.scene, this.perspective, this.env.bloom, postQualityOf(other) ?? 'standard', { effects: other, sun: this.env.shaftLight ?? this.env.sun, contactLight: this.env.sun, aoScale: 0.5, screenOcclusion: (globalThis as { __AETHER_SCREEN_OCCLUSION?: boolean }).__AETHER_SCREEN_OCCLUSION !== false, linkNow: (run) => this.preparation.synchronous(() => this.programs.synchronous(run)) })
+    createPostPipeline(this.renderer, this.scene, this.perspective, this.env.bloom, postQualityOf(other) ?? 'standard', { effects: other, sun: this.env.shaftLight ?? this.env.sun, contactLight: this.env.sun, aoScale: 0.5, screenOcclusion: (globalThis as { __AETHER_SCREEN_OCCLUSION?: boolean }).__AETHER_SCREEN_OCCLUSION !== false, linkNow: (run) => (this.linkPostAsync ? run() : this.preparation.synchronous(() => this.programs.synchronous(run))) })
       .then((p) => {
         this.postPending = false;
         if (!p) return;
@@ -5843,9 +5995,13 @@ export class WorldRenderer {
     }
   }
 
-  private drawReady(capture = false): void {
-    // Lamps that came, went or switched off since the last frame change the slots' values only, not the light set.
+  /** Lamps that came, went or switched off since the last frame change the slots' values only, not the light set. */
+  private syncLampSlots(): void {
     if (this.lampSlots.sync(this.sync.lights, this.sync.templateLamps)) log.info(`lamp slots: ${this.lampSlots.size}`);
+  }
+
+  private drawReady(capture = false): void {
+    this.syncLampSlots();
     // The post chain's scene passes update once per node frame, and the node frame advances once per animation frame:
     // a capture drawn in the same frame as the viewport (another aspect, another size, a camera moved a moment ago) would
     // reuse the viewport's scene pass and only re-composite it, stretched. Advance the frame so the capture renders fresh.

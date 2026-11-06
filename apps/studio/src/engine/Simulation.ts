@@ -552,6 +552,10 @@ export class Simulation {
     performance.mark('aether:sweep-start');
     await this.renderer.prepareSurroundings(4, Math.max(1000, maxMs / 3));
     performance.mark('aether:sweep-end');
+    // Without the sweep: every program is drawn once here, in each phase, so the driver's first use of each is behind the
+    // load screen too (not on the first turn of the camera).
+    await this.renderer.prepareFirstUse();
+    performance.mark('aether:first-use-end');
     let readySince = 0;
     let last: string | null = null;
     while (!this.disposed && performance.now() < end) {
