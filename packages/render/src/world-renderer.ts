@@ -20,7 +20,7 @@ import type { CookedPackage } from './cook/cooked';
 import { gpuFrameCost } from './gpu/frame-cost';
 import { preparePresentation } from './gpu/presentation';
 import { warmProceduralFields } from './gpu/procedural-fields-client';
-import { ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, Box3, BufferAttribute, BufferGeometry, Color, FogExp2, Mesh as ThreeMesh, MeshBasicMaterial, Frustum, Group, Matrix4, PerspectiveCamera, Plane, Quaternion, Raycaster, RenderTarget, Scene, Vector2, Vector3, Vector4, type Intersection, type Light, type Material, type Mesh, type Object3D, type Texture } from 'three';
+import { ACESFilmicToneMapping, AgXToneMapping, LinearToneMapping, NeutralToneMapping, Box3, BufferAttribute, BufferGeometry, Color, FogExp2, Mesh as ThreeMesh, MeshBasicMaterial, Frustum, Group, Matrix4, PerspectiveCamera, Plane, Quaternion, Raycaster, RenderTarget, Scene, Vector2, Vector3, Vector4, type Intersection, type Light, type Material, type Mesh, type Object3D, type Texture } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
 import type { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { buildStructure } from '@aether/arch';
@@ -68,8 +68,8 @@ import { Highlighter } from './view/highlighter';
 import { DebugOverlay } from './view/debug-overlay';
 import { captureMime, captureNeedsResize, pixelsAreBlank, captureSize, MAX_VIEWS, telephotoPose, viewPose, viewRegion, type CaptureView } from './view/capture';
 import { FrameStats } from './view/frame-stats';
-import { gradeFor, gradeWithPreset } from './gpu/grade';
-import { autoTier, degrade, effectsKey, effectsOf, evScale, GRADE_PRESETS, isGradePresetId, presetFor, RENDER_TIERS, resolveEffects, type EffectOverrides, type GradePreset, type GradePresetId, type PostEffects, type RenderTier } from './gpu/finishing';
+import { gradeFor, gradeWithPreset, NEUTRAL_GRADE } from './gpu/grade';
+import { animeEffects, autoTier, degrade, effectsKey, effectsOf, evScale, GRADE_PRESETS, isGradePresetId, presetFor, RENDER_TIERS, resolveEffects, type EffectOverrides, type GradePreset, type GradePresetId, type PostEffects, type RenderTier } from './gpu/finishing';
 import { CameraTour, DRONE_TOUR_RADIUS, TOUR_SECONDS, droneTourKeys, tourKeys, tourSections } from './view/tour';
 import { AdaptiveResolution, MOTION_PROFILES, motionOptions, passFloorOf, type MotionProfile } from './view/adaptive-resolution';
 import { MeshBasicNodeMaterial } from 'three/webgpu';
@@ -4840,6 +4840,7 @@ export class WorldRenderer {
     // more, a quarter of the frame on an integrated GPU.
     if (!effects.composite && plan.tier === 'low' && this.effectOverrides.composite !== false && this.env.bloom > 0.001 && !weakHardware(this.hardware) && !this.safe && this.cuts.tierCap !== 'low') effects = { ...effects, composite: true };
     if (!effects.composite || this.postFailed) return null;
+    if (this.animeStyle) effects = animeEffects(effects);
     // Sun shafts march through the sun's shadow map: they need a shadow-casting sun with a map in use.
     if (effects.shafts && (!this.env.sun.castShadow || this.shaftsUnavailable)) effects = { ...effects, shafts: false };
     return effects;
@@ -5480,7 +5481,8 @@ export class WorldRenderer {
    */
   private applyLook(): void {
     const sky = this.env.skyState;
-    const id = this.gradeId ?? presetFor({ elevation: sky.elevation, moon: sky.moon, sunGlowStrength: sky.sunGlowStrength, preset: sky.preset });
+    const anime = this.animeStyle;
+    const id = this.gradeId ?? (anime ? 'anime' : presetFor({ elevation: sky.elevation, moon: sky.moon, sunGlowStrength: sky.sunGlowStrength, preset: sky.preset }));
     const base = GRADE_PRESETS[id];
     // A grade carried by the document (a photo's white balance and tone) replaces the preset's own fields.
     const g = this.docGrade;
@@ -5493,7 +5495,8 @@ export class WorldRenderer {
     const shown: GradePreset = tw.contrast === 1 && tw.saturation === 1 && tw.exposureEv === 0 && tw.temperature === 0 ? preset : { ...preset, contrast: preset.contrast * tw.contrast, saturation: preset.saturation * tw.saturation, exposureEv: preset.exposureEv + tw.exposureEv, temperature: preset.temperature + tw.temperature };
     const post = this.post;
     // AgX takes the preset's look through the post chain's own curve when it is installed (see `gpu/agx-look.ts`).
-    this.renderer.toneMapping = post ? (preset.tone === 'agx' ? (post.agxToneMapping ?? AgXToneMapping) : preset.tone === 'neutral' ? NeutralToneMapping : ACESFilmicToneMapping) : ACESFilmicToneMapping;
+    // A painted (anime) world keeps its palette on every tier, the direct low tier included.
+    this.renderer.toneMapping = preset.tone === 'linear' ? LinearToneMapping : post ? (preset.tone === 'agx' ? (post.agxToneMapping ?? AgXToneMapping) : preset.tone === 'neutral' ? NeutralToneMapping : ACESFilmicToneMapping) : ACESFilmicToneMapping;
     const eye = adaptedLook(this.eyeFactor);
     // A baked light volume occludes the image light itself and tells the exposure how dark the spot is.
     const volume = this.lightVolume.ready;
@@ -5501,7 +5504,8 @@ export class WorldRenderer {
     // Outside the room's light the sky and the scenery take back part of the eye's interior exposure (a window shows a sky, not white).
     this.env.setExteriorScale(volume ? 2 ** (-EnvironmentRig.EXTERIOR_COMPENSATION * Math.max(0, this.eyeEv)) : 1);
     this.env.setInteriorFill(this.eyeFactor);
-    this.renderer.toneMappingExposure = volume ? toneExposure(this.env.exposure, this.eyeEv + this.trimNow) : this.env.exposure * eye.exposure;
+    // A painted world is shown at the exposure its author set: no sky preset factor, no eye adaptation.
+    this.renderer.toneMappingExposure = anime ? this.docExposure * 2 ** shown.exposureEv : volume ? toneExposure(this.env.exposure, this.eyeEv + this.trimNow) : this.env.exposure * eye.exposure;
     if (post) {
       // Inside a lit building the grade warms a little, as an interior photographer balances it (not for a document grade).
       // Most of the room light's own colour cast (a wood floor's bounce, warm lamps) is balanced out first.
@@ -5509,12 +5513,17 @@ export class WorldRenderer {
       const look = this.docLook;
       const adapted = Math.max(0, Math.min(1, this.eyeEv / 1.5));
       const warm = volume && (!g || look?.interiorWarmth !== undefined) ? (look?.interiorWarmth ?? INTERIOR_WARMTH) * adapted + this.eyeBalance * (look?.interiorBalance ?? INTERIOR_BALANCE) : 0;
-      const grade = gradeWithPreset(gradeFor(sky), warm !== 0 ? { ...shown, temperature: shown.temperature + warm } : shown);
+      const grade = anime ? gradeWithPreset(NEUTRAL_GRADE, shown) : gradeWithPreset(gradeFor(sky), warm !== 0 ? { ...shown, temperature: shown.temperature + warm } : shown);
       // The eye's exposure is in the renderer's tone mapping (which the post output applies too): the grade keeps only the preset's.
       post.setGrade(grade);
       post.setBloom(this.env.bloom * preset.bloom);
       if (!this.vignetteOff) post.setVignette(this.vignetteStrength());
     }
+  }
+
+  /** The world asks for the painted (anime) presentation (`environment.look.style`). */
+  private get animeStyle(): boolean {
+    return this.docLook?.style === 'anime';
   }
 
   /** Edge darkening of the picture: the world's `look.vignette`, else the renderer's default. */

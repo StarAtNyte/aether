@@ -44,7 +44,8 @@ export function worldFileText(world: WorldDoc): string {
  * A room rebuilt from a photo is not planned from its prompt: its world comes from the recorded photo run
  * (`npm run showcase:photo-rooms`) and is only re-validated and re-verified here, so the photo pipeline stays
  * reconstruct-only and nothing maps an uploaded photo to a stored room. A world the agent generated in a recorded run
- * (`origin: 'agent'`) is stored the same way: its file is the source, only re-validated and re-verified.
+ * (`origin: 'agent'`) and a world built around Blender pieces (`origin: 'blender'`) are stored the same way: the file is the
+ * source, only re-validated and re-verified.
  */
 async function bakePhoto(entry: ShowcaseEntry): Promise<{ text: string; entities: number; ms: number; stored: true }> {
   const t0 = performance.now();
@@ -86,7 +87,7 @@ export function withStoredSkins(world: WorldDoc, slug: string): WorldDoc {
 }
 
 async function bake(entry: ShowcaseEntry, sandbox: ReturnType<typeof createNodeSandbox>): Promise<{ text: string; entities: number; ms: number; stored?: true }> {
-  if (entry.origin === 'photo' || entry.origin === 'agent') return bakePhoto(entry);
+  if (entry.origin === 'photo' || entry.origin === 'agent' || entry.origin === 'blender') return bakePhoto(entry);
   const t0 = performance.now();
   const host = new NodeAgentHost(sandbox);
   const agent = new WorldAgent({ provider: createMockProvider({ library: GENERATOR_LIBRARY }), catalogs: CATALOGS, resolveGenerator: loadLibraryGenerator, maxRepairs: 2 });

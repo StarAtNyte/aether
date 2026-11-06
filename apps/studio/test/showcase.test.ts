@@ -4,6 +4,7 @@
  * files as untrusted input (slug check, size caps, timeouts, WebP check).
  */
 import { existsSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateWorld } from '@aether/core';
 import { describe, expect, it, vi } from 'vitest';
@@ -12,6 +13,7 @@ import { SHOWCASE } from '../src/showcase/manifest';
 import { loadTemplateThumbnail, loadTemplateWorld, readCapped, type FetchLike } from '../src/showcase/load';
 import { FLAGSHIPS } from '../../../packages/agent/src/providers/mock/showcase/index';
 
+const REPO = fileURLToPath(new URL('../../../', import.meta.url));
 const pub = (rel: string): string => fileURLToPath(new URL(`../public/${rel}`, import.meta.url));
 
 describe('showcase manifest', () => {
@@ -55,6 +57,21 @@ describe('showcase manifest', () => {
     for (const e of agent) {
       expect(e.prompt.length, e.slug).toBeGreaterThan(5);
       expect(['offline-planner', 'claude-code', 'claude-api', 'codex'], e.slug).toContain(e.provenance);
+    }
+  });
+
+  it('builds every Blender template from its own scripts and ships the pieces its models name', () => {
+    const blender = SHOWCASE.filter((e) => e.origin === 'blender');
+    expect(blender.length).toBeGreaterThanOrEqual(1);
+    for (const e of blender) {
+      expect(existsSync(join(REPO, 'scripts/blender', e.slug.split('-')[0] ?? e.slug)), `${e.slug} scripts`).toBe(true);
+      const raw = JSON.parse(readFileSync(pub(`templates/worlds/${e.slug}.json`), 'utf8')) as { world: { entities: Record<string, { shape: { kind: string; url?: string } }> } };
+      const urls = Object.values(raw.world.entities).flatMap((en) => (en.shape.kind === 'model' && en.shape.url ? [en.shape.url] : []));
+      expect(urls.length, e.slug).toBeGreaterThan(0);
+      for (const u of urls) {
+        expect(u.startsWith(`./templates/models/${e.slug}/`), u).toBe(true);
+        expect(existsSync(pub(u.slice(2))), u).toBe(true);
+      }
     }
   });
 

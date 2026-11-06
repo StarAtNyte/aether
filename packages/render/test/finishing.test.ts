@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { AGX_PUNCHY, agxLookParams } from '../src/gpu/agx-look';
 import {
+  animeEffects,
   autoTier,
   degrade,
   DEGRADE_ORDER,
@@ -192,5 +193,18 @@ describe('AgX look', () => {
     expect(look('golden-hour')).toBeGreaterThan(look('overcast'));
     expect(look('archviz-daylight')).toBeGreaterThan(look('night'));
     expect(look('golden-hour')).toBeLessThanOrEqual(1);
+  });
+
+  it('the anime look keeps the painted palette: linear curve, neutral grade, no shading passes, bloom kept', () => {
+    const a = GRADE_PRESETS.anime;
+    expect(a.tone).toBe('linear');
+    expect([a.saturation, a.contrast, a.exposureEv, a.temperature, a.tint, a.grain]).toEqual([1, 1, 0, 0, 0, 0]);
+    expect(a.bloom).toBe(1);
+    const e = animeEffects(effectsOf('ultra'));
+    expect(e.composite && e.taa && e.halation).toBe(true);
+    expect([e.ao, e.gi, e.contact, e.ssr, e.shafts, e.aberration, e.grain].some(Boolean)).toBe(false);
+    // The realistic presets are untouched.
+    for (const id of ['archviz-daylight', 'golden-hour', 'dusk-interior', 'overcast', 'night'] as const) expect(GRADE_PRESETS[id].tone).toBe('agx');
+    expect(effectsOf('ultra').ao).toBe(true);
   });
 });

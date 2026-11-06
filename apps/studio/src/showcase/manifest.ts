@@ -50,9 +50,10 @@ export interface ShowcaseEntry {
   /**
    * 'flagship': an art-directed showcase world; 'gallery': a saved gallery render; 'photo': an example room rebuilt from a photograph;
    * 'agent': a world the agent generated from the prompt in a recorded run, stored as it came out (re-validated and re-verified by
-   * `showcase:bake`, not re-planned).
+   * `showcase:bake`, not re-planned); 'blender': a world assembled around pieces modelled and baked in Blender by the scripts in
+   * `scripts/blender/<slug>/` (procedural only), stored as built (re-validated and re-verified, not re-planned).
    */
-  origin: 'flagship' | 'gallery' | 'photo' | 'agent';
+  origin: 'flagship' | 'gallery' | 'photo' | 'agent' | 'blender';
   /** Required for `origin: 'agent'`: how the stored world was made (shown on the card). */
   provenance?: Provenance;
   /** Gallery screenshot (in docs/screenshots/gallery) the thumbnail was cut from. */
@@ -85,6 +86,7 @@ export const SHOWCASE: readonly ShowcaseEntry[] = Object.freeze([
   { slug: 'blockfall', title: 'Blockfall', kind: 'game', curation: 'featured', origin: 'flagship', description: 'Mine, craft and survive the night in an endless block world.', prompt: 'Blockfall: a voxel survival sandbox with a village, a castle, crafting, mobs and a day/night cycle' },
   { slug: 'neon-rain-city', title: 'Neon Rain City', kind: 'game', curation: 'featured', origin: 'flagship', description: 'A rain-soaked downtown at night, lit window by window — find the five neon cats.', prompt: 'Neon Rain City: a rain-soaked downtown at night with neon signs, wet streets and traffic' },
   { slug: 'kyoto-temple', title: 'Kyoto Temple Lanterns', kind: 'story', curation: 'featured', origin: 'flagship', description: 'Rain on a thousand torii: a story in four chapters and a silent bell.', prompt: 'Kyoto Temple Lanterns: a story in four chapters on a rainy temple hill at dusk, with torii gates and lanterns' },
+  { slug: 'cloudwatch-harbour', title: 'Cloudwatch Harbour', kind: 'scene', curation: 'featured', origin: 'blender', description: 'A harbour town at summer dusk, painted.', prompt: 'Cloudwatch Harbour at summer dusk' },
   { slug: 'painterly-meadow', title: 'Painterly Meadow', kind: 'scene', curation: 'featured', origin: 'flagship', description: 'A steam train circles a wildflower valley on a summer morning.', prompt: 'Painterly Meadow: a steam train circling a wildflower valley on a summer morning, with a windmill and grazing animals' },
   { slug: 'four-seasons-garden', title: 'Four-Seasons Garden', kind: 'scene', curation: 'featured', origin: 'flagship', description: 'Blossom, green, fire and frost around a koi pond — switch seasons with 1–5.', prompt: 'Four-Seasons Garden: a Japanese garden with a koi pond whose four quarters live in four seasons' },
   { slug: 'orbital-lab', title: 'Orbital Lab', kind: 'game', curation: 'featured', origin: 'flagship', description: 'Bound through a low-gravity station above a blue planet to restart its reactor.', prompt: 'Orbital Lab: a low-gravity space station with motor-driven machines — recover five power cells and restart the reactor' },

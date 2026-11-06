@@ -21,6 +21,7 @@ import {
   DirectionalLight,
   MeshPhysicalMaterial,
   NeutralToneMapping,
+  LinearToneMapping,
   NoToneMapping,
   Object3D,
   PointLight,
@@ -86,7 +87,7 @@ export interface PathTraceInput {
   environmentIntensity: number;
   /** Rotation of the environment about +y (radians). */
   environmentRotationY: number;
-  toneMapping: ToneMapping | 'agx' | 'aces' | 'neutral' | 'none';
+  toneMapping: ToneMapping | 'agx' | 'aces' | 'neutral' | 'linear' | 'none';
   exposure: number;
 }
 
@@ -231,6 +232,8 @@ function toneOf(t: PathTraceInput['toneMapping']): ToneMapping {
       return NeutralToneMapping;
     case 'none':
       return NoToneMapping;
+    case 'linear':
+      return LinearToneMapping;
     default:
       return t;
   }

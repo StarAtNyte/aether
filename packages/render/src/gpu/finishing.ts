@@ -134,7 +134,7 @@ export function effectsKey(e: PostEffects): string {
 // ---------------------------------------------------------------------------
 
 /** Tone-mapping operator of a grade. */
-export type ToneCurve = 'agx' | 'aces' | 'neutral';
+export type ToneCurve = 'agx' | 'aces' | 'neutral' | 'linear';
 
 /** A named look: sun-matched grading of the linear HDR image before the tone curve. */
 export interface GradePreset {
@@ -161,7 +161,7 @@ export interface GradePreset {
 }
 
 /** Preset ids. */
-export type GradePresetId = 'archviz-daylight' | 'golden-hour' | 'dusk-interior' | 'overcast' | 'night' | 'neutral';
+export type GradePresetId = 'archviz-daylight' | 'golden-hour' | 'dusk-interior' | 'overcast' | 'night' | 'neutral' | 'anime';
 
 /** The preset table. Frozen. */
 export const GRADE_PRESETS: Readonly<Record<GradePresetId, GradePreset>> = Object.freeze({
@@ -176,7 +176,20 @@ export const GRADE_PRESETS: Readonly<Record<GradePresetId, GradePreset>> = Objec
   overcast: { id: 'overcast', tone: 'agx', exposureEv: 0.2, saturation: 1.04, contrast: 1.14, temperature: -0.06, tint: 0, grain: 1, bloom: 0.7, look: 0.4 },
   night: { id: 'night', tone: 'agx', exposureEv: 0.35, saturation: 0.9, contrast: 1.1, temperature: -0.12, tint: 0, grain: 1.5, bloom: 1.3, look: 0.3 },
   neutral: { id: 'neutral', tone: 'aces', exposureEv: 0, saturation: 1, contrast: 1, temperature: 0, tint: 0, grain: 0.6, bloom: 1 },
+  // Painted, cel-shaded worlds (`environment.look.style: 'anime'`): the surfaces already hold their final colour, so the curve
+  // is linear (a colour below white is shown as authored: no ACES hue shift toward yellow, no AgX desaturation), the grade
+  // is neutral and only what is brighter than white (the sun, lamps, glitter) blooms.
+  anime: { id: 'anime', tone: 'linear', exposureEv: 0, saturation: 1, contrast: 1, temperature: 0, tint: 0, grain: 0, bloom: 1 },
 });
+
+/**
+ * The effects an `anime` world keeps: the composite (bloom, vignette), anti-aliasing and halation. Ambient occlusion, contact
+ * shadows, reflections, GI, sun shafts, aberration and grain shade or texture the picture, and a painted flat colour has
+ * nothing for them to add.
+ */
+export function animeEffects(e: PostEffects): PostEffects {
+  return { ...e, ao: false, gi: false, contact: false, ssr: false, shafts: false, aberration: false, grain: false };
+}
 
 /** True when `value` names a preset. */
 export function isGradePresetId(value: unknown): value is GradePresetId {

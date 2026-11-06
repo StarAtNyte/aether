@@ -769,6 +769,13 @@ export const Environment = z.object({
        * not depend on it.
        */
       intent: z.object({ key: z.enum(['dim', 'moderate', 'bright']).optional(), text: z.string().max(120).optional() }).optional(),
+      /**
+       * Additive, opt-in: the presentation style. `anime` is for worlds whose surfaces carry their own painted, cel-shaded colour
+       * (baked toon light, unlit pieces): a palette-preserving linear tone curve on every tier, a neutral grade (no sky-derived
+       * warmth or saturation caps), no automatic exposure, and no screen-space shading passes (ambient occlusion, contact
+       * shadows, reflections, GI, sun shafts, aberration, grain) that would muddy flat colour. Bloom stays. Absent: realistic.
+       */
+      style: z.enum(['realistic', 'anime']).optional(),
     })
     .optional(),
   /**

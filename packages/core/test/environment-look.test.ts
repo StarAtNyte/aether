@@ -16,6 +16,12 @@ describe('Environment.look', () => {
     expect(Environment.safeParse({ look: { vignette: Number.NaN } }).success).toBe(false);
   });
 
+  it('takes an opt-in presentation style (anime), absent for every realistic world', () => {
+    expect(Environment.parse({ look: { style: 'anime' } }).look).toEqual({ style: 'anime' });
+    expect(Environment.parse({ look: { vignette: 0.2 } }).look?.style).toBeUndefined();
+    expect(Environment.safeParse({ look: { style: 'cartoon' } }).success).toBe(false);
+  });
+
   it('merges through setEnvironment and a null drops one field back to the renderer default', () => {
     let w = createWorld();
     w = applyPatches(w, [{ op: 'setEnvironment', set: { look: { interiorWarmth: 0.8, vignette: 0.5 } } }]).world;

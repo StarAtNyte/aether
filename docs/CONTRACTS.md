@@ -1644,6 +1644,14 @@ floor plan (draw a room, add a door, undo) → walk in through the front door
   -2.5..+1.2 EV, learned only at rest and, for stills and review captures, from up to three small drawings of the pose
   itself); `environment.exposure` and `grade.exposureEv` only bias the band (a third of a stop per stop).
   `setFoliageTint(hex | null)` (`materials/foliage-shading.ts`) multiplies leaf, needle and grass cards.
+- `Environment.look` gains `style?: 'realistic' | 'anime'` (additive, opt-in; absent = realistic, and every realistic world
+  is unchanged). `anime` is for worlds whose surfaces carry their own painted, cel-shaded colour (baked toon light on
+  unlit glb pieces): the grade preset `anime` (`gpu/finishing.ts`: tone curve `linear` on every tier, the direct low tier
+  included, so a colour below white shows as authored; saturation, contrast and temperature neutral; no grain), the
+  neutral grade instead of the sky-derived one (`NEUTRAL_GRADE`), `toneMappingExposure` = `environment.exposure` (no sky
+  preset factor, no eye adaptation or trim), and `animeEffects()` drops AO, GI, contact shadows, SSR, sun shafts,
+  aberration and grain from the tier's effects (bloom, halation, TAA and the vignette stay). First user: Cloudwatch Harbour
+  (`docs/worlds/CLOUDWATCH_HARBOUR.md`).
 - Room description (`@aether/arch/photo`): beds gain `headboardStyle` (slab, panel, tufted, slats), `pattern` (plain, floral,
   stripe, damask), `canopy` and `canopyHeight`; nightstands gain `style` (cabinet, round, wire), `height`, `diameter`; plants
   gain the `palm` species. `applyReality` repairs implausible numbers of a description (and reports them as fixes).
