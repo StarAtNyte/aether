@@ -128,9 +128,26 @@ export class GenPool {
     for (const lane of this.lanes) if (lane.worker) this.postCook(lane.worker);
   }
 
+  /** Holders of {@link holdKeepAll}. */
+  private keepAllHolds = 0;
+
+  /**
+   * Keep every output in the geometry cache, however cheap, until the returned release is called (the editor's publish
+   * generates the outputs the lanes skipped, so its cooked package covers the whole world). Jobs sent after this call see it.
+   */
+  holdKeepAll(): () => void {
+    if (this.keepAllHolds++ === 0) for (const lane of this.lanes) if (lane.worker) this.postCook(lane.worker);
+    let held = true;
+    return () => {
+      if (!held) return;
+      held = false;
+      if (--this.keepAllHolds === 0) for (const lane of this.lanes) if (lane.worker) this.postCook(lane.worker);
+    };
+  }
+
   private postCook(w: WorkerLike): void {
     try {
-      w.postMessage({ type: 'cook', config: { ...(this.cook ?? {}), compress: compressSwitch(), lossless: losslessSwitch() } }, []);
+      w.postMessage({ type: 'cook', config: { ...(this.cook ?? {}), ...(this.keepAllHolds > 0 ? { keepAll: true } : {}), compress: compressSwitch(), lossless: losslessSwitch() } }, []);
     } catch {
       // The lane is gone: its replacement gets the configuration.
     }
@@ -237,7 +254,7 @@ export class GenPool {
         w.onerror = () => this.crash(lane, new LaneFailure('a generation worker crashed'));
         lane.worker = w;
         lane.ready = false;
-        if (this.cook || !compressSwitch() || losslessSwitch().length > 0) this.postCook(w);
+        if (this.cook || this.keepAllHolds > 0 || !compressSwitch() || losslessSwitch().length > 0) this.postCook(w);
       } catch (e) {
         job.reject(new LaneFailure(`no generation worker: ${e instanceof Error ? e.message : String(e)}`));
         this.pumpSoon();

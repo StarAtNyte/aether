@@ -1014,10 +1014,11 @@ export class PublishController {
       const proof = await this.sealCurrent();
       if (this.host.history.current !== world) return;
       const enc = await encodeShare(world, meta, proof);
-      const url = shareUrl(this.playerBase(), enc.value) + this.cookedSuffix();
+      const published = this.publishedLink();
+      const url = published ?? shareUrl(this.playerBase(), enc.value);
       let qr: string | null = null;
       let qrSize = 0;
-      if (enc.fits && url.length <= 2900) {
+      if ((enc.fits || published) && url.length <= 2900) {
         const code = encodeQr(url, { ecc: 'L' });
         if (code) {
           qr = qrPath(code, 4);
@@ -1026,11 +1027,12 @@ export class PublishController {
       }
       const imports = world.entities ? Object.values(world.entities).filter((e) => e.shape.kind === 'asset' && /^user-/.test((e.shape as { id?: string }).id ?? '')).length : 0;
       const notes: string[] = [];
-      if (!enc.fits) notes.push('This world is too large for a link (over 1.5 MB). Download the game or publish it to your hosting instead.');
+      if (published) notes.push('Short link: the world and its cooked copy are on the public dataset.');
+      else if (!enc.fits) notes.push('This world is too large for a link (over 1.5 MB). Publish a cooked copy below for a short link, download the game or publish it to your hosting.');
       else if (enc.chars > 1_000_000) notes.push('Firefox opens links up to about 1 MB and this one is larger: for Firefox players, download the game or publish it to your hosting.');
       else if (enc.chars > LONG_LINK_CHARS) notes.push('This is a long link: it works in browsers, but some chat apps cut long links. A downloaded or hosted game always works.');
-      if (!qr && enc.fits) notes.push('Too long for a QR code: share the link itself.');
-      if (proof && !enc.sealed) notes.push('The replay seal is too large for a link: publish the game to include it.');
+      if (!qr && (enc.fits || published)) notes.push('Too long for a QR code: share the link itself.');
+      if (proof && !enc.sealed && !published) notes.push('The replay seal is too large for a link: publish the game to include it.');
       if (imports > 0) notes.push(`${imports} imported file${imports > 1 ? 's' : ''} cannot travel in a link and show as stand-ins. Publish the game to include them.`);
       this.set({ share: { value: enc.fits ? enc.value : null, chars: enc.chars, fits: enc.fits, qr, qrSize, note: notes.join(' ') || null } });
     } catch (e) {
@@ -1038,21 +1040,28 @@ export class PublishController {
     }
   }
 
-  /** The share URL (null until made / too large). */
+  /**
+   * The share URL (null until made / too large): the short link of the published cooked copy (`#c=<anon>.<world>&m=<start
+   * mode>`, the world is on the dataset) while it is current, else the world in the link (`#w=…`).
+   */
   shareLink(): string | null {
-    const v = this.state.getState().share.value;
-    return v ? `${this.playerBase()}#${SHARE_KEY}=${v}${this.cookedSuffix()}` : null;
+    const st = this.state.getState();
+    const short = this.publishedLink();
+    if (short) return short;
+    return st.share.value ? `${this.playerBase()}#${SHARE_KEY}=${st.share.value}` : null;
   }
 
-  /** `&c=<anon>.<world>&m=<start mode>` when a cooked copy of this version of the world is published. */
-  private cookedSuffix(): string {
+  /** The short link of the published cooked copy of this version of the world, or null. */
+  private publishedLink(): string | null {
     const c = this.state.getState().cooked;
-    return c.status === 'done' && c.ref ? `&c=${c.ref}&m=${c.startMode}` : '';
+    return c.status === 'done' && c.ref ? `${this.playerBase().replace(/#.*$/, '')}#c=${c.ref}&m=${c.startMode}` : null;
   }
 
   /**
-   * Cook the world in this browser and publish it to the public dataset (publish/cook-publish.ts, loaded on first use);
-   * the share link then opens it cooked. Progress and the outcome go to `state.cooked`; {@link cancelCooked} stops it.
+   * Cook the world in this browser and publish it to the public dataset (publish/cook-publish.ts, loaded on first use): the
+   * world itself, its geometry (generating what the editor did not keep) and its shaders. The share link then becomes short
+   * and opens it cooked; a world too large for a link is shared this way. Progress and the outcome go to `state.cooked`;
+   * {@link cancelCooked} stops it.
    */
   async publishCooked(): Promise<void> {
     const sim = this.sim;
@@ -1066,16 +1075,15 @@ export class PublishController {
     };
     progress(0, 'Starting');
     try {
-      if (!this.state.getState().share.value) await this.makeShareLink();
-      const value = this.state.getState().share.value;
-      if (!value) throw new Error('the world does not fit a link');
-      const [{ cookAndPublish }, { decodeShare }] = await Promise.all([import('../publish/cook-publish'), import('../publish/share')]);
-      // The world exactly as the player reads it from the link: its IR hash is what the cooked load checks.
-      const decoded = await decodeShare(value);
-      if (!decoded.ok) throw new Error(decoded.error);
-      const r = await cookAndPublish({ world: decoded.payload.world, renderer: sim.renderer, startMode, signal: ctrl.signal, onProgress: progress });
+      const st = this.state.getState();
+      const [{ cookAndPublish }, { cleanMeta }] = await Promise.all([import('../publish/cook-publish'), import('../publish/share')]);
+      const meta = cleanMeta({ title: st.meta.title || world.name, description: st.meta.description, author: st.meta.author, controls: st.meta.controls, ...(st.music ? { music: st.music } : {}) });
+      const proof = await this.sealCurrent();
       if (ctrl.signal.aborted || this.host.history.current !== world) return;
-      this.set({ cooked: { status: 'done', progress: 1, label: `Published: ${r.entries} geometry entries, ${r.programs} shaders, ${sizeLabel(r.bytes)}`, ref: r.ref, startMode } });
+      const r = await cookAndPublish({ world, meta, proof, renderer: sim.renderer, startMode, signal: ctrl.signal, onProgress: progress });
+      if (ctrl.signal.aborted || this.host.history.current !== world) return;
+      const made = r.generated > 0 ? `, ${r.generated} made for it` : '';
+      this.set({ cooked: { status: 'done', progress: 1, label: `Published: ${r.entries} geometry entries${made}, ${r.programs} shaders, ${sizeLabel(r.bytes)}`, ref: r.ref, startMode } });
       void this.makeShareLink();
     } catch (e) {
       if (ctrl.signal.aborted) return;

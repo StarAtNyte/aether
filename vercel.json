@@ -4,6 +4,11 @@
   "installCommand": "npm ci --no-audit --no-fund",
   "buildCommand": "npm run build -w @aether/studio",
   "outputDirectory": "apps/studio/dist",
+  "functions": {
+    "api/cook-upload.ts": {
+      "maxDuration": 60
+    }
+  },
   "build": {
     "env": {
       "AETHER_LIB_REPO": "StarAtNyte/aether"

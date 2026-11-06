@@ -29,6 +29,9 @@ export const SHARE_VERSION = 1;
 export const MAX_FRAGMENT_CHARS = 1_500_000;
 /** Largest inflated payload (bytes). */
 export const MAX_SHARE_JSON_BYTES = 8 * 1024 * 1024;
+/** Largest world file of a published world (gzipped), and the JSON it may inflate to ({@link encodeWorldFile}). */
+export const MAX_WORLD_FILE_BYTES = 32 * 1024 * 1024;
+export const MAX_WORLD_JSON_BYTES = 128 * 1024 * 1024;
 /** Above this many characters some chat apps and QR codes cannot carry the link. */
 export const LONG_LINK_CHARS = 64 * 1024;
 
@@ -224,6 +227,11 @@ export async function decodeShare(value: string): Promise<ShareDecodeResult> {
   } else {
     return { ok: false, error: 'This link uses an unknown format. It may come from a newer version.' };
   }
+  return decodeSharePayload(json);
+}
+
+/** Validate the JSON of a share payload (a link's, or a published world's file). Never throws. */
+export function decodeSharePayload(json: Uint8Array): ShareDecodeResult {
   let parsed: unknown;
   try {
     parsed = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(json));
@@ -237,6 +245,30 @@ export async function decodeShare(value: string): Promise<ShareDecodeResult> {
   const payload: SharePayload = { v: SHARE_VERSION, world: world.world, meta: cleanMeta(env.data.meta ?? {}) };
   if (typeof env.data.proof === 'object' && env.data.proof !== null && JSON.stringify(env.data.proof).length <= MAX_LINK_PROOF_CHARS * 4) payload.proof = env.data.proof;
   return { ok: true, payload };
+}
+
+/**
+ * A published world's file (`world.json.gz` of its cooked package, publish/cook-publish.ts): the share payload as gzipped
+ * JSON, for worlds too large for a link and for short links (`#c=…`), which carry no world.
+ */
+export async function encodeWorldFile(world: WorldDoc, meta: ShareMeta = {}, proof?: object | null): Promise<Uint8Array> {
+  const payload: SharePayload = { v: SHARE_VERSION, world, meta: cleanMeta(meta) };
+  if (proof && JSON.stringify(proof).length <= MAX_LINK_PROOF_CHARS * 4) payload.proof = proof;
+  const json = new TextEncoder().encode(JSON.stringify(payload));
+  if (json.byteLength > MAX_WORLD_JSON_BYTES) throw new Error(`the world is ${Math.round(json.byteLength / 1048576)} MB of JSON (at most ${MAX_WORLD_JSON_BYTES / 1048576} MB)`);
+  if (!canCompress()) throw new Error('this browser cannot compress');
+  const gz = await pipeThrough(json, new CompressionStream('gzip') as unknown as TransformStream<Uint8Array, Uint8Array>, MAX_WORLD_FILE_BYTES);
+  if (!gz) throw new Error(`the world does not compress under ${MAX_WORLD_FILE_BYTES / 1048576} MB`);
+  return gz;
+}
+
+/** Read a published world's file (untrusted: size caps while inflating, then {@link decodeSharePayload}). Never throws. */
+export async function decodeWorldFile(bytes: Uint8Array): Promise<ShareDecodeResult> {
+  if (bytes.byteLength === 0 || bytes.byteLength > MAX_WORLD_FILE_BYTES) return { ok: false, error: 'The published world is missing or too large.' };
+  if (!canCompress()) return { ok: false, error: 'This browser cannot open compressed worlds. Update it and try again.' };
+  const json = await pipeThrough(bytes, new DecompressionStream('gzip') as unknown as TransformStream<Uint8Array, Uint8Array>, MAX_WORLD_JSON_BYTES);
+  if (!json) return { ok: false, error: `The published world is damaged or unpacks to more than ${MAX_WORLD_JSON_BYTES / 1048576} MB.` };
+  return decodeSharePayload(json);
 }
 
 /** Full share URL for a player page (`base` like `https://host/play`). */

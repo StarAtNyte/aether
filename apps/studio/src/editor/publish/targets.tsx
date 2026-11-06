@@ -546,7 +546,7 @@ const CookedSection = memo(function CookedSection(): ReactElement {
   const cooked = useStore(studio.publish.state, (s) => s.cooked);
   const working = cooked.status === 'working';
   return (
-    <Section title="Fast-loading link" hint="Stores the geometry and shaders this editor already made on a public dataset (Hugging Face), under an anonymous id kept in this browser, so the link opens without generating the world again. Anyone with the link can download them. Without it, or if it goes stale, the link loads the world live.">
+    <Section title="Fast-loading link" hint="Stores the world, its geometry and its shaders on a public dataset (Hugging Face), under an anonymous id kept in this browser: the link becomes short and opens without generating the world again, and a world too large for a link can be shared. Anyone with the link can download them. If the cooked copy goes stale, the link loads the world live.">
       <div className="pub-link">
         {working ? (
           <button type="button" className="btn btn--sm" onClick={() => studio.publish.cancelCooked()} data-testid="publish-cooked-cancel">
@@ -566,7 +566,7 @@ const CookedSection = memo(function CookedSection(): ReactElement {
       {cooked.label && (
         <p className="pub-muted" data-testid="publish-cooked-status">
           {cooked.label}
-          {cooked.status === 'done' ? ' The link above now opens the cooked copy.' : ''}
+          {cooked.status === 'done' ? ' The link above is now short and opens the cooked copy.' : ''}
         </p>
       )}
     </Section>
@@ -578,8 +578,9 @@ export const ShareTarget = memo(function ShareTarget(): ReactElement {
   const studio = useStudio();
   const share = useStore(studio.publish.state, (s) => s.share);
   const meta = useStore(studio.publish.state, (s) => s.meta);
-  const link = share.value ? studio.publish.shareLink() : null;
-  const embed = share.value ? studio.publish.embedSnippet() : null;
+  const short = useStore(studio.publish.state, (s) => s.cooked.status === 'done' && !!s.cooked.ref);
+  const link = share.value || short ? studio.publish.shareLink() : null;
+  const embed = link ? studio.publish.embedSnippet() : null;
   useEffect(() => {
     if (!share.value) {
       const t = setTimeout(() => void studio.publish.makeShareLink(), 250);
@@ -597,7 +598,7 @@ export const ShareTarget = memo(function ShareTarget(): ReactElement {
       <SealSection />
       <Section title="Link" hint="The whole world travels inside the link, after the #. Browsers never send that part to a server, so nothing is uploaded or stored anywhere — the link is the game.">
         <div className="pub-link">
-          <input className="input input--mono" readOnly value={link ?? (share.fits ? 'Making the link…' : 'Too large for a link')} aria-label="Share link" data-testid="publish-share-link" onFocus={(e) => e.target.select()} />
+          <input className="input input--mono" readOnly value={link ?? (share.fits ? 'Making the link…' : 'Too large for a link: publish a cooked copy below')} aria-label="Share link" data-testid="publish-share-link" onFocus={(e) => e.target.select()} />
           <button type="button" className="btn btn--primary btn--sm" disabled={!link} onClick={() => void studio.publish.copyShareLink()} data-testid="publish-share-copy">
             <Icon name="copy" /> Copy
           </button>
@@ -609,7 +610,7 @@ export const ShareTarget = memo(function ShareTarget(): ReactElement {
           <div className={`pub-meter__fill${!share.fits ? ' is-over' : fill > 0.04 ? ' is-long' : ''}`} style={{ width: `${Math.max(1, fill * 100)}%` }} />
         </div>
         <p className="pub-muted" data-testid="publish-share-size">
-          {linkSizeLabel(share.chars)} of 1.5 MB{share.note ? ` · ${share.note}` : ''}
+          {short ? 'Short link' : `${linkSizeLabel(share.chars)} of 1.5 MB`}{share.note ? ` · ${share.note}` : ''}
         </p>
         {share.qr && (
           <div className="pub-qrbox">

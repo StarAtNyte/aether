@@ -45,7 +45,7 @@ function breakdownMB(b: TextureBreakdown | null): RenderMemoryStats['textureBrea
 import { createTextureSource, TextureCache, type TextureSource } from './geometry/poster';
 import type { HdriSource } from './environment/hdri';
 import { photoFinishResolver } from './materials/photo-finishes';
-import { getCatalog } from '@aether/assets';
+import { getCatalog, loadCatalog } from '@aether/assets';
 import { SceneSync } from './sync/scene-sync';
 import { installShadowSkip, SHADOW_BATCH_LAYER, shadowSkipTest } from './sync/cell-shadow-batches';
 import type { EntityNode } from './sync/entity-node';
@@ -130,7 +130,11 @@ import { slicedUploads, type SlicedUploadStats } from './streaming/sliced-upload
 import { sweepUploads } from './gpu/cpu-release';
 import { UploadStreamer } from './streaming/upload-streamer';
 import { postQualityOf, qualityPlan, Refinement, studioAvailable, stillPlan, type QualityPlan, type RenderQuality, type StillPlan } from './gpu/render-quality';
-import { ComputeClient, GeneratorCache, generationLanes, proceduralOutputKey } from '@aether/procgen';
+import { ComputeClient, generate, GeneratorCache, generationLanes, proceduralOutputKey, type GenerateOptions } from '@aether/procgen';
+import { assetGeneratorShape } from './cook/asset-shape';
+import { worldOutputShapes } from './cook/pack';
+import { sha256Hex } from './cook/format';
+import { DDC_CODE_VERSION } from './geometry/ddc';
 import { GenPool } from './geometry/gen-pool';
 import { disposeProfileTextures, registerLightSupport, type IesSpotLightCtor } from './sync/lights';
 import { errorMessage, log } from './log';
@@ -1006,6 +1010,8 @@ export class WorldRenderer {
   private readonly compute: ComputeClient | null;
   /** Generation lanes (built-in generators, validation and preparation of sandbox output, the geometry cache). */
   private readonly genPool: GenPool | null;
+  /** The sandbox custom generators run in (the editor's publish generates outputs the lanes skipped: {@link storeOutputsForCook}). */
+  private cookSandbox: SandboxRunner | null = null;
   /** Extra pixel-ratio cap from the options (or {@link setPixelRatioCap}). */
   private ratioCap: number;
   private cssWidth = 1;
@@ -1213,6 +1219,7 @@ export class WorldRenderer {
     // scripts/cook.ts) keeps every output in the geometry cache, however cheap.
     const cookRecord = (globalThis as { __AETHER_COOK_RECORD?: boolean }).__AETHER_COOK_RECORD === true;
     if (this.genPool && (opts.cooked || cookRecord)) this.genPool.setCook({ ...(cookRecord ? { keepAll: true } : {}), ...(opts.cooked ? { index: opts.cooked.laneIndex } : {}) });
+    this.cookSandbox = opts.sandbox ?? null;
     const source =
       opts.geometrySource ??
       createProcgenGeometrySource({
@@ -3651,6 +3658,54 @@ export class WorldRenderer {
   sessionPrograms(): Array<{ tier: RenderTier; boot: number; pairs: Array<[string, string]> }> {
     const pc = this.programCache;
     return pc ? pc.sessionTiers().map((tier) => ({ tier, boot: pc.sessionBoot(tier), pairs: pc.sessionPairs(tier) })) : [];
+  }
+
+  /**
+   * Generate into the geometry cache every output of the world on screen whose cache key is in `missing` (the editor's
+   * publish: outputs the lanes did not keep, the cheap ones, and those never drawn, such as spawn templates), so the cooked
+   * package covers the whole world. The lanes keep every output while this runs; built-ins run in the lanes, custom
+   * generators in the sandbox. The cache writes land shortly after each job: the caller waits for them.
+   */
+  async storeOutputsForCook(missing: ReadonlySet<string>, opts: { signal?: AbortSignal; onProgress?(done: number, total: number): void } = {}): Promise<{ generated: number; failed: number }> {
+    const world = this.sync.world;
+    const pool = this.genPool;
+    if (!world || !pool || missing.size === 0) return { generated: 0, failed: 0 };
+    await loadCatalog().catch(() => undefined);
+    const todo = new Map<string, ProceduralShape>();
+    for (const { shape } of worldOutputShapes(world, assetGeneratorShape)) {
+      const hex = await sha256Hex(`gen\u0000${DDC_CODE_VERSION}\u0000${proceduralOutputKey(shape, world)}`);
+      if (missing.has(hex) && !todo.has(hex)) todo.set(hex, shape);
+    }
+    const sandbox = this.cookSandbox;
+    // Behind the editor's own work (lower runs first).
+    const gen: GenerateOptions = {
+      priority: 1e9,
+      builtin: (g, p, seed, job) => pool.builtin(g, p, seed, job),
+      ...(sandbox ? { sandbox, custom: (def, p, seed, job) => pool.custom(sandbox, def, p, seed, job) } : {}),
+    };
+    const release = pool.holdKeepAll();
+    const shapes = [...todo.values()];
+    let next = 0, generated = 0, failed = 0;
+    try {
+      // A few at a time: each output comes back to this page before it is dropped.
+      const worker = async (): Promise<void> => {
+        while (next < shapes.length) {
+          if (opts.signal?.aborted) throw opts.signal.reason ?? new DOMException('aborted', 'AbortError');
+          const shape = shapes[next++]!;
+          try {
+            await generate(shape, world, gen);
+            generated++;
+          } catch {
+            failed++;
+          }
+          opts.onProgress?.(generated + failed, shapes.length);
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(4, shapes.length) }, worker));
+    } finally {
+      release();
+    }
+    return { generated, failed };
   }
 
   /**

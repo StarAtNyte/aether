@@ -4,7 +4,7 @@
  * Node) and the editor's publish (the publisher's browser, apps/studio/src/publish/cook-publish.ts). Storage is the
  * caller's: entries are read and packs written through callbacks.
  */
-import type { Entity, ProceduralShape, WorldDoc } from '@aether/core';
+import type { AssetShape, Entity, ProceduralShape, WorldDoc } from '@aether/core';
 import { proceduralOutputKey } from '@aether/procgen';
 import type { RenderTier } from '../gpu/finishing';
 import { assignCell, cellBounds, partitionFor, PERSISTENT_CELL, type CellPartition } from '../streaming/cell-grid';
@@ -47,13 +47,34 @@ export function partitionOf(world: WorldDoc): CellPartition | null {
   return maxX >= minX ? partitionFor([minX, minZ], [maxX, maxZ]) : null;
 }
 
-/** Geometry-cache key (geometry/ddc.ts `ddcKey`) of every procedural entity's output, with the ids that use it. */
-export async function worldOutputKeys(world: WorldDoc, genVersion: string): Promise<Map<string, string[]>> {
+/** The procedural shape a library asset stands for (a generator asset), or null: the scene's resolution of `asset` shapes. */
+export type AssetShapeResolver = (shape: AssetShape) => ProceduralShape | null;
+
+/**
+ * Every procedural output the world draws, with the entity that places it: procedural entities (spawn templates included),
+ * the pieces of scatter layers, and generator assets when `asset` resolves them (the scene's catalog).
+ */
+export function worldOutputShapes(world: WorldDoc, asset?: AssetShapeResolver): Array<{ id: string; shape: ProceduralShape }> {
+  const out: Array<{ id: string; shape: ProceduralShape }> = [];
+  for (const [id, e] of Object.entries(world.entities)) {
+    if (!e) continue;
+    const s = e.shape;
+    if (s.kind === 'procedural') out.push({ id, shape: s as ProceduralShape });
+    else if (s.kind === 'scatter' && s.of.kind === 'procedural') out.push({ id, shape: s.of as ProceduralShape });
+    else if (s.kind === 'asset' && asset) {
+      const p = asset(s as AssetShape);
+      if (p) out.push({ id, shape: p });
+    }
+  }
+  return out;
+}
+
+/** Geometry-cache key (geometry/ddc.ts `ddcKey`) of every procedural output of the world ({@link worldOutputShapes}), with the ids that use it. */
+export async function worldOutputKeys(world: WorldDoc, genVersion: string, asset?: AssetShapeResolver): Promise<Map<string, string[]>> {
   const out = new Map<string, string[]>();
   const memo = new Map<string, string>();
-  for (const [id, e] of Object.entries(world.entities)) {
-    if (!e || e.shape.kind !== 'procedural') continue;
-    const k = proceduralOutputKey(e.shape as ProceduralShape, world);
+  for (const { id, shape } of worldOutputShapes(world, asset)) {
+    const k = proceduralOutputKey(shape, world);
     let hex = memo.get(k);
     if (hex === undefined) memo.set(k, (hex = await sha256Hex(`gen\u0000${genVersion}\u0000${k}`)));
     let ids = out.get(hex);
@@ -80,6 +101,8 @@ export interface PackGeometryOptions {
   /** Called after each entry (progress). */
   onEntry?(done: number, total: number): void;
   signal?: AbortSignal;
+  /** Resolves generator assets, so their outputs are placed in the cell of the entity that uses them. */
+  asset?: AssetShapeResolver;
 }
 
 /** What {@link packGeometry} made. */
@@ -113,7 +136,7 @@ export async function packGeometry(rec: CookRecording, opts: PackGeometryOptions
   const grid = partitionOf(world);
   const eye = rec.opening ? [rec.opening.position[0], rec.opening.position[2]] : [0, 0];
   const placed = new Map<string, { cell: string; d: number; x: number; z: number }>();
-  for (const [hex, ids] of await worldOutputKeys(world, rec.genVersion)) {
+  for (const [hex, ids] of await worldOutputKeys(world, rec.genVersion, opts.asset)) {
     if (!keys.has(hex)) continue;
     for (const id of ids) {
       const e = world.entities[id]!;

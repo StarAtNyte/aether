@@ -65,9 +65,10 @@ export function templateCookUrl(slug: string, base: string = cookedBase()): stri
 }
 
 /**
- * The cooked copy a share link names (`#w=…&c=<anon>.<world>[&m=<start mode>]`, published from the editor: api/cook-upload.ts),
- * or null. Its manifest is `users/<anon>/<world>/manifest.json` under the cooked base; the cooked load checks it against
- * the link's world as for a template.
+ * The world published from the editor a share link names (api/cook-upload.ts), or null: a short link
+ * `#c=<anon>.<world>[&m=<start mode>]` (the world comes from the package: {@link loadPublished}), or an older long one
+ * `#w=…&c=…&m=…` (the world in the link, the package only for its cooked copy). Its manifest is
+ * `users/<anon>/<world>/manifest.json` under the cooked base; the cooked load checks it against the world as for a template.
  */
 export function sharedCookRoute(hash: string): { anon: string; world: string; startMode: 'play' | 'walkthrough' | 'orbit' | null } | null {
   const q = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash);
@@ -89,6 +90,85 @@ export function startModeForKind(kind: string | undefined): 'play' | 'walkthroug
 
 /** Longest wait for `game.json` (ms). */
 const FETCH_TIMEOUT_MS = 20_000;
+/** Longest wait for a published world's manifest and world file (ms). */
+const PUBLISHED_TIMEOUT_MS = 60_000;
+
+async function sha256Bytes(bytes: Uint8Array): Promise<string> {
+  const d = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>));
+  let s = '';
+  for (const x of d) s += x.toString(16).padStart(2, '0');
+  return s;
+}
+
+/**
+ * Open a world published from the editor by its short link (`#c=<anon>.<world>`): the package's manifest, then its world
+ * file (`world.json.gz`), checked against the manifest's size and SHA-256, inflated under a cap and validated as a share
+ * link's payload, its IR hash against the manifest's. The game then loads cooked from the same manifest.
+ */
+export async function loadPublished(route: NonNullable<ReturnType<typeof sharedCookRoute>>, fetchFn: typeof fetch = fetch, base: string = cookedBase()): Promise<GameSource> {
+  const gone: GameSource = { kind: 'error', message: 'This published world was not found. It may have been taken down, or the link is incomplete.' };
+  const damaged: GameSource = { kind: 'error', message: 'This published world is damaged. Ask its author to publish it again.' };
+  const url = sharedCookUrl(route.anon, route.world, base);
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), PUBLISHED_TIMEOUT_MS);
+  try {
+    const [{ parseCookManifest, worldIrHash, MAX_MANIFEST_BYTES }, { decodeWorldFile, MAX_WORLD_FILE_BYTES }] = await Promise.all([import('@aether/render'), import('../publish/share')]);
+    let res: Response;
+    try {
+      res = await fetchFn(url, { signal: ctrl.signal, credentials: 'omit', cache: 'no-cache' });
+    } catch {
+      return { kind: 'error', message: 'This published world could not be reached. Check the connection and try again.' };
+    }
+    if (!res.ok) return gone;
+    if (Number(res.headers.get('content-length') ?? '0') > MAX_MANIFEST_BYTES) return damaged;
+    const text = await res.text();
+    if (text.length > MAX_MANIFEST_BYTES) return damaged;
+    let raw: unknown;
+    try {
+      raw = JSON.parse(text);
+    } catch {
+      return gone;
+    }
+    const parsed = parseCookManifest(raw);
+    if (!parsed.ok) return damaged;
+    const m = parsed.manifest;
+    if (m.irHash.slice(0, 16) !== route.world) return damaged;
+    if (!m.ir || m.ir.bytes > MAX_WORLD_FILE_BYTES) return damaged;
+    const fileUrl = new URL(`${m.dir.endsWith('/') ? m.dir : `${m.dir}/`}${m.ir.file}`, new URL(url, typeof document !== 'undefined' ? document.baseURI : 'https://localhost/')).href;
+    let bytes: Uint8Array;
+    try {
+      const f = await fetchFn(fileUrl, { signal: ctrl.signal, credentials: 'omit' });
+      if (!f.ok) return gone;
+      if (Number(f.headers.get('content-length') ?? '0') > MAX_WORLD_FILE_BYTES) return damaged;
+      bytes = new Uint8Array(await f.arrayBuffer());
+    } catch {
+      return { kind: 'error', message: 'This published world could not be reached. Check the connection and try again.' };
+    }
+    if (bytes.byteLength !== m.ir.bytes || (await sha256Bytes(bytes)) !== m.ir.sha256) return damaged;
+    const r = await decodeWorldFile(bytes);
+    if (!r.ok) return { kind: 'error', message: r.error };
+    const { world, meta, proof } = r.payload;
+    if ((await worldIrHash(world)) !== m.irHash) return damaged;
+    const startMode = world.startMode ?? route.startMode ?? m.startMode;
+    return {
+      kind: 'game',
+      from: 'link',
+      game: {
+        title: meta.title ?? world.name,
+        description: meta.description ?? '',
+        author: meta.author ?? '',
+        controls: meta.controls ?? defaultControls(world),
+        music: meta.music ?? null,
+        ...(proof !== undefined ? { proof } : {}),
+        world,
+        startMode,
+        cook: url,
+      },
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /** Read the game for this page (`pathname`: the studio's `/play` route never has a game.json next to it). */
 export async function loadGame(hash: string, fetchFn: typeof fetch = fetch, pathname = typeof location !== 'undefined' ? location.pathname : '/'): Promise<GameSource> {
@@ -115,6 +195,8 @@ export async function loadGame(hash: string, fetchFn: typeof fetch = fetch, path
       },
     };
   }
+  const published = sharedCookRoute(hash);
+  if (published) return loadPublished(published, fetchFn);
   const template = templateRoute(hash);
   if (template) {
     const [{ loadTemplateWorld }, { SHOWCASE }, { templatePublish }] = await Promise.all([import('../showcase/load'), import('../showcase/manifest'), import('../showcase/publish')]);

@@ -121,7 +121,8 @@ export { atlasPixels, ATLAS_CELLS } from './vfx/atlas';
 
 export { BlackScreenWatchdog, GpuLogCapture, isBlackFrame, isShaderFailure, measureFrame, WATCHDOG_STEPS } from './gpu/watchdog';
 export { openCookedPackage, cookedProgramStore, MANIFEST_TIMEOUT_MS, type CookedPackage, type CookedOpen, type CookedStats } from './cook/cooked';
-export { COOK_FORMAT, PACK_TARGET_BYTES, START_MODES, COOK_PROFILES, cookFiles, cookPackageId, encodeProgramSetFile, parseCookManifest, parseCookedProgramSet, sha256Hex, worldIrHash, type CookManifest, type CookCell, type CookFile, type CookProfile, type CookedProgramSet, type StartMode, type LaneCookConfig, type LaneCookIndex } from './cook/format';
+export { COOK_FORMAT, PACK_TARGET_BYTES, START_MODES, COOK_PROFILES, cookFiles, cookPackageId, encodeProgramSetFile, WORLD_FILE, MAX_MANIFEST_BYTES, parseCookManifest, parseCookedProgramSet, sha256Hex, worldIrHash, type CookManifest, type CookCell, type CookFile, type CookProfile, type CookedProgramSet, type StartMode, type LaneCookConfig, type LaneCookIndex } from './cook/format';
 export { DDC_CACHE_NAME, DDC_CODE_VERSION, decodeOutput, encodeOutput } from './geometry/ddc';
-export { cookManifest, packGeometry, profileForStartMode, programSetBody, worldOutputKeys, type CookRecording, type PackedGeometry } from './cook/pack';
+export { cookManifest, packGeometry, profileForStartMode, programSetBody, worldOutputKeys, worldOutputShapes, type AssetShapeResolver, type CookRecording, type PackedGeometry } from './cook/pack';
+export { assetGeneratorShape } from './cook/asset-shape';
 export { sourceHash } from './gpu/program-cache';

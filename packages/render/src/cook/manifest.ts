@@ -72,7 +72,15 @@ export interface CookManifest {
   programs: Partial<Record<RenderTier, CookFile & { programs: number }>>;
   /** A bundled baked lightmap folder (lightmap-controller `staticBase`, relative to the cook folder), when there is one. */
   lightmap: { base: string } | null;
+  /**
+   * The world itself, for a world published from the editor (short share links carry no world): {@link WORLD_FILE} in the
+   * cook folder, the share payload as gzipped JSON, with its byte size and SHA-256. Absent (null) in a template's cook.
+   */
+  ir?: (CookFile & { sha256: string }) | null;
 }
+
+/** File name of the world in a cook folder ({@link CookManifest.ir}). */
+export const WORLD_FILE = 'world.json.gz';
 
 // --- Validation (untrusted input) -----------------------------------------------------------------------------------
 
@@ -158,6 +166,12 @@ export function parseCookManifest(v: unknown): ManifestResult {
     if (!isObj(v.lightmap) || typeof v.lightmap.base !== 'string' || !REL.test(v.lightmap.base)) return bad('bad lightmap');
     lightmap = { base: v.lightmap.base };
   }
+  let ir: CookManifest['ir'] = null;
+  if (v.ir !== null && v.ir !== undefined) {
+    const f = file(v.ir);
+    if (!f || !isObj(v.ir) || typeof v.ir.sha256 !== 'string' || !HEX64.test(v.ir.sha256)) return bad('bad ir');
+    ir = { ...f, sha256: v.ir.sha256 };
+  }
   return {
     ok: true,
     manifest: {
@@ -176,11 +190,12 @@ export function parseCookManifest(v: unknown): ManifestResult {
       entries,
       programs,
       lightmap,
+      ...(ir ? { ir } : {}),
     },
   };
 }
 
-/** The files of a cook, relative to its `<id>/` folder: every pack and program set the manifest names. */
+/** The files of a cook, relative to its `<id>/` folder: every pack and program set the manifest names, and the world file. */
 export function cookFiles(m: CookManifest): string[] {
-  return [...m.packs.map((p) => p.file), ...Object.values(m.programs).map((p) => p!.file)];
+  return [...m.packs.map((p) => p.file), ...Object.values(m.programs).map((p) => p!.file), ...(m.ir ? [m.ir.file] : [])];
 }

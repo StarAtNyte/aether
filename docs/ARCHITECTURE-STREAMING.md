@@ -731,46 +731,83 @@ The low and high sets reach the set cap (`SET_CAP` 64 / 128), so some programs o
 
 **Publishing from the editor** (Publish hub, Share, "Fast-loading link"; `apps/studio/src/publish/cook-publish.ts`, loaded
 with the hub; `api/cook-upload.ts`):
-- **Cooked in the publisher's browser.** The editor has already generated the world, so nothing is recorded again:
-  - geometry: the entries of the world's procedural outputs (`worldOutputKeys`: the same keys the lanes store under) read
-    from the page's geometry cache (Cache Storage) and packed by the cook's own packer (`cook/pack.ts`
-    `packGeometry`, shared with `scripts/cook.ts`), cut at 3.5 MB per pack; an entry over 4 MB is left out;
+- **Cooked in the publisher's browser.** The package covers the whole world:
+  - the world: the share payload (world, title screen, replay seal when small) as gzipped JSON, `<id>/world.json.gz`, named
+    in the manifest's `ir` with its size and SHA-256. The world hashed is this file's, decoded as the player decodes it, so
+    the player's IR check matches;
+  - geometry: every procedural output the world draws (`worldOutputShapes`: procedural entities, spawn templates included,
+    scatter pieces, generator assets), read from the page's geometry cache (Cache Storage). The ones the lanes did not
+    keep (cheap outputs, templates never drawn, entries evicted) are generated first (`WorldRenderer.storeOutputsForCook`:
+    built-ins in the lanes, custom generators in the sandbox, behind the editor's own jobs, the lanes keeping every output
+    while it runs: `GenPool.holdKeepAll`); the publish waits for their cache writes. Packed by the cook's own packer
+    (`cook/pack.ts` `packGeometry`, shared with `scripts/cook.ts`), cut at 3.5 MB per pack; an entry larger than that gets a
+    pack of its own, up to 32 MiB;
   - programs: the pairs this page used per tier (`WorldRenderer.sessionPrograms`), the ones used before the first
     picture as the boot pairs (`ProgramCache.sessionBoot`), encoded as format 3 files;
   - the opening is the renderer's `openingPose()`, the start mode the IR's `startMode`, else `play`; the profile follows
     the start mode.
-  The world hashed is the share link's own world, decoded as the player decodes it, so the player's IR check matches.
 - **Stored on the dataset** under `users/<anon>/<world>/manifest.json` and `users/<anon>/<world>/<id>/…`. `<world>` is
   the first 16 hex of the IR hash: a changed world is a new path; publishing the same world again rewrites the same one.
-- **Upload function** (`api/cook-upload.ts`, Vercel; protocol in `api/_lib/cook-upload.ts`). The Hugging Face write
-  token is the deployment's `HF_WRITE_TOKEN`; it is never in a response, an error or a log line. Three POSTs:
+- **Upload function** (`api/cook-upload.ts`, Vercel, 60 s; protocol in `api/_lib/cook-upload.ts`). The Hugging Face write
+  token is the deployment's `HF_WRITE_TOKEN`; it is never in a response, an error or a log line. All POST:
   - `?op=id`: a random 16-hex anonymous id and its key, an HMAC of the id under a secret derived from the token (or
     `COOK_SIGNING_SECRET` when set). The browser keeps both in localStorage (`aether.cook.anon`) and sends them as
     `x-aether-anon` / `x-aether-key`. **This is not authentication.** It only keeps one browser from writing into
     another's folder and gives the limits something to count; clearing storage gives a new id. Rotating the token (or
     the secret) invalidates every key; the page then asks for a new id once.
-  - `?op=blob`: one file, at most 4,000,000 bytes (Vercel caps a request body at 4.5 MB). It goes to the dataset's LFS
-    storage through the LFS batch API (basic transfer, then verify), not into a commit. The answer is its SHA-256.
-  - `?op=commit`: the manifest and each file's SHA-256. Checked: `parseCookManifest`, the world id against the IR hash,
-    the folder (16 hex), no lightmap, file names only `packs/<nnnn>.bin` (in order) and `programs/<tier>.bin`, the file
-    list equal to the manifest's, each file at most 4,000,000 bytes, at most 40 files and 60 MiB in all. Then the LFS
-    batch API must report every file stored, one commit adds the files and a second the manifest (re-serialized from
-    the parsed one), so a reader never meets a manifest whose files are missing.
-  - Limits, per hour, in memory per function instance (a soft limit): 10 new ids per address; per id 160 files and
-    150 MiB, per address 320 files and 300 MiB; 6 commits per id and 12 per address.
-- **Share link**: `#w=<world>&c=<anon>.<world>&m=<start mode>`. The world still travels in the link (the IR check needs
-  it); the player (`player/source.ts` `sharedCookRoute`) reads `<cooked base>users/<anon>/<world>/manifest.json` exactly
-  as a template's, and loads live when it is missing or stale. The start mode is the IR's, else `m`. An edit of the world
-  drops the cooked copy from the link until it is published again.
+  - `?op=begin`: the world id, the package's bytes and file count. The limits below are checked on the dataset; the answer
+    is a ticket (`<anon>.<world>.<bytes>.<expiry>.<HMAC>`, one hour), sent as `x-aether-ticket` with every later request.
+  - `?op=blob`: one chunk, at most 4,000,000 bytes (Vercel caps a request body at 4.5 MB). It goes to the dataset's LFS
+    storage through the LFS batch API (basic transfer, then verify), not into a commit. The answer is its SHA-256. A file
+    up to that size is one blob.
+  - `?op=assemble`: a larger file (up to 32 MiB) from its chunks: the function reads them back from LFS storage (the batch
+    API's download, which serves stored objects before any commit names them), checks each one's size and hash, joins
+    them, checks the file's SHA-256 and stores it (one PUT; the multipart transfer when the storage asks for it). The
+    chunks stay in LFS storage unreferenced.
+  - `?op=commit`: the manifest and each file's SHA-256. Checked: `parseCookManifest`, the world id against the IR hash
+    and the ticket, the folder (16 hex), no lightmap, the world file present (`world.json.gz`, its hash the manifest's),
+    file names only `packs/<nnnn>.bin` (in order), `programs/<tier>.bin` and `world.json.gz`, the file list equal to the
+    manifest's, each file at most 32 MiB, at most 120 files and 200 MiB in all, the request at most 4,000,000 bytes. Then
+    the limits again, the LFS batch API must report every file stored, one commit adds the files and a second the manifest
+    (re-serialized from the parsed one, titled `Point <root>/<anon>/<world> at cooked package <id>`), so a reader never
+    meets a manifest whose files are missing. The function does not inflate the world file: the player checks it.
+  - **Limits counted on the dataset** (`QUOTA`; at `begin` and at `commit`, read through the Hub API: the commit history
+    of the last hour, up to 500 commits, and the id's file tree): 6 publishes per id per hour, 60 per hour for everyone
+    (new ids are free: this bounds what many of them can do), 1 GiB and 50 worlds stored per id. They hold across
+    function instances and cold starts with no store or secret of their own; when the dataset cannot be read the upload
+    is refused. The template cook's commits do not count (their titles do not start with `Point users/`).
+  - **Soft limits** (`LIMITS`, per hour, in memory per function instance): 10 new ids and 30 tickets per address; per id
+    400 chunks, 600 MiB and 120 joins, per address 800 chunks and 1,200 MiB; 12 commits per id and 24 per address; a
+    ticket uploads at most twice its declared package.
+- **Share link**: `#c=<anon>.<world>&m=<start mode>`, a few dozen characters, also for worlds too large for a link
+  (1.5 MB). The player (`player/source.ts` `loadPublished`) reads `<cooked base>users/<anon>/<world>/manifest.json`, then
+  `world.json.gz`, checks its size and SHA-256 against the manifest, inflates it under a cap (32 MiB file, 128 MiB JSON),
+  validates it as a link's payload and checks its IR hash against the manifest's; then it loads cooked from the same
+  manifest, live when the package is stale. A missing or damaged package is an error (there is no world to load live).
+  The start mode is the IR's, else `m`, else the manifest's. Older links `#w=<world>&c=<anon>.<world>&m=<mode>` keep
+  working: the world from the link, the package only for its cooked copy. An edit of the world drops the short link
+  until it is published again.
 - **Hosts**: files stored through the LFS API answer 302 to `cdn-lfs-us-1.hf.co` (measured), not to the Xet CDN, so the
-  player's policy now also allows `https://cdn-lfs.hf.co https://cdn-lfs-us-1.hf.co` (`COOKED_HOSTS`); the studio's
+  player's policy also allows `https://cdn-lfs.hf.co https://cdn-lfs-us-1.hf.co` (`COOKED_HOSTS`); the studio's
   already did. The function is same-origin (`connect-src 'self'`).
 - **Takedown**: `npx tsx scripts/cook-takedown.ts users/<anon>[/<world>]` deletes the path in one commit with the local
   write token (`--dry-run` lists it). Only `users/` paths are accepted.
-- **Known limits**: outputs the lanes did not store (cheap ones, scatter pieces, spawn templates) and entries over 4 MB
-  are generated by the viewer; only tiers this page drew on have program sets; a world too large for a link (1.5 MB)
-  cannot be published this way; the package is stale once the deployment's generator code changes (then it loads live);
-  WebGPU sessions record no programs.
+- **End-to-end check**: `STATIC_DIR=<dist> GEN_GPU=intel npx tsx scripts/cook-publish-e2e.ts` serves a dist on 127.0.0.1
+  with vercel.json's headers and the function (writing under `users/_test/`), publishes a world too large for a link with
+  a generated part over 4 MB from the editor in headless Chrome, and opens its short link under the player's policy.
+  Measured (asteroid-field plus 2.3 MB of padding generators and a 14,000-stone rubble generator, Intel): the link would
+  be 2.31 MB; the publish took 31.5 s (5 outputs generated for it, 26 entries, 29 shaders), 13 files and 11.9 MB on the
+  dataset, the world file 1.74 MB, the largest pack 9.6 MB (three chunks, joined by the function). The short link loaded
+  cooked on a fresh profile, first picture in 20.8 s, all 26 entries from the package, none generated, no policy
+  violations; then taken down.
+- **WebGPU sessions record no programs.** The program sets are GLSL vertex and fragment pairs, replayed through WebGL's
+  `linkProgram` (`ProgramCache`, which is not created on WebGPU). A WebGPU session builds WGSL render pipelines through
+  three's node backend; nothing in it maps to a GLSL pair, and a viewer on WebGPU has no pipeline store to pre-warm from
+  (the browser keeps its own pipeline cache). A world published from a WebGPU session has geometry and its world, no
+  program sets; its viewers link live.
+- **Remaining limits**: an output over 32 MiB is generated by the viewer; only tiers this page drew on have program sets;
+  the package is stale once the deployment's generator code changes (then it loads live); a manifest over 4,000,000
+  bytes (tens of thousands of entries) cannot be committed in one request.
 
 Hooks left for later work: `cells`/`packs` per cell, for cell streaming and unloading; `lightmap`, for the publish bake;
 `profile`, for the publish UI of kinds; `GameManifest.cook`, for a self-hosted game build that ships its package.
