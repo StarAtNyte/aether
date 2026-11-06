@@ -26,10 +26,10 @@ interface Piece {
 }
 const pieces = JSON.parse(readFileSync(join(src, 'pieces.json'), 'utf8')) as Record<string, Piece>;
 /** Draw order is the file order; the sky first. */
-const ORDER = ['sky', 'sun', 'clouds', 'sea', 'terrain', 'forest', 'infra', 'town', 'trees', 'props', 'people'];
+const ORDER = ['sky', 'sun', 'clouds', 'sea', 'glitter', 'terrain', 'terrain_far', 'forest', 'infra', 'town', 'shrine', 'trees', 'props', 'people'];
 const NAMES: Record<string, string> = {
-  sky: 'Dusk sky', sun: 'Sun', clouds: 'Cloudscape', sea: 'Sea', terrain: 'Hillside and terraces', forest: 'Wooded ridges',
-  infra: 'Stair, lookout, harbour and railway', town: 'Houses and shrine', trees: 'Garden trees and hedges', props: 'Lanterns, signs and street life', people: 'People',
+  sky: 'Dusk sky', sun: 'Sun', clouds: 'Cloudscape', sea: 'Sea', glitter: 'Sun glitter on the sea', terrain: 'Town terraces and lanes', terrain_far: 'Hillside, headlands and sea floor', forest: 'Wooded ridges',
+  infra: 'Stair, lookout, harbour and railway', town: 'Houses', shrine: 'Shrine gate and hall', trees: 'Garden trees and hedges', props: 'Lanterns, signs and street life', people: 'People',
 };
 
 const outDir = join(REPO, 'apps/studio/public/templates/models', SLUG);
@@ -58,7 +58,7 @@ for (const key of ORDER) {
 }
 
 // Shot A of the design doc (the lookout), Blender (x, y, z) -> glTF/Aether (x, z, -y).
-const eye: [number, number, number] = [2.0, 45.65, -132.2];
+const eye: [number, number, number] = [2.0, 45.65, -130.9];
 const target: [number, number, number] = [-50.1, 24.6, 163.2];
 const world: WorldDocInput = {
   version: 1,

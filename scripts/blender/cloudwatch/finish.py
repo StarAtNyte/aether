@@ -8,12 +8,14 @@ from common import line_material
 def outline_width(ob):
     if ob.get("cw_person"):
         return 0.012
+    if ob.get("cw_line_w"):
+        return float(ob["cw_line_w"])  # thin gear spread over the town (antennas, tanks): a fine line, not a big one
     d = max(ob.dimensions)
     if d < 2.0:
-        return 0.014
+        return 0.016
     if d < 8.0:
-        return 0.03
-    return 0.05
+        return 0.035
+    return 0.06
 
 
 def build():

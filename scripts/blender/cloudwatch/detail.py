@@ -6,12 +6,11 @@ import math
 
 import bmesh
 import bpy
-from mathutils import Matrix, Vector
+from mathutils import Vector
 from mathutils.bvhtree import BVHTree
 
-from common import LOOKOUT_Y, P, ROAD_Z, add_box, add_cylinder, add_sphere, bm_object, collection, rng, rotate_faces, srgb, toon_material
+from common import LOOKOUT_Y, P, ROAD_Z, add_box, add_cylinder, add_sphere, bm_object, collection, rng, toon_material
 from form import TRACK_Y, TRACK_Z
-from land import terrace_ranges
 from town import HOUSES
 
 GROUND_OBJECTS = ("terrain", "roads", "stair", "lookout", "harbour")
@@ -263,29 +262,71 @@ def laundry(name, x, y, z, length, yaw, seed):
     return ob
 
 
-def ac_unit(bm, x, y, z, nx, ny):
-    add_box(bm, (x + nx * 0.2, y + ny * 0.2, z), (0.8 if ny else 0.35, 0.35 if ny else 0.8, 0.6), mat_index=0)
-    add_cylinder(bm, (x + nx * 0.38, y + ny * 0.38, z), 0.22, 0.02, segments=12, mat_index=1, axis=(nx, ny, 0))
+def ac_unit(bm, x, y, z, nx, ny, duct=0.0, side=1):
+    """An outdoor unit whose back touches the wall at (x, y) (outward normal nx, ny), centred at height z. `duct` > 0
+    runs a beige pipe cover from the unit's side up the wall that far, then into the wall."""
+    add_box(bm, (x + nx * 0.175, y + ny * 0.175, z), (0.8 if ny else 0.35, 0.35 if ny else 0.8, 0.6), mat_index=0)
+    add_cylinder(bm, (x + nx * 0.35, y + ny * 0.35, z), 0.22, 0.02, segments=8, mat_index=1, axis=(nx, ny, 0))
+    if duct > 0:
+        ux, uy = -ny * side, nx * side
+        px, py = x + ux * 0.48 + nx * 0.05, y + uy * 0.48 + ny * 0.05
+        add_box(bm, (px, py, z + duct / 2), (0.1 if ny else 0.1, 0.1, duct + 0.1), mat_index=2)
+        add_box(bm, (x + ux * 0.44 + nx * 0.05, y + uy * 0.44 + ny * 0.05, z), (0.16 if ny else 0.1, 0.1 if ny else 0.16, 0.1), mat_index=2)
 
 
 def build_small_props():
     r = rng(23)
     # Air conditioners on walls and water tanks on roofs.
     bm = bmesh.new()
-    acm = [toon_material("ac_body", "#e8e5dc"), toon_material("ac_fan", "#56545c")]
+    acm = [toon_material("ac_body", "#e8e5dc"), toon_material("ac_fan", "#56545c"), toon_material("ac_duct", "#d8d0bc")]
     for h in HOUSES:
-        for k in range(r.randint(0, 2)):
+        X0, X1, Y0, Y1 = h["x"] - h["w"] / 2, h["x"] + h["w"] / 2, h["y"] - h["d"] / 2, h["y"] + h["d"] / 2
+        blocks = h.get("blocks") or [(X0, X1, Y0, Y1, h["z"] + h["h"])]
+        # Ground units on a pad against a wall that is really there (L-shaped houses have a notch), clear of the stair
+        # side and of narrow gaps to the neighbour.
+        for k in range(1 if r.random() < 0.65 else 0):
             side = r.choice(["n", "e", "w"])
             if side == "n":
-                x, y, nx, ny = h["x"] + r.uniform(-h["w"] / 3, h["w"] / 3), h["y"] + h["d"] / 2, 0, 1
-            elif side == "e":
-                x, y, nx, ny = h["x"] + h["w"] / 2, h["y"] + r.uniform(-h["d"] / 3, h["d"] / 3), 1, 0
+                walls = [b for b in blocks if abs(b[3] - Y1) < 0.01 and b[1] - b[0] > 1.8]
+                if not walls:
+                    continue
+                b = r.choice(walls)
+                x, y, nx, ny = r.uniform(b[0] + 0.7, b[1] - 0.7), Y1, 0, 1
             else:
-                x, y, nx, ny = h["x"] - h["w"] / 2, h["y"] + r.uniform(-h["d"] / 3, h["d"] / 3), -1, 0
+                if h.get("stair_side") == side or h.get("gap_" + side, 99) < 1.6:
+                    continue
+                xe = X1 if side == "e" else X0
+                walls = [b for b in blocks if abs((b[1] if side == "e" else b[0]) - xe) < 0.01 and b[3] - b[2] > 2.0]
+                if not walls:
+                    continue
+                b = r.choice(walls)
+                x, y, nx, ny = xe, r.uniform(b[2] + 0.8, b[3] - 0.8), (1 if side == "e" else -1), 0
             z = drop_min(x + nx * 0.25, y + ny * 0.25, 0.4, 0.4)
             add_box(bm, (x + nx * 0.25, y + ny * 0.25, z + 0.09), (0.7, 0.7, 0.18), mat_index=1)  # pad
-            ac_unit(bm, x, y, z + 0.18 + 0.3, nx, ny)
-    bm_object("ac_units", bm, "props", mats=acm, outline=True)
+            ac_unit(bm, x, y, z + 0.18 + 0.3, nx, ny, duct=r.uniform(0.4, 0.7), side=r.choice((-1, 1)))
+        # Units on brackets high on the walls, on balconies and on the flat roofs.
+        for s in h.get("ac_spots", []):
+            ac_unit(bm, s["x"], s["y"], s["z"], s["nx"], s["ny"], duct=r.uniform(0.5, 1.2), side=r.choice((-1, 1)))
+            for o in (-0.3, 0.3):
+                ux, uy = -s["ny"], s["nx"]
+                add_box(bm, (s["x"] + ux * o + s["nx"] * 0.2, s["y"] + uy * o + s["ny"] * 0.2, s["z"] - 0.33),
+                        (0.05 if s["ny"] else 0.4, 0.4 if s["ny"] else 0.05, 0.06), mat_index=1)
+        for bal in h.get("balconies", []):
+            if r.random() < 0.5:
+                ux, uy = -bal["ny"], bal["nx"]
+                t = r.choice((-1, 1)) * (bal["len"] / 2 - 0.55)
+                # Against the wall at the balcony's end: the wall is dep/2 behind the recorded centre.
+                wx = bal["x"] - bal["nx"] * bal["dep"] / 2 + ux * t
+                wy = bal["y"] - bal["ny"] * bal["dep"] / 2 + uy * t
+                ac_unit(bm, wx, wy, bal["z"] + 0.3, bal["nx"], bal["ny"])
+                bal["ac_at"] = t
+        if h.get("deck_ac"):
+            x, y, zd = h["deck_ac"]
+            add_box(bm, (x, y, zd + 0.06), (0.9, 0.5, 0.12), mat_index=1)
+            add_box(bm, (x, y, zd + 0.42), (0.8, 0.35, 0.6), mat_index=0)
+            add_cylinder(bm, (x, y + 0.175, zd + 0.42), 0.22, 0.02, segments=12, mat_index=1, axis=(0, 1, 0))
+    ob = bm_object("ac_units", bm, "props", mats=acm, outline=True)
+    ob["cw_line_w"] = 0.016
     # Laundry lines in back yards (seen from the lookout) and potted plants by doors.
     pot_m = [toon_material("pot", "#b5653e"), toon_material("plant", "#4f8a4a", var="#7aa04e", noise_scale=3)]
     bmp = bmesh.new()
@@ -297,13 +338,39 @@ def build_small_props():
             z = drop_min(x, y, 1.5, 0.2)
             laundry(f"laundry_{n}", x, y, z, min(3.2, h["w"] - 1.5), 0.0, seed=n)
             n += 1
-        for k in range(r.randint(0, 3)):
+        for k in range(r.randint(0, 2)):
             x = h["door_x"] + r.choice((-1, 1)) * r.uniform(0.8, 1.6)
             y = h["y"] - h["d"] / 2 - 0.35
             z = drop_min(x, y, 0.2, 0.2)
-            add_cylinder(bmp, (x, y, z - 0.02), 0.17, 0.34, segments=8, mat_index=0, radius_top=0.21)
+            add_cylinder(bmp, (x, y, z - 0.02), 0.17, 0.34, segments=7, mat_index=0, radius_top=0.21, cap=False)
             add_sphere(bmp, (x, y, z + 0.5), 0.26, mat_index=1, subdiv=1, scale=(1, 1, 1.1))
-    bm_object("pots", bmp, "props", mats=pot_m, smooth=False, outline=True)
+        # Plants on balconies (along the railing, clear of the outdoor unit) and on a few window sills.
+        for bal in h.get("balconies", []):
+            ux, uy = -bal["ny"], bal["nx"]
+            for k in range(r.randint(1, 2)):
+                t = r.uniform(-bal["len"] / 2 + 0.45, bal["len"] / 2 - 0.45)
+                if "ac_at" in bal and abs(t - bal["ac_at"]) < 0.75:
+                    continue
+                o = bal["dep"] / 2 - 0.2
+                px, py = bal["x"] + bal["nx"] * o + ux * t, bal["y"] + bal["ny"] * o + uy * t
+                if bal.get("deck"):
+                    px, py = bal["x"] + ux * t + bal["nx"] * (bal["dep"] / 2 - 1.2), bal["y"] + uy * t + bal["ny"] * (bal["dep"] / 2 - 1.2)
+                rr = r.uniform(0.12, 0.17)
+                add_cylinder(bmp, (px, py, bal["z"]), rr, rr * 1.9, segments=6, mat_index=0, radius_top=rr * 1.2, cap=False)
+                add_sphere(bmp, (px, py, bal["z"] + rr * 1.9 + rr * 0.9), rr * 1.5, mat_index=1, subdiv=1, scale=(1, 1, 1.1))
+        for s in h.get("sills", []):
+            if r.random() > 0.3 or s["z"] < h["z"] + 1.0:
+                continue
+            ux, uy = -s["ny"], s["nx"]
+            for k in range(r.randint(1, 2)):
+                t = r.uniform(-s["len"] / 2 + 0.12, s["len"] / 2 - 0.12)
+                px, py = s["x"] - s["nx"] * 0.055 + ux * t, s["y"] - s["ny"] * 0.055 + uy * t
+                add_cylinder(bmp, (px, py, s["z"] + 0.025), 0.055, 0.11, segments=5, mat_index=0, radius_top=0.07, cap=False)
+                add_sphere(bmp, (px, py, s["z"] + 0.2), 0.1, mat_index=1, subdiv=1, scale=(1, 1, 1.15))
+    ob = bm_object("pots", bmp, "props", mats=pot_m, smooth=False, outline=True)
+    ob["cw_line_w"] = 0.016
+    import town_dress
+    town_dress.balcony_laundry([b for h in HOUSES for b in h.get("balconies", [])], seed=31)
     # Vending machines: two by the shop, one on the third terrace's lane; bicycles; the mailbox.
     shop = next((h for h in HOUSES if h.get("shop")), None)
     if shop:
@@ -317,7 +384,53 @@ def build_small_props():
         mz = drop_min(shop["x"] - 1.8, y - 0.3, 0.25, 0.2)
         ob = bm_object("mailbox", mb, "props", mats=[toon_material("mailbox_red", "#d23a30")], prop=True, outline=True)
         ob.location = (shop["x"] - 1.8, y - 0.3, mz)
-        _sign("sign_shop", "SHIOKAZE  STORE", shop["x"], shop["y"] - shop["d"] / 2 - 0.12, shop["z"] + 3.35, 0.0, 0.42, "#2f5d8a", "#fff4dc")
+        y0 = shop["y"] - shop["d"] / 2
+        _sign("sign_shop", "SHIOKAZE  STORE", shop["x"], y0 - 0.06, shop["z"] + 3.45, 0.0, 0.42, "#2f5d8a", "#fff4dc")
+        # A vertical board sticking out of the shop's east corner, readable along the lane from the east, and two
+        # nobori banners in front of the glazed bay.
+        _sign("sign_shop_v", "TABAKO", shop["x"] + shop["w"] / 2 - 0.35, y0 - 0.5, shop["z"] + 4.75, -math.pi / 2, 0.24,
+              "#c8332b", "#fff4dc", vertical=True, bracket=0.15)
+        import town_dress
+        zg = drop_min(shop["x"] - 0.3, y0 - 0.3, 0.12, 0.12)
+        town_dress.nobori("sign_nobori_0", shop["x"] - 0.3, y0 - 0.3, 0.0, "KOORI", "#f4f1ea", "#2f5d8a", zg)
+        zg = drop_min(shop["x"] + 1.0, y0 - 0.3, 0.12, 0.12)
+        town_dress.nobori("sign_nobori_1", shop["x"] + 1.0, y0 - 0.3, 0.0, "RAMUNE", "#e94b3c", "#fff4dc", zg)
+    # Name boards on a few houses: on the front by the door, on the back toward the lookout, and a billboard on one
+    # flat roof facing the lookout. All names are invented.
+    boards = [("TAKANO  CYCLE", "#2f5d5a", "#f4f1ea"), ("MINSHUKU  SAZANAMI", "#f4ecd8", "#7a3f36"), ("HAMAYA  FISH", "#2f3d66", "#f4f1ea"),
+              ("KUROSAKI  CLINIC", "#f4f1ea", "#2f5d8a"), ("BAR  UMIDORI", "#3a2c3a", "#ffcf7a"), ("ODA  RICE", "#e8d6bd", "#5a3a2c")]
+    cand = [h for h in HOUSES if not h.get("shop")]
+    rs = rng(91)
+    rs.shuffle(cand)
+    k = 0
+    for h in cand:
+        if k >= len(boards):
+            break
+        text, bc, ic = boards[k]
+        # Between the storeys (above the ground-floor windows and canopies, below the upper sills).
+        zs = h["z"] + 3.55
+        if k % 2 == 0:
+            # On the front wall above the door (shot D sees it), unless a balcony is there.
+            if h["storeys"] < 2 or any(b["ny"] == -1 and abs(b["x"] - h["door_x"]) < b["len"] / 2 + 1.6 for b in h.get("balconies", [])):
+                continue
+            _sign(f"sign_house_{k}", text, h["door_x"], h["y"] - h["d"] / 2 - 0.03, zs, 0.0, 0.2, bc, ic)
+        else:
+            # On the back wall, facing the lookout; only on a ground block whose back is the lot's back, with no
+            # balcony or outdoor unit on that wall.
+            yb = h["y"] + h["d"] / 2
+            blk = [b for b in h.get("blocks", []) if abs(b[3] - yb) < 0.01 and b[1] - b[0] > 4.2 and b[4] - h["z"] > 5.0]
+            if not blk or any(b["ny"] == 1 for b in h.get("balconies", [])) or any(s["ny"] == 1 for s in h.get("ac_spots", [])):
+                continue
+            b = blk[0]
+            _sign(f"sign_house_{k}", text, (b[0] + b[1]) / 2, b[3] + 0.03, zs, math.pi, 0.2, bc, ic)
+        k += 1
+    flats = [h for h in HOUSES if h.get("kind") == "flat" and h.get("deck_ac")]
+    if flats:
+        h = max(flats, key=lambda q: q["y"])
+        b = max(h["blocks"], key=lambda q: q[4])
+        # On posts just inside the back parapet, raised above it, facing the lookout.
+        _sign("sign_roof", "HOTEL SHIOSAI", (b[0] + b[1]) / 2, b[3] - 0.3, b[4] + 0.04 + 1.35, math.pi, 0.34, "#f4f1ea", "#c8332b",
+              base_z=b[4] + 0.04)
     t3 = [h for h in HOUSES if abs(h["z"] - 18.0) < 0.1]
     if t3:
         h = min(t3, key=lambda q: abs(q["x"] + 10))
@@ -333,10 +446,16 @@ def build_small_props():
     _sign("sign_lookout", "CLOUDWATCH  HILL", -6.0, LOOKOUT_Y[0] + 1.0, 44.0 + 1.75, 0.0, 0.26, "#5a3a2c", "#f4e6c8", post=True)
 
 
-def _sign(name, text, x, y, z, yaw, size, board, ink, post=False):
-    """A board with invented text (Blender's built-in font, converted to mesh)."""
+def _sign(name, text, x, y, z, yaw, size, board, ink, post=False, vertical=False, base_z=None, bracket=0.0):
+    """A board with invented text (Blender's built-in font, converted to mesh).
+
+    vertical: letters stacked top to bottom on a tall board. base_z: posts stand on this height (a roof deck) instead
+    of the ground (then the sign is not gated). bracket: arms that long from the board's +x edge (a sign sticking out
+    of a wall, its +x side against the wall)."""
     cu = bpy.data.curves.new(name + "_txt", "FONT")
-    cu.body = text
+    cu.body = "\n".join(text) if vertical else text
+    cu.space_line = 0.92
+    cu.resolution_u = 2  # letters a few centimetres high: coarse curves read the same, at a tenth of the triangles
     cu.size = size
     cu.align_x = "CENTER"
     cu.align_y = "CENTER"
@@ -348,23 +467,32 @@ def _sign(name, text, x, y, z, yaw, size, board, ink, post=False):
     bpy.data.objects.remove(tob)
     bpy.data.curves.remove(cu)
     xs = [v.co.x for v in me.vertices]
+    ys = [v.co.y for v in me.vertices] or [0.0]
     width = (max(xs) - min(xs)) if xs else 1.0
+    height = max(ys) - min(ys)
+    ymid = (max(ys) + min(ys)) / 2
     bm = bmesh.new()
     bm.from_mesh(me)
     bpy.data.meshes.remove(me)
     # Text stands up in the XZ plane, just in front of the board (facing -Y).
     for v in bm.verts:
-        v.co = Vector((v.co.x, -0.035 - v.co.z, v.co.y))
+        v.co = Vector((v.co.x, -0.035 - v.co.z, v.co.y - ymid))
     for f in bm.faces:
         f.material_index = 1
-    add_box(bm, (0, 0, 0), (width + size * 1.2, 0.05, size * 2.0), mat_index=0)
-    if post:
-        zb = drop(x, y)
+    bh = size * 2.0 if not vertical else height + size * 1.0
+    bw = width + size * 1.2
+    add_box(bm, (0, 0, 0), (bw, 0.05, bh), mat_index=0)
+    if bracket > 0:
+        for bz in (bh / 2 - 0.12, -bh / 2 + 0.12):
+            add_box(bm, (bw / 2 + bracket / 2, 0, bz), (bracket + 0.02, 0.04, 0.05), mat_index=2)
+    if post or base_z is not None:
+        zb = drop(x, y) if base_z is None else base_z
+        size = bh / 2
         for sx in ((-width / 2 - size * 0.3, width / 2 + size * 0.3) if width > 1.2 else (0,)):
             add_box(bm, (sx, 0.04, zb - z + 0.04), (0.16, 0.16, 0.08), mat_index=2)  # footing
             add_cylinder(bm, (sx, 0.04, zb - z + 0.08), 0.04, (z - zb) - 0.08 - size, segments=6, mat_index=2)
     mats = [toon_material("sign_" + board[1:], board), toon_material("ink_" + ink[1:], ink), toon_material("sign_post", "#6a6870")]
-    ob = bm_object(name, bm, "props", mats=mats, prop=post, outline=True, recalc=False)
+    ob = bm_object(name, bm, "props", mats=mats, prop=post and base_z is None, outline=True, recalc=False)
     ob.location = (x, y, z)
     ob.rotation_euler = (0, 0, yaw)
     return ob
@@ -372,79 +500,10 @@ def _sign(name, text, x, y, z, yaw, size, board, ink, post=False):
 
 # ------------------------------------------------------------------------------------------------------------- people
 
-def person(name, x, y, yaw, height, outfit, pose="stand", seed=0, z=None):
-    """A small stylised person: legs, skirt or shorts, torso, arms, neck, head and hair. Static."""
-    skin = toon_material("skin", P["skin"])
-    hair = toon_material("hair_" + outfit["hair"][1:], outfit["hair"])
-    top = toon_material("top_" + outfit["top"][1:], outfit["top"])
-    bottom = toon_material("bottom_" + outfit["bottom"][1:], outfit["bottom"])
-    shoes = toon_material("shoes", "#3a3440")
-    mats = [skin, hair, top, bottom, shoes]
-    s = height / 1.65
-    bm = bmesh.new()
-    leg_h = 0.78 * s
-    hip = 0.86 * s
-    for lx in (-0.085 * s, 0.085 * s):
-        add_box(bm, (lx, 0.02 * s, 0.04 * s), (0.1 * s, 0.22 * s, 0.08 * s), mat_index=4)
-        add_cylinder(bm, (lx, 0, 0.06 * s), 0.055 * s, leg_h, segments=8, mat_index=0, radius_top=0.07 * s)
-    if outfit.get("skirt"):
-        add_cylinder(bm, (0, 0, hip - 0.36 * s), 0.25 * s, 0.4 * s, segments=12, mat_index=3, radius_top=0.15 * s)
-    else:
-        for lx in (-0.085 * s, 0.085 * s):
-            add_cylinder(bm, (lx, 0, hip - 0.3 * s), 0.085 * s, 0.32 * s, segments=8, mat_index=3)
-        add_cylinder(bm, (0, 0, hip - 0.08 * s), 0.17 * s, 0.12 * s, segments=10, mat_index=3)
-    # Torso.
-    add_cylinder(bm, (0, 0, hip - 0.04 * s), 0.15 * s, 0.56 * s, segments=10, mat_index=2, radius_top=0.18 * s)
-    shoulder = hip + 0.5 * s
-    # Arms: down at the sides, or forward onto a railing.
-    for side in (-1, 1):
-        sh = Vector((side * 0.2 * s, 0, shoulder))
-        if pose == "lean":
-            hand = Vector((side * 0.17 * s, -0.42 * s, shoulder - 0.32 * s))
-        elif pose == "bag" and side > 0:
-            hand = Vector((side * 0.25 * s, 0.05 * s, shoulder - 0.6 * s))
-        else:
-            hand = Vector((side * 0.27 * s, 0.03 * s, shoulder - 0.62 * s))
-        d = hand - sh
-        add_cylinder(bm, sh, 0.05 * s, d.length * 0.55, segments=8, mat_index=2, axis=d, radius_top=0.045 * s)
-        add_cylinder(bm, sh + d * 0.55, 0.042 * s, d.length * 0.45, segments=8, mat_index=0, axis=d, radius_top=0.035 * s)
-    # Neck, head, hair.
-    add_cylinder(bm, (0, 0, shoulder - 0.02 * s), 0.045 * s, 0.1 * s, segments=8, mat_index=0)
-    hc = Vector((0, 0, shoulder + 0.17 * s))
-    add_sphere(bm, hc, 0.11 * s, mat_index=0, subdiv=2, scale=(0.92, 0.98, 1.05))
-    add_sphere(bm, hc + Vector((0, 0.02 * s, 0.025 * s)), 0.122 * s, mat_index=1, subdiv=2, scale=(0.95, 1.0, 1.0))
-    if outfit.get("long_hair"):
-        add_cylinder(bm, hc + Vector((0, 0.05 * s, -0.24 * s)), 0.1 * s, 0.26 * s, segments=10, mat_index=1, radius_top=0.115 * s)
-    if outfit.get("hat"):
-        add_cylinder(bm, hc + Vector((0, 0, 0.07 * s)), 0.2 * s, 0.02 * s, segments=14, mat_index=3)
-        add_cylinder(bm, hc + Vector((0, 0, 0.07 * s)), 0.12 * s, 0.09 * s, segments=12, mat_index=3)
-    ob = bm_object(name, bm, "people", mats=mats, prop=True, outline=True, recalc=False)
-    if z is None:
-        z = drop_min(x, y, 0.12 * s, 0.1 * s)
-    ob.location = (x, y, z)
-    ob.rotation_euler = (0, 0, yaw)
-    ob["cw_person"] = 1
-    return ob
-
-
 def build_people():
-    girl = {"hair": "#2f2630", "top": P["shirt_white"], "bottom": P["skirt_navy"], "skirt": True, "long_hair": True}
-    boy = {"hair": "#3a2c28", "top": P["shirt_blue"], "bottom": P["shorts"]}
-    woman = {"hair": "#4a3530", "top": "#e8b4a0", "bottom": "#5a6a8a", "skirt": True}
-    man = {"hair": "#2a2a30", "top": "#f2efe8", "bottom": "#3d4250", "hat": True}
-    child = {"hair": "#3a2a28", "top": "#f5d76e", "bottom": "#4f78b0"}
-    # At the lookout railing, leaning, facing the sea.
-    person("person_lookout", -2.2, LOOKOUT_Y[0] + 0.62, 0.0, 1.58, girl, pose="lean")
-    # On the stair, climbing.
-    person("person_stair", -0.55, 24.0, math.pi, 1.7, man)
-    # Two waiting at the crossing.
-    person("person_cross_0", -0.6, TRACK_Y - 3.05, math.pi, 1.62, woman, pose="bag")
-    person("person_cross_1", 0.3, TRACK_Y - 3.15, math.pi + 0.3, 1.25, child)
-    # By the bicycle at the shop.
-    shop = next((h for h in HOUSES if h.get("shop")), None)
-    if shop:
-        y = shop["y"] - shop["d"] / 2 - 1.3
-        person("person_shop", shop["x"] - shop["w"] / 2 + 2.1, y, -0.6, 1.72, boy)
+    """The cast (people.py): posed, smooth stylised figures."""
+    import people
+    people.build()
 
 
 def build():

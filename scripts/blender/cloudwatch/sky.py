@@ -1,15 +1,16 @@
-"""Sky: the gradient dome with the sun glow and high streaks, the cloudscape (toon-shaded metaball masses), the sun lamp
-and the ambient world light."""
+"""Sky: the painted gradient dome (horizon glow band, sun halo, high cirrus streaks in perspective), the cloudscape
+(cel-shaded billow masses built from many overlapping spheres: a towering cumulonimbus with an anvil, satellite cumulus
+at several depths, a broken bank on the horizon), the sun lamp and the ambient world light."""
 import math
 
 import bmesh
 import bpy
 from mathutils import Vector
 
-from common import P, collection, rng, srgb
+from common import P, _ico_template, collection, rng, srgb
 
-SUN_AZ = 252.0  # degrees from north (+Y), clockwise (east = +X)
-SUN_EL = 10.0
+SUN_AZ = 214.0  # degrees from north (+Y), clockwise (east = +X): low over the sea, inside the opening view
+SUN_EL = 6.5
 DOME_R = 2600.0
 EYE = Vector((0.0, 133.0, 46.0))  # the lookout: clouds are placed around it
 
@@ -19,166 +20,181 @@ def sun_dir():
     return Vector((math.sin(az) * math.cos(el), math.cos(az) * math.cos(el), math.sin(el)))
 
 
+def cloud_light_dir():
+    """The light the clouds are painted with: from the sun's side, but swung 80 degrees toward the lookout and raised, so
+    the towers read three-quarter lit (a painter's cheat; the true sun still draws the silver rims)."""
+    az, el = math.radians(SUN_AZ + 80.0), math.radians(30.0)
+    return Vector((math.sin(az) * math.cos(el), math.cos(az) * math.cos(el), math.sin(el)))
+
+
+# ---------------------------------------------------------------------------------------------------------------- node helpers
+
+class Nodes:
+    """Tiny builder for shader node trees: every call returns an output socket."""
+
+    def __init__(self, mat):
+        mat.use_nodes = True
+        self.nt = mat.node_tree
+        for n in list(self.nt.nodes):
+            self.nt.nodes.remove(n)
+        self.out = self.nt.nodes.new("ShaderNodeOutputMaterial")
+
+    def _in(self, sock, value):
+        if isinstance(value, bpy.types.NodeSocket):
+            self.nt.links.new(value, sock)
+        elif value is not None:
+            sock.default_value = value
+
+    def node(self, kind, **props):
+        n = self.nt.nodes.new(kind)
+        for k, v in props.items():
+            setattr(n, k, v)
+        return n
+
+    def math(self, op, a, b=None, clamp=False):
+        n = self.node("ShaderNodeMath", operation=op, use_clamp=clamp)
+        self._in(n.inputs[0], a)
+        if b is not None:
+            self._in(n.inputs[1], b)
+        return n.outputs[0]
+
+    def vmath(self, op, a, b=None, scale=None):
+        n = self.node("ShaderNodeVectorMath", operation=op)
+        self._in(n.inputs[0], a)
+        if b is not None:
+            self._in(n.inputs[1], b)
+        if scale is not None:
+            self._in(n.inputs["Scale"], scale)
+        return n.outputs["Value"] if op in ("DOT_PRODUCT", "LENGTH", "DISTANCE") else n.outputs["Vector"]
+
+    def remap(self, v, f0, f1, t0=0.0, t1=1.0, smooth=False):
+        n = self.node("ShaderNodeMapRange", interpolation_type="SMOOTHSTEP" if smooth else "LINEAR")
+        self._in(n.inputs["Value"], v)
+        n.inputs["From Min"].default_value = f0
+        n.inputs["From Max"].default_value = f1
+        n.inputs["To Min"].default_value = t0
+        n.inputs["To Max"].default_value = t1
+        return n.outputs[0]
+
+    def mix(self, fac, a, b, blend="MIX"):
+        n = self.node("ShaderNodeMix", data_type="RGBA", blend_type=blend, clamp_factor=True)
+        self._in(n.inputs["Factor"], fac)
+        self._in(n.inputs[6], srgb(a) if isinstance(a, str) else a)
+        self._in(n.inputs[7], srgb(b) if isinstance(b, str) else b)
+        return n.outputs[2]
+
+    def ramp(self, v, stops, interp="LINEAR"):
+        n = self.node("ShaderNodeValToRGB")
+        cr = n.color_ramp
+        cr.interpolation = interp
+        cr.elements[0].position, cr.elements[0].color = stops[0][0], srgb(stops[0][1])
+        cr.elements[1].position, cr.elements[1].color = stops[-1][0], srgb(stops[-1][1])
+        for pos, col in stops[1:-1]:
+            e = cr.elements.new(pos)
+            e.color = srgb(col)
+        self._in(n.inputs[0], v)
+        return n.outputs["Color"]
+
+    def sep(self, v):
+        n = self.node("ShaderNodeSeparateXYZ")
+        self._in(n.inputs[0], v)
+        return n.outputs
+
+    def combine(self, x, y, z):
+        n = self.node("ShaderNodeCombineXYZ")
+        self._in(n.inputs[0], x)
+        self._in(n.inputs[1], y)
+        self._in(n.inputs[2], z)
+        return n.outputs[0]
+
+    def emit(self, color, strength=1.0):
+        n = self.node("ShaderNodeEmission")
+        self._in(n.inputs["Color"], srgb(color) if isinstance(color, str) else color)
+        self._in(n.inputs["Strength"], strength)
+        return n.outputs[0]
+
+    def add_shader(self, a, b):
+        n = self.node("ShaderNodeAddShader")
+        self.nt.links.new(a, n.inputs[0])
+        self.nt.links.new(b, n.inputs[1])
+        return n.outputs[0]
+
+    def output(self, shader):
+        self.nt.links.new(shader, self.out.inputs[0])
+
+
+# ---------------------------------------------------------------------------------------------------------------- dome
+
 def _dome_material():
     m = bpy.data.materials.new("cw_sky")
-    m.use_nodes = True
-    nt = m.node_tree
-    for n in list(nt.nodes):
-        nt.nodes.remove(n)
-    out = nt.nodes.new("ShaderNodeOutputMaterial")
-    out.location = (1400, 0)
-    geo = nt.nodes.new("ShaderNodeTexCoord")
-    geo.location = (-1200, 0)
-    norm = nt.nodes.new("ShaderNodeVectorMath")
-    norm.operation = "NORMALIZE"
-    norm.location = (-1000, 0)
-    nt.links.new(geo.outputs["Object"], norm.inputs[0])
-    sep = nt.nodes.new("ShaderNodeSeparateXYZ")
-    sep.location = (-800, 0)
-    nt.links.new(norm.outputs[0], sep.inputs[0])
-    # Elevation gradient.
-    grad = nt.nodes.new("ShaderNodeValToRGB")
-    grad.location = (-600, 200)
-    cr = grad.color_ramp
-    cr.interpolation = "EASE"
-    stops = [(0.0, P["horizon"]), (0.035, "#f3a882"), (0.10, "#c98fa6"), (0.22, "#8b80c0"), (0.42, P["upper"]), (1.0, P["zenith"])]
-    cr.elements[0].position, cr.elements[0].color = stops[0][0], srgb(stops[0][1])
-    cr.elements[1].position, cr.elements[1].color = stops[-1][0], srgb(stops[-1][1])
-    for pos, col in stops[1:-1]:
-        e = cr.elements.new(pos)
-        e.color = srgb(col)
-    clampz = nt.nodes.new("ShaderNodeMath")
-    clampz.operation = "MAXIMUM"
-    clampz.inputs[1].default_value = 0.0
-    clampz.location = (-700, 300)
-    nt.links.new(sep.outputs["Z"], clampz.inputs[0])
-    nt.links.new(clampz.outputs[0], grad.inputs[0])
-    # Sun glow: dot(view dir, sun dir) -> wide warm halo plus a tight core.
+    b = Nodes(m)
+    tc = b.node("ShaderNodeTexCoord")
+    d = b.vmath("NORMALIZE", tc.outputs["Object"])
+    dx, dy, dz = b.sep(d)
+    e = b.math("MAXIMUM", dz, 0.0)
     sd = sun_dir()
-    dot = nt.nodes.new("ShaderNodeVectorMath")
-    dot.operation = "DOT_PRODUCT"
-    dot.location = (-600, -200)
-    dot.inputs[1].default_value = (sd.x, sd.y, sd.z)
-    nt.links.new(norm.outputs[0], dot.inputs[0])
-    wide = nt.nodes.new("ShaderNodeMapRange")
-    wide.location = (-400, -200)
-    wide.inputs["From Min"].default_value = 0.55
-    wide.inputs["From Max"].default_value = 1.0
-    wide.interpolation_type = "SMOOTHSTEP"
-    nt.links.new(dot.outputs["Value"], wide.inputs["Value"])
-    widep = nt.nodes.new("ShaderNodeMath")
-    widep.operation = "POWER"
-    widep.inputs[1].default_value = 2.2
-    widep.location = (-250, -200)
-    nt.links.new(wide.outputs[0], widep.inputs[0])
-    # Horizon weighting of the halo (strongest near the horizon).
-    hz = nt.nodes.new("ShaderNodeMapRange")
-    hz.location = (-400, -380)
-    hz.inputs["From Min"].default_value = 0.45
-    hz.inputs["From Max"].default_value = 0.0
-    nt.links.new(clampz.outputs[0], hz.inputs["Value"])
-    halo = nt.nodes.new("ShaderNodeMath")
-    halo.operation = "MULTIPLY"
-    halo.location = (-100, -250)
-    nt.links.new(widep.outputs[0], halo.inputs[0])
-    nt.links.new(hz.outputs[0], halo.inputs[1])
-    mixh = nt.nodes.new("ShaderNodeMix")
-    mixh.data_type = "RGBA"
-    mixh.blend_type = "SCREEN"
-    mixh.location = (100, 100)
-    nt.links.new(halo.outputs[0], mixh.inputs["Factor"])
-    nt.links.new(grad.outputs["Color"], mixh.inputs[6])
-    mixh.inputs[7].default_value = srgb(P["horizon_sun"])
-    # Sun disc core (bright, blooms).
-    core = nt.nodes.new("ShaderNodeMapRange")
-    core.location = (-400, -600)
-    core.inputs["From Min"].default_value = 0.99985
-    core.inputs["From Max"].default_value = 0.99993
-    nt.links.new(dot.outputs["Value"], core.inputs["Value"])
-    corehalo = nt.nodes.new("ShaderNodeMapRange")
-    corehalo.location = (-400, -800)
-    corehalo.inputs["From Min"].default_value = 0.9955
-    corehalo.inputs["From Max"].default_value = 1.0
-    corehalo.interpolation_type = "SMOOTHSTEP"
-    nt.links.new(dot.outputs["Value"], corehalo.inputs["Value"])
-    chp = nt.nodes.new("ShaderNodeMath")
-    chp.operation = "POWER"
-    chp.inputs[1].default_value = 3.0
-    chp.location = (-250, -800)
-    nt.links.new(corehalo.outputs[0], chp.inputs[0])
-    sun_amt = nt.nodes.new("ShaderNodeMath")
-    sun_amt.operation = "ADD"
-    sun_amt.location = (-100, -650)
-    nt.links.new(core.outputs[0], sun_amt.inputs[0])
-    nt.links.new(chp.outputs[0], sun_amt.inputs[1])
-    # High streaks: stretched noise in a band of elevation, tinted pink-gold.
-    nscale = nt.nodes.new("ShaderNodeMapping")
-    nscale.location = (-1000, 500)
-    nscale.inputs["Scale"].default_value = (0.6, 4.5, 9.0)
-    nscale.inputs["Rotation"].default_value = (0.0, 0.0, math.radians(25))
-    nt.links.new(norm.outputs[0], nscale.inputs[0])
-    streak = nt.nodes.new("ShaderNodeTexNoise")
-    streak.location = (-800, 500)
-    streak.inputs["Scale"].default_value = 2.2
-    streak.inputs["Detail"].default_value = 6.0
-    streak.inputs["Roughness"].default_value = 0.62
-    nt.links.new(nscale.outputs[0], streak.inputs["Vector"])
-    sthr = nt.nodes.new("ShaderNodeMapRange")
-    sthr.location = (-600, 500)
-    sthr.inputs["From Min"].default_value = 0.56
-    sthr.inputs["From Max"].default_value = 0.72
-    nt.links.new(streak.outputs["Fac"], sthr.inputs["Value"])
-    band = nt.nodes.new("ShaderNodeMapRange")
-    band.location = (-600, 700)
-    band.interpolation_type = "SMOOTHSTEP"
-    band.inputs["From Min"].default_value = 0.08
-    band.inputs["From Max"].default_value = 0.30
-    nt.links.new(clampz.outputs[0], band.inputs["Value"])
-    band2 = nt.nodes.new("ShaderNodeMapRange")
-    band2.location = (-600, 900)
-    band2.interpolation_type = "SMOOTHSTEP"
-    band2.inputs["From Min"].default_value = 0.75
-    band2.inputs["From Max"].default_value = 0.40
-    nt.links.new(clampz.outputs[0], band2.inputs["Value"])
-    bandm = nt.nodes.new("ShaderNodeMath")
-    bandm.operation = "MULTIPLY"
-    bandm.location = (-400, 800)
-    nt.links.new(band.outputs[0], bandm.inputs[0])
-    nt.links.new(band2.outputs[0], bandm.inputs[1])
-    stm = nt.nodes.new("ShaderNodeMath")
-    stm.operation = "MULTIPLY"
-    stm.location = (-250, 600)
-    nt.links.new(sthr.outputs[0], stm.inputs[0])
-    nt.links.new(bandm.outputs[0], stm.inputs[1])
-    stm2 = nt.nodes.new("ShaderNodeMath")
-    stm2.operation = "MULTIPLY"
-    stm2.inputs[1].default_value = 0.55
-    stm2.location = (-100, 600)
-    nt.links.new(stm.outputs[0], stm2.inputs[0])
-    mixs = nt.nodes.new("ShaderNodeMix")
-    mixs.data_type = "RGBA"
-    mixs.location = (300, 200)
-    nt.links.new(stm2.outputs[0], mixs.inputs["Factor"])
-    nt.links.new(mixh.outputs[2], mixs.inputs[6])
-    mixs.inputs[7].default_value = srgb("#f7c7c0")
-    # Add the sun.
-    emit_sky = nt.nodes.new("ShaderNodeEmission")
-    emit_sky.location = (600, 200)
-    nt.links.new(mixs.outputs[2], emit_sky.inputs["Color"])
-    emit_sun = nt.nodes.new("ShaderNodeEmission")
-    emit_sun.location = (600, -300)
-    emit_sun.inputs["Color"].default_value = srgb(P["sun"])
-    sunscale = nt.nodes.new("ShaderNodeMath")
-    sunscale.operation = "MULTIPLY"
-    sunscale.inputs[1].default_value = 3.0
-    sunscale.location = (300, -500)
-    nt.links.new(sun_amt.outputs[0], sunscale.inputs[0])
-    nt.links.new(sunscale.outputs[0], emit_sun.inputs["Strength"])
-    add = nt.nodes.new("ShaderNodeAddShader")
-    add.location = (900, 0)
-    nt.links.new(emit_sky.outputs[0], add.inputs[0])
-    nt.links.new(emit_sun.outputs[0], add.inputs[1])
-    nt.links.new(add.outputs[0], out.inputs[0])
+    hs = Vector((sd.x, sd.y, 0)).normalized()
+    # Sunward factor: 1 toward the sun's azimuth, 0 opposite.
+    dh = b.vmath("NORMALIZE", b.combine(dx, dy, 0.0))
+    sun_az = b.math("MULTIPLY", b.math("ADD", b.vmath("DOT_PRODUCT", dh, (hs.x, hs.y, 0.0)), 1.0), 0.5)
+    sunward = b.math("POWER", sun_az, 2.0)
+    cosang = b.vmath("DOT_PRODUCT", d, (sd.x, sd.y, sd.z))
+    # Elevation gradient: the sun side warm and bright, the far side cooler and pinker.
+    warm = b.ramp(e, [(0.0, "#ffd79a"), (0.018, "#ffbe86"), (0.05, "#f59f86"), (0.10, "#d98ea4"), (0.18, "#a98bc0"),
+                      (0.30, "#7f82c8"), (0.48, "#5d6fc4"), (0.75, "#3c4f9a"), (1.0, P["zenith"])], "EASE")
+    cool = b.ramp(e, [(0.0, "#f2b496"), (0.03, "#e9a3a0"), (0.08, "#c993b2"), (0.16, "#9a8cc4"), (0.30, "#7480c6"),
+                      (0.48, "#5a6cc0"), (0.75, "#3a4c96"), (1.0, P["zenith"])], "EASE")
+    col = b.mix(sunward, cool, warm)
+    # The horizon glow band: a thin, bright apricot-gold strip hugging the sea line, strongest under the sun.
+    band = b.math("POWER", b.remap(e, 0.0, 0.07, 1.0, 0.0, smooth=True), 2.2)
+    band_w = b.math("MULTIPLY", band, b.math("ADD", b.math("MULTIPLY", sunward, 0.75), 0.25))
+    col = b.mix(band_w, col, "#ffe0a6", blend="SCREEN")
+    # A second, wider rose glow above it.
+    rose = b.math("MULTIPLY", b.remap(e, 0.02, 0.2, 1.0, 0.0, smooth=True), b.math("MULTIPLY", sunward, 0.35))
+    col = b.mix(rose, col, "#ff9e8a", blend="SCREEN")
+    # Sun halo: wide warm halo, weighted to the horizon, plus a tight core glow.
+    wide = b.math("POWER", b.remap(cosang, 0.55, 1.0, 0.0, 1.0, smooth=True), 2.4)
+    halo = b.math("MULTIPLY", wide, b.remap(e, 0.45, 0.0))
+    col = b.mix(halo, col, P["horizon_sun"], blend="SCREEN")
+    # Cirrus: long thin strands drawn on a high cloud plane, so they converge toward the horizon (perspective depth).
+    inv = b.math("DIVIDE", 1.0, b.math("ADD", dz, 0.06))
+    plane = b.combine(b.math("MULTIPLY", dx, inv), b.math("MULTIPLY", dy, inv), 0.0)
+    mp = b.node("ShaderNodeMapping")
+    mp.inputs["Rotation"].default_value = (0.0, 0.0, math.radians(-28))
+    mp.inputs["Scale"].default_value = (1.0, 1.0, 1.0)
+    b._in(mp.inputs[0], plane)
+    warp = b.node("ShaderNodeTexNoise")
+    warp.inputs["Scale"].default_value = 0.9
+    warp.inputs["Detail"].default_value = 3.0
+    b._in(warp.inputs["Vector"], mp.outputs[0])
+    st = b.node("ShaderNodeMapping")
+    st.inputs["Scale"].default_value = (0.35, 6.0, 1.0)
+    b._in(st.inputs[0], b.vmath("ADD", mp.outputs[0], b.vmath("SCALE", warp.outputs["Color"], scale=0.25)))
+    streak = b.node("ShaderNodeTexNoise")
+    streak.inputs["Scale"].default_value = 1.6
+    streak.inputs["Detail"].default_value = 4.0
+    streak.inputs["Roughness"].default_value = 0.55
+    b._in(streak.inputs["Vector"], st.outputs[0])
+    wave = streak  # (the strands' source; named for the veil below)
+    strand = b.remap(streak.outputs["Fac"], 0.57, 0.68, 0.0, 1.0, smooth=True)
+    clump = b.node("ShaderNodeTexNoise")
+    clump.inputs["Scale"].default_value = 0.55
+    clump.inputs["Detail"].default_value = 2.0
+    b._in(clump.inputs["Vector"], mp.outputs[0])
+    clumpm = b.remap(clump.outputs["Fac"], 0.42, 0.58, 0.0, 1.0, smooth=True)
+    fade = b.math("MULTIPLY", b.remap(e, 0.05, 0.16, 0.0, 1.0, smooth=True), b.remap(e, 0.85, 0.55, 0.0, 1.0, smooth=True))
+    cir = b.math("MULTIPLY", b.math("MULTIPLY", strand, clumpm), fade)
+    cir_col = b.mix(b.math("POWER", sun_az, 3.0), "#e6a3c4", "#ffd8a8")
+    col = b.mix(b.math("MULTIPLY", cir, 0.85), col, cir_col)
+    # A fainter, broader veil beside each strand (the brush's dry edge).
+    veil = b.math("MULTIPLY", b.math("MULTIPLY", b.remap(wave.outputs["Fac"], 0.52, 0.66, 0.0, 1.0, smooth=True), clumpm), fade)
+    col = b.mix(b.math("MULTIPLY", veil, 0.18), col, cir_col, blend="SCREEN")
+    sky = b.emit(col)
+    # The sun disc and its tight glow (bright: blooms).
+    core = b.remap(cosang, 0.99990, 0.99995)
+    ch = b.math("POWER", b.remap(cosang, 0.9975, 1.0, 0.0, 1.0, smooth=True), 3.0)
+    sun = b.emit(P["sun"], b.math("MULTIPLY", b.math("ADD", core, ch), 3.0))
+    b.output(b.add_shader(sky, sun))
     m["cw_sky"] = 1
     return m
 
@@ -187,7 +203,6 @@ def build_dome():
     bm = bmesh.new()
     bm.loops.layers.uv.new("UVMap")
     bmesh.ops.create_uvsphere(bm, u_segments=96, v_segments=48, radius=DOME_R, calc_uvs=True)
-    # Normals inward.
     bmesh.ops.reverse_faces(bm, faces=bm.faces[:])
     me = bpy.data.meshes.new("sky_dome")
     bm.to_mesh(me)
@@ -203,193 +218,179 @@ def build_dome():
     return ob
 
 
-def _cloud_material(name, base_z, top_z):
-    m = bpy.data.materials.new(name)
-    m.use_nodes = True
-    nt = m.node_tree
-    for n in list(nt.nodes):
-        nt.nodes.remove(n)
-    out = nt.nodes.new("ShaderNodeOutputMaterial")
-    out.location = (1000, 0)
-    diff = nt.nodes.new("ShaderNodeBsdfDiffuse")
-    diff.location = (-600, 0)
-    s2r = nt.nodes.new("ShaderNodeShaderToRGB")
-    s2r.location = (-400, 0)
-    nt.links.new(diff.outputs[0], s2r.inputs[0])
-    bw = nt.nodes.new("ShaderNodeRGBToBW")
-    bw.location = (-200, 0)
-    nt.links.new(s2r.outputs[0], bw.inputs[0])
-    ramp = nt.nodes.new("ShaderNodeValToRGB")
-    ramp.location = (0, 0)
-    cr = ramp.color_ramp
-    cr.interpolation = "LINEAR"
-    stops = [(0.0, P["cloud_deep"]), (0.16, P["cloud_shadow"]), (0.24, "#b08fbe"), (0.40, "#e2a7b4"), (0.48, P["cloud_lit2"]), (0.72, P["cloud_lit2"]), (0.78, P["cloud_lit"]), (1.0, "#fff4e4")]
-    cr.elements[0].position, cr.elements[0].color = stops[0][0], srgb(stops[0][1])
-    cr.elements[1].position, cr.elements[1].color = stops[-1][0], srgb(stops[-1][1])
-    for pos, col in stops[1:-1]:
-        e = cr.elements.new(pos)
-        e.color = srgb(col)
-    nt.links.new(bw.outputs[0], ramp.inputs[0])
-    # Pink bases: world height.
-    geo = nt.nodes.new("ShaderNodeNewGeometry")
-    geo.location = (-600, -300)
-    sep = nt.nodes.new("ShaderNodeSeparateXYZ")
-    sep.location = (-400, -300)
-    nt.links.new(geo.outputs["Position"], sep.inputs[0])
-    hz = nt.nodes.new("ShaderNodeMapRange")
-    hz.location = (-200, -300)
-    hz.interpolation_type = "SMOOTHSTEP"
-    hz.inputs["From Min"].default_value = base_z + (top_z - base_z) * 0.22
-    hz.inputs["From Max"].default_value = base_z
-    nt.links.new(sep.outputs["Z"], hz.inputs["Value"])
-    hzm = nt.nodes.new("ShaderNodeMath")
-    hzm.operation = "MULTIPLY"
-    hzm.inputs[1].default_value = 0.55
-    hzm.location = (0, -300)
-    nt.links.new(hz.outputs[0], hzm.inputs[0])
-    mix = nt.nodes.new("ShaderNodeMix")
-    mix.data_type = "RGBA"
-    mix.blend_type = "MIX"
-    mix.location = (300, 0)
-    nt.links.new(hzm.outputs[0], mix.inputs["Factor"])
-    nt.links.new(ramp.outputs[0], mix.inputs[6])
-    mix.inputs[7].default_value = srgb(P["cloud_base"])
-    # Silver lining: where the camera looks toward the sun, the cloud's silhouette glows gold.
-    lw = nt.nodes.new("ShaderNodeLayerWeight")
-    lw.location = (-200, -600)
-    lw.inputs["Blend"].default_value = 0.5
-    rimp = nt.nodes.new("ShaderNodeMath")
-    rimp.operation = "POWER"
-    rimp.inputs[1].default_value = 4.0
-    rimp.location = (0, -600)
-    nt.links.new(lw.outputs["Facing"], rimp.inputs[0])
+# ---------------------------------------------------------------------------------------------------------------- cloud shading
+
+CLOUD_BANDS = [  # light value -> colour, hard steps (cel bands): shadow, a thin warm terminator, lit, sunlit crowns
+    (0.0, "#7b73b3"),
+    (0.40, "#e99aa2"),
+    (0.43, "#ffc39c"),
+    (0.80, "#fff0dc"),
+]
+
+
+def _cloud_material():
+    if "cw_cloud" in bpy.data.materials:
+        return bpy.data.materials["cw_cloud"]
+    m = bpy.data.materials.new("cw_cloud")
+    b = Nodes(m)
+    geo = b.node("ShaderNodeNewGeometry")
+    n = geo.outputs["Normal"]
+    nx, ny, nz = b.sep(n)
+    # The light value comes per vertex from realize() (`cw_light`, full float), from the blended form/billow normals.
+    # (Staircases along the billow creases at 4K are a depth-precision effect of sphere-on-sphere intersections 2 km out:
+    # the stills render the clouds in their own pass with a far near plane, shots._render_layered, and so do the cards.)
+    light = b.node("ShaderNodeAttribute", attribute_type="GEOMETRY", attribute_name="cw_light").outputs["Fac"]
+    # (No ambient-occlusion crease term: its screen-space noise, stepped by the bands, serrated every terminator at 4K.
+    # The creases come from the billows' own normals meeting where they intersect.)
+    col = b.ramp(light, CLOUD_BANDS, "CONSTANT")
+    # Cool underside: faces turned down toward the sea go deep blue-lavender, with a faint pink bounce at the very base.
+    attr_base = b.node("ShaderNodeAttribute", attribute_type="OBJECT", attribute_name="cw_base_z")
+    attr_h = b.node("ShaderNodeAttribute", attribute_type="OBJECT", attribute_name="cw_height")
+    pz = b.sep(geo.outputs["Position"])[2]
+    rel = b.math("DIVIDE", b.math("SUBTRACT", pz, attr_base.outputs["Fac"]), attr_h.outputs["Fac"])
+    low = b.remap(rel, 0.16, 0.02, 0.0, 1.0, smooth=True)
+    down = b.remap(nz, -0.15, -0.55, 0.0, 1.0)
+    under = b.math("MAXIMUM", b.math("MULTIPLY", down, 0.85), b.math("MULTIPLY", low, b.remap(nz, 0.3, -0.2)))
+    col = b.mix(b.math("MULTIPLY", under, 0.8), col, "#5b5f9c")
+    col = b.mix(b.math("MULTIPLY", b.math("MULTIPLY", low, b.remap(nz, -0.1, -0.8)), 0.35), col, "#c98aa8")
+    # Silver lining: silhouettes on the true sun's side burn gold (crisp, slightly over white so bloom finds it).
     sd = sun_dir()
-    neg = nt.nodes.new("ShaderNodeVectorMath")
-    neg.operation = "SCALE"
-    neg.inputs["Scale"].default_value = -1.0
-    neg.location = (-400, -800)
-    nt.links.new(geo.outputs["Incoming"], neg.inputs[0])
-    bdot = nt.nodes.new("ShaderNodeVectorMath")
-    bdot.operation = "DOT_PRODUCT"
-    bdot.inputs[1].default_value = (sd.x, sd.y, sd.z)
-    bdot.location = (-200, -800)
-    nt.links.new(neg.outputs[0], bdot.inputs[0])
-    back = nt.nodes.new("ShaderNodeMapRange")
-    back.location = (0, -800)
-    back.interpolation_type = "SMOOTHSTEP"
-    back.inputs["From Min"].default_value = 0.35
-    back.inputs["From Max"].default_value = 0.95
-    nt.links.new(bdot.outputs["Value"], back.inputs["Value"])
-    rim = nt.nodes.new("ShaderNodeMath")
-    rim.operation = "MULTIPLY"
-    rim.location = (200, -700)
-    nt.links.new(rimp.outputs[0], rim.inputs[0])
-    nt.links.new(back.outputs[0], rim.inputs[1])
-    rimc = nt.nodes.new("ShaderNodeMath")
-    rimc.operation = "MINIMUM"
-    rimc.inputs[1].default_value = 1.0
-    rimc.location = (350, -700)
-    rim2 = nt.nodes.new("ShaderNodeMath")
-    rim2.operation = "MULTIPLY"
-    rim2.inputs[1].default_value = 2.5
-    rim2.location = (300, -800)
-    nt.links.new(rim.outputs[0], rim2.inputs[0])
-    nt.links.new(rim2.outputs[0], rimc.inputs[0])
-    mixr = nt.nodes.new("ShaderNodeMix")
-    mixr.data_type = "RGBA"
-    mixr.blend_type = "MIX"
-    mixr.location = (450, 0)
-    nt.links.new(rimc.outputs[0], mixr.inputs["Factor"])
-    nt.links.new(mix.outputs[2], mixr.inputs[6])
-    mixr.inputs[7].default_value = srgb("#ffd79a")
-    em = nt.nodes.new("ShaderNodeEmission")
-    em.location = (700, 0)
-    nt.links.new(mixr.outputs[2], em.inputs["Color"])
-    nt.links.new(em.outputs[0], out.inputs[0])
+    lw = b.node("ShaderNodeLayerWeight")
+    lw.inputs["Blend"].default_value = 0.35
+    sil = b.remap(lw.outputs["Facing"], 0.50, 0.58, 0.0, 1.0)
+    sunside = b.remap(b.vmath("DOT_PRODUCT", n, (sd.x, sd.y, sd.z)), 0.02, 0.12, 0.0, 1.0)
+    rim = b.math("MULTIPLY", sil, sunside)
+    rim = b.math("MULTIPLY", rim, b.math("SUBTRACT", 1.0, b.math("MULTIPLY", under, 0.8)))
+    col = b.mix(rim, col, "#fff0c6")
+    # Aerial depth: farther clouds take on the horizon's haze (per object).
+    attr_hz = b.node("ShaderNodeAttribute", attribute_type="OBJECT", attribute_name="cw_haze")
+    col = b.mix(attr_hz.outputs["Fac"], col, "#e9b0a8")
+    strength = b.math("ADD", 1.0, b.math("MULTIPLY", rim, 0.35))
+    b.output(b.emit(col, strength))
     m["cw_cloud"] = 1
     return m
 
 
-def _metaball_cloud(name, balls, resolution):
-    mb = bpy.data.metaballs.new(name)
-    mb.resolution = resolution
-    mb.render_resolution = resolution
-    mb.threshold = 0.6
-    for (x, y, z, r) in balls:
-        e = mb.elements.new()
-        e.co = (x, y, z)
-        e.radius = r
-    ob = bpy.data.objects.new(name, mb)
-    collection("sky").objects.link(ob)
-    return ob
+# ---------------------------------------------------------------------------------------------------------------- cloud forms
 
+class Billows:
+    """Spheres (centre in a local frame u right / v away from the lookout / w up, radius, z squash) for one cloud."""
 
-def _to_mesh(ob):
-    dg = bpy.context.evaluated_depsgraph_get()
-    ev = ob.evaluated_get(dg)
-    me = bpy.data.meshes.new_from_object(ev)
-    mo = bpy.data.objects.new(ob.name + "_m", me)
-    collection("sky").objects.link(mo)
-    mo.matrix_world = ob.matrix_world.copy()
-    mb = ob.data
-    bpy.data.objects.remove(ob)
-    bpy.data.metaballs.remove(mb)
-    return mo
+    def __init__(self, seed):
+        self.r = rng(seed)
+        self.s = []
 
+    def add(self, u, v, w, rad, squash=1.0):
+        self.s.append((u, v, w, rad, squash))
+        return (u, v, w, rad, squash)
 
-def cumulus(name, center, width, height, seed, tower=False, anvil=False, lumpiness=1.0):
-    """A cloud mass as metaballs: a flat base, stacked domes (tower), cauliflower lumps over the top surface."""
-    r = rng(seed)
-    cx, cy, cz = center
-    balls = []
-    # Base layer: wide, flattened row.
-    n_base = max(4, int(width / (height * 0.35 + 1)))
-    for i in range(n_base):
-        t = (i + 0.5) / n_base - 0.5
-        rad = height * (0.30 + 0.12 * r.random())
-        balls.append((cx + t * width, cy + (r.random() - 0.5) * width * 0.25, cz + rad * 0.55, rad))
-    if tower:
-        levels = 7
-        for k in range(levels):
-            f = k / (levels - 1)
-            rad = height * (0.26 - 0.07 * f) * (1.0 + 0.2 * r.random())
-            off = (r.random() - 0.5) * width * 0.12
-            balls.append((cx + off, cy + (r.random() - 0.5) * width * 0.1, cz + height * (0.25 + 0.68 * f), rad))
-            for side in (-1, 1):
-                balls.append((cx + off + side * rad * (0.7 + 0.3 * r.random()), cy + (r.random() - 0.5) * rad, cz + height * (0.22 + 0.66 * f), rad * 0.75))
-    else:
-        for k in range(int(n_base * 1.5)):
-            t = r.random() - 0.5
-            rad = height * (0.22 + 0.16 * r.random())
-            balls.append((cx + t * width * 0.8, cy + (r.random() - 0.5) * width * 0.2, cz + height * (0.45 + 0.3 * r.random()) * (1 - abs(t)), rad))
-    if anvil:
-        top = cz + height * 0.95
-        for k in range(14):
-            t = (k / 13) - 0.35
-            rad = height * 0.12
-            balls.append((cx + t * width * 1.25, cy + (r.random() - 0.5) * width * 0.15, top + (r.random() - 0.3) * height * 0.04, rad))
-    # Cauliflower lumps on the upper surfaces, then smaller lumps on those.
-    def lumps(src, count, lo, hi, reach):
+    def sprout(self, parent, count, lo, hi, reach=0.82, up=0.55, side=None):
+        """Smaller billows on the outer and upper surface of `parent` (cauliflower)."""
+        r = self.r
+        u, v, w, rad, sq = parent
         out = []
-        for (x, y, z, rad) in src:
-            for j in range(count):
-                a = r.random() * 2 * math.pi
-                el = r.uniform(-0.1, 1.35)
-                d = Vector((math.cos(a) * math.cos(el), math.sin(a) * math.cos(el) * 0.7, math.sin(el)))
-                out.append((x + d.x * rad * reach, y + d.y * rad * reach, z + d.z * rad * reach, rad * r.uniform(lo, hi)))
+        for _ in range(count):
+            a = r.uniform(0, 2 * math.pi) if side is None else side + r.uniform(-1.1, 1.1)
+            el = r.uniform(-0.15, 1.25) * up + (1 - up) * r.uniform(-0.2, 0.6)
+            d = Vector((math.cos(a) * math.cos(el), math.sin(a) * math.cos(el), math.sin(el)))
+            rr = rad * r.uniform(lo, hi)
+            out.append(self.add(u + d.x * rad * reach, v + d.y * rad * reach, w + d.z * rad * reach * sq, rr, sq))
         return out
-    l1 = lumps(list(balls), int(3 * lumpiness), 0.32, 0.62, 0.78)
-    l2 = lumps(r.sample(l1, len(l1) // 3), 1, 0.4, 0.6, 0.75)
-    balls += l1 + l2
-    ob = _metaball_cloud(name, [(x - cx, y - cy, z - cz, rr) for (x, y, z, rr) in balls], resolution=height * 0.016)
-    ob.location = (cx, cy, cz)
-    mo = _to_mesh(ob)
-    mo.data.materials.append(_cloud_material(name + "_mat", cz, cz + height))
-    for p in mo.data.polygons:
-        p.use_smooth = True
-    mo["cw_piece"] = "sky"
-    mo.visible_shadow = False
-    return mo
+
+
+def cumulonimbus(seed, W, H, lean=-0.08, anvil_shift=-0.45):
+    """A towering cumulonimbus: a flat dark base shelf, a broad lower body of congestus towers, a billowing column narrowing
+    upward with side turrets, a smooth flattened anvil spreading downwind with an overshooting dome. Sizes in metres."""
+    B = Billows(seed)
+    r = B.r
+    # Base shelf: wide flattened lobes.
+    for k in range(6):
+        t = k / 5 - 0.5
+        B.add(t * W * 0.75 + r.uniform(-15, 15), r.uniform(-0.1, 0.1) * W, 0.06 * H, W * r.uniform(0.17, 0.21), 0.45)
+    # Lower body: four congestus towers side by side, the middle ones tallest.
+    for i, (ou, top) in enumerate(((-0.32, 0.24), (-0.10, 0.38), (0.14, 0.34), (0.34, 0.20))):
+        steps = 3
+        for s in range(steps):
+            f = s / (steps - 1)
+            rad = W * (0.23 - 0.06 * f) * r.uniform(0.9, 1.1)
+            p = B.add(ou * W, -0.02 * W + r.uniform(-0.04, 0.04) * W, H * (0.16 + (top - 0.12) * f), rad)
+            for c in B.sprout(p, 3, 0.45, 0.62, up=0.75):
+                B.sprout(c, 1, 0.45, 0.6, up=0.85)
+    # Column: stacked domes, alternating a little left and right, narrowing upward.
+    levels = 8
+    for k in range(levels):
+        t = k / (levels - 1)
+        w = H * (0.34 + 0.46 * t)
+        uc = lean * H * t + (0.06 if k % 2 else -0.06) * W
+        rad = W * (0.27 - 0.07 * t)
+        B.add(lean * H * t, 0.05 * W, w, rad * 1.05)
+        for side in (-1, 1):
+            p = B.add(uc + side * rad * 0.62, -rad * 0.25 + r.uniform(-0.05, 0.05) * W, w + r.uniform(-0.02, 0.02) * H, rad * r.uniform(0.62, 0.78))
+            for c in B.sprout(p, 3, 0.45, 0.6, up=0.7, side=(0 if side > 0 else math.pi) - 0.6 * side):
+                if t > 0.2:
+                    B.sprout(c, 1, 0.45, 0.6, up=0.8)
+        p = B.add(uc, -rad * 0.55, w, rad * 0.6)
+        for c in B.sprout(p, 2, 0.45, 0.6, up=0.7, side=-math.pi / 2):
+            B.sprout(c, 1, 0.45, 0.6, up=0.8)
+    # Turrets: towers growing out of the shoulders (two on the sun side, one left).
+    for (side_u, t0, t1, frac) in ((1.0, 0.36, 0.66, 0.42), (0.85, 0.55, 0.80, 0.34), (-1.0, 0.42, 0.62, 0.36)):
+        R0 = W * (0.27 - 0.07 * t0)
+        base_u = lean * H * t0 + side_u * R0 * 1.05
+        steps = 3
+        for s in range(steps):
+            f = s / (steps - 1)
+            w = H * (0.34 + 0.46 * (t0 + (t1 - t0) * f))
+            rr = R0 * frac * 1.3 * (1.0 - 0.3 * f)
+            p = B.add(base_u, -0.1 * W, w, rr)
+            for c in B.sprout(p, 3, 0.45, 0.6, up=0.8):
+                B.sprout(c, 2, 0.42, 0.55, up=0.9)
+    # The overshooting top above the column.
+    top_u = lean * H
+    p = B.add(top_u + 0.04 * W, 0, H * 0.84, W * 0.2)
+    for c in B.sprout(p, 4, 0.45, 0.6, up=0.95):
+        B.sprout(c, 2, 0.42, 0.55, up=0.95)
+    # Anvil: a broad, smooth, flattened shelf at the top, its long side spreading downwind (to the lookout's left).
+    cx = top_u + anvil_shift * W
+    for k in range(9):
+        f = k / 8 - 0.5  # -0.5 = the downwind tip (left), +0.5 = the upwind edge
+        thick = 0.24 - 0.10 * abs(f + 0.15)  # thickest just upwind of the centre, thinning to the tips
+        rad = W * (0.40 - 0.16 * abs(f))
+        top = H * 0.905
+        B.add(cx + f * W * 2.0, r.uniform(-0.06, 0.06) * W, top - rad * thick, rad, thick)
+    for k in range(12):
+        a = 2 * math.pi * k / 12 + r.uniform(-0.15, 0.15)
+        rad = W * r.uniform(0.17, 0.23)
+        B.add(cx + math.cos(a) * W * 1.05, math.sin(a) * W * 0.38, H * 0.885 - rad * 0.12, rad, 0.2)
+    # The anvil's root, joining it to the column.
+    for k in range(4):
+        f = k / 3
+        B.add(top_u + anvil_shift * W * f * 0.5, 0.05 * W, H * (0.78 + 0.07 * f), W * (0.25 - 0.02 * f), 0.55)
+    return B
+
+
+def cumulus(seed, W, H, domes=5, flat=True, turret=0.0):
+    """A cumulus mass: a flat base, a row of domes with cauliflower crowns."""
+    B = Billows(seed)
+    r = B.r
+    if flat:
+        nb = max(3, int(W / (H * 0.55)))
+        for k in range(nb):
+            t = (k + 0.5) / nb - 0.5
+            B.add(t * W * 0.95, r.uniform(-0.1, 0.1) * W, H * 0.12, H * r.uniform(0.28, 0.36), 0.45)
+    for k in range(domes):
+        t = (k + 0.5) / domes - 0.5
+        hump = 1.0 - (2 * abs(t)) ** 1.6
+        rad = H * (0.26 + 0.2 * hump) * r.uniform(0.85, 1.15)
+        p = B.add(t * W * 0.85 + r.uniform(-0.05, 0.05) * W, r.uniform(-0.12, 0.12) * W, H * (0.22 + 0.32 * hump), rad)
+        for c in B.sprout(p, 3, 0.4, 0.62, up=0.8):
+            B.sprout(c, 2, 0.4, 0.55, up=0.9)
+    if turret > 0:
+        u0 = r.uniform(-0.2, 0.2) * W
+        for s in range(4):
+            f = s / 3
+            p = B.add(u0, 0, H * (0.4 + turret * f), H * (0.34 - 0.08 * f))
+            B.sprout(p, 3, 0.4, 0.6, up=0.85)
+    return B
 
 
 def place(az_deg, dist, alt):
@@ -397,30 +398,121 @@ def place(az_deg, dist, alt):
     return (EYE.x + math.sin(a) * dist, EYE.y + math.cos(a) * dist, alt)
 
 
+def _cull_hidden(spheres):
+    """Drop spheres that sit wholly inside a bigger one (they cost triangles and add nothing)."""
+    keep = []
+    order = sorted(spheres, key=lambda s: -s[3] * min(1.0, s[4]))
+    for s in order:
+        u, v, w, rad, sq = s
+        inside = False
+        for (u2, v2, w2, r2, sq2) in keep:
+            if sq2 < 0.99 or sq < 0.99:
+                continue
+            if math.sqrt((u - u2) ** 2 + (v - v2) ** 2 + (w - w2) ** 2) + rad < r2 * 0.98:
+                inside = True
+                break
+        if not inside:
+            keep.append(s)
+    return keep
+
+
+def _field_normals(V, centres, radii, squash, widen=1.7, chunk=8000):
+    """Outward normals of a smooth blobby field (a Gaussian per billow, wider than the billow): the big form the billows
+    belong to. Shading with these (blended with each billow's own normal) makes the light fall across the whole mass, with
+    the terminator wobbling over the lumps, instead of every sphere carrying its own."""
+    import numpy as np
+    C = np.asarray(centres, np.float32)
+    S = (np.asarray(radii, np.float32) * widen) ** 2
+    Q = np.asarray(squash, np.float32)
+    out = np.empty_like(V)
+    for i in range(0, len(V), chunk):
+        D = V[i:i + chunk, None, :] - C[None]
+        D[..., 2] /= Q[None]
+        w = np.exp(-np.sum(D * D, axis=2) / S[None]) / S[None]
+        D[..., 2] /= Q[None]  # the gradient of an ellipsoidal Gaussian: z divided by the squash twice
+        g = np.einsum("nm,nmk->nk", w, D)
+        out[i:i + chunk] = g
+    n = np.linalg.norm(out, axis=1, keepdims=True)
+    return out / np.maximum(n, 1e-9)
+
+
+def realize(name, billows, az_deg, dist, base_alt, haze=0.0, form=0.62):
+    """Billows -> one mesh in the world, its local frame facing the lookout (u right, v away). `form` is how much of the
+    shading normal comes from the big form (the rest from each billow)."""
+    import numpy as np
+    a = math.radians(az_deg)
+    f = Vector((math.sin(a), math.cos(a), 0.0))
+    rgt = Vector((math.cos(a), -math.sin(a), 0.0))
+    cx, cy, cz = place(az_deg, dist, base_alt)
+    spheres = _cull_hidden(billows.s)
+    hmax = max(w + rad * sq for (u, v, w, rad, sq) in spheres)
+    verts, nrm, faces = [], [], []
+    centres, radii, sqs = [], [], []
+    for (u, v, w, rad, sq) in spheres:
+        sub = 3 if rad > 0.05 * hmax else 2
+        tv, tf = _ico_template(sub)
+        c = Vector((cx, cy, cz)) + rgt * u + f * v + Vector((0, 0, w))
+        base = len(verts)
+        for p in tv:
+            verts.append((c.x + p.x * rad, c.y + p.y * rad, c.z + p.z * rad * sq))
+            nn = Vector((p.x, p.y, p.z / max(sq, 1e-3))).normalized()
+            nrm.append((nn.x, nn.y, nn.z))
+        faces += [tuple(base + i for i in fc) for fc in tf]
+        centres.append((c.x, c.y, c.z))
+        radii.append(rad)
+        sqs.append(sq)
+    V = np.asarray(verts, np.float32)
+    Ns = np.asarray(nrm, np.float32)
+    Nf = _field_normals(V, centres, radii, sqs)
+    Nb = Nf * form + Ns * (1 - form)
+    Nb /= np.maximum(np.linalg.norm(Nb, axis=1, keepdims=True), 1e-9)
+    me = bpy.data.meshes.new(name)
+    me.from_pydata(verts, [], faces)
+    me.update()
+    for p in me.polygons:
+        p.use_smooth = True
+    me.normals_split_custom_set_from_vertices([tuple(x) for x in Nb.tolist()])
+    lf = cloud_light_dir()
+    lv = (Nb @ np.array([lf.x, lf.y, lf.z], np.float32)) * 0.78 + Nb[:, 2] * 0.14 + 0.12
+    at = me.attributes.new("cw_light", "FLOAT", "POINT")
+    at.data.foreach_set("value", lv.astype(np.float32))
+    ob = bpy.data.objects.new(name, me)
+    collection("sky").objects.link(ob)
+    me.materials.append(_cloud_material())
+    ob["cw_piece"] = "sky"
+    ob["cw_cloud_az"] = az_deg
+    ob["cw_base_z"] = cz
+    ob["cw_height"] = hmax
+    ob["cw_haze"] = haze
+    ob.visible_shadow = False
+    return ob
+
+
 def build_clouds():
     obs = []
-    # The tower to the south-south-east, lit on its sun (right) side.
-    tx, ty, tz = place(168, 2100, 40)
-    obs.append(cumulus("cloud_tower", (tx, ty, tz), 640, 860, seed=7, tower=True, anvil=True, lumpiness=1.2))
-    # A second, smaller tower to its left.
-    x, y, z = place(141, 2250, 60)
-    obs.append(cumulus("cloud_tower2", (x, y, z), 420, 560, seed=11, tower=True, lumpiness=1.0))
-    # Horizon bank: low broken cumulus from east to west.
+    # The hero: a towering cumulonimbus over the sea, left third of the opening view, lit from the right.
+    obs.append(realize("cloud_tower", cumulonimbus(7, 600, 790), 170, 2400, 60, haze=0.0))
+    # Satellites at several depths around it: nearer small cumulus, farther hazier ones.
+    sats = [  # az, dist, alt, W, H, domes, haze, turret
+        (190, 1300, 150, 150, 60, 4, 0.0, 0.0),
+        (152, 1600, 190, 180, 70, 5, 0.06, 0.0),
+        (198, 1800, 360, 90, 35, 3, 0.08, 0.0),
+        (140, 2000, 110, 300, 140, 5, 0.12, 0.7),
+        (202, 2300, 70, 340, 130, 6, 0.2, 0.0),
+        (128, 2400, 70, 380, 160, 6, 0.22, 0.0),
+    ]
+    for i, (az, d, alt, w, h, domes, hz, tur) in enumerate(sats):
+        obs.append(realize(f"cloud_sat{i}", cumulus(200 + i, w, h, domes=domes, turret=tur), az, d, alt, haze=hz))
+    # The horizon bank: low broken cumulus from east to west, hazier with distance (keeps the sun's azimuth open).
     r = rng(5)
-    for i, az in enumerate([100, 110, 121, 133, 147, 158, 181, 190, 199, 208, 218, 228, 240, 266, 276, 288]):
-        d = 2250 + r.uniform(-100, 120)
+    for i, az in enumerate([96, 106, 117, 128, 140, 152, 190, 232, 243, 256, 268, 281, 294]):
+        d = 2350 + r.uniform(-100, 150)
         w = r.uniform(240, 420)
-        h = r.uniform(90, 190)
-        x, y, z = place(az, d, r.uniform(25, 60))
-        obs.append(cumulus(f"cloud_bank{i}", (x, y, z), w, h, seed=100 + i, lumpiness=0.8))
-    # Mid-height puffs.
-    for i, (az, el_alt) in enumerate([(176, 330), (194, 420), (139, 470), (205, 260), (120, 300)]):
-        x, y, z = place(az, 2100, el_alt)
-        obs.append(cumulus(f"cloud_puff{i}", (x, y, z), r.uniform(120, 220), r.uniform(50, 90), seed=200 + i, lumpiness=0.7))
+        h = r.uniform(80, 150)
+        obs.append(realize(f"cloud_bank{i}", cumulus(100 + i, w, h, domes=r.randint(4, 7), turret=r.choice((0, 0, 0.5))), az, d, r.uniform(20, 45), haze=0.25))
     # Behind the town (north and east): sunlit cumulus over the hills, seen from the stair and the harbour.
-    for i, (az, d, alt, w, h) in enumerate([(5, 1900, 120, 520, 380), (40, 2000, 90, 420, 300), (330, 2050, 140, 380, 260), (70, 2100, 70, 300, 160), (300, 2100, 100, 260, 150)]):
-        x, y, z = place(az, d, alt)
-        obs.append(cumulus(f"cloud_north{i}", (x, y, z), w, h, seed=300 + i, tower=(i == 0), lumpiness=1.0))
+    for i, (az, d, alt, w, h, tur) in enumerate([(5, 1900, 120, 520, 260, 1.4), (40, 2000, 90, 420, 220, 0.8), (330, 2050, 140, 380, 200, 0.6), (70, 2100, 70, 300, 140, 0.0), (300, 2100, 100, 260, 130, 0.0)]):
+        obs.append(realize(f"cloud_north{i}", cumulus(300 + i, w, h, domes=6, turret=tur), az, d, alt, haze=0.12))
     return obs
 
 
@@ -432,7 +524,6 @@ def build_light():
     ld.angle = math.radians(0.6)
     ob = bpy.data.objects.new("sun", ld)
     collection("lights").objects.link(ob)
-    # The light points along -its local Z; aim it from the sun direction.
     ob.rotation_mode = "QUATERNION"
     ob.rotation_quaternion = (-sd).to_track_quat("-Z", "Y")
     ob["cw_piece"] = "light"

@@ -42,13 +42,27 @@ ONLY = set(A.only.split(",")) if A.only else None
 # Distances of the sky pieces in the browser: the dome and clouds are scaled about the lookout so the camera's far plane
 # keeps them (angles from the town are unchanged).
 SKY_SCALE = 0.58
+# The near terrain's box (Blender x, y): the cove the town fills, from the quay to the lookout.
+NEAR_X = 100.0
+NEAR_Y = (-36.0, 146.0)
+# Cloud impostor cards: their distance from the lookout in the browser (inside the dome, beyond the sea's far ring).
+CARD_DIST = 1250.0
 
 PIECES = {
-    "terrain": {"match": lambda n: n in ("terrain", "roads", "road_lines"), "tex": 2048, "dissolve": 1.5},
-    "town": {"match": lambda n: n.startswith("house_") or n in ("shop", "shrine_hall", "shrine_gate", "block_walls"), "tex": 4096},
+    # The terrain in two atlases: the town's cove (seen at a few metres from the streets) gets a 4096 px texture to itself;
+    # with one 2048 px atlas for the whole hillside a texel was 0.19 m, and the bank by the crossing showed the bake's light
+    # (wire and pole shadows, sampling noise) as a blurred diagonal smear.
+    "terrain": {"match": lambda n: n in ("terrain", "roads", "road_lines"), "tex": 4096, "dissolve": 1.5,
+                "keep": lambda x, y: abs(x) < NEAR_X and NEAR_Y[0] < y < NEAR_Y[1]},
+    "terrain_far": {"match": lambda n: n == "terrain", "tex": 2048, "dissolve": 1.5,
+                    "keep": lambda x, y: not (abs(x) < NEAR_X and NEAR_Y[0] < y < NEAR_Y[1])},
+    "town": {"match": lambda n: n.startswith("house_") or n in ("shop", "block_walls"), "tex": 4096},
+    # The shrine on its own small atlas: in the dense town atlas the gate's round posts were thinner than a texel and
+    # baked to nothing (black).
+    "shrine": {"match": lambda n: n in ("shrine_hall", "shrine_gate"), "tex": 1024},
     "infra": {"match": lambda n: n in ("stair", "lookout", "harbour", "lighthouse", "railway", "crossing", "poles_wires") or n.startswith("tunnel_portal"), "tex": 2048},
-    "props": {"match": lambda n: n.startswith(("stone_lantern", "stair_lantern", "vending", "bicycle", "laundry", "sign_", "boat_")) or n in ("pots", "ac_units", "mailbox"), "tex": 2048},
-    "people": {"match": lambda n: n.startswith("person_"), "tex": 512},
+    "props": {"match": lambda n: n.startswith(("stone_lantern", "stair_lantern", "vending", "bicycle", "laundry", "sign_", "boat_")) or n in ("pots", "ac_units", "mailbox", "roof_gear"), "tex": 2048},
+    "people": {"match": lambda n: n.startswith("person_"), "tex": 1024},
 }
 VERTEX_PIECES = {
     "trees": {"match": lambda n: n in ("trees_town", "hedges")},
@@ -311,6 +325,13 @@ def atlas_piece(key, spec):
         return None
     outlined = {o.name for o in obs if o.get("cw_outline")}
     j = joined_copy(obs, f"piece_{key}")
+    if spec.get("keep"):
+        bm = bmesh.new()
+        bm.from_mesh(j.data)
+        drop = [f for f in bm.faces if not spec["keep"](*f.calc_center_median().xy)]
+        bmesh.ops.delete(bm, geom=drop, context="FACES")
+        bm.to_mesh(j.data)
+        bm.free()
     if spec.get("dissolve"):
         # Flat terraces and gentle slopes need few triangles: merge faces within a small angle.
         md = j.modifiers.new("dissolve", "DECIMATE")
@@ -419,61 +440,231 @@ def forest_shell():
 
 
 def clouds_piece():
-    """Clouds shaded per vertex in Python with the cloud material's ramp, base tint and rim (view from the lookout)."""
-    from sky import EYE, sun_dir
-    obs = [o for o in bpy.data.objects if o.name.startswith("cloud") and o.type == "MESH" and not o.name.endswith("__c")]
-    sd = sun_dir()
-    stops = [(0.0, P["cloud_deep"]), (0.16, P["cloud_shadow"]), (0.24, "#b08fbe"), (0.40, "#e2a7b4"), (0.48, P["cloud_lit2"]), (0.72, P["cloud_lit2"]), (0.78, P["cloud_lit"]), (1.0, "#fff4e4")]
-    xs = np.array([s[0] for s in stops])
-    cs = np.array([srgb(s[1])[:3] for s in stops])
-    sun_strength = bpy.data.objects["sun"].data.energy
-    parts = []
-    for o in obs:
-        c = joined_copy([o], o.name + "_web")
-        nf = len(c.data.polygons)
-        md = c.modifiers.new("dec", "DECIMATE")
-        budget = 14000 if o.name == "cloud_tower" else 5000 if ("tower" in o.name or o.name == "cloud_north0") else 900
-        md.ratio = min(1.0, budget / max(1, nf))
-        select_only([c])
-        bpy.ops.object.modifier_apply(modifier=md.name)
-        me = c.data
-        me.calc_normals_split() if hasattr(me, "calc_normals_split") else None
-        n = len(me.vertices)
-        co = np.empty(n * 3, np.float32)
-        me.vertices.foreach_get("co", co)
-        co = co.reshape(-1, 3)
-        nr = np.empty(n * 3, np.float32)
-        me.vertices.foreach_get("normal", nr)
-        nr = nr.reshape(-1, 3)
-        sdv = np.array([sd.x, sd.y, sd.z])
-        Lv = np.clip(nr @ sdv, 0, None) * sun_strength / math.pi + 0.06
-        col = np.stack([np.interp(np.clip(Lv, 0, 1), xs, cs[:, k]) for k in range(3)], axis=1)
-        z0, z1 = co[:, 2].min(), co[:, 2].max()
-        base = np.clip((z0 + (z1 - z0) * 0.22 - co[:, 2]) / max(1e-3, (z1 - z0) * 0.22), 0, 1)
-        base = base * base * (3 - 2 * base) * 0.55
-        col = col * (1 - base[:, None]) + np.array(srgb(P["cloud_base"])[:3]) * base[:, None]
-        V = co - np.array([EYE.x, EYE.y, EYE.z])
-        V /= np.linalg.norm(V, axis=1, keepdims=True)
-        facing = 1 - np.abs(np.sum(nr * -V, axis=1))
-        back = np.clip((V @ sdv - 0.35) / 0.6, 0, 1)
-        back = back * back * (3 - 2 * back)
-        rim = np.clip(facing ** 4 * back * 2.5, 0, 1)
-        col = col * (1 - rim[:, None]) + np.array(srgb("#ffd79a")[:3]) * rim[:, None]
-        for a in list(me.color_attributes):
-            me.color_attributes.remove(a)
-        attr = me.color_attributes.new("cw_color", "BYTE_COLOR", "POINT")
-        attr.data.foreach_set("color", np.concatenate([col, np.ones((n, 1))], axis=1).astype(np.float32).ravel())
-        me.color_attributes.active_color = attr
-        parts.append(c)
-    select_only(parts)
-    bpy.ops.object.join()
-    j = bpy.context.view_layer.objects.active
-    j.name = "piece_clouds"
-    j.data.materials.clear()
-    j.data.materials.append(unlit_color_material("vc_clouds", attribute="cw_color"))
+    """The cloudscape as impostor cards. EEVEE renders the clouds alone from the lookout (transparent film, the sea held out
+    so nothing below the horizon is kept) in eight 45-degree sectors; each render is cropped to its clouds and laid on a
+    flat card that fills exactly that sector's frustum at CARD_DIST. From the lookout the cards are the Blender render pixel
+    for pixel (crisp cel bands, rims, creases); elsewhere in the town (a few hundred metres off, the clouds 1-2 km away)
+    the parallax is a few degrees. One unlit, alpha-blended texture per card."""
+    from sky import EYE
+    sc = bpy.context.scene
+    keep_engine = sc.render.engine
+    clouds = [o for o in bpy.data.objects if o.name.startswith("cloud") and o.type == "MESH" and not o.name.endswith("__c")]
+    hidden = []
+    for o in bpy.data.objects:
+        if o.type in ("MESH", "CURVE", "META", "FONT") and o not in clouds and not o.hide_render:
+            if o.name == "sea":
+                o.is_holdout = True
+                continue
+            o.hide_render = True
+            hidden.append(o)
+    from shots import setup_render
+    W = 2048
+    half = math.radians(22.5)
+    t = math.tan(half)
+    lo, hi = -math.tan(math.radians(2.0)), math.tan(math.radians(32.0))
+    H = int(round(W * (hi - lo) / (2 * t)))
+    setup_render(W, H)
+    sc.render.film_transparent = True
+    sc.render.use_compositing = False
+    sc.render.image_settings.color_mode = "RGBA"
+    sc.eevee.taa_render_samples = 64
+    cd = bpy.data.cameras.new("card_cam")
+    cd.sensor_fit = "HORIZONTAL"
+    cd.sensor_width = 36
+    cd.lens = 18.0 / t
+    cd.shift_y = ((hi + lo) / 2) / (2 * t)
+    cd.clip_start = 400.0  # the nearest cloud is 1 km out: a far near plane keeps the billow creases free of depth steps
+    cd.clip_end = 8000
+    cam = bpy.data.objects.new("card_cam", cd)
+    sc.collection.objects.link(cam)
+    sc.camera = cam
+    bm = bmesh.new()
+    uvl = bm.loops.layers.uv.new("bake")
+    mats = []
+    dist = CARD_DIST / SKY_SCALE
+    for i in range(8):
+        az = math.radians(170.0 + 45.0 * i)
+        f = Vector((math.sin(az), math.cos(az), 0.0))
+        rgt = Vector((math.cos(az), -math.sin(az), 0.0))
+        up = Vector((0, 0, 1))
+        cam.location = EYE
+        cam.rotation_mode = "QUATERNION"
+        cam.rotation_quaternion = f.to_track_quat("-Z", "Y")
+        path = os.path.join(A.out, f"card_{i}_full.png")
+        sc.render.filepath = path
+        bpy.ops.render.render(write_still=True)
+        img = bpy.data.images.load(path, check_existing=False)
+        px = image_np(img)  # rows bottom-up
+        bpy.data.images.remove(img)
+        alpha = px[..., 3]
+        rows = np.where(alpha.max(axis=1) > 0.004)[0]
+        cols = np.where(alpha.max(axis=0) > 0.004)[0]
+        if len(rows) == 0:
+            print(f"AETHER_CARD {i} empty", flush=True)
+            continue
+        r0, r1 = max(0, rows[0] - 3), min(H, rows[-1] + 4)
+        c0, c1 = max(0, cols[0] - 3), min(W, cols[-1] + 4)
+        crop = px[r0:r1, c0:c1]
+        # Straight alpha; colour under fully clear pixels is spread from the nearest cloud so filtering keeps no dark fringe.
+        rgb = crop[..., :3].copy()
+        a_ = crop[..., 3:4]
+        cov = (a_[..., 0] > 0.004).astype(np.float32)
+        acc, wsum = rgb * cov[..., None], cov.copy()
+        for _ in range(4):
+            acc, wsum = blur(acc, 2), blur(wsum, 2)
+        fill = acc / np.maximum(wsum[..., None], 1e-6)
+        rgb = np.where(cov[..., None] > 0, rgb, fill)
+        # (An 8-bit PNG's pixels come back sRGB-encoded, as written: no transfer to apply.)
+        out = write_png_rgba(os.path.join(A.out, f"card_{i}.png"), np.concatenate([np.clip(rgb, 0, 1), a_], axis=2))
+        m = unlit_alpha_material(f"cloud_card_{i}", out)
+        mats.append(m)
+        mi = len(mats) - 1
+
+        def corner(cx, ry):
+            xt = cx / W * 2 * t - t
+            yt = lo + ry / H * (hi - lo)
+            return EYE + (f + rgt * xt + up * yt) * dist
+        cs = [corner(c0, r0), corner(c1, r0), corner(c1, r1), corner(c0, r1)]
+        uvs = [(0, 0), (1, 0), (1, 1), (0, 1)]
+        vs = [bm.verts.new(c) for c in cs]
+        face = bm.faces.new(vs)
+        face.material_index = mi
+        for loop, uv in zip(face.loops, uvs):
+            loop[uvl].uv = uv
+        print(f"AETHER_CARD {i} {c1 - c0}x{r1 - r0}", flush=True)
+    me = bpy.data.meshes.new("piece_clouds")
+    bm.normal_update()
+    bm.to_mesh(me)
+    bm.free()
+    for m in mats:
+        me.materials.append(m)
+    j = bpy.data.objects.new("piece_clouds", me)
+    sc.collection.objects.link(j)
+    # Faces toward the lookout.
+    for p in me.polygons:
+        c = p.center
+        if p.normal.dot(EYE - c) < 0:
+            p.flip()
     scale_about_eye(j)
-    print(f"AETHER_BAKED clouds faces={len(j.data.polygons)}", flush=True)
+    for o in hidden:
+        o.hide_render = False
+    bpy.data.objects["sea"].is_holdout = False
+    sc.render.film_transparent = False
+    sc.render.engine = keep_engine
+    print(f"AETHER_BAKED clouds cards={len(mats)}", flush=True)
     return j
+
+
+def write_png_rgba(path, rgba01):
+    """Write an (H, W, 4) array in 0..1 (rows bottom-up) as an 8-bit RGBA PNG and load it as an image."""
+    import struct
+    import zlib
+    h, w, _ = rgba01.shape
+    px = (np.clip(rgba01[::-1], 0, 1) * 255 + 0.5).astype(np.uint8)
+    raw = b"".join(b"\x00" + px[y].tobytes() for y in range(h))
+
+    def chunk(t, d):
+        return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
+    with open(path, "wb") as f:
+        f.write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(raw, 6)) + chunk(b"IEND", b""))
+    img = bpy.data.images.load(path, check_existing=False)
+    img.colorspace_settings.name = "sRGB"
+    img.alpha_mode = "STRAIGHT"
+    return img
+
+
+def unlit_alpha_material(name, image, uv="bake"):
+    """Unlit with alpha (the glTF exporter's mix-with-transparent pattern -> KHR_materials_unlit, alphaMode BLEND)."""
+    m = bpy.data.materials.new(name)
+    m.use_nodes = True
+    nt = m.node_tree
+    for n in list(nt.nodes):
+        nt.nodes.remove(n)
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    tex = nt.nodes.new("ShaderNodeTexImage")
+    tex.image = image
+    tex.interpolation = "Linear"
+    tex.extension = "EXTEND"
+    uvn = nt.nodes.new("ShaderNodeUVMap")
+    uvn.uv_map = uv
+    nt.links.new(uvn.outputs[0], tex.inputs[0])
+    tr = nt.nodes.new("ShaderNodeBsdfTransparent")
+    mix = nt.nodes.new("ShaderNodeMixShader")
+    nt.links.new(tex.outputs["Alpha"], mix.inputs[0])
+    nt.links.new(tr.outputs[0], mix.inputs[1])
+    nt.links.new(tex.outputs["Color"], mix.inputs[2])
+    nt.links.new(mix.outputs[0], out.inputs[0])
+    try:
+        m.surface_render_method = "BLENDED"
+    except AttributeError:
+        m.blend_method = "BLEND"
+    m.use_backface_culling = True
+    return m
+
+
+def glitter_export(report):
+    """The sea glitter as four emissive meshes (one per twinkle group) with a looping visibility animation: each group is
+    shown or collapsed (scale 0 about its centre) on its own 2-second pattern of quarter-second steps, so the path
+    sparkles. Streaks beyond the browser sea's far ring are drawn in toward it (the ring is where its horizon is)."""
+    from sky import EYE
+    sc = bpy.context.scene
+    lim = 2600.0 * SKY_SCALE * 0.92 - 15.0
+    patterns = ["11011010", "01101101", "10110110", "11100011"]
+    sc.render.fps = 24
+    step = 6
+    sc.frame_start = 0
+    sc.frame_end = step * 8
+    parts = []
+    for i in range(4):
+        src = bpy.data.objects.get(f"glitter_{i}")
+        if src is None:
+            continue
+        me = src.data.copy()
+        mw = src.matrix_world
+        for v in me.vertices:
+            p = mw @ v.co
+            d = Vector((p.x - EYE.x, p.y - EYE.y))
+            L = d.length
+            if L > 1000.0:
+                # 1000..2150 m -> 1000..lim, keeping order (the far streaks crowd toward the horizon).
+                L2 = 1000.0 + (lim - 1000.0) * (1.0 - math.exp(-(L - 1000.0) / 420.0))
+                d = d.normalized() * L2
+            v.co = Vector((EYE.x + d.x, EYE.y + d.y, p.z))
+        for k, m in enumerate(me.materials):
+            me.materials[k] = emissive_export_material(m)
+        c = sum((v.co for v in me.vertices), Vector()) / max(1, len(me.vertices))
+        for v in me.vertices:
+            v.co -= c
+        ob = bpy.data.objects.new(f"glitter_{i}_web", me)
+        sc.collection.objects.link(ob)
+        ob.location = c
+        ob.animation_data_create()
+        act = bpy.data.actions.new(f"twinkle_{i}")
+        ob.animation_data.action = act
+        for axis in range(3):
+            fc = act.fcurves.new("scale", index=axis)
+            for k, on in enumerate(patterns[i] + patterns[i][0]):
+                kp = fc.keyframe_points.insert(k * step, 1.0 if on == "1" else 0.0)
+                kp.interpolation = "CONSTANT"
+        parts.append(ob)
+    select_only(parts)
+    path = os.path.join(A.out, "glitter.glb")
+    bpy.ops.export_scene.gltf(
+        filepath=path, export_format="GLB", use_selection=True, export_apply=False, export_yup=True,
+        export_texcoords=False, export_normals=False, export_tangents=False, export_materials="EXPORT",
+        export_cameras=False, export_lights=False, export_extras=False, export_animations=True,
+        export_animation_mode="ACTIVE_ACTIONS", export_force_sampling=True, export_frame_range=True,
+    )
+    pts = []
+    tris = 0
+    for ob in parts:
+        for v in ob.data.vertices:
+            pts.append(tuple(ob.location + v.co))
+        tris += sum(len(p.vertices) - 2 for p in ob.data.polygons)
+    co = np.asarray(pts, np.float32)
+    g = np.stack([co[:, 0], co[:, 2], -co[:, 1]], axis=1)
+    report["glitter"] = {"file": "glitter.glb", "bytes": os.path.getsize(path), "triangles": tris, "min": g.min(axis=0).tolist(), "max": g.max(axis=0).tolist()}
+    print(f"AETHER_EXPORT glitter tris={tris} bytes={os.path.getsize(path)}", flush=True)
 
 
 def scale_about_eye(ob):
@@ -586,7 +777,7 @@ def main():
     setup_cycles()
     report = {}
     want = (lambda k: ONLY is None or k in ONLY)
-    widths = {"town": 0.045, "infra": 0.03, "props": 0.014, "people": 0.012}
+    widths = {"town": 0.06, "shrine": 0.035, "infra": 0.03, "props": 0.014, "people": 0.012}
     for key, spec in PIECES.items():
         if not want(key):
             continue
@@ -607,13 +798,15 @@ def main():
     if want("clouds"):
         export_glb(clouds_piece(), "clouds", report)
     if want("sky"):
-        j = emission_piece("sky", "sky_dome", 2048, 1024, scale_sky=True)
+        j = emission_piece("sky", "sky_dome", 4096, 2048, scale_sky=True)
         export_glb(j, "sky", report)
     if want("sun"):
         export_glb(sun_piece(), "sun", report)
     if want("sea"):
         j = emission_piece("sea", "sea", 2048, 2048, uv_from_top=True)
         export_glb(j, "sea", report)
+    if want("glitter"):
+        glitter_export(report)
     path = os.path.join(A.out, "pieces.json")
     old = {}
     if os.path.exists(path):

@@ -6,8 +6,8 @@ import bmesh
 import bpy
 from mathutils import Vector
 
-from common import (LOOKOUT_Y, P, ROAD_Z, SEA_EDGE_Y, TERRACES, add_box, add_cylinder, bm_object, collection, cove_z, ground_z,
-                    mesh_object, profile_z, rng, srgb, toon_material)
+from common import (LOOKOUT_Y, P, ROAD_Z, SEA_EDGE_Y, TERRACES, add_box, add_cylinder, bm_object, cove_z, ground_z,
+                    mesh_object, rng, toon_material)
 
 X0, X1 = -170.0, 170.0
 Y0, Y1 = -150.0, 290.0
@@ -39,6 +39,7 @@ def build_terrain():
         toon_material("stone_bank", P["stone"], var=P["stone2"], noise_scale=0.4, stripes=("z", 0.55, "#9c9286", 0.08)),  # 2 stone banks
         toon_material("forest_floor", "#3f6b45", var="#507a48", noise_scale=0.04, var_amount=0.6),  # 3 wooded ridges
         toon_material("seabed", "#2a4f6a"),                                                          # 4 under water
+        toon_material("shore_rock", "#8d8278", var="#6f6a74", noise_scale=0.3, var_amount=0.5),    # 5 rocky shore
     ]
     nx = int((X1 - X0) / 2.0) + 1
     ys = []
@@ -59,8 +60,13 @@ def build_terrain():
             x = X0 + (i + 0.5) * 2.0
             yc = (ys[j] + ys[j + 1]) / 2
             side = cove_z(x, yc) > 0.6
-            if yc < SEA_EDGE_Y:
+            zc = ground_z(x, yc)
+            if yc < SEA_EDGE_Y and zc < 0.4:
+                # Under water. (The headlands rise out of the sea south of the quay line: they are wooded ground, not
+                # seabed; painting them with the seabed colour made a flat blue shape under the forest from the street.)
                 mi = 4
+            elif yc < SEA_EDGE_Y and zc < 2.5:
+                mi = 5
             elif side or yc > LOOKOUT_Y[1] + 2:
                 mi = 3
             elif is_bank(yc):
@@ -143,138 +149,107 @@ def build_harbour():
 
 
 def _sea_material():
+    """The sea: deep blue near, the sky's lavender far; the horizon glow reflected on the far water under the sun; a soft
+    warm column on the sun's path; painted wave strokes (light crests and dark troughs, long and thin, parallel to the
+    shore, fading with distance). The glitter itself is geometry (build_glitter), so it can bloom and twinkle."""
+    from sky import EYE, Nodes, sun_dir
     m = bpy.data.materials.new("cw_sea")
-    m.use_nodes = True
-    nt = m.node_tree
-    for n in list(nt.nodes):
-        nt.nodes.remove(n)
-    out = nt.nodes.new("ShaderNodeOutputMaterial")
-    out.location = (1200, 0)
-    geo = nt.nodes.new("ShaderNodeNewGeometry")
-    geo.location = (-1200, 0)
-    # Distance from the town: near deep blue, far lavender (the sky's reflection).
-    sep = nt.nodes.new("ShaderNodeSeparateXYZ")
-    sep.location = (-1000, 0)
-    nt.links.new(geo.outputs["Position"], sep.inputs[0])
-    dist = nt.nodes.new("ShaderNodeMapRange")
-    dist.location = (-800, 0)
-    dist.interpolation_type = "SMOOTHSTEP"
-    dist.inputs["From Min"].default_value = SEA_EDGE_Y
-    dist.inputs["From Max"].default_value = -1700.0
-    nt.links.new(sep.outputs["Y"], dist.inputs["Value"])
-    grad = nt.nodes.new("ShaderNodeValToRGB")
-    grad.location = (-600, 0)
-    cr = grad.color_ramp
-    cr.elements[0].color = srgb(P["sea_near"])
-    cr.elements[1].color = srgb(P["sea_far"])
-    e = cr.elements.new(0.35)
-    e.color = srgb("#3a5f98")
-    e = cr.elements.new(0.8)
-    e.color = srgb("#9a8fc4")
-    cr.elements[1].position = 1.0
-    nt.links.new(dist.outputs[0], grad.inputs[0])
-    # Wave strokes: stretched noise -> light dashes.
-    map_ = nt.nodes.new("ShaderNodeMapping")
-    map_.location = (-1000, -400)
-    map_.inputs["Scale"].default_value = (0.05, 0.5, 1.0)
-    nt.links.new(geo.outputs["Position"], map_.inputs[0])
-    vor = nt.nodes.new("ShaderNodeTexVoronoi")
-    vor.location = (-800, -400)
-    vor.feature = "F1"
-    vor.inputs["Scale"].default_value = 2.5
-    nt.links.new(map_.outputs[0], vor.inputs["Vector"])
-    strk = nt.nodes.new("ShaderNodeMapRange")
-    strk.location = (-600, -400)
-    strk.inputs["From Min"].default_value = 0.08
-    strk.inputs["From Max"].default_value = 0.0
-    nt.links.new(vor.outputs["Distance"], strk.inputs["Value"])
-    # Glitter: the sun's path on the water (toward the sun azimuth), dashes brighten there.
-    from sky import sun_dir, EYE
+    b = Nodes(m)
+    geo = b.node("ShaderNodeNewGeometry")
+    pos = geo.outputs["Position"]
+    px, py, pz = b.sep(pos)
+    rel = b.combine(b.math("SUBTRACT", px, EYE.x), b.math("SUBTRACT", py, EYE.y), 0.0)
+    dist = b.vmath("LENGTH", rel)
     sd = sun_dir()
-    rel = nt.nodes.new("ShaderNodeVectorMath")
-    rel.operation = "SUBTRACT"
-    rel.location = (-1000, -800)
-    rel.inputs[1].default_value = (EYE.x, EYE.y, 0)
-    nt.links.new(geo.outputs["Position"], rel.inputs[0])
-    flat = nt.nodes.new("ShaderNodeVectorMath")
-    flat.operation = "MULTIPLY"
-    flat.inputs[1].default_value = (1, 1, 0)
-    flat.location = (-850, -800)
-    nt.links.new(rel.outputs[0], flat.inputs[0])
-    nrm = nt.nodes.new("ShaderNodeVectorMath")
-    nrm.operation = "NORMALIZE"
-    nrm.location = (-700, -800)
-    nt.links.new(flat.outputs[0], nrm.inputs[0])
-    dot = nt.nodes.new("ShaderNodeVectorMath")
-    dot.operation = "DOT_PRODUCT"
     hd = Vector((sd.x, sd.y, 0)).normalized()
-    dot.inputs[1].default_value = (hd.x, hd.y, 0)
-    dot.location = (-550, -800)
-    nt.links.new(nrm.outputs[0], dot.inputs[0])
-    path = nt.nodes.new("ShaderNodeMapRange")
-    path.location = (-400, -800)
-    path.interpolation_type = "SMOOTHSTEP"
-    path.inputs["From Min"].default_value = 0.93
-    path.inputs["From Max"].default_value = 0.995
-    nt.links.new(dot.outputs["Value"], path.inputs["Value"])
-    far = nt.nodes.new("ShaderNodeMapRange")
-    far.location = (-400, -1000)
-    far.inputs["From Min"].default_value = -60
-    far.inputs["From Max"].default_value = -900
-    nt.links.new(sep.outputs["Y"], far.inputs["Value"])
-    pathf = nt.nodes.new("ShaderNodeMath")
-    pathf.operation = "MULTIPLY"
-    pathf.location = (-250, -900)
-    nt.links.new(path.outputs[0], pathf.inputs[0])
-    nt.links.new(far.outputs[0], pathf.inputs[1])
-    # Strokes everywhere (soft), glitter where the path is.
-    s_soft = nt.nodes.new("ShaderNodeMath")
-    s_soft.operation = "MULTIPLY"
-    s_soft.inputs[1].default_value = 0.25
-    s_soft.location = (-250, -400)
-    nt.links.new(strk.outputs[0], s_soft.inputs[0])
-    mix1 = nt.nodes.new("ShaderNodeMix")
-    mix1.data_type = "RGBA"
-    mix1.location = (0, 0)
-    nt.links.new(s_soft.outputs[0], mix1.inputs["Factor"])
-    nt.links.new(grad.outputs[0], mix1.inputs[6])
-    mix1.inputs[7].default_value = srgb("#a9b6e6")
-    path_glow = nt.nodes.new("ShaderNodeMath")
-    path_glow.operation = "MULTIPLY"
-    path_glow.inputs[1].default_value = 0.45
-    path_glow.location = (0, -700)
-    nt.links.new(pathf.outputs[0], path_glow.inputs[0])
-    mix2 = nt.nodes.new("ShaderNodeMix")
-    mix2.data_type = "RGBA"
-    mix2.blend_type = "SCREEN"
-    mix2.location = (250, 0)
-    nt.links.new(path_glow.outputs[0], mix2.inputs["Factor"])
-    nt.links.new(mix1.outputs[2], mix2.inputs[6])
-    mix2.inputs[7].default_value = srgb("#f6c39a")
-    glit = nt.nodes.new("ShaderNodeMath")
-    glit.operation = "MULTIPLY"
-    glit.location = (250, -500)
-    nt.links.new(strk.outputs[0], glit.inputs[0])
-    nt.links.new(pathf.outputs[0], glit.inputs[1])
-    em = nt.nodes.new("ShaderNodeEmission")
-    em.location = (600, 0)
-    nt.links.new(mix2.outputs[2], em.inputs["Color"])
-    emg = nt.nodes.new("ShaderNodeEmission")
-    emg.location = (600, -300)
-    emg.inputs["Color"].default_value = srgb(P["glitter"])
-    gs = nt.nodes.new("ShaderNodeMath")
-    gs.operation = "MULTIPLY"
-    gs.inputs[1].default_value = 4.0
-    gs.location = (450, -500)
-    nt.links.new(glit.outputs[0], gs.inputs[0])
-    nt.links.new(gs.outputs[0], emg.inputs["Strength"])
-    add = nt.nodes.new("ShaderNodeAddShader")
-    add.location = (900, 0)
-    nt.links.new(em.outputs[0], add.inputs[0])
-    nt.links.new(emg.outputs[0], add.inputs[1])
-    nt.links.new(add.outputs[0], out.inputs[0])
+    toward = b.vmath("DOT_PRODUCT", b.vmath("NORMALIZE", rel), (hd.x, hd.y, 0.0))
+    # Distance gradient.
+    t = b.remap(dist, 140.0, 2300.0, 0.0, 1.0, smooth=True)
+    col = b.ramp(t, [(0.0, P["sea_near"]), (0.3, "#2e5a8e"), (0.62, "#5d73b4"), (0.85, "#9a8fc4"), (1.0, "#c9a2b8")])
+    # The horizon glow reflected on the far water, strongest toward the sun.
+    far = b.remap(dist, 700.0, 2200.0, 0.0, 1.0, smooth=True)
+    sunward = b.math("POWER", b.remap(toward, 0.2, 1.0, 0.0, 1.0, smooth=True), 2.0)
+    refl = b.math("MULTIPLY", far, b.math("ADD", b.math("MULTIPLY", sunward, 0.65), 0.2))
+    col = b.mix(refl, col, "#f0b092")
+    # The sun's path: a warm column, narrow far and wider near.
+    path = b.math("POWER", b.remap(toward, 0.982, 0.9995, 0.0, 1.0, smooth=True), 1.5)
+    pathf = b.math("MULTIPLY", path, b.remap(dist, 60.0, 900.0, 0.2, 1.0))
+    col = b.mix(b.math("MULTIPLY", pathf, 0.5), col, "#f7c89c", blend="SCREEN")
+    halo = b.math("MULTIPLY", b.remap(toward, 0.9, 0.995, 0.0, 1.0, smooth=True), b.remap(dist, 300.0, 1800.0, 0.0, 1.0, smooth=True))
+    col = b.mix(b.math("MULTIPLY", halo, 0.25), col, "#e9a98f", blend="SCREEN")
+    # Wave strokes: wavy bands along the shore (x), broken into strokes by noise; light crests and dark troughs.
+    mp = b.node("ShaderNodeMapping")
+    mp.inputs["Scale"].default_value = (0.02, 0.32, 1.0)
+    b._in(mp.inputs[0], pos)
+    brk = b.node("ShaderNodeTexNoise")
+    brk.inputs["Scale"].default_value = 3.0
+    brk.inputs["Detail"].default_value = 2.0
+    b._in(brk.inputs["Vector"], mp.outputs[0])
+    wv = b.node("ShaderNodeTexWave", wave_type="BANDS", bands_direction="Y", wave_profile="SAW")
+    wv.inputs["Scale"].default_value = 1.0
+    wv.inputs["Distortion"].default_value = 3.0
+    wv.inputs["Detail Scale"].default_value = 0.6
+    mp2 = b.node("ShaderNodeMapping")
+    mp2.inputs["Scale"].default_value = (0.012, 0.12, 1.0)
+    b._in(mp2.inputs[0], pos)
+    b._in(wv.inputs["Vector"], mp2.outputs[0])
+    crest = b.math("MULTIPLY", b.remap(wv.outputs["Fac"], 0.90, 0.96, 0.0, 1.0), b.remap(brk.outputs["Fac"], 0.52, 0.6, 0.0, 1.0))
+    trough = b.math("MULTIPLY", b.remap(wv.outputs["Fac"], 0.42, 0.5, 0.0, 1.0), b.remap(wv.outputs["Fac"], 0.58, 0.5, 0.0, 1.0))
+    trough = b.math("MULTIPLY", trough, b.remap(brk.outputs["Fac"], 0.42, 0.34, 0.0, 1.0))
+    fade = b.remap(dist, 900.0, 160.0, 0.0, 1.0)
+    crest_c = b.mix(path, "#a6b6e8", "#ffe2b8")
+    col = b.mix(b.math("MULTIPLY", crest, b.math("MULTIPLY", fade, 0.75)), col, crest_c)
+    col = b.mix(b.math("MULTIPLY", trough, b.math("MULTIPLY", fade, 0.45)), col, "#163a62")
+    b.output(b.emit(col))
     m["cw_sea"] = 1
     return m
+
+
+def build_glitter():
+    """The sun's glitter path: short horizontal streaks of light on the water, crowded under the sun near the horizon and
+    scattered wider toward the town, as thin emissive quads lying on the sea. Four groups (glitter_0..3) twinkle in turn in
+    the browser (the export keys their visibility)."""
+    from sky import EYE, SUN_AZ
+    r = rng(77)
+    mat = toon_material("glitter", P["glitter"], emission="#fff0c8", emission_strength=3.2)
+    mat_hot = toon_material("glitter_hot", P["glitter"], emission="#fff6e0", emission_strength=5.0)
+    groups = [bmesh.new() for _ in range(4)]
+    az0 = math.radians(SUN_AZ)
+    n = 0
+    tries = 0
+    while n < 1400 and tries < 20000:
+        tries += 1
+        d = math.exp(r.uniform(math.log(70.0), math.log(2150.0)))
+        width = math.radians(2.2 + 7.0 * (1.0 - min(1.0, d / 1200.0)) ** 2)
+        off = r.gauss(0.0, width * 0.5)
+        if abs(off) > width * 1.4:
+            continue
+        a = az0 + off
+        x, y = EYE.x + math.sin(a) * d, EYE.y + math.cos(a) * d
+        if y > SEA_EDGE_Y - 6 or ground_z(x, y) > -0.5:
+            continue
+        core = max(0.0, 1.0 - abs(off) / (width * 1.2))
+        # Lengths along the view's tangent, thickness toward the eye sized so a streak stays a fine line on screen.
+        length = d * r.uniform(0.004, 0.011) * (0.5 + core)
+        thick = min(0.0011 * d * d / EYE.z * r.uniform(0.6, 1.2), d * 0.08) + 0.05
+        tx, ty = math.cos(a), -math.sin(a)
+        fx, fy = math.sin(a), math.cos(a)
+        z = 0.05
+        bm = groups[n % 4]
+        vs = [bm.verts.new((x + tx * sx * length / 2 + fx * sy * thick / 2, y + ty * sx * length / 2 + fy * sy * thick / 2, z))
+              for (sx, sy) in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+        f = bm.faces.new(vs)
+        f.material_index = 1 if (core > 0.55 and r.random() < 0.5) else 0
+        n += 1
+    obs = []
+    for i, bm in enumerate(groups):
+        ob = bm_object(f"glitter_{i}", bm, "glitter", mats=[mat, mat_hot], recalc=False)
+        for p in ob.data.polygons:
+            if p.normal.z < 0:
+                p.flip()
+        ob.visible_shadow = False
+        obs.append(ob)
+    return obs
 
 
 def build_sea():
@@ -349,26 +324,32 @@ def build_stair():
     return ob
 
 
+LOOKOUT_Z = TERRACES[-1][1]  # the lookout terrace (the deck once sat at 34 m, buried 10 m under the 44 m ground)
+
+
 def build_lookout():
     pave = toon_material("lookout_pave", "#d2c6b1", var="#c3b59e", noise_scale=1.2, stripes=("x", 0.9, "#b0a38f", 0.04))
     wood = toon_material("rail_wood", P["wood"], var="#9a6a48", noise_scale=2)
     metal = toon_material("lamp_metal", "#4a4d5a")
     bm = bmesh.new()
     ya, yb = LOOKOUT_Y[0], LOOKOUT_Y[0] + 10.0
-    add_box(bm, (0, (ya + yb) / 2, 34.0 - 0.3), (16.0, yb - ya, 0.7), mat_index=0)
+    add_box(bm, (0, (ya + yb) / 2, LOOKOUT_Z - 0.3), (16.0, yb - ya, 0.7), mat_index=0)
     # Railing along the south (sea) edge and the sides.
     posts = []
     for k in range(9):
-        posts.append((-8.0 + 2.0 * k, ya + 0.15))
+        if abs(-8.0 + 2.0 * k) > 1.5:  # the stair arrives through a gap in the middle
+            posts.append((-8.0 + 2.0 * k, ya + 0.15))
+    posts += [(-1.45, ya + 0.15), (1.45, ya + 0.15)]
     for k in range(1, 5):
         posts.append((-7.85, ya + 2.0 * k))
         posts.append((7.85, ya + 2.0 * k))
     for (x, y) in posts:
-        add_box(bm, (x, y, 34.05 + 0.525), (0.12, 0.12, 1.05), mat_index=1)
-    add_box(bm, (0, ya + 0.15, 34.05 + 1.02), (16.1, 0.14, 0.1), mat_index=1)
-    add_box(bm, (0, ya + 0.15, 34.05 + 0.55), (16.0, 0.06, 0.06), mat_index=1)
+        add_box(bm, (x, y, LOOKOUT_Z + 0.05 + 0.525), (0.12, 0.12, 1.05), mat_index=1)
+    for side in (-1, 1):
+        add_box(bm, (side * 4.75, ya + 0.15, LOOKOUT_Z + 0.05 + 1.02), (6.7, 0.14, 0.1), mat_index=1)
+        add_box(bm, (side * 4.75, ya + 0.15, LOOKOUT_Z + 0.05 + 0.55), (6.6, 0.06, 0.06), mat_index=1)
     for x in (-7.85, 7.85):
-        add_box(bm, (x, ya + 4.15, 34.05 + 1.02), (0.14, 8.0, 0.1), mat_index=1)
+        add_box(bm, (x, ya + 4.15, LOOKOUT_Z + 0.05 + 1.02), (0.14, 8.0, 0.1), mat_index=1)
     ob = bm_object("lookout", bm, "stair", mats=[pave, wood, metal], outline=True)
     return ob
 
@@ -378,6 +359,7 @@ def build():
     build_roads()
     build_harbour()
     build_sea()
+    build_glitter()
     build_stair()
     build_lookout()
     return t

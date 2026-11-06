@@ -26,12 +26,14 @@ const toAether = (p: readonly [number, number, number]): [number, number, number
 const vfov = (lens: number): number => (2 * Math.atan((36 * 9) / 16 / 2 / lens) * 180) / Math.PI;
 // Kept in step with scripts/blender/cloudwatch/shots.py (the stair's eye: profile_z(39) + 1.5; the breakwater's end).
 const SHOTS: Record<string, { eye: [number, number, number]; target: [number, number, number]; lens: number }> = {
-  A: { eye: [2.0, 132.2, 45.65], target: [-50.1, -163.2, 24.6], lens: 20 },
+  A: { eye: [2.0, 130.9, 45.65], target: [-50.1, -163.2, 24.6], lens: 20 },
   B: { eye: [-0.6, 39.0, 15.0], target: [0.5, 130.0, 52.0], lens: 24 },
-  C: { eye: [3.6, -13.4, 7.55], target: [-194.4, -41.2, 18.0], lens: 22 },
+  C: { eye: [3.6, -13.4, 7.55], target: [-177.7, -97.9, 18.0], lens: 22 },
   D: { eye: [51.4, -90.75, 3.2], target: [0.0, 40.0, 16.0], lens: 40 },
   // The sunset itself (not in the design's list: a check of the sun, its bloom and the glitter).
-  S: { eye: [2.0, 132.2, 45.65], target: [-91.7, 101.8, 58.0], lens: 30 },
+  S: { eye: [2.0, 130.9, 45.65], target: [-81.9, 7.8, 40.4], lens: 30 },
+  // The mother and child at the crossing, from across the track (a check of the people).
+  P: { eye: [-2.6, -5.6, 7.45], target: [0.2, -12.6, 6.9], lens: 35 },
 };
 
 await mkdir(out, { recursive: true });

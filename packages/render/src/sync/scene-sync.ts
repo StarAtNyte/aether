@@ -1511,6 +1511,16 @@ export class SceneSync {
         }
       });
       node.content.add(model);
+      // A model file that carries animation clips (a twinkling glitter, a turning sign) loops its first clip.
+      const clipRoot = model.children[0];
+      if (this.variant === 'standard' && clipRoot && clipRoot.animations.length > 0) {
+        return this.loadAnimator().then((animator) => {
+          if (!this.isCurrent(node, token)) return;
+          animator.add(node.id, clipRoot, node.object, {}, undefined);
+          node.releases.push(() => animator.remove(node.id));
+        });
+      }
+      return undefined;
     });
   }
 
