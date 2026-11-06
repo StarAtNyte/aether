@@ -4,7 +4,7 @@
  * on one persistent profile: the second has Chrome's program disk cache warm, as a returning visitor does). The load
  * probe of every stage is scripts/arch-probe.ts.
  *
- *   STATIC_DIR=/tmp/s2-dist GEN_GPU=intel npx tsx scripts/first-picture-probe.ts --out=<dir> [--runs=cold,warm] [--shots] [world]
+ *   STATIC_DIR=/tmp/s2-dist GEN_GPU=intel npx tsx scripts/first-picture-probe.ts --out=<dir> [--runs=cold,warm] [--shots] [--dead] [world]
  *
  * Per run it reports, from navigation:
  * - the marks of the load (`aether:*`), and the first picture: the moment the load screen starts to leave;
@@ -15,6 +15,9 @@
  * - GPU-process tasks over 50 ms (from a trace), before and after the first picture;
  * - an 8 s orbit after the load: frame times, `useProgram` and draws per frame.
  * With `--profile` the last run writes a CPU profile of its load (navigation to the first picture).
+ * With `--dead` each run writes `<run>-dead.json` (programs linked during the load and not drawn with afterwards, each with
+ * how it differs from the nearest program in use) and `<run>-late.json` (programs linked after the load).
+ * `PROBE_EVAL=<file>` evaluates a script in the page once the load settled and logs its result.
  * With `--shots` the last run also writes screenshots of the page at the first picture and once settled (hero shots:
  * scripts/hero-shots.ts).
  * Run it in a capped scope, one browser at a time (see docs/PERFORMANCE.md, Measuring).
@@ -32,6 +35,8 @@ const runs = (flag('runs') ?? 'cold,warm').split(',');
 const wantShots = args.includes('--shots');
 /** `--profile`: a CPU profile of the last run's load (navigation to the first picture), `<run>.cpuprofile`. */
 const wantProfile = args.includes('--profile');
+/** `--dead`: report the programs linked during the load that are not drawn with afterwards, and how each differs from the nearest one in use. */
+const wantDead = args.includes('--dead');
 const slug = args.find((a) => !a.startsWith('--')) ?? 'kestrel-outpost';
 mkdirSync(out, { recursive: true });
 const T0 = Date.now();
@@ -45,7 +50,20 @@ const INSTR = `(() => {
   const P = WebGL2RenderingContext.prototype;
   const wrap = (name, after) => { const f = P[name]; if (!f) return; P[name] = function (...a) { const t = performance.now(); const r = f.apply(this, a); add(name, performance.now() - t); if (after) after(a, r, t); return r; }; };
   const pending = new Map();
-  wrap('linkProgram', (a, r, t) => pending.set(a[0], t));
+  wrap('linkProgram', (a, r, t) => {
+    pending.set(a[0], t);
+    // --dead: keep each linked program's sources, to tell which links the load threw away.
+    if (globalThis.__probeDead) { try { const sh = this0().getAttachedShaders(a[0]) || []; const src = sh.map((x) => this0().getShaderSource(x) || ''); S.linked.push({ p: a[0], at: Math.round(t), src, used: false, deleted: false }); } catch {} }
+  });
+  let ctx0 = null;
+  const this0 = () => ctx0;
+  S.linked = [];
+  { const f = HTMLCanvasElement.prototype.getContext; HTMLCanvasElement.prototype.getContext = function (k, ...o) { const c = f.call(this, k, ...o); if (k === 'webgl2' && c && !ctx0) ctx0 = c; return c; }; }
+  if (globalThis.__probeDead) {
+    const up = P.useProgram, del = P.deleteProgram;
+    P.useProgram = function (p) { if (S.trackUse && p) { const e = S.linked.find((x) => x.p === p); if (e) e.used = true; } return up.call(this, p); };
+    P.deleteProgram = function (p) { const e = S.linked.find((x) => x.p === p); if (e) e.deleted = Math.round(performance.now()); return del.call(this, p); };
+  }
   // 0x91B1 COMPLETION_STATUS_KHR, 0x8B82 LINK_STATUS: the first query that sees the link done ends its latency.
   wrap('getProgramParameter', (a, r) => { if ((a[1] === 0x91B1 || a[1] === 0x8B82) && r === true && pending.has(a[0])) { const t = pending.get(a[0]); pending.delete(a[0]); S.links.push({ at: Math.round(t), ms: Math.round(performance.now() - t) }); } });
   for (const n of ['compileShader', 'useProgram', 'drawArrays', 'drawElements', 'drawArraysInstanced', 'drawElementsInstanced', 'texImage2D', 'texSubImage2D', 'texImage3D', 'texSubImage3D', 'texStorage2D', 'bufferData', 'bufferSubData', 'readPixels', 'clientWaitSync', 'generateMipmap', 'getUniformLocation', 'getUniformBlockIndex', 'uniformBlockBinding']) wrap(n);
@@ -67,7 +85,9 @@ const INSTR = `(() => {
     const r = window.__aether && window.__aether.simulation && window.__aether.simulation.renderer;
     if (!r) return;
     let s;
-    try { s = [r.processingStage, r.frameCount > 0 ? 'drawn' : 'none', 'links ' + r.programs.pending, 'prep ' + r.preparation.pending, r.animating ? 'animating' : '', r.lightVolumeBaking ? 'baking' : ''].join(' '); } catch (e) { s = 'n/a'; }
+    let lights = '';
+    if (globalThis.__probeDead) try { const ls = []; r.scene.traverseVisible((o) => { if (o.isLight) ls.push(o.type + (o.castShadow ? '*' : '') + (o.name ? ':' + o.name : '')); }); lights = ls.join(','); } catch {}
+    try { s = [lights, r.processingStage, r.frameCount > 0 ? 'drawn' : 'none', 'links ' + r.programs.pending, 'prep ' + r.preparation.pending, r.animating ? 'animating' : '', r.lightVolumeBaking ? 'baking' : ''].join(' '); } catch (e) { s = 'n/a'; }
     const last = S.states[S.states.length - 1];
     if (!last || last[1] !== s) S.states.push([Math.round(performance.now()), s]);
     if (S.firstPicture > 0) clearInterval(sample);
@@ -119,6 +139,7 @@ async function main(): Promise<void> {
         await ctx.addInitScript(env.SKIP_FIRST_RUN);
         await ctx.addInitScript({ content: 'globalThis.__name = (f) => f;' });
         if (process.env['GEN_GPU'] === 'intel') await ctx.addInitScript({ content: 'delete Navigator.prototype.gpu; try { delete navigator.gpu; } catch {}' });
+        if (wantDead) await ctx.addInitScript({ content: 'globalThis.__probeDead = true;' });
         await ctx.addInitScript({ content: INSTR });
         const page = ctx.pages()[0] ?? (await ctx.newPage());
         page.on('pageerror', (e) => log(`pageerror ${e.message.slice(0, 160)}`));
@@ -139,6 +160,9 @@ async function main(): Promise<void> {
         // Settle: whatever streams in behind the first picture finishes (bounded), so the orbit measures the steady state.
         await page.waitForFunction(() => (window as unknown as { __aether: { simulation: { renderer: { processingStage: string | null } } } }).__aether.simulation.renderer.processingStage === null, null, { timeout: 60_000, polling: 250 }).catch(() => log('renderer still busy'));
         if (wantShots && run === runs[runs.length - 1]) await page.screenshot({ path: join(out, `${run}-settled.png`) });
+        if (process.env['PROBE_EVAL']) log(`${run}: eval ${JSON.stringify(await page.evaluate(readFileSync(process.env['PROBE_EVAL'], 'utf8')))}`);
+        // From here on, a program drawn with counts as in use (--dead).
+        await page.evaluate(() => void Object.assign((globalThis as unknown as { __probe: { trackUse: boolean; trackFrom: number } }).__probe, { trackUse: true, trackFrom: performance.now() }));
         const load = await page.evaluate(() => {
           const P = (globalThis as unknown as { __probe: { gl: Record<string, { n: number; ms: number; max: number }>; links: Array<{ at: number; ms: number }>; firstPicture: number; progAtFirst: number; linksAtFirst: number; states: Array<[number, string]>; slowFrames: Array<[number, number]>; bigCalls: Array<[number, string, number]> } }).__probe;
           const r = (window as unknown as { __aether: { simulation: { renderer: Record<string, unknown> & { renderer: { info: { memory: { programs: number } } } } } } }).__aether.simulation.renderer;
@@ -167,6 +191,7 @@ async function main(): Promise<void> {
             linkLatency: { beforeFirst: { n: before.length, sumMs: sum(before), maxMs: Math.max(0, ...before.map((l) => l.ms)) }, afterFirst: { n: after.length, sumMs: sum(after), maxMs: Math.max(0, ...after.map((l) => l.ms)) } },
             slowLinks: (r['slowProgramLinks'] as unknown[] | undefined)?.length ?? null,
             prewarm: (r['prewarmStats'] as unknown) ?? null,
+            firstUse: (r['firstUseStats'] as unknown) ?? null,
           };
         });
         log(`${run}: first picture ${(load.firstPictureMs / 1000).toFixed(1)} s, fully loaded ${((load.marks['aether:fully-loaded'] ?? -1) / 1000).toFixed(1)} s, programs ${load.programsAtFirst} -> ${load.programs}, links ${load.linkCalls} (${load.linksAfterFirst} after the first picture)`);
@@ -195,12 +220,58 @@ async function main(): Promise<void> {
             last = ts;
           }
           dts.shift();
+          // What the renderer was busy with when the orbit ended (a bake or links behind the orbit make its frames slow).
+          const rr = r as unknown as { processingStage: string | null; lightVolumeBaking: boolean; programs: { pending: number }; preparation: { pending: number } };
+          const busy = `${rr.processingStage ?? '-'} baking ${String(rr.lightVolumeBaking)} links ${rr.programs.pending} prep ${rr.preparation.pending}`;
           const frames = dts.length;
           const s = [...dts].sort((a, b) => a - b);
           const q = (p: number): number => Math.round((s[Math.min(s.length - 1, Math.floor(s.length * p))] ?? 0) * 10) / 10;
-          return { frames, p50: q(0.5), p95: q(0.95), max: q(1), useProgramPerFrame: Math.round((n('useProgram') - u0) / frames), drawsPerFrame: Math.round((draws() - d0) / frames), linksDuringOrbit: n('linkProgram') - l0, programsAdded: r.renderer.info.memory.programs - prog0 };
+          return { frames, p50: q(0.5), p95: q(0.95), max: q(1), useProgramPerFrame: Math.round((n('useProgram') - u0) / frames), drawsPerFrame: Math.round((draws() - d0) / frames), linksDuringOrbit: n('linkProgram') - l0, busy, programsAdded: r.renderer.info.memory.programs - prog0 };
         });
         log(`${run}: orbit p50 ${orbit.p50} p95 ${orbit.p95} max ${orbit.max}, useProgram/frame ${orbit.useProgramPerFrame}, draws/frame ${orbit.drawsPerFrame}, links ${orbit.linksDuringOrbit}`);
+        if (wantDead) {
+          // The view rests after the orbit: the rest phase draws again.
+          await page.waitForTimeout(4000);
+          const dead = await page.evaluate(() => {
+            const P = (globalThis as unknown as { __probe: { firstPicture: number; linked: Array<{ at: number; src: string[]; used: boolean; deleted: number | false }> } }).__probe;
+            const live = P.linked.filter((l) => l.used);
+            // Node names are numbered in the order they are built: compare with the numbers taken out.
+            const lines = (l: { src: string[] }): Set<string> => new Set(l.src.join('\n').split('\n').map((x) => x.trim().replace(/\b(nodeUniform|nodeVarying|VERTEX_nodeVar|nodeVar|NodeBuffer_|nodeBuffer|nodeTexture|nodeAttribute|nodeVarying)\d+/g, '$1#')).filter(Boolean));
+            const liveLines = live.map(lines);
+            return P.linked.filter((l) => !l.used).map((l) => {
+              const mine = lines(l);
+              let best = -1, bestD = Infinity;
+              liveLines.forEach((o, i) => { let d = 0; for (const x of mine) if (!o.has(x)) d++; for (const x of o) if (!mine.has(x)) d++; if (d < bestD) { bestD = d; best = i; } });
+              const o = best >= 0 ? liveLines[best]! : new Set<string>();
+              return { at: l.at, beforeFirst: l.at < P.firstPicture, deleted: l.deleted, chars: l.src.join('').length, head: (l.src[1] ?? '').split('\n').find((x) => /^\/\/|name|define/.test(x))?.slice(0, 80) ?? '', diff: bestD, onlyDead: [...mine].filter((x) => !o.has(x)).slice(0, 30), onlyLive: [...o].filter((x) => !mine.has(x)).slice(0, 30), liveAt: best >= 0 ? live[best]!.at : -1, src: l.src, liveSrc: best >= 0 ? live[best]!.src : [] };
+            });
+          });
+          // The programs linked once the load was over (the orbit's): their fragment sources' first lines that tell them apart.
+          const late = await page.evaluate(() => {
+            const P = (globalThis as unknown as { __probe: { trackFrom: number; linked: Array<{ at: number; src: string[] }> } }).__probe;
+            return P.linked.filter((l) => l.at >= P.trackFrom).map((l) => ({ at: l.at, chars: l.src.join('').length, src: l.src }));
+          });
+          writeFileSync(join(out, `${run}-late.json`), JSON.stringify(late, null, 1));
+          // Skinned meshes (people): where they hang and whether they are shown (programs met only once one shows).
+          const skinned = await page.evaluate(() => {
+            const r = (window as unknown as { __aether: { simulation: { renderer: { scene: { traverse(f: (o: { isSkinnedMesh?: boolean; name: string; visible: boolean; parent: unknown; layers: { mask: number }; frustumCulled: boolean }) => void): void } } } } }).__aether.simulation.renderer;
+            const out: string[] = [];
+            r.scene.traverse((o) => {
+              if (!o.isSkinnedMesh) return;
+              const path: string[] = [];
+              let shown = true;
+              for (let p = o as unknown as { name: string; visible: boolean; parent: unknown; type?: string } | null; p; p = p.parent as typeof p) {
+                path.push(`${p.name || p.type}${p.visible ? '' : '(hidden)'}`);
+                if (!p.visible) shown = false;
+              }
+              out.push(`${shown ? 'shown' : 'hidden'} layers ${o.layers.mask} ${path.reverse().join(' / ')}`);
+            });
+            return out;
+          });
+          log(`${run}: skinned meshes:\n  ${skinned.slice(0, 20).join('\n  ')}`);
+          writeFileSync(join(out, `${run}-dead.json`), JSON.stringify(dead, null, 1));
+          log(`${run}: ${dead.length} links not drawn with after the load (${dead.filter((d) => d.beforeFirst).length} before the first picture, ${dead.filter((d) => d.deleted !== false).length} deleted)`);
+        }
         const done = new Promise<string>((res) => cdp.once('Tracing.tracingComplete', (e: { stream?: string }) => res(e.stream ?? '')));
         await cdp.send('Tracing.end');
         const handle = await done;
