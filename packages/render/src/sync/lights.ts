@@ -148,7 +148,7 @@ export interface EntityLight {
 
 /** Factor of architectural lights in full daylight (lamps read dim next to the sun, as to the eye). */
 export const DAYLIGHT_LAMP_FACTOR = 0.05;
-/** Below this daylight factor architectural lamps are switched off entirely (no per-pixel cost). */
+/** Below this daylight factor architectural lamps are switched off (intensity 0; they keep their place in the light set). */
 export const LAMP_CUTOFF = 0.2;
 /** Sun elevations (degrees) between which lamps fade from full (night) to the daylight factor. */
 export const DAYLIGHT_FADE: readonly [number, number] = Object.freeze([2, 16]) as readonly [number, number];
@@ -231,10 +231,15 @@ export function createEntityLight(spec: LightSpec, scale = 1): EntityLight {
   return { light, target };
 }
 
+/** Intensity of the three light for `spec` under a scale (local and area lights only; the daylight scale of lamps). */
+export function lightIntensity(spec: Pick<LightSpec, 'type' | 'intensity'>, scale = 1): number {
+  const local = spec.type === 'point' || spec.type === 'spot';
+  return Math.max(0, spec.intensity) * (local ? LOCAL_LIGHT_SCALE * scale : spec.type === 'area' ? LOCAL_AREA_SCALE * scale : 1);
+}
+
 /** Update intensity and color in place (cheap path for pulsing/animated lights). */
 export function updateLightParams(light: Light, spec: Pick<LightSpec, 'type' | 'intensity' | 'color'>, scale = 1): void {
-  const local = spec.type === 'point' || spec.type === 'spot';
-  light.intensity = Math.max(0, spec.intensity) * (local ? LOCAL_LIGHT_SCALE * scale : spec.type === 'area' ? LOCAL_AREA_SCALE * scale : 1);
+  light.intensity = lightIntensity(spec, scale);
   light.color.set(spec.color);
   if (light instanceof HemisphereLight) light.groundColor.set(spec.color).multiplyScalar(0.35);
 }

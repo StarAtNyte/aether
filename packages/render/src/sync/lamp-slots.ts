@@ -1,6 +1,6 @@
 /**
- * Stand-in slots for the scene's shadowless point lamps, so the set of lights every lit material is built for stays the
- * same while a world plays.
+ * Slots for the scene's shadowless point lamps, so the set of lights every lit material is built for stays the same
+ * while a world plays.
  *
  * The node renderer keys each object's shading program on the exact lights in the scene (their ids and kinds). A light
  * that appears (a medkit with its red glow dropped by a raider), disappears (a pickup collected) or is switched off made
@@ -8,15 +8,17 @@
  * ground, the cliffs and every other lit surface, so the view showed the flat haze below the horizon in their place.
  *
  * The entity lamps keep their place and their meaning (the light volume, room exposure and the bake read them as before)
- * but move to {@link HIDDEN_LAMP_LAYER}, which no camera draws. A fixed pool of slot lamps, the ones the renderer
- * actually shades with, takes their colour, intensity, range, world position, room clip and apertures each frame. A
- * slot without a lamp shines at zero. The pool holds a slot for every lit lamp shown, plus a spare for each lamp of the
- * world's templates (whose copies a game spawns), and only grows, so the light set changes when more lamps are lit at once than
- * ever before, not each time one comes or goes. Lamps the forward budget cut (`userData.cut`) or switched off by
- * hiding the light itself take no slot.
+ * but move to {@link HIDDEN_LAMP_LAYER}, which no camera draws. One {@link LampSet} light, the one the renderer actually
+ * shades with, holds a slot for each and draws the lit ones in a loop (`gpu/lamp-set-node.ts`): their colour,
+ * intensity, range, world position, room clip and apertures are read each frame. The set holds a slot for every lamp
+ * shown, plus a spare for each lamp of the world's templates (whose copies a game spawns), and only grows, so the light
+ * set changes when more lamps are shown at once than ever before, not each time one comes, goes or switches off. Lamps
+ * the forward budget cut (`userData.cut`) or switched off by hiding the light itself take no slot. A lamp turned down to
+ * zero (an architectural lamp in daylight) keeps its slot, so the slots a world needs at night are there from the first
+ * frame, whatever the hour it loads at.
  */
-import { Group, type Light, type Object3D } from 'three';
-import { RoomLamp, type LampPortal } from './room-lamp';
+import { Group, Light, type Object3D } from 'three';
+import { RoomLamp } from './room-lamp';
 
 /** Layer of the entity lamps that the slots stand in for: no camera enables it, so the renderer does not shade with them. */
 export const HIDDEN_LAMP_LAYER = 30;
@@ -26,29 +28,36 @@ export function slottable(l: Light): l is RoomLamp {
   return l instanceof RoomLamp && !l.castShadow;
 }
 
+/**
+ * The light the renderer shades the slotted lamps with: one loop over {@link lit} (`LampSetNode`). Its program depends
+ * on {@link capacity} only, not on how many lamps are lit or which.
+ */
+export class LampSet extends Light {
+  readonly isLampSet = true;
+  /** Lamps lit or at zero this frame, at most {@link capacity}; the node shades those with intensity. */
+  readonly lit: RoomLamp[] = [];
+
+  readonly capacity: number;
+
+  constructor(capacity = 1) {
+    super(0xffffff, 1);
+    this.capacity = capacity;
+    this.name = 'aether:lamp-set';
+    this.castShadow = false;
+    this.matrixAutoUpdate = false;
+  }
+}
+
 /** Visible all the way up to the root (a lamp under a hidden entity gives no light). */
 function shown(o: Object3D): boolean {
   for (let p: Object3D | null = o; p; p = p.parent) if (!p.visible) return false;
   return true;
 }
 
-function samePortal(a: LampPortal, b: LampPortal): boolean {
-  return a.cx === b.cx && a.cy === b.cy && a.cz === b.cz && a.tx === b.tx && a.tz === b.tz && a.halfWidth === b.halfWidth && a.halfHeight === b.halfHeight;
-}
-
-function samePortals(a: readonly LampPortal[], b: readonly LampPortal[]): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) if (!samePortal(a[i] as LampPortal, b[i] as LampPortal)) return false;
-  return true;
-}
-
 /** The slot pool. Add {@link group} to the scene and call {@link sync} before each draw. */
 export class LampSlots {
   readonly group = new Group();
-  private readonly slots: RoomLamp[] = [];
-  /** Lamp each slot stands in for (null: free). */
-  private readonly owners: Array<RoomLamp | null> = [];
-  private readonly live: RoomLamp[] = [];
+  private set: LampSet | null = null;
   /** Spare slots added so far for {@link sync}'s `spares`. */
   private spared = 0;
 
@@ -56,14 +65,19 @@ export class LampSlots {
     this.group.name = 'aether:lamp-slots';
   }
 
-  /** Number of slots (lights the shading programs are built for). */
+  /** Number of slots (lamps the shading programs are built for). */
   get size(): number {
-    return this.slots.length;
+    return this.set?.capacity ?? 0;
   }
 
-  /** Lamp a slot stands in for, by slot index (tests and diagnostics). */
+  /** The light the slots are drawn with (null before any lamp). */
+  get light(): LampSet | null {
+    return this.set;
+  }
+
+  /** Lamp in slot `i` this frame (tests and diagnostics). */
   owner(i: number): RoomLamp | null {
-    return this.owners[i] ?? null;
+    return this.set?.lit[i] ?? null;
   }
 
   /**
@@ -74,9 +88,8 @@ export class LampSlots {
    * Returns true when the pool grew.
    */
   sync(lamps: readonly Light[], spares = 0): boolean {
-    const live = this.live;
-    live.length = 0;
-    let grew = false;
+    const lit: RoomLamp[] = this.set?.lit ?? [];
+    lit.length = 0;
     for (let k = 0; k < lamps.length; k++) {
       const l = lamps[k];
       if (!(l instanceof RoomLamp)) continue;
@@ -86,46 +99,35 @@ export class LampSlots {
         continue;
       }
       if (l.layers.mask !== 1 << HIDDEN_LAMP_LAYER) l.layers.set(HIDDEN_LAMP_LAYER);
-      if (l.parent === null || !l.visible || !(l.intensity > 0) || l.userData['cut'] === true) continue;
-      if (shown(l)) live.push(l);
+      if (l.parent === null || !l.visible || l.userData['cut'] === true) continue;
+      if (shown(l)) lit.push(l);
     }
-    // A slot keeps its lamp while that lamp is lit (no change of slot, so nothing about the program changes either).
-    for (let i = 0; i < this.owners.length; i++) {
-      const o = this.owners[i];
-      if (o && !live.includes(o)) this.owners[i] = null;
+    // A slot for every lamp shown, and the spares once on top of those.
+    let want = Math.max(this.size, lit.length);
+    if (spares > this.spared) {
+      want += spares - this.spared;
+      this.spared = spares;
     }
-    for (let k = 0; k < live.length; k++) {
-      const l = live[k] as RoomLamp;
-      if (this.owners.includes(l)) continue;
-      let free = this.owners.indexOf(null);
-      if (free < 0) {
-        free = this.slots.length;
-        this.slots.push(this.makeSlot());
-        this.owners.push(null);
-        grew = true;
-      }
-      this.owners[free] = l;
+    if (want <= this.size) {
+      if (this.set && lit.length > this.set.capacity) lit.length = this.set.capacity;
+      return false;
     }
-    // Spares go on top of the slots the lamps shown now take, once each.
-    for (; this.spared < spares; this.spared++) {
-      this.slots.push(this.makeSlot());
-      this.owners.push(null);
-      grew = true;
-    }
-    for (let i = 0; i < this.slots.length; i++) this.copy(this.slots[i] as RoomLamp, this.owners[i] ?? null);
-    live.length = 0;
-    return grew;
+    // More lamps than ever: a larger set (a new light, so one change of every lit program).
+    const next = new LampSet(want);
+    next.lit.push(...lit);
+    this.set?.removeFromParent();
+    this.set?.dispose();
+    this.set = next;
+    this.group.add(next);
+    return true;
   }
 
-  /** Drop every slot (a new world: its lamps start a new pool). Returns true when there were any. */
+  /** Drop the set (a new world: its lamps start a new pool). Returns true when there was one. */
   clear(): boolean {
-    const had = this.slots.length > 0;
-    for (const s of this.slots) {
-      s.removeFromParent();
-      s.dispose();
-    }
-    this.slots.length = 0;
-    this.owners.length = 0;
+    const had = this.set !== null;
+    this.set?.removeFromParent();
+    this.set?.dispose();
+    this.set = null;
     this.spared = 0;
     return had;
   }
@@ -133,32 +135,5 @@ export class LampSlots {
   dispose(): void {
     this.clear();
     this.group.removeFromParent();
-  }
-
-  private makeSlot(): RoomLamp {
-    const s = new RoomLamp(0xffffff, 0, 0, 2);
-    s.name = 'aether:lamp-slot';
-    s.castShadow = false;
-    s.matrixAutoUpdate = false;
-    this.group.add(s);
-    return s;
-  }
-
-  private copy(slot: RoomLamp, lamp: RoomLamp | null): void {
-    if (!lamp) {
-      slot.intensity = 0;
-      return;
-    }
-    slot.color.copy(lamp.color);
-    slot.intensity = lamp.intensity;
-    slot.distance = lamp.distance;
-    slot.decay = lamp.decay;
-    lamp.updateWorldMatrix(true, false);
-    const e = lamp.matrixWorld.elements;
-    slot.position.set(e[12] as number, e[13] as number, e[14] as number);
-    slot.updateMatrix();
-    slot.matrixWorldNeedsUpdate = true;
-    if (!slot.clip.equals(lamp.clip)) slot.clip.copy(lamp.clip);
-    if (!samePortals(slot.portals, lamp.portals)) slot.setPortals(lamp.portals);
   }
 }

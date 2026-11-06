@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Group, Scene, type Light } from 'three';
-import { HIDDEN_LAMP_LAYER, LampSlots } from '../src/sync/lamp-slots';
+import { HIDDEN_LAMP_LAYER, LampSet, LampSlots } from '../src/sync/lamp-slots';
 import { RoomLamp } from '../src/sync/room-lamp';
 
 function lamp(parent: Group, x: number, intensity = 2): RoomLamp {
@@ -19,6 +19,8 @@ function shaded(scene: Scene): Light[] {
   return out;
 }
 
+const ids = (scene: Scene): number[] => shaded(scene).map((l) => l.id);
+
 describe('lamp slots', () => {
   it('keeps the shaded light set unchanged while lamps come, go and switch off', () => {
     const scene = new Scene();
@@ -35,20 +37,20 @@ describe('lamp slots', () => {
     world.add(template);
     const t = lamp(template, 8);
     lights.push(t);
-    slots.sync(lights, 1);
-    scene.updateMatrixWorld(true);
-    const before = shaded(scene).map((l) => l.id);
-    expect(before).toHaveLength(3);
+    expect(slots.sync(lights, 1)).toBe(true);
+    const before = ids(scene);
+    // One light shades every slotted lamp; the entity lamps are on a layer no camera draws.
+    expect(before).toHaveLength(1);
+    expect(shaded(scene)[0]).toBeInstanceOf(LampSet);
+    expect(slots.size).toBe(3);
     expect(a.layers.mask).toBe(1 << HIDDEN_LAMP_LAYER);
 
     // A copy of the template spawns: no new light in the shaded set.
     const spawned = lamp(world, -3);
     lights.push(spawned);
     expect(slots.sync(lights, 1)).toBe(false);
-    expect(shaded(scene).map((l) => l.id)).toEqual(before);
-    const lit = shaded(scene).filter((l) => l.intensity > 0);
-    expect(lit).toHaveLength(3);
-    expect(lit.some((l) => l.position.x === -3)).toBe(true);
+    expect(ids(scene)).toEqual(before);
+    expect(slots.light!.lit).toContain(spawned);
 
     // It is collected (removed), another lamp is switched off, another is hidden with its entity.
     spawned.removeFromParent();
@@ -59,32 +61,28 @@ describe('lamp slots', () => {
     holder.add(a);
     holder.visible = false;
     expect(slots.sync(lights, 1)).toBe(false);
-    expect(shaded(scene).map((l) => l.id)).toEqual(before);
-    expect(shaded(scene).every((l) => l.intensity === 0)).toBe(true);
+    expect(ids(scene)).toEqual(before);
+    expect(slots.light!.lit.filter((l) => l.intensity > 0)).toHaveLength(0);
   });
 
-  it('copies colour, intensity, range and world position into the slot', () => {
+  it('gives a lamp turned down to zero its slot, so it lights later without changing the light set', () => {
     const scene = new Scene();
     const world = new Group();
-    world.position.set(10, 0, 0);
     const slots = new LampSlots();
     scene.add(world, slots.group);
-    const l = lamp(world, 2, 3.5);
-    l.distance = 7;
-    l.clip.min.set(0, 0, 0);
-    l.clip.max.set(1, 1, 1);
-    slots.sync([l]);
-    scene.updateMatrixWorld(true);
-    const s = shaded(scene)[0] as RoomLamp;
-    expect(s).not.toBe(l);
-    expect(s.intensity).toBe(3.5);
-    expect(s.distance).toBe(7);
-    expect(s.color.equals(l.color)).toBe(true);
-    expect(s.getWorldPosition(s.position.clone()).x).toBeCloseTo(12);
-    expect(s.clip.equals(l.clip)).toBe(true);
+    // A world loaded in daylight: its lamps are at zero.
+    const lights: Light[] = [lamp(world, 0, 0), lamp(world, 4, 0)];
+    expect(slots.sync(lights)).toBe(true);
+    expect(slots.size).toBe(2);
+    const before = ids(scene);
+    // Dusk: the lamps come on in the slots they hold.
+    for (const l of lights) l.intensity = 3;
+    expect(slots.sync(lights)).toBe(false);
+    expect(ids(scene)).toEqual(before);
+    expect(slots.light!.lit.filter((l) => l.intensity === 3)).toHaveLength(2);
   });
 
-  it('grows only when more lamps are lit at once than ever before, and leaves shadow casters and cut lamps alone', () => {
+  it('grows only when more lamps are shown at once than ever before, and leaves shadow casters and cut lamps alone', () => {
     const world = new Group();
     const slots = new LampSlots();
     const a = lamp(world, 0);
@@ -96,14 +94,13 @@ describe('lamp slots', () => {
     expect(slots.sync([a, caster, cut])).toBe(true);
     expect(slots.size).toBe(1);
     expect(caster.layers.isEnabled(0)).toBe(true);
+    expect(slots.owner(0)).toBe(a);
     const b = lamp(world, 3);
     expect(slots.sync([a, b, caster, cut])).toBe(true);
     expect(slots.size).toBe(2);
     expect(slots.sync([b])).toBe(false);
     expect(slots.size).toBe(2);
-    // The lamp keeps its slot while it stays lit.
-    const at = [0, 1].find((i) => slots.owner(i) === b);
-    expect(slots.sync([a, b])).toBe(false);
-    expect(slots.owner(at!)).toBe(b);
+    expect(slots.owner(0)).toBe(b);
+    expect(slots.owner(1)).toBeNull();
   });
 });

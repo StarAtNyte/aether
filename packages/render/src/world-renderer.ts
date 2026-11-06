@@ -12,7 +12,8 @@ import { AssetSkinCache } from './gpu/asset-skin-cache';
 import { warmRaycastTrees } from './geometry/raycast-bvh';
 import { FrameInvalidation } from './view/frame-invalidation';
 import { deferRenderPreparation, type RenderPreparation } from './gpu/render-preparation';
-import { LampSlots } from './sync/lamp-slots';
+import { LampSet, LampSlots } from './sync/lamp-slots';
+import { LampSetNode } from './gpu/lamp-set-node';
 import { parallelPrograms, slowLinks, type ParallelPrograms } from './gpu/parallel-programs';
 import { indexedDbProgramStore, installLazyStages, ProgramCache, type ProgramCacheStats } from './gpu/program-cache';
 import type { CookedPackage } from './cook/cooked';
@@ -1352,6 +1353,7 @@ export class WorldRenderer {
       renderer.library.addLight(LightVolumeNode, LightVolume);
       renderer.library.addLight(RoomLampNode, RoomLamp);
       renderer.library.addLight(RoomSpotNode, RoomSpot);
+      renderer.library.addLight(LampSetNode, LampSet);
     } catch (e) {
       log.warn(`light volume unavailable: ${errorMessage(e)}`);
     }
@@ -2908,7 +2910,7 @@ export class WorldRenderer {
     }
     this.applyLightBake(env.lightBake);
     this.syncInteriorLight();
-    this.applyLampScale(false);
+    this.applyLampScale();
     this.applyLook();
     this.fx.setLighting(this.env.sun, this.env.hemi);
     this.rig.floorY = env.ground && this.env.skyState.showGround ? MIN_ORBIT_HEIGHT : Number.NEGATIVE_INFINITY;
@@ -3404,7 +3406,7 @@ export class WorldRenderer {
         if (last && !this.disposed) this.setEnvironmentOverride(last);
       }, LIVE_ENVIRONMENT_SETTLE_MS);
       this.env.apply(env, this.scene, true);
-      this.applyLampScale(true);
+      this.applyLampScale();
       this.applyLook();
       this.needsDraw = true;
       return;
@@ -3414,7 +3416,7 @@ export class WorldRenderer {
     this.lightVolume.invalidate();
     this.lightmap.invalidate('light');
     this.syncInteriorLight();
-    this.applyLampScale(false);
+    this.applyLampScale();
     this.applyLook();
     this.needsDraw = true;
   }
@@ -3437,20 +3439,12 @@ export class WorldRenderer {
 
   /**
    * Scale the architectural lamps for the sun's elevation (bright at night, dim in daylight, off under
-   * {@link LAMP_CUTOFF}). The intensity is a uniform and follows at once. Switching the lamps on or off changes the
-   * scene's set of lights, and with it the program of every lit material: during a drag (`live`) the lamps keep their
-   * state, at the nearest intensity it allows, so dragging back and forth over dusk links nothing; the switch comes with
-   * the settled hour, and its new programs are drawn for the first time one per frame (gpu/first-draw-pacer.ts).
+   * {@link LAMP_CUTOFF}). The intensity is a uniform and follows at once, during a drag too: a lamp switched off keeps
+   * its place in the scene's set of lights at zero (see `SceneSync.applyLampScale` and the lamp slots), so dusk and dawn
+   * change no program.
    */
-  private applyLampScale(live: boolean): void {
-    const want = daylightLampFactor(this.env.skyState.elevation);
-    const on = this.sync.lampScale >= LAMP_CUTOFF;
-    if (!live || on === want >= LAMP_CUTOFF) {
-      this.sync.setArchLampScale(want);
-      return;
-    }
-    // Keep the state: on, no dimmer than the cutoff; off, just under it (an off lamp has no intensity to show).
-    this.sync.setArchLampScale(on ? Math.max(want, LAMP_CUTOFF) : Math.min(want, LAMP_CUTOFF * 0.99));
+  private applyLampScale(): void {
+    this.sync.setArchLampScale(daylightLampFactor(this.env.skyState.elevation));
   }
 
   /** Re-apply the current document's environment (after {@link setEnvironmentOverride}). */

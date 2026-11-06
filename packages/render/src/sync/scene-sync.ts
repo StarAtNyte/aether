@@ -30,6 +30,7 @@ import {
   Vector3,
   type BufferGeometry,
   type Light,
+  type LightShadow,
   type Material,
   type Object3D,
   type PerspectiveCamera,
@@ -83,7 +84,7 @@ import { assignCell, partitionFor } from '../streaming/cell-grid';
 import { DEFAULT_FIELD_BUDGET, LodChainCache, lodOutputKey, lodPart, outputRadius, shareDemand, type FieldBudget } from './field-mount';
 import { buildMeshGeometry, previewMeshGeometry, type MeshGeometryBundle } from '../geometry/mesh-asset';
 import { meshColliders, yieldToEventLoop } from '@aether/procgen';
-import { areaLightsReady, chooseForwardLights, createEntityLight, disposeEntityLight, enforceShadowCap, LAMP_CUTOFF, loadAreaLights, updateLightParams, type BudgetLight } from './lights';
+import { areaLightsReady, chooseForwardLights, createEntityLight, disposeEntityLight, enforceShadowCap, LAMP_CUTOFF, lightIntensity, loadAreaLights, updateLightParams, type BudgetLight } from './lights';
 import { createEntityNode, ENTITY_ID_KEY, type EntityNode, type MeshBinding } from './entity-node';
 import { renderableIds } from './renderable';
 import { TERRAIN_RENDER_ORDER } from '../gpu/render-order';
@@ -953,6 +954,8 @@ export class SceneSync {
     for (const node of this.nodes.values()) {
       if (node.light && node.entity.light && node.entity.arch?.role === 'light') this.applyLampScale(node.light.light, node.entity.light);
     }
+    // The forward budget picks lamps by their full strength, so the hour changes no light's place in the set; choosing
+    // again picks up lamps placed since the last choice.
     if (Number.isFinite(this.lightBudget)) this.applyLightBudget();
   }
 
@@ -963,13 +966,22 @@ export class SceneSync {
 
   /**
    * Intensity of an architectural lamp under the daylight scale. Below
-   * {@link LAMP_CUTOFF} the light is switched off entirely (invisible lights
-   * cost nothing per pixel; a dozen point lights in a sunlit room otherwise
-   * do, for no visible effect).
+   * {@link LAMP_CUTOFF} the lamp is switched off by its intensity alone (0):
+   * it stays in the scene's set of lights, because hiding it changes the
+   * program of every lit material (29-32 links on an integrated GPU at each
+   * dusk and dawn). The shadowless point lamps are drawn through the lamp
+   * slots (a slot at zero costs about nothing per pixel); a lamp's own shadow
+   * map is not redrawn while it is off.
    */
   private applyLampScale(light: Light, spec: LightSpec): void {
-    updateLightParams(light, spec, this.archLampScale);
-    light.visible = this.archLampScale >= LAMP_CUTOFF && spec.intensity > 0 && light.userData['cut'] !== true;
+    const on = this.archLampScale >= LAMP_CUTOFF;
+    updateLightParams(light, spec, on ? this.archLampScale : 0);
+    light.visible = spec.intensity > 0 && light.userData['cut'] !== true;
+    const shadow = (light as Light & { shadow?: LightShadow }).shadow;
+    if (light.castShadow && shadow) {
+      if (on && !shadow.autoUpdate) shadow.needsUpdate = true;
+      shadow.autoUpdate = on;
+    }
   }
 
   private lightScale(node: Readonly<EntityNode>): number {
@@ -2307,20 +2319,23 @@ export class SceneSync {
       const light = n.light?.light, spec = n.entity.light;
       if (!light || !spec || spec.type === 'directional' || n.entity.template || n.entity.visible === false) continue;
       const lamp = n.entity.arch?.role === 'light';
-      if (spec.intensity > 0 && (!lamp || this.archLampScale >= LAMP_CUTOFF)) lit.push({ node: n, light, spec });
+      // Lamps under the daylight cutoff stay in the pool (`applyLampScale` turns them down to zero, not out), so the
+      // hour never changes which lights are live.
+      if (spec.intensity > 0) lit.push({ node: n, light, spec });
       else {
         light.userData['cut'] = false;
         // A light switched off (a lamp waiting for the power to come back) is not drawn: a visible light at zero
         // intensity still costs every lit pixel its share of the light loop (fourteen of them doubled a colony's frame).
-        // Lamps under the daylight cutoff are hidden by `applyLampScale`.
         if (!lamp) light.visible = false;
       }
     }
-    const pool: BudgetLight[] = lit.map(({ node, light }) => {
+    const pool: BudgetLight[] = lit.map(({ node, light, spec }) => {
       node.object.updateWorldMatrix(true, false);
       const e = node.object.matrixWorld.elements;
       const pos: [number, number, number] = [e[12] as number, e[13] as number, e[14] as number];
-      return { id: node.id, group: node.entity.arch?.room ?? `cell:${Math.floor(pos[0] / 8)},${Math.floor(pos[2] / 8)}`, position: pos, intensity: light.intensity };
+      // A lamp ranks by its full strength (the daylight scale is the same for every lamp and changes with the hour).
+      const intensity = node.entity.arch?.role === 'light' ? lightIntensity(spec) : light.intensity;
+      return { id: node.id, group: node.entity.arch?.room ?? `cell:${Math.floor(pos[0] / 8)},${Math.floor(pos[2] / 8)}`, position: pos, intensity };
     });
     const kept = chooseForwardLights(pool, this.lightBudget);
     for (const { node, light } of lit) {

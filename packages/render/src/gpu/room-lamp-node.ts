@@ -5,8 +5,13 @@
  * world (the mask is 1). Six smoothsteps per lit fragment and lamp. A lamp's room apertures (archways, open doors) let
  * the light through: a fragment the lamp sees through an opening is lit as if the wall were not there (see
  * {@link portalMask}).
+ *
+ * A shadowless lamp at zero intensity (a lamp slot without a lamp, an architectural lamp in daylight) skips its whole
+ * term behind a uniform branch: it keeps its place in the scene's set of lights, so switching it on or off changes no
+ * program, and costs a lit fragment one uniform test while it is off.
  */
 import { Vector3, Vector4, type Box3 } from 'three';
+import { renderGroup } from 'three/tsl';
 import { IESSpotLightNode, PointLightNode, type NodeBuilder } from 'three/webgpu';
 import { T, type Nd } from '../materials/tsl-lite';
 import { MAX_LAMP_PORTALS, type LampPortal, type RoomLamp, type RoomSpot } from '../sync/room-lamp';
@@ -21,6 +26,28 @@ const FAR = 1e7;
 interface DirectData {
   lightColor: Nd;
   lightDirection: Nd;
+}
+
+type Switch = Nd & { value: number };
+
+/**
+ * A lamp's uniform, shared by every draw of a frame (render group, like three's own light uniforms). In the default
+ * object group each of a world's 1,500-1,900 draws carried and checked every lamp's clip box and apertures.
+ */
+function lampUniform<V>(v: V): Nd {
+  return (T.uniform(v) as Nd & { setGroup(g: unknown): Nd }).setGroup(renderGroup);
+}
+
+/**
+ * Build a light node's term behind `on` (1 while the light has intensity), unless it casts a shadow: the shadow's own
+ * setup stays outside any branch (a shadowed lamp draws its own light; see `LampSlots`).
+ */
+function switched(light: { castShadow: boolean } | null, on: Switch, setup: () => void): void {
+  if (!light || light.castShadow) {
+    setup();
+    return;
+  }
+  T.If(on.greaterThan(0.5), setup);
 }
 
 /** Copy a light's clip box into the node's uniforms (an empty clip: no limit). */
@@ -67,12 +94,12 @@ function syncPortals(light: (RoomLamp | RoomSpot) | null, u: PortalUniforms): vo
  * an area light), and the light fades out between {@link PORTAL_REACH} metres beyond it.
  */
 function portalMask(u: PortalUniforms): Nd {
-  const L = T.uniform(u.lamp);
+  const L = lampUniform(u.lamp);
   const d = T.positionWorld.sub(L);
   let best: Nd = T.float(0);
   for (let i = 0; i < MAX_LAMP_PORTALS; i++) {
-    const A = T.uniform(u.a[i]!);
-    const B = T.uniform(u.b[i]!);
+    const A = lampUniform(u.a[i]!);
+    const B = lampUniform(u.b[i]!);
     const C = A.xyz;
     const n = T.vec3(B.y, 0, B.x.negate());
     const den = T.dot(d, n);
@@ -96,8 +123,8 @@ function portalMask(u: PortalUniforms): Nd {
 function clipMask(lo: Vector3, hi: Vector3, portals: PortalUniforms): Nd {
   const p = T.positionWorld;
   const h = ROOM_LAMP_FADE / 2;
-  const uLo = T.uniform(lo);
-  const uHi = T.uniform(hi);
+  const uLo = lampUniform(lo);
+  const uHi = lampUniform(hi);
   const inLo = T.smoothstep(uLo.sub(h), uLo.add(h), p);
   const inHi = T.smoothstep(uHi.sub(h), uHi.add(h), p).oneMinus();
   const m = inLo.mul(inHi);
@@ -114,10 +141,19 @@ export class RoomLampNode extends PointLightNode {
   private readonly vMax = new Vector3(FAR, FAR, FAR);
   private readonly portals = makePortalUniforms();
 
+  /** 1 while the light has intensity (see {@link switched}). */
+  private readonly on = lampUniform(1) as Switch;
+
   override update(frame: Parameters<PointLightNode['update']>[0]): undefined {
     super.update(frame);
+    this.on.value = this.light && this.light.intensity > 0 ? 1 : 0;
     syncClip((this.light as RoomLamp | null)?.clip, this.vMin, this.vMax);
     syncPortals(this.light as RoomLamp | null, this.portals);
+    return undefined;
+  }
+
+  override setup(builder: NodeBuilder): undefined {
+    switched(this.light, this.on, () => void super.setup(builder));
     return undefined;
   }
 
@@ -141,10 +177,19 @@ export class RoomSpotNode extends IESSpotLightNode {
   private readonly vMax = new Vector3(FAR, FAR, FAR);
   private readonly portals = makePortalUniforms();
 
+  /** 1 while the light has intensity (see {@link switched}). */
+  private readonly on = lampUniform(1) as Switch;
+
   override update(frame: Parameters<IESSpotLightNode['update']>[0]): undefined {
     super.update(frame);
+    this.on.value = this.light && this.light.intensity > 0 ? 1 : 0;
     syncClip((this.light as RoomSpot | null)?.clip, this.vMin, this.vMax);
     syncPortals(this.light as RoomSpot | null, this.portals);
+    return undefined;
+  }
+
+  override setup(builder: NodeBuilder): undefined {
+    switched(this.light, this.on, () => void super.setup(builder));
     return undefined;
   }
 

@@ -256,13 +256,37 @@ describe('daylight lamp dimming', () => {
     sync.setProperty('lamp', 'light.intensity', 1);
     expect(lamp.intensity).toBeCloseTo(LOCAL_LIGHT_SCALE * 0.25);
     expect(lamp).toBeInstanceOf(PointLight);
-    // Full daylight switches lamps off entirely (no per-pixel cost); other lights are untouched.
+    // Full daylight switches lamps off by their intensity: they stay in the light set (no program changes at dusk or
+    // dawn); other lights are untouched.
     expect(lamp.visible).toBe(true);
     sync.setArchLampScale(LAMP_CUTOFF / 2);
-    expect(lamp.visible).toBe(false);
+    expect(lamp.visible).toBe(true);
+    expect(lamp.intensity).toBe(0);
     expect(torch.visible).toBe(true);
+    expect(torch.intensity).toBeCloseTo(2 * LOCAL_LIGHT_SCALE);
     sync.setArchLampScale(1);
     expect(lamp.visible).toBe(true);
+    expect(lamp.intensity).toBeCloseTo(LOCAL_LIGHT_SCALE);
     expect(sync.node('lamp')!.content.children.every((c) => !(c instanceof Mesh) || c.visible)).toBe(true);
+  });
+
+  it('keeps the same lamps live under the light budget at every hour', async () => {
+    const { sync } = makeSync();
+    const world = createWorld({
+      entities: {
+        a: { id: 'a', light: { type: 'point', intensity: 2, color: '#ffffff', range: 6 }, arch: { role: 'light', kind: 'pendant' } },
+        b: { id: 'b', light: { type: 'point', intensity: 1, color: '#ffffff', range: 6 }, arch: { role: 'light', kind: 'pendant' } },
+        torch: { id: 'torch', light: { type: 'point', intensity: 1.5, color: '#ffffff', range: 6 } },
+      },
+    });
+    await sync.setWorld(world);
+    sync.setLightBudget(2);
+    const live = (): string[] => ['a', 'b', 'torch'].filter((id) => sync.node(id)!.light!.light.visible);
+    const night = live();
+    expect(night).toHaveLength(2);
+    for (const scale of [DAYLIGHT_LAMP_FACTOR, LAMP_CUTOFF, 0.6, 1]) {
+      sync.setArchLampScale(scale);
+      expect(live()).toEqual(night);
+    }
   });
 });

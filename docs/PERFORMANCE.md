@@ -551,8 +551,7 @@ scope). Each slider is dragged slowly for 3 s (10:00 to 16:00), then fast across
   ultra tiers, each preset change also unbinds the photographed sky, shows the analytic sky until the next map has loaded,
   then rebinds. That changes the scene's environment twice, and every material follows each change.
 - **Drag.** `setEnvironmentOverride(env, { live: true })`: once a frame (the studio coalesces input to
-  `requestAnimationFrame`), only the cheap part follows. The lamps keep their on or off state, at the nearest intensity
-  that state allows. The photographed sky keeps its map, and the analytic sky's reflection image is redrawn at most every
+  `requestAnimationFrame`), only the cheap part follows (the lamps follow too since the change below). The photographed sky keeps its map, and the analytic sky's reflection image is redrawn at most every
   120 ms. Bakes under way stop at the first value. The full environment follows 250 ms after the last value, or at once
   when the slider is let go. The inspector's time slider previews the same way and commits one edit when let go.
 - **Photographed sky.** One automatic map stays bound until the next has arrived, and two of them stay parked, so moving
@@ -638,3 +637,53 @@ of the 5 GB scope: this build 1 of 8 runs, the base 0 of 8 (before this change: 
 Through a probe: a merged bench moved 2 m was evicted, its merge was rebuilt from the members and its copy released again,
 and a ray hit the bench before and after the move. A glTF export of the whole of Lisbon Hills runs out of the 5 GB scope
 with either build; the export of released merges is covered by `test/cpu-release.test.ts`.
+
+## Lamps at dusk and dawn without a link (6 November 2026)
+
+The switch after a drag across dusk still linked 29-32 programs: an architectural lamp under the daylight cutoff was
+hidden (`light.visible = false`), which takes it out of the scene's light set, and every lit program is keyed on that set.
+Measured with `scripts/daylight-drag-probe.ts` on an Intel UHD 770 (`GEN_GPU=intel`, WebGL2), shared office PC, niced, 5 GB
+scope; frame costs are GPU time (timer queries) of frames drawn back to back. New probe options: `--tier=`, `--cost`,
+`--lamp-ab`, `--set-ab`; each run now also logs the lamps (shown, lit, slots) and the links during the shots.
+
+- **What was measured.** (a) Keep the lamps in the set at zero intensity: four room lamps shaded at zero cost
+  +48 % of a daylight frame at low and +95-108 % at medium (`--lamp-ab`: 25.4 against 37.5 ms, 34.2 against 71.0 ms). The
+  current build already paid this after its first dusk, since the old slot pool kept its slots at zero. A uniform branch
+  around each lamp's term skipped the arithmetic but not its weight on the program: still +6-9 % at low and +25-37 % at
+  medium against no lamps (`--set-ab`); without the aperture code the residue was +6.7 % at medium, so it is code size
+  (register pressure), not work. (b) Pre-warming both light sets doubles the lit programs at load, and on this driver a
+  program is compiled again at its first draw even from a warm cache (the pacer's 100-170 ms frames), so a switch would
+  still not be free. (c) A fixed light set it is, with the code of one lamp.
+- **The change.** `LampSlots` now shades every shadowless point lamp through one `LampSet` light
+  (`gpu/lamp-set-node.ts`): a loop over uniform arrays (colour, world position and range, decay, room clip, three
+  apertures per lamp, all in the render group), as many passes as lamps have intensity this frame. The program holds the
+  code of one lamp whatever their number, and depends on the set's capacity only (a slot for every lamp shown plus the
+  template spares; it only grows). Lamps under the cutoff stay shown at intensity 0 and keep their slot, so a world
+  loaded at noon has its night slots from the first frame; the forward budget ranks lamps by full strength, so the hour
+  changes no light's place; a lamp with its own shadow map stays a light of its own, its map not redrawn while it is off
+  (and `RoomLampNode`/`RoomSpotNode` skip their term behind a uniform branch at zero). The drag no longer holds the
+  lamps: they follow the hour live. The night stars stay drawn by day at zero opacity (1,800 points, one draw); hidden,
+  they linked their program at the first dusk.
+- **Daylight cost** (`--set-ab`, lower quartiles of 12 alternations, Casa del Patio at 12:00): lamps in the set against no
+  lamps 22.79 against 22.64 ms at low (+0.7 %), 25.5 against 24.9 ms at medium (+2.3 %).
+
+| Casa del Patio, low tier, drag and release across dusk | before (`f717984e`) | after |
+| --- | --- | --- |
+| program links from the fast drag to settled | 29 (other runs 29-32) | 0 (four runs) |
+| frames over 50 ms after release | 117-167 ms frames for 9.6 s | none |
+| lamps during the drag | held off until release | lit live (4 of 4) |
+| links while the shots cross dawn, noon, dusk, night | 0 (slots already at zero) | 0 |
+| links at load (the shots' total) | 108 (after the drag's 29) | 78 |
+
+Skyline Penthouse (low, four runs against two): 0 links in the drags and across the shots in both builds (it loads at
+golden hour with its lamps on, so the current build had its slots from the load). Two of the four runs of this build had a
+few frames of 83-233 ms 1-2 s after the fast drag's release, with no link and nothing preparing; the other two, and both
+runs of the current build, had none. Night frame cost there is unchanged: GPU 17.9-18.1 ms at 22:00 against 18.6-29.0
+for the current build (fastest bursts, `--cost`). At high tier on Casa del Patio (the photographed-sky path of the change above): no rebuild during either drag in
+either build; after the fast drag's release the current build linked 39 programs with frames of 9.6, 2.9 and 9.3 s, this
+one linked 1 with no frame over 133 ms. The frames of 50-133 ms after release at high tier come from the light volume and
+lightmap bakes for the new hour, in both builds. Settled shots of the fixed view at 06:30, 12:00, 18:30 and 22:00 after
+the drags differ from the current build by a mean of 0.07-0.13 / 255 on Casa del Patio (two runs of the current build
+differ by 0.15-0.32). On fresh loads (shots only) 12:00, 18:30 and 22:00 differ by 0.11-0.31; the first shot, 06:30, by
+5.4, in edges only: the current build crosses dawn on that shot, links the lamp programs and lowers its resolution scale.
+The penthouse differs by 2.6-7.8, inside the 4.5-8.1 that two runs of the current build differ by there.

@@ -210,7 +210,9 @@ export class SkyDome {
     this.moonDisc.visible = above && state.moon;
     this.moonDisc.material.color.set('#ffffff').multiplyScalar(1.5 * this.brightness);
     this.stars.material.opacity = state.stars;
-    this.stars.visible = state.stars > 0.01;
+    // The stars stay drawn by day, at zero opacity (1,800 one-pixel points, one draw): hidden, they linked a program at
+    // the first dusk, in the middle of a time-of-day drag.
+    this.stars.visible = true;
   }
 
   /**
