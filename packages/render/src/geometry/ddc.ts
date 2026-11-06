@@ -94,19 +94,23 @@ export function encodeOutput(out: GeneratorOutput): EncodedOutput {
   return { blob: new Blob(parts), bytes: head.byteLength + offset };
 }
 
-/** Inverse of {@link encodeOutput}; every array gets a buffer of its own (safe to transfer). Throws on malformed data. */
-export function decodeOutput(buf: ArrayBuffer): GeneratorOutput {
-  if (buf.byteLength < 8) throw new Error('short entry');
-  const len = new DataView(buf).getUint32(0, true);
-  if (4 + len > buf.byteLength) throw new Error('bad header length');
-  const { table, json } = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 4, len))) as { table: Array<[string, number, number]>; json: string };
-  const base = Math.ceil((4 + len) / 8) * 8;
+/**
+ * Inverse of {@link encodeOutput}; every array gets a buffer of its own (safe to transfer). Throws on malformed data.
+ * `at` and `size` select one entry inside a larger buffer (a cooked pack, see `cook/format.ts`); `at` must be 8-aligned.
+ */
+export function decodeOutput(buf: ArrayBuffer, at = 0, size = buf.byteLength - at): GeneratorOutput {
+  if (!Number.isInteger(at) || !Number.isInteger(size) || at < 0 || at % 8 !== 0 || size < 0 || at + size > buf.byteLength) throw new Error('bad entry range');
+  if (size < 8) throw new Error('short entry');
+  const len = new DataView(buf, at, size).getUint32(0, true);
+  if (4 + len > size) throw new Error('bad header length');
+  const { table, json } = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, at + 4, len))) as { table: Array<[string, number, number]>; json: string };
+  const base = at + Math.ceil((4 + len) / 8) * 8;
   const views: ArrayBufferView[] = table.map(([tag, off, n]) => {
     const Ctor = TYPES[tag];
     if (!Ctor || !Number.isInteger(off) || !Number.isInteger(n) || off < 0 || n < 0) throw new Error('bad array entry');
     const start = base + off;
     const end = start + n * Ctor.BYTES_PER_ELEMENT;
-    if (end > buf.byteLength) throw new Error('array out of range');
+    if (end > at + size) throw new Error('array out of range');
     return new Ctor(buf.slice(start, end));
   });
   const doc = JSON.parse(json, (_k, value: unknown) => {

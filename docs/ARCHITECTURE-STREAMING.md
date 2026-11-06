@@ -548,6 +548,73 @@ The IR stays the source of truth, so a remix or edit after publish keeps working
 typically gives 4–8x. This has to be measured in stage 5, with a target of 35–60 MB for the whole Lisbon cook, about
 half of it in the far rings, which never load at full detail.
 
+### 3.5.1 Cooked package format (first slice, implemented)
+
+A published world is cooked: a viewer downloads, uploads and draws; it never generates. Templates are published worlds:
+the player opens them cooked (`play.html#t=<slug>`), and the editor (Edit/Remix) opens the IR live as before. The publish
+kinds (game, arch walkthrough, scene showcase, VR) are profiles on one cook. This slice cooks in the real renderer in a
+headless browser rather than in Node, so what is cooked is exactly what the browser makes. Code:
+`packages/render/src/cook/` (format, page side, lane side), `scripts/cook.ts`.
+
+**Layout** (`cooked/<slug>/` at the repository root, git-ignored; copied into a dist's `cooked/` to be served):
+
+```
+cooked/<slug>/manifest.json               small, revalidated on every visit
+cooked/<slug>/<id>/packs/<nnnn>.bin       geometry, immutable
+cooked/<slug>/<id>/programs/<tier>.json   program set of a tier, immutable
+```
+
+`<id>` is 16 hex of SHA-256(IR hash, geometry code version). The IR hash is SHA-256 of the parsed world's canonical JSON
+(sorted keys), without `opening` and `startMode`. The geometry code version is `DDC_CODE_VERSION`: `__AETHER_GEN_VERSION__`
+(a build hash of procgen, arch, core and render's geometry code) plus the preparation version.
+
+**Manifest** (`CookManifest`, `cook/format.ts`; validated in full by `parseCookManifest`):
+- `format` (1), `irHash`, `genVersion`, `dir` (`<id>/`), `cookedAt`, `world` (id, name, entity count);
+- `opening` (position, target, fov) and `startMode` (`play` | `walkthrough` | `orbit`, also an additive IR field next to
+  `opening`), `profile` (`game` | `walkthrough` | `showcase` | `vr`);
+- `partition`: the world's grid (`streaming/cell-grid.ts` `partitionFor`, from the top-level entities, as scene-sync);
+- `cells`: per cell its key (`level:ix,iz`, or `p` for the persistent layer), XZ bounds of its entities, entry count,
+  bytes and packs. Cells are ordered nearest the opening first;
+- `packs`: file and byte size of each pack;
+- `entries`: geometry-cache key (64 hex, the same SHA-256 the geometry cache uses) to `[pack, offset, length, cell]`;
+- `programs`: per tier its file, bytes and program count;
+- `lightmap`: an optional bundled lightmap folder (`lightmap-controller` `staticBase`), relative to the cook folder. Null
+  until the publish bake exists.
+
+**Geometry packs.** Each entry is a generator output in the geometry cache's own encoding (`geometry/ddc.ts`
+`encodeOutput`: header JSON plus typed arrays, prepared render streams included), 8-byte aligned. Entries go to the cell of
+the nearest entity that uses them; outputs no top-level entity places (spawn templates, scatter pieces) go to `p`. A pack
+is cut at 4 MB (`PACK_TARGET_BYTES`); a larger entry gets a pack of its own.
+
+**Program sets** (`CookedProgramSet`): `{ format, tier, boot, pairs, sources }`. `pairs` are `[vertex hash, fragment
+hash]` in `gpu/program-cache.ts` `sourceHash` form, `sources` the exact GLSL three generated, as the program cache records
+them in IndexedDB. The first `boot` pairs are those the load used before its first picture; the rest came from the orbit
+and play.
+
+**Cooking** (`scripts/cook.ts`): one headless session per tier on one browser profile, each opening
+`play.html#t=<slug>&cook=record&tier=<tier>` with `__AETHER_COOK_RECORD` set. That switch makes the generation lanes keep
+every output in the geometry cache, however cheap. Each session loads fully, saves the program set (the boot pairs), orbits
+the opening for 6 s, starts play for games, and saves again. The last session reads the program sets from IndexedDB and
+every geometry-cache entry from Cache Storage. The script then places, packs and writes the package, and reports raw,
+gzip and brotli sizes. `--install=<dist>` copies it into a dist.
+
+**Cooked load** (`player/PlayerApp.tsx`, `cook/cooked.ts`):
+1. The player fetches the manifest beside the template and checks it: format, `genVersion` equal to this build's,
+   `irHash` equal to the loaded world's. Anything missing, malformed or stale loads live, with the reason in
+   `window.__aetherCook`.
+2. The geometry index goes to the generation lanes (`GenPool.setCook`). A lane looks up the geometry cache, then the
+   package: it fetches a pack once (48 MB per lane kept), decodes the entry, answers, and seeds the geometry cache with it
+   behind the reply. No generator, sandbox or validation runs. An entry that fails generates as before.
+3. The program sets seed the program cache (`cookedProgramStore`). The boot pre-warm links the tier's cooked set, the
+   boot pairs first, and keeps submitting them after the world's compile begins (`ProgramStore.boot`). Both are written
+   through to IndexedDB, so the session's save, a later visit and the editor's Remix keep them.
+4. The world starts in its `startMode` at its opening (the cook's opening fills in an IR without one). `play` shows the
+   title card over the attract tour as before; `orbit` and `walkthrough` stay on the opening view. Their play-mode UI is
+   later work.
+
+Hooks left for later work: `cells`/`packs` per cell, for cell streaming and unloading; `lightmap`, for the publish bake;
+`profile`, for the publish UI of kinds; `GameManifest.cook`, for a self-hosted game build that ships its package.
+
 ### 3.6 Worker generation plan
 
 **Pool.**

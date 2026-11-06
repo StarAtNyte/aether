@@ -20,6 +20,9 @@
  * `PROBE_EVAL=<file>` evaluates a script in the page once the load settled and logs its result.
  * With `--shots` the last run also writes screenshots of the page at the first picture and once settled (hero shots:
  * scripts/hero-shots.ts).
+ * With `--player` it opens the world in the standalone player (`play.html#t=<slug>`), from its cooked package when the
+ * dist has one (`cooked/<slug>/`, scripts/cook.ts); `--live` adds `cook=0`, the player's live path. Each run then reports
+ * the path taken and the generator runs (`generated`, `posted` and `fallbacks` of the generation pool; `cooked` hits).
  * Run it in a capped scope, one browser at a time (see docs/PERFORMANCE.md, Measuring).
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, createWriteStream, readFileSync } from 'node:fs';
@@ -38,6 +41,9 @@ const wantProfile = args.includes('--profile');
 /** `--dead`: report the programs linked during the load that are not drawn with afterwards, and how each differs from the nearest one in use. */
 const wantDead = args.includes('--dead');
 const slug = args.find((a) => !a.startsWith('--')) ?? 'kestrel-outpost';
+/** `--player`: the standalone player on the template (cooked when the dist has the package); `--live`: its live path. */
+const player = args.includes('--player');
+const live = args.includes('--live');
 mkdirSync(out, { recursive: true });
 const T0 = Date.now();
 const log = (s: string): void => void process.stdout.write(`[${((Date.now() - T0) / 1000).toFixed(1)}s] ${s}\n`);
@@ -69,7 +75,7 @@ const INSTR = `(() => {
   for (const n of ['compileShader', 'useProgram', 'drawArrays', 'drawElements', 'drawArraysInstanced', 'drawElementsInstanced', 'texImage2D', 'texSubImage2D', 'texImage3D', 'texSubImage3D', 'texStorage2D', 'bufferData', 'bufferSubData', 'readPixels', 'clientWaitSync', 'generateMipmap', 'getUniformLocation', 'getUniformBlockIndex', 'uniformBlockBinding']) wrap(n);
   const programs = () => { try { return window.__aether.simulation.renderer.renderer.info.memory.programs; } catch { return -1; } };
   const mo = new MutationObserver(() => {
-    const el = document.querySelector('.vp-loading');
+    const el = document.querySelector('.vp-loading, .pl-loading');
     if (el && !S.sawScreen) S.sawScreen = true;
     if (S.sawScreen && S.firstPicture < 0 && (!el || el.classList.contains('is-leaving'))) {
       S.firstPicture = performance.now();
@@ -140,6 +146,10 @@ async function main(): Promise<void> {
         await ctx.addInitScript({ content: 'globalThis.__name = (f) => f;' });
         if (process.env['GEN_GPU'] === 'intel') await ctx.addInitScript({ content: 'delete Navigator.prototype.gpu; try { delete navigator.gpu; } catch {}' });
         if (wantDead) await ctx.addInitScript({ content: 'globalThis.__probeDead = true;' });
+        // `PROBE_INIT=<js>`: switches set before the page starts (`globalThis.__AETHER_… = …`).
+        if (process.env['PROBE_INIT']) await ctx.addInitScript({ content: process.env['PROBE_INIT'] });
+        // The player's handle under the studio's name, so the rest of the probe reads either.
+        if (player) await ctx.addInitScript({ content: "Object.defineProperty(window, '__aether', { configurable: true, get() { return window.__aetherPlayer; } });" });
         await ctx.addInitScript({ content: INSTR });
         const page = ctx.pages()[0] ?? (await ctx.newPage());
         page.on('pageerror', (e) => log(`pageerror ${e.message.slice(0, 160)}`));
@@ -151,15 +161,37 @@ async function main(): Promise<void> {
           await cdp.send('Profiler.setSamplingInterval', { interval: 500 });
           await cdp.send('Profiler.start');
         }
-        await page.goto(`${server.url}/?debug=1#/new/${slug}`, { waitUntil: 'domcontentloaded' });
+        await page.goto(player ? `${server.url}/play.html#t=${slug}${live ? '&cook=0' : ''}` : `${server.url}/?debug=1#/new/${slug}`, { waitUntil: 'domcontentloaded' });
         await page.waitForFunction(() => (globalThis as unknown as { __probe: { firstPicture: number } }).__probe.firstPicture > 0, null, { timeout: 240_000, polling: 100 });
         if (profiling) writeFileSync(join(out, `${run}.cpuprofile`), JSON.stringify((await cdp.send('Profiler.stop')).profile));
         if (wantShots && run === runs[runs.length - 1]) await page.screenshot({ path: join(out, `${run}-first-picture.png`) });
         await page.waitForFunction(() => performance.getEntriesByName('aether:fully-loaded').length + performance.getEntriesByName('aether:load-timeout').length > 0, null, { timeout: 240_000, polling: 250 });
-        await page.waitForFunction(() => !document.querySelector('.vp-loading'), null, { timeout: 30_000, polling: 100 }).catch(() => log('load screen still up'));
+        await page.waitForFunction(() => !document.querySelector('.vp-loading, .pl-loading'), null, { timeout: 30_000, polling: 100 }).catch(() => log('load screen still up'));
         // Settle: whatever streams in behind the first picture finishes (bounded), so the orbit measures the steady state.
         await page.waitForFunction(() => (window as unknown as { __aether: { simulation: { renderer: { processingStage: string | null } } } }).__aether.simulation.renderer.processingStage === null, null, { timeout: 60_000, polling: 250 }).catch(() => log('renderer still busy'));
         if (wantShots && run === runs[runs.length - 1]) await page.screenshot({ path: join(out, `${run}-settled.png`) });
+        if (wantShots && player && run === runs[runs.length - 1]) {
+          // Hero shots of the player at fixed poses (the title's attract tour moves the camera): the opening view, and two
+          // views a third of a turn round the content, without the title card.
+          await page.addStyleTag({ content: 'body * { visibility: hidden !important; } canvas { visibility: visible !important; }' });
+          for (let k = 0; k < 3; k++) {
+            await page.evaluate(async (turn) => {
+              const sim = (window as unknown as { __aetherPlayer: { simulation: { openWorld(o: { duration: number }): Promise<void>; renderer: { stopTour(): void; camera: { position: { x: number; y: number; z: number } }; contentSphere?: { center?: { x: number; z: number } }; setCameraPose(x: number, y: number, z: number, yaw: number, pitch: number): void } } } }).__aetherPlayer.simulation;
+              sim.renderer.stopTour();
+              await sim.openWorld({ duration: 0 });
+              if (turn === 0) return;
+              const r = sim.renderer;
+              const cx = r.contentSphere?.center?.x ?? 0, cz = r.contentSphere?.center?.z ?? 0;
+              const p = r.camera.position;
+              const rad = Math.max(8, Math.hypot(p.x - cx, p.z - cz));
+              const a = Math.atan2(p.x - cx, p.z - cz) + (turn * 2 * Math.PI) / 3;
+              const x = cx + Math.sin(a) * rad, z = cz + Math.cos(a) * rad;
+              r.setCameraPose(x, p.y, z, Math.atan2(x - cx, z - cz), -0.2);
+            }, k);
+            await page.waitForTimeout(4000);
+            await page.screenshot({ path: join(out, `hero-${k}.png`) });
+          }
+        }
         if (process.env['PROBE_EVAL']) log(`${run}: eval ${JSON.stringify(await page.evaluate(readFileSync(process.env['PROBE_EVAL'], 'utf8')))}`);
         // From here on, a program drawn with counts as in use (--dead).
         await page.evaluate(() => void Object.assign((globalThis as unknown as { __probe: { trackUse: boolean; trackFrom: number } }).__probe, { trackUse: true, trackFrom: performance.now() }));
@@ -192,8 +224,14 @@ async function main(): Promise<void> {
             slowLinks: (r['slowProgramLinks'] as unknown[] | undefined)?.length ?? null,
             prewarm: (r['prewarmStats'] as unknown) ?? null,
             firstUse: (r['firstUseStats'] as unknown) ?? null,
+            gen: (globalThis as unknown as { __aetherGenStats?: { hits: number; cooked?: number; generated: number; posted: number; fallbacks: number } }).__aetherGenStats ?? null,
+            cook: (() => {
+              const c = (window as unknown as { __aetherCook?: { path: string; reason: string | null } }).__aetherCook;
+              return c ? { path: c.path, reason: c.reason } : null;
+            })(),
           };
         });
+        if (load.gen) log(`${run}: ${load.cook ? `${load.cook.path}${load.cook.reason ? ` (${load.cook.reason})` : ''}, ` : ''}generator runs ${load.gen.generated + load.gen.posted + load.gen.fallbacks} (generated ${load.gen.generated}, posted ${load.gen.posted}, fallbacks ${load.gen.fallbacks}), cache hits ${load.gen.hits} (cooked ${load.gen.cooked ?? 0})`);
         log(`${run}: first picture ${(load.firstPictureMs / 1000).toFixed(1)} s, fully loaded ${((load.marks['aether:fully-loaded'] ?? -1) / 1000).toFixed(1)} s, programs ${load.programsAtFirst} -> ${load.programs}, links ${load.linkCalls} (${load.linksAfterFirst} after the first picture)`);
         // Orbit 8 s around the opening view: frame times, programs switched and draws per frame.
         const orbit = await page.evaluate(async () => {

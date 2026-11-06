@@ -67,6 +67,13 @@ export interface GameManifest {
   attribution?: string[];
   /** Streamed packs whose files ship in the build (the player loads them locally, never from the network). */
   packs?: Array<(typeof BUNDLED_PACKS)[number]>;
+  /**
+   * The world's cooked package (render `cook/format.ts`): the manifest, relative to the page. The player reads geometry and
+   * programs from it and loads live when it is missing or stale.
+   */
+  cook?: string;
+  /** How the player starts the world (the IR's `startMode`, else the cook's). */
+  startMode?: 'play' | 'walkthrough' | 'orbit';
   world: WorldDoc;
 }
 

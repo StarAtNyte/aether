@@ -11,6 +11,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactElem
 import { History, type Json, type WorldDoc } from '@aether/core';
 import { creditsFor, loadCatalog, setAboBase, setCatalog, setLibraryRemote, type Credit } from '@aether/assets';
 import { createWorkerSandbox, generationLanes, type SandboxRunner } from '@aether/procgen';
+import { DDC_CODE_VERSION, openCookedPackage, worldIrHash, type CookedPackage } from '@aether/render';
 import { prefersReducedMotion, Simulation, type CombatHud } from '../engine/Simulation';
 import { CombatHudView, ScoreLine } from '../components/viewport/CombatHud';
 import { recordScore } from '../lib/bestScore';
@@ -25,7 +26,7 @@ import type { InteractPrompt } from '../engine/interaction';
 import { playMusic, musicSeed, type MusicPlayer } from '../publish/video/music';
 import type { GameManifest } from '../publish/manifest';
 import { ProofBadge } from './ProofBadge';
-import { loadGame, loadSave, registerBundledImports, type GameSource } from './source';
+import { loadGame, loadSave, registerBundledImports, templateRoute, type GameSource } from './source';
 import { browserSettingsStorage, defaultSettings, loadSettings, qualityPlan, QUALITIES, saveSettings, type PlayerSettings, type Quality } from './settings';
 
 type Phase = 'booting' | 'title' | 'starting' | 'playing' | 'paused' | 'over' | 'failed';
@@ -48,10 +49,42 @@ interface PlayerHandle {
   start(): void;
 }
 
+/**
+ * How this page loaded its world (probes and scripts/cook.ts read it): from a cooked package or live, and why not cooked.
+ * In the cook's recording run (`#t=<slug>&cook=record`) it also carries what the cook serializes.
+ */
+interface CookHandle {
+  /** 'cooked': geometry and programs from the package; 'live': generated here. */
+  path: 'cooked' | 'live';
+  reason: string | null;
+  startMode: 'play' | 'walkthrough' | 'orbit' | null;
+  /** The world is loaded and the first picture is up. */
+  ready: boolean;
+  /** Recording run only. */
+  record?: { irHash: string; genVersion: string; world: WorldDoc };
+}
+
 declare global {
   interface Window {
     __aetherPlayer?: PlayerHandle;
+    __aetherCook?: CookHandle;
   }
+}
+
+/** Open the game's cooked package for `world` (null: none, or missing or stale; the reason goes to the handle). */
+async function openCooked(game: GameManifest, world: WorldDoc, handle: CookHandle): Promise<CookedPackage | null> {
+  if (!game.cook) {
+    handle.reason = 'no cooked package';
+    return null;
+  }
+  const r = await openCookedPackage(game.cook, world);
+  if (!r.ok) {
+    handle.reason = r.reason;
+    console.info(`[player] loading live: ${r.reason}`);
+    return null;
+  }
+  handle.path = 'cooked';
+  return r.pkg;
 }
 
 function clock(t: number): string {
@@ -246,12 +279,17 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
   const attract = useCallback(async () => {
     const sim = simRef.current;
     if (!sim) return;
+    // A walkthrough or a showcase stays on its opening view (the play-mode UI of those kinds is later work).
+    if (game.startMode === 'orbit' || game.startMode === 'walkthrough') {
+      await sim.openWorld({ duration: 0 });
+      return;
+    }
     await sim.frameWorld();
     // A slow cinematic loop behind the title screen, starting from the framed view.
     setTimeout(() => {
       if (phaseRef.current === 'title' && simRef.current === sim) sim.renderer.startTour(60);
     }, 900);
-  }, []);
+  }, [game.startMode]);
 
   const start = useCallback(async () => {
     const sim = simRef.current;
@@ -332,11 +370,17 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
     canvas.setAttribute('aria-label', `${game.title} — 3D view`);
     host.prepend(canvas);
     const sandbox = createSandbox();
-    const history = new History(world, { maxEntries: 4 });
+    const route = templateRoute(location.hash);
+    const cookHandle: CookHandle = { path: 'live', reason: null, startMode: game.startMode ?? null, ready: false };
+    window.__aetherCook = cookHandle;
     void (async () => {
       try {
-        await relativeLibrary(game);
-        await registerBundledImports(game);
+        const [cooked] = await Promise.all([openCooked(game, world, cookHandle), relativeLibrary(game).then(() => registerBundledImports(game))]);
+        if (route?.cook === 'record') cookHandle.record = { irHash: await worldIrHash(world), genVersion: DDC_CODE_VERSION, world };
+        // The view the cook opened on, where the IR has none of its own (the renderer then skips choosing one).
+        const opening = cooked?.manifest.opening;
+        const doc: WorldDoc = opening && !world.opening ? { ...world, opening } : world;
+        const history = new History(doc, { maxEntries: 4 });
         const s0 = settingsRef.current;
         const q = qualityPlan(s0.quality);
         const sim = await Simulation.create(
@@ -387,6 +431,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
             pointerLock: world.player.mode === 'firstPerson',
             saveBase: `game-${musicSeed(JSON.stringify(world.voxel ?? world.name)).toString(36)}`,
             ...(sandbox ? { sandbox } : {}),
+            ...(cooked ? { cooked } : {}),
             onProgress: (msg) => setLoading(msg),
           },
         );
@@ -395,6 +440,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
           return;
         }
         simRef.current = sim;
+        if (route?.tier) sim.renderer.setRenderTier(route.tier);
         sim.renderer.setPixelRatioCap(q.pixelRatioCap);
         sim.setVolume(s0.volume);
         sim.setLookSensitivity(s0.sensitivity);
@@ -433,6 +479,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
         setCredits(creditsFor(world, catalog));
         if (disposed) return;
         go('title');
+        cookHandle.ready = true;
         void attract();
       } catch (err) {
         if (disposed) return;

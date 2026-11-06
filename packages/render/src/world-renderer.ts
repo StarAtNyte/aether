@@ -15,6 +15,7 @@ import { deferRenderPreparation, type RenderPreparation } from './gpu/render-pre
 import { LampSlots } from './sync/lamp-slots';
 import { parallelPrograms, slowLinks, type ParallelPrograms } from './gpu/parallel-programs';
 import { indexedDbProgramStore, installLazyStages, ProgramCache, type ProgramCacheStats } from './gpu/program-cache';
+import type { CookedPackage } from './cook/cooked';
 import { gpuFrameCost } from './gpu/frame-cost';
 import { preparePresentation } from './gpu/presentation';
 import { warmProceduralFields } from './gpu/procedural-fields-client';
@@ -240,6 +241,11 @@ export interface RendererOptions {
    * the bake only). A bundled world ships the lightmap its own build produced.
    */
   lightmapBase?: string | null;
+  /**
+   * The world's cooked package (cook/cooked.ts `openCookedPackage`): its geometry is read instead of generated, its program
+   * sets seed the boot pre-warm, and its bundled lightmap folder (if any) replaces `lightmapBase`. Absent: the live path.
+   */
+  cooked?: CookedPackage | null;
   /** The baked lightmap started, progressed, applied, failed or was cancelled (a status line, a cancel button). */
   onLightmapStatus?: (status: LightmapStatus) => void;
 }
@@ -1096,7 +1102,7 @@ export class WorldRenderer {
     // The tier's program set, linked ahead of need while the world is generated (gpu/program-cache.ts). WebGL2 only:
     // WebGPU builds its pipelines off the frame.
     const glBackend = renderer.backend as unknown as { gl?: WebGL2RenderingContext; parallel?: { COMPLETION_STATUS_KHR: number } | null; isWebGPUBackend?: boolean };
-    this.programCache = glBackend.isWebGPUBackend !== true && glBackend.gl && glBackend.parallel && (globalThis as { __AETHER_PROGRAM_CACHE?: boolean }).__AETHER_PROGRAM_CACHE !== false ? new ProgramCache(glBackend.gl, glBackend.parallel, indexedDbProgramStore()) : null;
+    this.programCache = glBackend.isWebGPUBackend !== true && glBackend.gl && glBackend.parallel && (globalThis as { __AETHER_PROGRAM_CACHE?: boolean }).__AETHER_PROGRAM_CACHE !== false ? new ProgramCache(glBackend.gl, glBackend.parallel, opts.cooked ? opts.cooked.programStore(indexedDbProgramStore()) : indexedDbProgramStore()) : null;
     const lazyStages = this.programCache ? installLazyStages(renderer.backend as unknown as Parameters<typeof installLazyStages>[0], this.programCache) : () => undefined;
     const releaseShaders = this.releaseShaders;
     this.releaseShaders = () => { lazyStages(); releasePipelines(); releaseShaders(); };
@@ -1146,7 +1152,7 @@ export class WorldRenderer {
       onStatus: (st) => opts.onLightmapStatus?.(st),
       autoBake: () => this.lightmapAutoBake(),
       autoQuality: () => this.lightmapAutoQuality(),
-      staticBase: opts.lightmapBase ?? null,
+      staticBase: opts.cooked?.lightmapBase ?? opts.lightmapBase ?? null,
     });
     this.watchdogOn = opts.watchdog !== false;
     // `globalThis.__aetherWatchdog` (tests): shorter waits than a person would sit through.
@@ -1196,6 +1202,10 @@ export class WorldRenderer {
     // Half as many trusted lanes as sandbox workers: they validate, prepare and cache, the sandbox does the heavy part.
     this.genPool = compute ? new GenPool({ lanes: Math.min(4, Math.ceil(generationLanes() / 2)) }) : null;
     if (this.genPool) (globalThis as { __aetherGenStats?: unknown }).__aetherGenStats = this.genPool.stats;
+    // A cooked world reads its geometry from the package; the cook's own recording run (`__AETHER_COOK_RECORD`, set by
+    // scripts/cook.ts) keeps every output in the geometry cache, however cheap.
+    const cookRecord = (globalThis as { __AETHER_COOK_RECORD?: boolean }).__AETHER_COOK_RECORD === true;
+    if (this.genPool && (opts.cooked || cookRecord)) this.genPool.setCook({ ...(cookRecord ? { keepAll: true } : {}), ...(opts.cooked ? { index: opts.cooked.laneIndex } : {}) });
     const source =
       opts.geometrySource ??
       createProcgenGeometrySource({

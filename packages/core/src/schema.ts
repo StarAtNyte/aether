@@ -1083,6 +1083,12 @@ export const WorldDoc = z.object({
   intro: WorldIntro.optional(),
   /** Additive: the view the editor opens the world on (see {@link OpeningView}). */
   opening: OpeningView.optional(),
+  /**
+   * Additive: how a published (cooked) world starts at its opening: `play` (the game, from its title card), `walkthrough`
+   * (on foot through an architectural world) or `orbit` (a free camera around a showcase scene). Absent: the player decides
+   * from the world. The editor ignores it.
+   */
+  startMode: z.enum(['play', 'walkthrough', 'orbit']).optional(),
   /** Additive: game feel — feedback tier and per-event cues (visual only; absent = the `normal` tier). See `feel-schema.ts`. */
   feel: FeelSpec.optional(),
   /** Additive: texture sets of the project (see {@link TextureSetDef}); absent for worlds without photographed or generated maps. */

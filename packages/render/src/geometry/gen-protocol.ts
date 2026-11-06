@@ -21,9 +21,9 @@ export interface LaneTimes {
   encode: number;
 }
 
-/** Lane → page. `output` null: a lookup that missed. */
+/** Lane → page. `output` null: a lookup that missed. `cooked`: the hit came from the world's cooked package. */
 export type GenReply =
-  | { type: 'result'; id: number; ok: true; output: GeneratorOutput | null; hit: boolean; times?: LaneTimes }
+  | { type: 'result'; id: number; ok: true; output: GeneratorOutput | null; hit: boolean; cooked?: boolean; times?: LaneTimes }
   | { type: 'result'; id: number; ok: false; error: string };
 
 function isObj(v: unknown): v is Record<string, unknown> {
@@ -54,7 +54,7 @@ export function parseGenReply(v: unknown): GenReply | { type: 'ready' } | null {
   const t = isObj(v.times) ? v.times : null;
   const num = (x: unknown): number => (typeof x === 'number' && Number.isFinite(x) ? x : 0);
   const times: LaneTimes | undefined = t ? { read: num(t.read), generate: num(t.generate), validate: num(t.validate), prepare: num(t.prepare), encode: num(t.encode) } : undefined;
-  return { type: 'result', id: v.id, ok: true, output: (v.output ?? null) as GeneratorOutput | null, hit: v.hit === true, ...(times ? { times } : {}) };
+  return { type: 'result', id: v.id, ok: true, output: (v.output ?? null) as GeneratorOutput | null, hit: v.hit === true, ...(v.cooked === true ? { cooked: true } : {}), ...(times ? { times } : {}) };
 }
 
 function f32(a: unknown, len: number): boolean {

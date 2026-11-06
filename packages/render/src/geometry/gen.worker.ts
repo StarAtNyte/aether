@@ -4,6 +4,8 @@
  * - `gen`: run a built-in generator.
  * - `post`: validate a custom generator's raw output from the locked-down sandbox (the page never scans it).
  * - `lookup`: read the persistent cache only.
+ * - `cook` (configuration, no reply): a cooked package to read before generating, and the cook's "keep everything" switch
+ *   (cook/format.ts `LaneCookConfig`).
  *
  * Every output is validated, its render-ready streams are prepared (metre UVs, 16-bit indices, bounds; see
  * buffer-geometry.ts `preparePart`), it is stored in the generated-geometry cache (ddc.ts) when it was worth
@@ -15,6 +17,8 @@ import { prepareOutputParts, preparePart } from './buffer-geometry';
 import { prepareSoft } from './soften';
 import { Ddc, ddcKey, encodeOutput, type EncodedOutput } from './ddc';
 import { checkOutputShape, outputTransfer, parseGenRequest, type GenReply, type LaneTimes } from './gen-protocol';
+import { LaneCookSource } from '../cook/lane-source';
+import type { LaneCookConfig } from '../cook/format';
 
 interface Scope {
   onmessage: ((e: MessageEvent) => void) | null;
@@ -32,19 +36,53 @@ function message(err: unknown): string {
   return (err instanceof Error ? err.message : String(err)).slice(0, 300);
 }
 
+/** The cooked package of the world being loaded (null: none), and whether every output is kept (a cook records the world). */
+let cook: LaneCookSource | null = null;
+let keepAll = false;
+
+/** Apply a `cook` configuration message (validated loosely: a malformed index only means misses). */
+function configure(cfg: LaneCookConfig): void {
+  keepAll = cfg.keepAll === true;
+  const index = cfg.index;
+  cook = index && Array.isArray(index.packs) && index.packs.every((u) => typeof u === 'string') && typeof index.entries === 'object' && index.entries !== null ? new LaneCookSource(index) : null;
+}
+
 /**
- * A stored output. Entries are written only by these lanes, after validation; a read checks the shape (array types
- * and lengths) and deletes an entry that does not match.
+ * A stored output: the persistent cache first, then the cooked package (whose entry then seeds the cache). Entries are
+ * written only by these lanes, after validation; a read checks the shape (array types and lengths) and deletes an entry
+ * that does not match. `from.cooked` is set when the package served it.
  */
-async function cached(key: string, t: LaneTimes): Promise<GeneratorOutput | null> {
-  if (!ddc) return null;
+async function cached(key: string, t: LaneTimes, from?: { cooked: boolean }): Promise<GeneratorOutput | null> {
   const t0 = performance.now();
-  const out = await ddc.get(key);
+  if (ddc) {
+    const out = await ddc.get(key);
+    if (out) {
+      t.read += performance.now() - t0;
+      if (checkOutputShape(out)) return out;
+      await ddc.remove(key);
+    }
+  }
+  if (cook?.has(key)) {
+    const entry = await cook.get(key);
+    t.read += performance.now() - t0;
+    if (entry && checkOutputShape(entry.output)) {
+      if (from) from.cooked = true;
+      // Seeded behind the reply; skipped while writes are backed up (the package's HTTP cache still serves a later visit).
+      if (ddc && writeBacklog <= MAX_WRITE_BACKLOG) queueWrite(ddc, key, { blob: new Blob([entry.encoded as Uint8Array<ArrayBuffer>]), bytes: entry.encoded.byteLength });
+      return entry.output;
+    }
+    return null;
+  }
   t.read += performance.now() - t0;
-  if (!out) return null;
-  if (checkOutputShape(out)) return out;
-  await ddc.remove(key);
   return null;
+}
+
+/** Write an entry after the reply, one at a time per lane, behind a bounded backlog. */
+function queueWrite(store: Ddc, key: string, e: EncodedOutput): void {
+  writeBacklog += e.bytes;
+  writes = writes.then(() => store.put(key, e)).finally(() => {
+    writeBacklog -= e.bytes;
+  });
 }
 
 function reply(msg: GenReply, out?: GeneratorOutput): void {
@@ -60,7 +98,7 @@ async function finish(id: number, key: string | null, out: GeneratorOutput, ms: 
   // only copy kept, and it is written after the reply, so the page never waits on the cache.
   const bytes = outputBytes(out);
   let entry: EncodedOutput | null = null;
-  if (ddc && key && (always || ms >= STORE_MIN_MS || bytes >= STORE_MIN_BYTES)) {
+  if (ddc && key && (always || keepAll || ms >= STORE_MIN_MS || bytes >= STORE_MIN_BYTES)) {
     // Bounded backlog of entries waiting for storage: wait for the writes first rather than pile up memory.
     if (writeBacklog > MAX_WRITE_BACKLOG) await writes;
     t0 = performance.now();
@@ -72,15 +110,7 @@ async function finish(id: number, key: string | null, out: GeneratorOutput, ms: 
     t.encode += performance.now() - t0;
   }
   reply({ type: 'result', id, ok: true, output: out, hit: false, times: t }, out);
-  if (entry && ddc && key) {
-    const e = entry;
-    const store = ddc;
-    const k = key;
-    writeBacklog += e.bytes;
-    writes = writes.then(() => store.put(k, e)).finally(() => {
-      writeBacklog -= e.bytes;
-    });
-  }
+  if (entry && ddc && key) queueWrite(ddc, key, entry);
 }
 
 /** Encoded entries waiting to be written, in bytes, and the chain of writes (one at a time per lane). */
@@ -89,6 +119,11 @@ let writes: Promise<void> = Promise.resolve();
 const MAX_WRITE_BACKLOG = 16 * 1024 * 1024;
 
 scope.onmessage = (e: MessageEvent): void => {
+  const data = e.data as { type?: unknown; config?: unknown } | null;
+  if (data && data.type === 'cook') {
+    if (typeof data.config === 'object' && data.config !== null) configure(data.config as LaneCookConfig);
+    return;
+  }
   const req = parseGenRequest(e.data);
   if (!req) return;
   void (async () => {
@@ -96,9 +131,10 @@ scope.onmessage = (e: MessageEvent): void => {
     try {
       const key = req.key ? await ddcKey(req.key) : null;
       if (key && (req.type === 'lookup' || req.type === 'gen')) {
-        const hit = await cached(key, t);
+        const from = { cooked: false };
+        const hit = await cached(key, t, from);
         if (hit) {
-          reply({ type: 'result', id: req.id, ok: true, output: hit, hit: true, times: t }, hit);
+          reply({ type: 'result', id: req.id, ok: true, output: hit, hit: true, ...(from.cooked ? { cooked: true } : {}), times: t }, hit);
           return;
         }
         if (req.type === 'lookup') {

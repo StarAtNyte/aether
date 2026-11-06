@@ -20,6 +20,10 @@
  * - Pooled programs no pipeline took are deleted {@link POOL_TRIM_MS} after the first picture (a program costs memory in
  *   the GPU process, megabytes on Mesa).
  *
+ * - **A cooked world's boot set** ({@link ProgramStore.boot}): the programs its load is known to use (recorded by the cook,
+ *   cook/format.ts) are linked first and keep being submitted after the world's compile begins: the compile then takes them
+ *   from the pool instead of linking one after another.
+ *
  * The sources are the keys: a build that changes a shader simply misses, and its entries age out of the set (least
  * recently used first, at most {@link SET_CAP} per tier). Opt out with `globalThis.__AETHER_PROGRAM_CACHE = false`.
  */
@@ -29,6 +33,11 @@ import type { RenderTier } from './finishing';
 export const SET_CAP: Readonly<Record<RenderTier, number>> = { low: 64, medium: 96, high: 128, ultra: 160 };
 /** Links the boot pre-warm keeps in flight: enough to keep the driver's threads busy, few enough not to queue far ahead. */
 export const PREWARM_IN_FLIGHT = 6;
+/** Links in flight for a cooked world's boot set (`__AETHER_EAGER_IN_FLIGHT` overrides; measured in docs/PERFORMANCE.md). */
+function EAGER_IN_FLIGHT(): number {
+  const n = (globalThis as { __AETHER_EAGER_IN_FLIGHT?: number }).__AETHER_EAGER_IN_FLIGHT;
+  return typeof n === 'number' && n >= 1 && n <= 32 ? Math.round(n) : PREWARM_IN_FLIGHT;
+}
 /** Pooled programs nobody took are deleted this long after the first picture (ms). */
 export const POOL_TRIM_MS = 20_000;
 /** A set entry not used in this many sessions of its tier is dropped. */
@@ -57,13 +66,19 @@ export interface ProgramStore {
   putSources(sources: ReadonlyMap<string, string>): Promise<void>;
   /** Delete sources whose hash is not in `keep` (no set refers to them). */
   prune(keep: ReadonlySet<string>): Promise<void>;
+  /**
+   * Optional: the pairs (`<vertex hash>:<fragment hash>`) the world's load is known to use (a cooked world's), linked first
+   * and not stopped by the world's own compile.
+   */
+  boot?(tier: RenderTier): Promise<ReadonlySet<string> | null>;
 }
 
 /** What the cache did (diagnostics, the probe and the perf job read it). */
 export interface ProgramCacheStats {
   tier: RenderTier | null;
-  /** Programs in the stored set of the boot tier. */
+  /** Programs in the stored set of the boot tier, and of them the cooked boot set's (linked first, see {@link ProgramStore.boot}). */
   set: number;
+  eager: number;
   /** Pre-warm links submitted, finished, failed. */
   submitted: number;
   linked: number;
@@ -140,8 +155,8 @@ export class ProgramCache {
   private readonly pool = new Map<string, Map<string, Pooled>>();
   /** Every stage source the pool covers (count of pooled programs using it). */
   private readonly covered = new Map<string, number>();
-  /** Pairs of the boot set not submitted yet (vertex, fragment sources). */
-  private queue: Array<{ v: string; f: string }> = [];
+  /** Pairs of the boot set not submitted yet (vertex, fragment sources); `eager` ones first (see {@link ProgramStore.boot}). */
+  private queue: Array<{ v: string; f: string; eager?: boolean }> = [];
   /** Pairs used this session, by tier (source strings; hashed when saved). */
   private readonly used = new Map<RenderTier, Map<string, Set<string>>>();
   private readonly hashes = new Map<string, string>();
@@ -159,7 +174,7 @@ export class ProgramCache {
   private generation = 0;
   /** The session number this page saves each tier under. */
   private readonly sessions = new Map<RenderTier, number>();
-  readonly stats: ProgramCacheStats = { tier: null, set: 0, submitted: 0, linked: 0, failed: 0, adopted: 0, linkedOwn: 0, missedAfterFirstPicture: 0, trimmed: 0, primed: 0, startedAt: 0, doneAt: 0 };
+  readonly stats: ProgramCacheStats = { tier: null, set: 0, eager: 0, submitted: 0, linked: 0, failed: 0, adopted: 0, linkedOwn: 0, missedAfterFirstPicture: 0, trimmed: 0, primed: 0, startedAt: 0, doneAt: 0 };
   /** Pairs of the boot set (source strings): a link outside them after the first picture is a miss. */
   private readonly inSet = new Map<string, Set<string>>();
 
@@ -191,8 +206,12 @@ export class ProgramCache {
     if (!set || this.disposed || gen !== this.generation) return;
     const order = prewarmOrder(set, SET_CAP[tier]);
     this.stats.set = order.length;
-    const sources = await this.store.getSources([...new Set(order.flatMap((e) => [e.v, e.f]))]).catch(() => new Map<string, string>());
+    const [sources, boot] = await Promise.all([
+      this.store.getSources([...new Set(order.flatMap((e) => [e.v, e.f]))]).catch(() => new Map<string, string>()),
+      this.store.boot ? this.store.boot(tier).catch(() => null) : Promise.resolve(null),
+    ]);
     if (this.disposed || gen !== this.generation) return;
+    const later: Array<{ v: string; f: string }> = [];
     for (const e of order) {
       const v = sources.get(e.v), f = sources.get(e.f);
       if (v === undefined || f === undefined) continue;
@@ -203,8 +222,11 @@ export class ProgramCache {
       fs.add(f);
       // Already asked for by three while the set was loading (it links that one itself), or already pooled.
       if (this.usedNow(v, f) || this.pool.get(v)?.has(f)) continue;
-      this.queue.push({ v, f });
+      if (boot?.has(`${e.v}:${e.f}`)) this.queue.push({ v, f, eager: true });
+      else later.push({ v, f });
     }
+    this.stats.eager = this.queue.length;
+    this.queue.push(...later);
     if (this.timer === undefined) this.pump();
   }
 
@@ -262,6 +284,7 @@ export class ProgramCache {
     if (this.firstPicture) return;
     this.firstPicture = true;
     this.stopped = true;
+    for (const q of this.queue) q.eager = false;
     this.trimTimer = setTimeout(() => this.trim(), POOL_TRIM_MS);
     this.scheduleSave(2000);
   }
@@ -423,7 +446,8 @@ export class ProgramCache {
       this.stats.doneAt = performance.now();
       this.detach(p);
     }
-    while (!this.stopped && this.linking.size < PREWARM_IN_FLIGHT && this.queue.length > 0) {
+    const inFlight = this.queue[0]?.eager === true ? EAGER_IN_FLIGHT() : PREWARM_IN_FLIGHT;
+    while (this.linking.size < inFlight && this.queue.length > 0 && (!this.stopped || this.queue[0]!.eager === true)) {
       const next = this.queue.shift()!;
       const p = this.link(next.v, next.f);
       if (!p) break;
@@ -435,7 +459,7 @@ export class ProgramCache {
       this.cover(next.f);
       this.linking.add(p);
     }
-    if (this.linking.size > 0 || (!this.stopped && this.queue.length > 0)) this.timer = setTimeout(() => this.pump(), 16);
+    if (this.linking.size > 0 || (this.queue.length > 0 && (!this.stopped || this.queue[0]!.eager === true))) this.timer = setTimeout(() => this.pump(), 16);
   }
 
   /** A linked program needs no shaders: detach and delete them (their compiled form is large on Mesa). */

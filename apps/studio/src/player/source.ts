@@ -1,14 +1,50 @@
 /**
  * Where a published game comes from: the URL fragment of a share link
- * (`#w=…`, decoded and validated by `publish/share.ts`), or the `game.json`
- * next to a downloaded / self-hosted build. Both are untrusted and fully
- * validated; a failure becomes a readable message, never a crash.
+ * (`#w=…`, decoded and validated by `publish/share.ts`), a bundled template
+ * (`#t=<slug>`, a published world of this site with its cooked package at
+ * `cooked/<slug>/manifest.json`), or the `game.json` next to a downloaded /
+ * self-hosted build. All are untrusted and fully validated; a failure becomes
+ * a readable message, never a crash.
  */
 import { decodeShare, shareValueFromHash } from '../publish/share';
 import { defaultControls, IMPORT_PATH, MAX_GAME_JSON_BYTES, parseGameManifest, type GameManifest } from '../publish/manifest';
 
 /** Outcome of {@link loadGame}. */
-export type GameSource = { kind: 'game'; game: GameManifest; from: 'link' | 'build' } | { kind: 'none' } | { kind: 'error'; message: string };
+export type GameSource = { kind: 'game'; game: GameManifest; from: 'link' | 'build' | 'template' } | { kind: 'none' } | { kind: 'error'; message: string };
+
+/** Template slugs (as `showcase/load.ts`). */
+const TEMPLATE_SLUG = /^(?=.{1,64}$)[a-z0-9]+(?:-[a-z0-9]+){0,7}$/;
+
+/**
+ * The options of a `#t=<slug>` fragment: `cook=0` opens the template live (no cooked package), `cook=record` is the cook's
+ * own recording run (scripts/cook.ts: live, and the page exposes what the cook reads), `tier=<tier>` starts on that render tier.
+ */
+export interface TemplateRoute {
+  slug: string;
+  cook: 'use' | 'off' | 'record';
+  tier: 'low' | 'medium' | 'high' | 'ultra' | null;
+}
+
+/** Parse a `#t=<slug>[&cook=0|record][&tier=…]` fragment (null for any other fragment). */
+export function templateRoute(hash: string): TemplateRoute | null {
+  if (!hash.startsWith('#t=')) return null;
+  const q = new URLSearchParams(hash.slice(1));
+  const slug = q.get('t') ?? '';
+  if (!TEMPLATE_SLUG.test(slug)) return null;
+  const c = q.get('cook');
+  const t = q.get('tier');
+  return { slug, cook: c === '0' || c === 'off' ? 'off' : c === 'record' ? 'record' : 'use', tier: t === 'low' || t === 'medium' || t === 'high' || t === 'ultra' ? t : null };
+}
+
+/** The manifest of a template's cooked package. */
+export function templateCookUrl(slug: string): string {
+  return `./cooked/${slug}/manifest.json`;
+}
+
+/** Start mode of a template kind (the cook records it; the IR's own `startMode` wins). */
+export function startModeForKind(kind: string | undefined): 'play' | 'walkthrough' | 'orbit' {
+  return kind === 'game' ? 'play' : kind === 'architecture' ? 'walkthrough' : 'orbit';
+}
 
 /** Longest wait for `game.json` (ms). */
 const FETCH_TIMEOUT_MS = 20_000;
@@ -31,6 +67,28 @@ export async function loadGame(hash: string, fetchFn: typeof fetch = fetch, path
         music: meta.music ?? null,
         ...(proof !== undefined ? { proof } : {}),
         world,
+      },
+    };
+  }
+  const template = templateRoute(hash);
+  if (template) {
+    const [{ loadTemplateWorld }, { SHOWCASE }] = await Promise.all([import('../showcase/load'), import('../showcase/manifest')]);
+    const r = await loadTemplateWorld(template.slug, (u, i) => fetchFn(u, i));
+    if (!r.ok) return { kind: 'error', message: r.error };
+    const entry = SHOWCASE.find((e) => e.slug === template.slug);
+    const world = r.world;
+    return {
+      kind: 'game',
+      from: 'template',
+      game: {
+        title: world.intro?.title ?? entry?.title ?? world.name,
+        description: entry?.description ?? world.description,
+        author: '',
+        controls: defaultControls(world),
+        music: null,
+        world,
+        startMode: world.startMode ?? startModeForKind(entry?.kind),
+        ...(template.cook === 'use' ? { cook: templateCookUrl(template.slug) } : {}),
       },
     };
   }

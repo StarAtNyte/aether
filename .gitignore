@@ -27,3 +27,7 @@ eval-out/
 gameplay-out/
 photoreal-out/
 screenshots/
+
+# Cooked packages of published worlds (scripts/cook.ts): large binaries, hosted outside git
+/cooked/
+apps/studio/public/cooked/

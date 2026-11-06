@@ -16,6 +16,7 @@ import type { GeneratorDef, Json } from '@aether/core';
 import { validateOutput, type GenerateJob, type WorkerLike } from '@aether/procgen';
 import type { GeneratorOutput, SandboxRunner } from '../types';
 import { checkOutputShape, parseGenReply, rawTransfer, type GenRequest, type LaneTimes } from './gen-protocol';
+import type { LaneCookConfig } from '../cook/format';
 
 /** The generation machinery failed (not the generator): fall back. */
 export class LaneFailure extends Error {
@@ -42,8 +43,10 @@ export interface GenPoolOptions {
 
 /** Counters for probes and the debug overlay. */
 export interface GenPoolStats {
-  /** Outputs served from the persistent cache. */
+  /** Outputs served from the persistent cache (cooked ones included). */
   hits: number;
+  /** Of {@link hits}, outputs served from the world's cooked package. */
+  cooked: number;
   /** Built-in generator runs in lanes. */
   generated: number;
   /** Sandbox outputs validated and prepared in lanes. */
@@ -83,7 +86,7 @@ function defaultWorker(): WorkerLike {
 
 /** Trusted generation lanes with a persistent geometry cache behind them. */
 export class GenPool {
-  readonly stats: GenPoolStats = { hits: 0, generated: 0, posted: 0, fallbacks: 0, laneMs: { read: 0, generate: 0, validate: 0, prepare: 0, encode: 0 } };
+  readonly stats: GenPoolStats = { hits: 0, cooked: 0, generated: 0, posted: 0, fallbacks: 0, laneMs: { read: 0, generate: 0, validate: 0, prepare: 0, encode: 0 } };
   private readonly lanes: Lane[];
   private readonly queue: Job[] = [];
   private readonly timeoutMs: number;
@@ -92,6 +95,8 @@ export class GenPool {
   private readonly factory: () => WorkerLike;
   private nextId = 1;
   private pumpQueued = false;
+  /** The cook configuration every lane gets before its first job (see {@link setCook}). */
+  private cook: LaneCookConfig | null = null;
   private disposed = false;
 
   constructor(opts: GenPoolOptions = {}) {
@@ -101,6 +106,23 @@ export class GenPool {
     this.idleTimeoutMs = Math.max(0, opts.idleTimeoutMs ?? 30_000);
     this.sandboxTimeoutMs = Math.max(50, opts.sandboxTimeoutMs ?? 15_000);
     this.factory = opts.createWorker ?? defaultWorker;
+  }
+
+  /**
+   * Read a cooked package before generating (`index`), and/or keep every output in the geometry cache (`keepAll`, the
+   * cook's recording run). Sent to the running lanes and to every lane started later; null clears it.
+   */
+  setCook(config: LaneCookConfig | null): void {
+    this.cook = config;
+    for (const lane of this.lanes) if (lane.worker) this.postCook(lane.worker);
+  }
+
+  private postCook(w: WorkerLike): void {
+    try {
+      w.postMessage({ type: 'cook', config: this.cook ?? {} }, []);
+    } catch {
+      // The lane is gone: its replacement gets the configuration.
+    }
   }
 
   /** Number of lanes. */
@@ -204,6 +226,7 @@ export class GenPool {
         w.onerror = () => this.crash(lane, new LaneFailure('a generation worker crashed'));
         lane.worker = w;
         lane.ready = false;
+        if (this.cook) this.postCook(w);
       } catch (e) {
         job.reject(new LaneFailure(`no generation worker: ${e instanceof Error ? e.message : String(e)}`));
         this.pumpSoon();
@@ -252,7 +275,10 @@ export class GenPool {
       if (msg.output === null) job.resolve(null);
       else if (!checkOutputShape(msg.output)) job.reject(new LaneFailure('a generation worker returned malformed output'));
       else {
-        if (msg.hit) this.stats.hits++;
+        if (msg.hit) {
+          this.stats.hits++;
+          if (msg.cooked) this.stats.cooked++;
+        }
         else if (job.request.type === 'gen') this.stats.generated++;
         else if (job.request.type === 'post') this.stats.posted++;
         job.resolve(msg.output);

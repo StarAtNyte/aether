@@ -31,7 +31,8 @@ const IMMUTABLE_PREFIXES: readonly string[] = ['/assets/', '/fonts/'];
 
 /** True when `path` is served with {@link IMMUTABLE_CACHE}. */
 export function isImmutablePath(path: string): boolean {
-  return IMMUTABLE_PREFIXES.some((p) => path.startsWith(p));
+  // A cooked package's files live under a folder named by its content key (`cooked/<slug>/<id>/…`); its manifest does not.
+  return IMMUTABLE_PREFIXES.some((p) => path.startsWith(p)) || /^\/cooked\/[a-z0-9-]+\/[0-9a-f]{16}\//.test(path);
 }
 
 /** Register static file serving, the player route and the 404 page. No-op (with a warning) when `dir` is missing. */
