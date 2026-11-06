@@ -110,7 +110,7 @@ export function sceneOpeningProbe(sync: SceneSync, ground: Object3D | null, top:
     const w = waterAt(water, p[0], p[2], p[1]);
     return !!w && w.y > p[1];
   };
-  return { surface, sight: sceneSightTest(sync), near: sceneSightTest(sync, new Set(), { scatter: false }), underWater };
+  return { surface, sight: sceneSightTest(sync), near: sceneSightTest(sync, new Set(), { scatter: false }), cover: sceneSightTest(sync, new Set(), { cover: true }), underWater };
 }
 
 function visible(object: Object3D): boolean {

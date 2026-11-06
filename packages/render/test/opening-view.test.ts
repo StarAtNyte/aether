@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { boxSightTest, type FramingItem } from '../src/view/framing';
-import { chooseOpeningView, horizonPitch, NEAR_ZONE, nearestInView, OPENING_HEIGHT, openingLandmark, type OpeningProbe } from '../src/view/opening-view';
+import { ARCH_COVER_ZONE, chooseOpeningView, horizonPitch, NEAR_ZONE, nearestInView, OPENING_HEIGHT, openingLandmark, type OpeningProbe } from '../src/view/opening-view';
 
 const boxAt = (cx: number, cz: number, half: number, height: number, extra: Partial<FramingItem> = {}): FramingItem => ({ min: [cx - half, 0, cz - half], max: [cx + half, height, cz + half], ...extra });
 
@@ -96,5 +96,24 @@ describe('opening view', () => {
     expect(nearestInView(boxSightTest([...items, bush]), moved.position, moved.target, 50, 16 / 9)).toBeGreaterThanOrEqual(NEAR_ZONE);
     // Every eye under water: nothing qualifies.
     expect(chooseOpeningView(input, { ...probe, underWater: () => true })).toBeNull();
+  });
+
+  it('frames a building over its garden, not through tall grass at the lens', () => {
+    // A house in a meadow of grass a metre tall, with a mown lawn to the south (z < -6).
+    const house = boxAt(0, 0, 6, 4, { focus: true });
+    const meadow: FramingItem[] = [{ min: [-60, 0, -6], max: [60, 1, 60] }];
+    const probe: OpeningProbe = {
+      surface: (x, z) => (Math.abs(x) <= 6 && Math.abs(z) <= 6 ? { y: 4, kind: 'blocked' } : { y: 0, kind: 'ground' }),
+      sight: boxSightTest([]),
+      cover: boxSightTest([house, ...meadow]),
+    };
+    const input = { framing: { center: [0, 2, 0] as [number, number, number], radius: 14 }, items: [house], fovDeg: 50, aspect: 16 / 9, arch: true };
+    const v = chooseOpeningView(input, probe);
+    expect(v).not.toBeNull();
+    expect(nearestInView(probe.cover!, v!.position, v!.target, 50, 16 / 9, ARCH_COVER_ZONE)).toBeGreaterThanOrEqual(ARCH_COVER_ZONE);
+    expect(v!.sees).toBe(true);
+    // Without the ground cover counted the same search stands in the grass.
+    const blind = chooseOpeningView(input, { ...probe, cover: undefined });
+    expect(nearestInView(probe.cover!, blind!.position, blind!.target, 50, 16 / 9, ARCH_COVER_ZONE)).toBeLessThan(ARCH_COVER_ZONE);
   });
 });

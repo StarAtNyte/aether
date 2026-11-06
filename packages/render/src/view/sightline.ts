@@ -25,10 +25,13 @@ export function isOpaqueVisible(object: Object3D): boolean {
 /**
  * {@link SightTest} over `sync`'s document content. `skip` makes objects (and everything under them) transparent
  * to the test: the subject of a shot does not hide itself. `scatter: false` leaves the coarse scatter occluders out
- * (they are boxes round whole patches: under them every short ray is blocked). The caller keeps world matrices current.
+ * (they are boxes round whole patches: under them every short ray is blocked). `cover: true` counts ground cover as well
+ * (tall grass, shrubs, flowers: see `SceneSync.coverOcclusion`), for what fills the foreground of a view from the ground.
+ * The caller keeps world matrices current.
  */
-export function sceneSightTest(sync: SceneSync, skip: ReadonlySet<Object3D> = new Set(), opts: { scatter?: boolean } = {}): SightTest {
+export function sceneSightTest(sync: SceneSync, skip: ReadonlySet<Object3D> = new Set(), opts: { scatter?: boolean; cover?: boolean } = {}): SightTest {
   const scatter = opts.scatter !== false;
+  const cover = opts.cover === true;
   const ray = new Raycaster();
   ray.layers.enable(BATCHED_LAYER);
   const hits: Intersection[] = [];
@@ -60,7 +63,7 @@ export function sceneSightTest(sync: SceneSync, skip: ReadonlySet<Object3D> = ne
     }
     hits.length = 0;
     if (!scatter) return free;
-    const d = sync.scatterOcclusion(a, b) * length;
+    const d = (cover ? sync.coverOcclusion(a, b) : sync.scatterOcclusion(a, b)) * length;
     if (d >= SIGHT_NEAR && d < free) free = d;
     return free;
   };

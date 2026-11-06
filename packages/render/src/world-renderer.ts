@@ -3739,18 +3739,21 @@ export class WorldRenderer {
     if (own && own.position.every(Number.isFinite) && own.target.every(Number.isFinite)) {
       return { position: [...own.position], target: [...own.target], ...(own.fov !== undefined ? { fov: own.fov } : {}), authored: true };
     }
-    // Deterministic per world: computed once per document (the scene tests take a second or two on a big world).
+    // Deterministic per world: computed once per document (the scene tests take a second or two on a big world). A view
+    // chosen while content was still being built (the load opens close in before the walls are generated) is chosen
+    // again once the scene is complete: made without its walls, it stood inside Casa del Patio.
     const doc = this.sync.world;
-    if (!this.openingCache || this.openingCache.world !== doc) {
+    if (!this.openingCache || this.openingCache.world !== doc || (this.openingCache.partial && this.sync.idle)) {
+      const partial = !this.sync.idle;
       const view = this.rankOpening(1)[0];
-      this.openingCache = { world: doc, pose: view ? { position: view.position, target: view.target } : null };
+      this.openingCache = { world: doc, partial, pose: view ? { position: view.position, target: view.target } : null };
     }
     const pose = this.openingCache.pose;
     return pose ? { position: [...pose.position], target: [...pose.target], authored: false } : null;
   }
 
   /** The computed opening view of the last world asked about. */
-  private openingCache: { world: WorldDoc | null; pose: { position: Vec3; target: Vec3 } | null } | null = null;
+  private openingCache: { world: WorldDoc | null; partial: boolean; pose: { position: Vec3; target: Vec3 } | null } | null = null;
 
   /**
    * The best `limit` computed opening views of the content, best first (see `view/opening-view.ts`); `stats` counts

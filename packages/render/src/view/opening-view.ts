@@ -30,6 +30,11 @@ export interface OpeningProbe {
   sight: SightTest;
   /** The same for the short clearance tests round the eye (default `sight`): solid meshes only, no coarse scatter boxes. */
   near?: SightTest;
+  /**
+   * The same counting ground cover too (tall grass, shrubs, flowers): what an opening view of a building must not have
+   * within {@link ARCH_COVER_ZONE} of the lens. Default `sight`.
+   */
+  cover?: SightTest;
   /** The point is below a water surface (an eye there sees the underside of the water). */
   underWater?(p: Vec3): boolean;
 }
@@ -70,6 +75,11 @@ const MAX_STEP = 1.3;
 const RING_SHARES = [0.3, 0.45, 0.65, 0.9] as const;
 /** Nothing may be closer to the lens than this (m) anywhere in the frame's centre and bottom band. */
 export const NEAR_ZONE = 2;
+/**
+ * A building's opening view frames it from its garden: no grass, shrub or flower may be closer to the lens than this (m)
+ * in the frame (tall grass a metre or two away filled half of Casa del Patio's first picture).
+ */
+export const ARCH_COVER_ZONE = 3;
 /** Smallest downward pitch (radians) of an opening view: the orbit camera never looks level or up. */
 const MIN_DOWN = 0.035;
 /** Directions tried on each ring. */
@@ -124,6 +134,8 @@ export interface OpeningStats {
   noAim: number;
   /** Turned down for something within {@link NEAR_ZONE} of the lens in the frame, or an eye under water. */
   near?: number;
+  /** A building's spots with ground cover within {@link ARCH_COVER_ZONE} of the lens (kept only when no other spot is). */
+  cover?: number;
   kept: number;
 }
 
@@ -170,7 +182,7 @@ export function* rankOpeningViewsSteps(input: OpeningInput, probe: OpeningProbe,
   const fit = markHeight > 0 ? markHeight / (2 * Math.tan(vHalf) * 0.5) : 0;
   const far = Math.min(120, r + 8);
   const rings = [...new Set([...RING_SHARES.map((f) => r * f), ...(fit > 0 ? [fit, fit * 1.5] : [])].map((d) => Math.round(Math.max(8, Math.min(far, d)))))].sort((a, b) => a - b);
-  const all: OpeningPose[] = [];
+  const all: Array<OpeningPose & { covered: boolean }> = [];
   for (const d of rings) {
     for (let k = 0; k < AZIMUTHS; k++) {
       // From the preferred side outward, alternating left and right.
@@ -204,23 +216,30 @@ export function* rankOpeningViewsSteps(input: OpeningInput, probe: OpeningProbe,
           if (stats) stats.noAim++;
           continue;
         }
+        // A building is framed over its garden, not through the grass at the camera's feet: a spot with ground cover close
+        // to the lens tries the raised eye, and is kept only for when no spot is clear.
+        const covered = input.arch === true && nearestInView(probe.cover ?? probe.sight, pose.position, pose.target, input.fovDeg, input.aspect, ARCH_COVER_ZONE) < ARCH_COVER_ZONE;
+        if (covered && stats) stats.cover = (stats.cover ?? 0) + 1;
         // A raised eye is the second choice; a spot far from the middle is less of a place.
         const central = Math.hypot(x - framing.center[0], z - framing.center[2]) / r;
-        placed = pose.sees;
-        all.push({ ...pose, score: pose.score - hi * 0.4 - central * 0.8 - Math.max(0, central - 1) * 1.5 - (d / r) * 0.2 });
+        placed = pose.sees && !covered;
+        all.push({ ...pose, covered, score: pose.score - hi * 0.4 - central * 0.8 - Math.max(0, central - 1) * 1.5 - (d / r) * 0.2 });
         if (stats) stats.kept++;
       }
       yield;
     }
   }
-  // Spots that see the landmark first, if there are any; then best first, ties in the order tried (deterministic).
-  const seeing = all.some((p) => p.sees) ? all.filter((p) => p.sees) : all;
+  // Clear spots that see the landmark first, then spots that see it, if there are any; then best first, ties in the order
+  // tried (deterministic).
+  const clear = all.filter((p) => p.sees && !p.covered);
+  const seeing = clear.length > 0 ? clear : all.some((p) => p.sees) ? all.filter((p) => p.sees) : all;
   const order = seeing.map((p, i) => ({ p, i })).sort((a, b) => b.p.score - a.p.score || a.i - b.i);
   const out: OpeningPose[] = [];
   for (const { p } of order) {
     if (out.length >= limit) break;
     if (out.some((q) => Math.hypot(q.position[0] - p.position[0], q.position[2] - p.position[2]) < 6)) continue;
-    out.push(p);
+    const { covered: _covered, ...pose } = p;
+    out.push(pose);
   }
   return out;
 }
@@ -327,11 +346,11 @@ function scoreView(eye: Vec3, lc: Vec3, mark: { top: number; base: number } | nu
 }
 
 /**
- * The nearest content (m, up to {@link NEAR_ZONE} + 1) along rays through the frame of the view `eye` → `target`: a grid
- * over the centre and the bottom band (where a shrub, a leaf or a railing next to the camera shows), at the field of
- * view `fovDeg` and `aspect`. `sight` gives the free distance along a segment.
+ * The nearest content (m, up to `zone` + 1, default {@link NEAR_ZONE}) along rays through the frame of the view
+ * `eye` → `target`: a grid over the centre and the bottom band (where a shrub, a leaf or a railing next to the camera
+ * shows), at the field of view `fovDeg` and `aspect`. `sight` gives the free distance along a segment.
  */
-export function nearestInView(sight: SightTest, eye: Vec3, target: Vec3, fovDeg: number, aspect: number): number {
+export function nearestInView(sight: SightTest, eye: Vec3, target: Vec3, fovDeg: number, aspect: number, zone = NEAR_ZONE): number {
   const dx = target[0] - eye[0];
   const dy = target[1] - eye[1];
   const dz = target[2] - eye[2];
@@ -341,7 +360,7 @@ export function nearestInView(sight: SightTest, eye: Vec3, target: Vec3, fovDeg:
   const pitch = Math.atan2(dy, flat);
   const vHalf = (Math.max(10, Math.min(120, fovDeg || 50)) * deg) / 2;
   const hHalf = Math.atan(Math.tan(vHalf) * (aspect > 0 ? aspect : 16 / 9));
-  const len = NEAR_ZONE + 1;
+  const len = zone + 1;
   let nearest = len;
   // Rows: the centre, the lower half and the bottom edge; columns across the width.
   for (const v of [0, -0.5, -0.92]) {

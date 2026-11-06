@@ -14,6 +14,14 @@
 
 /** Instances lower than this (m, after scale) are not view occluders. */
 export const OCCLUDER_MIN_HEIGHT = 1.5;
+/**
+ * Lowest instances (m, after scale) of the ground-cover occluders ({@link OccluderGrid.fromScatter} with this height):
+ * tall grass, shrubs and flowers, which cannot hide a third-person view but fill the foreground of a view from the
+ * ground (an opening view of a house from its garden).
+ */
+export const COVER_MIN_HEIGHT = 0.3;
+/** Most instances a layer may have to get ground-cover occluders (larger fields are left out). */
+export const COVER_MAX_INSTANCES = 20_000;
 /** Horizontal share of a part's bounds kept as its occluder (a cone or sphere crown fills its box only near the axis). */
 export const OCCLUDER_SHRINK = 0.75;
 /** Grid cell edge (m). */
@@ -103,9 +111,10 @@ export class OccluderGrid {
 
   /**
    * Occluders of a scatter layer from its instance poses (see {@link posesFromMatrices}) and the generator's part
-   * bounds (see {@link partBounds}); null when no instance is tall enough to hide a view.
+   * bounds (see {@link partBounds}); null when no instance is tall enough to hide a view. `minHeight`: lowest instance
+   * kept (default {@link OCCLUDER_MIN_HEIGHT}; {@link COVER_MIN_HEIGHT} for ground cover).
    */
-  static fromScatter(poses: ArrayLike<number>, count: number, parts: Float32Array): OccluderGrid | null {
+  static fromScatter(poses: ArrayLike<number>, count: number, parts: Float32Array, minHeight = OCCLUDER_MIN_HEIGHT): OccluderGrid | null {
     const nParts = Math.floor(parts.length / 6);
     if (nParts === 0 || count <= 0) return null;
     let y0 = Infinity, y1 = -Infinity;
@@ -121,7 +130,7 @@ export class OccluderGrid {
       const x = poses[o] as number, y = poses[o + 1] as number, z = poses[o + 2] as number;
       const c = poses[o + 3] as number, sn = poses[o + 4] as number;
       const s = Math.hypot(c, sn);
-      if (!(s > 0) || !Number.isFinite(x + y + z) || (y1 - y0) * s < OCCLUDER_MIN_HEIGHT) continue;
+      if (!(s > 0) || !Number.isFinite(x + y + z) || (y1 - y0) * s < minHeight) continue;
       const ac = Math.abs(c), as = Math.abs(sn);
       for (let p = 0; p < nParts; p++) {
         const b = p * 6;

@@ -89,7 +89,7 @@ import { createEntityNode, ENTITY_ID_KEY, type EntityNode, type MeshBinding } fr
 import { renderableIds } from './renderable';
 import { TERRAIN_RENDER_ORDER } from '../gpu/render-order';
 import { withWaterKind } from './water-surfaces';
-import { OccluderGrid, partBounds, posesFromMatrices } from '../view/occluders';
+import { COVER_MAX_INSTANCES, COVER_MIN_HEIGHT, OccluderGrid, partBounds, posesFromMatrices } from '../view/occluders';
 import { setEntityPath } from './property-path';
 import { errorMessage, log } from '../log';
 
@@ -273,6 +273,8 @@ export class SceneSync {
   /** `occluders` as parallel arrays: iterating a Map allocates an entry per step, and this runs per boom ray. */
   private occluderNodes: EntityNode[] = [];
   private occluderGrids: OccluderGrid[] = [];
+  /** Ground-cover occluders (grass, shrubs, flowers and the tall layers too) of scatter layers up to {@link COVER_MAX_INSTANCES}. */
+  private readonly cover = new Map<EntityNode, OccluderGrid>();
   /** Surface entity id → ids of scatters placed on it (O(1) dependent lookup). */
   private readonly dependents = new Map<EntityId, Set<EntityId>>();
   private readonly variant: MaterialVariant;
@@ -1054,10 +1056,30 @@ export class SceneSync {
     return _occOut[0]!;
   }
 
+  /**
+   * Fraction t ∈ [0, 1] of the world segment `from`→`to` where it first enters a scatter instance at least
+   * {@link COVER_MIN_HEIGHT} tall (tall grass, a shrub, a tree), or Infinity. For views from the ground (an opening view of
+   * a house from its garden must not look through grass a metre from the lens). Hidden layers are skipped.
+   */
+  coverOcclusion(from: Vector3, to: Vector3): number {
+    let t = Number.POSITIVE_INFINITY;
+    for (const [node, grid] of this.cover) {
+      if (!visibleChain(node.object)) continue;
+      node.content.updateWorldMatrix(true, false);
+      grid.segmentEntryWorld(node.content.matrixWorld.elements, from, to);
+      if (grid.entry[0]! < t) t = grid.entry[0]!;
+    }
+    return t;
+  }
+
   private setOccluders(node: EntityNode, poses: Float32Array, count: number, keyed: KeyedOutput): void {
-    const grid = OccluderGrid.fromScatter(poses, count, partBounds(keyed.output.parts));
+    const bounds = partBounds(keyed.output.parts);
+    const grid = OccluderGrid.fromScatter(poses, count, bounds);
     if (grid) this.occluders.set(node, grid);
     else this.occluders.delete(node);
+    const cover = count <= COVER_MAX_INSTANCES ? OccluderGrid.fromScatter(poses, count, bounds, COVER_MIN_HEIGHT) : null;
+    if (cover) this.cover.set(node, cover);
+    else this.cover.delete(node);
     this.indexOccluders();
   }
 
@@ -2169,6 +2191,7 @@ export class SceneSync {
     node.scatterTriangles = 0;
     node.instanceMatrix = null;
     if (this.occluders.delete(node)) this.indexOccluders();
+    this.cover.delete(node);
     this.surfaceGrids.delete(node.id);
     return retired;
   }
