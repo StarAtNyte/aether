@@ -33,6 +33,7 @@ import { BATCHED_LAYER } from './static-batches';
 import { MergeBuildClient, type MergeJob } from './merge-client';
 import { mergeGeometryStamp, mergeRequest, type MergeRequest } from './merge-wire';
 import { errorMessage, log } from '../log';
+import { releaseAfterUpload } from '../gpu/cpu-release';
 import { interiorContent } from '../gpu/performance';
 
 /** Marks the merge key of room contents (see `rebuild`). */
@@ -498,6 +499,7 @@ export class StaticMerges {
     const merge: Merge = { key, parent, parentWorld: parent.matrixWorld.clone(), material, mesh, members, stale: false,
       built: request === null, job: null, completion: Promise.resolve() };
     this.merges.push(merge);
+    if (!request) this.releaseCopy(merge, geometry);
     if (request) this.start(merge, request);
   }
 
@@ -554,9 +556,21 @@ export class StaticMerges {
   private publish(merge: Merge, geometry: BufferGeometry): void {
     const refresh = merge.built;
     merge.mesh.geometry.dispose(); merge.mesh.geometry = geometry; merge.built = true;
+    this.releaseCopy(merge, geometry);
     if (refresh) refreshProgram(merge.mesh);
     else { this.readyCount++; this.saved += drawsMerged(merge) - 1; }
     this.options.changed?.();
+  }
+
+  /**
+   * Let the merged copy's CPU arrays go once uploaded (gpu/cpu-release.ts): only the GPU reads it (the members answer
+   * picking, physics and lightmaps). Exports rebuild it from the members, shadow batches read the members' positions.
+   */
+  private releaseCopy(merge: Merge, geometry: BufferGeometry): void {
+    releaseAfterUpload(geometry, {
+      restore: () => (this.merges.includes(merge) && merge.mesh.geometry === geometry ? this.build(merge.members.map((m) => m.mesh), merge.members) : null),
+      pieces: () => merge.members.map((m) => ({ geometry: m.geometry, matrix: new Matrix4().fromArray(m.rel) })),
+    });
   }
 
   /** Remove a merge; members not in `still` go back to the default layer. */

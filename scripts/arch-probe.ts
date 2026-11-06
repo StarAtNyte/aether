@@ -20,7 +20,7 @@ import { CHROME_ARGS, findChrome, HEADLESS, SKIP_FIRST_RUN, startServer } from '
 const args = process.argv.slice(2);
 const flag = (k: string): string | undefined => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3);
 const slug = args.find((a) => !a.startsWith('--'));
-if (!slug) throw new Error('usage: arch-probe.ts --out=<dir> [--visits=N] [--orbit=S] [--scale=S] [--profile] [--eval=<file>] [--init=<file>] <slug>');
+if (!slug) throw new Error('usage: arch-probe.ts --out=<dir> [--visits=N] [--orbit=S] [--scale=S] [--profile] [--eval=<file>] [--after=<file>] [--init=<file>] <slug>');
 const out = resolve(flag('out') ?? `probe-out/arch-${slug}`);
 const visits = Math.max(1, Number(flag('visits') ?? 1));
 const orbitS = Math.max(0, Number(flag('orbit') ?? 20));
@@ -320,6 +320,12 @@ try {
           return { poses: poses.slice(1), slowFrames, sunRedraws: (r.sunMapDraws ?? 0) - sun0, sunReasons: r.sunMapReasons ?? null, casterDraws: r.sunCasterDraws ?? null, batches: { ...(r.sync?.batchStats?.() ?? {}), ...(r.sync?.cellBatchStats?.() ?? {}) }, per: per.slice(1), dts: dts.slice(1), lt: (P.lt as Array<{ d: number }>).map((x) => Math.round(x.d)), glSlow: P.glSlow };
         }, [orbitS, fixedScale] as const);
         if (cdp) writeFileSync(join(out, `orbit.v${v}.cpuprofile`), JSON.stringify((await cdp.send('Profiler.stop')).profile));
+        // --after=<file>: a page expression evaluated right after the orbit (diagnostics gathered during it).
+        const afterFile = flag('after');
+        if (afterFile) {
+          rec['after'] = await page.evaluate(readFileSync(afterFile, 'utf8')).catch((e) => String(e));
+          log(`after ${JSON.stringify(rec['after']).slice(0, 3000)}`);
+        }
         const d = [...orbit.dts].sort((a, b) => a - b);
         const q = (p: number): number => Math.round((d[Math.min(d.length - 1, Math.floor(d.length * p))] ?? 0) * 10) / 10;
         // Per drawn frame (frames with no draw are skipped: the renderer idles when nothing changed).

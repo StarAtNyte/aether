@@ -574,3 +574,67 @@ Slow drags and the inspector's drags stayed within 2x the idle p95, with no task
 the inspector showed nothing until the slider was let go. Both commit one undo entry per drag. Settled shots of a fixed
 view at 06:30, 12:00, 18:30 and 22:00 on fresh loads differ from the previous build by a mean of 0.15-0.33 / 255, about
 the same as two runs of one build.
+
+## CPU copies after upload (6 November 2026)
+
+Follow-up to the section above: its merges took merged geometry from 74 to 120 MB, held on the CPU and again on the GPU,
+and Lisbon hero runs ran out of the 5 GB scope more often.
+
+- **Render-only geometry lets its CPU arrays go once uploaded** (`gpu/cpu-release.ts`, `__AETHER_RELEASE_CPU_GEOMETRY`,
+  on by default). three keeps every vertex and index array after upload, and the WebGPU renderer and its WebGL2 backend
+  never call `onUploadCallback`. A registered geometry's arrays are swapped for empty arrays of the same type once three's
+  backend holds a buffer for them (checked each frame and every 250 ms, since the load uploads most of it from the
+  preparation queue without drawing a frame). three uploads only what a pass reads (the sun's depth pass reads positions),
+  so each attribute goes when a pass that reads it has drawn, and one that no pass reads keeps its copy. Counts, item sizes
+  and array types stay, and the bounds are computed first and then fixed.
+- Registered: building and prop merges (all attributes and the index), shadow cell batches (positions; the index stays,
+  because an eviction rewrites a range of it), and view cell batches (vertices; the index is the live cut).
+- **Readers get the data from the owner.** Picking, physics, lightmaps and edits read the members, which keep their arrays
+  as before; a merge is rebuilt from its members when they change. Shadow batches read a released merge's members'
+  positions (`cpuPieces`), with the same triangles in the same order. glTF export asks for a full copy (`cpuGeometry`: a
+  merge from its members, a view batch from its sources with the cut drawn now), and leaves out geometry nobody can make
+  again rather than write it empty.
+- Not released: textures (65 MB of KTX2 levels on Lisbon Hills; a tier change can upload them again) and the generator
+  outputs behind entity geometry (the raw part streams sit next to their prepared streams: fields, occluders, softening and
+  triangle counts still read them). Both are candidates for later.
+- `scripts/arch-probe.ts --after=<file>` evaluates a page expression right after the orbit (memory census, what the orbit
+  prepared and linked).
+
+Measured with `scripts/arch-probe.ts` (Lisbon Hills, `GEN_GPU=intel`, low tier, resolution held at 0.5, 20 s orbit, 5 GB
+scope), base `35dd310a` and this change on `2cdc54b4` interleaved, two visits each (before `f9640e86`, which now links
+every program behind the load screen); the office PC ran other jobs (load average 15-95), so
+frame times are noisy. CPU bytes are summed over the scene's geometry arrays (`census`), before the orbit and after it.
+
+| Lisbon Hills | Base `35dd310a` | `2cdc54b4` | This build |
+|---|---|---|---|
+| Merged geometry, CPU (GPU) | 74 MB (74) | 120 MB (120) | 20 MB at load, 5.5 MB after the orbit (120) |
+| Shadow cell batches, CPU | 58-68 MB | 59 MB | 23 MB |
+| View cell batches, CPU | 142 MB | 142 MB | 76 MB, 70 MB after the orbit |
+| CPU arrays released | 0 | 0 | 210 MB at load, 233 MB after the orbit |
+| JS heap after the orbit | 1,444-1,694 MB | (1,445 before it) | 1,273-1,517 MB |
+| JS heap peak during the load | 1,488-1,695 MB (median 1,610) | 1,610-1,684 MB | 1,591-1,680 MB (median 1,640) |
+| View draws, opening view | 704 | 412 | 412 |
+| Cold orbit p99 | 83-117 ms (seven runs), 167 once | 117-167 ms | 133-183 ms (four runs), 367 at load 94 |
+| Second-visit orbit p99 | 83-233 ms | 100-133 ms | 117-167 ms |
+
+The merged copy is gone from the CPU (5.5 MB left: merges never drawn yet, and attributes no pass reads), and the steady
+JS heap is 100-200 MB below the base. The load's peak is not lower: it comes during the load, before the preparation has
+uploaded what it holds, and is 30 MB above the base's median, inside the spread of both builds.
+
+**The cold orbit.** What the orbit prepares is the same in both builds: every scatter field's levels of detail are
+separate instanced meshes, and three builds a node graph per instanced mesh (its cache key holds the object), 20-50 ms
+each on this GPU; 116-119 of them came into view during a cold orbit in both builds (2.4 s of main thread). Building them
+all in the background after the first picture (387 meshes, 13 s) moved that work but made the orbit worse, and was not
+kept. The difference between the builds is two program links mid-orbit, 400-600 ms frames: a street lamp alone in its
+256 m region keeps its transparent glass as a plain mesh, and with the other lamps' glass instanced nothing else draws
+that program before it comes into view (the base links it at load with the other copies). The compile walk links the
+plain glass once at load, and its first draw in the orbit links two more programs for it. Instancing the lone copy
+as well removed those links but doubled the cold orbit's median frame in three of four runs, and was not kept either. Not
+fixed here.
+
+Hero shots (Lisbon Hills, eight runs of each build interleaved): mean pixel difference against the base 0.68-0.92 (0-255),
+the base against itself 0.65-0.76. One run of each build came out in a brighter variant of the light (pre-existing). Out
+of the 5 GB scope: this build 1 of 8 runs, the base 0 of 8 (before this change: `2cdc54b4` 4 of 8, the base 1 of 5).
+Through a probe: a merged bench moved 2 m was evicted, its merge was rebuilt from the members and its copy released again,
+and a ray hit the bench before and after the move. A glTF export of the whole of Lisbon Hills runs out of the 5 GB scope
+with either build; the export of released merges is covered by `test/cpu-release.test.ts`.

@@ -46,6 +46,7 @@ import {
   type Object3D,
   type Texture,
 } from 'three';
+import { cpuGeometry } from '../gpu/cpu-release';
 import { ENTITY_ID_KEY } from '../sync/entity-node';
 import { FINISH_MAPS_KEY, type AntiTileMaps } from '../materials/anti-tile';
 
@@ -345,7 +346,14 @@ export function buildExportScene(content: Object3D, camera: Camera | null, maxTr
       baked.push(geometry);
       node = new Mesh(geometry, material);
     } else {
-      node = new Mesh(o.geometry, material);
+      // Render-only geometry whose CPU arrays went after upload is made again by its owner (gpu/cpu-release.ts).
+      const data = cpuGeometry(o.geometry);
+      if (!data) {
+        skipped++;
+        return;
+      }
+      if (data.temporary) baked.push(data.geometry);
+      node = new Mesh(data.geometry, material);
     }
     o.matrixWorld.decompose(node.position, node.quaternion, node.scale);
     const id = entityOf(o) ?? 'mesh';

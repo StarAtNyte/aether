@@ -16,6 +16,7 @@ import { BufferAttribute, BufferGeometry, FrontSide, Material, Matrix3, Matrix4,
 import { createCutScratch, cutIndexCount, LOD_STRIDE, selectCut, type ClusterDag, type CutScratch, type CutView } from './cluster-dag';
 import { createLocalView, localView } from './view';
 import { VIRTUAL_ERROR_PX } from './virtual-mesh';
+import { releaseAfterUpload } from '../gpu/cpu-release';
 
 /** Attributes a batch carries (those VirtualGroup draws). */
 const ATTRIBUTES = ['position', 'normal', 'color', 'uv', 'splat'] as const;
@@ -44,6 +45,32 @@ export function attributeSignature(g: BufferGeometry): string {
     out.push(name === 'position' || name === 'normal' ? name : `${name}:${a.itemSize}:${a.normalized ? 1 : 0}:${a.array.constructor.name}`);
   }
   return out.join(',');
+}
+
+/** Write the vertices of `g`, transformed by `matrix`, into `arrays` from vertex `base`; returns its vertex count. */
+function writeVertices(arrays: ReadonlyMap<string, TypedArray>, g: BufferGeometry, matrix: Matrix4, base: number): number {
+  _n.getNormalMatrix(matrix);
+  const pos = g.getAttribute('position') as BufferAttribute;
+  const n = pos.count;
+  const P = arrays.get('position')!;
+  for (let i = 0; i < n; i++) {
+    _v.fromBufferAttribute(pos, i).applyMatrix4(matrix);
+    P[(base + i) * 3] = _v.x; P[(base + i) * 3 + 1] = _v.y; P[(base + i) * 3 + 2] = _v.z;
+  }
+  const nor = g.getAttribute('normal') as BufferAttribute | undefined;
+  const N = arrays.get('normal');
+  if (nor && N) {
+    for (let i = 0; i < n; i++) {
+      _v.fromBufferAttribute(nor, i).applyMatrix3(_n).normalize();
+      N[(base + i) * 3] = _v.x; N[(base + i) * 3 + 1] = _v.y; N[(base + i) * 3 + 2] = _v.z;
+    }
+  }
+  for (const name of ['color', 'uv', 'splat'] as const) {
+    const a = g.getAttribute(name) as BufferAttribute | undefined;
+    const out = arrays.get(name);
+    if (a && out) out.set(a.array.subarray(0, n * a.itemSize) as never, base * a.itemSize);
+  }
+  return n;
 }
 
 interface Slot {
@@ -105,28 +132,7 @@ export class VirtualCellBatch {
     for (const m of members) {
       const g = m.source.geometry;
       const world = m.mesh.matrixWorld.clone();
-      _m.multiplyMatrices(toBatch, world);
-      _n.getNormalMatrix(_m);
-      const pos = g.getAttribute('position') as BufferAttribute;
-      const n = pos.count;
-      const P = arrays.get('position')!;
-      for (let i = 0; i < n; i++) {
-        _v.fromBufferAttribute(pos, i).applyMatrix4(_m);
-        P[(base + i) * 3] = _v.x; P[(base + i) * 3 + 1] = _v.y; P[(base + i) * 3 + 2] = _v.z;
-      }
-      const nor = g.getAttribute('normal') as BufferAttribute | undefined;
-      const N = arrays.get('normal');
-      if (nor && N) {
-        for (let i = 0; i < n; i++) {
-          _v.fromBufferAttribute(nor, i).applyMatrix3(_n).normalize();
-          N[(base + i) * 3] = _v.x; N[(base + i) * 3 + 1] = _v.y; N[(base + i) * 3 + 2] = _v.z;
-        }
-      }
-      for (const name of ['color', 'uv', 'splat'] as const) {
-        const a = g.getAttribute(name) as BufferAttribute | undefined;
-        const out = arrays.get(name);
-        if (a && out) out.set(a.array.subarray(0, n * a.itemSize) as never, base * a.itemSize);
-      }
+      const n = writeVertices(arrays, g, _m.multiplyMatrices(toBatch, world), base);
       this.slots.push({ m, geometry: g, material: m.source.material as Material, world, base, scratch: createCutScratch(m.dag), selected: new Uint32Array(Math.max(1, m.dag.count)),
         count: 0, indexCount: 0, hash: -1, last: new Float64Array(4).fill(Number.NaN), start: 0, length: 0, evicted: false });
       base += n;
@@ -137,6 +143,10 @@ export class VirtualCellBatch {
     geometry.setDrawRange(0, 0);
     geometry.computeBoundingSphere();
     geometry.computeBoundingBox();
+    // The vertices never change once uploaded (a cut rewrites the index only): their CPU copy goes (gpu/cpu-release.ts).
+    // An export asks for them again: rebuilt from the members' sources, with the cut drawn now.
+    const from = toBatch.clone();
+    releaseAfterUpload(geometry, { restore: () => this.restore(from) }, ATTRIBUTES);
     const src = members[0]!.source;
     const mesh = new Mesh(geometry, src.material as Material);
     mesh.name = `aether:cell-virtual#${key}`;
@@ -148,6 +158,26 @@ export class VirtualCellBatch {
     mesh.raycast = noRaycast;
     mesh.userData['aetherBatch'] = this;
     this.mesh = mesh;
+  }
+
+  /** A new geometry with this batch's vertices and its current index (its own vertex arrays were released). */
+  private restore(toBatch: Matrix4): BufferGeometry {
+    const now = this.mesh.geometry;
+    const geometry = new BufferGeometry();
+    const arrays = new Map<string, TypedArray>();
+    for (const name of ATTRIBUTES) {
+      const a = now.getAttribute(name);
+      if (!(a instanceof BufferAttribute)) continue;
+      const array = new (a.array.constructor as new (n: number) => TypedArray)(a.count * a.itemSize);
+      arrays.set(name, array);
+      geometry.setAttribute(name, new BufferAttribute(array, a.itemSize, a.normalized));
+    }
+    for (const slot of this.slots) writeVertices(arrays, slot.geometry, _m.multiplyMatrices(toBatch, slot.world), slot.base);
+    geometry.setIndex(new BufferAttribute((this.index.array as Uint32Array).slice(), 1));
+    geometry.setDrawRange(now.drawRange.start, now.drawRange.count);
+    geometry.boundingBox = now.boundingBox?.clone() ?? null;
+    geometry.boundingSphere = now.boundingSphere?.clone() ?? null;
+    return geometry;
   }
 
   get size(): number {

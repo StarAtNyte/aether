@@ -126,6 +126,7 @@ import { PathOverlay } from './view/path-overlay';
 import { captureUntilComplete, type CapturePass } from './view/capture-rounds';
 import { FrameBudget } from './streaming/frame-budget';
 import { slicedUploads, type SlicedUploadStats } from './streaming/sliced-upload';
+import { sweepUploads } from './gpu/cpu-release';
 import { UploadStreamer } from './streaming/upload-streamer';
 import { postQualityOf, qualityPlan, Refinement, studioAvailable, stillPlan, type QualityPlan, type RenderQuality, type StillPlan } from './gpu/render-quality';
 import { ComputeClient, GeneratorCache, generationLanes, proceduralOutputKey } from '@aether/procgen';
@@ -677,6 +678,8 @@ const SHADER_WARMUP_MS = 15_000;
 export const LIVE_ENVIRONMENT_SETTLE_MS = 250;
 /** The view must have been still this long before idle program priming links anything (ms). */
 const IDLE_PRIME_MS = 2_000;
+/** Period of the CPU-copy sweep between frames (ms, see gpu/cpu-release.ts). */
+const CPU_RELEASE_MS = 250;
 /**
  * The warm-up compiles every object, not one per (material, layout, kind): objects that share that key still differ in
  * what makes a program (lights, receiving, light-map channels), and each one met later linked a program on the way, a
@@ -1121,6 +1124,9 @@ export class WorldRenderer {
     const uploads = (globalThis as { __AETHER_SLICED_UPLOAD?: boolean }).__AETHER_SLICED_UPLOAD === true ? slicedUploads(renderer.backend) : null;
     this.slicedUploads = uploads;
     this.uploadStreamer = uploads && (globalThis as { __AETHER_UPLOAD_AHEAD?: boolean }).__AETHER_UPLOAD_AHEAD !== false ? new UploadStreamer(this.scene as never, { step: (g) => uploads.step(g), budget: this.frameBudget, blocked: () => this.programs.pending > 0 }) : null;
+    // Render-only geometry gives its CPU arrays back once uploaded (gpu/cpu-release.ts). On a timer as well as each frame: during
+    // the load the preparation queue uploads most of it without a frame being drawn.
+    this.cpuReleaseTimer = setInterval(() => { if (!this.disposed && !this.lost) sweepUploads(renderer.backend); }, CPU_RELEASE_MS);
     this.preparation = deferRenderPreparation(renderer, {
       ready: () => this.requestPreparedFrame(),
       error: e => log.warn(`render preparation failed: ${errorMessage(e)}`),
@@ -4207,6 +4213,8 @@ export class WorldRenderer {
     this.matricesFresh = false;
     // Objects prepared since the last frame start linking now, whether or not this frame draws.
     this.preparation.link();
+    // Render-only geometry uploaded by the last frame gives its CPU arrays back (gpu/cpu-release.ts).
+    sweepUploads(this.renderer.backend);
     if (this.watchdogOn) this.watch(false);
     this.cullFarAnimals();
     this.cullFarInteriors();
@@ -5986,6 +5994,7 @@ export class WorldRenderer {
   private readonly frameBudget = new FrameBudget();
   /** Large geometry uploads in slices (WebGL2, opt-in with `__AETHER_SLICED_UPLOAD = true`; null otherwise). */
   private readonly slicedUploads: { readonly stats: SlicedUploadStats } | null;
+  private readonly cpuReleaseTimer: ReturnType<typeof setInterval>;
   /** Uploads new geometry's large buffers ahead of their first use (see streaming/upload-streamer.ts). */
   private readonly uploadStreamer: UploadStreamer | null;
   /** The world counted as heavy when the quality plan was last made (discrete GPUs, see applyQuality). */
@@ -7065,6 +7074,7 @@ export class WorldRenderer {
   dispose(): void {
     if (this.disposed) return;
     this.endLiveEnvironment();
+    clearInterval(this.cpuReleaseTimer);
     this.compileTextures.dispose();
     this.presentation.dispose();
     this.preparation.dispose();

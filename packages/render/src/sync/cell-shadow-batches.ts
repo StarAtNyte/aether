@@ -24,6 +24,7 @@ import { BufferAttribute, BufferGeometry, FrontSide, Matrix4, Mesh, MeshBasicMat
 import { createCutScratch, selectCut, type ClusterDag, type CutView } from '../virtual/cluster-dag';
 import { ancestorCell, assignCell, partitionFor, PERSISTENT_CELL, type CellPartition } from '../streaming/cell-grid';
 import { BATCHED_LAYER } from './static-batches';
+import { cpuPieces, releaseAfterUpload, released } from '../gpu/cpu-release';
 
 /** The cast flag, material and layer test that apply to a candidate: a virtual stand-in answers with its source. */
 function casterOf(mesh: Mesh, virtual: { source: Mesh } | null | undefined): { casts: boolean; material: Material } {
@@ -165,27 +166,41 @@ export function buildShadowGeometry(
   toBatch: Matrix4,
   errorMetres = SHADOW_ERROR_METRES,
 ): ShadowGeometry {
-  const parts: Array<{ positions: BufferAttribute | InterleavedBufferAttribute; indices: ArrayLike<number> | null; first: number; count: number; matrix: Matrix4 }> = [];
+  // A member may contribute several parts (the pieces of a merge whose own arrays were released); its triangles stay one range.
+  const parts: Array<{ member: number; cut: boolean; positions: BufferAttribute | InterleavedBufferAttribute; indices: ArrayLike<number> | null; first: number; count: number; matrix: Matrix4 }> = [];
   let vertices = 0;
   let indexCount = 0;
-  for (const m of members) {
+  for (let k = 0; k < members.length; k++) {
+    const m = members[k]!;
     const matrix = new Matrix4().multiplyMatrices(toBatch, m.world);
     if (m.virtual) {
       const pos = m.virtual.source.geometry.getAttribute('position') as BufferAttribute;
       const idx = virtualIndices(m.virtual.dag, maxScale(m.world), errorMetres);
-      parts.push({ positions: pos, indices: idx, first: 0, count: idx.length, matrix });
+      parts.push({ member: k, cut: true, positions: pos, indices: idx, first: 0, count: idx.length, matrix });
       indexCount += idx.length;
       vertices += Math.min(pos.count, idx.length);
       continue;
     }
     const g = m.mesh.geometry;
+    const pieces = cpuPieces(g);
+    if (pieces) {
+      for (const piece of pieces) {
+        const pos = piece.geometry.getAttribute('position') as BufferAttribute | InterleavedBufferAttribute;
+        const idx = piece.geometry.index;
+        const n = idx ? idx.count - (idx.count % 3) : pos.count - (pos.count % 3);
+        parts.push({ member: k, cut: false, positions: pos, indices: idx ? (idx.array as ArrayLike<number>) : null, first: 0, count: n, matrix: new Matrix4().multiplyMatrices(matrix, piece.matrix) });
+        indexCount += n;
+        vertices += idx ? pos.count : n;
+      }
+      continue;
+    }
     const pos = g.getAttribute('position') as BufferAttribute | InterleavedBufferAttribute;
     const idx = g.index;
     const total = idx ? idx.count : pos.count;
     const first = Math.max(0, Math.min(total, g.drawRange.start));
     const count = Math.max(0, Math.min(total - first, Number.isFinite(g.drawRange.count) ? g.drawRange.count : total));
     const n = count - (count % 3);
-    parts.push({ positions: pos, indices: idx ? (idx.array as ArrayLike<number>) : null, first, count: n, matrix });
+    parts.push({ member: k, cut: false, positions: pos, indices: idx ? (idx.array as ArrayLike<number>) : null, first, count: n, matrix });
     indexCount += n;
     vertices += idx ? pos.count : n;
   }
@@ -194,9 +209,11 @@ export function buildShadowGeometry(
   const starts = new Uint32Array(members.length + 1);
   let v = 0;
   let w = 0;
+  let member = 0;
   for (let p = 0; p < parts.length; p++) {
-    starts[p] = w / 3;
-    const { positions: pos, indices, first, count, matrix } = parts[p]!;
+    const { member: k, cut, positions: pos, indices, first, count, matrix } = parts[p]!;
+    // Members without parts (nothing drawn) get empty ranges.
+    while (member <= k) starts[member++] = w / 3;
     if (!indices) {
       // Non-indexed: copy the drawn vertices in order.
       for (let i = 0; i < count; i++) {
@@ -207,8 +224,7 @@ export function buildShadowGeometry(
       v += count;
       continue;
     }
-    const virtual = (members[p] as { virtual?: unknown }).virtual;
-    if (!virtual) {
+    if (!cut) {
       // Indexed: every vertex (the drawn range normally uses all of them), indices offset.
       for (let i = 0; i < pos.count; i++) {
         readPosition(pos, i, _v).applyMatrix4(matrix);
@@ -232,7 +248,7 @@ export function buildShadowGeometry(
       index[w++] = dst;
     }
   }
-  starts[parts.length] = w / 3;
+  while (member <= members.length) starts[member++] = w / 3;
   return { positions: v * 3 === positions.length ? positions : positions.slice(0, v * 3), index, starts };
 }
 
@@ -345,6 +361,8 @@ export class CellShadowBatches {
       if (mv && mv.geometry === c.mesh.geometry && mv.n >= MAX_MOVES) continue;
       if (!this.attached(c.mesh)) continue;
       const g = (c.virtual?.source ?? c.mesh).geometry;
+      // Released arrays (gpu/cpu-release.ts) and no pieces to read instead: it casts by itself.
+      if (!c.virtual && released(g) && !cpuPieces(g)) continue;
       if (!g.boundingSphere) g.computeBoundingSphere();
       if (!g.boundingSphere) continue;
       _sphere.copy(g.boundingSphere).applyMatrix4(c.mesh.matrixWorld);
@@ -572,6 +590,8 @@ export class CellShadowBatches {
     geometry.setIndex(new BufferAttribute(built.index, 1));
     geometry.computeBoundingSphere();
     geometry.computeBoundingBox();
+    // Only the GPU reads the positions once uploaded; the index stays (an eviction rewrites a range of it).
+    releaseAfterUpload(geometry, {}, ['position']);
     const mesh = new Mesh(geometry, this.materialFor(members[0]!.material));
     mesh.name = `aether:cell-shadow#${key}`;
     mesh.castShadow = true;
