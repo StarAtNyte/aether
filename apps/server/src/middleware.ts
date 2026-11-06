@@ -190,11 +190,12 @@ export const DAG_WORKER_CSP = "default-src 'none'; script-src 'self'";
 export const DAG_WORKER_PATH = /^\/assets\/dag\.worker-[A-Za-z0-9_-]{4,32}\.js$/;
 
 /**
- * Hosts the player reads templates' cooked packages from (`/play#t=<slug>`): the dataset's `resolve` URLs on
- * huggingface.co (a manifest answers with a same-host redirect) and the CDN its packs redirect to. GET only, no
- * credentials; a failure loads the world live.
+ * Hosts the player reads cooked packages from (templates, `/play#t=<slug>`, and worlds published from the editor,
+ * `#w=…&c=…`): the dataset's `resolve` URLs on huggingface.co (a manifest answers with a same-host redirect) and the CDNs
+ * its files redirect to: `us.aws.cdn.hf.co` for files the `hf` CLI stored (Xet), `cdn-lfs*.hf.co` for files stored
+ * through the LFS batch API (api/cook-upload.ts). GET only, no credentials; a failure loads the world live.
  */
-export const COOKED_HOSTS: readonly string[] = Object.freeze(['https://huggingface.co', ...HF_CDN_HOSTS]);
+export const COOKED_HOSTS: readonly string[] = Object.freeze(['https://huggingface.co', ...HF_CDN_HOSTS, 'https://cdn-lfs.hf.co', 'https://cdn-lfs-us-1.hf.co']);
 
 /**
  * Content-Security-Policy of the standalone player (`/play`): the same strict
@@ -205,7 +206,7 @@ export const COOKED_HOSTS: readonly string[] = Object.freeze(['https://huggingfa
  * build (publish/gameBuild.ts) keeps its own policy with no third-party host.
  */
 export const PLAY_CSP =
-  "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob: data: https://huggingface.co https://us.aws.cdn.hf.co; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors *";
+  "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob: data: https://huggingface.co https://us.aws.cdn.hf.co https://cdn-lfs.hf.co https://cdn-lfs-us-1.hf.co; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors *";
 /**
  * Content-Security-Policy of a published build (the local library's `/published/<id>/…`, a build served on the LAN): the
  * player's policy with no third-party host at all, as a downloaded build's own (publish/gameBuild.ts). A build ships its

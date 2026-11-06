@@ -172,7 +172,7 @@ describe('player page policy (/play, published builds)', () => {
     expect(p.get('script-src')).toEqual(["'self'", "'wasm-unsafe-eval'"].sort());
     expect(p.get('connect-src')).toEqual(["'self'", 'blob:', 'data:', ...COOKED_HOSTS].sort());
     // The dataset's resolve URLs, and the CDN host its packs redirect to (checked against the live dataset).
-    expect([...COOKED_HOSTS].sort()).toEqual(['https://huggingface.co', 'https://us.aws.cdn.hf.co']);
+    expect([...COOKED_HOSTS].sort()).toEqual(['https://cdn-lfs-us-1.hf.co', 'https://cdn-lfs.hf.co', 'https://huggingface.co', 'https://us.aws.cdn.hf.co']);
     expect(p.get('object-src')).toEqual(["'none'"]);
     expect(p.get('frame-ancestors')).toEqual(['*']);
     for (const [name, sources] of p) {

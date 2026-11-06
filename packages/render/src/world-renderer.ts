@@ -3644,6 +3644,16 @@ export class WorldRenderer {
   }
 
   /**
+   * The programs this page used, per tier, for a cook made in the browser (the editor's publish): each tier's pairs of
+   * vertex and fragment source in first-use order, and how many of them the load used before its first picture. Empty
+   * without the program cache (WebGPU, or the cache off).
+   */
+  sessionPrograms(): Array<{ tier: RenderTier; boot: number; pairs: Array<[string, string]> }> {
+    const pc = this.programCache;
+    return pc ? pc.sessionTiers().map((tier) => ({ tier, boot: pc.sessionBoot(tier), pairs: pc.sessionPairs(tier) })) : [];
+  }
+
+  /**
    * The view the editor opens the world on: the world's own `opening` when it has one, else a computed one, a camera
    * at eye height or a little above on open ground near the content's middle, facing the landmark (see
    * `view/opening-view.ts`). Null when there is nothing to frame or nowhere to stand.

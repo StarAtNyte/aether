@@ -15,18 +15,17 @@
  * scripts/cook-upload.ts pushes it to the hosted dataset). Output goes to `cooked/` at
  * the repository root (git-ignored). Run it in a capped scope (docs/PERFORMANCE.md, Measuring).
  */
-import { createHash } from 'node:crypto';
 import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { brotliCompressSync, constants as zc, gzipSync } from 'node:zlib';
 import { chromium, type BrowserContext, type Page } from 'playwright';
-import type { Entity, ProceduralShape, WorldDoc } from '@aether/core';
-import { outputBytes, proceduralOutputKey } from '@aether/procgen';
+import type { WorldDoc } from '@aether/core';
+import { outputBytes } from '@aether/procgen';
 import { decodeEntry } from '../packages/render/src/geometry/ddc-codec';
 import { DDC_CACHE_NAME } from '../packages/render/src/geometry/ddc';
-import { assignCell, cellBounds, partitionFor, PERSISTENT_CELL, type CellPartition } from '../packages/render/src/streaming/cell-grid';
-import { COOK_FORMAT, COOK_PROFILES, cookPackageId, PACK_TARGET_BYTES, programSetLines, type CookCell, type CookedProgramSet, type CookFile, type CookManifest, type CookProfile, type StartMode } from '../packages/render/src/cook/format';
+import { COOK_FORMAT, COOK_PROFILES, cookPackageId, programSetLines, type CookManifest, type CookProfile, type StartMode } from '../packages/render/src/cook/format';
+import { cookManifest, packGeometry, profileForStartMode, programSetBody } from '../packages/render/src/cook/pack';
 import type { RenderTier } from '../packages/render/src/gpu/finishing';
 import { sourceHash } from '../packages/render/src/gpu/program-cache';
 import { TEMPLATE_PUBLISH } from '../apps/studio/src/showcase/publish';
@@ -200,32 +199,6 @@ async function session(server: env.TestServer, profileDir: string, slug: string,
   }
 }
 
-const sha256 = (s: string): string => createHash('sha256').update(s).digest('hex');
-
-/** World XZ of an entity: its position plus its parents' (rotation and scale of parents ignored: placement only). */
-function worldXZ(world: WorldDoc, id: string): [number, number] | null {
-  let x = 0, z = 0;
-  let e: Entity | undefined = world.entities[id];
-  for (let depth = 0; e && depth < 64; depth++) {
-    const p = e.transform.position;
-    x += Number(p[0]);
-    z += Number(p[2]);
-    e = e.parent ? world.entities[e.parent] : undefined;
-  }
-  return Number.isFinite(x) && Number.isFinite(z) ? [x, z] : null;
-}
-
-function partitionOf(world: WorldDoc): CellPartition | null {
-  let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
-  for (const e of Object.values(world.entities)) {
-    if (!e || e.template || e.parent) continue;
-    const x = Number(e.transform.position[0]), z = Number(e.transform.position[2]);
-    if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
-    minX = Math.min(minX, x); maxX = Math.max(maxX, x); minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
-  }
-  return maxX >= minX ? partitionFor([minX, minZ], [maxX, maxZ]) : null;
-}
-
 function dirBytes(dir: string): { files: number; bytes: number; gzip: number; brotli: number; largest: number } {
   const out = { files: 0, bytes: 0, gzip: 0, brotli: 0, largest: 0 };
   const walk = (d: string): void => {
@@ -283,36 +256,6 @@ async function cook(server: env.TestServer, slug: string): Promise<void> {
 }
 
 async function pack(slug: string, rec: Recorded, programs: NonNullable<Awaited<ReturnType<typeof session>>['programs']>, boots: ReadonlyMap<RenderTier, { pairs: Array<[string, string]>; sources: Record<string, string> }>, blobs: ReadonlyMap<string, number>, blobDir: string): Promise<void> {
-  const world = rec.world;
-
-  // Each output to the cell of the nearest entity that uses it (to the opening view); unplaced ones are persistent.
-  const grid = partitionOf(world);
-  const eye = rec.opening ? [rec.opening.position[0], rec.opening.position[2]] : [0, 0];
-  const placed = new Map<string, { cell: string; d: number; x: number; z: number }>();
-  for (const [id, e] of Object.entries(world.entities)) {
-    if (!e || e.shape.kind !== 'procedural') continue;
-    const hex = sha256(`gen\u0000${rec.genVersion}\u0000${proceduralOutputKey(e.shape as ProceduralShape, world)}`);
-    if (!blobs.has(hex)) continue;
-    const xz = e.template ? null : worldXZ(world, id);
-    const cell = xz && grid ? assignCell(grid, xz[0], xz[1], 0) : PERSISTENT_CELL;
-    const d = xz ? Math.hypot(xz[0] - (eye[0] as number), xz[1] - (eye[1] as number)) : -1;
-    const prev = placed.get(hex);
-    if (!prev || (prev.cell === PERSISTENT_CELL && cell !== PERSISTENT_CELL) || (cell !== PERSISTENT_CELL && d < prev.d)) placed.set(hex, { cell, d, x: xz?.[0] ?? 0, z: xz?.[1] ?? 0 });
-  }
-  const byCell = new Map<string, Array<{ hex: string; d: number; x: number; z: number }>>();
-  for (const hex of blobs.keys()) {
-    const p = placed.get(hex) ?? { cell: PERSISTENT_CELL, d: -1, x: 0, z: 0 };
-    let list = byCell.get(p.cell);
-    if (!list) byCell.set(p.cell, (list = []));
-    list.push({ hex, d: p.d, x: p.x, z: p.z });
-  }
-  const cellDist = (key: string): number => {
-    if (key === PERSISTENT_CELL || !grid) return -1;
-    const b = cellBounds(grid, key);
-    return Math.hypot((b[0] + b[2]) / 2 - (eye[0] as number), (b[1] + b[3]) / 2 - (eye[1] as number));
-  };
-  const cellKeys = [...byCell.keys()].sort((a, b) => cellDist(a) - cellDist(b));
-
   const id = await cookPackageId(rec.irHash, rec.genVersion);
   const root = join(OUT, slug);
   rmSync(root, { recursive: true, force: true });
@@ -320,64 +263,14 @@ async function pack(slug: string, rec: Recorded, programs: NonNullable<Awaited<R
   mkdirSync(join(dir, 'packs'), { recursive: true });
   mkdirSync(join(dir, 'programs'), { recursive: true });
 
-  const packs: CookFile[] = [];
-  const cells: CookCell[] = [];
-  const entries: CookManifest['entries'] = {};
-  let bad = 0;
-  // Identical entries (outputs of different keys with the same bytes) are stored once: later keys point at the first copy.
-  const stored = new Map<string, [number, number, number]>();
-  let shared = 0;
-  let sharedBytes = 0;
-  let decodedBytes = 0;
-  for (const key of cellKeys) {
-    const list = (byCell.get(key) ?? []).sort((a, b) => a.d - b.d);
-    const cellIndex = cells.length;
-    const cell: CookCell = { key, bounds: null, entries: 0, bytes: 0, packs: [] };
-    let chunk: Buffer[] = [];
-    let size = 0;
-    const flush = (): void => {
-      if (size === 0) return;
-      const file = `packs/${String(packs.length).padStart(4, '0')}.bin`;
-      writeFileSync(join(dir, file), Buffer.concat(chunk));
-      cell.packs.push(packs.length);
-      packs.push({ file, bytes: size });
-      chunk = [];
-      size = 0;
-    };
-    for (const it of list) {
-      const body = readFileSync(join(blobDir, it.hex));
-      try {
-        const ab = body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) as ArrayBuffer;
-        decodedBytes += outputBytes(await decodeEntry(ab));
-      } catch {
-        bad++;
-        continue;
-      }
-      const content = createHash('sha256').update(body).digest('hex');
-      const first = stored.get(content);
-      if (first) {
-        entries[it.hex] = [first[0], first[1], first[2], cellIndex];
-        shared++;
-        sharedBytes += body.length;
-        continue;
-      }
-      if (size > 0 && size + body.length > PACK_TARGET_BYTES) flush();
-      const pad = (8 - (body.length % 8)) % 8;
-      entries[it.hex] = [packs.length, size, body.length, cellIndex];
-      stored.set(content, [packs.length, size, body.length]);
-      chunk.push(body);
-      if (pad) chunk.push(Buffer.alloc(pad));
-      size += body.length + pad;
-      cell.entries++;
-      cell.bytes += body.length;
-      if (key !== PERSISTENT_CELL && it.d >= 0) {
-        const b = cell.bounds ?? [it.x, it.z, it.x, it.z];
-        cell.bounds = [Math.min(b[0], it.x), Math.min(b[1], it.z), Math.max(b[2], it.x), Math.max(b[3], it.z)];
-      }
-    }
-    flush();
-    if (cell.entries > 0) cells.push(cell);
-  }
+  // Geometry: packs per cell, nearest the opening first (cook/pack.ts, shared with the editor's publish).
+  const geometry = await packGeometry(rec, {
+    keys: blobs.keys(),
+    read: async (hex) => readFileSync(join(blobDir, hex)),
+    decode: async (body) => outputBytes(await decodeEntry(body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) as ArrayBuffer)),
+    writePack: (file, parts) => writeFileSync(join(dir, file), Buffer.concat(parts)),
+  });
+  const { cells, packs, entries } = geometry;
 
   const programFiles: CookManifest['programs'] = {};
   // What the sets would weigh as format 2 JSON (reported against the files written).
@@ -388,49 +281,21 @@ async function pack(slug: string, rec: Recorded, programs: NonNullable<Awaited<R
     if ((!set || set.entries.length === 0) && !recorded) continue;
     // The load's own programs first, in the order it used them (a viewer links them eagerly: the first session on this
     // tier's, the automatic one where it settled here), then the rest of the stored set (orbit, play), most recent first.
-    const sources: Record<string, string> = {};
-    const pairs: Array<[string, string]> = [];
-    const have = new Set<string>();
-    const push = (hv: string, hf: string, v: string | undefined, f: string | undefined): void => {
-      if (v === undefined || f === undefined || have.has(`${hv}:${hf}`)) return;
-      have.add(`${hv}:${hf}`);
-      sources[hv] = v;
-      sources[hf] = f;
-      pairs.push([hv, hf]);
-    };
-    for (const [hv, hf] of recorded?.pairs ?? []) push(hv, hf, recorded!.sources[hv], recorded!.sources[hf]);
-    const bootCount = pairs.length;
-    for (const e of [...(set?.entries ?? [])].sort((p, q) => q.last - p.last || q.uses - p.uses)) push(e.v, e.f, programs.sources[e.v], programs.sources[e.f]);
+    const rest = [...(set?.entries ?? [])].sort((p, q) => q.last - p.last || q.uses - p.uses).map((e) => [e.v, e.f] as [string, string]);
+    const body = programSetBody(tier, recorded ?? null, { pairs: rest, sources: programs.sources });
+    if (!body) continue;
     // Each distinct line of GLSL once, sources as runs of lines, gzipped (format 3; static hosts serve .bin as is).
     const file = `programs/${tier}.bin`;
-    const body: Omit<CookedProgramSet, 'format'> = { tier, boot: bootCount, pairs, sources };
     const bytes = gzipSync(JSON.stringify(programSetLines(body)), { level: 9 });
     writeFileSync(join(dir, file), bytes);
-    programFiles[tier] = { file, bytes: bytes.byteLength, programs: pairs.length };
+    programFiles[tier] = { file, bytes: bytes.byteLength, programs: body.pairs.length };
     programJson += Buffer.byteLength(JSON.stringify({ format: COOK_FORMAT, ...body }));
   }
 
-  const startMode = rec.startMode;
-  const manifest: CookManifest = {
-    format: COOK_FORMAT,
-    irHash: rec.irHash,
-    genVersion: rec.genVersion,
-    dir: `${id}/`,
-    cookedAt: new Date().toISOString(),
-    world: { id: world.id, name: world.name, entities: Object.keys(world.entities).length },
-    opening: rec.opening,
-    startMode,
-    // --profile, else the template's row in showcase/publish.ts, else from the start mode.
-    profile: PROFILE ?? TEMPLATE_PUBLISH[slug]?.profile ?? (startMode === 'play' ? 'game' : startMode === 'walkthrough' ? 'walkthrough' : 'showcase'),
-    partition: grid ? { cellSize: grid.cellSize, origin: [grid.origin[0], grid.origin[1]] } : null,
-    cells,
-    packs,
-    entries,
-    programs: programFiles,
-    lightmap: null,
-  };
+  // --profile, else the template's row in showcase/publish.ts, else from the start mode.
+  const manifest = await cookManifest(rec, PROFILE ?? TEMPLATE_PUBLISH[slug]?.profile ?? profileForStartMode(rec.startMode), geometry, programFiles);
   writeFileSync(join(root, 'manifest.json'), JSON.stringify(manifest));
-  const geometry = packs.reduce((s, p) => s + p.bytes, 0);
+  const geometryBytes = packs.reduce((s, p) => s + p.bytes, 0);
   const sizes = dirBytes(root);
   const summary = {
     slug,
@@ -438,15 +303,15 @@ async function pack(slug: string, rec: Recorded, programs: NonNullable<Awaited<R
     irHash: rec.irHash,
     genVersion: rec.genVersion,
     entries: Object.keys(entries).length,
-    unplaced: byCell.get(PERSISTENT_CELL)?.length ?? 0,
-    malformed: bad,
+    unplaced: geometry.stats.unplaced,
+    malformed: geometry.stats.malformed,
     cells: cells.length,
     packs: packs.length,
-    geometryBytes: geometry,
+    geometryBytes,
     /** The arrays the entries decode to (what format 1 stored, give or take headers and padding). */
-    geometryDecodedBytes: decodedBytes,
-    sharedEntries: shared,
-    sharedEntryBytes: sharedBytes,
+    geometryDecodedBytes: geometry.stats.decodedBytes,
+    sharedEntries: geometry.stats.shared,
+    sharedEntryBytes: geometry.stats.sharedBytes,
     programs: Object.fromEntries(Object.entries(programFiles).map(([t, f]) => [t, { programs: f!.programs, bytes: f!.bytes }])),
     /** The program sets as plain JSON (format 2), against the files written. */
     programJsonBytes: programJson,
@@ -454,7 +319,7 @@ async function pack(slug: string, rec: Recorded, programs: NonNullable<Awaited<R
     total: sizes,
   };
   writeFileSync(join(root, 'cook-report.json'), JSON.stringify(summary, null, 1));
-  log(`${slug}: ${summary.entries} entries (${summary.unplaced} unplaced) in ${cells.length} cells, ${packs.length} packs, geometry ${MB(geometry)} (decoded ${MB(decodedBytes)}, ${shared} identical entries stored once, ${MB(sharedBytes)}); ` + `programs ${Object.entries(programFiles).map(([t, f]) => `${t} ${f!.programs}`).join(', ')} (${MB(Object.values(programFiles).reduce((n, f) => n + f!.bytes, 0))}, as JSON ${MB(programJson)}); ` + `total ${sizes.files} files ${MB(sizes.bytes)} (gzip ${MB(sizes.gzip)}, brotli ${MB(sizes.brotli)}), largest file ${MB(sizes.largest)}`);
+  log(`${slug}: ${summary.entries} entries (${summary.unplaced} unplaced) in ${cells.length} cells, ${packs.length} packs, geometry ${MB(geometryBytes)} (decoded ${MB(geometry.stats.decodedBytes)}, ${geometry.stats.shared} identical entries stored once, ${MB(geometry.stats.sharedBytes)}); ` + `programs ${Object.entries(programFiles).map(([t, f]) => `${t} ${f!.programs}`).join(', ')} (${MB(Object.values(programFiles).reduce((n, f) => n + f!.bytes, 0))}, as JSON ${MB(programJson)}); ` + `total ${sizes.files} files ${MB(sizes.bytes)} (gzip ${MB(sizes.gzip)}, brotli ${MB(sizes.brotli)}), largest file ${MB(sizes.largest)}`);
   if (INSTALL) {
     const dest = join(resolve(INSTALL), 'cooked', slug);
     rmSync(dest, { recursive: true, force: true });

@@ -540,6 +540,39 @@ const PlayerAddress = memo(function PlayerAddress(): ReactElement | null {
   );
 });
 
+/** Publish a cooked copy, so the share link opens without generating. */
+const CookedSection = memo(function CookedSection(): ReactElement {
+  const studio = useStudio();
+  const cooked = useStore(studio.publish.state, (s) => s.cooked);
+  const working = cooked.status === 'working';
+  return (
+    <Section title="Fast-loading link" hint="Stores the geometry and shaders this editor already made on a public dataset (Hugging Face), under an anonymous id kept in this browser, so the link opens without generating the world again. Anyone with the link can download them. Without it, or if it goes stale, the link loads the world live.">
+      <div className="pub-link">
+        {working ? (
+          <button type="button" className="btn btn--sm" onClick={() => studio.publish.cancelCooked()} data-testid="publish-cooked-cancel">
+            Cancel
+          </button>
+        ) : (
+          <button type="button" className="btn btn--primary btn--sm" onClick={() => void studio.publish.publishCooked()} data-testid="publish-cooked">
+            <Icon name="globe" /> {cooked.status === 'done' ? 'Publish again' : 'Publish cooked copy'}
+          </button>
+        )}
+      </div>
+      {working && (
+        <div className="pub-meter" aria-label="Publish progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(cooked.progress * 100)}>
+          <div className="pub-meter__fill" style={{ width: `${Math.max(1, cooked.progress * 100)}%` }} />
+        </div>
+      )}
+      {cooked.label && (
+        <p className="pub-muted" data-testid="publish-cooked-status">
+          {cooked.label}
+          {cooked.status === 'done' ? ' The link above now opens the cooked copy.' : ''}
+        </p>
+      )}
+    </Section>
+  );
+});
+
 /** Share link with QR code and embed snippet. */
 export const ShareTarget = memo(function ShareTarget(): ReactElement {
   const studio = useStudio();
@@ -588,6 +621,7 @@ export const ShareTarget = memo(function ShareTarget(): ReactElement {
           </div>
         )}
       </Section>
+      <CookedSection />
       <Section title="Remix link" hint="Opens this world read-only in the studio; visitors can play it or press Remix to get their own editable copy. Like the player link, the world travels in the link.">
         <button type="button" className="btn btn--sm" onClick={() => void studio.share()} data-testid="publish-share-remix">
           <Icon name="copy" /> Copy remix link

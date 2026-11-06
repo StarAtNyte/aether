@@ -118,6 +118,8 @@ export interface PublishState {
   model: { binary: boolean };
   plan: { building: string | null; level: number; format: 'svg' | 'pdf'; scale: 50 | 100 };
   share: { value: string | null; chars: number; fits: boolean; qr: string | null; qrSize: number; note: string | null };
+  /** A cooked copy of the world on the public dataset (publish/cook-publish.ts): the share link names it while the world is unchanged. */
+  cooked: { status: 'idle' | 'working' | 'done' | 'failed'; progress: number; label: string | null; ref: string | null; startMode: 'play' | 'walkthrough' | 'orbit' };
   /** Where share links point: `<origin><path>/play` of a hosted copy of the studio (or this one). */
   playerBase: string;
   /** This page runs on this computer or the local network: its links do not work elsewhere. */
@@ -196,6 +198,7 @@ function initialState(world: WorldDoc): PublishState {
     model: { binary: true },
     plan: { building: null, level: 0, format: 'svg', scale: 50 },
     share: { value: null, chars: 0, fits: true, qr: null, qrSize: 0, note: null },
+    cooked: { status: 'idle', progress: 0, label: null, ref: null, startMode: 'play' },
     playerBase: initialPlayerBase(),
     playerLocal: isLocalUrl(initialPlayerBase()),
     game: { includeSave: false },
@@ -243,6 +246,7 @@ function isAbort(e: unknown): boolean {
 export class PublishController {
   readonly state: StoreApi<PublishState>;
   private abort: AbortController | null = null;
+  private cookAbort: AbortController | null = null;
   private objectUrl: string | null = null;
   private raf = 0;
   private previewStart = 0;
@@ -273,6 +277,10 @@ export class PublishController {
         // A share link describes one version of the world: an edit makes it stale.
         const st = this.state.getState();
         if (st.share.value) this.state.setState({ share: { ...st.share, value: null, qr: null, note: null } });
+        if (st.cooked.status !== 'idle') {
+          this.cookAbort?.abort();
+          this.state.setState({ cooked: { ...st.cooked, status: 'idle', progress: 0, label: null, ref: null } });
+        }
       }),
       host.onSimulation((sim) => {
         if (sim) this.drawPath();
@@ -1006,7 +1014,7 @@ export class PublishController {
       const proof = await this.sealCurrent();
       if (this.host.history.current !== world) return;
       const enc = await encodeShare(world, meta, proof);
-      const url = shareUrl(this.playerBase(), enc.value);
+      const url = shareUrl(this.playerBase(), enc.value) + this.cookedSuffix();
       let qr: string | null = null;
       let qrSize = 0;
       if (enc.fits && url.length <= 2900) {
@@ -1033,7 +1041,55 @@ export class PublishController {
   /** The share URL (null until made / too large). */
   shareLink(): string | null {
     const v = this.state.getState().share.value;
-    return v ? `${this.playerBase()}#${SHARE_KEY}=${v}` : null;
+    return v ? `${this.playerBase()}#${SHARE_KEY}=${v}${this.cookedSuffix()}` : null;
+  }
+
+  /** `&c=<anon>.<world>&m=<start mode>` when a cooked copy of this version of the world is published. */
+  private cookedSuffix(): string {
+    const c = this.state.getState().cooked;
+    return c.status === 'done' && c.ref ? `&c=${c.ref}&m=${c.startMode}` : '';
+  }
+
+  /**
+   * Cook the world in this browser and publish it to the public dataset (publish/cook-publish.ts, loaded on first use);
+   * the share link then opens it cooked. Progress and the outcome go to `state.cooked`; {@link cancelCooked} stops it.
+   */
+  async publishCooked(): Promise<void> {
+    const sim = this.sim;
+    if (!sim || this.state.getState().cooked.status === 'working') return;
+    const world = this.host.history.current;
+    const startMode = world.startMode ?? 'play';
+    const ctrl = new AbortController();
+    this.cookAbort = ctrl;
+    const progress = (p: number, label: string): void => {
+      if (!ctrl.signal.aborted) this.set({ cooked: { status: 'working', progress: p, label, ref: null, startMode } });
+    };
+    progress(0, 'Starting');
+    try {
+      if (!this.state.getState().share.value) await this.makeShareLink();
+      const value = this.state.getState().share.value;
+      if (!value) throw new Error('the world does not fit a link');
+      const [{ cookAndPublish }, { decodeShare }] = await Promise.all([import('../publish/cook-publish'), import('../publish/share')]);
+      // The world exactly as the player reads it from the link: its IR hash is what the cooked load checks.
+      const decoded = await decodeShare(value);
+      if (!decoded.ok) throw new Error(decoded.error);
+      const r = await cookAndPublish({ world: decoded.payload.world, renderer: sim.renderer, startMode, signal: ctrl.signal, onProgress: progress });
+      if (ctrl.signal.aborted || this.host.history.current !== world) return;
+      this.set({ cooked: { status: 'done', progress: 1, label: `Published: ${r.entries} geometry entries, ${r.programs} shaders, ${sizeLabel(r.bytes)}`, ref: r.ref, startMode } });
+      void this.makeShareLink();
+    } catch (e) {
+      if (ctrl.signal.aborted) return;
+      this.set({ cooked: { status: 'failed', progress: 0, label: `Not published: ${errorMessage(e)}`, ref: null, startMode } });
+    } finally {
+      if (this.cookAbort === ctrl) this.cookAbort = null;
+    }
+  }
+
+  /** Stop a cooked publish (files already sent stay unreferenced: the manifest goes last). */
+  cancelCooked(): void {
+    this.cookAbort?.abort();
+    this.cookAbort = null;
+    this.set({ cooked: { ...this.state.getState().cooked, status: 'idle', progress: 0, label: 'Cancelled.', ref: null } });
   }
 
   /** `<iframe>` snippet that embeds the player. */

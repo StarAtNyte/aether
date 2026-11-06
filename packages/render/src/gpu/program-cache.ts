@@ -183,6 +183,8 @@ export class ProgramCache {
   private stopped = false;
   private disposed = false;
   private firstPicture = false;
+  /** How many of each tier's {@link sessionPairs} were used before the first picture ({@link sessionBoot}). */
+  private readonly bootSeen = new Map<RenderTier, number>();
   private timer: ReturnType<typeof setTimeout> | undefined;
   private trimTimer: ReturnType<typeof setTimeout> | undefined;
   private saveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -316,6 +318,7 @@ export class ProgramCache {
   markFirstPicture(): void {
     if (this.firstPicture) return;
     this.firstPicture = true;
+    for (const [tier, all] of this.seen) this.bootSeen.set(tier, all.size);
     this.stopped = true;
     for (const q of this.queue) q.eager = false;
     this.trimTimer = setTimeout(() => this.trim(), POOL_TRIM_MS);
@@ -428,6 +431,17 @@ export class ProgramCache {
    */
   sessionPairs(tier: RenderTier): Array<[string, string]> {
     return [...(this.seen.get(tier)?.values() ?? [])];
+  }
+
+  /** How many of {@link sessionPairs} of `tier` the load used before its first picture (all of them before it). */
+  sessionBoot(tier: RenderTier): number {
+    const n = this.seen.get(tier)?.size ?? 0;
+    return this.firstPicture ? Math.min(n, this.bootSeen.get(tier) ?? 0) : n;
+  }
+
+  /** The tiers this page used programs on. */
+  sessionTiers(): RenderTier[] {
+    return [...this.seen.keys()];
   }
 
   /** Save what this session used (also called on dispose). */

@@ -64,6 +64,24 @@ export function templateCookUrl(slug: string, base: string = cookedBase()): stri
   return `${normalizeCookedBase(base) ?? LOCAL_COOKED_BASE}${slug}/manifest.json`;
 }
 
+/**
+ * The cooked copy a share link names (`#w=…&c=<anon>.<world>[&m=<start mode>]`, published from the editor: api/cook-upload.ts),
+ * or null. Its manifest is `users/<anon>/<world>/manifest.json` under the cooked base; the cooked load checks it against
+ * the link's world as for a template.
+ */
+export function sharedCookRoute(hash: string): { anon: string; world: string; startMode: 'play' | 'walkthrough' | 'orbit' | null } | null {
+  const q = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash);
+  const m = /^([0-9a-f]{16})\.([0-9a-f]{16})$/.exec(q.get('c') ?? '');
+  if (!m) return null;
+  const s = q.get('m');
+  return { anon: m[1]!, world: m[2]!, startMode: s === 'play' || s === 'walkthrough' || s === 'orbit' ? s : null };
+}
+
+/** The manifest of a world published from the editor under `base` (this build's by default). */
+export function sharedCookUrl(anon: string, world: string, base: string = cookedBase()): string {
+  return `${normalizeCookedBase(base) ?? LOCAL_COOKED_BASE}users/${anon}/${world}/manifest.json`;
+}
+
 /** Start mode of a template kind (a slug without a row in showcase/publish.ts; the IR's own `startMode` wins). */
 export function startModeForKind(kind: string | undefined): 'play' | 'walkthrough' | 'orbit' {
   return kind === 'game' ? 'play' : kind === 'architecture' ? 'walkthrough' : 'orbit';
@@ -79,6 +97,8 @@ export async function loadGame(hash: string, fetchFn: typeof fetch = fetch, path
     const r = await decodeShare(value);
     if (!r.ok) return { kind: 'error', message: r.error };
     const { world, meta, proof } = r.payload;
+    const cooked = sharedCookRoute(hash);
+    const startMode = world.startMode ?? cooked?.startMode ?? null;
     return {
       kind: 'game',
       from: 'link',
@@ -90,6 +110,8 @@ export async function loadGame(hash: string, fetchFn: typeof fetch = fetch, path
         music: meta.music ?? null,
         ...(proof !== undefined ? { proof } : {}),
         world,
+        ...(startMode ? { startMode } : {}),
+        ...(cooked ? { cook: sharedCookUrl(cooked.anon, cooked.world) } : {}),
       },
     };
   }

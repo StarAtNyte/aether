@@ -17,7 +17,9 @@ import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { parseCookManifest, type CookManifest } from '../../packages/render/src/cook/format';
+import { cookFiles, parseCookManifest, type CookManifest } from '../../packages/render/src/cook/format';
+
+export { cookFiles };
 
 /** The dataset of cooked packages. */
 export const COOKED_REPO = 'StarAtNyte1/aether-cooked';
@@ -46,11 +48,6 @@ export interface UploadResult {
   files: boolean;
   /** The manifest was uploaded (false: the dataset's already named this id). */
   manifest: boolean;
-}
-
-/** The files of a cook, relative to its `<id>/` folder: every pack and program set the manifest names. */
-export function cookFiles(m: CookManifest): string[] {
-  return [...m.packs.map((p) => p.file), ...Object.values(m.programs).map((p) => p!.file)];
 }
 
 /** Read and check the local package of `slug` under `root` (the cook's `--out`, `cooked/` by default). */
