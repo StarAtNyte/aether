@@ -26,6 +26,7 @@ import {
   type BridgeErrorCode,
 } from '@aether/agent';
 import { BridgeError, DEFAULT_ACCOUNT_ID, type LocalAi } from '@aether/bridge';
+import { BlenderPlanRequestSchema, BlenderRunRequestSchema, BlenderSettingsRequestSchema } from '@aether/agent/blender';
 import type { AppEnv } from '../app-env';
 import { readJsonBody } from '../http';
 import { ADMIN_HEADER, hasSession, secretEquals } from '../local-guard';
@@ -165,6 +166,58 @@ export function registerLocalRoutes(app: Hono<AppEnv>, deps: LocalRouteDeps): vo
     try {
       const out = await local.image({ prompt: parsed.data.prompt, ...(parsed.data.size ? { size: parsed.data.size } : {}), ...(parsed.data.reference ? { reference: parsed.data.reference } : {}) }, ctrl.signal);
       return c.json({ image: `data:${out.mime};base64,${Buffer.from(out.bytes).toString('base64')}`, model: out.model });
+    } catch (e) {
+      return toError(c, e, logger);
+    } finally {
+      c.req.raw.signal.removeEventListener('abort', onAbort);
+      deps.shutdownSignal?.removeEventListener('abort', onAbort);
+    }
+  });
+
+  // Blender on this computer (MCP server, off by default). Loopback + session secret like every /api/local route; never
+  // offered on the paired bridge of hosted studios. Python actions run only with `confirm: true` (the studio's dialog).
+  app.get('/api/local/blender/status', async (c) => {
+    try {
+      return c.json(await local.blender.status());
+    } catch (e) {
+      return toError(c, e, logger);
+    }
+  });
+  app.post('/api/local/blender/settings', async (c) => {
+    const body = await jsonBody(c);
+    if (!body.ok) return body.response;
+    const parsed = BlenderSettingsRequestSchema.safeParse(body.value);
+    if (!parsed.success) return errorBody(c, 'invalid_request', 'Send {"enabled": true | false}.', 400);
+    try {
+      return c.json(await local.blender.setEnabled(parsed.data.enabled));
+    } catch (e) {
+      return toError(c, e, logger);
+    }
+  });
+  app.post('/api/local/blender/plan', async (c) => {
+    const body = await jsonBody(c);
+    if (!body.ok) return body.response;
+    const parsed = BlenderPlanRequestSchema.safeParse(body.value);
+    if (!parsed.success) return errorBody(c, 'invalid_request', `The Blender request is invalid (${parsed.error.issues[0]?.path.join('.') ?? ''}: ${parsed.error.issues[0]?.message ?? ''}).`.slice(0, 300), 400);
+    try {
+      return c.json(await local.blender.plan(parsed.data));
+    } catch (e) {
+      return toError(c, e, logger);
+    }
+  });
+  app.post('/api/local/blender/run', async (c) => {
+    const body = await jsonBody(c);
+    if (!body.ok) return body.response;
+    const parsed = BlenderRunRequestSchema.safeParse(body.value);
+    if (!parsed.success) return errorBody(c, 'invalid_request', 'Send {"planId": "<id>"} (and "confirm": true for actions you allowed).', 400);
+    const ctrl = new AbortController();
+    const onAbort = (): void => ctrl.abort();
+    c.req.raw.signal.addEventListener('abort', onAbort, { once: true });
+    deps.shutdownSignal?.addEventListener('abort', onAbort, { once: true });
+    try {
+      const out = await local.blender.run(parsed.data.planId, parsed.data.confirm === true, ctrl.signal);
+      if (out.kind === 'glb') return c.body(out.bytes as Uint8Array<ArrayBuffer>, 200, { 'content-type': 'model/gltf-binary', 'cache-control': 'no-store' });
+      return c.json(out.result);
     } catch (e) {
       return toError(c, e, logger);
     } finally {

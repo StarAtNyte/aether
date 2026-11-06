@@ -28,14 +28,17 @@ function initialFiles(html: string): { js: Set<string>; css: Set<string> } {
   }
   return { js, css };
 }
-const gz = (files: Set<string>): number => [...files].reduce((n, f) => n + (existsSync(f) ? gzipSync(readFileSync(f)).length : 0), 0) / 1024;
+/** Exact gzip bytes of `files` (compared in bytes: a KiB float rounded for display could pass 203.01 as "203"). */
+const gzBytes = (files: Set<string>): number => [...files].reduce((n, f) => n + (existsSync(f) ? gzipSync(readFileSync(f)).length : 0), 0);
+const show = (bytes: number): string => `${(bytes / 1024).toFixed(2)} KiB (${bytes} B)`;
 
 let failed = false;
 for (const [page, limit] of Object.entries(budget)) {
   const { js, css } = initialFiles(page);
-  const jsKB = gz(js), cssKB = gz(css);
-  const ok = jsKB <= limit.jsGzipKB && cssKB <= limit.cssGzipKB;
+  const jsBytes = gzBytes(js), cssBytes = gzBytes(css);
+  const jsLimit = Math.round(limit.jsGzipKB * 1024), cssLimit = Math.round(limit.cssGzipKB * 1024);
+  const ok = jsBytes <= jsLimit && cssBytes <= cssLimit;
   if (!ok) failed = true;
-  console.log(`${ok ? 'ok  ' : 'OVER'} ${page}: js ${jsKB.toFixed(0)} kB gzip (limit ${limit.jsGzipKB}, ${js.size} files), css ${cssKB.toFixed(0)} kB (limit ${limit.cssGzipKB})`);
+  console.log(`${ok ? 'ok  ' : 'OVER'} ${page}: js ${show(jsBytes)} gzip (limit ${show(jsLimit)}, ${js.size} files), css ${show(cssBytes)} (limit ${show(cssLimit)})`);
 }
 if (failed) { console.error('Initial download is over budget. Lazy-load the new code, or raise scripts/size-budget.json with a reason in the commit.'); process.exit(1); }

@@ -6,7 +6,8 @@
   "license": "MIT",
   "exports": {
     ".": "./src/index.ts",
-    "./diff-text": "./src/refine/diff-text.ts"
+    "./diff-text": "./src/refine/diff-text.ts",
+    "./blender": "./src/blender.ts"
   },
   "main": "./src/index.ts",
   "types": "./src/index.ts",

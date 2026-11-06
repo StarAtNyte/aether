@@ -225,7 +225,7 @@ export class WorldAgent {
     this.fineEdit = opts.fineEdit !== false;
     this.localEdits = opts.localEdits ?? this.fineEdit;
     this.maxTokens = Math.min(clampInt(opts.maxTokens, DEFAULTS.maxTokens, 256, 64_000), this.compact ? COMPACT_LIMITS.maxTokens : Infinity);
-    const extra = [...(opts.levelTools ? LEVEL_TOOLS : []), ...(opts.textures ? [MAKE_TEXTURE_TOOL] : [])];
+    const extra = [...(opts.levelTools ? LEVEL_TOOLS : []), ...(opts.textures ? [MAKE_TEXTURE_TOOL] : []), ...(opts.blender ? opts.blender.tools : [])];
     this.tools = this.compact ? COMPACT_TOOLS : extra.length > 0 ? [...AGENT_TOOLS, ...extra] : AGENT_TOOLS;
     const ids = new Set<string>();
     for (const g of opts.catalogs.generators) {
@@ -380,6 +380,7 @@ export class WorldAgent {
       ...(this.opts.hubSearch ? { hubSearch: this.opts.hubSearch } : {}),
       ...(this.opts.levelTools ? { levelTools: this.opts.levelTools } : {}),
       ...(this.opts.textures ? { textures: this.opts.textures } : {}),
+      ...(this.opts.blender ? { blender: this.opts.blender } : {}),
       ...(signal ? { signal } : {}),
       realistic: realisticWorld(request, host.getWorld()),
     };
@@ -578,6 +579,7 @@ export class WorldAgent {
           }
           if (out.finished) finished = out.finished;
           results.push({ type: 'tool_result', toolUseId: call.id, content: out.content, ...(out.isError ? { isError: true } : {}) });
+          for (const dataUrl of out.images ?? []) lookBlocks.push({ type: 'image', dataUrl });
         }
         if (finished && batchRefused && calls.length > 1) {
           // finish came in the same reply as a call that was refused: it was sent before the result was read.

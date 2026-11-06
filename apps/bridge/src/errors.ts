@@ -24,6 +24,8 @@ export const STATUS_FOR: Readonly<Record<BridgeErrorCode, number>> = {
   model_unavailable: 422,
   context_too_large: 413,
   network_error: 502,
+  confirmation_required: 428,
+  blender_unavailable: 503,
 };
 
 /** An error with a client-safe code and message. */

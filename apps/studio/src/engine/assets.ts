@@ -357,6 +357,30 @@ export class AssetController {
     return placed;
   }
 
+  /**
+   * Store GLB bytes made elsewhere (Blender on this computer) as a user asset: the same validation and storage as a
+   * dropped .glb. Not placed; returns the stored asset.
+   */
+  async importGlb(bytes: Uint8Array, name: string): Promise<{ ok: true; meta: UserAssetMeta } | { ok: false; error: string }> {
+    this.state.setState({ busy: `Importing ${name.slice(0, 40)}…` });
+    try {
+      const { importUserAsset } = await import('@aether/assets/import');
+      const r = await importUserAsset(bytes, `${name}.glb`);
+      if (!r.ok) return { ok: false, error: r.error };
+      if (r.asset.meta.kind !== 'model') return { ok: false, error: 'not a 3D model' };
+      const meta: UserAssetMeta = { ...r.asset.meta, name: name.slice(0, 64) };
+      const store = await this.userStore();
+      await store.put(meta, r.asset.data);
+      this.register(meta, new Blob([r.asset.data as Uint8Array<ArrayBuffer>], { type: meta.mime }));
+      await this.refreshImports();
+      return { ok: true, meta };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message.slice(0, 160) : 'import failed' };
+    } finally {
+      this.state.setState({ busy: null });
+    }
+  }
+
   /** Refresh the list of saved creations. */
   async refreshCreations(): Promise<void> {
     try {

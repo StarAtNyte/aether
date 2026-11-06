@@ -19,6 +19,7 @@
  *   GET    /api/local/jobs/:id               → LocalJob
  *   GET    /api/local/jobs/:id/events?after= → text/event-stream of LocalJobEvent, then `end` with the LocalJob
  *   POST   /api/local/jobs/:id/cancel        → LocalJob
+ *   /api/local/blender/*                     see blender-protocol.ts
  */
 import { z } from 'zod';
 import { GeneratorDef } from '@aether/core';
@@ -78,6 +79,8 @@ export const LocalStatusSchema = z.object({
   /** Build jobs queued or running. */
   jobs: z.number().int().min(0),
   login: LoginStateSchema.nullable(),
+  /** Blender through its MCP server (see blender-protocol.ts BLENDER_STATES); absent from older servers. */
+  blender: z.enum(['ready', 'off', 'not_installed']).optional(),
 });
 /** Local AI status. */
 export type LocalStatus = z.infer<typeof LocalStatusSchema>;

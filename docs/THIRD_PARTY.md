@@ -59,7 +59,7 @@ bridge.
 | [hono](https://github.com/honojs/hono) | 4.13.13 | MIT | `apps/server` | HTTP server | © 2021–present Yusuke Wada and Hono contributors |
 | [@hono/node-server](https://github.com/honojs/node-server) | 2.1.4 | MIT | `apps/server` | Node adapter | © 2022–present Yusuke Wada and Hono contributors |
 | [tsx](https://github.com/privatenumber/tsx) | 4.23.15 | MIT | `apps/server`, `apps/cli`, `apps/bridge`, `packages/verifier` | TypeScript loader at run time; `smoke` and `e2e` scripts | © Hiroki Osame |
-| [@modelcontextprotocol/sdk](https://github.com/modelcontextprotocol/typescript-sdk) | 1.32.1 | MIT | `apps/cli` | `aether mcp` stdio MCP server; never in the studio bundle or the hosted server | © Anthropic, PBC and contributors |
+| [@modelcontextprotocol/sdk](https://github.com/modelcontextprotocol/typescript-sdk) | 1.32.1 | MIT | `apps/cli`, `apps/bridge` | `aether mcp` stdio MCP server, and the local server's client of the Blender MCP server; never in the studio bundle or the hosted server | © Anthropic, PBC and contributors |
 | [@gltf-transform/core](https://github.com/donmccurdy/glTF-Transform) | 4.5.1 | MIT | `apps/cli` (runtime); root (dev, asset build scripts) | Headless glTF writing in `aether mcp`; asset and character build scripts | © 2024 Don McCurdy |
 | [@openai/codex-sdk](https://github.com/openai/codex) | 0.162.1 | Apache-2.0 | `apps/bridge` | Local Aether Bridge only; never in the browser bundle or the hosted server | © OpenAI |
 | [esbuild](https://github.com/evanw/esbuild) | 0.28.2 | MIT | `apps/bridge` (also pulled in by tsx and vite) | Bundles the asset checker (`check.mjs`) handed to the local coding agent; TypeScript transform inside tsx | © 2020 Evan Wallace |
@@ -82,7 +82,7 @@ package is installed; each carries the licence of its parent package.
 | @openai/codex-&lt;platform&gt; (for example `@openai/codex-linux-x64`) | 0.162.1 | Apache-2.0 (no LICENCE file in the package) | @openai/codex; native binary |
 | fsevents | 2.3.3 | MIT | tsx, vite; optional, macOS only, not installed on Linux |
 
-Pulled in by `@modelcontextprotocol/sdk` (used by `apps/cli` only; the stdio
+Pulled in by `@modelcontextprotocol/sdk` (used by `apps/cli` and `apps/bridge` only; the stdio
 server never starts the HTTP transports, so Express is loaded but not served):
 
 | Package | Version | Licence |
@@ -1039,6 +1039,7 @@ Not used: Depth Anything V2 Base, Large and Giant (CC-BY-NC-4.0, non-commercial)
 | Codex CLI with the user's own ChatGPT sign-in (through the local bridge) | Optional AI connection | Runs on the user's computer under the user's own OpenAI account and terms; nothing is proxied through the hosted server |
 | Claude Code CLI with the user's own sign-in (through the local bridge) | Optional AI connection | The user's installed `claude` binary is spawned; `@anthropic-ai/claude-agent-sdk` is **not** bundled (its licence is not open source) |
 | Netlify CLI, Vercel CLI, GitHub CLI (`gh`), itch.io `butler`, the user's own installs and logins | Optional "publish to your own hosting" from the local app | Spawned on the user's computer with the user's accounts and under each service's terms; Aether ships none of them, passes them no credentials and never deploys to an account of its own |
+| Blender with the [MCP for Blender](https://pypi.org/project/mcp-for-blender/) add-on and server (`mcp-for-blender` 2.2.7, MIT), the user's own installs | Optional Blender actions from the local app (scene info, viewport picture, Python with confirmation, GLB export, Cycles render and bake) | Off by default. Blender (GPL) runs as the user's own separate program; the server is started with `uvx mcp-for-blender==2.2.7` over stdio with telemetry off and talks to the add-on on `127.0.0.1` only. Aether ships neither; only three of its tools are callable (`get_scene_info`, `look`, `execute_blender_code`) |
 | Hugging Face and MLC model hosts (`huggingface.co` and its CDN hosts, `raw.githubusercontent.com`) | On-device model download, only after explicit opt-in | Only permissively licensed weights are offered: Qwen2.5 1.5B Instruct (Apache-2.0), Phi-3.5 mini Instruct (MIT), SmolLM2 1.7B Instruct (Apache-2.0). The visitor's browser downloads them directly from the host; Aether does not redistribute them |
 
 Model ids are configuration, not code. No model weights are bundled. With no

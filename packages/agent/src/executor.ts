@@ -35,6 +35,8 @@ export interface ToolOutcome {
   finished?: { message: string };
   /** A verification ran (run_verification). */
   verified?: { passed: boolean };
+  /** Pictures shown to the model with the result (PNG data URLs; host tools such as Blender's look and render). */
+  images?: string[];
 }
 
 /** Everything a tool execution may need. */
@@ -57,6 +59,8 @@ export interface ExecutorContext {
   levelTools?: AgentOptions['levelTools'];
   /** Texture sources for `make_texture` (see `AgentOptions.textures`). */
   textures?: AgentOptions['textures'];
+  /** Blender tools run by the host (see `AgentOptions.blender`). */
+  blender?: AgentOptions['blender'];
   /** Set for a small edit: checks a patch list against what the request named; `ok: false` patches are refused with the message. */
   audit?: (patches: readonly unknown[]) => { ok: boolean; message: string };
   /**
@@ -676,6 +680,18 @@ async function sculptTool(ctx: ExecutorContext, input: SculptInput): Promise<Too
 
 /** Execute one tool call. Never throws except when aborted. */
 export async function executeTool(ctx: ExecutorContext, name: string, rawInput: unknown): Promise<ToolOutcome> {
+  const hostTools = ctx.blender;
+  if (hostTools && hostTools.tools.some((t) => t.name === name)) {
+    if (typeof rawInput === 'string') return fail('The tool arguments were not valid JSON. Resend the call with a valid JSON object.');
+    if (inputSize(rawInput) > TOOL_LIMITS.MAX_INPUT_CHARS) return fail(`Tool input too large (max ${TOOL_LIMITS.MAX_INPUT_CHARS} characters). Split it into several calls.`);
+    try {
+      const r = await raceAbort(hostTools.run(name, rawInput ?? {}, ctx.signal), ctx.signal);
+      return { content: clip(r.text || (r.isError ? 'failed' : 'done')), isError: r.isError === true, events: [], edited: false, ...(r.image ? { images: [r.image] } : {}) };
+    } catch (e) {
+      if (ctx.signal?.aborted) throw e;
+      return fail(`Tool "${name}" failed: ${errorMessage(e).slice(0, 500)}`);
+    }
+  }
   if (isLevelToolName(name)) {
     if (typeof rawInput === 'string') return fail('The tool arguments were not valid JSON. Resend the call with a valid JSON object.');
     if (inputSize(rawInput) > TOOL_LIMITS.MAX_INPUT_CHARS) return fail(`Tool input too large (max ${TOOL_LIMITS.MAX_INPUT_CHARS} characters). Split it into several calls.`);

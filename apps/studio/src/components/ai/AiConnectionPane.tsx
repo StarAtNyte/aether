@@ -5,7 +5,7 @@
  * Codex / Claude Code subscription, the on-device model runs on their GPU,
  * and a personal API key is billed to its owner.
  */
-import { memo, useEffect, useState, type ReactElement, type ReactNode } from 'react';
+import { lazy, memo, Suspense, useEffect, useState, type ReactElement, type ReactNode } from 'react';
 import { aiConnection, DEFAULT_BRIDGE_URL, effectiveBridgeChoice } from '../../ai/connection';
 import { hostedBridgeNote, isLocalOrigin } from '../../ai/messages';
 import { byokModelFor } from '../../ai/byok';
@@ -16,6 +16,9 @@ import { bridgeBadge, localBadge, useAi } from '../../ai/useAi';
 import { Icon } from '../Icon';
 import { Segmented } from '../ui/Segmented';
 import { BridgeSignIn, LocalAiSetup } from './LocalAiSetup';
+
+// Blender (local only) loads on its own chunk: nothing of it reaches pages that never open these settings.
+const BlenderSettings = lazy(async () => ({ default: (await import('../../blender/BlenderSettings')).BlenderSettings }));
 
 /** Copy-to-clipboard command line. */
 function Command({ text }: { text: string }): ReactElement {
@@ -428,6 +431,12 @@ export const AiConnectionPane = memo(function AiConnectionPane({ prefs, update, 
           </ModeCard>
           {server.state === 'live' && <ModeCard mode="server" prefs={prefs} update={update} title="Server model" hint={`The model configured on this server (${server.providers.join(', ')}).`} badge={<Badge text="Connected" tone="ok" />} />}
         </div>
+      </section>
+      <section className="settings__group">
+        <h3 className="settings__heading">Blender</h3>
+        <Suspense fallback={null}>
+          <BlenderSettings />
+        </Suspense>
       </section>
       <section className="settings__group">
         <h3 className="settings__heading">Quality</h3>

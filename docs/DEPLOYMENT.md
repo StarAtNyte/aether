@@ -68,6 +68,23 @@ It builds the studio when needed, starts the server detached on
 secret and a rotating log, and opens the browser. `aether stop` drains it.
 `npm run e2e:cli` exercises this flow end to end (Chromium and Firefox).
 
+### Blender (optional, local only)
+
+The local app can drive your own Blender through the MIT-licensed MCP for Blender server: scene info,
+viewport pictures, Python, a "Blender asset" export into the project, Cycles render and Cycles bake. It is
+off by default, served only under `/api/local/blender/*` (loopback, session secret; never the paired bridge
+of a hosted studio), and every action that runs Python shows its exact code for "Allow once", "Allow for
+this session" or "Cancel".
+
+1. Install Blender 4.2+ (on PATH, in `~/tools/blender-*`, or set `AETHER_BLENDER`) and uv (`uvx`).
+2. Install the add-on: `pip download --no-deps --no-binary :all: mcp-for-blender==2.2.7`, unpack it, take `addon.py`, install it in Blender
+   (Preferences → Add-ons → Install from disk), or copy it to `<user scripts>/addons/mcp_for_blender.py`.
+3. `blender -b --factory-startup --python scripts/blender/mcp-addon-setup.py` enables it, binds `127.0.0.1` and turns telemetry off.
+4. Start Blender: the GUI with the add-on's server started from its sidebar, or headless with
+   `blender -b --python scripts/blender/mcp-serve-headless.py` (listens on `127.0.0.1:9876`).
+5. In the studio: Settings → AI connection → Blender, flip the switch. The status reads Ready, the
+   assistant gets the Blender tools, and Assets → Imports shows Blender asset, Cycles render and Cycles bake.
+
 ## 3. Self-hosted container (optional)
 
 ```bash

@@ -53,6 +53,10 @@ export const BRIDGE_ERROR_CODES = [
   'context_too_large',
   /** The CLI could not reach its own service (no internet, DNS, TLS). */
   'network_error',
+  /** A Blender action that runs Python was sent without the user's confirmation. */
+  'confirmation_required',
+  /** Blender is not installed, switched off, or not reachable (local only). */
+  'blender_unavailable',
 ] as const;
 /** A bridge error code. */
 export type BridgeErrorCode = (typeof BRIDGE_ERROR_CODES)[number];

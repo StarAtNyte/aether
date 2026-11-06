@@ -432,6 +432,19 @@ export interface AgentOptions {
    * `webSearch`: the provider can search the web (ideas in text only). The reference image needs `textures.images`.
    */
   brief?: { webSearch?: boolean };
+  /**
+   * Blender on this computer (the local Aether server's `/api/local/blender/*`): the host passes it only while the server
+   * reports Blender ready, and its tools are offered only then. Tools that run Python go through the host's confirmation
+   * dialog; the model can never confirm them itself. Absent (hosted studio, no local server, Blender off): no Blender tools.
+   */
+  blender?: HostToolRunner;
+}
+
+/** Tools the host runs itself (offered to the model as given; see `AgentOptions.blender`). */
+export interface HostToolRunner {
+  readonly tools: readonly ToolDef[];
+  /** Run one of `tools`. `image`: a PNG data URL shown to the model with the result. */
+  run(name: string, input: unknown, signal?: AbortSignal): Promise<{ text: string; isError?: boolean; image?: string }>;
 }
 
 /** Options of the room-from-photo flow. */

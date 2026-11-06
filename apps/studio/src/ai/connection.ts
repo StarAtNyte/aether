@@ -53,7 +53,7 @@ export type LocalState = 'off' | 'checking' | 'ready' | 'not_logged_in' | 'error
 /** Observable connection state. */
 export interface AiConnectionState {
   /** Local AI: the signed-in Codex / Claude Code of this computer, through the Aether server's workers. */
-  local: { state: LocalState; detail: string; backends: BridgeBackendStatus[]; account: LocalStatus['account']; jobs: number; login: LoginState | null };
+  local: { state: LocalState; detail: string; backends: BridgeBackendStatus[]; account: LocalStatus['account']; jobs: number; login: LoginState | null; /** Blender through the local server (absent: hosted, older server or not checked). */ blender?: LocalStatus['blender'] };
   bridge: { url: string; paired: boolean; state: BridgeState; detail: string; backends: BridgeBackendStatus[]; login: LoginState | null };
   server: { state: 'checking' | 'live' | 'mock' | 'offline'; providers: string[]; byok: boolean; local: boolean };
   webllm: { state: 'idle' | 'unsupported' | 'loading' | 'ready' | 'error'; progress: number; detail: string; model: string | null };
@@ -195,7 +195,7 @@ export class AiConnection {
   /** Re-read local AI status (sign-in state, models, account). Never throws. */
   async refreshLocal(): Promise<void> {
     if (!this.store.getState().server.local) {
-      this.setLocal({ state: 'off', detail: '', backends: [], account: null, jobs: 0, login: null });
+      this.setLocal({ state: 'off', detail: '', backends: [], account: null, jobs: 0, login: null, blender: undefined });
       return;
     }
     const cur = this.store.getState().local;
@@ -204,9 +204,9 @@ export class AiConnection {
       const st = await this.localApi.status();
       const ready = st.backends.some((b) => b.installed && b.loggedIn);
       const detail = ready ? st.backends.filter((b) => b.loggedIn).map((b) => b.label).join(' and ') + ' ready on this computer' : st.backends.map((b) => `${b.label}: ${b.detail}`).join(' · ');
-      this.setLocal({ state: ready ? 'ready' : 'not_logged_in', detail: detail.slice(0, 240), backends: st.backends, account: st.account, jobs: st.jobs, login: st.login });
+      this.setLocal({ state: ready ? 'ready' : 'not_logged_in', detail: detail.slice(0, 240), backends: st.backends, account: st.account, jobs: st.jobs, login: st.login, blender: st.blender });
     } catch (err) {
-      this.setLocal({ state: 'error', detail: err instanceof Error ? err.message.slice(0, 200) : 'local AI error' });
+      this.setLocal({ state: 'error', detail: err instanceof Error ? err.message.slice(0, 200) : 'local AI error', blender: undefined });
     }
   }
 

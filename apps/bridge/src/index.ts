@@ -29,3 +29,7 @@ export { createWorkerTextBackend, createWorkerSessionStore } from './worker/text
 export { createAssetWorkspace, removeWorkspace, parseAssetArtifact, assetTask, bundledCheckScript, ASSET_ARTIFACT } from './worker/workspace';
 export { confinedNodeArgs, runConfinedCheck } from './worker/agentic';
 export { WorkerJob, WorkerResult, parseProgressLine, PROGRESS_PREFIX, type WorkerRunner, type WorkerProgress } from './worker/protocol';
+export { BlenderService, probeLoopbackPort, PLAN_TTL_MS, type BlenderServiceOptions } from './blender/service';
+export { detectBlender, findBlender, findAddon, findUvx, missingDetail as blenderMissingDetail, BLENDER_ENV, UVX_ENV, ADDON_MODULE, type BlenderInstall, type DetectOptions } from './blender/detect';
+export { connectBlenderMcp, mcpEnv, allowedMcpTool, MCP_PACKAGE, BLENDER_HOST, BLENDER_PORT, type BlenderMcpSession, type McpToolResult } from './blender/mcp';
+export { exportGlbCode, renderCode, bakeCode, parseResult as parseBlenderResult, RESULT_MARKER } from './blender/templates';

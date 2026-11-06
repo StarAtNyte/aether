@@ -26,6 +26,7 @@ export type {
   ReviewOptions,
   ReviewPhase,
   ReviewViewRequest,
+  HostToolRunner,
 } from './types';
 
 export { WorldAgent, COMPACT_LIMITS, SLICE_THRESHOLD, type RunOptions } from './agent';

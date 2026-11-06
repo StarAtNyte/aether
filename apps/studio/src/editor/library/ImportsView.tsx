@@ -10,6 +10,10 @@ import { Icon } from '../../components/Icon';
 import { formatBytes } from '../../lib/format';
 import { ASSET_DRAG_TYPE, IMPORT_ACCEPT, useLibrary } from './useLibrary';
 import type { Creation } from '../../assets/userStore';
+import { lazyBoundary } from '../../components/ErrorBoundary';
+
+// Blender (local only) loads on its own chunk.
+const BlenderTools = lazyBoundary(async () => ({ default: (await import('../../blender/BlenderTools')).BlenderTools }), { what: 'Blender tools', fallback: null, variant: 'inline' });
 
 function kindLabel(m: UserAssetMeta): string {
   if (m.kind === 'model') return `${(m.triangles ?? 0).toLocaleString('en-US')} triangles${m.clips && m.clips.length > 0 ? ` · ${m.clips.length} clips` : ''}`;
@@ -110,6 +114,7 @@ export const ImportsView = memo(function ImportsView({ query }: { query: string 
         </span>
       </button>
       {!persistent && <p className="panel-note">This browser blocks storage: imports last until you close the tab.</p>}
+      <BlenderTools disabled={playing} />
       {creations.length > 0 && (
         <section className="assets__section" aria-labelledby="assets-creations">
           <header className="assets__head">

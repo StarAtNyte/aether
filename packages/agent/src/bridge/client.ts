@@ -47,6 +47,8 @@ const CODE_FOR: Readonly<Record<BridgeErrorCode, ProviderErrorCode>> = {
   model_unavailable: 'not_found',
   context_too_large: 'too_large',
   network_error: 'network',
+  confirmation_required: 'permission',
+  blender_unavailable: 'not_found',
 };
 
 /** One request to the bridge or to local AI (internal to the clients). */

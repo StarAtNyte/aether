@@ -20,6 +20,7 @@ import { LoginManager, type LoginState } from './auth';
 import { cached, probeClaude, probeCodex } from './backends/status';
 import { resolveCommands, type ResolvedCommands } from './headless';
 import { JobQueue } from './queue';
+import { BlenderService } from './blender/service';
 import type { SessionStore } from './sessions';
 import { JobManager, type JobManagerOptions } from './worker/jobs';
 import { runWorker, stopAllWorkers } from './worker/runner';
@@ -45,6 +46,8 @@ export interface LocalAiOptions {
   timeoutMs?: number;
   /** Most waiting quick calls. */
   maxWaiting?: number;
+  /** Blender (default: one over `<dataDir>/blender`, off until switched on). */
+  blender?: BlenderService;
 }
 
 /** The local AI service. */
@@ -54,6 +57,8 @@ export class LocalAi {
   readonly login: LoginManager;
   readonly jobs: JobManager;
   readonly commands: ResolvedCommands;
+  /** Blender through its MCP server (local only; see blender/service.ts). */
+  readonly blender: BlenderService;
   private readonly backends: Record<BridgeBackendId, TextBackend>;
   private readonly queue: JobQueue;
   private readonly probe: (home: string | null) => Promise<Array<Omit<BridgeBackendStatus, 'busy'>>>;
@@ -76,6 +81,7 @@ export class LocalAi {
         accountHome: async () => ({ id: await this.accounts.activeId(), home: await this.accounts.activeHome() }),
       });
     this.queue = new JobQueue(opts.maxWaiting ?? 4);
+    this.blender = opts.blender ?? new BlenderService({ dataDir: join(opts.dataDir, 'blender') });
     const common = {
       runWorker: run,
       queue: this.queue,
@@ -151,7 +157,7 @@ export class LocalAi {
       probe = cached(() => this.probe(home), 30_000);
       this.probeCache.set(key, probe);
     }
-    const list = await probe();
+    const [list, blender] = await Promise.all([probe(), this.blender.state().catch(() => 'off' as const)]);
     const busy = this.queue.size;
     return {
       ok: true,
@@ -161,6 +167,7 @@ export class LocalAi {
       account,
       jobs: this.jobs.activeCount(),
       login: login ? { ...login, output: login.output.slice(-4000) } : null,
+      blender,
     };
   }
 
@@ -179,6 +186,7 @@ export class LocalAi {
     this.jobs.dispose();
     this.login.dispose();
     this.sessions.clear();
+    void this.blender.dispose();
     stopAllWorkers();
   }
 }
