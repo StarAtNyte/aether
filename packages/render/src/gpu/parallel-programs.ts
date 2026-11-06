@@ -1,5 +1,5 @@
 /** Three r186's draw path links synchronously even when KHR_parallel_shader_compile is available. */
-interface Pipeline { fragmentProgram: object; vertexProgram: object }
+interface Pipeline { fragmentProgram: { code?: string }; vertexProgram: { code?: string } }
 interface RenderObject { pipeline: Pipeline; getBindings(): unknown; context?: { textures?: Array<{ isPMREMTexture?: boolean; isCubeTexture?: boolean }> | null } }
 interface Backend {
   gl?: WebGL2RenderingContext;
@@ -28,7 +28,12 @@ const STUCK_PIPELINE_MS = 5000;
 /** WebGPU pipeline jobs let go for never settling (diagnostics). */
 export const stuckPipelines = { count: 0 };
 /** Retain the bindings, not a mutable/disposable RenderObject, while a program links. */
-export function parallelPrograms(backend: Backend, changed: () => void, failed: (error: unknown) => void): ParallelPrograms {
+/** The program pool a pipeline may take its program from (gpu/program-cache.ts). */
+export interface ProgramPool {
+  take(vertex: string | undefined, fragment: string | undefined): { program: WebGLProgram; ready(): boolean; done(): void } | null;
+  note(vertex: string | undefined, fragment: string | undefined): void;
+}
+export function parallelPrograms(backend: Backend, changed: () => void, failed: (error: unknown) => void, pool: ProgramPool | null = null): ParallelPrograms {
   const jobs = new Set<{ cancel(): void; done: Promise<void>; ready(): boolean; complete(): void; pipeline: object }>();
   /** Pipelines whose program is still linking or compiling: drawing one would use a program with no bindings yet. */
   const linking = new Map<object, number>();
@@ -125,16 +130,23 @@ export function parallelPrograms(backend: Backend, changed: () => void, failed: 
   }
   if (!gl || !parallel || typeof original !== 'function' || typeof backend._completeCompile !== 'function') return controller;
   function create(object: RenderObject, promises: Promise<void>[] | null): void {
-    if (disposed || synchronous || (!promises && object.context?.textures?.some(texture => texture.isPMREMTexture || texture.isCubeTexture)) || !gl || !parallel) return original.call(backend, object, promises);
     const pipeline = object.pipeline;
-    const fragmentShader = backend.get(pipeline.fragmentProgram).shaderGPU!;
-    const vertexShader = backend.get(pipeline.vertexProgram).shaderGPU!;
-    const programGPU = gl.createProgram();
+    if (disposed || synchronous || (!promises && object.context?.textures?.some(texture => texture.isPMREMTexture || texture.isCubeTexture)) || !gl || !parallel) {
+      pool?.note(pipeline.vertexProgram.code, pipeline.fragmentProgram.code);
+      return original.call(backend, object, promises);
+    }
+    // A program of the pre-warmed set (linked, or linking, ahead of need) is taken as it is: no link here.
+    const pooled = pool?.take(pipeline.vertexProgram.code, pipeline.fragmentProgram.code) ?? null;
+    const fragmentShader = pooled ? undefined : backend.get(pipeline.fragmentProgram).shaderGPU!;
+    const vertexShader = pooled ? undefined : backend.get(pipeline.vertexProgram).shaderGPU!;
+    const programGPU = pooled ? pooled.program : gl.createProgram();
     if (!programGPU) return original.call(backend, object, promises);
     const bindings = object.getBindings();
-    gl.attachShader(programGPU, fragmentShader);
-    gl.attachShader(programGPU, vertexShader);
-    gl.linkProgram(programGPU);
+    if (!pooled) {
+      gl.attachShader(programGPU, fragmentShader!);
+      gl.attachShader(programGPU, vertexShader!);
+      gl.linkProgram(programGPU);
+    }
     const linkStart = performance.now();
     backend.set(pipeline, { programGPU, fragmentShader, vertexShader });
     let resolve!: () => void;
@@ -149,11 +161,12 @@ export function parallelPrograms(backend: Backend, changed: () => void, failed: 
       pipeline,
       done,
       cancel: () => { if (!gl.isContextLost()) gl.deleteProgram(programGPU); finish(); },
-      ready: () => gl.getProgramParameter(programGPU, parallel.COMPLETION_STATUS_KHR) === true,
+      ready: pooled ? pooled.ready : () => gl.getProgramParameter(programGPU, parallel.COMPLETION_STATUS_KHR) === true,
       complete: () => {
         const ms = performance.now() - linkStart;
+        pooled?.done();
         // Diagnostics: one slow link holds every other completion and the preparation queue (see poll).
-        if (ms > SLOW_LINK_MS) slowLinks.push({ ms: Math.round(ms), chars: (gl.getShaderSource(fragmentShader)?.length ?? 0) + (gl.getShaderSource(vertexShader)?.length ?? 0), head: (gl.getShaderSource(fragmentShader) ?? '').slice(0, 0) });
+        if (ms > SLOW_LINK_MS && fragmentShader && vertexShader) slowLinks.push({ ms: Math.round(ms), chars: (gl.getShaderSource(fragmentShader)?.length ?? 0) + (gl.getShaderSource(vertexShader)?.length ?? 0), head: (gl.getShaderSource(fragmentShader) ?? '').slice(0, 0) });
         backend._completeCompile({ getBindings: () => bindings }, pipeline); finish();
       },
     };

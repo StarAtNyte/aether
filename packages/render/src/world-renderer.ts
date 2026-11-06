@@ -14,6 +14,7 @@ import { FrameInvalidation } from './view/frame-invalidation';
 import { deferRenderPreparation, type RenderPreparation } from './gpu/render-preparation';
 import { LampSlots } from './sync/lamp-slots';
 import { parallelPrograms, slowLinks, type ParallelPrograms } from './gpu/parallel-programs';
+import { indexedDbProgramStore, installLazyStages, ProgramCache, type ProgramCacheStats } from './gpu/program-cache';
 import { gpuFrameCost } from './gpu/frame-cost';
 import { preparePresentation } from './gpu/presentation';
 import { warmProceduralFields } from './gpu/procedural-fields-client';
@@ -66,7 +67,7 @@ import { DebugOverlay } from './view/debug-overlay';
 import { captureMime, captureNeedsResize, pixelsAreBlank, captureSize, MAX_VIEWS, telephotoPose, viewPose, viewRegion, type CaptureView } from './view/capture';
 import { FrameStats } from './view/frame-stats';
 import { gradeFor, gradeWithPreset } from './gpu/grade';
-import { autoTier, degrade, effectsKey, effectsOf, evScale, GRADE_PRESETS, isGradePresetId, presetFor, resolveEffects, type EffectOverrides, type GradePreset, type GradePresetId, type PostEffects, type RenderTier } from './gpu/finishing';
+import { autoTier, degrade, effectsKey, effectsOf, evScale, GRADE_PRESETS, isGradePresetId, presetFor, RENDER_TIERS, resolveEffects, type EffectOverrides, type GradePreset, type GradePresetId, type PostEffects, type RenderTier } from './gpu/finishing';
 import { CameraTour, DRONE_TOUR_RADIUS, TOUR_SECONDS, droneTourKeys, tourKeys, tourSections } from './view/tour';
 import { AdaptiveResolution, MOTION_PROFILES, motionOptions, passFloorOf, type MotionProfile } from './view/adaptive-resolution';
 import { MeshBasicNodeMaterial } from 'three/webgpu';
@@ -662,6 +663,8 @@ const KTX2_SETUP_DELAY_MS = 4000;
 
 /** Longest the load screen waits for the first frame's shader programs to link (ms). */
 const SHADER_WARMUP_MS = 15_000;
+/** The view must have been still this long before idle program priming links anything (ms). */
+const IDLE_PRIME_MS = 2_000;
 /**
  * The warm-up compiles every object, not one per (material, layout, kind): objects that share that key still differ in
  * what makes a program (lights, receiving, light-map channels), and each one met later linked a program on the way, a
@@ -840,6 +843,10 @@ export class WorldRenderer {
   private readonly onProgress: ((msg: string) => void) | null;
   /** Programs discovered by actual post/shadow passes link without blocking a draw. */
   private readonly programs: ParallelPrograms;
+  /** The pre-warmed program set of the tier (null on WebGPU, without parallel linking, or opted out). */
+  private readonly programCache: ProgramCache | null;
+  /** Last time the view changed (a drawn frame that was not a refinement): idle work waits for a still view. */
+  private viewMovedAt = 0;
   private readonly releaseShaders: () => void;
   private readonly gpuCost: ReturnType<typeof gpuFrameCost>;
   private readonly presentation: ReturnType<typeof preparePresentation>;
@@ -1064,9 +1071,14 @@ export class WorldRenderer {
     this.releaseShaders = installShaderRelease(renderer.backend as unknown as Parameters<typeof installShaderRelease>[0]);
     // Programs of pipelines three let go (a tier change rebuilds every lit material) are deleted, not kept beside the new ones.
     const releasePipelines = installPipelineRelease(renderer.backend as unknown as Parameters<typeof installPipelineRelease>[0], (renderer as unknown as { _pipelines?: Parameters<typeof installPipelineRelease>[1] })._pipelines);
+    // The tier's program set, linked ahead of need while the world is generated (gpu/program-cache.ts). WebGL2 only:
+    // WebGPU builds its pipelines off the frame.
+    const glBackend = renderer.backend as unknown as { gl?: WebGL2RenderingContext; parallel?: { COMPLETION_STATUS_KHR: number } | null; isWebGPUBackend?: boolean };
+    this.programCache = glBackend.isWebGPUBackend !== true && glBackend.gl && glBackend.parallel && (globalThis as { __AETHER_PROGRAM_CACHE?: boolean }).__AETHER_PROGRAM_CACHE !== false ? new ProgramCache(glBackend.gl, glBackend.parallel, indexedDbProgramStore()) : null;
+    const lazyStages = this.programCache ? installLazyStages(renderer.backend as unknown as Parameters<typeof installLazyStages>[0], this.programCache) : () => undefined;
     const releaseShaders = this.releaseShaders;
-    this.releaseShaders = () => { releasePipelines(); releaseShaders(); };
-    this.programs = parallelPrograms(renderer.backend as unknown as Parameters<typeof parallelPrograms>[0], () => this.requestPreparedFrame(false), e => log.warn(`parallel shader linking failed: ${errorMessage(e)}`));
+    this.releaseShaders = () => { lazyStages(); releasePipelines(); releaseShaders(); };
+    this.programs = parallelPrograms(renderer.backend as unknown as Parameters<typeof parallelPrograms>[0], () => this.requestPreparedFrame(false), e => log.warn(`parallel shader linking failed: ${errorMessage(e)}`), this.programCache);
     this.gpuCost = gpuFrameCost(renderer.backend as unknown as Parameters<typeof gpuFrameCost>[0]);
     const webgpuBackend = (renderer.backend as unknown as { isWebGPUBackend?: boolean }).isWebGPUBackend === true;
     // Opt-in (`__AETHER_SLICED_UPLOAD = true`): in runs that load two heavy worlds in one page, buffers handed to three this
@@ -1310,6 +1322,8 @@ export class WorldRenderer {
     wr.resize(width, height);
     if (opts.safeMode === true) wr.setSafeMode(true);
     else wr.startCautiously();
+    // The tier's program set links while the world is still being generated: its pipelines then take them as they are.
+    if (wr.qualityPlan.quality === 'realtime' && !wr.simple) void wr.programCache?.prewarm(wr.renderTier);
     if (wr.budget.post) {
       const want = wr.wantedEffects();
       if (want) {
@@ -1333,6 +1347,25 @@ export class WorldRenderer {
   /** Program links that took over 1.5 s in this page (diagnostics). */
   get slowProgramLinks(): ReadonlyArray<{ ms: number; chars: number }> {
     return slowLinks;
+  }
+
+  /** What the pre-warmed program set did: its size, programs taken from it, links outside it (null without the cache). */
+  get prewarmStats(): Readonly<ProgramCacheStats> | null {
+    return this.programCache?.stats ?? null;
+  }
+
+  /**
+   * The first picture of the world is on screen (the host lifted its load screen). Pre-warmed programs nobody took are let
+   * go a little later, and, while the view is at rest, the rest of the tier's set and the neighbouring tiers' sets are
+   * linked once into the browser's program cache, so a tier change links from it.
+   */
+  markFirstPicture(): void {
+    const cache = this.programCache;
+    if (!cache || this.disposed) return;
+    cache.markFirstPicture();
+    const i = RENDER_TIERS.indexOf(this.renderTier);
+    const neighbours = [RENDER_TIERS[i + 1], RENDER_TIERS[i - 1]].filter((t): t is RenderTier => t !== undefined);
+    void cache.prime(neighbours, () => !this.disposed && !this.lost && !this.loadingScreen && this.programs.pending === 0 && this.preparation.pending === 0 && now() - this.viewMovedAt > IDLE_PRIME_MS);
   }
 
   /** Frames actually drawn since creation (on-demand rendering skips the rest). */
@@ -1410,7 +1443,10 @@ export class WorldRenderer {
    * Frustum-culled per heading, so it holds only what looking around would load anyway. Bounded; never throws.
    */
   async prepareSurroundings(steps = 6, boundMs = 20_000): Promise<void> {
-    if (this.disposed || this.lost || (globalThis as { __AETHER_SWEEP?: boolean }).__AETHER_SWEEP === false) return;
+    // Off by default since the tier's program set is pre-warmed (gpu/program-cache.ts) and the load gate is the first
+    // picture: the sweep held a small outpost's load screen 7-16 s. Programs met later link off the frame (the view keeps
+    // its last complete picture meanwhile) and objects prepare in time slices. `__AETHER_SWEEP = true` turns it back on.
+    if (this.disposed || this.lost || (globalThis as { __AETHER_SWEEP?: boolean }).__AETHER_SWEEP !== true) return;
     // Memory first: every heading prepares what it sees, and a world that already holds a large share of the page's heap
     // (a hillside town of 31,000 instances at 1.3 GB of 4.4) would push a 14 GB laptop into swap. Such worlds turn
     // through fewer headings, or none.
@@ -2005,6 +2041,16 @@ export class WorldRenderer {
       if (this.sync.world === world) this.fx.syncEmitters(world);
       // The first world of a session just materialises; later builds show their plan marks first.
       if (added.length > 0) this.startGrow(added, prev !== null);
+      // The plan the world loads with comes first (a heavy world starts lower), then its programs link on the driver's
+      // threads while the opening view is chosen on this one (raycasts, picking trees): the two used to run one after the
+      // other, 2-3 s each on an integrated GPU.
+      if (hold) this.startForWeight();
+      // A discrete GPU's motion chain depends on the world's weight (see applyQuality): plan again once it is known.
+      if (this.gpu.tier === 'discrete' && (this.sync.entityCount >= HEAVY_WORLD.entities) !== this.heavyPlanned) {
+        this.heavyPlanned = this.sync.entityCount >= HEAVY_WORLD.entities;
+        this.applyQuality(this.qualityPlan.quality);
+      }
+      const warm = hold ? this.warmShaders(say).catch((e: unknown) => log.warn(`shader warm-up failed: ${errorMessage(e)}`)) : null;
       if (!this.framed) {
         say?.('Preparing camera…');
         await warmRaycastTrees(this.sync.root, FIRST_FRAME_BVH_MS);
@@ -2014,13 +2060,7 @@ export class WorldRenderer {
         performance.mark('aether:framed');
       }
       this.syncSmallCasters();
-      if (hold) this.startForWeight();
-    // A discrete GPU's motion chain depends on the world's weight (see applyQuality): plan again once it is known.
-    if (this.gpu.tier === 'discrete' && (this.sync.entityCount >= HEAVY_WORLD.entities) !== this.heavyPlanned) {
-      this.heavyPlanned = this.sync.entityCount >= HEAVY_WORLD.entities;
-      this.applyQuality(this.qualityPlan.quality);
-    }
-      if (hold) await this.warmShaders(say);
+      if (warm) await warm;
     } finally {
       if (hold) {
         this.warming = false;
@@ -2073,18 +2113,17 @@ export class WorldRenderer {
   }
 
   /**
-   * After the first frame: every {@link LATE_ROUND_MS} (or when the last model is in) hold the draws for one parallel link
-   * of whatever arrived since. The page stays responsive; a synchronous link inside a draw freezes it for 0.1 to 0.8 s.
+   * After the first frame: every {@link LATE_ROUND_MS} (or when the last model is in) one parallel link of whatever arrived
+   * since. The draws are not held: frames keep coming, and while programs link the view keeps its last complete picture
+   * (a round used to hold the draws, which kept the first picture off the screen for its whole length).
    */
   private async lateWarm(): Promise<void> {
     for (let round = 0; round < LATE_ROUNDS && !this.disposed && !this.lost; round++) {
       await this.bounded(this.sync.whenIdle(), LATE_ROUND_MS);
       if (this.disposed || this.lost || this.warming) return;
-      this.warming = true;
       try {
         await this.prepareAndCompile(LATE_COMPILE_MS);
       } finally {
-        this.warming = false;
         this.needsDraw = true;
       }
       this.syncSmallCasters();
@@ -2438,6 +2477,8 @@ export class WorldRenderer {
    * (it is gathered synchronously, before the first await). Objects out of view count as well: the camera moves on.
    */
   private async compileScene(boundMs = SHADER_WARMUP_MS): Promise<void> {
+    // From here the world asks for its own programs: the rest of the pre-warmed set would only queue in front of them.
+    this.programCache?.worldCompiling();
     const webgpu = (this.renderer as unknown as { backend?: { isWebGPUBackend?: boolean } }).backend?.isWebGPUBackend === true;
     const restoreEffects = this.fx.vfx.prepareForCompile();
     const changed: Array<{ o: Object3D; visible: boolean; culled: boolean }> = [];
@@ -4022,6 +4063,7 @@ export class WorldRenderer {
     // Programs still linking or objects still preparing: show what is ready every so often (bounded wait).
     this.progressive = (this.programs.pending > 0 || this.preparation.pending > 0) && this.progressiveDue(motion);
     const changed = cameraMoved || this.needsDraw || this.progressive || (animate && this.env.animating);
+    if (cameraMoved || motion) this.viewMovedAt = now();
     if (changed) this.refinement.restart();
     this.syncRest(motion, !motion && (this.frameInvalidation.motion || this.frameInvalidation.animating || (animate && this.env.animating)));
     const refine = !changed && this.refinement.next();
@@ -5393,6 +5435,8 @@ export class WorldRenderer {
     this.restDeferred = false;
     this.motionFrameReady = false;
     this.qualityPlan = qualityPlan(quality, this.budget, this.gpu.tier === 'software', this.tierChoice === 'auto' ? this.autoTierNow() : this.tierChoice, { split: this.tierChoice === 'auto' && this.gpu.tier !== 'discrete', tierCap: this.tierChoice === 'auto' ? this.cuts.tierCap : null });
+    // Programs are recorded into the set of the realtime tier in effect (stills and path tracing are not pre-warmed).
+    this.programCache?.setTier(this.qualityPlan.quality === 'realtime' ? this.qualityPlan.tier : null);
     // An integrated GPU keeps the single cached sun map in the realtime view at every tier: cascades follow the camera and
     // draw their casters again on nearly every moving frame (an ultra hillside town: 1,700 draws and 9.7 M triangles a
     // frame against 250 and 2.2 M at medium on an Intel UHD). The other effects of the tier stay; stills keep cascades.
@@ -6787,6 +6831,7 @@ export class WorldRenderer {
     this.presentation.dispose();
     this.preparation.dispose();
     this.programs.dispose();
+    this.programCache?.dispose();
     this.releaseShaders();
     this.gpuCost.dispose();
     this.fx.dispose();

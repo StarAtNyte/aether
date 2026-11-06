@@ -120,6 +120,41 @@ describe('parallel WebGL linking', () => {
     (f.backend.createRenderPipeline as unknown as (item: typeof object, promises: null) => void)(object, null);
     expect(f.controller.pending).toBe(0);expect(vi.getTimerCount()).toBe(0);f.controller.dispose();
   });
+  it('takes a pooled program without linking, and records native-path pipelines', async () => {
+    vi.useFakeTimers();
+    const pooledProgram = { id: 'pooled' };
+    let pooledReady = false;
+    const done = vi.fn(), noted: string[] = [];
+    const linked: object[] = [];
+    const data = new Map<object, { programGPU?: object; shaderGPU?: object }>();
+    const completed: unknown[] = [];
+    const backend = {
+      gl: { createProgram: () => ({ id: 'own' }), attachShader() {}, linkProgram: (p: object) => linked.push(p), isContextLost: () => false, deleteProgram() {}, getProgramParameter: () => true },
+      parallel: { COMPLETION_STATUS_KHR: 42 },
+      get: (p: object) => data.get(p) ?? { shaderGPU: {} }, set: (p: object, v: object) => data.set(p, v),
+      createRenderPipeline: vi.fn(),
+      _completeCompile: (o: { getBindings(): unknown }) => completed.push(o.getBindings()),
+    };
+    const pool = {
+      take: (v?: string, f?: string) => (v === 'V' && f === 'F' ? { program: pooledProgram, ready: () => pooledReady, done } : null),
+      note: (v?: string, f?: string) => void noted.push(`${v}/${f}`),
+    };
+    const c = parallelPrograms(backend as unknown as Parameters<typeof parallelPrograms>[0], vi.fn(), vi.fn(), pool);
+    const create = backend.createRenderPipeline as unknown as (o: object, p: null) => void;
+    const pipeline = { vertexProgram: { code: 'V' }, fragmentProgram: { code: 'F' } };
+    create({ pipeline, getBindings: () => 'b' }, null);
+    expect(data.get(pipeline)?.programGPU).toBe(pooledProgram);
+    expect(linked).toEqual([]);
+    await vi.advanceTimersByTimeAsync(20);
+    expect(completed).toEqual([]); // still linking in the pool
+    pooledReady = true;
+    await vi.advanceTimersByTimeAsync(20);
+    expect(completed).toEqual(['b']);
+    expect(done).toHaveBeenCalledOnce();
+    c.synchronous(() => create({ pipeline: { vertexProgram: { code: 'V2' }, fragmentProgram: { code: 'F2' } }, getBindings: () => 'c' }, null));
+    expect(noted).toEqual(['V2/F2']);
+    c.dispose();
+  });
   it('keeps the native path when parallel compilation is unavailable', () => {
     const backend = { createRenderPipeline: vi.fn() };
     const original = backend.createRenderPipeline;

@@ -530,6 +530,8 @@ export class Simulation {
       smooth = t - last < SETTLE_FRAME_MS ? smooth + 1 : 0;
       last = t;
     }
+    // The first picture goes up now: unused pre-warmed programs are let go later, neighbouring tiers prime at rest.
+    if (!this.disposed) this.renderer.markFirstPicture();
   }
 
   private async loadFully(maxMs: number, onStage?: (stage: RenderProcessingStage | 'motion') => void): Promise<void> {
@@ -545,8 +547,9 @@ export class Simulation {
       while (!this.disposed && this.renderer.lightVolumeBaking && performance.now() < bakeEnd) await new Promise<void>((resolve) => setTimeout(resolve, 100));
     }
     onStage?.('render');
+    // The hidden four-heading sweep is off by default (the tier's program set is pre-warmed, and programs met later link
+    // off the frame); `__AETHER_SWEEP = true` brings it back. Four headings: a 16:9 view is about 90° wide.
     performance.mark('aether:sweep-start');
-    // Four headings: a 16:9 view is about 90° wide, so four cover the circle (six overlapped and prepared twice).
     await this.renderer.prepareSurroundings(4, Math.max(1000, maxMs / 3));
     performance.mark('aether:sweep-end');
     let readySince = 0;
