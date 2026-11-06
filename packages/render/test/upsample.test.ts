@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { halton, jitterOffset } from '../src/gpu/upsample';
-import { lodBiasFor, MAX_LOD_BIAS, setTextureLodBias, textureLodBias } from '../src/gpu/lod-bias';
+import { lodBiasFor, MAX_LOD_BIAS, onTextureLodBias, setTextureLodBias, textureLodBias } from '../src/gpu/lod-bias';
 
 describe('temporal upsampling jitter', () => {
   it('halton values lie in [0, 1) and differ between bases', () => {
@@ -54,5 +54,17 @@ describe('texture level bias of a scaled scene pass', () => {
     expect(textureLodBias()).toBe(-MAX_LOD_BIAS);
     setTextureLodBias(Number.NaN);
     expect(textureLodBias()).toBe(0);
+  });
+
+  it('turns off with __AETHER_LOD_BIAS = false and reaches listeners', () => {
+    const seen: number[] = [];
+    onTextureLodBias((b) => seen.push(b));
+    setTextureLodBias(-0.5);
+    expect(seen[seen.length - 1]).toBe(-0.5);
+    (globalThis as { __AETHER_LOD_BIAS?: boolean }).__AETHER_LOD_BIAS = false;
+    setTextureLodBias(-0.5);
+    expect(textureLodBias()).toBe(0);
+    delete (globalThis as { __AETHER_LOD_BIAS?: boolean }).__AETHER_LOD_BIAS;
+    setTextureLodBias(0);
   });
 });

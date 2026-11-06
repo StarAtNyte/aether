@@ -413,3 +413,22 @@ moving frame are the camera-dependent bindings, not per-batch state. Frame pacin
 noise; the frames over 33 ms are mostly ones with few draws (median 130 against 400 for the fast frames), waiting on the
 GPU process or a node build, not on submission. Hero shots of Lisbon Hills match the old build within run-to-run noise
 (mean pixel difference to a second run of the old build 0.2-2.4, the old build against itself 1.0-10.1).
+
+## Texture level bias below render scale (6 November 2026)
+
+The bias already existed (`gpu/lod-bias.ts`): one uniform feeds a `log2(scale)` level bias to every mip-mapped colour sample of the
+scene pass when the temporal upsample takes the scale (ultra/light chains in motion), clamped to [-2, 0] and 0 above scale 0.95.
+Changing the scale only writes the uniform, so no program is recompiled. This pass added a switch and a fix:
+
+- Switch: `__AETHER_LOD_BIAS = false` turns the bias off (the older `__NOBIAS = true` still works). On by default.
+- Foliage: the mip-scaled alpha boost (`foliage-shading.ts`) read the unbiased derivative level while the colour texture is now read
+  finer; it now subtracts the bias (a uniform fed by `onTextureLodBias`), so a biased leaf is not over-thickened.
+- Specular AA (`gpu/specular-aa.ts`) is derivative based and needs no change: sharper normal maps raise the normal variance it widens by.
+- Foliage edges: alpha-to-coverage stays off on purpose (`material-cache.ts`): the scene pass is single-sampled and coverage on it
+  stipples the card. Under TAA the jittered alpha test is integrated by the upsample. No change.
+- Harness: `tests/e2e/upscale-quality.e2e.ts --tier=ultra` pins the tier so the scene pass takes the scale (without it the canvas
+  itself shrinks and no bias applies).
+
+Kestrel Outpost, ultra, scale pinned 0.7, three orbit frames against the same frames at scale 1 (`scripts/upscale-metrics.py`):
+bias on: detail ratio 0.87, SSIM after 4x down 0.9861; bias off: 0.80, 0.9839. Full-size PSNR 34.5 against 34.8 dB (the bias trades a
+little pixel match for detail). Lisbon Hills captures were unusable in this run (a crashed browser, one black frame).

@@ -19,14 +19,28 @@ export function lodBiasFor(scale: number): number {
   return -Math.min(MAX_LOD_BIAS, Math.log2(1 / Math.max(0.05, scale)));
 }
 
+/** Whether the bias is on. `globalThis.__AETHER_LOD_BIAS = false` (or the older `__NOBIAS = true`) turns it off. */
+export function lodBiasEnabled(): boolean {
+  const g = globalThis as { __AETHER_LOD_BIAS?: boolean; __NOBIAS?: boolean };
+  return g.__AETHER_LOD_BIAS !== false && g.__NOBIAS !== true;
+}
+
 let value = 0;
+const listeners: Array<(bias: number) => void> = [];
+
+/** Follow the bias (a shader uniform of its own, e.g. the foliage alpha boost that must read the mip the texture is sampled at). */
+export function onTextureLodBias(fn: (bias: number) => void): void {
+  listeners.push(fn);
+  fn(value);
+}
 let uniformNode: { value: number } | null = null;
 let installed = false;
 
 /** Set the bias in levels (0 or negative). Takes effect on the next draw. */
 export function setTextureLodBias(bias: number): void {
-  value = Number.isFinite(bias) && (globalThis as { __NOBIAS?: boolean }).__NOBIAS !== true ? Math.min(0, Math.max(-MAX_LOD_BIAS, bias)) : 0;
+  value = Number.isFinite(bias) && lodBiasEnabled() ? Math.min(0, Math.max(-MAX_LOD_BIAS, bias)) : 0;
   if (uniformNode) uniformNode.value = value;
+  for (const fn of listeners) fn(value);
 }
 
 /** The bias in force (tests and diagnostics). */

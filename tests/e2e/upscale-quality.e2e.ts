@@ -3,7 +3,7 @@
  * function of the step index) is captured from the canvas inside the draw call (no screenshot timing), at a pinned scene
  * scale. Capture the reference at `--scale=1`, the candidates at their scale, then compare with `scripts/upscale-metrics.py`.
  *
- * Run: `npm run build && GEN_GPU=intel npx tsx tests/e2e/upscale-quality.e2e.ts --out=dir [--worlds=a,b] [--scale=0.25|auto] [--speed=0.004] [--size=1920x1080]`
+ * Run: `npm run build && GEN_GPU=intel npx tsx tests/e2e/upscale-quality.e2e.ts --out=dir [--worlds=a,b] [--scale=0.25|auto] [--tier=ultra] [--nobias=1] [--speed=0.004] [--size=1920x1080]`
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -18,6 +18,8 @@ const OUT = arg('out') ?? 'upscale-out';
 const SCALE = arg('scale') ?? '1';
 const VARIANT = arg('var');
 const NOBIAS = arg('nobias') !== undefined;
+/** A fixed render tier (`ultra`: the scene pass takes the scale, the canvas stays full size). */
+const TIER = arg('tier');
 const SPEED = Number(arg('speed') ?? 0.004);
 const [W, H] = (arg('size') ?? '1856x1016').split('x').map(Number) as [number, number];
 const SHOTS = (arg('shots') ?? '40,70,100').split(',').map(Number);
@@ -50,6 +52,7 @@ async function main(): Promise<void> {
         st?.setPanel('right', false);
         st?.updateSettings({ showNavHint: false });
       });
+      if (TIER) await page.evaluate((t) => (window.__aether?.simulation?.renderer as unknown as { setRenderTier?: (x: string) => void } | undefined)?.setRenderTier?.(t), TIER);
       await page.waitForTimeout(8000);
       const cam = COVER_CAMERAS[slug];
       let pose: number[] = [];

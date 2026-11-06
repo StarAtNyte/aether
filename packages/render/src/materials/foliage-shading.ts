@@ -14,6 +14,7 @@
  * WebGL2.
  */
 import { staticShadowAlpha } from '../gpu/shadow-alpha';
+import { onTextureLodBias } from '../gpu/lod-bias';
 import { Color, Vector3, type MeshStandardMaterial } from 'three';
 import { Fn, If } from 'three/tsl';
 import { T, type Nd } from './tsl-lite';
@@ -28,6 +29,8 @@ const uSunIrradiance = T.uniform(sunIrradiance);
 /** Multiplier on the colour of every foliage card (white: none); the world's `look.foliageTint` sets it. */
 const foliageTint = new Color(1, 1, 1);
 const uFoliageTint = T.uniform(foliageTint);
+const uFoliageLodBias = T.uniform(0);
+onTextureLodBias((b) => void ((uFoliageLodBias as unknown as { value: number }).value = b));
 
 /** Tint the foliage cards (a #rrggbb multiplier, null: none). Invalid input is ignored. */
 export function setFoliageTint(hex: string | null): void {
@@ -94,7 +97,8 @@ function nodes(): { color: Nd; emissive: Nd; mask: Nd } {
   const texel = T.uv().mul(FOLIAGE_ALPHA_TEXELS);
   const dx = T.dFdx(texel);
   const dy = T.dFdy(texel);
-  const lod = T.max(T.log2(T.max(T.max(T.dot(dx, dx), T.dot(dy, dy)), 1e-8)).mul(0.5), 0);
+  // The colour texture is read `uLodBias` levels finer in a scaled scene pass (see `lod-bias.ts`), so that much less boost.
+  const lod = T.max(T.log2(T.max(T.max(T.dot(dx, dx), T.dot(dy, dy)), 1e-8)).mul(0.5).add(uFoliageLodBias), 0);
   const alpha = base.w.mul(lod.mul(FOLIAGE_ALPHA_PER_MIP).add(1));
   colorNode = Fn(() => {
     const out = T.vec4(base.rgb.mul(uFoliageTint), alpha).toVar();
