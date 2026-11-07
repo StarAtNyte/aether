@@ -29,6 +29,10 @@ export const KAHO = 'cw-kaho';
 /** The local train (`cw-train`, a separate baked piece; its moves are skipped while the world has no such entity). */
 export const TRAIN = 'cw-train';
 
+/** Her friend Mio (`cw-mio`, in the world once her body is in the original cast) and her place at the lookout. */
+export const MIO = 'cw-mio';
+export const MIO_START: V3 = [0.35, 44.05, -130.85];
+
 /** Where she ends the film: at the lookout railing, facing the sea. */
 export const KAHO_END: V3 = [0.9, 44.05, -130.9];
 /** Where the visitor starts when playing from the story (behind her spot). */
