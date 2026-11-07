@@ -1024,3 +1024,50 @@ Casa del Patio, Intel UHD 770, player on the cooked package (`scripts/baked-ligh
 
 Package: +8.8 MB of baked light on Casa del Patio (lightmap 5.5 MB, volume 3.3 MB). Bake at publish: 67 s on 12 threads
 outside the page (940 s in the page's single worker).
+
+## A ladder step without a link, and fewer triangles a frame (7 November 2026)
+
+Kestrel Outpost (cooked) on the Intel UHD 770, WebGL2, measured with `scripts/first-picture-probe.ts --player` and the
+base build interleaved with this one on a shared, busy GPU.
+
+- **The ladder's tier cap keeps the materials.** A step to the medium or low cap used to rebuild every lit material
+  (lights, sky detail, the scene pass's output): 34 links, page tasks of 210-370 ms and up to 16 GPU-process tasks over
+  100 ms (longest 570-620 ms), and the slow frames of the rebuild made the ladder take the next step 4-6 s later. The cap
+  now lowers only what the frame costs (`QualityOptions.ladderCap`): the lower tier's level of detail, draw distances,
+  small casters and post passes, the composite kept. `QualityPlan.programTier` is the tier the materials are built for;
+  the programs, the program set (`programs/<tier>.bin`) and the neighbours primed in idle time follow it. Firefox's
+  cautious start still asks for the lightest programs. A heavy world on a weak GPU starts at the low cost with the
+  automatic tier's programs (Lisbon Hills on Intel: the medium look, the composite and its grade, from the first picture).
+- **No evidence from a rebuild.** Frames drawn while a plan change's programs link (a chosen tier, a cascades step) no
+  longer feed the ladder or adaptive resolution.
+- **Shadow-pass level of detail for scatter fields.** The sun map draws every field level through a stand-in with the
+  next level's geometry and the same instance buffer (`FIELD_SHADOW_LAYER`); the levels themselves are skipped there.
+  Cascade cameras draw the levels as before.
+- **Field level of detail from the instance's centre.** A chunk took its level from the nearest point of its box padded by
+  the instance radius: an 18 m pine counted 18 m nearer than it was. And heavy meshes switch level at a larger projected
+  radius (`fieldLodPixels`: the switch radius grows with the square root of the level's triangles over 1,000).
+- **Probe:** `--drop` forces one ladder step after 4 s of motion and reports links, long tasks and GPU-process tasks in
+  the 6 s after it; `--tris` reports triangles per frame by pass and by mesh at the opening view (adaptive resolution off,
+  ladder held), with the cached sun map and with it redrawn; `--tier=<tier>` starts the player on a chosen tier.
+
+| Kestrel Outpost, Intel UHD 770 | base | this |
+| --- | --- | --- |
+| forced step medium to low (`--drop`, cold and warm): links in the 6 s after | 34, 34 | 0, 0, 0, 0 |
+| longest page task in those 6 s | 1,536 ms, 71 ms | 64, 0, 0, 69 ms |
+| GPU-process tasks over 100 ms in those 6 s | 11 (longest 634 ms), 2 | 0, 0, 0, 0 (longest 83 ms) |
+| a further step from the rebuild's slow frames (all drop runs) | 3 of 8 | 0 of 10 |
+| triangles a frame, opening view at medium, 1600×900, sun map cached (3 runs) | 692,000-711,000 | 525,000 (-25 %) |
+| the same with the sun map redrawn | 1,248,000-1,282,000 | 853,500 (-33 %) |
+| 8 s orbit, triangles a frame | 655,000-702,000 | 498,000-504,000 (-26 %) |
+| GPU time of the frame, orbit (timer queries, a contended GPU; mean of 3 pairs) | 113 ms | 84 ms |
+
+Lisbon Hills at medium: 3.50 M to 3.44 M triangles a frame (-2 %). The hero views of Kestrel Outpost, Lisbon Hills and
+Casa del Patio (`scripts/experience-shots.ts --hero`, and the probe's opening views) show no loss: the pines, their
+shadows and the buildings look the same; Lisbon on Intel now shows the medium grade from its first picture.
+
+What dominates: Kestrel's opening view at medium, 1600×900: a pine field at its finest level (235,000 triangles), the
+outpost's merged buildings (121,000), and in the sun map the same pines (184,000 of 596,000). Lisbon Hills: merged
+buildings (1.26 M of 3.4 M in the view) and the per-cell shadow batches (2.4 M of 3.0 M in the sun map). Neither moves
+here: the buildings are for HLOD streaming, and simplifying the shadow batches costs seconds of CPU at load.
+
+Still open: an adaptive-resolution step resizes the canvas, 35-130 ms on this GPU in either build.

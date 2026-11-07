@@ -35,8 +35,17 @@ export const TIER_SHADOW_RADIUS = 4;
 /** What a quality asks of the renderer. */
 export interface QualityPlan {
   quality: RenderQuality;
-  /** Render tier whose effect set the plan starts from (stills always run the ultra chain). */
+  /**
+   * Render tier in effect: what the frame costs (level of detail, draw distances, shadow casters) follows it. Stills
+   * always run the ultra chain.
+   */
   tier: RenderTier;
+  /**
+   * Tier the material programs are built for: lights, sky detail, the photographed sky, the output of the scene pass.
+   * Below {@link tier} only when the performance ladder lowered the cost without rebuilding the materials (see
+   * {@link QualityOptions.ladderCap}); otherwise equal to it.
+   */
+  programTier: RenderTier;
   /** The effects the plan asks for (before user toggles and device failures; see `resolveEffects`). */
   effects: PostEffects;
   /** Post pipeline variant (null: none unless the world's bloom asks for the standard one). */
@@ -66,8 +75,24 @@ export interface QualityOptions {
    * Both phases retain the same lighting effects to avoid camera-driven brightness changes.
    */
   split?: boolean;
-  /** Most expensive tier the performance ladder still allows (null: any). */
+  /** Most expensive tier the performance ladder still allows (null: any). Stills: the effects of the chain. */
   tierCap?: RenderTier | null;
+  /**
+   * Realtime: the performance ladder's cap on the tier's cost (null: none). The plan's {@link QualityPlan.tier} is capped
+   * and the post passes the lower tier lacks are dropped, but the material programs stay those of the tier asked for
+   * ({@link QualityPlan.programTier}): the scene pass keeps its output (the composite stays), the shadow technique and
+   * radius stay. A ladder step then links no program: on an integrated GPU a step from medium to low rebuilt every lit
+   * material, 29-35 links and GPU-process tasks of 100-900 ms each, while the frame was bound by triangles, which the
+   * lower tier's level of detail and draw distances cut.
+   */
+  ladderCap?: RenderTier | null;
+}
+
+const ORDER: readonly RenderTier[] = ['low', 'medium', 'high', 'ultra'];
+
+/** The cheaper of `tier` and `cap` (null: `tier`). */
+function capTier(tier: RenderTier, cap: RenderTier | null): RenderTier {
+  return cap !== null && ORDER.indexOf(cap) < ORDER.indexOf(tier) ? cap : tier;
 }
 
 /** The effects of `base` that `cap`'s tier also runs. */
@@ -133,15 +158,21 @@ export function qualityPlan(quality: RenderQuality, budget: Pick<RenderBudget, '
   const cap = Number.isFinite(budget.shadowMapCap) && budget.shadowMapCap > 0 ? budget.shadowMapCap : 1024;
   if (quality === 'realtime' || !studioAvailable(budget)) {
     const t: RenderTier = !budget.post ? 'low' : (tier ?? (software ? 'low' : 'medium'));
-    const effects = effectsOf(t);
+    const cost = capTier(t, opts.ladderCap ?? null);
+    const own = effectsOf(t);
+    // The lower tier's post passes, with the scene pass's output kept (a composite draws through it: dropping it would
+    // put the tone mapping back into every material).
+    const effects = cost === t ? own : { ...clampEffects(own, cost), composite: own.composite };
     const refined = effects.ao || effects.taa;
+    const ownRefined = own.ao || own.taa;
     return {
       quality: 'realtime',
-      tier: t,
+      tier: cost,
+      programTier: t,
       effects,
       post: postQualityOf(effects),
       shadowMapCap: cap,
-      shadowRadius: refined ? TIER_SHADOW_RADIUS : SHADOW_RADIUS.realtime,
+      shadowRadius: ownRefined ? TIER_SHADOW_RADIUS : SHADOW_RADIUS.realtime,
       accumulateFrames: refined ? (software ? TIER_ACCUMULATE_FRAMES_SOFTWARE : TIER_ACCUMULATE_FRAMES) : 0,
       adaptiveResolution: true,
       moveEffects: null,
@@ -158,6 +189,7 @@ export function qualityPlan(quality: RenderQuality, budget: Pick<RenderBudget, '
   return {
     quality,
     tier: 'ultra',
+    programTier: 'ultra',
     effects,
     post: 'studio',
     shadowMapCap: split ? cap : Math.min(STUDIO_SHADOW_MAP_MAX, software ? cap : cap * 2),

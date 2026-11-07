@@ -4,7 +4,8 @@ import { buildChunks, FieldCuller, FIELD_STRIDE, packMatrices, type FieldView } 
 import { buildLodChain, isFaceted } from '../src/virtual/lod-chain';
 import { composeScatterMatrices, composeScatterPacked, scatterPlacements } from '../src/geometry/scatter';
 import { shareBudget, shareDemand } from '../src/sync/field-mount';
-import { FIELD_MIN_INSTANCES, fieldChunkSize, isFieldLayer } from '../src/virtual/scatter-field';
+import { DEFAULT_LOD_PIXELS } from '../src/virtual/field-culler';
+import { FIELD_MIN_INSTANCES, FIELD_SHADOW_LAYER, fieldChunkSize, fieldLodPixels, fieldShadowSkipped, isFieldLayer, LOD_REFERENCE_TRIANGLES } from '../src/virtual/scatter-field';
 import { renderBudget } from '../src/gpu/budget';
 import { makeSync, patch, world } from './helpers';
 import { primitiveOutput } from '@aether/procgen';
@@ -72,6 +73,30 @@ describe('FieldCuller', () => {
     for (let i = 0; i < (culler.counts[culler.levels - 1] as number); i++) minFar = Math.min(minFar, dist(far, i));
     expect(culler.counts[0]).toBeGreaterThan(0);
     expect(maxNear).toBeLessThan(minFar);
+  });
+
+  it('projects an instance from its centre, not from the padded edge of its chunk', () => {
+    // One tree of radius 10, level 1 below 90 px. At 95 m: 10 × 800 / 95 ≈ 84 px, level 1 (from the edge of its padded
+    // box, 85 m away, it was 94 px: level 0). At 60 m: 133 px, level 0. Among the instances: level 0.
+    const one = new Float32Array(FIELD_STRIDE);
+    one[3] = 1;
+    const tree = buildChunks(one, 1, 10, 1);
+    const at = (x: number): number => {
+      const c = new FieldCuller(tree, { lodTriangles: [500, 100, 20], radius: 10, budgetTriangles: 10_000 });
+      c.update({ cx: x, cy: 0, cz: 0, pixelScale: 800, planes: null });
+      return c.counts[0] === 1 ? 0 : c.counts[1] === 1 ? 1 : 2;
+    };
+    expect(at(60)).toBe(0);
+    expect(at(95)).toBe(1);
+    expect(at(0)).toBe(0);
+  });
+
+  it('switches heavy meshes to a coarser level at a larger projected radius', () => {
+    expect(fieldLodPixels([LOD_REFERENCE_TRIANGLES / 2, 100, 20])).toEqual([DEFAULT_LOD_PIXELS[0], DEFAULT_LOD_PIXELS[1]]);
+    const heavy = fieldLodPixels([4 * LOD_REFERENCE_TRIANGLES, LOD_REFERENCE_TRIANGLES, 200]);
+    expect(heavy[0]).toBeCloseTo(2 * (DEFAULT_LOD_PIXELS[0] as number));
+    expect(heavy[1]).toBeCloseTo(DEFAULT_LOD_PIXELS[1] as number);
+    expect(fieldLodPixels([500])).toEqual([]);
   });
 
   it('demotes and drops chunks front to back when the budget is small', () => {
@@ -258,6 +283,22 @@ describe('SceneSync scatter fields', () => {
     expect(stats.drawnTriangles).toBeLessThanOrEqual(400_000);
     const drawn = node.field!.meshes.reduce((s, m: InstancedMesh) => s + m.count, 0);
     expect(drawn).toBe(stats.drawnInstances * node.partCount);
+    // The sun map draws every level but the coarsest through a stand-in with the next level's geometry and the same
+    // instances; the levels themselves are skipped there, the coarsest casts itself.
+    const f = node.field!;
+    expect(f.shadowMeshes.length).toBe((f.levels - 1) * node.partCount);
+    for (let i = 0; i < f.shadowMeshes.length; i++) {
+      const stand = f.shadowMeshes[i]!;
+      const source = f.meshes[i]!;
+      expect(stand.instanceMatrix).toBe(source.instanceMatrix);
+      expect(stand.count).toBe(source.count);
+      expect(stand.geometry).toBe(f.meshes[i + node.partCount]!.geometry);
+      expect(stand.material).toBe(source.material);
+      expect(stand.layers.mask).toBe(1 << FIELD_SHADOW_LAYER);
+      expect(stand.castShadow).toBe(source.castShadow);
+      expect(fieldShadowSkipped(source)).toBe(true);
+    }
+    for (const m of f.meshes.slice((f.levels - 1) * node.partCount)) expect(fieldShadowSkipped(m)).toBe(false);
     // Same view: nothing to re-upload.
     expect(sync.updateView(camera, 900)).toBe(false);
     const tris = primitiveOutput({ kind: 'primitive', primitive: 'cone', size: [1, 2, 1] }).parts.reduce((s, p) => s + p.indices.length / 3, 0);

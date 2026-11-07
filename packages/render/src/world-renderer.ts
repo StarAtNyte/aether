@@ -48,6 +48,7 @@ import { photoFinishResolver } from './materials/photo-finishes';
 import { getCatalog, loadCatalog } from '@aether/assets';
 import { SceneSync } from './sync/scene-sync';
 import { installShadowSkip, SHADOW_BATCH_LAYER, shadowSkipTest } from './sync/cell-shadow-batches';
+import { FIELD_SHADOW_LAYER, fieldShadowSkipped } from './virtual/scatter-field';
 import type { EntityNode } from './sync/entity-node';
 import { ghostWorld } from './sync/ghost';
 import { EnvironmentRig } from './environment/environment-rig';
@@ -1303,7 +1304,10 @@ export class WorldRenderer {
       },
     });
     // The sun's depth pass draws static casters per grid cell; their own meshes are skipped there (see cell-shadow-batches).
-    installShadowSkip(this.renderer, shadowSkipTest(() => this.sync.cellShadowBatches));
+    // It draws a scatter field's levels through their coarser stand-ins, and skips the levels themselves (see scatter-field).
+    const cellSkip = shadowSkipTest(() => this.sync.cellShadowBatches);
+    const fieldMask = 1 << FIELD_SHADOW_LAYER;
+    installShadowSkip(this.renderer, (object, camera) => cellSkip(object, camera) || ((camera.layers.mask & fieldMask) !== 0 && fieldShadowSkipped(object)));
     this.ghost = new SceneSync({
       ...common,
       variant: 'ghost',
@@ -1410,7 +1414,7 @@ export class WorldRenderer {
     if (opts.safeMode === true) wr.setSafeMode(true);
     else wr.startCautiously();
     // The tier's program set links while the world is still being generated: its pipelines then take them as they are.
-    if (wr.qualityPlan.quality === 'realtime' && !wr.simple) void wr.programCache?.prewarm(wr.renderTier);
+    if (wr.qualityPlan.quality === 'realtime' && !wr.simple) void wr.programCache?.prewarm(wr.qualityPlan.programTier);
     if (wr.budget.post) {
       const want = wr.wantedEffects();
       if (want) {
@@ -1453,7 +1457,7 @@ export class WorldRenderer {
     const cache = this.programCache;
     if (!cache || this.disposed) return;
     cache.markFirstPicture();
-    const i = RENDER_TIERS.indexOf(this.renderTier);
+    const i = RENDER_TIERS.indexOf(this.qualityPlan.programTier);
     const neighbours = [RENDER_TIERS[i + 1], RENDER_TIERS[i - 1]].filter((t): t is RenderTier => t !== undefined);
     // At rest only: links beside a moving view cost its frames (Lisbon Hills, a cooked cold orbit: p95 133 to 233-333 ms).
     void cache.prime(neighbours, () => !this.disposed && !this.lost && !this.loadingScreen && this.programs.pending === 0 && this.preparation.pending === 0 && now() - this.viewMovedAt > IDLE_PRIME_MS);
@@ -3538,7 +3542,7 @@ export class WorldRenderer {
     this.voxelLoading ??= import('./voxel/voxel-layer').then(({ VoxelLayer: Layer }) => {
       if (this.disposed) throw new Error('renderer disposed');
       const layer = new Layer();
-      layer.setQuality(this.qualityPlan.tier);
+      layer.setQuality(this.qualityPlan.programTier);
       layer.setCharacters(this.characters);
       // Terrain shaders compile asynchronously (no multi-hundred-ms first frame).
       layer.setCompiler((object) => (this.disposed ? Promise.resolve() : this.renderer.compileAsync(object, this.perspective, this.scene)));
@@ -4962,8 +4966,10 @@ export class WorldRenderer {
     // A split studio chain refines at rest with its full (slow) chain: those frames say nothing about motion.
     if (this.qualityPlan.moveEffects === null || !this.atRest) {
       // CPU contention from a background bake says nothing about GPU pixel cost, nor does a progressive frame drawn while
-      // objects coming into view still prepare (the preparation shares the frame).
-      const measuring = this.drewLastFrame && !this.lightVolumeBaking && !this.progressive;
+      // objects coming into view still prepare (the preparation shares the frame), nor a frame drawn while a plan change's
+      // programs link: counted, the links' slow frames made the ladder take the next step at once (medium to low, then the
+      // effects 6 s later on an Intel UHD 770), and the step after a climb undid the climb.
+      const measuring = this.drewLastFrame && !this.lightVolumeBaking && !this.progressive && !this.rewarming && this.rebuildSince === 0;
       if (this.adaptive.record(dt, measuring, this.gpuCost.seconds)) this.resize(this.cssWidth, this.cssHeight);
       const scale = this.adaptive.enabled ? this.adaptive.scale : 0;
       // The ladder waits for adaptive resolution to fall first; a scale held at its floor (0.75 under the sharp motion
@@ -5139,6 +5145,8 @@ export class WorldRenderer {
     const sunLayers = this.env.sun.shadow.camera.layers;
     if (this.sync.cellShadowBatches !== null) sunLayers.enable(SHADOW_BATCH_LAYER);
     else sunLayers.disable(SHADOW_BATCH_LAYER);
+    // Scatter fields cast through their coarser stand-ins (cascade cameras draw the levels themselves).
+    sunLayers.enable(FIELD_SHADOW_LAYER);
     const cascades = this.env.sunCascades;
     const temporal = this.post?.effects.taa === true;
     if (temporal) {
@@ -5764,6 +5772,14 @@ export class WorldRenderer {
     return capTier(this.adaptiveTier.resolve(this.autoTierBase()), this.cuts.tierCap);
   }
 
+  /**
+   * The tier the automatic choice builds the materials for: the ladder's cap does not lower it (a step links nothing),
+   * except on Firefox's cautious start, whose point is the lightest programs.
+   */
+  private autoProgramTier(): RenderTier {
+    return this.ladderStart === 'gecko' ? this.autoTierNow() : this.adaptiveTier.resolve(this.autoTierBase());
+  }
+
   private autoTierBase(): RenderTier {
     return capTier(autoTier(this.gpu.tier, this.budget), hardwareTierCap(this.hardware, this.gpu.tier));
   }
@@ -5816,8 +5832,9 @@ export class WorldRenderer {
   }
 
   /**
-   * A heavy world on a weak GPU starts on the light end of the ladder (see `startLevel`), before its shaders are linked, so
-   * the programs linked are the ones drawn; the governor climbs while frames are fast. Automatic tier only.
+   * A heavy world on a weak GPU starts on the light end of the ladder (see `startLevel`): the low tier's cost with the
+   * automatic tier's programs, so neither the start nor the climb links anything; the governor climbs while frames are
+   * fast. Automatic tier only.
    */
   private startForWeight(entities = this.sync.entityCount): void {
     if (this.tierChoice !== 'auto' || !this.governor.enabled || this.safe || this.qualityPlan.quality !== 'realtime') return;
@@ -6233,9 +6250,12 @@ export class WorldRenderer {
     this.shaftsUnavailable = false;
     this.restDeferred = false;
     this.motionFrameReady = false;
-    this.qualityPlan = qualityPlan(quality, this.budget, this.gpu.tier === 'software', this.tierChoice === 'auto' ? this.autoTierNow() : this.tierChoice, { split: this.tierChoice === 'auto' && this.gpu.tier !== 'discrete', tierCap: this.tierChoice === 'auto' ? this.cuts.tierCap : null });
-    // Programs are recorded into the set of the realtime tier in effect (stills and path tracing are not pre-warmed).
-    this.programCache?.setTier(this.qualityPlan.quality === 'realtime' ? this.qualityPlan.tier : null);
+    const auto = this.tierChoice === 'auto';
+    // The ladder's tier cap lowers what the frame costs, not the materials (see `QualityOptions.ladderCap`): a step down or
+    // back up links nothing.
+    this.qualityPlan = qualityPlan(quality, this.budget, this.gpu.tier === 'software', this.tierChoice === 'auto' ? this.autoProgramTier() : this.tierChoice, { split: auto && this.gpu.tier !== 'discrete', tierCap: auto ? this.cuts.tierCap : null, ladderCap: auto ? this.cuts.tierCap : null });
+    // Programs are recorded into the set of the realtime tier they are built for (stills and path tracing are not pre-warmed).
+    this.programCache?.setTier(this.qualityPlan.quality === 'realtime' ? this.qualityPlan.programTier : null);
     // An integrated GPU keeps the single cached sun map in the realtime view at every tier: cascades follow the camera and
     // draw their casters again on nearly every moving frame (an ultra hillside town: 1,700 draws and 9.7 M triangles a
     // frame against 250 and 2.2 M at medium on an Intel UHD). The other effects of the tier stay; stills keep cascades.
@@ -6255,17 +6275,18 @@ export class WorldRenderer {
       this.qualityPlan = { ...this.qualityPlan, moveEffects: { ...e, ao: false, gi: false, taa: false, contact: false, ssr: false, dof: false, ...((globalThis as { __AETHER_MOTION_SHAFTS?: boolean }).__AETHER_MOTION_SHAFTS === false ? { shafts: false } : {}) } };
     }
     const plan = this.qualityPlan;
+    // What changes the material programs follows the tier they are built for (`programTier`); what only costs, the tier.
     // The high and ultra tiers (and stills) light and reflect with a photographed sky.
-    this.env.setAutoHdri(plan.tier === 'high' || plan.tier === 'ultra');
-    this.env.sky.setDetail(plan.tier !== 'low');
+    this.env.setAutoHdri(plan.programTier === 'high' || plan.programTier === 'ultra');
+    this.env.sky.setDetail(plan.programTier !== 'low');
     this.env.shadowMapCap = plan.shadowMapCap;
     this.env.sun.shadow.radius = plan.shadowRadius;
-    this.voxelLayer?.setQuality(plan.tier);
+    this.voxelLayer?.setQuality(plan.programTier);
     this.syncSmallCasters();
     // The cheaper tiers merge drawers and doors while nobody uses them (a regroup on first use instead of a draw each).
-    this.sync.setInteractiveMerges(plan.quality === 'realtime' && (plan.tier === 'low' || plan.tier === 'medium'));
-    // The low tier lights with fewer local lights (a program rebuild, which the change of tier makes anyway).
-    this.sync.setLightBudget(forwardLightBudget(FORWARD_LIGHTS[this.gpu.tier], plan.tier, plan.quality !== 'realtime'));
+    this.sync.setInteractiveMerges(plan.quality === 'realtime' && (plan.programTier === 'low' || plan.programTier === 'medium'));
+    // The low tier lights with fewer local lights (a program rebuild, which a chosen change of tier makes anyway).
+    this.sync.setLightBudget(forwardLightBudget(FORWARD_LIGHTS[this.gpu.tier], plan.programTier, plan.quality !== 'realtime'));
     // Each part of a character is a draw call in the shadow pass: fewer cast on the cheaper tiers.
     if (plan.tier === 'low') this.characters.setShadowLimits(3, 30);
     else if (plan.tier === 'medium') this.characters.setShadowLimits(10, 60);
@@ -6289,10 +6310,11 @@ export class WorldRenderer {
     this.resize(this.cssWidth, this.cssHeight);
     this.boundsDirty = true;
     this.needsDraw = true;
-    const key = JSON.stringify([plan.tier, plan.shadowTier, plan.shadowStill, plan.post, plan.effects, plan.moveEffects, this.cuts]);
-    // Only a change of tier or effects rebuilds programs; the ladder's cuts alone (cascades, light volume) do not need a re-link walk.
-    const programsChanged = JSON.stringify([plan.tier, plan.shadowTier, plan.post, plan.effects]) !== this.programKey;
-    this.programKey = JSON.stringify([plan.tier, plan.shadowTier, plan.post, plan.effects]);
+    // The ladder's tier cap alone (level of detail, draw distances) leaves the materials as they are: no rebuild to wait for.
+    const key = JSON.stringify([plan.programTier, plan.shadowTier, plan.shadowStill, plan.post, plan.effects, plan.moveEffects, { ...this.cuts, tierCap: null }]);
+    // Only a change of the programs' tier or of effects rebuilds programs; the ladder's cuts alone (cascades, light volume) do not need a re-link walk.
+    const programsChanged = JSON.stringify([plan.programTier, plan.shadowTier, plan.post, plan.effects]) !== this.programKey;
+    this.programKey = JSON.stringify([plan.programTier, plan.shadowTier, plan.post, plan.effects]);
     const rebuilt = key !== this.planKey && this.framesDrawn > 0;
     if (rebuilt) this.rebuildSince = now();
     this.planKey = key;

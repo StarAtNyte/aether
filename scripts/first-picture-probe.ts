@@ -25,6 +25,12 @@
  * With `--player` it opens the world in the standalone player (`play.html#t=<slug>`), from its cooked package when the
  * dist has one (`cooked/<slug>/`, scripts/cook.ts, read with `cook=local`); `--live` adds `cook=0`, the player's live path. Each run then reports
  * the path taken and the generator runs (`generated`, `posted` and `fallbacks` of the generation pool; `cooked` hits).
+ * With `--drop` the ladder takes one step down after the load, the way the governor steps (a step that would change
+ * nothing is skipped: on a medium tier without the light volume or cascades, the first step is the low cap). It reports
+ * what the step cost in the 6 s after it (the view moves from 4 s before it): links, long tasks of the page, GPU-process
+ * tasks, the tier transition.
+ * With `--tris` the orbit also reports triangles and draws per frame by pass (render target size) and the meshes that draw
+ * the most, at the full resolution and the ladder's start (adaptive resolution off and the ladder held from there on). The orbit reports triangles per frame and the GPU time of the frame (the renderer's timer query samples).
  * Run it in a capped scope, one browser at a time (see docs/PERFORMANCE.md, Measuring).
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, createWriteStream, readFileSync } from 'node:fs';
@@ -44,6 +50,12 @@ const wantProfile = args.includes('--profile');
 const wantDead = args.includes('--dead');
 /** `--links`: each run writes `<run>-links.json`, every program link (source hashes, time, latency, first use). */
 const wantLinks = args.includes('--links');
+/** `--drop`: force the ladder's tier drop after the load and report what it cost. */
+const wantDrop = args.includes('--drop');
+/** `--tier=<tier>` (with `--player`): start on that render tier, chosen (no ladder): two builds then compare at one tier. */
+const tierChoice = flag('tier');
+/** `--tris`: triangles per frame by pass and by mesh during the orbit. */
+const wantTris = args.includes('--tris');
 const slug = args.find((a) => !a.startsWith('--')) ?? 'kestrel-outpost';
 /** `--player`: the standalone player on the template (cooked when the dist has the package); `--live`: its live path. */
 const player = args.includes('--player');
@@ -134,8 +146,10 @@ const INSTR = `(() => {
   S.slowFrames = [];
   let lastFrame = 0;
   const frame = (t) => { if (lastFrame && t - lastFrame > 40) S.slowFrames.push([Math.round(lastFrame), Math.round(t - lastFrame)]); lastFrame = t; if (S.firstPicture < 0) requestAnimationFrame(frame); };
-  // The first 6 s after the first picture, frame by frame: interval, and what the frame sent (GL calls by kind, scale).
+  // The first 6 s after the first picture (with --drop: after the forced step), frame by frame: interval, and what the
+  // frame sent (GL calls by kind, scale).
   S.after = [];
+  S.afterFrom = -1;
   const kinds = { tex: ['texImage2D', 'texSubImage2D', 'texImage3D', 'texSubImage3D', 'texStorage2D'], mip: ['generateMipmap'], buf: ['bufferData', 'bufferSubData'], draw: ['drawArrays', 'drawElements', 'drawArraysInstanced', 'drawElementsInstanced'], link: ['linkProgram'] };
   const snap = () => { const o = {}; for (const k in kinds) { let n = 0, ms = 0; for (const g of kinds[k]) { const e = S.gl[g]; if (e) { n += e.n; ms += e.ms; } } o[k] = n; o[k + 'Ms'] = ms; } return o; };
   let prevSnap = null, prevT = 0;
@@ -145,15 +159,16 @@ const INSTR = `(() => {
     if (prevSnap) {
       let r = null;
       try { r = window.__aether.simulation.renderer; } catch {}
-      const row = { t: Math.round(t - S.firstPicture), dt: Math.round(t - prevT) };
+      const row = { t: Math.round(t - (S.afterFrom > 0 ? S.afterFrom : S.firstPicture)), dt: Math.round(t - prevT) };
       for (const k in kinds) { row[k] = c[k] - prevSnap[k]; const ms = c[k + 'Ms'] - prevSnap[k + 'Ms']; if (ms >= 1) row[k + 'Ms'] = Math.round(ms); }
       try { const st = r.stats(); row.scale = Math.round(st.resolutionScale * 100) / 100; row.tex = row.tex; row.textures = st.textures; } catch {}
-      try { row.busy = r.processingStage; } catch {}
+      try { row.busy = r.processingStage; row.tris = r.stats().triangles; } catch {}
       S.after.push(row);
     }
     prevSnap = c; prevT = t;
-    if (t - S.firstPicture < 6000) requestAnimationFrame(after);
+    if (t - (S.afterFrom > 0 ? S.afterFrom : S.firstPicture) < 6000) requestAnimationFrame(after);
   };
+  S.recordAfter = () => { S.after = []; S.afterFrom = performance.now(); prevSnap = null; requestAnimationFrame(after); };
   requestAnimationFrame(after);
   // Quality changes (the performance ladder's level, the tier in effect), every 250 ms: each rebuilds the lit materials.
   S.quality = [];
@@ -164,10 +179,13 @@ const INSTR = `(() => {
     if (q && (!last || last[1] !== q)) S.quality.push([Math.round(performance.now() - Math.max(0, S.firstPicture)), q, S.firstPicture > 0]);
   }, 250);
   requestAnimationFrame(frame);
+  // Long tasks of the page (--drop reports those after the forced step).
+  S.longtasks = [];
+  try { new PerformanceObserver((l) => { for (const e of l.getEntries()) S.longtasks.push([Math.round(e.startTime), Math.round(e.duration)]); }).observe({ type: 'longtask', buffered: true }); } catch {}
 })();`;
 
 /** GPU-process main-thread tasks over 50 ms, before and after the first picture (trace events in µs). */
-function gpuTasks(tracePath: string): { before: { n: number; ms: number; max: number }; after: { n: number; ms: number; max: number } } | null {
+function gpuTasks(tracePath: string): { before: { n: number; ms: number; max: number }; after: { n: number; ms: number; max: number }; drop: { n: number; ms: number; max: number; over100: number } } | null {
   try {
     const raw = JSON.parse(readFileSync(tracePath, 'utf8')) as { traceEvents?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>;
     const ev = Array.isArray(raw) ? raw : (raw.traceEvents ?? []);
@@ -175,14 +193,22 @@ function gpuTasks(tracePath: string): { before: { n: number; ms: number; max: nu
     const first = ev.find((e) => e['name'] === 'probe:first-picture');
     if (!gpu) return null;
     const cut = typeof first?.['ts'] === 'number' ? (first['ts'] as number) : Infinity;
+    const dropMark = ev.find((e) => e['name'] === 'probe:drop');
+    const dropCut = typeof dropMark?.['ts'] === 'number' ? (dropMark['ts'] as number) : Infinity;
     const tasks = ev.filter((e) => e['pid'] === gpu['pid'] && e['tid'] === gpu['tid'] && e['ph'] === 'X' && typeof e['dur'] === 'number').sort((a, b) => (a['ts'] as number) - (b['ts'] as number));
-    const sum = { before: { n: 0, ms: 0, max: 0 }, after: { n: 0, ms: 0, max: 0 } };
+    const sum = { before: { n: 0, ms: 0, max: 0 }, after: { n: 0, ms: 0, max: 0 }, drop: { n: 0, ms: 0, max: 0, over100: 0 } };
     let end = 0;
     for (const t of tasks) {
       const ts = t['ts'] as number, dur = t['dur'] as number;
       if (ts < end) continue; // nested
       end = ts + dur;
       if (dur < 50_000) continue;
+      if (ts >= dropCut) {
+        sum.drop.n++;
+        sum.drop.ms += Math.round(dur / 1000);
+        sum.drop.max = Math.max(sum.drop.max, Math.round(dur / 1000));
+        if (dur > 100_000) sum.drop.over100++;
+      }
       const s = ts >= cut ? sum.after : sum.before;
       s.n++;
       s.ms += Math.round(dur / 1000);
@@ -224,7 +250,7 @@ async function main(): Promise<void> {
           await cdp.send('Profiler.setSamplingInterval', { interval: 500 });
           await cdp.send('Profiler.start');
         }
-        await page.goto(player ? `${server.url}/play.html#t=${slug}${live ? '&cook=0' : '&cook=local'}` : `${server.url}/?debug=1#/new/${slug}`, { waitUntil: 'domcontentloaded' });
+        await page.goto(player ? `${server.url}/play.html#t=${slug}${live ? '&cook=0' : '&cook=local'}${tierChoice ? `&tier=${tierChoice}` : ''}` : `${server.url}/?debug=1#/new/${slug}`, { waitUntil: 'domcontentloaded' });
         await page.waitForFunction(() => (globalThis as unknown as { __probe: { firstPicture: number } }).__probe.firstPicture > 0, null, { timeout: 240_000, polling: 100 });
         if (profiling) writeFileSync(join(out, `${run}.cpuprofile`), JSON.stringify((await cdp.send('Profiler.stop')).profile));
         if (wantShots && run === runs[runs.length - 1]) await page.screenshot({ path: join(out, `${run}-first-picture.png`) });
@@ -304,6 +330,137 @@ async function main(): Promise<void> {
           await page.waitForTimeout(titleMs);
           log(`${run}: title ${titleMs / 1000} s, links ${(await linksNow()) - l0}`);
         }
+        let drop: Record<string, unknown> | null = null;
+        if (wantDrop) {
+          type Gov = { governor: { level: number; lastMove: number }; applyPerformance(): void; renderTier: string };
+          const step = (level: number): Promise<string> =>
+            page.evaluate((lv) => {
+              const t = performance.now();
+              const r = (window as unknown as { __aether: { simulation: { renderer: Gov } } }).__aether.simulation.renderer;
+              performance.mark('probe:drop');
+              (globalThis as unknown as { __probe: { recordAfter(): void } }).__probe.recordAfter();
+              r.governor.level = lv;
+              r.governor.lastMove = 1;
+              r.applyPerformance();
+              return `${r.renderTier} (the step took ${Math.round(performance.now() - t)} ms)`;
+            }, level);
+          const counts = (): Promise<{ links: number; linkMs: number; at: number }> =>
+            page.evaluate(() => {
+              const P = (globalThis as unknown as { __probe: { gl: Record<string, { n: number; ms: number }> } }).__probe;
+              return { links: P.gl['linkProgram']?.n ?? 0, linkMs: (P.gl['linkProgram']?.ms ?? 0) + (P.gl['compileShader']?.ms ?? 0) + (P.gl['getProgramParameter']?.ms ?? 0), at: performance.now() };
+            });
+          // A moving view, as when the ladder steps: 4 s of it before the step (adaptive resolution settles on the motion's
+          // frame rate first: its own resizes are not the step's), and 6 s after.
+          const move = (ms: number): Promise<void> => page.evaluate(async (ms) => {
+            const r = (window as unknown as { __aether: { simulation: { renderer: { camera: { position: { x: number; y: number; z: number }; rotation: { y: number } }; setCameraPose(x: number, y: number, z: number, yaw: number, pitch: number): void } } } }).__aether.simulation.renderer;
+            const t0 = performance.now();
+            const p = { x: r.camera.position.x, y: r.camera.position.y, z: r.camera.position.z };
+            const yaw = r.camera.rotation.y;
+            while (performance.now() - t0 < ms) {
+              const k = (performance.now() - t0) / 6000;
+              r.setCameraPose(p.x + Math.sin(k * 6.28) * 0.5, p.y, p.z, yaw, -0.1);
+              await new Promise((res) => requestAnimationFrame(res));
+            }
+          }, ms);
+          // The governor holds still meanwhile (a step of its own on a busy machine would be measured as the forced one).
+          await page.evaluate(() => (window as unknown as { __aether: { simulation: { renderer: { holdQuality(on: boolean): void } } } }).__aether.simulation.renderer.holdQuality(true));
+          await move(4000);
+          const c0 = await counts();
+          const tier = await step(1);
+          await move(6000);
+          const c1 = await counts();
+          drop = await page.evaluate(({ at, links, linkMs }) => {
+            const P = (globalThis as unknown as { __probe: { longtasks: Array<[number, number]> } }).__probe;
+            const r = (window as unknown as { __aether: { simulation: { renderer: { renderTier: string; qualityTransition: unknown; stats(): { performanceLevel: number } } } } }).__aether.simulation.renderer;
+            const lt = P.longtasks.filter(([t]) => t >= at);
+            return { tier: r.renderTier, level: r.stats().performanceLevel, links, linkMs: Math.round(linkMs), longTasks: lt.map(([t, d]) => `${Math.round(t - at)}+${d}`).join(' '), longestTask: Math.max(0, ...lt.map(([, d]) => d)), transition: r.qualityTransition };
+          }, { at: c0.at, links: c1.links - c0.links, linkMs: c1.linkMs - c0.linkMs });
+          log(`${run}: drop: one step -> tier ${tier}; 6 s after: ${JSON.stringify(drop)}`);
+        }
+        if (wantTris) {
+          await page.evaluate(() => {
+            const r = (window as unknown as { __aether: { simulation: { renderer: { renderer: { info: { update(o: unknown, c: number, i: number): void }; getRenderTarget(): { width: number; height: number } | null } } } } }).__aether.simulation.renderer;
+            const info = r.renderer.info;
+            const T = ((globalThis as unknown as { __tris: unknown }).__tris = { passes: {} as Record<string, { tris: number; draws: number }>, meshes: {} as Record<string, number>, shadowMeshes: {} as Record<string, number> });
+            const orig = info.update.bind(info);
+            type O = { name?: string; type?: string; parent?: O; isMesh?: boolean; isInstancedMesh?: boolean; isBatchedMesh?: boolean };
+            const label = (o: O): string => {
+              const parts: string[] = [];
+              let p: O | undefined = o;
+              for (let k = 0; p && k < 4; k++, p = p.parent) if (p.name) parts.push(p.name);
+              return `${o.isBatchedMesh ? 'B:' : o.isInstancedMesh ? 'I:' : ''}${parts.join('<') || o.type}`.slice(0, 90);
+            };
+            info.update = (o: unknown, count: number, inst: number) => {
+              orig(o, count, inst);
+              const m = o as O;
+              if (!m.isMesh) return;
+              const rt = r.renderer.getRenderTarget();
+              const pass = rt ? `${rt.width}x${rt.height}` : 'canvas';
+              const e = T.passes[pass] ?? (T.passes[pass] = { tris: 0, draws: 0 });
+              const t = (inst * count) / 3;
+              e.tris += t;
+              e.draws++;
+              const bag = rt && rt.width === rt.height ? T.shadowMeshes : T.meshes;
+              const k = label(m);
+              bag[k] = (bag[k] ?? 0) + t;
+            };
+          });
+        }
+        let openingTris: unknown = null;
+        if (wantTris) {
+          // The opening view, still, at the full resolution (adaptive resolution off for the rest of the run: the level of
+          // detail follows the drawn height, so counts compare only at one): 60 frames with the cached sun map (frame
+          // invalidation only), then 10 that redraw it.
+          openingTris = await page.evaluate(async () => {
+            const r = (window as unknown as { __aether: { simulation: { renderer: { frameInvalidation: { change(): void }; needsDraw: boolean; stats(): { triangles: number; drawCalls: number }; gpuCost?: { seconds: number }; setAdaptiveResolution(on: boolean): void; holdQuality(on: boolean): void } } } }).__aether.simulation.renderer;
+            r.setAdaptiveResolution(false);
+            // The ladder goes back to its start and holds still: a step taken on a busy machine would compare two tiers.
+            const g = r as unknown as { governor: { level: number; lastMove: number }; applyPerformance(): void; processingStage: string | null };
+            if (g.governor.level > 0) {
+              g.governor.level = 0;
+              g.governor.lastMove = -1;
+              g.applyPerformance();
+            }
+            r.holdQuality(true);
+            const t0 = performance.now();
+            for (let i = 0; i < 30 || (g.processingStage !== null && performance.now() - t0 < 30_000); i++) {
+              r.frameInvalidation.change();
+              await new Promise((res) => requestAnimationFrame(res));
+            }
+            type B = { passes: Record<string, { tris: number; draws: number }>; meshes: Record<string, number>; shadowMeshes: Record<string, number> };
+            const T = (globalThis as unknown as { __tris: B }).__tris;
+            const run = async (frames: number, sun: boolean): Promise<Record<string, unknown>> => {
+              T.passes = {};
+              T.meshes = {};
+              T.shadowMeshes = {};
+              let tris = 0, gpu = 0, gpuN = 0;
+              for (let i = 0; i < frames; i++) {
+                if (sun) r.needsDraw = true;
+                else r.frameInvalidation.change();
+                await new Promise((res) => requestAnimationFrame(res));
+                tris += r.stats().triangles;
+                const g = r.gpuCost?.seconds ?? 0;
+                if (g > 0) {
+                  gpu += g;
+                  gpuN++;
+                }
+              }
+              const top = (b: Record<string, number>): Array<[string, number]> => Object.entries(b).sort((x, y) => y[1] - x[1]).slice(0, 25).map(([k, v]) => [k, Math.round(v / frames)]);
+              const passes: Record<string, { tris: number; draws: number }> = {};
+              for (const [k, v] of Object.entries(T.passes)) if (v.tris / frames >= 100) passes[k] = { tris: Math.round(v.tris / frames), draws: Math.round(v.draws / frames) };
+              return { trisPerFrame: Math.round(tris / frames), gpuMs: gpuN > 0 ? Math.round((gpu / gpuN) * 10000) / 10 : null, passes, meshes: top(T.meshes), shadowMeshes: top(T.shadowMeshes) };
+            };
+            const cached = await run(60, false);
+            const sun = await run(10, true);
+            T.passes = {};
+            T.meshes = {};
+            T.shadowMeshes = {};
+            return { cached, sun };
+          });
+          writeFileSync(join(out, `${run}-opening-tris.json`), JSON.stringify(openingTris, null, 1));
+          const o = openingTris as { cached: { trisPerFrame: number; gpuMs: number | null }; sun: { trisPerFrame: number; gpuMs: number | null } };
+          log(`${run}: opening view triangles/frame ${o.cached.trisPerFrame} (GPU ms ${o.cached.gpuMs ?? 'n/a'}), with the sun map redrawn ${o.sun.trisPerFrame} (GPU ms ${o.sun.gpuMs ?? 'n/a'})`);
+        }
         // Orbit 8 s around the opening view: frame times, programs switched and draws per frame.
         const orbit = await page.evaluate(async () => {
           const P = (globalThis as unknown as { __probe: { gl: Record<string, { n: number }> } }).__probe;
@@ -318,6 +475,10 @@ async function main(): Promise<void> {
           const draws = (): number => n('drawArrays') + n('drawElements') + n('drawArraysInstanced') + n('drawElementsInstanced');
           const u0 = n('useProgram'), d0 = draws(), l0 = n('linkProgram'), prog0 = r.renderer.info.memory.programs;
           const dts: number[] = [];
+          let triSum = 0, gpuSum = 0, gpuN = 0;
+          const rs = r as unknown as { stats(): { triangles: number }; gpuCost?: { seconds: number }; sunMapDraws?: number; sunMapReasons?: Record<string, number> };
+          const sun0 = rs.sunMapDraws ?? 0;
+          const why0 = { ...(rs.sunMapReasons ?? {}) };
           const t0 = performance.now();
           let last = t0;
           while (performance.now() - t0 < 8000) {
@@ -327,6 +488,12 @@ async function main(): Promise<void> {
             const ts = await new Promise<number>((res) => requestAnimationFrame(res));
             dts.push(ts - last);
             last = ts;
+            triSum += rs.stats().triangles;
+            const g = rs.gpuCost?.seconds ?? 0;
+            if (g > 0) {
+              gpuSum += g;
+              gpuN++;
+            }
           }
           dts.shift();
           // What the renderer was busy with when the orbit ended (a bake or links behind the orbit make its frames slow).
@@ -335,7 +502,9 @@ async function main(): Promise<void> {
           const frames = dts.length;
           const s = [...dts].sort((a, b) => a - b);
           const q = (p: number): number => Math.round((s[Math.min(s.length - 1, Math.floor(s.length * p))] ?? 0) * 10) / 10;
-          return { frames, p50: q(0.5), p95: q(0.95), max: q(1), useProgramPerFrame: Math.round((n('useProgram') - u0) / frames), drawsPerFrame: Math.round((draws() - d0) / frames), linksDuringOrbit: n('linkProgram') - l0, busy, programsAdded: r.renderer.info.memory.programs - prog0 };
+          const why: Record<string, number> = {};
+          for (const [k, v] of Object.entries(rs.sunMapReasons ?? {})) if (v - (why0[k] ?? 0) > 0) why[k] = v - (why0[k] ?? 0);
+          return { sunMapDraws: (rs.sunMapDraws ?? 0) - sun0, sunMapWhy: why, trisPerFrame: Math.round(triSum / Math.max(1, dts.length + 1)), gpuMs: gpuN > 0 ? Math.round((gpuSum / gpuN) * 10000) / 10 : null, frames, p50: q(0.5), p95: q(0.95), max: q(1), useProgramPerFrame: Math.round((n('useProgram') - u0) / frames), drawsPerFrame: Math.round((draws() - d0) / frames), linksDuringOrbit: n('linkProgram') - l0, busy, programsAdded: r.renderer.info.memory.programs - prog0 };
         });
         log(`${run}: quality ${(await page.evaluate(() => (globalThis as unknown as { __probe: { quality: Array<[number, string, boolean]> } }).__probe.quality)).map(([t, q, after]) => `${after ? '+' : ''}${(t / 1000).toFixed(1)} s ${q}`).join(', ')}`);
         // The frames of the first 6 s after the first picture (interval, GL calls by kind, scale).
@@ -349,7 +518,19 @@ async function main(): Promise<void> {
           return { playAt: Math.round(P.playAt), firstPicture: Math.round(P.firstPicture), links: P.links.filter((l) => l.at >= from && l.at < P.playAt + 10_000).length, elapsed: Math.round(performance.now() - P.playAt) };
         });
         if (playLinks) log(`${run}: play started at ${(playLinks.playAt / 1000).toFixed(1)} s, links in its first 10 s (after the first picture) ${playLinks.links}${playLinks.elapsed < 10_000 ? ` (only ${playLinks.elapsed} ms of play so far)` : ''}`);
-        log(`${run}: orbit p50 ${orbit.p50} p95 ${orbit.p95} max ${orbit.max}, useProgram/frame ${orbit.useProgramPerFrame}, draws/frame ${orbit.drawsPerFrame}, links ${orbit.linksDuringOrbit}`);
+        log(`${run}: orbit p50 ${orbit.p50} p95 ${orbit.p95} max ${orbit.max}, useProgram/frame ${orbit.useProgramPerFrame}, draws/frame ${orbit.drawsPerFrame}, links ${orbit.linksDuringOrbit}, triangles/frame ${orbit.trisPerFrame}, GPU ms ${orbit.gpuMs ?? 'n/a'}, sun map drawn ${orbit.sunMapDraws} times ${JSON.stringify(orbit.sunMapWhy)}`);
+        let tris: unknown = null;
+        if (wantTris) {
+          tris = await page.evaluate((frames) => {
+            const T = (globalThis as unknown as { __tris: { passes: Record<string, { tris: number; draws: number }>; meshes: Record<string, number>; shadowMeshes: Record<string, number> } }).__tris;
+            const top = (b: Record<string, number>): Array<[string, number]> => Object.entries(b).sort((a, c) => c[1] - a[1]).slice(0, 25).map(([k, v]) => [k, Math.round(v / frames)]);
+            const passes: Record<string, { tris: number; draws: number }> = {};
+            for (const [k, v] of Object.entries(T.passes)) passes[k] = { tris: Math.round(v.tris / frames), draws: Math.round(v.draws / frames) };
+            return { passes, meshes: top(T.meshes), shadowMeshes: top(T.shadowMeshes) };
+          }, orbit.frames + 1);
+          writeFileSync(join(out, `${run}-tris.json`), JSON.stringify(tris, null, 1));
+          log(`${run}: triangles per frame by pass ${JSON.stringify((tris as { passes: unknown }).passes)}`);
+        }
         if (wantLinks) {
           const links = await page.evaluate(() => {
             const P = (globalThis as unknown as { __probe: { firstPicture: number; linkPairs: Array<{ at: number; v: string; f: string; used: number | false; ms: number }> } }).__probe;
@@ -414,10 +595,10 @@ async function main(): Promise<void> {
         await cdp.send('IO.close', { handle } as never);
         const gpuMain = gpuTasks(tracePath);
         if (process.env['KEEP_TRACE'] !== '1') rmSync(tracePath, { force: true });
-        if (gpuMain) log(`${run}: GPU-process tasks > 50 ms before the first picture ${gpuMain.before.n} (${gpuMain.before.ms} ms, longest ${gpuMain.before.max}), after ${gpuMain.after.n} (${gpuMain.after.ms} ms, longest ${gpuMain.after.max})`);
+        if (gpuMain) log(`${run}: GPU-process tasks > 50 ms before the first picture ${gpuMain.before.n} (${gpuMain.before.ms} ms, longest ${gpuMain.before.max}), after ${gpuMain.after.n} (${gpuMain.after.ms} ms, longest ${gpuMain.after.max})${wantDrop ? `, after the drop ${gpuMain.drop.n} (${gpuMain.drop.over100} over 100 ms, longest ${gpuMain.drop.max})` : ''}`);
         const cgPeakMB = Math.round(cgPeak / 1048576);
         log(`${run}: JS heap peak ${load.heapMaxMB} MB, scope peak ${cgPeakMB} MB`);
-        results[run] = { ...load, orbit, playLinks, gpuMain, cgPeakMB };
+        results[run] = { ...load, orbit, playLinks, gpuMain, cgPeakMB, drop, tris, openingTris };
       } finally {
         await ctx.close().catch(() => undefined);
       }

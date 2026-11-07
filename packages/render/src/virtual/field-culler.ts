@@ -283,12 +283,19 @@ export class FieldCuller {
         level[c] = -1;
         continue;
       }
-      // Distance from the camera to the box (0 inside).
-      const dx = view.cx < x0 ? x0 - view.cx : view.cx > x1 ? view.cx - x1 : 0;
-      const dy = view.cy < y0 ? y0 - view.cy : view.cy > y1 ? view.cy - y1 : 0;
-      const dz = view.cz < z0 ? z0 - view.cz : view.cz > z1 ? view.cz - z1 : 0;
+      // Distance from the camera to the box of the instances' centres (the box shrunk by the radius it was padded with;
+      // 0 inside): the projected radius is the instance radius over the distance to its centre. The padded box put a
+      // tree of 18 m radius 18 m nearer than it is, at its finest level twice as far as it should be.
+      const r = this.opts.radius * (chunks.maxScale[c] as number);
+      const cx0 = Math.min(x0 + r, (x0 + x1) / 2), cx1 = Math.max(x1 - r, (x0 + x1) / 2);
+      const cy0 = Math.min(y0 + r, (y0 + y1) / 2), cy1 = Math.max(y1 - r, (y0 + y1) / 2);
+      const cz0 = Math.min(z0 + r, (z0 + z1) / 2), cz1 = Math.max(z1 - r, (z0 + z1) / 2);
+      const dx = view.cx < cx0 ? cx0 - view.cx : view.cx > cx1 ? view.cx - cx1 : 0;
+      const dy = view.cy < cy0 ? cy0 - view.cy : view.cy > cy1 ? view.cy - cy1 : 0;
+      const dz = view.cz < cz0 ? cz0 - view.cz : view.cz > cz1 ? view.cz - cz1 : 0;
       const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      const px = (this.opts.radius * (chunks.maxScale[c] as number) * view.pixelScale) / (d > 1e-3 ? d : 1e-3);
+      // Never more than the instance's own size away when the eye is among them (a radius over a vanishing distance).
+      const px = (r * view.pixelScale) / Math.max(d, r, 1e-3);
       if (px < this.minPixels) {
         level[c] = -1;
         continue;

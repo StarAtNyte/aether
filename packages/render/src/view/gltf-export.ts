@@ -323,7 +323,7 @@ export function buildExportScene(content: Object3D, camera: Camera | null, maxTr
   const seen = new Set<string>();
   const baked: BufferGeometry[] = [];
   content.traverse((o) => {
-    if (!(o instanceof Mesh) || (o as { isBatchedMesh?: boolean }).isBatchedMesh) return;
+    if (!(o instanceof Mesh) || (o as { isBatchedMesh?: boolean }).isBatchedMesh || o.userData['shadowOnly'] === true) return;
     if ((camera && !o.layers.test(camera.layers)) || !visibleChain(o, content)) return;
     const pos = o.geometry?.getAttribute('position');
     if (!pos || pos.count === 0) return;

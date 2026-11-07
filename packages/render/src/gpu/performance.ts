@@ -58,6 +58,11 @@ export const WEAK_PIXEL_RATIO = 1;
 /**
  * What each step of the ladder gives up, cheapest loss of looks first. Resolution is not on the ladder: adaptive
  * resolution goes first and the ladder starts when it has fallen to {@link GOVERNOR_DEFAULTS.afterScale}.
+ *
+ * The tier caps (`post-medium`, `post-off`) lower what the frame costs, not the materials (`QualityOptions.ladderCap`):
+ * the lower tier's level of detail, draw distances and shadow casters, and its post passes except the composite. Lights,
+ * sky and the scene pass's output stay those of the tier the materials were built for, so a step links no program
+ * (Firefox's cautious start excepted: it asks for the lightest programs).
  */
 export const PERFORMANCE_STEPS = Object.freeze(['light-volume', 'cascades', 'post-medium', 'post-off', 'effects'] as const);
 export type PerformanceStep = (typeof PERFORMANCE_STEPS)[number];
@@ -113,7 +118,7 @@ export const GOVERNOR_DEFAULTS = Object.freeze({
   climbFloorFps: 28,
   /** Seconds above `upFps` before a step back up. */
   upAfter: 10,
-  /** Seconds after any move before the next step up (a move recompiles shaders; frames settle first). */
+  /** Seconds after any move before the next step up (frames settle first). */
   settle: 20,
   /** A step down this soon (s) after a step up pins the floor. */
   retreat: 45,
@@ -132,8 +137,8 @@ export const GOVERNOR_DEFAULTS = Object.freeze({
  * count (an idle editor or a hidden tab never looks slow).
  *
  * It also climbs back, one step at a time, when frames are comfortably fast: p90 above `upFps` with the resolution at full
- * scale for `upAfter` seconds, and not sooner than `settle` seconds after the last move. Every step recompiles shaders, so
- * the climb is slow on purpose and has hysteresis: `upFps` is well above `lowFps`, and when a climb is undone by a step down
+ * scale for `upAfter` seconds, and not sooner than `settle` seconds after the last move. Every step changes the level of
+ * detail (and some, the light volume or the cascades, a shadow technique), so the climb is slow on purpose and has hysteresis: `upFps` is well above `lowFps`, and when a climb is undone by a step down
  * within `retreat` seconds, that level becomes a temporary floor. Sustained full-resolution headroom permits a later
  * retry, with a longer wait after repeated failures. A governor
  * that starts above level 0 (a machine on a path known to need care) is told with {@link start}. Time here is the sum of
@@ -372,9 +377,9 @@ export const HEAVY_WORLD = Object.freeze({ entities: 250, triangles: 6_000_000 }
 
 /**
  * Ladder level a world starts at (0: nothing given up). On an integrated, unrecognised or software GPU a heavy world starts
- * at the low tier (level 4) and the governor climbs while frames are comfortably fast, instead of starting at medium and
- * stepping down: every step rebuilds the lit materials, and on a street of houses each rebuild froze an Intel UHD 770 for
- * seconds, four times over, before the frame rate was any good.
+ * at the low tier's cost (level 4) and the governor climbs while frames are comfortably fast, instead of starting at medium
+ * and stepping down through the slow frames first. (Steps once rebuilt the lit materials, and on a street of houses each
+ * rebuild froze an Intel UHD 770 for seconds; a tier cap of the ladder now keeps the materials, see `cutsAt`.)
  */
 export function startLevel(gpu: GpuTier, world: { entities: number; triangles: number }): number {
   if (gpu === 'discrete') return 0;

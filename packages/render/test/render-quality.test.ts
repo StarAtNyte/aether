@@ -23,6 +23,7 @@ describe('qualityPlan', () => {
     expect(p).toEqual({
       quality: 'realtime',
       tier: 'medium',
+      programTier: 'medium',
       effects: effectsOf('medium'),
       post: 'standard',
       shadowMapCap: b.shadowMapCap,
@@ -48,6 +49,27 @@ describe('qualityPlan', () => {
     const ultra = qualityPlan('realtime', b, false, 'ultra');
     expect(ultra.effects.ssr && ultra.effects.shafts && ultra.effects.halation).toBe(true);
     expect(ultra.effects.dof).toBe(false);
+  });
+  it("the ladder's cap lowers the tier's cost and keeps the programs of the tier asked for", () => {
+    const b = renderBudget('integrated', false);
+    const medium = qualityPlan('realtime', b, false, 'medium');
+    const capped = qualityPlan('realtime', b, false, 'medium', { ladderCap: 'low' });
+    expect(capped.tier).toBe('low');
+    expect(capped.programTier).toBe('medium');
+    // The scene pass keeps its output (the composite), so no material changes; the shadow technique and radius stay.
+    expect(capped.effects).toEqual(medium.effects);
+    expect(capped.post).toBe(medium.post);
+    expect(capped.shadowTier).toBe(medium.shadowTier);
+    expect(capped.shadowRadius).toBe(medium.shadowRadius);
+    // From high the lower tier's post passes go (ambient occlusion, contact shadows); the composite stays.
+    const high = qualityPlan('realtime', b, false, 'high', { ladderCap: 'low' });
+    expect(high.tier).toBe('low');
+    expect(high.programTier).toBe('high');
+    expect(high.effects).toEqual({ ...effectsOf('low'), composite: true });
+    expect(high.shadowRadius).toBe(TIER_SHADOW_RADIUS);
+    // A cap at or above the tier changes nothing.
+    expect(qualityPlan('realtime', b, false, 'medium', { ladderCap: 'high' })).toEqual(medium);
+    expect(medium.programTier).toBe('medium');
   });
   it('software rasterizers default to the low tier', () => {
     expect(qualityPlan('realtime', renderBudget('software', false), true).tier).toBe('low');
