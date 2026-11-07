@@ -28,13 +28,16 @@ const T0 = Date.now();
 const log = (s: string): void => void process.stdout.write(`[${((Date.now() - T0) / 1000).toFixed(1)}s] ${s}\n`);
 const report: Record<string, unknown> = {};
 
-type Snap = { phase: string; experience: unknown; explore: unknown; camera: number[]; tour: boolean; mode: string | null };
+type Snap = { phase: string; experience: unknown; explore: unknown; camera: number[]; tour: boolean; mode: string | null; streaming?: unknown };
 const snap = (page: Page): Promise<Snap> =>
   page.evaluate(() => {
     const p = (window as unknown as { __aetherPlayer?: { phase: string; experience: unknown; explore: unknown; simulation: { mode: string; renderer: { camera: { position: { x: number; y: number; z: number } }; touring: boolean } } | null } }).__aetherPlayer;
     const c = p?.simulation?.renderer.camera.position;
     const ex = p?.explore as { stops?: unknown[] } | null;
-    return { phase: p?.phase ?? 'none', experience: p?.experience ?? null, explore: ex ? { ...ex, stops: (ex.stops ?? []).length, names: (ex.stops as Array<{ name?: string }> | undefined)?.map((s) => s.name ?? null) } : null, camera: c ? [c.x, c.y, c.z].map((v) => Math.round(v * 100) / 100) : [], tour: p?.simulation?.renderer.touring ?? false, mode: p?.simulation?.mode ?? null };
+    // Cell streaming (a streamed world): the shown proxies nearest the camera and the near holds.
+    const st = (globalThis as unknown as { __aetherStreaming?: () => { proxiesNear: unknown; holds: number; holdTimeouts: number; resident: number; loading: number } | null }).__aetherStreaming?.() ?? null;
+    const streaming = st ? { proxiesNear: st.proxiesNear, holds: st.holds, holdTimeouts: st.holdTimeouts, resident: st.resident, loading: st.loading } : undefined;
+    return { streaming, phase: p?.phase ?? 'none', experience: p?.experience ?? null, explore: ex ? { ...ex, stops: (ex.stops ?? []).length, names: (ex.stops as Array<{ name?: string }> | undefined)?.map((s) => s.name ?? null) } : null, camera: c ? [c.x, c.y, c.z].map((v) => Math.round(v * 100) / 100) : [], tour: p?.simulation?.renderer.touring ?? false, mode: p?.simulation?.mode ?? null };
   });
 
 async function shot(page: Page, slug: string, step: string, steps: Array<Record<string, unknown>>): Promise<void> {
@@ -42,7 +45,7 @@ async function shot(page: Page, slug: string, step: string, steps: Array<Record<
   await page.screenshot({ path: file });
   const s = await snap(page);
   steps.push({ step, file, ...s });
-  log(`${slug} ${step}: phase ${s.phase}, camera ${s.camera.join(', ')}${s.tour ? ', touring' : ''}`);
+  log(`${slug} ${step}: phase ${s.phase}, camera ${s.camera.join(', ')}${s.tour ? ', touring' : ''}${s.streaming ? `, streaming ${JSON.stringify(s.streaming)}` : ''}`);
 }
 
 /** Wait for the computed tour stops (searched in slices after the entry starts). */
@@ -131,6 +134,25 @@ const CASES: Record<string, (page: Page, steps: Array<Record<string, unknown>>) 
     await shot(page, 'lisbon-hills', '2-drone-tour', steps);
     await page.waitForTimeout(8000);
     await shot(page, 'lisbon-hills', '3-drone-tour-later', steps);
+    // Camera jumps of a streamed world (its near cells must be full detail on arrival): every district button, the hero
+    // view again, then the start-mode change (play as the character) and back.
+    await waitStops(page, 2);
+    const stops = (await ctrl(page, 'c.snapshot.stops.length')) as number;
+    await ctrl(page, 'c.setAutoplay(false)');
+    for (let i = 1; i < Math.min(stops, 7); i++) {
+      await ctrl(page, `c.goTo(${i})`);
+      await page.waitForFunction(() => (window as unknown as { __aetherPlayer?: { simulation: { renderer: { cameraFlying: boolean } } | null } }).__aetherPlayer?.simulation?.renderer.cameraFlying === false, null, { timeout: 30_000, polling: 100 }).catch(() => log('still flying'));
+      await page.waitForTimeout(300);
+      await shot(page, 'lisbon-hills', `4-district-${i}`, steps);
+    }
+    await ctrl(page, 'c.goTo(0)');
+    await page.waitForFunction(() => (window as unknown as { __aetherPlayer?: { simulation: { renderer: { cameraFlying: boolean } } | null } }).__aetherPlayer?.simulation?.renderer.cameraFlying === false, null, { timeout: 30_000, polling: 100 }).catch(() => log('still flying'));
+    await page.waitForTimeout(300);
+    await shot(page, 'lisbon-hills', '5-hero-again', steps);
+    await page.evaluate(() => (window as unknown as { __aetherPlayer: { start(): void } }).__aetherPlayer.start());
+    await page.waitForFunction(() => (window as unknown as { __aetherPlayer?: { phase: string } }).__aetherPlayer?.phase === 'playing', null, { timeout: 60_000, polling: 250 }).catch(() => log('play did not start'));
+    await page.waitForTimeout(1500);
+    await shot(page, 'lisbon-hills', '6-play', steps);
   },
   async 'kestrel-outpost'(page, steps) {
     await page.waitForFunction(() => (window as unknown as { __aetherPlayer?: { phase: string } }).__aetherPlayer?.phase === 'title', null, { timeout: 60_000 });

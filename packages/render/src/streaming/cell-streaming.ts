@@ -518,6 +518,12 @@ export class CellStreamer {
     return out;
   }
 
+  /** XZ distance from (x, z) to cell `key`'s box (Infinity for an unknown cell). */
+  distanceTo(key: string, x: number, z: number): number {
+    const c = this.cells.get(key);
+    return c ? boxDistance(c.box, x, z) : Number.POSITIVE_INFINITY;
+  }
+
   private distance(c: CellState, sources: readonly StreamSource[]): number {
     let d = Infinity;
     for (const s of sources) d = Math.min(d, boxDistance(c.box, s.x, s.z));

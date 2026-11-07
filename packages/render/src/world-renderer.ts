@@ -1873,11 +1873,19 @@ export class WorldRenderer {
   /** Last streaming update (ms). */
   private streamAt = 0;
   /** Streaming counters (window.__aetherStreaming, probes). */
-  private readonly streamLog = { holds: 0, applies: 0, applyMsMax: 0, applyMsSum: 0, revealed: 0, removed: 0, loadMsMax: 0, events: [] as Array<[number, string, number]> };
+  private readonly streamLog = { holds: 0, holdTimeouts: 0, applies: 0, applyMsMax: 0, applyMsSum: 0, revealed: 0, removed: 0, loadMsMax: 0, events: [] as Array<[number, string, number]> };
 
   /** Cell streaming state (diagnostics, probes): null when the world is not streamed. */
-  get streaming(): (ReturnType<CellStreamer['stats']> & { holds: number; applies: number; applyMsMax: number; applyMsSum: number; revealed: number; removed: number; loadMsMax: number; nodes: number; events: Array<[number, string, number]>; hlod: ReturnType<HlodLayer['stats']> | null }) | null {
-    return this.streamer ? { ...this.streamer.stats(), ...this.streamLog, nodes: this.sync.entityCount, hlod: this.hlod?.stats() ?? null } : null;
+  get streaming(): (ReturnType<CellStreamer['stats']> & { holds: number; holdTimeouts: number; applies: number; applyMsMax: number; applyMsSum: number; revealed: number; removed: number; loadMsMax: number; nodes: number; events: Array<[number, string, number]>; hlod: ReturnType<HlodLayer['stats']> | null; proxiesNear: Array<[string, number, boolean, boolean]> }) | null {
+    const st = this.streamer;
+    if (!st) return null;
+    // The proxies on screen nearest the camera (cell, XZ metres, resident, loading): a near view must have none close.
+    const cam = this.perspective.position;
+    const loading = new Set(st.loadingKeys());
+    const proxiesNear: Array<[string, number, boolean, boolean]> = [];
+    if (this.hlod) for (const k of this.hlod.keys()) if (this.hlod.shown(k)) proxiesNear.push([k, Math.round(st.distanceTo(k, cam.x, cam.z)), st.isResident(k), loading.has(k)]);
+    proxiesNear.sort((a, b) => a[1] - b[1]);
+    return { ...st.stats(), ...this.streamLog, nodes: this.sync.entityCount, hlod: this.hlod?.stats() ?? null, proxiesNear: proxiesNear.slice(0, 6) };
   }
 
   /** When the draws started waiting for near cells ({@link nearHeld}), 0 when they do not. */
@@ -1890,6 +1898,7 @@ export class WorldRenderer {
     const cam = this.perspective.position;
     if (!st.nearPending([{ x: cam.x, z: cam.z }])) {
       this.nearHoldSince = 0;
+      this.holdTimedOut = false;
       return false;
     }
     const t = now();
@@ -1899,8 +1908,16 @@ export class WorldRenderer {
       this.streamAt = 0;
       this.streamLog.holds++;
     }
-    return t - this.nearHoldSince < NEAR_HOLD_MAX_MS;
+    const held = t - this.nearHoldSince < NEAR_HOLD_MAX_MS;
+    if (!held && !this.holdTimedOut) {
+      this.holdTimedOut = true;
+      this.streamLog.holdTimeouts++;
+    }
+    return held;
   }
+
+  /** The current near hold ran out with the near cells still pending (counted once per hold). */
+  private holdTimedOut = false;
 
   /** The cooked package's proxy cells (manifest `hlod`), null without proxies. */
   private hlodCells: ReadonlyArray<{ cell: string; bounds: readonly number[] }> | null = null;
