@@ -5,11 +5,13 @@
  *   road) or the one the plan names; never a blank back wall;
  * - at a **three-quarter angle**, about 30–45° off the front's normal, so two facades show (the second one the richer of
  *   the two sides);
- * - at eye height (1.65 m), or a little raised (3 m) where the ground needs it, with a near-level pitch (vertical lines
- *   stay vertical: a two-point perspective);
+ * - from the **sunlit side** at the world's time of day: the front the sun falls on counts as more of a front, and a view
+ *   into the sun (the facade in its own shadow, the sky blown out behind it) loses points;
+ * - at the eye height of a standing person (1.65 m), or barely raised (2.2 m) where the grass needs it, with a near-level
+ *   pitch (vertical lines stay vertical: a two-point perspective);
  * - with the building filling about 55–75 % of the frame width, some sky above it and ground before it;
- * - with nothing within a few metres of the lens, no grass filling the lower third, and preferably standing on a path, a
- *   terrace or open ground.
+ * - with nothing within a few metres of the lens, no grass filling the lower third, no trunk, crown or branch framing the
+ *   edges or hanging into the picture, and preferably standing on a path, a terrace or open ground.
  *
  * Candidate spots (each facade as the front, both sides, three angles, three distances fitted to the frame share) pass the
  * opening view's safety checks (open dry ground, clearance round the eye, the near zone, not under water, the cover zone)
@@ -17,7 +19,7 @@
  * facts ({@link ArchBuilding}) and the probe.
  */
 import type { Vec3 } from '@aether/core';
-import { ARCH_COVER_ZONE, boxEntryDistance, crampedBy, MIN_DOWN, NEAR_ZONE, nearestInView, nearZone, standable, type OpeningInput, type OpeningPose, type OpeningProbe, type OpeningStats } from './opening-view';
+import { ARCH_COVER_ZONE, boxEntryDistance, crampedBy, frameClutter, MIN_DOWN, NEAR_ZONE, nearestInView, nearZone, standable, sunHorizontal, type OpeningInput, type OpeningPose, type OpeningProbe, type OpeningStats, type OpeningSun } from './opening-view';
 
 /** A door or a window of a building's outside walls. */
 export interface ArchOpening {
@@ -56,10 +58,14 @@ export interface ArchFacade {
   entrance: boolean;
 }
 
-/** Eye heights tried (m over the ground): standing, then slightly raised. */
-export const ARCH_HERO_HEIGHTS: readonly number[] = Object.freeze([1.65, 3]);
+/** Eye heights tried (m over the ground): a standing person, then barely raised (over tall grass, never a drone). */
+export const ARCH_HERO_HEIGHTS: readonly number[] = Object.freeze([1.65, 2.2]);
+/** A view whose edges meet trunks, crowns or branches on more than this share of their rays is used only when none is clear. */
+export const ARCH_HERO_EDGE_CLUTTER = 0.2;
 /** Angles off the front's normal tried (degrees). */
-export const ARCH_HERO_ANGLES: readonly number[] = Object.freeze([35, 28, 44]);
+export const ARCH_HERO_ANGLES: readonly number[] = Object.freeze([35, 28, 44, 20, 52]);
+/** A step back (m) from the farthest fitted distance, tried once and twice. */
+export const ARCH_HERO_STEP_BACK = 3;
 /** Shares of the frame width the building is fitted to (best first). */
 export const ARCH_HERO_SHARES: readonly number[] = Object.freeze([0.65, 0.55, 0.75]);
 /** A view's primary facade scores at least this share of the best front's to count as a view of the front. */
@@ -91,10 +97,11 @@ export function openingWeight(o: ArchOpening): number {
 
 /**
  * The building's four sides (its main axes from the openings' normals), each with its front score: the entrance (+4), its
- * share of the outward-seen doors and glazing (×4), facing the approach (+1.5), the plan's front (+6). `outer(o)` says an
+ * share of the outward-seen doors and glazing (×4), facing the approach (+1.5), the plan's front (+6), and with a `sun`, the
+ * light on it (up to +2.5 facing the sun, down to −1.5 in its own shadow; a blank wall stays at 0). `outer(o)` says an
  * opening looks out of the building (not into a courtyard); default: all do.
  */
-export function archFacades(b: ArchBuilding, outer: (o: ArchOpening) => boolean = () => true): ArchFacade[] {
+export function archFacades(b: ArchBuilding, outer: (o: ArchOpening) => boolean = () => true, sun?: OpeningSun): ArchFacade[] {
   // Main axis: the weighted circular mean of 4 × the normals' angle (a rectangle's four sides agree on it).
   let sx = 0;
   let sz = 0;
@@ -139,6 +146,13 @@ export function archFacades(b: ArchBuilding, outer: (o: ArchOpening) => boolean 
       return along > half * 0.6 && along < half + 40 && along > Math.abs(dx * s.normal[1] - dz * s.normal[0]) * 0.7;
     })) s.score += 1.5;
     if (b.front && s.normal[0] * b.front[0] + s.normal[1] * b.front[1] > Math.SQRT1_2) s.score += 6;
+    // The light: a photographer shoots the front the sun falls on (a dusk sun low behind the entrance leaves it a
+    // silhouette), so a well glazed side in the sun competes with an entrance in shadow.
+    const toSun = sunHorizontal(sun);
+    if (toSun && s.richness > 0) {
+      const lit = s.normal[0] * toSun[0] + s.normal[1] * toSun[1];
+      s.score = Math.max(0, s.score + (lit > 0 ? 2.5 * lit : 1.5 * lit) * (sun?.strength ?? 0));
+    }
   }
   return sides;
 }
@@ -188,6 +202,8 @@ export interface ArchHeroScore {
   foliage: number;
   sky: number;
   footing: number;
+  light: number;
+  clutter: number;
 }
 
 /** What {@link scoreArchHero} measures of one view. */
@@ -215,12 +231,22 @@ export interface ArchHeroMeasure {
   inCover: boolean;
   /** The raised eye. */
   raised: boolean;
+  /**
+   * Cosine (−1–1) between the view direction (building to eye) and the way to the sun, times the sun's strength: 1 with the
+   * sun at the photographer's back, −1 shooting into it. Absent without a sun.
+   */
+  sunlit?: number;
+  /** Share (0–1) of the frame's edge rays (both sides, the top) that meet a trunk, a crown or a branch before the building. */
+  edges?: number;
+  /** Share (0–1) of all the frame's rays that do. */
+  clutter?: number;
 }
 
 /**
  * Score of a hero view (higher is better): front facing (3), the three-quarter angle (2), the frame share (2), facade
- * richness (3, a blank wall −3), occlusion (−4), grass in the lower third (−3), sky (+1, none −1.5), footing (±0.7) and
- * the raised eye (−0.5).
+ * richness (3, a blank wall −3), occlusion (−4), grass in the lower third (−3), sky (+1, none −1.5), footing (±0.7), the
+ * light (+1.5 with the sun behind the camera, down to −3 shooting into it), trunks and branches at the edges (−5) or
+ * anywhere in the frame (−3), and the raised eye (−1.5).
  */
 export function scoreArchHero(m: ArchHeroMeasure): ArchHeroScore {
   const front = 3 * Math.max(0, Math.min(1, m.frontness));
@@ -233,12 +259,15 @@ export function scoreArchHero(m: ArchHeroMeasure): ArchHeroScore {
   const sky = m.sky <= 0.02 ? -1.5 : m.sky >= 0.1 && m.sky <= 0.45 ? 1 : 0.3;
   const footing = (m.paved ? 0.7 : 0) - (m.inCover ? 0.7 : 0);
   const tall = m.height !== undefined && m.height > 0.8 ? 1.5 : 0;
-  const total = front + angle + coverage + richness + occlusion + foliage + sky + footing - tall - (m.topCut ? 3 : 0) - (m.raised ? 0.5 : 0);
-  return { total, front, angle, coverage, richness, occlusion, foliage, sky, footing };
+  const sun = m.sunlit ?? 0;
+  const light = sun >= 0 ? 1.5 * sun : 1.5 * sun - (sun < -0.35 ? 1.5 * Math.min(1, (-sun - 0.35) / 0.35) : 0);
+  const clutter = -5 * (m.edges ?? 0) - 3 * (m.clutter ?? 0);
+  const total = front + angle + coverage + richness + occlusion + foliage + sky + footing + light + clutter - tall - (m.topCut ? 3 : 0) - (m.raised ? 1.5 : 0);
+  return { total, front, angle, coverage, richness, occlusion, foliage, sky, footing, light, clutter };
 }
 
 /** The pose and measure of a view from `eye` at the building (null when the building does not fit the frame at all). */
-function measure(eye: Vec3, b: ArchBuilding, pts: readonly Vec3[], primary: ArchFacade, best: number, probe: OpeningProbe, outer: readonly ArchOpening[], totalW: number, vHalf: number, hHalf: number, ground: number, raised: boolean, paved: boolean): { m: ArchHeroMeasure; target: Vec3 } | null {
+function measure(eye: Vec3, b: ArchBuilding, pts: readonly Vec3[], primary: ArchFacade, best: number, probe: OpeningProbe, outer: readonly ArchOpening[], totalW: number, vHalf: number, hHalf: number, ground: number, raised: boolean, paved: boolean, sun: OpeningSun | undefined, fovDeg: number, aspect: number): { m: ArchHeroMeasure; target: Vec3 } | null {
   const c = centerOf(b);
   const flat = Math.hypot(c[0] - eye[0], c[2] - eye[2]);
   if (flat < 3) return null;
@@ -323,6 +352,9 @@ function measure(eye: Vec3, b: ArchBuilding, pts: readonly Vec3[], primary: Arch
     }
   }
   const inCover = cover(eye, [eye[0], ground + 0.05, eye[2]]) < eye[1] - ground - 0.2 && solid(eye, [eye[0], ground + 0.05, eye[2]]) >= eye[1] - ground - 0.2;
+  // Trunks, crowns and branches between the lens and the building: at the edges they frame the picture like a doorway.
+  const fc = frameClutter(probe, eye, target, fovDeg, aspect, { near: Math.max(4, flat * 0.6), subject: { min: b.min, max: b.max } });
+  const toSun = sunHorizontal(sun);
   const m: ArchHeroMeasure = {
     frontness: best > 0 ? primary.score / best : 0,
     offAngle,
@@ -336,6 +368,9 @@ function measure(eye: Vec3, b: ArchBuilding, pts: readonly Vec3[], primary: Arch
     paved,
     inCover,
     raised,
+    edges: fc.edges,
+    clutter: fc.overall,
+    ...(toSun ? { sunlit: (dir[0]! * toSun[0] + dir[1]! * toSun[1]) * (sun?.strength ?? 0) } : {}),
   };
   return { m, target };
 }
@@ -364,7 +399,7 @@ export function* archHeroViewsSteps(input: OpeningInput, b: ArchBuilding, probe:
     const to: Vec3 = [from[0] + o.normal[0] * 24, from[1], from[2] + o.normal[1] * 24];
     if (solid(from, to) >= 12) outerSet.add(o);
   }
-  const facades = archFacades(b, (o) => outerSet.has(o));
+  const facades = archFacades(b, (o) => outerSet.has(o), input.sun);
   const best = Math.max(0, ...facades.map((f) => f.score));
   const outer = [...outerSet].sort((p, q) => openingWeight(q) - openingWeight(p)).slice(0, MAX_SAMPLED);
   const totalW = outer.reduce((s, o) => s + openingWeight(o), 0);
@@ -380,14 +415,20 @@ export function* archHeroViewsSteps(input: OpeningInput, b: ArchBuilding, probe:
     const a0 = Math.atan2(f.normal[0], f.normal[1]);
     for (const sign of signs) {
       for (const off of ARCH_HERO_ANGLES) {
+        // Swung far toward a blank side, the picture is mostly blank wall.
+        if (off > 45 && (sign > 0 ? right : left).richness === 0) continue;
         const a = a0 + sign * off * deg;
         const dir: [number, number] = [Math.sin(a), Math.cos(a)];
-        for (const share of ARCH_HERO_SHARES) {
-          // Far enough for the width share, and for the height to fill at most about 60 % of the frame (a tall, narrow
-          // house seen close fills the frame with one wall).
-          const reach = Math.abs(dir[0]) * (b.max[0] - b.min[0]) * 0.5 + Math.abs(dir[1]) * (b.max[2] - b.min[2]) * 0.5;
-          const tall = (b.max[1] - b.min[1]) / (2 * Math.tan(vHalf) * ARCH_HERO_HEIGHT_SHARE) + reach;
-          const d = Math.max(fitDistance(pts, c, dir, share, hHalf, b.min[1] + 1.65), tall);
+        // Far enough for the width share, and for the height to fill at most about 60 % of the frame (a tall, narrow
+        // house seen close fills the frame with one wall); then a step or two back, as a photographer clears a tree or a
+        // planter between the lens and the house.
+        const reach = Math.abs(dir[0]) * (b.max[0] - b.min[0]) * 0.5 + Math.abs(dir[1]) * (b.max[2] - b.min[2]) * 0.5;
+        const tall = (b.max[1] - b.min[1]) / (2 * Math.tan(vHalf) * ARCH_HERO_HEIGHT_SHARE) + reach;
+        const fitted = ARCH_HERO_SHARES.map((share) => Math.max(fitDistance(pts, c, dir, share, hHalf, b.min[1] + 1.65), tall));
+        const far = Math.max(...fitted);
+        const dists: number[] = [];
+        for (const d of [...fitted, far + ARCH_HERO_STEP_BACK, far + 2 * ARCH_HERO_STEP_BACK]) if (dists.every((q) => Math.abs(q - d) > 1)) dists.push(d);
+        for (const d of dists) {
           const x = c[0] + dir[0] * d;
           const z = c[2] + dir[1] * d;
           if (stats) stats.tried++;
@@ -407,7 +448,7 @@ export function* archHeroViewsSteps(input: OpeningInput, b: ArchBuilding, probe:
               }
               continue;
             }
-            const r = measure(eye, b, pts, f, best, probe, outer, totalW, vHalf, hHalf, ground, hi > 0, surface?.paved === true);
+            const r = measure(eye, b, pts, f, best, probe, outer, totalW, vHalf, hHalf, ground, hi > 0, surface?.paved === true, input.sun, input.fovDeg, input.aspect);
             if (!r || probe.underWater?.(eye) || nearZone(probe.sight, eye, r.target, input.fovDeg, input.aspect) < NEAR_ZONE) {
               if (stats) stats.near = (stats.near ?? 0) + 1;
               continue;
@@ -418,17 +459,19 @@ export function* archHeroViewsSteps(input: OpeningInput, b: ArchBuilding, probe:
             all.push({ position: eye, target: r.target, landmark: c, score: parts.total, sees: r.m.occluded < 0.5, parts, measure: r.m, covered });
             if (stats) stats.kept++;
             // The raised eye only where standing height is not clear.
-            if (!covered && r.m.foliage < 0.25 && r.m.occluded < 0.3) break;
+            if (!covered && r.m.foliage < 0.25 && r.m.occluded < 0.3 && (r.m.edges ?? 0) <= ARCH_HERO_EDGE_CLUTTER) break;
           }
           yield;
         }
       }
     }
   }
-  // Clear spots first; of them the views of the front itself (its facade the best or close to it, mostly in sight), so a
-  // side or back view never wins on points alone (a tree beside the front, grass not yet grown in when the search ran).
-  const clear = all.filter((p) => !p.covered);
-  const open = clear.length > 0 ? clear : all;
+  // Clear spots first (no cover at the lens, no trunk or branch framing the edges); of them the views of the front itself
+  // (its facade the best or close to it, mostly in sight), so a side or back view never wins on points alone (a tree beside
+  // the front, grass not yet grown in when the search ran).
+  const clear = all.filter((p) => !p.covered && (p.measure.edges ?? 0) <= ARCH_HERO_EDGE_CLUTTER);
+  const uncovered = all.filter((p) => !p.covered);
+  const open = clear.length > 0 ? clear : uncovered.length > 0 ? uncovered : all;
   const fronts = open.filter((p) => p.measure.frontness >= ARCH_HERO_FRONTNESS && p.measure.occluded < 0.5);
   const pool = fronts.length > 0 ? fronts : open;
   const ranked = pool.map((p, i) => ({ p, i })).sort((p, q) => q.p.score - p.p.score || p.i - q.i);

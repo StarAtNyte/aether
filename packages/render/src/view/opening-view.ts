@@ -59,6 +59,8 @@ export interface OpeningInput {
   azimuthDeg?: number;
   /** The building of an `arch` world: its hero view is searched first (see `arch-hero.ts`). */
   building?: ArchBuilding;
+  /** The sun at the world's time of day: a building is shot from its sunlit side (see `arch-hero.ts`). */
+  sun?: OpeningSun;
 }
 
 /** A chosen opening view. */
@@ -522,4 +524,86 @@ export function nearZone(sight: SightTest, eye: Vec3, target: Vec3, fovDeg: numb
   }
   if (hidden >= 4) return 0;
   return nearestInView(sight, eye, target, fovDeg, aspect);
+}
+
+/** Distance (m) within which {@link frameClutter} counts what a ray meets as a near obstacle, by default. */
+export const FRAME_NEAR = 8;
+
+/** What {@link frameClutter} finds in a view's frame. */
+export interface FrameClutter {
+  /** Share (0–1) of the rays of the frame's left and right edge columns and top row that meet a near obstacle. */
+  edges: number;
+  /** Share (0–1) of all the frame's rays that meet a near obstacle. */
+  overall: number;
+}
+
+/**
+ * Near obstacles in the frame of the view `eye` → `target`: a trunk or a crown at the side of the picture, a branch across
+ * its top, a tree between the lens and the subject. A ray meets a near obstacle when it stops within `near` (default
+ * {@link FRAME_NEAR}) on something that is not the ground at that spot (the open ground, a
+ * path, the water) and not the subject itself (`subject`: its box; a ray that ends at the box's face is clear). Pure; the
+ * probe's `surface` tells the ground from a tree.
+ */
+export function frameClutter(probe: OpeningProbe, eye: Vec3, target: Vec3, fovDeg: number, aspect: number, opts: { near?: number; subject?: { min: Vec3; max: Vec3 } } = {}): FrameClutter {
+  const dx = target[0] - eye[0];
+  const dy = target[1] - eye[1];
+  const dz = target[2] - eye[2];
+  const flat = Math.hypot(dx, dz);
+  if (!(flat > 1e-6)) return { edges: 0, overall: 0 };
+  const yaw = Math.atan2(dx, dz);
+  const pitch = Math.atan2(dy, flat);
+  const vHalf = (Math.max(10, Math.min(120, fovDeg || 50)) * deg) / 2;
+  const hHalf = Math.atan(Math.tan(vHalf) * (aspect > 0 ? aspect : 16 / 9));
+  const near = opts.near ?? FRAME_NEAR;
+  const subject = opts.subject;
+  let edgeHits = 0;
+  let edgeCells = 0;
+  let hits = 0;
+  let cells = 0;
+  const rows = [0.94, 0.65, 0.35, 0.05, -0.25, -0.55, -0.85];
+  for (const v of rows) {
+    for (const u of [-0.96, -0.82, -0.5, -0.17, 0.17, 0.5, 0.82, 0.96]) {
+      const a = yaw + Math.atan(Math.tan(hHalf) * u);
+      const b = pitch + Math.atan(Math.tan(vHalf) * v);
+      const c = Math.cos(b);
+      const end: Vec3 = [eye[0] + Math.sin(a) * c * near, eye[1] + Math.sin(b) * near, eye[2] + Math.cos(a) * c * near];
+      // Scatter trees count by their boxes: an eye inside one stands under a crown, and every ray of it is cluttered.
+      const free = probe.sight(eye, end);
+      let blocked = free < near - 0.05;
+      if (blocked && subject) {
+        const face = boxEntryDistance(eye, end, subject.min, subject.max);
+        if (face !== null && free >= face - 0.6) blocked = false;
+      }
+      if (blocked) {
+        const t = free / near;
+        const p: Vec3 = [eye[0] + (end[0] - eye[0]) * t, eye[1] + (end[1] - eye[1]) * t, eye[2] + (end[2] - eye[2]) * t];
+        const s = probe.surface(p[0], p[2]);
+        // The ground (or the water) where the ray lands: the foreground, not an obstacle.
+        if (s && s.kind !== 'blocked' && Math.abs(p[1] - s.y) < 0.4) blocked = false;
+      }
+      cells++;
+      if (blocked) hits++;
+      const edge = Math.abs(u) > 0.8 || v === rows[0];
+      if (edge) {
+        edgeCells++;
+        if (blocked) edgeHits++;
+      }
+    }
+  }
+  return { edges: edgeCells > 0 ? edgeHits / edgeCells : 0, overall: cells > 0 ? hits / cells : 0 };
+}
+
+/** The sun as an opening view sees it: the horizontal direction toward it and how much it shapes the light (0–1). */
+export interface OpeningSun {
+  /** Unit vector from the scene toward the sun. */
+  direction: Vec3;
+  /** 0 at night, under the moon or overcast; 1 for a clear sun. */
+  strength: number;
+}
+
+/** Horizontal unit direction (x, z) toward the sun, or null when it gives no direction (overhead, night, none). */
+export function sunHorizontal(sun: OpeningSun | undefined): [number, number] | null {
+  if (!sun || !(sun.strength > 0)) return null;
+  const l = Math.hypot(sun.direction[0], sun.direction[2]);
+  return l > 0.15 ? [sun.direction[0] / l, sun.direction[2] / l] : null;
 }

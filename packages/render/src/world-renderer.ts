@@ -74,7 +74,7 @@ import { CameraTour, DRONE_TOUR_RADIUS, TOUR_SECONDS, droneTourKeys, tourKeys, t
 import { AdaptiveResolution, MOTION_PROFILES, motionOptions, passFloorOf, type MotionProfile } from './view/adaptive-resolution';
 import { MeshBasicNodeMaterial } from 'three/webgpu';
 import { textureWork } from './gpu/task-queue';
-import { BATCHED_LAYER } from './sync/static-batches';
+import { BATCHED_LAYER, FAR_INTERIOR_LAYER, RAYCAST_LAYERS, SMALL_MESH_LAYER } from './sync/static-batches';
 import { nextTrim, type TrimIntent } from './view/exposure-trim';
 import { adaptStep, adaptedLook, interiorBalance, interiorFactor, toneExposure, volumeExposure, type CeilingBox } from './view/eye-adapt';
 import { looksInside } from './view/arch-view';
@@ -95,7 +95,7 @@ import { daylightLampFactor, FORWARD_LIGHTS, LAMP_CUTOFF, lightIntensity } from 
 import type { RelightLighting } from './environment/relight';
 import { installFirstDrawPacer, type FirstDrawPacer } from './gpu/first-draw-pacer';
 import { collectFramingItems, FOCUS_TAG } from './view/content-items';
-import { drainSteps, nearestInView, nearZone, rankOpeningViews, rankOpeningViewsSteps, type OpeningPose, type OpeningStats } from './view/opening-view';
+import { drainSteps, nearestInView, nearZone, rankOpeningViews, rankOpeningViewsSteps, type OpeningPose, type OpeningStats, type OpeningSun } from './view/opening-view';
 import type { ArchBuilding, ArchOpening } from './view/arch-hero';
 import { archStopsSteps, MAX_STOPS, quickSceneStopsSteps, sceneStopsSteps, VEGETATION_NAME, viewpointName, type QuickStopProbe, type RoomArea, type ViewStopPose } from './view/view-stops';
 import { sceneOpeningProbe } from './view/opening-probe';
@@ -353,7 +353,7 @@ function programKey(o: Object3D): string {
   return `${mats.map((x) => x?.uuid ?? "-").join('/')}|${attrs}|${kind}|${m.castShadow ? 1 : 0}${m.receiveShadow ? 1 : 0}`;
 }
 
-/** A raycaster that also tests batched static props (their meshes live on {@link BATCHED_LAYER}). */
+/** A raycaster that also tests batched static props and meshes not drawn from where the camera is ({@link RAYCAST_LAYERS}). */
 /** The statistics of a picture read back as RGBA (a 24 x 24 grid of points), as the live read-back reports them. */
 function measurePixels(rgba: Uint8Array, w: number, h: number): FrameSample {
   const n = 24;
@@ -379,8 +379,7 @@ function addedEntities(prev: WorldDoc, world: WorldDoc, cap: number): number {
 
 function createRaycaster(): Raycaster {
   const r = new Raycaster();
-  r.layers.enable(BATCHED_LAYER);
-  r.layers.enable(FAR_INTERIOR_LAYER);
+  for (const l of RAYCAST_LAYERS) r.layers.enable(l);
   return r;
 }
 
@@ -749,13 +748,6 @@ const SUN_MAP_SOFT_REFRESH_MOVING = 30;
 const SMALL_CASTER_METRES = 0.9;
 /** Skinned assets farther than this from the eye are not drawn on the low tier (metres). */
 const FAR_ANIMAL_METRES = 55;
-/**
- * Layer of room contents left undrawn far from the eye on the cheaper tiers (see `interiorDrawDistance`): neither the view
- * nor the shadow cameras render it, the renderer's raycasters still test it (picking through a window works).
- */
-const FAR_INTERIOR_LAYER = 6;
-/** Layer of meshes left undrawn on integrated GPUs for covering under {@link SMALL_MESH_PX} pixels (see cullSmallMeshes). */
-const SMALL_MESH_LAYER = 8;
 /** Largest image texture (px) uploaded on an integrated GPU or in low-memory mode (see gpu/texture-cap.ts). */
 const INTEGRATED_TEXTURE_CAP = 512;
 /** Share of the JS heap limit above which the load-time sweep (prepareSurroundings) turns through two headings only. */
@@ -3892,8 +3884,26 @@ export class WorldRenderer {
       const reach = framing.radius * 2 + 100;
       const probe = sceneOpeningProbe(this.sync, this.env.groundMesh, framing.center[1] + reach, framing.center[1] - reach);
       const building = arch ? this.archBuilding() : null;
-      return rankOpeningViews({ framing, items, fovDeg: cam.fov, aspect: cam.aspect, arch, azimuthDeg: front ?? DEFAULT_FRAMING_AZIMUTH, ...(building ? { building } : {}) }, probe, limit, stats);
+      const sun = this.openingSun();
+      return rankOpeningViews({ framing, items, fovDeg: this.openingFov(arch), aspect: cam.aspect, arch, azimuthDeg: front ?? DEFAULT_FRAMING_AZIMUTH, ...(building ? { building } : {}), ...(sun ? { sun } : {}) }, probe, limit, stats);
     });
+  }
+
+  /**
+   * The lens an opening view is composed for: a building's hero view is seen with the walk lens (the player tours a
+   * building at {@link WALK_FOV}), so its frame edges are judged at that width whatever lens the camera has while the search
+   * runs (the orbit lens during the load: the view chosen then showed cypresses at the edges of the wider walk frame).
+   */
+  private openingFov(arch: boolean): number {
+    return arch ? WALK_FOV : this.perspective.fov;
+  }
+
+  /** The sun at the world's time of day for the opening search: none at night, under the moon or below the horizon. */
+  private openingSun(): OpeningSun | null {
+    const sky = this.env.skyState;
+    if (sky.moon) return null;
+    const strength = Math.max(0, Math.min(1, (sky.elevation + 2) / 6));
+    return strength > 0 ? { direction: [...sky.lightDirection], strength } : null;
   }
 
   /**
@@ -3955,7 +3965,8 @@ export class WorldRenderer {
     });
     const front = this.archView.active ? this.archFrontAzimuth() : null;
     const building = this.archView.active ? this.archBuilding() : null;
-    const input = { framing, items, fovDeg: cam.fov, aspect: cam.aspect, arch: this.archView.active, azimuthDeg: front ?? DEFAULT_FRAMING_AZIMUTH, ...(building ? { building } : {}) };
+    const sun = this.openingSun();
+    const input = { framing, items, fovDeg: this.openingFov(this.archView.active), aspect: cam.aspect, arch: this.archView.active, azimuthDeg: front ?? DEFAULT_FRAMING_AZIMUTH, ...(building ? { building } : {}), ...(sun ? { sun } : {}) };
     if (rooms.length > 0) {
       const inRoom = (r: RoomArea, x: number, z: number): boolean => {
         const hit = this.raycastWorld([x, r.floorY + 1, z], [0, -1, 0], 1.6, undefined, r.id);

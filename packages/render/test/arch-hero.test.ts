@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Vec3 } from '@aether/core';
 import { boxSightTest, type FramingItem } from '../src/view/framing';
 import { archFacades, archHeroViewsSteps, scoreArchHero, type ArchBuilding, type ArchHeroMeasure, type ArchOpening } from '../src/view/arch-hero';
-import { ARCH_COVER_ZONE, drainSteps, nearestInView, rankOpeningViews, type OpeningProbe } from '../src/view/opening-view';
+import { ARCH_COVER_ZONE, drainSteps, frameClutter, nearestInView, rankOpeningViews, type OpeningProbe } from '../src/view/opening-view';
 
 const W = 12; // along X
 const D = 8; // along Z
@@ -143,6 +143,54 @@ describe('arch hero view', () => {
     const [v] = drainSteps(archHeroViewsSteps(input(glassyBack), glassyBack, probeOf([house]), 1));
     expect(v!.position[2]).toBeGreaterThan(D / 2);
     expect(v!.measure.frontness).toBe(1);
+  });
+
+  it('shoots the glazed side the low sun falls on, not the entrance in its own shadow', () => {
+    const glassyBack = building({
+      openings: [
+        { center: [0, 1.05, D / 2], normal: [0, 1], area: 2.5, kind: 'entrance' },
+        ...[-4.5, -1.5, 1.5, 4.5].map((x): ArchOpening => ({ center: [x, 1.6, -D / 2], normal: [0, -1], area: 4, kind: 'window' })),
+      ],
+    });
+    // A dusk sun low in the −Z sky: the entrance (+Z) is backlit.
+    const sun = { direction: [0, 0.08, -1] as Vec3, strength: 1 };
+    const [v] = drainSteps(archHeroViewsSteps({ ...input(glassyBack), sun }, glassyBack, probeOf([house]), 1));
+    expect(v!.position[2]).toBeLessThan(-D / 2);
+    expect(v!.measure.sunlit!).toBeGreaterThan(0.5);
+    expect(v!.parts.light).toBeGreaterThan(0);
+    // The sun at the entrance's side keeps the entrance.
+    const [w] = drainSteps(archHeroViewsSteps({ ...input(glassyBack), sun: { direction: [0, 0.3, 1], strength: 1 } }, glassyBack, probeOf([house]), 1));
+    expect(w!.position[2]).toBeGreaterThan(D / 2);
+  });
+
+  it('scores a view into the sun, the raised eye and trunks at the edges down', () => {
+    const base: ArchHeroMeasure = { frontness: 1, offAngle: 36, share: 0.65, topCut: false, richness: 0.6, occluded: 0, foliage: 0, sky: 0.2, paved: false, inCover: false, raised: false };
+    const t = scoreArchHero(base).total;
+    expect(scoreArchHero({ ...base, sunlit: 0.8 }).total).toBeGreaterThan(t);
+    expect(scoreArchHero({ ...base, sunlit: -0.9 }).total).toBeLessThan(t - 2);
+    expect(scoreArchHero({ ...base, raised: true }).total).toBeLessThan(t - 1);
+    expect(scoreArchHero({ ...base, edges: 0.5, clutter: 0.2 }).total).toBeLessThan(t - 2);
+  });
+
+  it('keeps trunks and crowns out of the frame edges', () => {
+    const b = building();
+    const clear = drainSteps(archHeroViewsSteps(input(b), b, probeOf([house]), 1))[0]!;
+    // Two trunks a few metres in front of the clear view's lens, either side of its line of sight.
+    const dir = [clear.target[0] - clear.position[0], clear.target[2] - clear.position[2]];
+    const l = Math.hypot(dir[0]!, dir[1]!);
+    const f = [dir[0]! / l, dir[1]! / l];
+    const r = [f[1]!, -f[0]!];
+    const trunk = (side: number): FramingItem => {
+      const x = clear.position[0] + f[0]! * 4 + r[0]! * side;
+      const z = clear.position[2] + f[1]! * 4 + r[1]! * side;
+      return { min: [x - 0.35, 0, z - 0.35], max: [x + 0.35, 9, z + 0.35] };
+    };
+    const trunks = [trunk(3.3), trunk(-3.3)];
+    const probe = probeOf([house, ...trunks]);
+    expect(frameClutter(probe, clear.position, clear.target, 50, 16 / 9, { subject: { min: house.min, max: house.max } }).edges).toBeGreaterThan(0.2);
+    const v = drainSteps(archHeroViewsSteps(input(b), b, probe, 1))[0]!;
+    expect(v.measure.edges!).toBeLessThanOrEqual(0.2);
+    expect(Math.hypot(v.position[0] - clear.position[0], v.position[2] - clear.position[2])).toBeGreaterThan(1);
   });
 
   it('is deterministic', () => {

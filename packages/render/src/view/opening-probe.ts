@@ -5,7 +5,7 @@
 import { Box3, Raycaster, Vector3, type Intersection, type Mesh, type Object3D } from 'three';
 import { findWaterBodies, isWaterEntity, waterAt, type Entity, type EntityId, type Vec3 } from '@aether/core';
 import type { SceneSync } from '../sync/scene-sync';
-import { BATCHED_LAYER } from '../sync/static-batches';
+import { RAYCAST_LAYERS } from '../sync/static-batches';
 import { SCENERY_GENERATORS } from './content-items';
 import type { OpeningProbe, OpeningSurface } from './opening-view';
 import { sceneSightTest } from './sightline';
@@ -30,7 +30,7 @@ const LAND_EXTENT = 40;
  */
 export function sceneOpeningProbe(sync: SceneSync, ground: Object3D | null, top: number, bottom: number): OpeningProbe {
   const ray = new Raycaster();
-  ray.layers.enable(BATCHED_LAYER);
+  for (const l of RAYCAST_LAYERS) ray.layers.enable(l);
   const hits: Intersection[] = [];
   const down = new Vector3(0, -1, 0);
   const from = new Vector3();

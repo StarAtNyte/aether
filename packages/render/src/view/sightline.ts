@@ -7,7 +7,7 @@
 import { Raycaster, Vector3, type Intersection, type Mesh, type Object3D } from 'three';
 import type { Vec3 } from '@aether/core';
 import type { SceneSync } from '../sync/scene-sync';
-import { BATCHED_LAYER } from '../sync/static-batches';
+import { RAYCAST_LAYERS } from '../sync/static-batches';
 import type { SightTest } from './framing';
 
 /** Hits closer than this (m) to the segment start are ignored (the camera's own near plane). */
@@ -33,7 +33,7 @@ export function sceneSightTest(sync: SceneSync, skip: ReadonlySet<Object3D> = ne
   const scatter = opts.scatter !== false;
   const cover = opts.cover === true;
   const ray = new Raycaster();
-  ray.layers.enable(BATCHED_LAYER);
+  for (const l of RAYCAST_LAYERS) ray.layers.enable(l);
   const hits: Intersection[] = [];
   const a = new Vector3();
   const b = new Vector3();

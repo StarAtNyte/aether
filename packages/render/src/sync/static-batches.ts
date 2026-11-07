@@ -29,6 +29,19 @@ import type { EntityNode } from './entity-node';
 
 /** Layer of batched member meshes: raycast, but never rendered directly. */
 export const BATCHED_LAYER = 7;
+/**
+ * Layer of room contents left undrawn far from the eye on the cheaper tiers (see the renderer's `interiorDrawDistance`):
+ * neither the view nor the shadow cameras render it, raycasters still test it (picking through a window works).
+ */
+export const FAR_INTERIOR_LAYER = 6;
+/**
+ * Layer of meshes left undrawn on integrated GPUs for covering only a few pixels from where the camera is (the renderer's
+ * small-mesh cull). Still solid: sight tests must see them, or a tree far from the camera when a view is searched is not
+ * there for the search.
+ */
+export const SMALL_MESH_LAYER = 8;
+/** Every layer a sight or surface ray tests besides the default one: content not drawn now is still there. */
+export const RAYCAST_LAYERS: readonly number[] = Object.freeze([BATCHED_LAYER, FAR_INTERIOR_LAYER, SMALL_MESH_LAYER]);
 /** Smallest group worth an instanced draw. */
 export const MIN_BATCH = 6;
 /** Largest instanced mesh (bigger groups split into several). */
