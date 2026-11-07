@@ -290,7 +290,8 @@ export class StoryRunner {
     if (!this.tris) return out;
     this.laid.shots.forEach((s, i) => {
       for (const m of s.moves) {
-        if (!this.people.has(m.entity)) continue;
+        // A person riding (a path kept off the ground) is inside a vehicle's walls by design.
+        if (!this.people.has(m.entity) || m.ground === false) continue;
         const c = this.tris!.clearance(m.path);
         out.push({ shot: i, entity: m.entity, min: Math.round(c.min * 100) / 100, at: c.at });
       }
@@ -399,7 +400,7 @@ export class StoryRunner {
         ...s,
         moves: s.moves.map((m) => {
           ids.add(m.entity);
-          const laid = people.has(m.entity) && solid.size > 0 ? { ...m, path: groundPath(m.path as V3[], ground) } : m;
+          const laid = people.has(m.entity) && solid.size > 0 && m.ground !== false ? { ...m, path: groundPath(m.path as V3[], ground) } : m;
           if (laid !== m) fine(laid.path as V3[]);
           this.lengths.set(laid, pathLengths(laid.path));
           return laid;

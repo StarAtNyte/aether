@@ -206,52 +206,58 @@ the finished stills are 3840 x 2160.
 
 ## The film: "Two Whistles"
 
-An original slice-of-life short of about 100 seconds, written as data in the world (`world.story`, the shot list in
-`scripts/blender/cloudwatch/story.ts`, written into the template by `world.ts`). It replaces "The Last Light" (80 s, a
-girl races the sunset to the lookout), which had a goal but no turn, and whose last three shots repeated one framing.
+An original slice-of-life short of about 105 seconds, written as data in the world (`world.story`, the shot list in
+`scripts/blender/cloudwatch/story.ts`, written into the template by `world.ts`), with two people: Kaho and her best friend
+Mio. Its first version (100 s, Kaho alone) told the friendship only in captions: a viewer saw a girl climbing stairs and
+did not know who Mio was or who Kaho was talking to. Now Mio is seen: in the opening flashback, at the train window, and
+in the payoff; every line names its speaker; the filler stair shots are cut.
 
 Beat sheet:
 
-- **Goal** (1-4). Kaho's best friend Mio leaves town tonight on the evening train, which Mio's father drives. Class ran
-  late; Kaho races from the harbour road up to the level crossing to say goodbye ("6:31. Mio's train passes the crossing
-  at 6:40.").
-- **The turn** (5-8). The crossing bell; she arrives as the train is already passing; she waves, it does not stop
-  ("Mio—!"); a Dutch-tilted close-up as it goes; a held silence on the empty crossing ("…I didn't even say goodbye.").
-- **Memory** (9). Low against the sky she remembers Mio's promise: "If you ever miss me, run to the lookout. Dad always
-  whistles twice at the cape."
-- **The run** (10-14). The whole hill stair: high and wide down it, through the shrine gate on a long lens, a held "ma"
-  on the cloud and the gulls, an insert of her feet on the last steps, the reverse from the lookout as she climbs in.
-- **Payoff** (15-19). At the rail, over her shoulder toward the cape; two long whistles carry over the water; close and
-  low she waves ("…See you, Mio."); the camera cranes up and back to the whole town, the sea and the sun touching it as
-  the lamps come on.
-- **Coda** (20). The town at blue hour from the harbour; the end card.
+- **Promise** (1-3, "Last summer."): the two girls at the lookout rail at sunset; Mio holds up two fingers: "When the
+  train takes me to the city, Dad will whistle twice at the cape. Two whistles. That's me." Kaho: "Then I'll be up here.
+  Promise." A white flash cuts to today.
+- **Today** (4-7): the title over the sea; 6:31, Kaho runs along the harbour road; cross-cut: Mio at the train window,
+  sad ("…She's not coming."); Kaho up the first steps.
+- **The crossing** (8-12): the bell; the train is already passing ("Kaho: Mio—!"); through the glass Mio sees her, a hand
+  to her chest, then two fingers ("Mio: Two whistles!"); Kaho's face as it goes (the one Dutch tilt), teary; low against
+  the sky she understands ("Kaho: …The cape.").
+- **The race** (13-17): up the stair, high and wide; cross-cut: the train out of the west tunnel onto the shore viaduct;
+  the shrine gate on a long lens; the near miss: she stumbles on the last steps and catches herself; the reverse from the
+  lookout as she climbs in.
+- **Payoff** (18-21): over her shoulder toward the cape; two long whistles; on a long lens from the sea, the train on the
+  viaduct and Mio waving at her window; Kaho in tears and smiling waves back ("Kaho: See you, Mio!"); the crane up over
+  the town and the sea as the lamps come on.
+- **Coda** (22): the town at blue hour.
 
-Storyboard: `docs/worlds/cloudwatch-concept/storyboard-{1,2,3}.webp` (generated reference, eighteen panels). The railway
-cannot be seen from the lookout (the terraces' houses hide it), so the payoff is heard, with a caption for viewers
-without sound, rather than shown.
+The railway on the hill is hidden from the lookout by the terraces' houses and the western line by the lookout's trees,
+so the payoff cuts from Kaho's view toward the cape to a long lens on the viaduct from the sea: her look, then what she
+cannot quite see, with the whistles carrying across both.
 
 | # | Shot | Length | Grammar | Lens |
 |---|---|---|---|---|
-| 1 | The sky over the sea, the title | 8 s | fade in, tilt down from the cloud to the glitter | 50 deg |
-| 2 | Insert: her loafers on the road | 2.6 s | ground-level tracking alongside | 36 deg |
-| 3 | The harbour road | 5 s | long lens into the low sun, she runs away from us; first line | 8 deg (telephoto) |
-| 4 | The first steps | 4 s | leading three-quarter front, tracking up with her | 34 deg |
-| 5 | Insert: the crossing lamps | 2.2 s | low, the bell starts | 24 deg |
-| 6 | The crossing | 6 s | side-on, she in the right third, the train crosses the frame against her | 34 to 30 deg |
-| 7 | Her face, the train behind | 3 s | close, Dutch tilt 11 to 13 deg (the only one) | 19 deg |
-| 8 | Too late | 4.2 s | held wide, no move | 36 deg |
-| 9 | She remembers | 6.4 s | very low, looking up at her against the sky and the cloud; push in | 27 to 24 deg |
-| 10 | Down the stair | 5 s | high and wide, she climbs toward us | 44 deg |
-| 11 | The shrine gate | 5 s | long lens from above the gate, framed by its posts, the sea behind | 22 deg |
-| 12 | Ma: the cloud and the gulls | 4.5 s | held, a slow eased pan | 46 deg |
-| 13 | Insert: her feet on the last steps | 2.6 s | low, leading down the stair | 30 deg |
-| 14 | The last stair | 5 s | reverse from the lookout, push in | 34 to 25 deg |
-| 15 | Arrival | 4.2 s | low three-quarter, she turns to the sea | 27 deg |
-| 16 | Toward the cape | 5 s | over her shoulder | 24 deg |
-| 17 | Two whistles | 4.6 s | long lens on the cape; the sound carries it | 9 deg |
-| 18 | See you, Mio | 5.2 s | close, low and frontal; she waves | 24 deg |
-| 19 | The crane up | 12 s | from behind her low, up and back on a spline to the town, the sea and the sun | 40 to 52 deg |
-| 20 | The town at blue hour | 7 s | fade; from the harbour, windows lit | 40 deg |
+| 1 | Last summer: the two at the rail | 6 s | fade in, from behind, a slow push; memory grade | 36 to 34 deg |
+| 2 | Two fingers | 6.5 s | two-shot, side, Mio's line and gesture | 30 to 27 deg |
+| 3 | The promise | 4.2 s | close on Kaho, a nod | 24 to 22 deg |
+| 4 | Today: the title | 6 s | white flash, tilt down from the cloud | 50 deg |
+| 5 | 6:31, the harbour road | 5 s | long lens into the low sun | 8 deg |
+| 6 | Mio at the window | 4 s | cross-cut, a camera riding level with her window | 22 deg |
+| 7 | The first steps | 3.6 s | leading three-quarter front | 34 deg |
+| 8 | The crossing lamps | 2 s | insert, the bell starts | 24 deg |
+| 9 | The train is already passing | 4.5 s | side-on, she in the right third, the train against her | 34 to 30 deg |
+| 10 | Through the glass | 4.5 s | riding with the window: hand to chest, two fingers | 20 deg |
+| 11 | Her face as it goes | 3 s | close, Dutch 11 to 13 deg | 19 to 17 deg |
+| 12 | The cape | 3.6 s | very low against the sky, push in | 27 to 24 deg |
+| 13 | Up the stair | 4.2 s | high and wide, she climbs toward us | 44 deg |
+| 14 | The train on the shore line | 3.6 s | cross-cut from the sea below the viaduct | 30 deg |
+| 15 | The shrine gate | 4 s | long lens from above, framed by the posts | 22 deg |
+| 16 | The near miss | 3.4 s | low, leading her; she stumbles | 30 deg |
+| 17 | The last stair | 4.2 s | reverse from the lookout, push in | 34 to 25 deg |
+| 18 | Toward the cape | 4.4 s | over her shoulder | 28 deg |
+| 19 | Two whistles; Mio waves | 5 s | long lens on the viaduct from the sea | 9 deg |
+| 20 | See you, Mio | 5.2 s | close, low and frontal; tears and a smile, she waves | 24 deg |
+| 21 | The crane up | 11 s | up and back on a spline to the town, the sea and the sun | 40 to 52 deg |
+| 22 | The town at blue hour | 6 s | fade; from the harbour, windows lit | 40 deg |
 
 - Cinematography: her way is screen right all film long; the cameras keep to the inland or east side of her line, which
   also puts the low sun ahead of the lens (back light and warm rims instead of flat front light); the train runs against
@@ -266,7 +272,10 @@ without sound, rather than shown.
   down, the two whistles), an ambience bed (wind, waves, cicadas, gulls, the town) set per shot, and one-shot sounds
   (the crossing bell, the train passing with its rail joints and Doppler, the whistle with the valley's echo, gulls,
   steps, a gust, a chime, a heartbeat). M or the Sound chip mutes it (remembered); the player's volume and music levels
-  apply; a browser that holds sound until a gesture starts it on the first key or click.
+  apply. Browsers hold audio until the visitor acts, so the film opens on a start card over its first view (Watch with
+  sound, Watch muted, Explore, Play): the click opens the audio context in its own gesture. A lead sings a four-bar
+  melody on the motif and swells in the climax; the score leads the mix over the ambience. `story-shots.ts` clicks
+  Watch and checks the context runs and the mix is audible (peak RMS 0.045 in the first seconds).
 - The end: after the last shot the picture holds black under the end card's title for 0.8 s, then the black lifts over
   2.4 s onto the live world in the last shot's view and grade; Play, Explore, Watch again and Sound sit over the living
   scene on a soft scrim. Before, the end card stayed on full black (the story frame's fade was 1 for as long as the
@@ -319,6 +328,16 @@ and a 0.1 m near plane, the creases where billows intersect 2 km away came out a
 
 ## Result (7 November 2026)
 
+- **Film pass 2** (the friendship seen, not told; Kaho and Mio from the Blender character pipeline):
+  - Mio is in the film: the flashback at the lookout, at the train window (a camera riding level with it), her two
+    fingers through the glass, her wave from the viaduct on the cape; captions name the speaker. Before/after contact
+    sheets: `before-after/19-film-mio-before-after.webp`; frames in `story/`, the start card `story/gate.webp`.
+  - Story format, additive: actions carry facial expressions (morphs by name), moves keep their heights (`ground:
+    false`, a rider) and turn with an offset (`yawOffset`, the train along its x axis); a rider that does not orient to
+    its way keeps facing its `face` point; the shortest field of view is 5 degrees.
+  - Over the whole film on the Intel GPU: p50 16.7 ms, p95 22.7 ms, no frame over 50 ms, no program linked; the sound
+    check clicks Watch and hears the mix (peak RMS 0.038); the hand-over after the end and after a skip shows the live
+    town.
 - **Film pass** ("Two Whistles", Kaho rebuilt; see The film above):
   - Concept first: three generated design directions, the chosen one's turnaround, expressions, details with the palette
     and a silhouette study, and three storyboard pages (`docs/worlds/cloudwatch-concept/`, generated reference only).

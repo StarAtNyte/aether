@@ -144,14 +144,15 @@ export function moveProgress(move: Pick<StoryMove, 'start' | 'end' | 'ease'>, lo
 }
 
 /** The pose of a move at progress `u` (yaw faces the way it goes; at rest it turns to `face`). */
-export function movePose(move: Pick<StoryMove, 'path' | 'orient' | 'face'>, lengths: readonly number[], u: number): ActorPose {
+export function movePose(move: Pick<StoryMove, 'path' | 'orient' | 'face' | 'yawOffset'>, lengths: readonly number[], u: number): ActorPose {
   const { point, dir } = alongPath(move.path, lengths, u);
   let yaw: number | null = null;
-  if (move.face && (u >= 1 || move.path.length < 2)) {
+  // `face` turns it once it stops; a move that does not orient to its way (a rider) keeps facing it throughout.
+  if (move.face && (u >= 1 || move.path.length < 2 || !move.orient)) {
     const dx = move.face[0] - point[0];
     const dz = move.face[2] - point[2];
     if (Math.hypot(dx, dz) > 1e-6) yaw = Math.atan2(-dx, -dz);
-  } else if (move.orient && dir) yaw = Math.atan2(-dir[0], -dir[1]);
+  } else if (move.orient && dir) yaw = Math.atan2(-dir[0], -dir[1]) + ((move.yawOffset ?? 0) * Math.PI) / 180;
   return { position: point, yaw };
 }
 

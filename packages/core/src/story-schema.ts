@@ -32,7 +32,7 @@ export const StoryCamera = z.object({
   position: V3,
   target: V3,
   /** Vertical field of view in degrees (default: the previous shot's, else 50). */
-  fov: z.number().min(8).max(100).optional(),
+  fov: z.number().min(5).max(100).optional(),
   /** Dutch tilt: roll about the view axis in degrees (+ clockwise); keep it for the story's turn. */
   roll: z.number().min(-45).max(45).optional(),
 });
@@ -75,6 +75,10 @@ export const StoryMove = z.object({
   /** Turn to face the way it moves (default true); `face` turns it toward a point once it stops. */
   orient: z.boolean().default(true),
   face: V3.optional(),
+  /** A person's path is laid on the ground under it (default); false keeps its heights (riding in a train). */
+  ground: z.boolean().default(true),
+  /** Added to the heading when it turns to the way it goes (degrees): a model whose length is not along its facing (a train along its x axis). */
+  yawOffset: z.number().min(-360).max(360).optional(),
 });
 export type StoryMove = z.infer<typeof StoryMove>;
 
