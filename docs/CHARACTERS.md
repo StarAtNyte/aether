@@ -12,7 +12,7 @@ reads a source file: it loads glTF files built offline by
 | 10 adult bodies | [Microsoft Rocketbox](https://github.com/microsoft/Microsoft-Rocketbox), commit `0943055db6ec570bcef9f2c8b41c9e5467c808f9`, `Assets/Avatars/Adults/<name>/Export/<name>.fbx` | MIT, © 2020 Microsoft |
 | 57 motion clips per gender | Same repository, `Assets/Animations/all_animations_max_motextr_{static,xy,xyz}/` | MIT, © 2020 Microsoft |
 | 10 clips per gender | Keyframed in `scripts/characters/authored.ts` | MIT (this project) |
-| Toon body `kaho` | Built procedurally by `scripts/characters/anime-kaho.ts` (mesh, painted face and every colour generated there; only the Biped's rest transforms are read from `juno`) | MIT (this project) |
+| Toon bodies `kaho`, `mio` | Built by the Blender character pipeline `scripts/blender/character/` (mesh, painted face, hair, clothes and every colour generated there; only the Biped's rest transforms are read from `juno`) | MIT (this project) |
 
 The repository's `LICENSE.md` is copied unchanged to
 `assets/characters-LICENSE.md` by the build. The in-app credit line and the
@@ -131,41 +131,37 @@ result is an ordinary base colour texture; variants share materials by key
 - `packages/assets/src/characters/generated.ts`: the runtime subset of the same
   data (`GENERATED_LIBRARY`). Generated; do not edit.
 
-## Kaho, the toon body
+## Kaho, Mio and the character pipeline
 
-`kaho` (`style: 'toon'`, 1.535 m, about 6.7 heads, 45 k triangles, 614 KB with
-its 2048x1024 PNG atlas) is an original anime-style girl, built to match her
-model sheet (`docs/worlds/cloudwatch-concept/`, generated concept art used as
-reference only): a summer sailor uniform (white short-sleeve blouse with a chest
-pocket, a sky-blue collar with two white lines, a deep-teal neckerchief with two
-pointed tails, a knee-length navy skirt in twelve knife pleats), white socks,
-brown loafers, a black digital watch on her left wrist, a chin-length chestnut
-bob in large clumps curling in at the tips, side-parted bangs laid on the
-forehead, a thin braid behind her left ear ending in a seashell charm, and brown
-eyes. (Before November 2026 she had a ponytail, a red ribbon and teal eyes; the
-bangs stood off the forehead in profile and the hands clipped the skirt.)
+`kaho` (`style: 'toon'`, 1.539 m, 6.45 heads, 58 k triangles, 908 KB) and `mio` (1.545 m, 57.5 k triangles, 897 KB)
+are built by the Blender character pipeline (`scripts/blender/character/build.py`; docs/BLENDER-HARNESS.md,
+"Characters") from their briefs in `scripts/blender/character/briefs/`, and installed by
+`scripts/characters/finish-character.ts` into `assets/lib/c/<id>.<hash8>.glb`, `assets/characters-original.json` and
+`packages/assets/src/characters/original.ts` (`ORIGINAL_CAST`, appended to `CAST`). Kaho follows her model sheet
+(`docs/worlds/cloudwatch-concept/`, generated concept art used as reference only): a summer sailor uniform (white
+blouse; a sky-blue collar with two white lines and a square back flap; a deep-teal neckerchief with a knot and two
+tails; a knee-length navy skirt in twelve knife pleats with real depth), off-white socks, brown loafers with a strap, a
+black watch on her left wrist, a chin-length chestnut bob with the inward curl and side-swept bangs on the forehead, a
+braid behind her left ear ending in a seashell charm, brown eyes. Mio follows her brief
+(`docs/worlds/cloudwatch-concept/prompts/r4-mio.txt`): a pale mint cardigan open over a white T-shirt, a long
+light-beige skirt in 24 pleats, white sneakers, a brown bag strap across her body, long straight black hair with a
+fringe and a white hairband, droopy dark grey-brown eyes, a beauty mark under her left eye. (Until November 2026 Kaho
+was lofted from primitives by `scripts/characters/anime-kaho.ts`, kept for reference; running it would replace the
+pipeline's body.) Proof: `docs/screenshots/cloudwatch/character/kaho-vs-sheet.webp`, `mio-turnaround.webp`.
 
-- Build: `npx tsx scripts/characters/anime-kaho.ts` (no inputs besides the
-  library's `juno` body, for the skeleton). Modules under
-  `scripts/characters/kaho/`: `skeleton.ts` (the Biped with only bone offsets
-  changed: long legs, short torso and arms, narrow shoulders; rest rotations
-  kept, so the female motion set plays unchanged), `body.ts` (lofted limbs and
-  clothes, a signed-distance head, lens-section hair locks, the collar laid on
-  the torso surface, envelope skin weights), `paint.ts` (the atlas: the face
-  with layered irises, catchlights, lashes, brows, nose, mouth and blush; the
-  hair strip with its highlight shape; the collar stripe; flat swatches), and
-  `png.ts`. It writes `assets/lib/c/kaho.<hash8>.glb`,
-  `assets/characters-original.json` and
-  `packages/assets/src/characters/original.ts` (`ORIGINAL_CAST`, appended to
-  `CAST`); `characters:build` keeps her file.
-- The file holds the skinned body twice (`kaho-body` and `kaho-outline`
-  nodes sharing one geometry), materials marked `toon: body|outline` in their
-  extras, a `_TOON` vertex attribute (outline width, shade bias, rim strength)
-  and, in the scene extras, `toon.springs` (eight skirt panels, the braid, the
-  side locks, the neckerchief's two tails) and `toon.colliders` (thighs,
-  calves, forearms, hands, head, back, chest, hips). A spring link is kept out
-  of a capsule at its tip and at its middle, so a skirt panel cannot cut
-  through a thigh.
+- One skinned mesh on the shared Biped, rest rotations exact and only bone offsets changed (long legs, short torso),
+  so the female motion set plays unchanged. Secondary bones: 8 skirt panels, the braid (Kaho) or three chains of long
+  hair (Mio), the side locks, the neckerchief's tails; 13 springs each, with capsules on the thighs, calves, forearms,
+  hands, head, back, chest and hips.
+- Morph targets `smile`, `sad`, `surprised`, `teary`, `blink`, `mouth_open`, `determined` (decals on the face, driven by
+  `CharacterRig.setExpression`), and clips of their own, `look_up`, `hand_to_chest`, `two_fingers`, `run_stop`, which
+  join the motion set by name (`run_stop` replaces the shared one).
+- The file holds the skinned body twice (`<id>-body` and `<id>-outline` nodes sharing one geometry and its morphs),
+  materials marked `toon: body|outline` in their extras, a `_TOON` vertex attribute (outline width, shade bias, rim
+  strength) and, in the scene extras, `toon.springs` and `toon.colliders`. A spring link is kept out of a capsule at its
+  tip and at its middle, so a skirt panel cannot cut through a thigh. Each build also writes a far level of detail
+  (`<id>.lod1.glb`, about 23 k triangles) beside it; the runtime does not load it yet.
+- Rebuild: docs/BLENDER-HARNESS.md, "How to run" (about 30 s per character).
 - Runtime corrections of a toon body after the clip (`rig.ts`): the arms hang
   6 degrees out (`armClearance`); standing, the head and neck ease back to
   rest from the idle clip's glances (`headSteady`), so a held close-up does not

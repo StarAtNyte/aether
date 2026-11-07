@@ -1,0 +1,32 @@
+{
+  "id": "kaho",
+  "name": "Kaho",
+  "style": "anime",
+  "age": 15,
+  "height_m": 1.54,
+  "build": "slim",
+  "head_ratio": 6.5,
+  "gender": "female",
+  "skin": "fair #f6c8ac",
+  "eyes": "brown #593d35, large, lively",
+  "hair": {
+    "style": "bob with the inward curl",
+    "colour": "chestnut #644946",
+    "length": 0.25,
+    "parting": "side-left",
+    "volume": 1.0,
+    "accessories": [{ "item": "braid", "side": "left", "charm": "seashell", "colour": "#644946", "charm_colour": "#f1e6cf" }]
+  },
+  "outfit": [
+    { "item": "blouse", "colour": "white #efe6e7", "sleeves": "short", "pocket": "left" },
+    { "item": "sailor collar", "colour": "sky blue #92a8cc", "line_colour": "white #f4f1f2", "lines": 2 },
+    { "item": "neckerchief", "colour": "deep teal #396773" },
+    { "item": "pleated skirt", "colour": "navy #3d425a", "pleats": 12, "length": "knee" },
+    { "item": "socks", "colour": "off-white #e9e0e3", "height": "mid-calf" },
+    { "item": "loafers", "colour": "brown #6c4b42" },
+    { "item": "watch", "colour": "black #26242a", "wrist": "left" }
+  ],
+  "look": "anime girl, summer sailor uniform with a sky-blue collar and a teal neckerchief, chin-length chestnut bob with a thin braid and a seashell charm",
+  "notes": "Cloudwatch Harbour's lead: 15, quick and stubborn, a summer sailor uniform. Model sheet: docs/worlds/cloudwatch-concept/kaho-turnaround.webp.",
+  "install": true
+}

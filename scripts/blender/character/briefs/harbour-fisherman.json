@@ -1,0 +1,27 @@
+{
+  "id": "harbour-fisherman",
+  "name": "Old Genzo",
+  "style": "anime",
+  "age": 68,
+  "height_m": 1.66,
+  "build": "sturdy",
+  "head_ratio": 7.0,
+  "gender": "male",
+  "skin": "weathered #d9a07a",
+  "eyes": "dark brown #3f2c24, narrow, kind",
+  "hair": {
+    "style": "short",
+    "colour": "grey #b9b6b2",
+    "length": 0.06,
+    "accessories": [{ "item": "knit cap", "colour": "rust #9a4a2a" }],
+    "beard": { "colour": "#c9c6c2", "length": 0.05 }
+  },
+  "outfit": [
+    { "item": "t-shirt", "colour": "cream #e6dcc6" },
+    { "item": "jacket", "colour": "navy #36405a", "sleeves": "long", "open": true },
+    { "item": "trousers", "colour": "khaki #8f8466" },
+    { "item": "boots", "colour": "black #2b2a2e" }
+  ],
+  "look": "old harbour fisherman, rust knit cap, short grey beard, open navy work jacket over a cream T-shirt, khaki trousers, black rubber boots",
+  "notes": "Mends nets on the quay every evening; broad hands, kind eyes in a weathered face. Made from this brief alone, no sheet."
+}

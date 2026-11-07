@@ -1,0 +1,30 @@
+{
+  "id": "mio",
+  "name": "Mio",
+  "style": "anime",
+  "age": 15,
+  "height_m": 1.54,
+  "build": "slim",
+  "head_ratio": 6.5,
+  "gender": "female",
+  "skin": "fair #f4cdb6",
+  "eyes": "dark grey-brown #4a3e3a, slightly droopy gentle eyes",
+  "hair": {
+    "style": "long straight with a fringe",
+    "colour": "black #2a2630",
+    "length": 0.6,
+    "parting": "centre",
+    "volume": 0.95,
+    "accessories": [{ "item": "hairband", "colour": "white #f4f1f2" }]
+  },
+  "outfit": [
+    { "item": "t-shirt", "colour": "white #f2eeee" },
+    { "item": "cardigan", "colour": "pale mint #c9eadb", "sleeves": "short" },
+    { "item": "pleated skirt", "colour": "light beige #e3d3b6", "pleats": 24, "length": "mid-calf" },
+    { "item": "sneakers", "colour": "white #f2eeee", "sole_colour": "#d9d4cf" },
+    { "item": "bag strap", "colour": "brown #7a5236", "from": "right shoulder" }
+  ],
+  "look": "anime girl, pale mint short-sleeve cardigan over a white T-shirt, long light-beige pleated skirt, long straight black hair with a fringe and a white hairband",
+  "notes": "Kaho's best friend: gentle, a little shy, the calm one; leaving town on the evening train in travel clothes. A small beauty mark under her left eye. Brief: docs/worlds/cloudwatch-concept/prompts/r4-mio.txt.",
+  "install": true
+}

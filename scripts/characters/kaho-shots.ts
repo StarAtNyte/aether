@@ -2,7 +2,7 @@
  * Proof shots of the toon body `kaho` in Cloudwatch Harbour's sunset light: a full-body turnaround, a face close-up and
  * walk / run frames (the entity is moved every frame through `renderer.setEntityProperty`, as a cinematic would).
  *
- *   STATIC_DIR=<dist> GEN_GPU=intel npx tsx scripts/characters/kaho-shots.ts --out=<dir> [--at=x,z] [--only=turn,face,walk,run,idle]
+ *   STATIC_DIR=<dist> GEN_GPU=intel npx tsx scripts/characters/kaho-shots.ts --out=<dir> [--at=x,z] [--only=turn,face,walk,run,idle,clips,expressions] [--body=kaho]
  *
  * Writes a scratch world (`kaho-proof.json`: Cloudwatch Harbour plus one entity with `character.body: 'kaho'`) into the
  * dist's templates, opens it in the player and writes PNGs plus `report.json` (clip names by speed).
@@ -33,7 +33,7 @@ world.world.entities['kaho-test'] = {
   behaviors: [], castShadow: true, id: 'kaho-test', name: 'Kaho', parent: null, receiveShadow: true,
   shape: { kind: 'primitive', primitive: 'box', size: [0.5, 1.6, 0.5] }, state: {}, tags: [], template: false,
   transform: { position: [at[0], 0.8, at[1]], rotation: [0, 0, 0], scale: [1, 1, 1] }, visible: true,
-  character: { body: 'kaho' },
+  character: { body: arg('body') ?? 'kaho' },
 };
 writeFileSync(join(dist, 'templates/worlds/kaho-proof.json'), JSON.stringify(world));
 
@@ -126,6 +126,26 @@ try {
     }
     await page.evaluate('window.__kahoMove.stop = true');
     report[mode] = states;
+  }
+  if (only.has('clips')) {
+    // the body's own clips (a built character's extra beats), front on
+    for (const clip of ['two_fingers', 'hand_to_chest', 'look_up']) {
+      await place(x0, z0, 180);
+      await cam([x0, floor + 1.0, z0 + 3.0], [x0, floor + 0.85, z0], 32);
+      report[`clip-${clip}`] = await page.evaluate(`${R}.characterRig('kaho-test').playClip('${clip}')`);
+      await page.waitForTimeout(900);
+      await canvasShot(page, `clip-${clip}`);
+      await page.waitForTimeout(1800);
+    }
+  }
+  if (only.has('expressions')) {
+    await place(x0, z0, 200);
+    await cam([x0 + 0.12, floor + 1.43, z0 + 0.75], [x0, floor + 1.41, z0], 30);
+    for (const ex of (arg('exprs') ?? 'smile,surprised,sad,teary,blink,mouth_open,determined').split(',')) {
+      await page.evaluate(`(() => { const g = ${R}.characterRig('kaho-test'); for (const e of ['smile', 'surprised', 'sad', 'teary', 'blink', 'mouth_open', 'determined']) g.setExpression(e, e === '${ex}' ? 1 : 0); })()`);
+      await page.waitForTimeout(700);
+      await canvasShot(page, `ex-${ex}`);
+    }
   }
   if (only.has('idle')) {
     await place(x0, z0, 190);

@@ -1,5 +1,5 @@
 {
- "source": "scripts/characters/anime-kaho.ts",
+ "source": "scripts/blender/character/build.py (scripts/characters/finish-character.ts)",
  "licence": "MIT",
  "author": "this project",
  "cast": [
@@ -7,16 +7,27 @@
    "id": "kaho",
    "gender": "female",
    "look": "anime girl, summer sailor uniform with a sky-blue collar and a teal neckerchief, chin-length chestnut bob with a thin braid and a seashell charm",
-   "file": "c/kaho.92067d24.glb",
-   "height": 1.535,
-   "hip": 0.848,
-   "triangles": 45304,
+   "file": "c/kaho.6566c7d4.glb",
+   "height": 1.539,
+   "hip": 0.824,
+   "triangles": 58160,
    "faces": 1,
-   "bytes": 629040,
+   "bytes": 907716,
    "style": "toon",
-   "sha256": "92067d246eb7265b56cc55a523ab45f5596181bae77b725909c00b10221bba55",
-   "vertices": 23407,
-   "bones": 69
+   "sha256": "6566c7d4b8bd80fa8752db01af60942ccda5dcfe3deb11f595689558eadac14c"
+  },
+  {
+   "id": "mio",
+   "gender": "female",
+   "look": "anime girl, pale mint short-sleeve cardigan over a white T-shirt, long light-beige pleated skirt, long straight black hair with a fringe and a white hairband",
+   "file": "c/mio.b51a3dc7.glb",
+   "height": 1.545,
+   "hip": 0.824,
+   "triangles": 57516,
+   "faces": 1,
+   "bytes": 897172,
+   "style": "toon",
+   "sha256": "b51a3dc799a6992cf7ee30c7f3af2ead7f18ed0cfc92ef887b1affe8b0b79732"
   }
  ]
 }
