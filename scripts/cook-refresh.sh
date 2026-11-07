@@ -10,10 +10,10 @@
 #
 # - The refresh checkout is a detached worktree of this repository (AETHER_REFRESH_REPO, default
 #   ~/.cache/aether-cookall/repo), moved to origin/main on each run: the working checkout is never touched.
-# - Its node_modules are links into this checkout's (the @aether/* packages link to the refresh tree's own); when
-#   origin/main's package-lock.json differs from this checkout's, it gets its own `npm ci` instead.
+# - It has its own `npm ci` install, redone when origin/main's package-lock.json changes (step 2 says why not links).
 # - One run at a time (a lock), and no cooking run while any cook runs (scripts/cook.ts or scripts/cook-upload.ts).
-# - The build and the cooks are niced and capped: systemd-run --user --scope -p MemoryMax=5000M -p MemorySwapMax=0.
+# - The build and the cooks are niced and capped: systemd-run --user --scope -p MemorySwapMax=0, MemoryMax=5000M for
+#   the build and 8000M for each cook (Lisbon's cook is killed at 5000M).
 # - Everything is logged to ~/.cache/aether-cookall/refresh.log.
 set -euo pipefail
 
@@ -69,28 +69,15 @@ if [ "$PULL" = 1 ]; then
 fi
 log "checkout at $(git -C "$REPO" log -1 --format='%h %s' | cut -c1-100)"
 
-# 2. Dependencies: links into this checkout's while main's lockfile matches it, else an `npm ci` of the refresh checkout.
-link_modules() {
-  rm -rf "$REPO/node_modules"
-  mkdir -p "$REPO/node_modules/@aether"
-  for e in "$SELF_ROOT"/node_modules/* "$SELF_ROOT"/node_modules/.bin; do
-    n="$(basename "$e")"
-    [ "$n" = "@aether" ] || ln -sfn "$e" "$REPO/node_modules/$n"
-  done
-  # The workspace packages are the refresh tree's own (this checkout's links are relative: ../../packages/<name>).
-  for e in "$SELF_ROOT"/node_modules/@aether/*; do
-    t="$(readlink "$e")"
-    ln -sfn "$REPO/${t#../../}" "$REPO/node_modules/@aether/$(basename "$e")"
-  done
-}
+# 2. Dependencies: the refresh checkout's own `npm ci` install, redone when main's lockfile changes. Not links into
+# this checkout's node_modules: a package reached through a link resolves outside the tree, and the generator code
+# version (scripts/vite/gen-version.ts) would then differ from the deployed build's, so every package would be stale.
 if [ "$REPO" != "$SELF_ROOT" ]; then
   MARK="$REPO/node_modules/.npm-ci-lock"
   if [ -f "$MARK" ] && cmp -s "$REPO/package-lock.json" "$MARK"; then
     : # its own install is current
-  elif cmp -s "$REPO/package-lock.json" "$SELF_ROOT/package-lock.json"; then
-    [ -L "$REPO/node_modules/@aether/core" ] && [ ! -f "$MARK" ] || link_modules
   else
-    log "package-lock.json differs from this checkout's: npm ci in the refresh checkout"
+    log "npm ci in the refresh checkout"
     rm -rf "$REPO/node_modules"
     (cd "$REPO" && capped npm ci --no-audit --no-fund)
     cp "$REPO/package-lock.json" "$MARK"
@@ -118,7 +105,7 @@ fi
 log "building $DIST"
 (cd apps/studio && capped node "$REPO/node_modules/vite/bin/vite.js" build --outDir "$DIST" --emptyOutDir)
 log "cooking $STALE"
-if STATIC_DIR="$DIST" nice -n 10 "$TSX" scripts/cook-upload.ts --all --clean --out="$OUT" --only="$STALE"; then
+if STATIC_DIR="$DIST" nice -n 10 "$TSX" scripts/cook-upload.ts --all --retry-failed --clean --out="$OUT" --only="$STALE"; then
   log "refresh done"
 else
   log "refresh finished with failures (see $OUT/.cook-all-state.json)"

@@ -182,6 +182,10 @@ export async function generationCode(opts: GenerationCodeOptions = {}): Promise<
   const used = new Set<string>();
   for (const o of Object.values(r.metafile.outputs)) for (const [k, v] of Object.entries(o.inputs)) if (v.bytesInOutput > 0) used.add(k.split('\\').join('/'));
   const inputs = [...used].map((k) => relative(ROOT, join(ROOT, k)).split('\\').join('/')).sort();
+  // An input outside the checkout (a node_modules linked to another checkout's) changes the bundle's chunk hashes, so
+  // this tree's version would not be the deployed build's.
+  const outside = inputs.filter((k) => k.startsWith('../'));
+  if (outside.length) throw new Error(`gen-version: ${outside.length} inputs resolve outside the checkout (${outside[0]}); install its own node_modules`);
   return { version: h.digest('hex').slice(0, 16), inputs };
 }
 

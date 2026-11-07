@@ -11,7 +11,7 @@
  * the dataset is current: its manifest names this tree's generator code version and the IR hash of the template's world
  * (what the player checks, cook/cooked.ts). `--dry-run` only lists the stale ones (no dist, cook or token needed); its last
  * line is `stale: <slug>,<slug>,…` (empty when none). Each cook runs as its own capped
- * process (`systemd-run --user --scope -p MemoryMax=5000M -p MemorySwapMax=0 nice -n 10`, unless `--no-scope`), then
+ * process (`systemd-run --user --scope -p MemoryMax=8000M -p MemorySwapMax=0 nice -n 10`, unless `--no-scope`), then
  * its package is uploaded. Progress is kept in `<out>/.cook-all-state.json`: a rerun skips templates already uploaded
  * from the same world file by the same generator code, and templates that failed unless `--retry-failed`. `--clean`
  * deletes a package's local copy once it is uploaded. The dist must be built from this tree (the generator code version
@@ -100,7 +100,7 @@ function cookOne(slug: string): Promise<void> {
   const cookArgs = [existsSync(tsx) ? tsx : 'tsx', join(ROOT, 'scripts/cook.ts'), `--out=${OUT}`, ...(flag('tiers') ? [`--tiers=${flag('tiers')}`] : []), slug];
   const scoped = !has('no-scope') && spawnSync('systemd-run', ['--version'], { stdio: 'ignore' }).status === 0;
   const [cmd, ...rest] = scoped
-    ? ['systemd-run', '--user', '--scope', '--quiet', '-p', 'MemoryMax=5000M', '-p', 'MemorySwapMax=0', 'nice', '-n', '10', ...cookArgs]
+    ? ['systemd-run', '--user', '--scope', '--quiet', '-p', 'MemoryMax=8000M', '-p', 'MemorySwapMax=0', 'nice', '-n', '10', ...cookArgs]
     : ['nice', '-n', '10', ...cookArgs];
   return new Promise((res, rej) => {
     // The cook never needs the token: it is not passed on.
@@ -157,7 +157,9 @@ async function all(): Promise<number> {
       continue;
     }
     const same = prev && prev.genVersion === gen && prev.worldSha === sha;
-    if (same && prev.status === 'uploaded') {
+    // A package this run's state calls uploaded is skipped only when the dataset could not be read: once the dataset
+    // calls it stale (say its baked light is missing), the state is out of date, and the template is cooked again.
+    if (same && prev.status === 'uploaded' && why.startsWith('could not check')) {
       log(`[${i + 1}/${slugs.length}] ${slug}: done (${prev.id}), skipped`);
       continue;
     }
