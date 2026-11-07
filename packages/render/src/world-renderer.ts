@@ -570,6 +570,10 @@ const STREAM_INTERVAL_MS = 200;
 const HLOD_WAIT_MS = 10_000;
 /** Longest the view keeps its last picture while a cell next to the camera loads its full detail (ms). */
 const NEAR_HOLD_MAX_MS = 3000;
+/** The same after a camera jump, when the whole near ring may be loading (ms). */
+const JUMP_HOLD_MAX_MS = 8000;
+/** A camera that moves farther than this in one frame jumped (metres, XZ): a pose set, a cut, a start-mode change. */
+const JUMP_METRES = 8;
 /** Smallest base cell of a world whose cook bakes proxies (metres; the town scale of cell-grid.ts). */
 const HLOD_MIN_CELL = 64;
 /** The proxies' material (streaming/hlod-layer.ts): white, lit, its colour from the vertices. */
@@ -1896,7 +1900,16 @@ export class WorldRenderer {
     const st = this.streamer;
     if (!st || !this.hlod || !this.framed || this.loadingScreen) return false;
     const cam = this.perspective.position;
-    if (!st.nearPending([{ x: cam.x, z: cam.z }])) {
+    // A jump (the camera moved far in one frame, or a fly-to just landed): until the whole near ring is in, the view
+    // waits for it. Moving on its own the camera waits only for cells within the hold radius.
+    const flying = this.cameraFlying;
+    if (Math.hypot(cam.x - this.holdCamX, cam.z - this.holdCamZ) > JUMP_METRES || (this.holdFlying && !flying)) this.jumped = true;
+    this.holdCamX = cam.x;
+    this.holdCamZ = cam.z;
+    this.holdFlying = flying;
+    const here = [{ x: cam.x, z: cam.z }];
+    if (this.jumped && !st.nearPending(here)) this.jumped = false;
+    if (flying || !st.nearPending(here, this.jumped ? undefined : st.holdRadius)) {
       this.nearHoldSince = 0;
       this.holdTimedOut = false;
       return false;
@@ -1908,7 +1921,7 @@ export class WorldRenderer {
       this.streamAt = 0;
       this.streamLog.holds++;
     }
-    const held = t - this.nearHoldSince < NEAR_HOLD_MAX_MS;
+    const held = t - this.nearHoldSince < (this.jumped ? JUMP_HOLD_MAX_MS : NEAR_HOLD_MAX_MS);
     if (!held && !this.holdTimedOut) {
       this.holdTimedOut = true;
       this.streamLog.holdTimeouts++;
@@ -1918,6 +1931,12 @@ export class WorldRenderer {
 
   /** The current near hold ran out with the near cells still pending (counted once per hold). */
   private holdTimedOut = false;
+  /** The camera jumped and its near ring is not all in yet ({@link nearHeld}). */
+  private jumped = false;
+  /** The camera's XZ and flight state at the last {@link nearHeld}. */
+  private holdCamX = Number.NaN;
+  private holdCamZ = Number.NaN;
+  private holdFlying = false;
 
   /** The cooked package's proxy cells (manifest `hlod`), null without proxies. */
   private hlodCells: ReadonlyArray<{ cell: string; bounds: readonly number[] }> | null = null;

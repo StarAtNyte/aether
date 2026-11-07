@@ -58,6 +58,11 @@ export interface CellStreamingConfig {
    */
   proxyLoadRadius: number;
   proxyNearRadius: number;
+  /**
+   * Within this distance a proxied cell that is not in yet holds the view while the camera moves on its own (a walk, an
+   * orbit), and loads without waiting its turn; after a camera jump the whole {@link proxyNearRadius} holds it.
+   */
+  proxyHoldRadius: number;
   /** How long a proxied cell stays past its unload distance before it unloads (ms): its proxy covers it at once. */
   proxyUnloadDelayMs: number;
   /** Most proxied cells loading at once (each load's arrays become garbage on upload: spread out, the heap stays low). */
@@ -73,9 +78,10 @@ export function streamingConfig(cellSize: number, tier: string, budgetBytes = Nu
   return {
     loadRadius: cellSize * ring, nearRadius: cellSize * 1.5 * (ring / 4), unloadMargin: cellSize, unloadDelayMs: 5000, maxLoading: 2,
     budgetBytes, minResidentMs: 4000, entityBytes: 1 << 20,
-    // A cell with a proxy is full detail within 1.5 cells (scaled by tier); only within half a cell is it resident whatever
-    // the budget (stage 5, §3.2 R0/R1): past that the budget decides, and the proxy draws meanwhile.
-    proxyLoadRadius: cellSize * 1.5 * (ring / 4), proxyNearRadius: cellSize * 0.5 * (ring / 4), proxyUnloadDelayMs: 1500, proxyMaxLoading: 1,
+    // A cell with a proxy is full detail within 1.5 cells (scaled by tier), the near ring, whatever the budget (stage 5,
+    // §3.2 R0/R1): a proxy drops pieces under 35 cm (flowers, pots, railings), which still read at that distance. Within
+    // half a cell a cell still loading holds the view (a jump: the whole near ring, see WorldRenderer.nearHeld).
+    proxyLoadRadius: cellSize * 1.5 * (ring / 4), proxyNearRadius: cellSize * 1.5 * (ring / 4), proxyHoldRadius: cellSize * 0.5 * (ring / 4), proxyUnloadDelayMs: 1500, proxyMaxLoading: 1,
   };
 }
 
@@ -414,15 +420,20 @@ export class CellStreamer {
 
   /**
    * Whether a proxied cell within the proxy near ring of `sources` is not drawn at full detail yet (not resident, or still
-   * loading): its proxy would sit next to the eye.
+   * loading) within `radius` (the near ring by default): its proxy would sit next to the eye.
    */
-  nearPending(sources: readonly StreamSource[]): boolean {
-    const r = this.config.proxyNearRadius;
+  nearPending(sources: readonly StreamSource[], radius = this.config.proxyNearRadius): boolean {
+    const r = radius;
     for (const c of this.cells.values()) {
       if (!c.proxied || (c.resident && !c.loading)) continue;
       if (this.distance(c, sources) <= r) return true;
     }
     return false;
+  }
+
+  /** The hold radius of proxied cells (metres; {@link CellStreamingConfig.proxyHoldRadius}). */
+  get holdRadius(): number {
+    return this.config.proxyHoldRadius;
   }
 
   private loadRadiusOf(c: CellState): number {
@@ -597,8 +608,8 @@ export class CellStreamer {
     const load: string[] = [];
     for (const w of want) {
       if (loading >= maxLoading) break;
-      // Near cells load at once (a proxy must never sit next to the eye); farther proxied cells one at a time.
-      if (w.c.proxied && proxiedLoading >= this.config.proxyMaxLoading && w.d > this.config.proxyNearRadius) continue;
+      // The nearest cells load at once (a proxy must never sit next to the eye); the rest of the proxied ones one at a time.
+      if (w.c.proxied && proxiedLoading >= this.config.proxyMaxLoading && w.d > this.config.proxyHoldRadius) continue;
       if (w.d > this.nearRadiusOf(w.c)) {
         // Make room: evict resident cells past the near ring, loaded long enough, clearly less urgent than this one.
         while (bytes + w.c.bytes > budgetBytes) {

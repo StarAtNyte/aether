@@ -42,7 +42,16 @@ const snap = (page: Page): Promise<Snap> =>
 
 async function shot(page: Page, slug: string, step: string, steps: Array<Record<string, unknown>>): Promise<void> {
   const file = join(out, `${slug}-${step}.png`);
-  await page.screenshot({ path: file });
+  // A picture with no frame in the canvas yet (a tier change rebuilding the pipeline, a fade) is all background and
+  // compresses to a few kB: take it again for up to 4 s.
+  for (let t = 0; ; t++) {
+    const png = await page.screenshot({ path: file });
+    if (png.length > 60_000 || t >= 8) {
+      if (t > 0) log(`${slug} ${step}: picture after ${t} retakes`);
+      break;
+    }
+    await page.waitForTimeout(500);
+  }
   const s = await snap(page);
   steps.push({ step, file, ...s });
   log(`${slug} ${step}: phase ${s.phase}, camera ${s.camera.join(', ')}${s.tour ? ', touring' : ''}${s.streaming ? `, streaming ${JSON.stringify(s.streaming)}` : ''}`);
