@@ -477,6 +477,26 @@ under the frame budget.
   generated once. Until a proxy exists, R2 falls back to full geometry with a reduced draw distance, which is today's
   behaviour.
 
+### 3.3.1 First slice (work in progress, not on main)
+
+- **Bake** (`streaming/hlod-bake.ts`, `WorldRenderer.bakeHlod`, the last session of `scripts/cook.ts`): per streamed cell of
+  a world with cells of 64 m or more, the full-detail meshes of its entities in world space, albedo baked into vertex
+  colours (material colour, vertex colours, a natural finish's base colour, a model map's average), pieces under 35 cm
+  dropped, welded by position and simplified by meshoptimizer (8 cm, colours weighted, small parts pruned; past 24 k
+  triangles a larger error, then clustering), shaded flat again. File and manifest: `streaming/hlod.ts`, manifest `hlod`.
+- **Draw** (`streaming/hlod-layer.ts`): one mesh per cell, plain lit vertex colours with `alphaHash`, a dithered
+  cross-fade of 450 ms both ways; the cook's recording draws a degenerate warm-up mesh so the program is in the cooked set.
+  A proxied cell is full detail within 1.5 cells (scaled by tier) and takes its proxy's exact bounds.
+- **Tiles**: Lisbon Hills' house bands, retaining walls, setts, kerbs and streets are tiles along their length (`tile0`,
+  `tile1`, `extent` params of their custom generators; not recentred, placed where the whole feature put them), so they
+  stream. An explicit `extent` sizes a tile for streaming whatever its generator's name.
+- **Measured** (cooked Lisbon Hills, Intel, `first-picture-probe --player` with `probe-sweep.js`, a loaded shared machine):
+  5.56 M source triangles to 280 k proxy triangles (3.6 MB). Geometry the scene holds on the CPU at the opening went from
+  620 to 458 MB and generator outputs from 185 to 131 MB, but the JS heap peak did not fall (main 1465-1680 MB, this
+  1338-1817 MB: the peak moved from the load to the walk, where cells load while the ones left behind are still held and
+  their garbage is not collected yet). The GPU estimate fell about 10 % at the load (760 MB against 830-870) and rose to
+  up to 1080 MB by the end of the walk (unloaded cells' GPU memory does not come back). The gate is not met.
+
 ### 3.4 DDC: the generated-geometry cache
 
 **Key** (a SHA-256 hex of the string):
@@ -589,7 +609,11 @@ cooked/<slug>/<id>/programs/<tier>.bin    program set of a tier, immutable (cook
   re-lightable lightmap (`<key>.lmap`), the light volume (`<key>.lvol`) and their `index.json` (`{ keys, volumes }`), read by
   `lightmap-controller` and `light-volume-controller` as `staticBase`. A viewer reads it only when `version` is its
   `BAKED_LIGHT_VERSION` (`environment/relight.ts`); null for a world without buildings or with `environment.lightBake` off.
-  Format and measurements: docs/LIGHTING-BAKE.md.
+  Format and measurements: docs/LIGHTING-BAKE.md;
+- `hlod` (optional): the HLOD proxies of a world that streams (§3.3.1), `{ file, bytes, version, cells }`: `hlod/proxies.bin`
+  in the package folder, the proxy format version (`streaming/hlod.ts` `HLOD_VERSION`; a viewer reads only its own), and per
+  cell its key, world bounds (min xyz, max xyz) and triangle count. Absent in older cooks, the editor's publishes and worlds
+  with cells under 64 m.
 
 **Geometry packs.** Each entry is a generator output in the geometry cache's own encoding, 8-byte aligned. Entries go to
 the cell of the nearest entity that uses them; outputs no top-level entity places (spawn templates, scatter pieces) go to

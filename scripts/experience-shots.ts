@@ -7,9 +7,10 @@
  * - Lisbon Hills (city): the street-level hero view, then the drone tour;
  * - Kestrel Outpost (game): the title card, play, then Tab (explore).
  *
- *   STATIC_DIR=<dist> GEN_GPU=intel npx tsx scripts/experience-shots.ts --out=<dir> [slug ...]
+ *   STATIC_DIR=<dist> GEN_GPU=intel npx tsx scripts/experience-shots.ts --out=<dir> [--cooked] [slug ...]
  *
- * Writes `<slug>-<step>.png` and `report.json` (phases, explore state, camera positions). Live worlds (`cook=0`). Run it in
+ * Writes `<slug>-<step>.png` and `report.json` (phases, explore state, camera positions). Live worlds (`cook=0`), or with
+ * `--cooked` the dist's cooked packages (`cook=local`). Run it in
  * a capped scope, one browser at a time.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -20,6 +21,8 @@ import * as env from '../tests/e2e/support/env';
 const args = process.argv.slice(2);
 const out = resolve(args.find((a) => a.startsWith('--out='))?.slice(6) ?? 'probe-out/experience');
 const only = args.filter((a) => !a.startsWith('--'));
+/** `--cooked`: open each world from the dist's cooked package (`cook=local`, scripts/cook.ts `--install`) instead of live. */
+const cooked = args.includes('--cooked');
 mkdirSync(out, { recursive: true });
 const T0 = Date.now();
 const log = (s: string): void => void process.stdout.write(`[${((Date.now() - T0) / 1000).toFixed(1)}s] ${s}\n`);
@@ -49,7 +52,7 @@ const waitStops = (page: Page, n: number): Promise<unknown> =>
 const ctrl = (page: Page, js: string): Promise<unknown> => page.evaluate(`(() => { const c = window.__aetherPlayer.exploreController; return ${js}; })()`);
 
 async function open(page: Page, url: string, slug: string): Promise<void> {
-  await page.goto(`${url}/play.html#t=${slug}&cook=0`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`${url}/play.html#t=${slug}&cook=${cooked ? 'local' : '0'}`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => (window as unknown as { __aetherCook?: { ready: boolean } }).__aetherCook?.ready === true, null, { timeout: 300_000, polling: 250 });
   await page.waitForFunction(() => (window as unknown as { __aetherPlayer?: { simulation: { renderer: { processingStage: unknown } } | null } }).__aetherPlayer?.simulation?.renderer.processingStage === null, null, { timeout: 120_000, polling: 250 }).catch(() => log('renderer still busy'));
 }

@@ -46,10 +46,14 @@ import { createTextureSource, TextureCache, type TextureSource } from './geometr
 import type { HdriSource } from './environment/hdri';
 import { photoFinishResolver } from './materials/photo-finishes';
 import { assetInfo, effectiveAssetId, fitScale, getCatalog, loadCatalog } from '@aether/assets';
-import { CellStreamer, cookedCellBytes, planStreaming, streamingBudget, streamingConfig, worldPartition, type StreamSource } from './streaming/cell-streaming';
+import { CellStreamer, cookedCellBytes, planStreaming, streamingBudget, streamingConfig, worldPartition, type AssetSize, type StreamSource } from './streaming/cell-streaming';
+import { encodeHlod, gzipBytes, HLOD_VERSION, MAX_HLOD_BYTES, membersKey, positionBounds, readHlodFile, type HlodProxy } from './streaming/hlod';
+import { HlodLayer } from './streaming/hlod-layer';
+import { createMaterial } from './materials/material-cache';
+import { resolveMaterial } from './materials/presets';
 import { SceneSync } from './sync/scene-sync';
 import { installShadowSkip, SHADOW_BATCH_LAYER, shadowSkipTest } from './sync/cell-shadow-batches';
-import type { EntityNode } from './sync/entity-node';
+import { ENTITY_ID_KEY, type EntityNode } from './sync/entity-node';
 import { ghostWorld } from './sync/ghost';
 import { EnvironmentRig } from './environment/environment-rig';
 import { SKY_RADIUS } from './environment/sky-dome';
@@ -562,6 +566,20 @@ const INTERIOR_BALANCE = 1;
  */
 /** How often streaming looks at its sources (ms). */
 const STREAM_INTERVAL_MS = 200;
+/** Longest wait of a streamed world's load for its cooked proxies (ms): past it, far cells load at full detail. */
+const HLOD_WAIT_MS = 10_000;
+/** Smallest base cell of a world whose cook bakes proxies (metres; the town scale of cell-grid.ts). */
+const HLOD_MIN_CELL = 64;
+/** The proxies' material (streaming/hlod-layer.ts): white, lit, its colour from the vertices. */
+const PROXY_MATERIAL = { color: '#ffffff', roughness: 0.9, metalness: 0 } as const;
+
+/** Size of a library model a shape places (metres, its fit applied), or null (cell streaming's estimate of its bounds). */
+const assetSizeOf: AssetSize = (shape: AssetShape) => {
+  const info = assetInfo(effectiveAssetId(shape));
+  if (!info || info.kind !== 'model') return null;
+  const k = fitScale(info.size, shape.fitSize);
+  return [info.size[0] * k, info.size[1] * k, info.size[2] * k];
+};
 const _streamDir = new Vector3();
 const _streamFocus: Vec3 = [0, 0, 0];
 const _streamBox = new Box3();
@@ -1212,6 +1230,22 @@ export class WorldRenderer {
     this.lowMemory = opts.lowMemory === true || opts.lowPower === true;
     this.streamingWanted = opts.streaming === true && (globalThis as { __AETHER_STREAMING?: boolean }).__AETHER_STREAMING !== false;
     this.cookedCells = opts.cooked?.manifest.cells ?? null;
+    // The cooked HLOD proxies: fetched from the start, while the rest of the load runs (a streamed world waits for them
+    // before its first picture, see setWorld).
+    const hlod = opts.cooked?.manifest.hlod;
+    if (this.streamingWanted && opts.cooked && hlod && hlod.version === HLOD_VERSION) {
+      this.hlodCells = hlod.cells;
+      const url = new URL(hlod.file, opts.cooked.base).href;
+      this.hlodLoad = fetch(url, { credentials: 'same-origin' })
+        .then(async (res) => {
+          if (!res.ok || Number(res.headers.get('content-length') ?? '0') > MAX_HLOD_BYTES) throw new Error(`HTTP ${res.status}`);
+          return readHlodFile(new Uint8Array(await res.arrayBuffer()));
+        })
+        .catch((e: unknown) => {
+          log.warn(`hlod: proxies not loaded (${errorMessage(e)}): far cells stay at full detail`);
+          return null;
+        });
+    }
     this.lightmap = new LightmapController(this.lightVolume.light, {
       gather: () => this.gatherLightmap(),
       volume: () => (this.lightVolume.baking ? null : this.lightVolume.bakedVolume),
@@ -1840,8 +1874,118 @@ export class WorldRenderer {
   private readonly streamLog = { applies: 0, applyMsMax: 0, applyMsSum: 0, revealed: 0, removed: 0, loadMsMax: 0, events: [] as Array<[number, string, number]> };
 
   /** Cell streaming state (diagnostics, probes): null when the world is not streamed. */
-  get streaming(): (ReturnType<CellStreamer['stats']> & { applies: number; applyMsMax: number; applyMsSum: number; revealed: number; removed: number; loadMsMax: number; nodes: number; events: Array<[number, string, number]> }) | null {
-    return this.streamer ? { ...this.streamer.stats(), ...this.streamLog, nodes: this.sync.entityCount } : null;
+  get streaming(): (ReturnType<CellStreamer['stats']> & { applies: number; applyMsMax: number; applyMsSum: number; revealed: number; removed: number; loadMsMax: number; nodes: number; events: Array<[number, string, number]>; hlod: ReturnType<HlodLayer['stats']> | null }) | null {
+    return this.streamer ? { ...this.streamer.stats(), ...this.streamLog, nodes: this.sync.entityCount, hlod: this.hlod?.stats() ?? null } : null;
+  }
+
+  /** The cooked package's proxy cells (manifest `hlod`), null without proxies. */
+  private hlodCells: ReadonlyArray<{ cell: string; bounds: readonly number[] }> | null = null;
+  /** The cooked proxies, loading (null without proxies). */
+  private hlodLoad: Promise<HlodProxy[] | null> | null = null;
+  /** The proxies on screen (null: none). */
+  private hlod: HlodLayer | null = null;
+  /** Proxied cells whose full detail waits for their proxy to cover it before it is taken down. */
+  private readonly hlodLeaving = new Set<string>();
+
+  /** A proxy layer on this renderer's scene (its material: plain lit vertex colours, see streaming/hlod-layer.ts). */
+  private proxyLayer(): HlodLayer {
+    if (!this.hlod) {
+      this.hlod = new HlodLayer(() => createMaterial(resolveMaterial(PROXY_MATERIAL, { hasVertexColors: true }), 'standard'));
+      this.scene.add(this.hlod.group);
+    }
+    return this.hlod;
+  }
+
+  /**
+   * Put the cooked proxies of a streamed world on screen once they are in (bounded by {@link HLOD_WAIT_MS}): a proxy whose
+   * cell holds other entities than it was baked from is dropped, and its cell goes back to the full-detail rings. The
+   * proxies of the cells not resident show at once (the first picture draws them).
+   */
+  private async mountProxies(): Promise<void> {
+    const load = this.hlodLoad;
+    const streamer = this.streamer;
+    this.hlodLoad = null;
+    if (!load) return;
+    const proxies = await Promise.race([load, new Promise<null>((res) => setTimeout(() => res(null), HLOD_WAIT_MS))]);
+    if (!streamer || this.streamer !== streamer || this.disposed) return;
+    const got = new Map<string, HlodProxy>();
+    for (const p of proxies ?? []) got.set(p.cell, p);
+    let mounted = 0, dropped = 0;
+    for (const c of this.hlodCells ?? []) {
+      const p = got.get(c.cell);
+      if (!p || membersKey(p.members) !== membersKey(streamer.members(c.cell))) {
+        streamer.setProxy(c.cell, null);
+        dropped++;
+        continue;
+      }
+      const layer = this.proxyLayer();
+      layer.add(p);
+      if (!streamer.isResident(c.cell)) layer.show(c.cell, true);
+      mounted++;
+    }
+    log.info(`hlod: ${mounted} cell proxies (${this.hlod?.stats().triangles ?? 0} triangles), ${dropped} dropped${proxies ? '' : ' (not loaded)'}`);
+    this.needsDraw = true;
+  }
+
+  /**
+   * Bake the HLOD proxies of the world on screen (the cook's recording, docs/ARCHITECTURE-STREAMING.md §3.3): for every
+   * streamed cell, the meshes of its entities merged and simplified (streaming/hlod-bake.ts). Null when the world does not
+   * stream. Its geometry must be built (the recording loads the whole world).
+   */
+  async bakeHlod(): Promise<{ proxies: HlodProxy[]; stats: Array<{ cell: string; members: number; source: number; triangles: number; error: number; skipped: number; ms: number }> } | null> {
+    const world = this.sync.world;
+    if (!world) return null;
+    const partition = worldPartition(world);
+    // A village or a house (cells under 64 m) has no far field worth a proxy: its streamed cells are all near.
+    if (!partition || partition.cellSize < HLOD_MIN_CELL) return null;
+    const plan = planStreaming(world, partition, assetSizeOf);
+    if (plan.entities.size === 0) return null;
+    const { ProxyGather, proxyMeshes, simplifyProxy } = await import('./streaming/hlod-bake');
+    const byCell = new Map<string, string[]>();
+    for (const se of plan.entities.values()) {
+      let l = byCell.get(se.cell);
+      if (!l) byCell.set(se.cell, (l = []));
+      l.push(se.id);
+    }
+    this.sync.root.updateMatrixWorld(true);
+    const proxies: HlodProxy[] = [];
+    const stats: Array<{ cell: string; members: number; source: number; triangles: number; error: number; skipped: number; ms: number }> = [];
+    for (const [cell, members] of byCell) {
+      const t0 = now();
+      const gather = new ProxyGather();
+      for (const id of members) {
+        const root = this.sync.object(id);
+        if (!root) continue;
+        // Virtual-geometry cluster cuts and scatter fields are not the entity's surface (their full sources are).
+        const skip = new Set<Object3D>();
+        const finish = new Map<Material, string | undefined>();
+        root.traverse((o) => {
+          const eid = o.userData[ENTITY_ID_KEY] as unknown;
+          if (typeof eid !== 'string') return;
+          const node = this.sync.node(eid);
+          if (!node) return;
+          for (const v of node.virtual) skip.add(v.mesh);
+          if (node.entity.shape.kind === 'scatter') skip.add(node.content);
+          for (const b of node.bindings) finish.set(b.mesh.material as Material, b.partMaterial.finish ?? node.entity.material?.finish);
+        });
+        for (const mesh of proxyMeshes(root, skip)) gather.addMesh(mesh, (m) => finish.get(m));
+      }
+      const simple = await simplifyProxy(gather.mesh());
+      if (simple.indices.length === 0) continue;
+      proxies.push({ cell, members: [...members].sort(), bounds: positionBounds(simple.positions), positions: simple.positions, normals: simple.normals, colors: simple.colors, indices: simple.indices });
+      stats.push({ cell, members: members.length, source: gather.triangles, triangles: simple.indices.length / 3, error: Math.round(simple.error * 1000) / 1000, skipped: gather.skipped, ms: Math.round(now() - t0) });
+      // A task between cells (a large world's bake is seconds of work).
+      await new Promise((res) => setTimeout(res, 0));
+    }
+    return { proxies, stats };
+  }
+
+  /** {@link bakeHlod} as the package's proxy file (streaming/hlod.ts) and its manifest cells; null when nothing streams. */
+  async bakeHlodFile(): Promise<{ bytes: Uint8Array<ArrayBuffer>; cells: Array<{ cell: string; bounds: HlodProxy['bounds']; triangles: number }>; stats: NonNullable<Awaited<ReturnType<WorldRenderer['bakeHlod']>>>['stats'] } | null> {
+    const baked = await this.bakeHlod();
+    if (!baked || baked.proxies.length === 0) return null;
+    const bytes = await gzipBytes(encodeHlod(baked.proxies));
+    return { bytes, cells: baked.proxies.map((p) => ({ cell: p.cell, bounds: p.bounds, triangles: p.indices.length / 3 })), stats: baked.stats };
   }
 
   /**
@@ -1852,17 +1996,13 @@ export class WorldRenderer {
     const partition = worldPartition(world);
     const eye = world.opening?.position ?? world.player?.spawn;
     if (!partition || !eye) return;
-    const assetSize = (shape: AssetShape): readonly [number, number, number] | null => {
-      const info = assetInfo(effectiveAssetId(shape));
-      if (!info || info.kind !== 'model') return null;
-      const k = fitScale(info.size, shape.fitSize);
-      return [info.size[0] * k, info.size[1] * k, info.size[2] * k];
-    };
-    const plan = planStreaming(world, partition, assetSize);
+    const plan = planStreaming(world, partition, assetSizeOf);
     if (plan.entities.size === 0) return;
     const budget = streamingBudget(this.gpu.tier === 'integrated' || this.gpu.tier === 'unknown' || this.lowMemory);
     const streamer = new CellStreamer(plan, streamingConfig(partition.cellSize, this.autoTierNow(), budget));
     if (this.cookedCells) cookedCellBytes(world, partition, streamer, this.cookedCells);
+    // Cells with a cooked proxy: their exact bounds and the proxy rings (checked against the proxies once they are in).
+    for (const c of this.hlodCells ?? []) streamer.setProxy(c.cell, [c.bounds[0] as number, c.bounds[2] as number, c.bounds[3] as number, c.bounds[5] as number]);
     const target = world.opening?.target;
     const dx = target ? target[0] - eye[0] : 0, dz = target ? target[2] - eye[2] : 0;
     const len = Math.hypot(dx, dz);
@@ -1872,7 +2012,12 @@ export class WorldRenderer {
     log.info(`streaming: ${s.entities} of ${Object.keys(world.entities).length} entities stream in ${s.cells} cells (${partition.cellSize} m), ${s.resident} at the opening (${s.residentMB} of ${s.budgetMB} MB); pinned ${JSON.stringify(plan.pinned)}`);
     if (s.resident === s.cells) return;
     this.streamer = streamer;
-    this.sync.setResidency((id) => streamer.resident(id));
+    const leaving = this.hlodLeaving;
+    this.sync.setResidency((id) => {
+      if (streamer.resident(id)) return true;
+      const cell = streamer.cellOfEntity(id);
+      return cell !== undefined && leaving.has(cell);
+    });
     // The cells of the opening are part of the load: once the world is built they are loaded and weighed.
     const opening = streamer.loadingKeys();
     // After this task: the world's builds start right after this call (sync.setWorld), and are what is waited for.
@@ -1898,7 +2043,25 @@ export class WorldRenderer {
     const focus = this.orbitTarget(_streamFocus);
     if (Number.isFinite(focus[0]) && Number.isFinite(focus[2])) sources.push({ x: focus[0], z: focus[2] });
     const change = streamer.update(sources, t);
-    if (change.load.length === 0 && change.unload.length === 0) return;
+    // A cell with a proxy leaves under it: the proxy dithers in over the full detail first, and the nodes go once it covers
+    // them. One that comes back before that keeps its nodes.
+    const hlod = this.hlod;
+    let covered = 0;
+    if (hlod) {
+      for (const k of change.unload) {
+        if (!hlod.has(k)) continue;
+        this.hlodLeaving.add(k);
+        hlod.show(k);
+      }
+      for (const k of [...this.hlodLeaving]) {
+        if (streamer.isResident(k)) this.hlodLeaving.delete(k);
+        else if (hlod.covered(k)) {
+          this.hlodLeaving.delete(k);
+          covered++;
+        }
+      }
+    }
+    if (change.load.length === 0 && change.unload.length === 0 && covered === 0) return;
     const t0 = now();
     const r = this.sync.applyResidency(true);
     const ms = now() - t0;
@@ -1931,6 +2094,8 @@ export class WorldRenderer {
       for (const k of cells) {
         streamer.loaded(k);
         streamer.setBytes(k, this.sync.geometryBytes(streamer.members(k)), true);
+        // The full detail is shown: its proxy dithers out over it.
+        if (streamer.isResident(k)) this.hlod?.hide(k);
       }
       this.needsDraw = true;
       try {
@@ -2515,6 +2680,11 @@ export class WorldRenderer {
     // (Lisbon Hills, cooked: 93 links of the medium set during generation, then the world settled on low).
     if (hold && prev === null) this.startForWeight(Object.keys(world.entities).length);
     if (prev === null && this.streamingWanted) this.startStreaming(world);
+    // The cook's recording draws the proxy program (nothing visible) so it is in the cooked program set.
+    if (prev === null && (globalThis as { __AETHER_COOK_RECORD?: boolean }).__AETHER_COOK_RECORD === true) {
+      const at = world.opening?.target ?? world.player?.spawn ?? [0, 0, 0];
+      this.proxyLayer().warmMesh([at[0], at[1], at[2]]);
+    }
     performance.mark('aether:sync-start');
     const done = this.sync.setWorld(world);
     this.fx.setWorld(world);
@@ -2544,6 +2714,8 @@ export class WorldRenderer {
     say?.('Building the world…');
     try {
       await done;
+      // A streamed world's far cells draw their proxies in the first picture.
+      if (prev === null) await this.mountProxies();
       performance.mark('aether:sync-done');
       this.uploadStreamer?.invalidate();
       // Ceilings measured while their geometry was still streaming in are stale.
@@ -4915,6 +5087,7 @@ export class WorldRenderer {
     const step = Number.isFinite(dt) ? Math.min(Math.max(dt, 0), 0.1) : 0;
     const cameraMoved = this.rig.update(step);
     if (this.streamer && this.framed && !this.loadingScreen) this.updateStreaming(t0);
+    if (this.hlod?.update(step * 1000)) this.needsDraw = true;
     // The view or the content was asked to change from outside (camera, edits, resizes), as against content that merely animates.
     const motion = cameraMoved || this.frameInvalidation.motion;
     this.frameBudget.beginFrame(motion);
@@ -7774,6 +7947,8 @@ export class WorldRenderer {
   /** Dispose every GPU resource, control and listener. The renderer is unusable afterwards. */
   dispose(): void {
     if (this.disposed) return;
+    this.hlod?.dispose();
+    this.hlod = null;
     if (this.loadingScreen) workerScheduler().setPaused('first-picture', false);
     this.endLiveEnvironment();
     clearInterval(this.cpuReleaseTimer);

@@ -27,13 +27,15 @@ const assetSize = (shape: AssetShape): readonly [number, number, number] | null 
 for (const slug of slugs.length ? slugs : ['lisbon-hills', 'kestrel-outpost']) {
   const doc = JSON.parse(readFileSync(resolve(`apps/studio/public/templates/worlds/${slug}.json`), 'utf8')) as { world: WorldDocInput };
   const mPath = cookedDir ? join(cookedDir, slug, 'manifest.json') : null;
-  const manifest = mPath && existsSync(mPath) ? (JSON.parse(readFileSync(mPath, 'utf8')) as { opening: WorldDocInput['opening']; cells: Array<{ key: string; bytes: number }> }) : null;
+  const manifest = mPath && existsSync(mPath) ? (JSON.parse(readFileSync(mPath, 'utf8')) as { opening: WorldDocInput['opening']; cells: Array<{ key: string; bytes: number }>; hlod?: { cells: Array<{ cell: string; bounds: number[] }> } }) : null;
   const world = createWorld({ ...doc.world, ...(!doc.world.opening && manifest?.opening ? { opening: manifest.opening } : {}) });
   const p = worldPartition(world);
   if (!p) { console.log(slug, 'no partition'); continue; }
   const plan = planStreaming(world, p, assetSize);
   const s = new CellStreamer(plan, streamingConfig(p.cellSize, tier, streamingBudget(!args.includes('--discrete'))));
   if (manifest) cookedCellBytes(world, p, s, manifest.cells);
+  // Cells with a cooked HLOD proxy take its bounds and the proxy rings, as in the player.
+  for (const c of manifest?.hlod?.cells ?? []) s.setProxy(c.cell, [c.bounds[0]!, c.bounds[2]!, c.bounds[3]!, c.bounds[5]!]);
   const eye = world.opening?.position ?? world.player.spawn;
   const target = world.opening?.target;
   const dx = target ? target[0] - eye[0] : 0, dz = target ? target[2] - eye[2] : 0;

@@ -8,6 +8,8 @@
  * - the opening view and the start mode;
  * - a building's baked light (re-lightable lightmap and light volume, `environment/relight.ts`), baked here at publish
  *   quality so a viewer never bakes: `<id>/light/<key>.lmap`, `<key>.lvol` and their `index.json`, manifest `lightmap`;
+ * - the HLOD proxies of a world that streams (`streaming/hlod.ts`): per streamed cell one merged, simplified mesh baked from
+ *   the full detail on screen, `<id>/hlod/proxies.bin`, manifest `hlod`;
  * - a manifest of cells, bounds, byte sizes and the files.
  *
  *   STATIC_DIR=<dist> GEN_GPU=intel npx tsx scripts/cook.ts [--out=cooked] [--tiers=low,medium,high,ultra] [--profile=game|walkthrough|showcase|vr] [--install=<dist>] [--bake=high|medium|low|off] [--samples=256] [--blender=<path>|off] [--cpu-bake=<threads>|off] <slug> [<slug> …]
@@ -38,6 +40,7 @@ import { DDC_CACHE_NAME } from '../packages/render/src/geometry/ddc';
 import { COOK_FORMAT, COOK_PROFILES, cookPackageId, programSetLines, type CookManifest, type CookProfile, type StartMode } from '../packages/render/src/cook/format';
 import { cookManifest, packGeometry, profileForStartMode, programSetBody } from '../packages/render/src/cook/pack';
 import { BAKED_LIGHT_VERSION } from '../packages/render/src/environment/relight';
+import { HLOD_FILE, HLOD_VERSION } from '../packages/render/src/streaming/hlod';
 import type { RenderTier } from '../packages/render/src/gpu/finishing';
 import { sourceHash } from '../packages/render/src/gpu/program-cache';
 import { TEMPLATE_PUBLISH } from '../apps/studio/src/showcase/publish';
@@ -275,8 +278,47 @@ async function bakeLight(page: Page, slug: string, world: WorldDoc, sink: Map<st
   return { files, lightmap: info.lightmap, volume: info.volume, stats: { ...info.stats, quality, samples: SAMPLES, bakeWallMs: ms, baker: outside?.baker ?? 'page' } };
 }
 
-/** One recording session on `tier`: load, orbit, play (games), save the program set; the last one also bakes the light. */
-async function session(server: env.TestServer, profileDir: string, slug: string, tier: RenderTier | 'auto', last: boolean, sink: (key: string, body: Buffer) => void): Promise<{ rec: Recorded; tier: RenderTier; boot: Array<[string, string]>; bootSources: Record<string, string>; programs: { sets: Record<string, { entries: Array<{ v: string; f: string; uses: number; last: number }> } | null>; sources: Record<string, string> } | null; light: BakedLight | null }> {
+/** The HLOD proxies of a cook: the file and its manifest cells. */
+interface BakedHlod {
+  bytes: Buffer;
+  cells: Array<{ cell: string; bounds: [number, number, number, number, number, number]; triangles: number }>;
+}
+
+/** Bake the proxies of the world on screen (the renderer's `bakeHlodFile`) and read the file back. Null when it does not stream. */
+async function bakeHlod(page: Page, slug: string): Promise<BakedHlod | null> {
+  let body: Buffer | null = null;
+  await page.route('**/__cook/hlod', async (route) => {
+    body = route.request().postDataBuffer();
+    await route.fulfill({ status: 204, body: '' });
+  });
+  try {
+    const t0 = Date.now();
+    const info = await page.evaluate(async () => {
+      const ren = (window as unknown as Win).__aetherPlayer!.simulation!.renderer as unknown as { bakeHlodFile(): Promise<{ bytes: Uint8Array; cells: BakedHlod['cells']; stats: Array<Record<string, number | string>> } | null> };
+      const r = await ren.bakeHlodFile();
+      if (!r) return null;
+      await fetch('/__cook/hlod', { method: 'POST', body: r.bytes.slice().buffer });
+      return { cells: r.cells, stats: r.stats };
+    });
+    if (!info || !body) {
+      log(`${slug}: no HLOD proxies (the world does not stream)`);
+      return null;
+    }
+    const tris = info.cells.reduce((n, c) => n + c.triangles, 0);
+    const source = info.stats.reduce((n, c) => n + Number(c['source'] ?? 0), 0);
+    log(`${slug}: HLOD proxies of ${info.cells.length} cells in ${((Date.now() - t0) / 1000).toFixed(1)} s: ${tris} triangles from ${source} (${MB((body as Buffer).length)})`);
+    for (const st of info.stats) log(`  ${JSON.stringify(st)}`);
+    return { bytes: body, cells: info.cells };
+  } catch (e) {
+    log(`${slug}: HLOD bake failed (${e instanceof Error ? e.message : String(e)}): no proxies`);
+    return null;
+  } finally {
+    await page.unroute('**/__cook/hlod').catch(() => undefined);
+  }
+}
+
+/** One recording session on `tier`: load, orbit, play (games), save the program set; the last one also bakes the light and the proxies. */
+async function session(server: env.TestServer, profileDir: string, slug: string, tier: RenderTier | 'auto', last: boolean, sink: (key: string, body: Buffer) => void): Promise<{ rec: Recorded; tier: RenderTier; boot: Array<[string, string]>; bootSources: Record<string, string>; programs: { sets: Record<string, { entries: Array<{ v: string; f: string; uses: number; last: number }> } | null>; sources: Record<string, string> } | null; light: BakedLight | null; hlod: BakedHlod | null }> {
   const ctx = await launch(profileDir);
   try {
     const page = ctx.pages()[0] ?? (await ctx.newPage());
@@ -350,6 +392,8 @@ async function session(server: env.TestServer, profileDir: string, slug: string,
       const pc = ((window as unknown as Win).__aetherPlayer!.simulation!.renderer as unknown as { programCache?: { save(): Promise<void> } }).programCache;
       await pc?.save();
     });
+    // The proxies of the far field, once (the last session), from the full detail on screen.
+    const hlod = last ? await bakeHlod(page, slug) : null;
     // The publish bake, once (the last session): what a viewer's lightmap and light volume are loaded from.
     const light = last ? await bakeLight(page, slug, info.record.world, lightFiles) : null;
     const entries = await drainWrites(page);
@@ -397,7 +441,7 @@ async function session(server: env.TestServer, profileDir: string, slug: string,
       }, DDC_CACHE_NAME);
       log(`${slug}: ${sent} geometry entries read`);
     }
-    return { rec: { irHash: info.record.irHash, genVersion: info.record.genVersion, world: info.record.world, startMode: (info.startMode ?? 'orbit') as StartMode, opening: info.opening, ...(info.views && info.views.length > 0 ? { views: info.views } : {}) }, tier: info.tier as RenderTier, boot, bootSources, programs, light };
+    return { rec: { irHash: info.record.irHash, genVersion: info.record.genVersion, world: info.record.world, startMode: (info.startMode ?? 'orbit') as StartMode, opening: info.opening, ...(info.views && info.views.length > 0 ? { views: info.views } : {}) }, tier: info.tier as RenderTier, boot, bootSources, programs, light, hlod };
   } finally {
     await ctx.close().catch(() => undefined);
   }
@@ -434,6 +478,7 @@ async function cook(server: env.TestServer, slug: string): Promise<void> {
   let rec: Recorded | null = null;
   let programs: Awaited<ReturnType<typeof session>>['programs'] = null;
   let light: BakedLight | null = null;
+  let hlod: BakedHlod | null = null;
   const boots = new Map<RenderTier, { pairs: Array<[string, string]>; sources: Record<string, string> }>();
   try {
     // First on the automatic tier, as a viewer of this machine's class starts: its boot set is then exact for that tier.
@@ -448,6 +493,7 @@ async function cook(server: env.TestServer, slug: string): Promise<void> {
       rec ??= r.rec;
       programs = r.programs ?? programs;
       light = r.light ?? light;
+      hlod = r.hlod ?? hlod;
       if (!boots.has(r.tier)) boots.set(r.tier, { pairs: r.boot, sources: r.bootSources });
     }
   } finally {
@@ -455,13 +501,13 @@ async function cook(server: env.TestServer, slug: string): Promise<void> {
   }
   try {
     if (!rec || !programs) throw new Error('nothing recorded');
-    await pack(slug, rec, programs, boots, blobs, blobDir, light);
+    await pack(slug, rec, programs, boots, blobs, blobDir, light, hlod);
   } finally {
     rmSync(blobDir, { recursive: true, force: true });
   }
 }
 
-async function pack(slug: string, rec: Recorded, programs: NonNullable<Awaited<ReturnType<typeof session>>['programs']>, boots: ReadonlyMap<RenderTier, { pairs: Array<[string, string]>; sources: Record<string, string> }>, blobs: ReadonlyMap<string, number>, blobDir: string, light: BakedLight | null): Promise<void> {
+async function pack(slug: string, rec: Recorded, programs: NonNullable<Awaited<ReturnType<typeof session>>['programs']>, boots: ReadonlyMap<RenderTier, { pairs: Array<[string, string]>; sources: Record<string, string> }>, blobs: ReadonlyMap<string, number>, blobDir: string, light: BakedLight | null, hlod: BakedHlod | null): Promise<void> {
   const id = await cookPackageId(rec.irHash, rec.genVersion);
   const root = join(OUT, slug);
   rmSync(root, { recursive: true, force: true });
@@ -513,7 +559,15 @@ async function pack(slug: string, rec: Recorded, programs: NonNullable<Awaited<R
     writeFileSync(join(dir, 'light', 'index.json'), JSON.stringify({ keys: [light.lightmap], volumes: [light.volume] }));
   }
   // --profile, else the template's row in showcase/publish.ts, else from the start mode.
-  const manifest = await cookManifest(rec, PROFILE ?? TEMPLATE_PUBLISH[slug]?.profile ?? profileForStartMode(rec.startMode), geometry, programFiles, undefined, light ? { base: 'light/', version: BAKED_LIGHT_VERSION } : null);
+  // HLOD proxies (streaming/hlod.ts).
+  if (hlod) {
+    mkdirSync(join(dir, 'hlod'), { recursive: true });
+    writeFileSync(join(dir, HLOD_FILE), hlod.bytes);
+  }
+  const manifest: CookManifest = {
+    ...(await cookManifest(rec, PROFILE ?? TEMPLATE_PUBLISH[slug]?.profile ?? profileForStartMode(rec.startMode), geometry, programFiles, undefined, light ? { base: 'light/', version: BAKED_LIGHT_VERSION } : null)),
+    ...(hlod ? { hlod: { file: HLOD_FILE, bytes: hlod.bytes.length, version: HLOD_VERSION, cells: hlod.cells } } : {}),
+  };
   writeFileSync(join(root, 'manifest.json'), JSON.stringify(manifest));
   const geometryBytes = packs.reduce((s, p) => s + p.bytes, 0);
   const sizes = dirBytes(root);
@@ -535,6 +589,8 @@ async function pack(slug: string, rec: Recorded, programs: NonNullable<Awaited<R
     programs: Object.fromEntries(Object.entries(programFiles).map(([t, f]) => [t, { programs: f!.programs, bytes: f!.bytes }])),
     /** The program sets as plain JSON (format 2), against the files written. */
     programJsonBytes: programJson,
+    /** The HLOD proxies: cells, triangles and file size. */
+    hlod: hlod ? { cells: hlod.cells.length, triangles: hlod.cells.reduce((n, c) => n + c.triangles, 0), bytes: hlod.bytes.length } : null,
     /** The baked light (lightmap and volume files) and what its bake cost. */
     light: light ? { bytes: lightBytes, files: Object.fromEntries([...light.files].map(([n, b]) => [n, b.length])), ...light.stats } : null,
     manifestBytes: statSync(join(root, 'manifest.json')).size,

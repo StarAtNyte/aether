@@ -52,6 +52,12 @@ export interface CellStreamingConfig {
   minResidentMs: number;
   /** Bytes assumed for a member entity until its cell has been measured or estimated otherwise. */
   entityBytes: number;
+  /**
+   * Load and near radii of a cell that has an HLOD proxy (metres; hlod.ts): past them the proxy draws instead of the
+   * full detail, so they are smaller than {@link loadRadius} and {@link nearRadius}.
+   */
+  proxyLoadRadius: number;
+  proxyNearRadius: number;
 }
 
 /** Load ring by render tier, in base cells (section 3.2: R1 at 4 cells, scaled by tier). */
@@ -63,6 +69,8 @@ export function streamingConfig(cellSize: number, tier: string, budgetBytes = Nu
   return {
     loadRadius: cellSize * ring, nearRadius: cellSize * 1.5 * (ring / 4), unloadMargin: cellSize, unloadDelayMs: 5000, maxLoading: 2,
     budgetBytes, minResidentMs: 4000, entityBytes: 1 << 20,
+    // A cell with a proxy is full detail within 1.5 cells (scaled by tier), its near ring one cell (stage 5, §3.2 R0/R1).
+    proxyLoadRadius: cellSize * 1.5 * (ring / 4), proxyNearRadius: cellSize * (ring / 4),
   };
 }
 
@@ -123,8 +131,12 @@ export function estimateExtent(e: Entity, assetSize?: AssetSize): number | null 
       break;
     }
     case 'procedural': {
-      if (PERSISTENT_GENERATORS.test(shape.generator)) return null;
-      extent = paramExtent(shape.params);
+      // A tile of a long feature (a street, a wall: its `extent` parameter) is bounded whatever its generator's name.
+      const tile = shape.params['extent'];
+      const tiled = typeof tile === 'number' && Number.isFinite(tile) && tile > 0;
+      if (PERSISTENT_GENERATORS.test(shape.generator) && !tiled) return null;
+      // A tile's extent is its own; the whole feature's size parameters (its length) do not apply to it.
+      extent = tiled ? tile : paramExtent(shape.params);
       break;
     }
     case 'scatter': {
@@ -286,6 +298,10 @@ interface CellState {
   /** Geometry bytes: measured once loaded, else estimated. */
   bytes: number;
   measured: boolean;
+  /** The cell has an HLOD proxy (its rings are the proxy rings). */
+  proxied: boolean;
+  /** The box is the cell's exact bounds (from its proxy): building its members does not widen it. */
+  exact: boolean;
 }
 
 /** Distance on XZ from (x, z) to the nearest point of `b`. */
@@ -321,7 +337,7 @@ export class CellStreamer {
   constructor(plan: StreamPlan, private readonly config: CellStreamingConfig) {
     for (const se of plan.entities.values()) {
       let c = this.cells.get(se.cell);
-      if (!c) this.cells.set(se.cell, (c = { key: se.cell, members: [], box: [...se.box], resident: false, loading: false, farSince: null, since: 0, bytes: 0, measured: false }));
+      if (!c) this.cells.set(se.cell, (c = { key: se.cell, members: [], box: [...se.box], resident: false, loading: false, farSince: null, since: 0, bytes: 0, measured: false, proxied: false, exact: false }));
       c.members.push(se.id);
       c.box = union(c.box, se.box);
       c.bytes += config.entityBytes;
@@ -360,11 +376,43 @@ export class CellStreamer {
     return this.cells.get(key)?.box ?? null;
   }
 
-  /** The real XZ bounds of a built entity: its cell's box widens to hold them (never shrinks). */
+  /** The real XZ bounds of a built entity: its cell's box widens to hold them (never shrinks; an exact box stays). */
   learn(id: EntityId, box: XZBox): void {
     const c = this.cellOf.get(id);
-    if (!c || !box.every(Number.isFinite) || box[2] < box[0] || box[3] < box[1]) return;
+    if (!c || c.exact || !box.every(Number.isFinite) || box[2] < box[0] || box[3] < box[1]) return;
     c.box = union(c.box, box);
+  }
+
+  /**
+   * Cell `key` has an HLOD proxy whose bounds are `box` (the cell's content as cooked): the cell takes that box, and the
+   * proxy rings. Without one (`box` null) it is back to the full-detail rings and its estimated box stays.
+   */
+  setProxy(key: string, box: Readonly<XZBox> | null): void {
+    const c = this.cells.get(key);
+    if (!c) return;
+    if (box && box.every(Number.isFinite) && box[2] >= box[0] && box[3] >= box[1]) {
+      c.box = [box[0], box[1], box[2], box[3]];
+      c.exact = true;
+      c.proxied = true;
+    } else c.proxied = false;
+  }
+
+  /** Whether cell `key` is resident (its full detail wanted). */
+  isResident(key: string): boolean {
+    return this.cells.get(key)?.resident ?? false;
+  }
+
+  /** Whether cell `key` draws with a proxy when not resident. */
+  proxied(key: string): boolean {
+    return this.cells.get(key)?.proxied ?? false;
+  }
+
+  private loadRadiusOf(c: CellState): number {
+    return c.proxied ? this.config.proxyLoadRadius : this.config.loadRadius;
+  }
+
+  private nearRadiusOf(c: CellState): number {
+    return c.proxied ? this.config.proxyNearRadius : this.config.nearRadius;
   }
 
   /** The geometry of cell `key` weighs `bytes`: `measured` once it was built (a later estimate does not replace that). */
@@ -433,18 +481,18 @@ export class CellStreamer {
    * the most urgent ones within the load ring while they fit the budget. Returns their keys.
    */
   primeAround(sources: readonly StreamSource[], nowMs = 0): string[] {
-    const { loadRadius, nearRadius, budgetBytes } = this.config;
+    const { budgetBytes } = this.config;
     const ranked: Array<{ c: CellState; d: number; u: number }> = [];
     for (const c of this.cells.values()) {
       if (c.resident) continue;
       const d = this.distance(c, sources);
-      if (d <= loadRadius) ranked.push({ c, d, u: this.urgency(c, sources, d) });
+      if (d <= this.loadRadiusOf(c)) ranked.push({ c, d, u: this.urgency(c, sources, d) });
     }
     ranked.sort((a, b) => a.u - b.u);
     let bytes = this.residentBytes;
     const out: string[] = [];
     for (const { c, d } of ranked) {
-      if (d > nearRadius && bytes + c.bytes > budgetBytes) continue;
+      if (d > this.nearRadiusOf(c) && bytes + c.bytes > budgetBytes) continue;
       this.makeResident(c, nowMs);
       bytes += c.bytes;
       out.push(c.key);
@@ -481,7 +529,7 @@ export class CellStreamer {
    * (past the ring and the hysteresis band for the unload delay, or evicted by the budget for a more urgent cell).
    */
   update(sources: readonly StreamSource[], nowMs: number): StreamChange {
-    const { loadRadius, nearRadius, unloadMargin, unloadDelayMs, maxLoading, budgetBytes, minResidentMs } = this.config;
+    const { unloadMargin, unloadDelayMs, maxLoading, budgetBytes, minResidentMs } = this.config;
     const want: Array<{ c: CellState; d: number; u: number }> = [];
     const kept: Array<{ c: CellState; d: number; u: number }> = [];
     const unload: string[] = [];
@@ -489,11 +537,13 @@ export class CellStreamer {
     for (const c of this.cells.values()) {
       if (c.loading) loading++;
       const d = this.distance(c, sources);
+      const loadRadius = this.loadRadiusOf(c);
       if (!c.resident) {
         if (d <= loadRadius) want.push({ c, d, u: this.urgency(c, sources, d) });
         continue;
       }
-      if (d <= loadRadius + unloadMargin) {
+      // A proxied cell's hysteresis band is half a ring step (its full detail is what the memory goes to).
+      if (d <= loadRadius + (c.proxied ? unloadMargin / 2 : unloadMargin)) {
         c.farSince = null;
         kept.push({ c, d, u: this.urgency(c, sources, d) });
         continue;
@@ -516,11 +566,11 @@ export class CellStreamer {
     kept.sort((a, b) => b.u - a.u);
     let bytes = 0;
     for (const k of kept) bytes += k.c.bytes;
-    const evictable = (k: { c: CellState; d: number }): boolean => k.c.resident && !k.c.loading && k.d > nearRadius && nowMs - k.c.since >= minResidentMs;
+    const evictable = (k: { c: CellState; d: number }): boolean => k.c.resident && !k.c.loading && k.d > this.nearRadiusOf(k.c) && nowMs - k.c.since >= minResidentMs;
     const load: string[] = [];
     for (const w of want) {
       if (loading >= maxLoading) break;
-      if (w.d > nearRadius) {
+      if (w.d > this.nearRadiusOf(w.c)) {
         // Make room: evict resident cells past the near ring, loaded long enough, clearly less urgent than this one.
         while (bytes + w.c.bytes > budgetBytes) {
           const v = kept.find((k) => evictable(k) && k.u > w.u + EVICT_MARGIN);

@@ -100,10 +100,23 @@ export interface CookManifest {
    */
   lightmap: { base: string; version?: string } | null;
   /**
+   * The HLOD proxies (streaming/hlod.ts; docs/ARCHITECTURE-STREAMING.md §3.3): one file of every streamed cell's proxy,
+   * relative to the package folder `dir`, the version of its format, and per cell its key and world bounds (min xyz, max
+   * xyz). A viewer reads it only when the version is its `HLOD_VERSION`. Absent in older cooks and worlds that do not stream.
+   */
+  hlod?: (CookFile & { version: number; cells: CookHlodCell[] }) | null;
+  /**
    * The world itself, for a world published from the editor (short share links carry no world): {@link WORLD_FILE} in the
    * cook folder, the share payload as gzipped JSON, with its byte size and SHA-256. Absent (null) in a template's cook.
    */
   ir?: (CookFile & { sha256: string }) | null;
+}
+
+/** A cell's proxy in {@link CookManifest.hlod}. */
+export interface CookHlodCell {
+  cell: string;
+  bounds: [number, number, number, number, number, number];
+  triangles: number;
 }
 
 /** File name of the world in a cook folder ({@link CookManifest.ir}). */
@@ -213,6 +226,18 @@ export function parseCookManifest(v: unknown): ManifestResult {
     if (ver !== undefined && (typeof ver !== 'string' || !/^[A-Za-z0-9._-]{1,64}$/.test(ver))) return bad('bad lightmap version');
     lightmap = { base: v.lightmap.base, ...(typeof ver === 'string' ? { version: ver } : {}) };
   }
+  let hlod: CookManifest['hlod'] = null;
+  if (v.hlod !== null && v.hlod !== undefined) {
+    const f = file(v.hlod);
+    const h = v.hlod as Record<string, unknown>;
+    if (!f || !nat(h.version) || !Array.isArray(h.cells) || h.cells.length > 100_000) return bad('bad hlod');
+    const hc: CookHlodCell[] = [];
+    for (const c of h.cells as unknown[]) {
+      if (!isObj(c) || typeof c.cell !== 'string' || c.cell.length > 40 || !Array.isArray(c.bounds) || c.bounds.length !== 6 || !c.bounds.every(fin) || !nat(c.triangles)) return bad('bad hlod cell');
+      hc.push({ cell: c.cell, bounds: [...(c.bounds as number[])] as CookHlodCell['bounds'], triangles: c.triangles });
+    }
+    hlod = { ...f, version: h.version, cells: hc };
+  }
   let ir: CookManifest['ir'] = null;
   if (v.ir !== null && v.ir !== undefined) {
     const f = file(v.ir);
@@ -239,6 +264,7 @@ export function parseCookManifest(v: unknown): ManifestResult {
       ...(fingerprints ? { fingerprints } : {}),
       programs,
       lightmap,
+      ...(hlod ? { hlod } : {}),
       ...(ir ? { ir } : {}),
     },
   };
@@ -246,5 +272,5 @@ export function parseCookManifest(v: unknown): ManifestResult {
 
 /** The files of a cook, relative to its `<id>/` folder: every pack and program set the manifest names, and the world file. */
 export function cookFiles(m: CookManifest): string[] {
-  return [...m.packs.map((p) => p.file), ...Object.values(m.programs).map((p) => p!.file), ...(m.ir ? [m.ir.file] : [])];
+  return [...m.packs.map((p) => p.file), ...Object.values(m.programs).map((p) => p!.file), ...(m.hlod ? [m.hlod.file] : []), ...(m.ir ? [m.ir.file] : [])];
 }
