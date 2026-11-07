@@ -2017,7 +2017,7 @@ export class WorldRenderer {
       if (streamer.resident(id)) return true;
       const cell = streamer.cellOfEntity(id);
       return cell !== undefined && leaving.has(cell);
-    });
+    }, (id) => streamer.streams(id), partition.cellSize);
     // The cells of the opening are part of the load: once the world is built they are loaded and weighed.
     const opening = streamer.loadingKeys();
     // After this task: the world's builds start right after this call (sync.setWorld), and are what is waited for.

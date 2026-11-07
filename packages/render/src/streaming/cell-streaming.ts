@@ -58,6 +58,10 @@ export interface CellStreamingConfig {
    */
   proxyLoadRadius: number;
   proxyNearRadius: number;
+  /** How long a proxied cell stays past its unload distance before it unloads (ms): its proxy covers it at once. */
+  proxyUnloadDelayMs: number;
+  /** Most proxied cells loading at once (each load's arrays become garbage on upload: spread out, the heap stays low). */
+  proxyMaxLoading: number;
 }
 
 /** Load ring by render tier, in base cells (section 3.2: R1 at 4 cells, scaled by tier). */
@@ -69,8 +73,9 @@ export function streamingConfig(cellSize: number, tier: string, budgetBytes = Nu
   return {
     loadRadius: cellSize * ring, nearRadius: cellSize * 1.5 * (ring / 4), unloadMargin: cellSize, unloadDelayMs: 5000, maxLoading: 2,
     budgetBytes, minResidentMs: 4000, entityBytes: 1 << 20,
-    // A cell with a proxy is full detail within 1.5 cells (scaled by tier), its near ring one cell (stage 5, §3.2 R0/R1).
-    proxyLoadRadius: cellSize * 1.5 * (ring / 4), proxyNearRadius: cellSize * (ring / 4),
+    // A cell with a proxy is full detail within 1.5 cells (scaled by tier); only within half a cell is it resident whatever
+    // the budget (stage 5, §3.2 R0/R1): past that the budget decides, and the proxy draws meanwhile.
+    proxyLoadRadius: cellSize * 1.5 * (ring / 4), proxyNearRadius: cellSize * 0.5 * (ring / 4), proxyUnloadDelayMs: 1500, proxyMaxLoading: 1,
   };
 }
 
@@ -533,9 +538,12 @@ export class CellStreamer {
     const want: Array<{ c: CellState; d: number; u: number }> = [];
     const kept: Array<{ c: CellState; d: number; u: number }> = [];
     const unload: string[] = [];
-    let loading = 0;
+    let loading = 0, proxiedLoading = 0;
     for (const c of this.cells.values()) {
-      if (c.loading) loading++;
+      if (c.loading) {
+        loading++;
+        if (c.proxied) proxiedLoading++;
+      }
       const d = this.distance(c, sources);
       const loadRadius = this.loadRadiusOf(c);
       if (!c.resident) {
@@ -551,7 +559,7 @@ export class CellStreamer {
       // A cell still loading finishes first (its builds are in flight).
       if (!c.loading) {
         c.farSince ??= nowMs;
-        if (nowMs - c.farSince >= unloadDelayMs) {
+        if (nowMs - c.farSince >= (c.proxied ? this.config.proxyUnloadDelayMs : unloadDelayMs)) {
           c.resident = false;
           c.farSince = null;
           this.unloads++;
@@ -570,6 +578,7 @@ export class CellStreamer {
     const load: string[] = [];
     for (const w of want) {
       if (loading >= maxLoading) break;
+      if (w.c.proxied && proxiedLoading >= this.config.proxyMaxLoading) continue;
       if (w.d > this.nearRadiusOf(w.c)) {
         // Make room: evict resident cells past the near ring, loaded long enough, clearly less urgent than this one.
         while (bytes + w.c.bytes > budgetBytes) {
@@ -585,6 +594,7 @@ export class CellStreamer {
       this.makeResident(w.c, nowMs);
       bytes += w.c.bytes;
       loading++;
+      if (w.c.proxied) proxiedLoading++;
       load.push(w.c.key);
     }
     // Over budget with nothing waiting (a cell measured heavier than its estimate): drop the least urgent.

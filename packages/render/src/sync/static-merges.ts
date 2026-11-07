@@ -259,6 +259,11 @@ export class StaticMerges {
    * owner knows it, {@link COPY_CELL} before. Takes effect at the next {@link rebuild}.
    */
   copyCell = COPY_CELL;
+  /**
+   * Edge (m) of the cells unique procedural props (and the other parts of entities with virtual parts) merge in: {@link PROP_CELL},
+   * or a streamed world's base cell, so a cell that streams in or out re-merges only its own props.
+   */
+  propCell: number | null = null;
   /** Member meshes of the current merges (see {@link has}); null after a change, rebuilt on demand. */
   private memberSet: Set<Mesh> | null = null;
   private inline = 0;
@@ -328,7 +333,7 @@ export class StaticMerges {
       const parts = own ? node.bindings.filter((b) => mergeablePart(b) && !virtualSource(node, b.mesh)).map((b) => ({ mesh: b.mesh, materialKey: b.materialKey })) : assetParts(node);
       // The parts of an entity with virtual parts (a row of houses' windows and balconies, a wall's copings) merge per
       // `virtualPartCell()` metres: the merged mesh is culled as a whole and is not left out as a speck.
-      const edge = own && node.entity.shape.kind === 'procedural' ? (hasVirtualParts(node) ? virtualPartCell(this.copyCell) : PROP_CELL) : this.copyCell;
+      const edge = own && node.entity.shape.kind === 'procedural' ? (this.propCell ?? (hasVirtualParts(node) ? virtualPartCell(this.copyCell) : PROP_CELL)) : this.copyCell;
       if (!parts || !node.content.visible || !node.object.visible) continue;
       const parent = node.object.parent;
       if (!parent) continue;

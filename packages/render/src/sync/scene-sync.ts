@@ -586,8 +586,11 @@ export class SceneSync {
 
   /** The meshes the sun's depth pass draws for static entities, with their owners (see CellShadowBatches). */
   private *shadowCandidates(): Iterable<ShadowCandidate> {
+    const streamed = this.streamed;
     for (const node of this.nodes.values()) {
       if (!staticCaster(node)) continue;
+      // A streamed entity casts by itself: its cell coming or going must not rebuild a batch.
+      if (streamed && streamed(this.topLevel(node.id))) continue;
       // Virtual stand-ins cast with their source's flags (a stand-in drawn by a view batch is not mirrored any more).
       for (const v of node.virtual) {
         const dag = this.virtualGroups.get(v.key)?.group.dag;
@@ -604,7 +607,19 @@ export class SceneSync {
         yield { mesh, id: node.id };
       }
     }
-    if (this.merges) for (const mesh of this.merges.meshes()) if (mesh.castShadow && plainCasterMesh(mesh)) yield { mesh, id: this.idOf(mesh.parent) };
+    if (this.merges && !streamed) for (const mesh of this.merges.meshes()) if (mesh.castShadow && plainCasterMesh(mesh)) yield { mesh, id: this.idOf(mesh.parent) };
+  }
+
+  /** Top-level ancestor of `id` in the current world (`id` itself without one). */
+  private topLevel(id: EntityId): EntityId {
+    const world = this.current;
+    let cur = id;
+    for (let depth = 0; world && depth < 64; depth++) {
+      const p = world.entities[cur]?.parent;
+      if (!p || !world.entities[p]) break;
+      cur = p;
+    }
+    return cur;
   }
 
   /** Static shadow batches (null when disabled), for the renderer's shadow-pass skip test. */
@@ -881,9 +896,18 @@ export class SceneSync {
    * Cell streaming (streaming/cell-streaming.ts): only entities whose top-level ancestor passes `test` get scene nodes.
    * Null: every entity does. Takes effect on the next {@link setWorld} or {@link applyResidency}.
    */
-  setResidency(test: ((topLevel: EntityId) => boolean) | null): void {
+  setResidency(test: ((topLevel: EntityId) => boolean) | null, streamed: ((topLevel: EntityId) => boolean) | null = null, cellSize: number | null = null): void {
     this.residency = test;
+    this.streamed = test ? streamed : null;
+    // A streamed world's props merge per streaming cell (its base cell), and the merged meshes cast by themselves: a cell
+    // coming or going re-merges its own props and never rebuilds a shadow batch of the cells that stay.
+    if (this.merges) this.merges.propCell = this.streamed && cellSize !== null && cellSize > 0 ? cellSize : null;
+    this.cellShadowsStale = true;
+    this.batchesStale = true;
   }
+
+  /** Top-level entities that stream (their casters and merged meshes stay out of the shadow batches), null: none. */
+  private streamed: ((topLevel: EntityId) => boolean) | null = null;
 
   private residency: ((topLevel: EntityId) => boolean) | null = null;
 
@@ -2639,3 +2663,4 @@ function staticCaster(node: Readonly<EntityNode>): boolean {
 }
 
 const _cellSphere = new Sphere();
+
