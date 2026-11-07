@@ -496,6 +496,16 @@ under the frame budget.
   1338-1817 MB: the peak moved from the load to the walk, where cells load while the ones left behind are still held and
   their garbage is not collected yet). The GPU estimate fell about 10 % at the load (760 MB against 830-870) and rose to
   up to 1080 MB by the end of the walk (unloaded cells' GPU memory does not come back). The gate is not met.
+- **Round 4** (rebased on main `b7528dfa`, 3 interleaved rounds against main, cold and warm, same probes): the cooked
+  program set matches the streamed player (lamp-set arrays take stable node ids: three names a uniform array's block after
+  its node id), the near ring (1.5 cells) is full detail whatever the budget and holds the view after a jump, and the
+  missing flowers were not proxies but virtual geometry (a cluster group simplified to nothing orphaned its children; now
+  its clusters stay roots). Experience shots: no proxy within 74 m in any shot (hero, drone tour, six districts, hero again,
+  play), no hold timed out, flowers and wall drapes complete. Cold first picture 14.5-17.5 s (main 18.0-21.8), warm
+  11.4-12.7 s (main 13.9-15.9); links cold 98-100 (main 84), warm 83-86 (82-83); JS heap peak cold 1455-1519 MB (main
+  1418-1471), warm 1460-1509 (1456-1465); GPU estimate peak 853-873 MB (main 846-849): forcing the near ring resident took
+  the GPU saving (591-632 MB before) away. Walk frames over 50 ms 73 on average (main 65). The gate is not met: GPU and
+  heap peaks, cold links. `alloc-probe` fails at 16.4-17.2 B per frame against 16 (`updateBatches`).
 
 ### 3.4 DDC: the generated-geometry cache
 
