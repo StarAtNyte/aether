@@ -40,7 +40,7 @@ import type { CookView, ViewStopPose } from '@aether/render';
 import { TIME_PRESETS } from '../state/archUi';
 import type { StoryOverlay, StoryRunner } from './story-runner';
 import type { StoryAudio } from './story-audio';
-import { storyCast } from './story';
+import { playStartAfterStory, storyCast } from './story';
 
 /** Hour of each time-of-day key (Digit1 … Digit4). */
 const TIME_PRESETS_BY_DIGIT: Readonly<Record<string, number>> = Object.freeze(Object.fromEntries(TIME_PRESETS.map((p) => [`Digit${p.key}`, p.hour])));
@@ -633,8 +633,9 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
     if (!sim || (from !== 'title' && from !== 'over' && from !== 'exploring' && from !== 'story' && !(from === 'paused' && pausedFrom.current === 'exploring'))) return;
     // Play from explore mode: a walk hands its spot over (the character stands where the visitor stood); from a story,
     // where its film puts the visitor.
-    const playFrom = world.story?.playFrom;
-    const standing = exploreRef.current?.standing ?? (from === 'story' && playFrom ? { feet: playFrom.position, yawDeg: playFrom.yaw } : null);
+    // After the film: its playFrom, else the spot of the person the last shot followed, else the world's play spawn.
+    const afterFilm = from === 'story' ? playStartAfterStory(world) : null;
+    const standing = exploreRef.current?.standing ?? afterFilm;
     leaveExplore();
     leaveStory();
     go('starting');
@@ -643,8 +644,9 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
     setOver(null);
     setHud({});
     setTime(0);
+    // Every kind but a game plays as the human character, even a world whose player is an orbit camera.
     if (sim.mode === 'play') await sim.restart();
-    else await sim.play();
+    else await sim.play({ onFoot: exp.kind !== 'game' });
     if (sim.mode !== 'play') {
       if (exp.kind === 'game') go('title');
       else void enterExplore(false);

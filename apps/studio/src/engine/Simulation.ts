@@ -352,6 +352,8 @@ export class Simulation {
   /** The editor camera when Play began: Stop puts it back (a walk must not leave the editor eye in front of a wall). */
   private editPose: ReturnType<WorldRenderer['cameraPose']> | null = null;
   private transition: Promise<void> = Promise.resolve();
+  /** Play as the character even in an orbit-camera world (see {@link play}). */
+  private forceOnFoot = false;
   private syncChain: Promise<void> = Promise.resolve();
   private syncedWorldDoc: WorldDoc | null = null;
   private pendingWorld: WorldDoc | null = null;
@@ -1178,7 +1180,12 @@ export class Simulation {
   }
 
   /** Enter play mode from the current world. No-op while already playing. */
-  play(): Promise<void> {
+  /**
+   * Enter play mode. `onFoot`: play as the human character even when the world's player is an orbit camera (the player's
+   * P after a film or a tour: every kind plays as the character); kept for restarts until the next `play`.
+   */
+  play(opts: { onFoot?: boolean } = {}): Promise<void> {
+    this.forceOnFoot = opts.onFoot === true;
     // Edit-mode decorations (proof replay, plan marks) never carry into play.
     this.renderer.stopProof();
     this.renderer.stopGhost();
@@ -1282,7 +1289,7 @@ export class Simulation {
       if (this.disposed) throw new Error('simulation disposed');
       const avatarId = findAvatar(world);
       const voxelGame = world.voxel !== undefined && this.voxel !== null && this.voxel.active;
-      if (!voxelGame && !avatarId && world.player.mode !== 'orbit' && world.player.mode !== 'vehicle') {
+      if (!voxelGame && !avatarId && (world.player.mode !== 'orbit' || this.forceOnFoot) && world.player.mode !== 'vehicle') {
         character = new CharacterController(pw, { radius: PLAYER_CAPSULE.radius, height: PLAYER_CAPSULE.height, spawn: world.player.spawn, id: PLAYER_PSEUDO_ID, feel: CHARACTER_FEEL, settleSpawn: true });
       }
       const voxel = voxelGame && this.voxel ? await this.voxel.startPlay(world, this.renderer.domElement) : null;

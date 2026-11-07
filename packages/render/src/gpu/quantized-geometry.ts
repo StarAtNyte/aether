@@ -71,9 +71,13 @@ export interface GpuQuantizeStats {
   /** Float bytes of those too large, by the grid they would need (and whether a translation was allowed). */
   largeSteps: Record<string, number>;
   reverted: number;
+  /** Draws left out: drawn by an object or material that reads object space, with the CPU positions already released. */
+  skipped: number;
+  /** Why the last draw was left out (diagnostics). */
+  lastSkip?: string;
 }
 
-const stats: GpuQuantizeStats = { geometries: 0, floatBytes: 0, gpuBytes: 0, positions: 0, positionsFloat: 0, floatObjectSpace: 0, floatLarge: 0, floatLargeOrigin: 0, largeSteps: {}, reverted: 0 };
+const stats: GpuQuantizeStats = { geometries: 0, floatBytes: 0, gpuBytes: 0, positions: 0, positionsFloat: 0, floatObjectSpace: 0, floatLarge: 0, floatLargeOrigin: 0, largeSteps: {}, reverted: 0, skipped: 0 };
 (globalThis as { __aetherGpuQuantized?: GpuQuantizeStats }).__aetherGpuQuantized = stats;
 
 /** How a stream is stored on the GPU. */
@@ -461,7 +465,12 @@ export function installGpuQuantize(renderer: unknown): void {
     if (!fold) return direct.call(this, object, material, ...rest);
     if (!plainObject(object) || readsObjectSpace(material) || readsObjectSpace(r._currentSourceMaterial)) {
       // Not drawn rather than drawn wrong (never seen: merges and batches keep their material).
-      if (!revert(r, fold.attr)) return undefined;
+      if (!revert(r, fold.attr)) {
+        stats.skipped++;
+        const sm = r._currentSourceMaterial as (Material & { type?: string; name?: string }) | null;
+        stats.lastSkip = `${(object as Object3D & { type?: string }).type ?? '?'} ${object.name} material ${(material as Material & { type?: string }).type} pos ${String((material as { positionNode?: unknown }).positionNode != null)} src ${sm ? `${sm.type} ${sm.name} pos ${String((sm as { positionNode?: unknown }).positionNode != null)}` : 'none'}`;
+        return undefined;
+      }
       return direct.call(this, object, material, ...rest);
     }
     const e = object.matrixWorld.elements;

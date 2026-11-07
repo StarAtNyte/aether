@@ -5,7 +5,7 @@ import { authorStory, escalate, MAX_IMAGES_PER_CALL, reviewShots, type PresentHo
 import { defaultPresentation, parseChoice, presentationSignals, wantsPresentation } from '../src/presentation/kind';
 import { pointsOfInterest, type PresentationViews } from '../src/presentation/poi';
 import { checkStory, fallbackPlan, moveEnd, planToStory, projectInFrame, repairStory, STORY_SECONDS } from '../src/presentation/story';
-import { fixPatches, measuredIssues, parseReport, reviewFrames, spawnPose, yawToward } from '../src/presentation/review';
+import { autoFixable, degenerateFrame, fixPatches, measuredIssues, parseReport, reviewFrames, spawnPose, yawToward } from '../src/presentation/review';
 import type { CompletionRequest, CompletionResponse, Provider } from '../src/types';
 
 const box = (id: string, p: [number, number, number], extra: Record<string, unknown> = {}): Patch => ({ op: 'add', entity: { id, shape: { kind: 'primitive', primitive: 'box', size: [2, 2, 2] }, transform: { position: p, rotation: [0, 0, 0], scale: [1, 1, 1] }, ...extra } } as Patch);
@@ -186,7 +186,7 @@ describe('shot review', () => {
 
   it('measured issues and fixes', () => {
     const f = { name: 'opening', label: '', kind: 'opening' as const, pose: VIEWS.opening as NonNullable<PresentationViews['opening']>, aspect: 16 / 9 };
-    expect(measuredIssues(f, { dark: 0.8, bright: 0, mean: 5, centre: 1 }, { near: 0.1, underWater: false }).map((x) => x.fix)).toContain('repick-opening');
+    expect(measuredIssues(f, { dark: 0.8, bright: 0, mean: 5, centre: 1, spread: 1, top: 5 }, { near: 0.1, underWater: false }).map((x) => x.fix)).toContain('repick-opening');
     const rep = parseReport({ frames: [{ name: 'opening', ok: false, issues: [{ check: 'occluder', note: 'branch', fix: 'pull-back' }] }, { name: 'ghost', ok: true, issues: [] }], summary: 's' }, [f]);
     expect(rep.issues).toHaveLength(1);
     const plan = fixPatches(scene(), f, rep.issues[0]!, VIEWS);
@@ -215,7 +215,7 @@ describe('shot review', () => {
         n++;
         seen.push(req.messages.flatMap((m) => (Array.isArray(m.content) ? m.content : [])).filter((b) => b.type === 'image').length);
         if (req.tools?.[0]?.name !== 'report_shots') return { stopReason: 'end', content: [] } as CompletionResponse;
-        return { stopReason: 'tool_use', content: [{ type: 'tool_use', id: 'r', name: 'report_shots', input: { summary: 'ok', frames: [{ name: 'story-1', ok: false, issues: n === 1 ? [{ check: 'framing', note: 'too low', fix: 'raise' }] : [] }] } }] } as CompletionResponse;
+        return { stopReason: 'tool_use', content: [{ type: 'tool_use', id: 'r', name: 'report_shots', input: { summary: 'ok', frames: [{ name: 'story-1', ok: false, issues: n === 1 ? [{ check: 'framing', severity: 'high', confidence: 0.9, note: 'too low', fix: 'raise' }] : [] }] } }] } as CompletionResponse;
       },
     } as Provider;
     const r = await reviewShots(h, provider);
@@ -241,11 +241,79 @@ describe('shot review', () => {
     const provider: Provider = {
       async complete(req) {
         if (req.tools?.[0]?.name !== 'report_shots') return { stopReason: 'end', content: [] } as CompletionResponse;
-        return { stopReason: 'tool_use', content: [{ type: 'tool_use', id: 'r', name: 'report_shots', input: { summary: 'still low', frames: [{ name: 'story-1', ok: false, issues: [{ check: 'framing', note: 'too low', fix: 'raise' }] }] } }] } as CompletionResponse;
+        return { stopReason: 'tool_use', content: [{ type: 'tool_use', id: 'r', name: 'report_shots', input: { summary: 'still low', frames: [{ name: 'story-1', ok: false, issues: [{ check: 'framing', severity: 'high', confidence: 0.9, note: 'too low', fix: 'raise' }] }] } }] } as CompletionResponse;
       },
     } as Provider;
     const r = await reviewShots(h, provider, { reviewRounds: 3 });
     expect(r.undone.length).toBeGreaterThan(0);
     expect(h.world.story?.shots[0]?.camera.position[1]).toBeCloseTo(first);
+  });
+
+  it('never judges or fixes a degenerate frame: black, flat, or a daytime sky come out black', async () => {
+    const st = (mean: number, spread: number, top: number, dark = 0) => ({ dark, bright: 0, mean, centre: 5, spread, top });
+    expect(degenerateFrame(st(2, 1, 0, 0.99))).toBe('near-black');
+    expect(degenerateFrame(st(120, 1, 120))).toBe('one flat tone');
+    expect(degenerateFrame(st(90, 30, 4), { skyExpected: true })).toMatch(/sky/);
+    expect(degenerateFrame(st(90, 30, 4), { skyExpected: false })).toBeNull();
+    // A host whose renders are all black: nothing is judged, nothing in the world changes (no hour moved to noon).
+    const h = host(scene());
+    (h as unknown as { decodeImage: unknown }).decodeImage = async () => ({ width: 8, height: 8, data: new Uint8ClampedArray(8 * 8 * 4).map((_, i) => (i % 4 === 3 ? 255 : 0)) });
+    const before = h.world;
+    let judged = 0;
+    const provider: Provider = {
+      async complete() {
+        judged++;
+        return { stopReason: 'tool_use', content: [{ type: 'tool_use', id: 'r', name: 'report_shots', input: { summary: 'dark', frames: [{ name: 'opening', ok: false, issues: [{ check: 'exposure', severity: 'high', confidence: 1, note: 'black', fix: 'time-of-day', hour: 12 }] }] } }] } as CompletionResponse;
+      },
+    } as unknown as Provider;
+    const r = await reviewShots(h, provider);
+    expect(judged).toBe(0);
+    expect(h.world.environment).toBe(before.environment);
+    expect(r.summary).toMatch(/nothing was judged/);
+  });
+
+  it('a calibrated judge: only sure, high-severity findings are fixed; the rest are ranked suggestions', async () => {
+    const h = host(scene());
+    await authorStory(h, null);
+    const provider: Provider = {
+      async complete(req) {
+        if (req.tools?.[0]?.name !== 'report_shots') return { stopReason: 'end', content: [] } as CompletionResponse;
+        return { stopReason: 'tool_use', content: [{ type: 'tool_use', id: 'r', name: 'report_shots', input: { summary: 'mostly fine', frames: [
+          { name: 'story-1', ok: false, issues: [{ check: 'framing', severity: 'medium', confidence: 0.9, note: 'a little low', fix: 'raise' }] },
+          { name: 'spawn', ok: false, issues: [{ check: 'lighting', severity: 'low', confidence: 0.8, note: 'flat light', fix: 'time-of-day', hour: 12 }] },
+          { name: 'opening', ok: false, issues: [{ check: 'occluder', severity: 'high', confidence: 0.4, note: 'maybe a branch', fix: 'repick-opening' }] },
+        ] } }] } as CompletionResponse;
+      },
+    } as Provider;
+    const story = h.world.story;
+    const env = h.world.environment;
+    const r = await reviewShots(h, provider, { reviewRounds: 2 });
+    expect(r.fixed).toEqual([]);
+    expect(h.world.story).toBe(story);
+    expect(h.world.environment).toBe(env);
+    expect(r.remaining.filter((x) => x.by === 'model').map((x) => x.severity)).toEqual(['high', 'medium', 'low']);
+    expect(autoFixable({ fix: 'raise', by: 'model', severity: 'high', confidence: 0.8 })).toBe(true);
+    expect(autoFixable({ fix: 'raise', by: 'probe' })).toBe(true);
+  });
+
+  it('replays the recorded Sanctuary Falls judgement (made on black-sky renders): nothing in it is fixed on its own now', async () => {
+    // Verbatim from the live run of 7 November (the judge then gave no severities): it moved the hour to noon.
+    const recorded = { summary: 'Tour-2, tour-3 and spawn all show a black void sky and are too dark.', frames: [
+      { name: 'story-1', ok: false, issues: [{ check: 'exposure', note: 'The frame is dark overall; the right third is a black void and the sky is black.', fix: 'time-of-day', hour: 12 }] },
+      { name: 'spawn', ok: false, issues: [{ check: 'sky', note: 'The sky is a flat black void with floating banners.', fix: 'time-of-day', hour: 12 }, { check: 'missing-geometry', note: 'The black void sits behind and between the arcades.', fix: 'none' }] },
+    ] };
+    const h = host(scene());
+    await authorStory(h, null);
+    const env = h.world.environment;
+    const story = h.world.story;
+    const provider = { name: 'replay', async complete(req: CompletionRequest) {
+      if (req.tools?.[0]?.name !== 'report_shots') return { stopReason: 'end', content: [] } as unknown as CompletionResponse;
+      return { stopReason: 'tool_use', content: [{ type: 'tool_use', id: 'r', name: 'report_shots', input: recorded }] } as unknown as CompletionResponse;
+    } } as unknown as Provider;
+    const r = await reviewShots(h, provider, { reviewRounds: 2 });
+    expect(h.world.environment).toBe(env);
+    expect(h.world.story).toBe(story);
+    expect(r.fixed.filter((f) => /time of day|at 12 h/.test(f))).toEqual([]);
+    expect(r.remaining.some((x) => x.check === 'sky')).toBe(true);
   });
 });

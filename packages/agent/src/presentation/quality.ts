@@ -325,10 +325,9 @@ function lightingChecks(world: WorldDoc, host: QualityHost | null, out: QualityF
     if (cos > 0.85 && !s.title) {
       const h = s.hour ?? hour;
       const next = h === undefined ? undefined : Math.round(Math.max(8, Math.min(17, h < 12 ? h + 3 : h - 3)) * 10) / 10;
-      const story = world.story ? structuredClone(world.story) : null;
-      const shot = story?.shots[i];
-      if (story && shot && next !== undefined) shot.hour = next;
-      out.push({ check: 'lighting', severity: 'info', note: `film shot ${i + 1} looks into a low sun: the subject is backlit`, ...(story && next !== undefined ? { fix: { kind: 'patches' as const, patches: [{ op: 'setMeta', story } as Patch], label: `film shot ${i + 1} moved to ${next} h` } } : {}), by: 'data' });
+      // A suggestion, never applied on its own: moving a shot's hour changes the film's colour script (and backlight can be
+      // the intent of a shot).
+      out.push({ check: 'lighting', severity: 'info', note: `film shot ${i + 1} looks into a low sun: the subject is backlit${next !== undefined ? ` (try ${next} h, or turn the camera)` : ''}`, fix: { kind: 'route', to: 'user', label: 'change the shot\'s hour or turn the camera' }, by: 'data' });
     }
   });
 }
@@ -400,9 +399,13 @@ export async function runQualityPass(host: QualityHost, provider: Provider | nul
   }
   const after = await qualityChecks(host.getWorld(), views, host);
   // What is left: findings of the last look that no fix answered, and the visual review's remaining ones.
-  const remaining = after.filter((f) => f.severity !== 'info' || f.fix?.kind === 'route');
+  const remaining = after.filter((f) => !(f.check === 'performance' && f.by === 'host' && /not measured/.test(f.note)));
   const map: Record<string, QualityCheck> = { framing: 'opening', occluder: 'opening', exposure: 'lighting', spawn: 'playability', 'missing-geometry': 'missing-geometry', lighting: 'lighting', sky: 'sky', interpenetration: 'interpenetration', characters: 'characters', scale: 'scale', aerial: 'aerial', other: 'opening' };
-  for (const r of review?.remaining ?? []) remaining.push({ check: map[r.check] ?? 'opening', severity: 'warn', note: `${r.frame}: ${r.note}`, by: r.by === 'model' ? 'model' : r.by === 'probe' ? 'probe' : 'measured' });
+  // The judge's high-severity findings are problems; medium ones warnings; low ones suggestions.
+  for (const r of review?.remaining ?? []) remaining.push({ check: map[r.check] ?? 'opening', severity: r.severity === 'high' ? 'error' : r.severity === 'low' ? 'info' : 'warn', note: `${r.frame}: ${r.note}`, by: r.by === 'model' ? 'model' : r.by === 'probe' ? 'probe' : 'measured' });
+  // Worst first: problems, then warnings, then suggestions.
+  const order: Record<string, number> = { error: 0, warn: 1, info: 2 };
+  remaining.sort((a, b) => (order[a.severity] ?? 1) - (order[b.severity] ?? 1));
   return { findings: first, fixed, remaining, review };
 }
 

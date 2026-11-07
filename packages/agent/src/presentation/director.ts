@@ -8,7 +8,7 @@ import { openingPictureScore, openingProbeOk } from '../opening';
 import type { AgentHost, ChatMessage, ContentBlock, Provider, ReviewViewRequest, ToolDef } from '../types';
 import { defaultPresentation, presentationSignals } from './kind';
 import { type PointOfInterest, type PoseLike, type PresentationViews, pointsOfInterest, poiText } from './poi';
-import { CHECKS, type FrameIssue, type ShotFix, fixPatches, frameStats, measuredIssues, parseReport, REPORT_SHOTS_TOOL, type ReviewFrame, reviewFrames, SHOT_CHECKLIST } from './review';
+import { autoFixable, CHECKS, degenerateFrame, rankIssues, skyExpected, type FrameIssue, type ShotFix, fixPatches, frameStats, measuredIssues, parseReport, REPORT_SHOTS_TOOL, type ReviewFrame, reviewFrames, SHOT_CHECKLIST } from './review';
 import { CAMERA_MOVES, checkStory, fallbackPlan, framePoi, issuesText, planToStory, repairStory, STORY_LOOKS, StoryPlan, type StoryProbe } from './story';
 
 /** What the director needs of the host (the studio's agent bridge, a test fake). */
@@ -293,14 +293,14 @@ export async function reviewShots(host: PresentHost, provider: Provider | null, 
     if (frames.length === 0) break;
     status(round === 0 ? `Rendering ${frames.length} frames for the shot review…` : `Rendering the fixed frames (round ${round + 1})…`);
     const imgs = await render(host, frames.map((f) => request(f.name, f.label, f.pose, f.aspect)), size, signal);
-    // A frame that comes back all black is rendered again on its own first: a capture can lose its frame to another
-    // render in flight (a thumbnail, the playtest), and a lost frame is not the world's fault.
+    // A degenerate frame (near-black, one flat tone, a daytime sky come out black) is rendered again on its own first: a
+    // capture can lose its frame to another render in flight, and a lost frame is not the world's fault.
     if (host.decodeImage) {
       for (const f of frames) {
         const img = imgs.get(f.name);
         const px = img ? await host.decodeImage(img, 48).catch(() => null) : null;
         const st = px ? frameStats(px) : null;
-        if (!st || st.dark < 0.97) continue;
+        if (!degenerateFrame(st, { skyExpected: skyExpected(world, f.pose, f.kind) })) continue;
         const again = await render(host, [request(f.name, f.label, f.pose, f.aspect)], size, signal);
         const img2 = again.get(f.name);
         if (img2) imgs.set(f.name, img2);
@@ -313,10 +313,11 @@ export async function reviewShots(host: PresentHost, provider: Provider | null, 
       const px = img && host.decodeImage ? await host.decodeImage(img, 96).catch(() => null) : null;
       const pr = host.probeView ? await host.probeView({ position: f.pose.position, target: f.pose.target, up: [0, 1, 0], fov: f.pose.fov ?? 50 }).catch(() => null) : null;
       const st = px ? frameStats(px) : null;
-      // Still all black after a render of its own: the render failed (a lost frame, a lost context), and a failed render
-      // says nothing about the world. It is reported, never judged or fixed.
-      const failed = st !== null && st.dark > 0.97 && st.bright < 0.01;
-      const m = failed ? [{ frame: f.name, check: 'other' as const, note: 'the render of this frame failed (all black): not judged', fix: 'none' as const, by: 'measured' as const }] : measuredIssues(f, st, pr);
+      // Still degenerate after a render of its own: the render failed (a lost frame, a lost context, a missing sky), and a
+      // failed render says nothing about the world. It is reported, never judged or fixed.
+      const why = degenerateFrame(st, { skyExpected: skyExpected(world, f.pose, f.kind) });
+      const failed = why !== null;
+      const m = failed ? [{ frame: f.name, check: 'other' as const, note: `the render of this frame failed (${why}): not judged`, fix: 'none' as const, by: 'measured' as const }] : measuredIssues(f, st, pr);
       evidence.push(...m);
       if (failed) failedFrames.add(f.name);
       else failedFrames.delete(f.name);
@@ -327,7 +328,7 @@ export async function reviewShots(host: PresentHost, provider: Provider | null, 
     }
     let issues: FrameIssue[] = evidence;
     if (failedFrames.size === frames.length) {
-      summary = 'Every render failed (all black): nothing was judged. Review again once the view draws.';
+      summary = 'Every render failed (black, flat or without its sky): nothing was judged or changed. Review again once the view draws.';
       open = evidence;
       break;
     }
@@ -352,7 +353,8 @@ export async function reviewShots(host: PresentHost, provider: Provider | null, 
         const call = res.content.find((b): b is Extract<ContentBlock, { type: 'tool_use' }> => b.type === 'tool_use' && b.name === REPORT_SHOTS_TOOL.name);
         if (!call) continue;
         const rep = parseReport(call.input, frames);
-        found.push(...rep.issues);
+        // A batch reports only on its own frames; a judge that repeats another batch's frame is not counted twice.
+        for (const x of rep.issues) if (!found.some((y) => y.frame === x.frame && y.check === x.check && y.note === x.note)) found.push(x);
         if (rep.summary) summaries.push(rep.summary);
         answered++;
       }
@@ -368,7 +370,7 @@ export async function reviewShots(host: PresentHost, provider: Provider | null, 
     // undone, so a hand-made view is never left worse than it was. Undone in reverse order of application.
     for (const t of [...trial.entries()].reverse()) {
       const [name, tr] = t;
-      const now = issues.filter((x) => x.frame === name && x.fix !== 'none').length;
+      const now = issues.filter((x) => x.frame === name && autoFixable(x)).length;
       if (now < tr.issues) continue;
       const undo = patchesBetween(tr.after, tr.before);
       if (undo.length > 0) host.applyPatches(undo, `Shot review: undo ${tr.done} (not better)`);
@@ -384,7 +386,8 @@ export async function reviewShots(host: PresentHost, provider: Provider | null, 
     }
     trial.clear();
     open = issues;
-    const fixable = issues.filter((x) => x.fix !== 'none');
+    // Only measured facts and the judge's sure, high-severity findings are fixed on their own; the rest are suggestions.
+    const fixable = rankIssues(issues.filter(autoFixable));
     if (fixable.length === 0) {
       if (!summary) summary = modelJudged ? 'The frames pass the checklist.' : 'The measurements find nothing wrong.';
       break;
@@ -425,8 +428,8 @@ export async function reviewShots(host: PresentHost, provider: Provider | null, 
     }
     if (!changed) break;
   }
-  // Left for the user: what the last look found.
-  const remaining = open;
+  // Left for the user: what the last look found, worst first.
+  const remaining = rankIssues(open);
   if (undoneAll.length > 0) summary = `${summary ? `${summary} ` : ''}Undone (not better when judged again): ${undoneAll.join('; ')}.`;
   return { frames: [...results.values()], fixed: fixedAll, undone: undoneAll, remaining, summary, judgedBy: modelJudged ? 'model' : 'measured', rounds: Math.min(round + 1, rounds), calls };
 }

@@ -72,3 +72,9 @@
 .present-finding.is-error strong {
   color: var(--danger-text);
 }
+
+.present-more summary {
+  cursor: pointer;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}

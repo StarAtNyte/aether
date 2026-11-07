@@ -319,6 +319,28 @@ export function storyFrame(story: Story, starts: readonly number[], t: number, a
 }
 
 /** The people a story moves (entities with a `character`): they step aside while the visitor plays. */
+/**
+ * Where the visitor stands when they play after the film: the story's own `playFrom`; else, when the last shot follows a
+ * person of the film (who steps aside for the visitor), that person's last spot and heading; else null (the world's
+ * play spawn).
+ */
+export function playStartAfterStory(world: { story?: Pick<Story, 'shots' | 'playFrom'> | undefined; entities: Record<string, { character?: unknown; transform: { position: [number, number, number]; rotation: [number, number, number] } }> }): { feet: [number, number, number]; yawDeg: number } | null {
+  const story = world.story;
+  if (!story) return null;
+  if (story.playFrom) return { feet: [...story.playFrom.position], yawDeg: story.playFrom.yaw };
+  const last = story.shots[story.shots.length - 1];
+  if (!last) return null;
+  const id = last.track ?? last.moves.find((m) => world.entities[m.entity]?.character)?.entity;
+  const e = id ? world.entities[id] : undefined;
+  if (!id || !e?.character) return null;
+  const move = [...last.moves].reverse().find((m) => m.entity === id);
+  const at = move?.path[move.path.length - 1] ?? e.transform.position;
+  // Facing where the last shot looked, so the first frame of play continues the film's view.
+  const cam = last.cameraTo ?? last.camera;
+  const yaw = (Math.atan2(-(cam.target[0] - cam.position[0]), -(cam.target[2] - cam.position[2])) * 180) / Math.PI;
+  return { feet: [at[0], at[1], at[2]], yawDeg: Math.round(yaw) || 0 };
+}
+
 export function storyCast(world: { story?: Pick<Story, 'shots'> | undefined; entities: Record<string, { character?: unknown }> }): string[] {
   const out = new Set<string>();
   for (const s of world.story?.shots ?? []) for (const m of s.moves) if (world.entities[m.entity]?.character) out.add(m.entity);

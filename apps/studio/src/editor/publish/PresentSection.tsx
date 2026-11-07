@@ -124,14 +124,29 @@ export const PresentSection = memo(function PresentSection(): ReactElement {
           {st.quality.remaining.length === 0 ? (
             <p className="pub-muted">Every check passes.</p>
           ) : (
-            <ul className="present-left">
-              {st.quality.remaining.slice(0, 12).map((f, i) => (
-                <li key={i} className={`present-finding is-${f.severity}`}>
-                  <strong>{f.check}</strong>: {f.note}
-                  {f.fix && f.fix.kind === 'route' ? ` (${f.fix.label})` : ''}
-                </li>
-              ))}
-            </ul>
+            <>
+              {/* The problems first (at most six); the rest are suggestions, folded away. */}
+              <ul className="present-left">
+                {st.quality.remaining.filter((f) => f.severity !== 'info').slice(0, 6).map((f, i) => (
+                  <li key={i} className={`present-finding is-${f.severity}`}>
+                    <strong>{f.check}</strong>: {f.note}
+                    {f.fix && f.fix.kind === 'route' ? ` (${f.fix.label})` : ''}
+                  </li>
+                ))}
+              </ul>
+              {st.quality.remaining.length > Math.min(6, st.quality.remaining.filter((f) => f.severity !== 'info').length) && (
+                <details className="present-more">
+                  <summary>{st.quality.remaining.length - Math.min(6, st.quality.remaining.filter((f) => f.severity !== 'info').length)} suggestions</summary>
+                  <ul className="present-left">
+                    {[...st.quality.remaining.filter((f) => f.severity !== 'info').slice(6), ...st.quality.remaining.filter((f) => f.severity === 'info')].slice(0, 20).map((f, i) => (
+                      <li key={i} className={`present-finding is-${f.severity}`}>
+                        <strong>{f.check}</strong>: {f.note}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </>
           )}
         </div>
       )}

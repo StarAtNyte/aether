@@ -112,8 +112,23 @@ The visual review renders these frames:
 - a close detail of the landmark;
 - the play spawn.
 
-A frame that comes back black is rendered again on its own first. A capture can lose its frame to another render in
-flight.
+A degenerate frame is rendered again on its own first. A frame is degenerate when it is:
+
+- near-black;
+- one flat tone;
+- an outdoor daytime view whose top band (where the sky is) came out black.
+
+If it stays degenerate, it is reported as a failed render and is never judged or fixed. A black frame once led the
+judge to move a world's hour to noon.
+
+Captures draw the way the viewport draws, with the post chain and the quantized streams' folded matrices, and the
+first-draw pacer is off for them. The bare scene render used before left the quantized ground, land and trees out of
+landscape captures. The pacer, which adds one new pipeline per frame, also left the sky and most of the land out of
+large worlds.
+
+The judge gives every finding a severity (high, medium or low) and a confidence. Only measured facts and sure findings
+(high severity, confidence 0.7 or more) are fixed automatically. Everything else is ranked and shown as a suggestion. The
+publish dialog lists at most six problems and folds the rest away under "suggestions".
 
 The AI judges the frames in batches of at most four images. The rounds then run as follows:
 

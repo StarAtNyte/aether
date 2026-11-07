@@ -7582,9 +7582,15 @@ export class WorldRenderer {
     // camera that sees a new surface): the poses are drawn once to prime them and the frames of that pass are dropped, then
     // drawn again until no draw was held back for preparation (see capture-rounds.ts).
     let held = 0;
+    // The last resort (see below): prepare and link what the pose sees on the spot instead of holding its draw back.
+    let complete = false;
+    // The frame is drawn as the viewport draws it (`draw`: the post chain, the quantized streams' folded matrices, the virtual
+    // cuts and scatter fields planned for this camera), not by a bare `render` of the scene: that left the quantized ground,
+    // the land and the trees out of a generated landscape's captures (drawn at the grid's unit scale round the origin).
     const drawScene = (): void => {
       const before = this.preparation.deferred;
-      this.renderer.render(this.scene, cam);
+      if (complete) this.draw(true);
+      else this.drawOnce(true);
       held += this.preparation.deferred - before;
     };
     const pass = async (): Promise<CapturePass<string[]>> => {
@@ -7600,14 +7606,17 @@ export class WorldRenderer {
               aim(pose);
               this.snapEye();
             }, 192, Math.max(64, Math.round((192 * h) / w)));
+            // The post chain draws its scene passes at the drawing buffer's size: the buffer takes the capture's size for the frame.
             const pixels = await this.grow.withFullScale(() =>
-              this.renderToPixels(w, h, () => {
-                aim(pose);
-                this.snapEye();
-                this.prepareBatches(true);
-                this.fx.vfx.face(cam);
-                drawScene();
-              }, restoreCamera),
+              this.withTemporarySize(w, h, () =>
+                this.renderToPixels(w, h, () => {
+                  aim(pose);
+                  this.snapEye();
+                  this.prepareBatches(true);
+                  this.fx.vfx.face(cam);
+                  drawScene();
+                }, restoreCamera),
+              ),
             );
             out.push(await encodePixels(pixels, w, h, mime, this.backend === 'webgl2', (this.encodeCanvas ??= document.createElement('canvas'))));
             continue;
@@ -7633,12 +7642,27 @@ export class WorldRenderer {
       }
       return { images: out, held };
     };
+    // A capture wants every object: the first-draw pacer (one new pipeline a frame) would leave all but one new pipeline out
+    // of each pose, since a capture pass draws no frame (a large world read back with no sky and most of its land).
+    this.captureActive = true;
     try {
       const done = await captureUntilComplete(pass, () => this.waitForPreparation());
-      if (done.held > 0) log.warn(`capture: ${done.held} draws still preparing after ${done.passes} passes`);
-      return done.images;
+      if (done.held === 0) return done.images;
+      // The queue never drained between passes (a large world: each pose's draws re-queue for the capture's own context,
+      // held back again): one more pass prepares and links on the spot. Slow, but the picture is complete, never black.
+      log.warn(`capture: ${done.held} draws still preparing after ${done.passes} passes; drawing them synchronously`);
+      complete = true;
+      const last = await pass();
+      return last.images;
     } finally {
+      this.captureActive = false;
       restore();
+      // A resize asked for while the capture ran (see resize) is applied now.
+      const pending = this.pendingResize;
+      if (pending && !this.disposed) {
+        this.pendingResize = null;
+        this.resize(pending[0], pending[1]);
+      }
       this.needsDraw = true;
     }
   }

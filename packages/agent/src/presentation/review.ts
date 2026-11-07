@@ -43,6 +43,28 @@ export interface FrameIssue {
   at?: Vec3;
   /** Where the finding came from. */
   by: 'model' | 'measured' | 'probe';
+  /** How much it harms a visitor's first impression (the judge's call; measurements: high for facts). */
+  severity?: 'high' | 'medium' | 'low';
+  /** How sure the judge is, 0..1. */
+  confidence?: number;
+}
+
+/** Severity order (high first). */
+const SEVERITY_RANK: Readonly<Record<string, number>> = { high: 0, medium: 1, low: 2 };
+
+/** Issues ranked: high severity first, then the more confident, measurements before opinions. */
+export function rankIssues<T extends Pick<FrameIssue, 'severity' | 'confidence' | 'by'>>(list: readonly T[]): T[] {
+  return [...list].sort((a, b) => (SEVERITY_RANK[a.severity ?? 'medium'] ?? 1) - (SEVERITY_RANK[b.severity ?? 'medium'] ?? 1) || (b.confidence ?? 0.6) - (a.confidence ?? 0.6) || (a.by === 'model' ? 1 : 0) - (b.by === 'model' ? 1 : 0));
+}
+
+/**
+ * Whether the review may apply an issue's fix on its own: measured facts (a camera in geometry, a black frame) always;
+ * the judge's opinions only when it calls them high severity with confidence 0.7 or more. The rest are suggestions.
+ */
+export function autoFixable(issue: Pick<FrameIssue, 'fix' | 'by' | 'severity' | 'confidence'>): boolean {
+  if (issue.fix === 'none') return false;
+  if (issue.by !== 'model') return true;
+  return issue.severity === 'high' && (issue.confidence ?? 0) >= 0.7;
 }
 
 /** The checklist the judge applies to every frame. */
@@ -59,6 +81,7 @@ export const SHOT_CHECKLIST = `Checklist for each frame (a visitor's first impre
 10. scale: doors about 2 m, stair risers 15 to 19 cm, handrails about 0.9 m: anything that looks the wrong size for a person.
 11. aerial frames: the horizon is in frame, never straight down, and the edge of the terrain (land ending against the void) is never seen.
 A "detail" frame is a close view of the landmark: look hardest there for missing geometry (pieces of a kit that vanished, holes, untextured parts).
+Be calibrated, as a cinematographer signing off a reel would be: report only what a visitor would notice in the first seconds, never matters of taste, and expect a carefully made world to pass most frames. For each problem give its severity: high only for a broken first impression (the camera in a wall or the ground, the subject invisible or cut away, a frame too dark or blown out to read, missing or floating geometry, a character in a wall or floating); medium for a clear flaw a visitor notices (an occluder at the edge, a weak composition, flat light); low for a nicety. Give your confidence (0 to 1). Only high-severity problems you are sure of are fixed automatically; the rest are shown to the user as suggestions.
 For each problem pick the fix that would cure it: repick-opening (the opening frame only: choose another opening view), pull-back / push-in / raise / lower (move the camera), retarget (aim at "at", a world point you give), time-of-day (set "hour"), drop-shot (a film frame that cannot be saved), face-landmark (the spawn: turn the character toward the landmark), or none (report it; it needs the user).`;
 
 export const REPORT_SHOTS_TOOL: ToolDef = {
@@ -80,12 +103,14 @@ export const REPORT_SHOTS_TOOL: ToolDef = {
                 type: 'object',
                 properties: {
                   check: { type: 'string', enum: [...CHECKS] },
+                  severity: { type: 'string', enum: ['high', 'medium', 'low'] },
+                  confidence: { type: 'number', minimum: 0, maximum: 1 },
                   note: { type: 'string' },
                   fix: { type: 'string', enum: [...FIXES] },
                   hour: { type: 'number' },
                   at: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 },
                 },
-                required: ['check', 'note', 'fix'],
+                required: ['check', 'severity', 'confidence', 'note', 'fix'],
               },
             },
           },
@@ -182,6 +207,38 @@ export interface FrameStats {
   mean: number;
   /** Luminance spread in the middle of the frame (a flat wall: near 0). */
   centre: number;
+  /** Luminance spread of the whole frame (one flat tone: near 0). */
+  spread: number;
+  /** Mean luminance of the top fifth of the frame (where an outdoor view's sky is). */
+  top: number;
+}
+
+/**
+ * Why a rendered frame says nothing about the world (a capture that failed), or null: near-black, one flat tone, or an
+ * outdoor daytime view whose sky came out black. Such a frame is rendered again, and if it stays degenerate it is
+ * reported and never judged or fixed (a black frame once moved a world's hour to noon).
+ */
+export function degenerateFrame(st: FrameStats | null, ctx: { skyExpected?: boolean } = {}): string | null {
+  if (!st) return null;
+  if (st.mean < 6 || (st.dark > 0.9 && st.bright < 0.01)) return 'near-black';
+  if (st.spread < 2.5) return 'one flat tone';
+  if (ctx.skyExpected && st.top < 12) return 'the sky is missing (black where a daytime sky should be)';
+  return null;
+}
+
+/** Whether a frame of `world` from `pose` should show daylight sky in its top band (outdoors, by day, not looking down). */
+export function skyExpected(world: WorldDoc, pose: PoseLike, kind: FrameKind): boolean {
+  const env = world.environment;
+  if (env.sky === 'night' || env.sky === 'space' || env.sky === 'studio') return false;
+  const h = env.timeOfDay;
+  if (h !== undefined && (h < 7 || h > 18.5)) return false;
+  if (kind === 'tour' || kind === 'detail') return false;
+  const dx = pose.target[0] - pose.position[0];
+  const dy = pose.target[1] - pose.position[1];
+  const dz = pose.target[2] - pose.position[2];
+  const pitch = (Math.atan2(dy, Math.hypot(dx, dz)) * 180) / Math.PI;
+  // The top band holds sky when the camera looks no more than a little below the horizon.
+  return pitch > -((pose.fov ?? 55) / 2) * 0.5;
 }
 
 /** Statistics of RGBA pixels. */
@@ -194,11 +251,19 @@ export function frameStats(px: { width: number; height: number; data: ArrayLike<
   let cs = 0;
   let cs2 = 0;
   let cn = 0;
+  let sum2 = 0;
+  let tsum = 0;
+  let tn = 0;
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const i = (y * w + x) * 4;
       const l = 0.2126 * (data[i] as number) + 0.7152 * (data[i + 1] as number) + 0.0722 * (data[i + 2] as number);
       sum += l;
+      sum2 += l * l;
+      if (y < h * 0.2) {
+        tsum += l;
+        tn++;
+      }
       if (l < 12) dark++;
       if (l > 245) bright++;
       if (x >= w * 0.3 && x < w * 0.7 && y >= h * 0.3 && y < h * 0.7) {
@@ -210,20 +275,21 @@ export function frameStats(px: { width: number; height: number; data: ArrayLike<
   }
   const n = w * h;
   const cm = cs / Math.max(1, cn);
-  return { dark: dark / n, bright: bright / n, mean: sum / n, centre: Math.sqrt(Math.max(0, cs2 / Math.max(1, cn) - cm * cm)) };
+  const mean = sum / n;
+  return { dark: dark / n, bright: bright / n, mean, centre: Math.sqrt(Math.max(0, cs2 / Math.max(1, cn) - cm * cm)), spread: Math.sqrt(Math.max(0, sum2 / n - mean * mean)), top: tsum / Math.max(1, tn) };
 }
 
 /** Problems the measurements alone show (evidence for the judge; the fixes without a model). */
 export function measuredIssues(frame: ReviewFrame, st: FrameStats | null, probe: { near: number; underWater: boolean } | null): FrameIssue[] {
   const out: FrameIssue[] = [];
   const move: ShotFix = frame.kind === 'opening' ? 'repick-opening' : frame.kind === 'spawn' ? 'face-landmark' : frame.kind === 'detail' ? 'none' : 'pull-back';
-  if (probe?.underWater) out.push({ frame: frame.name, check: 'occluder', note: 'the camera is under water', fix: frame.kind === 'spawn' ? 'none' : frame.kind === 'opening' ? move : 'raise', by: 'probe' });
-  else if (probe && probe.near < 0.6) out.push({ frame: frame.name, check: 'occluder', note: `the camera is in or against geometry (${probe.near.toFixed(2)} m)`, fix: move, by: 'probe' });
-  else if (probe && probe.near < 1.5 && frame.kind !== 'spawn') out.push({ frame: frame.name, check: 'occluder', note: `something ${probe.near.toFixed(1)} m from the lens`, fix: move, by: 'probe' });
+  if (probe?.underWater) out.push({ frame: frame.name, check: 'occluder', note: 'the camera is under water', fix: frame.kind === 'spawn' ? 'none' : frame.kind === 'opening' ? move : 'raise', by: 'probe', severity: 'high', confidence: 1 });
+  else if (probe && probe.near < 0.6) out.push({ frame: frame.name, check: 'occluder', note: `the camera is in or against geometry (${probe.near.toFixed(2)} m)`, fix: move, by: 'probe', severity: 'high', confidence: 1 });
+  else if (probe && probe.near < 1.5 && frame.kind !== 'spawn') out.push({ frame: frame.name, check: 'occluder', note: `something ${probe.near.toFixed(1)} m from the lens`, fix: move, by: 'probe', severity: 'high', confidence: 1 });
   if (st) {
-    if (st.dark > 0.45) out.push({ frame: frame.name, check: 'exposure', note: `${Math.round(st.dark * 100)}% of the frame is black`, fix: frame.kind === 'opening' ? 'repick-opening' : 'none', by: 'measured' });
-    else if (st.bright > 0.35) out.push({ frame: frame.name, check: 'exposure', note: `${Math.round(st.bright * 100)}% of the frame is blown out`, fix: frame.kind === 'opening' ? 'repick-opening' : 'none', by: 'measured' });
-    if (st.centre < 4 && st.dark <= 0.45) out.push({ frame: frame.name, check: 'framing', note: 'the middle of the frame is one flat tone (a wall, the sky or the ground fills it)', fix: move, by: 'measured' });
+    if (st.dark > 0.45) out.push({ frame: frame.name, check: 'exposure', note: `${Math.round(st.dark * 100)}% of the frame is black`, fix: frame.kind === 'opening' ? 'repick-opening' : 'none', by: 'measured', severity: 'high', confidence: 0.9 });
+    else if (st.bright > 0.35) out.push({ frame: frame.name, check: 'exposure', note: `${Math.round(st.bright * 100)}% of the frame is blown out`, fix: frame.kind === 'opening' ? 'repick-opening' : 'none', by: 'measured', severity: 'high', confidence: 0.9 });
+    if (st.centre < 4 && st.dark <= 0.45) out.push({ frame: frame.name, check: 'framing', note: 'the middle of the frame is one flat tone (a wall, the sky or the ground fills it)', fix: move, by: 'measured', severity: 'high', confidence: 0.9 });
   }
   return out;
 }
@@ -249,7 +315,9 @@ export function parseReport(input: unknown, frames: readonly ReviewFrame[]): { i
       const note = typeof it['note'] === 'string' ? it['note'].slice(0, 240) : '';
       const hour = typeof it['hour'] === 'number' && it['hour'] >= 0 && it['hour'] <= 24 ? it['hour'] : undefined;
       const at = Array.isArray(it['at']) && it['at'].length === 3 && it['at'].every((v) => typeof v === 'number' && Number.isFinite(v)) ? (it['at'] as Vec3) : undefined;
-      issues.push({ frame: fr.name, check, note, fix, by: 'model', ...(hour !== undefined ? { hour } : {}), ...(at ? { at } : {}) });
+      const severity = it['severity'] === 'high' || it['severity'] === 'low' ? it['severity'] : 'medium';
+      const confidence = typeof it['confidence'] === 'number' && Number.isFinite(it['confidence']) ? Math.max(0, Math.min(1, it['confidence'])) : 0.5;
+      issues.push({ frame: fr.name, check, note, fix, by: 'model', severity, confidence, ...(hour !== undefined ? { hour } : {}), ...(at ? { at } : {}) });
     }
   }
   return { issues, ok, summary: typeof r.summary === 'string' ? r.summary.slice(0, 600) : '' };
