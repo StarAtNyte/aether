@@ -83,6 +83,12 @@ export class CharacterSystem {
   private frameNo = 0;
   /** Characters mounted over the lifetime (diagnostics). */
   mounted = 0;
+  /**
+   * The last {@link update} moved a character that is shown and casts into the sun's shadow map: only then does the cached
+   * sun map need its soft refresh. A person loaded ahead and hidden until play, or one too far to cast, animates without
+   * changing a shadow (redrawing every caster for it cost an integrated GPU a full shadow pass every few frames).
+   */
+  castersMoved = false;
   private readonly sorted: Entry[] = [];
 
   constructor(private readonly opts: CharacterSystemOptions) {}
@@ -289,6 +295,7 @@ export class CharacterSystem {
    */
   update(dt: number): boolean {
     const list = this.list;
+    this.castersMoved = false;
     if (list.length === 0 || !(dt > 0)) return false;
     this.frameNo++;
     const cam = this.camera;
@@ -319,6 +326,8 @@ export class CharacterSystem {
       const shadows = d < this.shadowRange && casting < this.shadowBudget && this.opts.shadows !== false;
       if (shadows) casting++;
       if (shadows !== e.shadowsOn && !e.rig.shadowOnlyBody) {
+        // A shadow joins or leaves the sun map.
+        if (shown(e.rig.root)) this.castersMoved = true;
         e.shadowsOn = shadows;
         e.rig.root.traverse((o) => {
           if (o instanceof Mesh) o.castShadow = shadows;
@@ -331,6 +340,7 @@ export class CharacterSystem {
       if (every > 1 && (e.frame + (e.id.length & 3)) % every !== 0) continue;
       e.rig.update(e.accumulated, detail);
       e.accumulated = 0;
+      if (!this.castersMoved && (e.shadowsOn || e.rig.shadowOnlyBody) && shown(e.rig.root)) this.castersMoved = true;
     }
     return true;
   }
@@ -346,4 +356,10 @@ export class CharacterSystem {
     for (const id of [...this.entries.keys()]) this.remove(id);
     this.pending.clear();
   }
+}
+
+/** Whether an object and every parent up to the root are visible (a hidden ancestor hides it from every pass). */
+function shown(o: Object3D): boolean {
+  for (let p: Object3D | null = o; p; p = p.parent) if (!p.visible) return false;
+  return true;
 }

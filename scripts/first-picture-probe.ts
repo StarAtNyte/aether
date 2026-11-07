@@ -48,6 +48,8 @@ const slug = args.find((a) => !a.startsWith('--')) ?? 'kestrel-outpost';
 /** `--player`: the standalone player on the template (cooked when the dist has the package); `--live`: its live path. */
 const player = args.includes('--player');
 const live = args.includes('--live');
+/** `--title=<s>`: before the orbit, leave the page's own camera alone for that long (a game's title: the overview flight, then its tour). */
+const titleMs = Math.max(0, Number(args.find((a) => a.startsWith('--title='))?.slice(8) ?? 0) * 1000);
 mkdirSync(out, { recursive: true });
 const T0 = Date.now();
 const log = (s: string): void => void process.stdout.write(`[${((Date.now() - T0) / 1000).toFixed(1)}s] ${s}\n`);
@@ -132,6 +134,35 @@ const INSTR = `(() => {
   S.slowFrames = [];
   let lastFrame = 0;
   const frame = (t) => { if (lastFrame && t - lastFrame > 40) S.slowFrames.push([Math.round(lastFrame), Math.round(t - lastFrame)]); lastFrame = t; if (S.firstPicture < 0) requestAnimationFrame(frame); };
+  // The first 6 s after the first picture, frame by frame: interval, and what the frame sent (GL calls by kind, scale).
+  S.after = [];
+  const kinds = { tex: ['texImage2D', 'texSubImage2D', 'texImage3D', 'texSubImage3D', 'texStorage2D'], mip: ['generateMipmap'], buf: ['bufferData', 'bufferSubData'], draw: ['drawArrays', 'drawElements', 'drawArraysInstanced', 'drawElementsInstanced'], link: ['linkProgram'] };
+  const snap = () => { const o = {}; for (const k in kinds) { let n = 0, ms = 0; for (const g of kinds[k]) { const e = S.gl[g]; if (e) { n += e.n; ms += e.ms; } } o[k] = n; o[k + 'Ms'] = ms; } return o; };
+  let prevSnap = null, prevT = 0;
+  const after = (t) => {
+    if (S.firstPicture < 0) { requestAnimationFrame(after); return; }
+    const c = snap();
+    if (prevSnap) {
+      let r = null;
+      try { r = window.__aether.simulation.renderer; } catch {}
+      const row = { t: Math.round(t - S.firstPicture), dt: Math.round(t - prevT) };
+      for (const k in kinds) { row[k] = c[k] - prevSnap[k]; const ms = c[k + 'Ms'] - prevSnap[k + 'Ms']; if (ms >= 1) row[k + 'Ms'] = Math.round(ms); }
+      try { const st = r.stats(); row.scale = Math.round(st.resolutionScale * 100) / 100; row.tex = row.tex; row.textures = st.textures; } catch {}
+      try { row.busy = r.processingStage; } catch {}
+      S.after.push(row);
+    }
+    prevSnap = c; prevT = t;
+    if (t - S.firstPicture < 6000) requestAnimationFrame(after);
+  };
+  requestAnimationFrame(after);
+  // Quality changes (the performance ladder's level, the tier in effect), every 250 ms: each rebuilds the lit materials.
+  S.quality = [];
+  setInterval(() => {
+    let q = null;
+    try { const r = window.__aether.simulation.renderer; q = 'tier ' + r.renderTier + ' ladder ' + r.stats().performanceLevel; } catch {}
+    const last = S.quality[S.quality.length - 1];
+    if (q && (!last || last[1] !== q)) S.quality.push([Math.round(performance.now() - Math.max(0, S.firstPicture)), q, S.firstPicture > 0]);
+  }, 250);
   requestAnimationFrame(frame);
 })();`;
 
@@ -267,6 +298,12 @@ async function main(): Promise<void> {
         });
         if (load.gen) log(`${run}: ${load.cook ? `${load.cook.path}${load.cook.reason ? ` (${load.cook.reason})` : ''}, ` : ''}generator runs ${load.gen.generated + load.gen.posted + load.gen.fallbacks} (generated ${load.gen.generated}, posted ${load.gen.posted}, fallbacks ${load.gen.fallbacks}), cache hits ${load.gen.hits} (cooked ${load.gen.cooked ?? 0})`);
         log(`${run}: first picture ${(load.firstPictureMs / 1000).toFixed(1)} s, fully loaded ${((load.marks['aether:fully-loaded'] ?? -1) / 1000).toFixed(1)} s, programs ${load.programsAtFirst} -> ${load.programs}, links ${load.linkCalls} (${load.linksAfterFirst} after the first picture)`);
+        if (titleMs > 0) {
+          const linksNow = (): Promise<number> => page.evaluate(() => (globalThis as unknown as { __probe: { gl: Record<string, { n: number }> } }).__probe.gl['linkProgram']?.n ?? 0);
+          const l0 = await linksNow();
+          await page.waitForTimeout(titleMs);
+          log(`${run}: title ${titleMs / 1000} s, links ${(await linksNow()) - l0}`);
+        }
         // Orbit 8 s around the opening view: frame times, programs switched and draws per frame.
         const orbit = await page.evaluate(async () => {
           const P = (globalThis as unknown as { __probe: { gl: Record<string, { n: number }> } }).__probe;
@@ -300,6 +337,9 @@ async function main(): Promise<void> {
           const q = (p: number): number => Math.round((s[Math.min(s.length - 1, Math.floor(s.length * p))] ?? 0) * 10) / 10;
           return { frames, p50: q(0.5), p95: q(0.95), max: q(1), useProgramPerFrame: Math.round((n('useProgram') - u0) / frames), drawsPerFrame: Math.round((draws() - d0) / frames), linksDuringOrbit: n('linkProgram') - l0, busy, programsAdded: r.renderer.info.memory.programs - prog0 };
         });
+        log(`${run}: quality ${(await page.evaluate(() => (globalThis as unknown as { __probe: { quality: Array<[number, string, boolean]> } }).__probe.quality)).map(([t, q, after]) => `${after ? '+' : ''}${(t / 1000).toFixed(1)} s ${q}`).join(', ')}`);
+        // The frames of the first 6 s after the first picture (interval, GL calls by kind, scale).
+        writeFileSync(join(out, `${run}-after.json`), JSON.stringify(await page.evaluate(() => (globalThis as unknown as { __probe: { after: unknown[] } }).__probe.after)));
         // Links submitted in the first 10 s of play (and after the first picture), whatever happened in them (orbit included).
         await page.waitForFunction(() => { const P = (globalThis as unknown as { __probe: { playAt: number } }).__probe; return P.playAt < 0 || performance.now() - P.playAt >= 10_000; }, null, { timeout: 15_000, polling: 250 }).catch(() => undefined);
         const playLinks = await page.evaluate(() => {

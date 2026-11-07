@@ -3512,11 +3512,16 @@ export class WorldRenderer {
     return this.characters.size;
   }
 
-  /** Advance people and animated assets; true when a redraw is needed. */
+  /** The last {@link stepAnimations} moved something that casts into the sun map (an animated asset, a shown person in range). */
+  private animatedCasters = false;
+
+  /** Advance people and animated assets; true when a redraw is needed (see {@link animatedCasters} for the sun map). */
   private stepAnimations(dt: number): boolean {
     this.characters.setCamera(this.perspective);
     let animated = this.sync.updateAnimations(dt, this.perspective.position);
+    this.animatedCasters = animated;
     if (this.characters.update(dt)) animated = true;
+    if (this.characters.castersMoved) this.animatedCasters = true;
     if (this.avatar.isPlaced && this.avatar.character) {
       this.avatar.headPosition(_avatarHead);
       this.avatar.setCameraDistance(this.perspective.position.distanceTo(_avatarHead));
@@ -4793,15 +4798,17 @@ export class WorldRenderer {
     if (this.blueprint.active && this.blueprint.update(step)) this.needsDraw = true;
     if (this.proof.active && !this.cameraFlying && this.proof.update(step)) this.needsDraw = true;
     if (this.ghostRun.active && this.ghostRun.update(step)) this.needsDraw = true;
-    // Characters and animals animate while the world runs or the user works (not in an idle editor).
+    // Characters and animals animate while the world runs or the user works (not in an idle editor). The cached sun map
+    // refreshes only for what moved and casts into it: animated assets, and people shown within shadow range (not the
+    // player's person loaded ahead and hidden until play).
     if (opts.animate !== false && this.stepAnimations(gameStep)) {
       this.frameInvalidation.animate();
-      this.sunMapSoft = true;
+      if (this.animatedCasters) this.sunMapSoft = true;
     }
-    if (opts.animate !== false && this.fx.animating) {
-      this.frameInvalidation.animate();
-      this.sunMapSoft = true;
-    }
+    // Particles cast no shadow (vfx/system.ts) and the camera director moves only the camera: a new frame, the same sun
+    // map. Kestrel Outpost's ambient particles redrew every caster every second to fourth frame at rest and on the title
+    // tour, the frames that went over 50 ms of GPU time on an Intel UHD 770.
+    if (opts.animate !== false && this.fx.animating) this.frameInvalidation.animate();
     this.stepWater(step, opts.animate !== false);
     // Grow-in rescales content groups: re-apply the architectural view once it settles,
     // and merge building geometry only once nothing animates any more.
