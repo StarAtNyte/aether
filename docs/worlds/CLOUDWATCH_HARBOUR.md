@@ -369,6 +369,11 @@ and a 0.1 m near plane, the creases where billows intersect 2 km away came out a
     tiled gable slope (no outline shell on them), the stair rebuilt to 0.17 m risers, 0.29 m treads and landings, its
     handrail following the landings. Telegraph wires hang in true catenaries (`common.catenary`).
   - Motion: `laundry.glb` (16 swaying lines and banners) and the shoreline foam flipbook on the glitter clip (now 8 s).
+  - For the film: the first car's sea-side middle bay has two open windows onto a lit saloon (floor 1.15 m over the
+    rail, longitudinal seats, grab poles, a light strip), and a western shore line (`form.build_west_line`): a low
+    viaduct on piers along the western headland's cove-facing waterline from a portal by the quay's west end to a
+    portal in the cape, with its own overhead line, the forest kept off it (shot W in `shots.py`: from the lookout,
+    205 mm; the nearest west houses and trees still cover part of it from the lookout's middle).
 - **Gate** (this pass): 78 props checked, 0 failed; the one touching pair is the mother's and child's hands.
 - **Budget** (this pass): 17 pieces, 561 k triangles, 24.5 MB (from 16, 484 k, 21.4 MB): town 169 k / 10.0 MB (from
   125 k / 8.6: window frames, tile courses, a fuller atlas), infra 68 k / 2.9 MB (stair landings and nosings, the

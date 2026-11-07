@@ -31,7 +31,7 @@ CONTACT_WIRE = 5.0                      # contact wire over the rail top (form.b
 BAKE_AT = Vector((0.0, -900.0, 60.0))
 REST_AT = Vector((PORTAL_X + 1.2 + TRAIN_L / 2 + 1.0, TRACK_Y, RAIL_TOP))
 
-M_BODY, M_STRIPE, M_ROOF, M_GLASS, M_LIT, M_DARK, M_METAL, M_DOOR, M_MASK, M_WHEEL = range(10)
+M_BODY, M_STRIPE, M_ROOF, M_GLASS, M_LIT, M_DARK, M_METAL, M_DOOR, M_MASK, M_WHEEL, M_SEAT, M_INWALL, M_FLOOR = range(13)
 HW = CAR_W / 2
 # The roof's cross-section from the side's top to the centre line (y, z), a shallow arc.
 ROOF = [(HW, SIDE_TOP), (HW - 0.04, SIDE_TOP + 0.14), (HW - 0.22, SIDE_TOP + 0.28), (HW - 0.6, SIDE_TOP + 0.37), (0.0, ROOF_TOP)]
@@ -71,12 +71,13 @@ def _side(bm, x0, x1, s, cells):
             f = _quad(bm, P(p[0], p[1]), P(q[0], q[1]), P(q[0], q[1], dep), P(p[0], p[1], dep), M_DARK)
             if s > 0:
                 f.normal_flip()
-        zc = za
+        if back is None:
+            xs = xb
+            continue  # an open window: the interior shows through it
         for (ba, bb, bmi) in (bands or [(za, zb, back)]):
             f = _quad(bm, P(xa, ba, dep), P(xb, ba, dep), P(xb, bb, dep), P(xa, bb, dep), bmi)
             if s > 0:
                 f.normal_flip()
-            zc = bb
         xs = xb
     wall(xs, x1, BODY_BOT, SIDE_TOP)
 
@@ -158,7 +159,7 @@ def _pantograph(bm, px, zr):
     add_box(bm, (head.x, 0.0, zh - 0.1), (0.12, 0.5, 0.08), mat_index=M_METAL)
 
 
-def _car(bm, x0, lead, pantograph, seed):
+def _car(bm, x0, lead, pantograph, seed, interior=False):
     """One car from x0 (its -x end) to x0 + CAR_L. lead: +1 / -1 for a cab at that end, 0 none. Wheels on z = 0."""
     L = CAR_L
     xc = x0 + L / 2
@@ -179,14 +180,20 @@ def _car(bm, x0, lead, pantograph, seed):
                           [(FLOOR - 0.05, FLOOR + 0.95, M_DOOR), (FLOOR + 0.95, FLOOR + 1.6, M_GLASS), (FLOOR + 1.6, FLOOR + 1.85, M_DOOR)]))
         bays = [(doors[i] + 0.95, doors[i + 1] - 0.95) for i in range(3)]
         lit_k = 0
-        for (a, b) in bays:
+        for bi, (a, b) in enumerate(bays):
             n = 2
             w = (b - a - 0.35) / n
             for i in range(n):
                 wa = a + i * (w + 0.35)
                 lit = (lit_k + seed + (s > 0)) % 3 != 0
-                cells.append((wa, wa + w, FLOOR + 0.85, FLOOR + 1.75, 0.07, M_LIT if lit else M_GLASS, None))
+                back = M_LIT if lit else M_GLASS
+                if interior and s < 0 and bi == 1:
+                    back = None  # the sea side's middle bay of this car: open windows onto a lit interior
+                    INTERIOR_WINDOWS.append((wa, wa + w, FLOOR + 0.85, FLOOR + 1.75))
+                cells.append((wa, wa + w, FLOOR + 0.85, FLOOR + 1.75, 0.07, back, None))
                 lit_k += 1
+        if interior and s < 0:
+            _interior(bm, bays[1][0] - 0.3, bays[1][1] + 0.3)
         # End bays: a narrow window toward a gangway end, the cab's side window toward a cab.
         for (ea, eb, is_cab) in ((max(xa, x0) + 0.5, doors[0] - 0.95, lead < 0), (doors[-1] + 0.95, min(xb, x0 + L) - 0.5, lead > 0)):
             if eb - ea < 0.4:
@@ -270,6 +277,36 @@ def _car(bm, x0, lead, pantograph, seed):
         add_box(bm, (x0 + L * 0.5 + 1.6, 0.45, ROOF_TOP + 0.05), (2.0, 0.06, 0.06), mat_index=M_METAL)
 
 
+INTERIOR_WINDOWS = []  # (x0, x1, z0, z1) of the open windows, in the train's frame (x along, z over the rail top)
+
+
+def _interior(bm, xa, xb):
+    """The saloon behind the open windows: a floor at FLOOR, the far wall, the ceiling with a warm light strip, bulkheads
+    closing the bay, longitudinal bench seats along both walls with grab poles, so a figure standing at the window reads
+    from outside. Faces turned inward."""
+    y0, y1 = -HW + 0.08, HW - 0.08
+    zc = SIDE_TOP - 0.18
+
+    def q(a, b, c, d, mi):
+        _quad(bm, a, b, c, d, mi)
+    q((xa, y0, FLOOR), (xb, y0, FLOOR), (xb, y1, FLOOR), (xa, y1, FLOOR), M_FLOOR)           # floor, facing up
+    q((xa, y0, zc), (xa, y1, zc), (xb, y1, zc), (xb, y0, zc), M_INWALL)                     # ceiling, facing down
+    q((xa, y1, FLOOR), (xb, y1, FLOOR), (xb, y1, zc), (xa, y1, zc), M_INWALL)               # far wall, facing -y
+    q((xa, y0, FLOOR), (xa, y1, FLOOR), (xa, y1, zc), (xa, y0, zc), M_INWALL)               # bulkheads, facing in
+    q((xb, y0, FLOOR), (xb, y0, zc), (xb, y1, zc), (xb, y1, FLOOR), M_INWALL)
+    # The light strip down the ceiling (a practical: it lights the saloon in the bake and glows at dusk).
+    add_box(bm, ((xa + xb) / 2, 0.0, zc - 0.03), (xb - xa - 0.4, 0.35, 0.05), mat_index=M_LIT)
+    for sy in (-1, 1):
+        yb = sy * (HW - 0.38)
+        add_box(bm, ((xa + xb) / 2, yb, FLOOR + 0.22), (xb - xa - 0.5, 0.5, 0.44), mat_index=M_SEAT)      # seat base
+        add_box(bm, ((xa + xb) / 2, yb, FLOOR + 0.48), (xb - xa - 0.5, 0.52, 0.1), mat_index=M_SEAT)      # cushion
+        add_box(bm, ((xa + xb) / 2, sy * (HW - 0.16), FLOOR + 0.78), (xb - xa - 0.5, 0.08, 0.5), mat_index=M_SEAT)  # back
+        for px in (xa + 0.5, (xa + xb) / 2, xb - 0.5):
+            add_cylinder(bm, (px, sy * (HW - 0.7), FLOOR), 0.02, zc - FLOOR, segments=6, mat_index=M_METAL)  # grab pole
+    add_cylinder(bm, (xa + 0.3, -0.5, zc - 0.25), 0.015, xb - xa - 0.6, segments=5, mat_index=M_METAL, axis=(1, 0, 0))
+    add_cylinder(bm, (xa + 0.3, 0.5, zc - 0.25), 0.015, xb - xa - 0.6, segments=5, mat_index=M_METAL, axis=(1, 0, 0))
+
+
 def _spans(a, b, holes):
     out, x = [], a
     for (ha, hb) in sorted(holes):
@@ -320,9 +357,13 @@ def build_train():
         mat("train_door", "#e2d8bf"),
         mat("train_mask", "#22202a"),
         mat("train_wheel", "#5a5560"),
+        mat("train_seat", "#9a4a44", var="#a8564d", noise_scale=6),
+        mat("train_inwall", "#ece4d2"),
+        mat("train_floor", "#8a8272"),
     ]
+    INTERIOR_WINDOWS.clear()
     bm = bmesh.new()
-    _car(bm, -TRAIN_L / 2, -1, True, 0)
+    _car(bm, -TRAIN_L / 2, -1, True, 0, interior=True)
     _car(bm, -TRAIN_L / 2 + CAR_L + GAP, 1, False, 1)
     # The gangway: a bellows between the end doors, ribbed, and the couplers' bar.
     gx = -TRAIN_L / 2 + CAR_L + GAP / 2

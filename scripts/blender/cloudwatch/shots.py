@@ -28,7 +28,16 @@ def shot_list():
         "S": {"eye": (2.0, 130.9, 45.65), "target": (-81.9, 7.8, 40.4), "lens": 30},
         # The mother and child at the crossing, from across the track (a check of the people).
         "P": {"eye": (-2.6, -5.6, 7.45), "target": (0.2, -12.6, 6.9), "lens": 35},
+        # The western shore line from the lookout with a long lens (about 10 degrees across).
+        "W": {"eye": (2.0, 130.9, 45.65), "target": _west_line_mid(), "lens": 205},
     }
+
+
+def _west_line_mid():
+    from form import west_line_path
+    pts = west_line_path() or [(-150.0, -60.0)]
+    x, y = pts[(3 * len(pts)) // 4]  # the cape end: clear of the town's west houses
+    return (x, y, 7.0)
 
 
 def camera(name, eye, target, lens):

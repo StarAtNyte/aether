@@ -51,7 +51,7 @@ shots.setup_render(W, H)
 sc.eevee.taa_render_samples = 32
 cams = shots.shot_list()
 # The train out of the tunnel, its cab end (-x) toward a camera by the track.
-if "T" in A.shots and "train" in pieces:
+if ("T" in A.shots or "I" in A.shots) and "train" in pieces:
     tr = [o for o in pieces["train"] if o.type == "MESH"]
     xs = [(o.matrix_world @ Vector(c)).x for o in tr for c in o.bound_box]
     x0, x1 = min(xs), max(xs)
@@ -61,6 +61,8 @@ if "T" in A.shots and "train" in pieces:
             o.location.x += dx
     front = x0 + dx
     cams["T"] = {"eye": (front - 9.0, -15.6, 8.4), "target": (front + 6.0, -9.4, 8.2), "lens": 30}
+    # The open saloon windows of the first car, from the sea side at the crossing camera's distance.
+    cams["I"] = {"eye": (front + 10.0, -15.4, 8.6), "target": (front + 10.0, -9.4, 8.4), "lens": 35}
 for key in A.shots.split(","):
     if key not in cams:
         continue

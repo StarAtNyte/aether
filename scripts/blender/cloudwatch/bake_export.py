@@ -60,7 +60,7 @@ PIECES = {
     # The shrine on its own small atlas: in the dense town atlas the gate's round posts were thinner than a texel and
     # baked to nothing (black).
     "shrine": {"match": lambda n: n in ("shrine_hall", "shrine_gate"), "tex": 1024},
-    "infra": {"match": lambda n: n in ("stair", "lookout", "harbour", "lighthouse", "railway", "crossing", "poles_wires", "catenary") or n.startswith("tunnel_portal"), "tex": 2048},
+    "infra": {"match": lambda n: n in ("stair", "lookout", "harbour", "lighthouse", "railway", "crossing", "poles_wires", "catenary", "west_line") or n.startswith("tunnel_portal"), "tex": 2048},
     "props": {"match": lambda n: n.startswith(("stone_lantern", "stair_lantern", "vending", "bicycle", "laundry", "sign_", "boat_", "pots")) or n in ("ac_units", "mailbox", "roof_gear"), "tex": 2048},
     "people": {"match": lambda n: n.startswith("person_"), "tex": 1024},
     # The train (extras.py): baked over the open sea, unhazed, moved to its rest just inside the east tunnel.

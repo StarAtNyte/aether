@@ -3,6 +3,7 @@ lanterns and hall, trees and the forest on the ridges, boats in the harbour."""
 import math
 
 import bmesh
+import numpy as np
 import bpy
 from mathutils import Vector, noise
 
@@ -120,6 +121,127 @@ def build_catenary():
             bot = ca.lerp(cb, t)
             add_cylinder(bm, (bot.x, bot.y, bot.z + 0.01), 0.006, max(0.05, top.z - bot.z), segments=3, mat_index=1, cap=False)
     ob = bm_object("catenary", bm, "rail", mats=[steel, wire_m, insul], outline=False)
+    return ob
+
+
+WEST_LINE = []  # (x, y) of the western shore line's centre, for the forest to keep clear
+
+
+def west_line_path():
+    """The line's centre along the western headland's cove-facing shore: the waterline (ground_z crossing the sea
+    level, scanning west from the cove) pushed 6 m out over the water, from beside the quay's west end to the cape,
+    smoothed. Blender (x, y); the rail top is the main line's."""
+    raw = []
+    for y in np.arange(-40.0, -150.0, -4.0):
+        hit = None
+        for ax in np.arange(96.0, 330.0, 0.5):
+            if ground_z(-ax, y) >= 0.0:
+                hit = ax
+                break
+        if hit is None or hit - 6.0 > 205.0:
+            break  # past the cape the shore turns away west
+        raw.append((-(hit - 6.0), float(y)))
+    if len(raw) < 4:
+        return []
+    pts = []
+    for i in range(len(raw)):
+        a = raw[max(0, i - 2):i + 3]
+        pts.append((sum(p[0] for p in a) / len(a), raw[i][1]))
+    return pts
+
+
+def build_west_line():
+    """A branch of the line on a low viaduct along the western headland's shore, from a portal in the headland by the
+    quay's west end to a portal in the cape: a deck on piers standing in the sea, ballast, sleepers and rails at the main
+    line's height, parapets, and the overhead line on masts on the seaward edge. Seen from the lookout across the cove
+    with a long lens."""
+    from common import catenary
+    pts = west_line_path()
+    if not pts:
+        return None
+    WEST_LINE.extend(pts)
+    conc = toon_material("viaduct_concrete", "#b8b1a5", var="#a59d90", noise_scale=0.4, stripes=("z", 1.1, "#a39b8f", 0.03))
+    ballast = toon_material("ballast", P["gravel"], var="#9a8f82", noise_scale=3)
+    rail = toon_material("rail", P["rail"])
+    steel = toon_material("ohl_steel", "#7c7f88", var="#6f727c", noise_scale=2)
+    wire_m = toon_material("ohl_wire", "#3a3540")
+    dark = toon_material("tunnel_dark", "#1d1a26")
+    bm = bmesh.new()
+    rail_top = TRACK_Z + 0.3 + 0.12 + 0.16
+    deck_top = TRACK_Z
+    seg = []
+    for (ax, ay), (bx, by) in zip(pts[:-1], pts[1:]):
+        d = Vector((bx - ax, by - ay, 0.0))
+        ang = math.atan2(d.y, d.x)
+        mid = ((ax + bx) / 2, (ay + by) / 2)
+        L = d.length + 0.15
+        add_box(bm, (mid[0], mid[1], deck_top - 0.45), (L, 5.0, 0.9), mat_index=0, rot_z=ang)          # deck
+        add_box(bm, (mid[0], mid[1], deck_top + 0.15), (L, 3.2, 0.3), mat_index=1, rot_z=ang)          # ballast
+        for sy in (-1, 1):
+            nx, ny = -math.sin(ang), math.cos(ang)
+            add_box(bm, (mid[0] + nx * sy * 0.5335, mid[1] + ny * sy * 0.5335, rail_top - 0.08), (L, 0.07, 0.16), mat_index=2, rot_z=ang)
+            add_box(bm, (mid[0] + nx * sy * 2.4, mid[1] + ny * sy * 2.4, deck_top + 0.45), (L, 0.2, 0.9), mat_index=0, rot_z=ang)  # parapet
+        seg.append((Vector((ax, ay, 0)), Vector((bx, by, 0)), ang))
+    # Piers every ~12 m down to the sea bed, a little wider at the foot.
+    acc = 0.0
+    for (a, b, ang) in seg:
+        L = (b - a).length
+        t = (6.0 - acc) if acc < 6.0 else 0.0
+        while t < L:
+            p = a.lerp(b, t / L)
+            zb = min(-0.5, ground_z(p.x, p.y)) - 0.5
+            h = deck_top - 0.9 - zb
+            f = add_box(bm, (p.x, p.y, zb + h / 2), (1.4, 3.6, h), mat_index=0, rot_z=ang)
+            t += 12.0
+        acc = (acc + L) % 12.0
+    # Portals at both ends, facing along the line, their mouths dark.
+    for (p, q) in ((pts[0], pts[1]), (pts[-1], pts[-2])):
+        d = Vector((p[0] - q[0], p[1] - q[1], 0)).normalized()
+        c = Vector((p[0], p[1], 0)) + d * 1.0
+        ang = math.atan2(d.y, d.x)
+        add_box(bm, (c.x, c.y, TRACK_Z + 3.6), (2.0, 9.0, 8.4), mat_index=0, rot_z=ang)
+        m = c - d * 1.02
+        nx, ny = -d.y, d.x
+        rr, base = 2.6, TRACK_Z + 0.2
+        arch = [(-rr, base)] + [(rr * math.cos(math.pi - math.pi * k / 12), base + 3.2 + rr * math.sin(math.pi - math.pi * k / 12)) for k in range(13)] + [(rr, base)]
+        vs = [bm.verts.new((m.x + nx * u, m.y + ny * u, z)) for (u, z) in arch]
+        fc = bm.faces.new(vs)
+        fc.material_index = 5
+        if fc.normal.dot(-d) < 0:
+            fc.normal_flip()
+    # Overhead line: masts on the seaward (east) edge every ~28 m, a cantilever to the track centre, the wires.
+    zc, zm = rail_top + 5.0, rail_top + 6.15
+    cum = [0.0]
+    for (a, b, ang) in seg:
+        cum.append(cum[-1] + (b - a).length)
+    contact, messenger = [], []
+    nm = max(2, int(cum[-1] / 28.0) + 1)
+    for k in range(nm):
+        t = cum[-1] * k / (nm - 1)
+        i = max(0, min(len(seg) - 1, int(np.searchsorted(cum, t)) - 1))
+        a, b, ang = seg[i]
+        p = a.lerp(b, (t - cum[i]) / max(1e-6, (b - a).length))
+        nx, ny = -math.sin(ang), math.cos(ang)
+        out = 1 if nx > 0 else -1  # the side toward +x (the cove)
+        mx, my = p.x + nx * out * 2.2, p.y + ny * out * 2.2
+        for dd in (-0.09, 0.09):
+            add_box(bm, (mx - ny * dd, my + nx * dd, TRACK_Z + 3.8), (0.02, 0.02, 7.2), mat_index=3)
+        add_box(bm, (mx, my, TRACK_Z + 3.8), (0.24, 0.24, 7.2), mat_index=3, rot_z=ang)
+        stg = 0.2 if k % 2 else -0.2
+        tip = Vector((p.x - nx * out * stg, p.y - ny * out * stg, zm))
+        base = Vector((mx, my, zm))
+        add_cylinder(bm, base, 0.035, (tip - base).length, segments=5, mat_index=3, axis=tip - base)
+        stay = Vector((mx, my, zm + 0.9))
+        add_cylinder(bm, stay, 0.025, (tip - stay).length, segments=5, mat_index=3, axis=tip - stay)
+        contact.append(Vector((tip.x, tip.y, zc)))
+        messenger.append(Vector((tip.x, tip.y, zm + 0.04)))
+    for (ca, cb), (ma, mb) in zip(zip(contact[:-1], contact[1:]), zip(messenger[:-1], messenger[1:])):
+        d = cb - ca
+        add_cylinder(bm, ca, 0.014, d.length, segments=4, mat_index=4, axis=d, cap=False)
+        wp = catenary(ma, mb, sag=0.45, n=10)
+        for p, q in zip(wp[:-1], wp[1:]):
+            add_cylinder(bm, p, 0.012, (q - p).length, segments=4, mat_index=4, axis=q - p, cap=False)
+    ob = bm_object("west_line", bm, "rail", mats=[conc, ballast, rail, steel, wire_m, dark], outline=True)
     return ob
 
 
@@ -296,6 +418,8 @@ def build_trees():
         if abs(x - PORTAL_X) < 8 or abs(x + PORTAL_X) < 8:
             if -20 < y < -2:
                 continue
+        if z < 16.0 and any((x - wx) ** 2 + (y - wy) ** 2 < 144.0 for (wx, wy) in WEST_LINE):
+            continue  # the western shore line stays in view from the lookout
         h = r.uniform(8, 14)
         tree(far, (x, y, z), h, h * r.uniform(0.5, 0.66), seed=9000 + k, mat=r.randrange(3), subdiv=2, clumps=r.randint(4, 6))
         count += 1
@@ -358,6 +482,7 @@ def build_boats():
 def build():
     build_railway()
     build_catenary()
+    build_west_line()
     build_shrine()
     build_trees()
     build_boats()
