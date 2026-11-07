@@ -67,6 +67,62 @@ def build_railway():
     _crossing()
 
 
+CATENARY_MASTS = (-92.0, -64.0, -37.0, -14.0, 16.0, 41.0, 66.0, 92.0)
+MAST_Y = TRACK_Y - 2.3  # south of the track, between the ballast and the telegraph line
+
+
+def build_catenary():
+    """Overhead line for the electric trains: steel H-masts south of the track, a cantilever out over it with a
+    registration arm, a messenger wire hanging in true catenaries between the masts and a level contact wire 5.0 m over
+    the rail top (zigzagged 0.2 m either side of the track centre so it wears the pantograph evenly), hung on droppers."""
+    from common import catenary
+    steel = toon_material("ohl_steel", "#7c7f88", var="#6f727c", noise_scale=2)
+    wire_m = toon_material("ohl_wire", "#3a3540")
+    insul = toon_material("insulator", "#e9e6df")
+    bm = bmesh.new()
+    rail_top = TRACK_Z + 0.3 + 0.12 + 0.16
+    zc, zm = rail_top + 5.0, rail_top + 6.15
+    contact, messenger = [], []
+    for k, x in enumerate(CATENARY_MASTS):
+        stg = 0.2 if k % 2 else -0.2
+        # The mast: an H-section 0.3 x 0.2 m on a concrete footing, a cap plate.
+        add_box(bm, (x, MAST_Y - 0.1, TRACK_Z + 0.2), (0.6, 0.6, 0.4), mat_index=0)
+        for dy in (-0.09, 0.09):
+            add_box(bm, (x, MAST_Y + dy, TRACK_Z + 3.8), (0.3, 0.02, 7.2), mat_index=0)
+        add_box(bm, (x, MAST_Y, TRACK_Z + 3.8), (0.02, 0.18, 7.2), mat_index=0)
+        add_box(bm, (x, MAST_Y, TRACK_Z + 7.42), (0.36, 0.26, 0.04), mat_index=0)
+        # Cantilever: a horizontal tube to over the track and a stay from higher up the mast, insulators at the mast.
+        y_end = TRACK_Y + stg
+        a, b = Vector((x, MAST_Y + 0.12, zm)), Vector((x, y_end - 0.25, zm))
+        add_cylinder(bm, a, 0.035, (b - a).length, segments=5, mat_index=0, axis=b - a)
+        a2 = Vector((x, MAST_Y + 0.12, zm + 0.9))
+        add_cylinder(bm, a2, 0.025, (b - a2).length, segments=5, mat_index=0, axis=b - a2)
+        add_cylinder(bm, (x, MAST_Y + 0.14, zm), 0.06, 0.3, segments=6, mat_index=2, axis=(0, 1, 0))
+        # Registration arm from the cantilever down to the contact wire.
+        a3, b3 = Vector((x, y_end - 0.6, zm - 0.02)), Vector((x, y_end, zc + 0.04))
+        add_cylinder(bm, a3, 0.022, (b3 - a3).length, segments=4, mat_index=0, axis=b3 - a3)
+        contact.append(Vector((x, y_end, zc)))
+        messenger.append(Vector((x, y_end - 0.05, zm + 0.04)))
+    # The wires run on past the end masts into the tunnels.
+    contact = [Vector((-PORTAL_X - 2.0, TRACK_Y, zc))] + contact + [Vector((PORTAL_X + 2.0, TRACK_Y, zc))]
+    messenger = [Vector((-PORTAL_X - 2.0, TRACK_Y, zm - 0.3))] + messenger + [Vector((PORTAL_X + 2.0, TRACK_Y, zm - 0.3))]
+    for (ca, cb), (ma, mb) in zip(zip(contact[:-1], contact[1:]), zip(messenger[:-1], messenger[1:])):
+        span = (cb - ca).length
+        d = cb - ca
+        add_cylinder(bm, ca, 0.014, d.length, segments=4, mat_index=1, axis=d, cap=False)
+        pts = catenary(ma, mb, sag=0.0016 * span * span / 8 + 0.35, n=12)
+        for p, q in zip(pts[:-1], pts[1:]):
+            add_cylinder(bm, p, 0.012, (q - p).length, segments=4, mat_index=1, axis=q - p, cap=False)
+        nd = max(2, int(span / 6.0))
+        for i in range(1, nd):
+            t = i / nd
+            top = pts[min(len(pts) - 1, int(round(t * (len(pts) - 1))))]
+            bot = ca.lerp(cb, t)
+            add_cylinder(bm, (bot.x, bot.y, bot.z + 0.01), 0.006, max(0.05, top.z - bot.z), segments=3, mat_index=1, cap=False)
+    ob = bm_object("catenary", bm, "rail", mats=[steel, wire_m, insul], outline=False)
+    return ob
+
+
 def _crossing():
     panel = toon_material("crossing_panel", "#4c4854", stripes=("x", 0.5, "#3c3944", 0.05))
     yellow = toon_material("hazard_yellow", "#f2c230", stripes=("z", 0.5, "#24202a", 0.5))
@@ -301,6 +357,7 @@ def build_boats():
 
 def build():
     build_railway()
+    build_catenary()
     build_shrine()
     build_trees()
     build_boats()

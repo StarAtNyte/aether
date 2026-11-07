@@ -76,15 +76,10 @@ def pole(bm, x, y, z, arm_dir, mats, seed):
 
 
 def wire(bm, a, b, sag, mat_index, radius=0.022):
-    """A sagging wire as a thin tube along a catenary-like curve."""
-    n = 12
-    pts = []
-    for k in range(n + 1):
-        t = k / n
-        p = a.lerp(b, t)
-        p.z -= sag * 4 * t * (1 - t)
-        pts.append(p)
-    prev = None
+    """A sagging wire as a thin tube along a true catenary (common.catenary), `sag` under its chord's middle."""
+    from common import catenary
+    n = 14
+    pts = catenary(a, b, sag, n)
     for k in range(n):
         p, q = pts[k], pts[k + 1]
         d = q - p
@@ -250,15 +245,22 @@ def laundry(name, x, y, z, length, yaw, seed):
     for sx in (-length / 2, length / 2):
         add_cylinder(bm, (sx, 0, 0), 0.03, 1.9, segments=6, mat_index=len(cols))
     add_cylinder(bm, (-length / 2, 0, 1.85), 0.012, length, segments=4, mat_index=len(cols), axis=(1, 0, 0))
+    from common import sway_free, sway_object
+    sway = abs(x) < 30.0 and sway_free()
+    cb = bmesh.new() if sway else bm
+    zp = 1.85 if sway else 0.0
     xx = -length / 2 + 0.25
     while xx < length / 2 - 0.4:
         w = r.uniform(0.35, 0.7)
         h = r.uniform(0.45, 0.85)
-        add_box(bm, (xx + w / 2, 0, 1.84 - h / 2), (w, 0.02, h), mat_index=r.randrange(len(cols)))
+        add_box(cb, (xx + w / 2, 0, 1.84 - h / 2 - zp), (w, 0.02, h), mat_index=r.randrange(len(cols)))
         xx += w + r.uniform(0.08, 0.2)
     ob = bm_object(name, bm, "props", mats=mats, prop=True, outline=False)
     ob.location = (x, y, z)
     ob.rotation_euler = (0, 0, yaw)
+    if sway and cb.faces:
+        sway_object(name.replace("laundry_", "sway_yard_"), cb, mats, (x, y, z + zp), (math.cos(yaw), math.sin(yaw), 0.0),
+                    amp_deg=10.0, mean_deg=8.0, rot_z=yaw)
     return ob
 
 
@@ -444,7 +446,8 @@ def build_small_props():
         bicycle("bicycle_2", h["x"] + 1.6, h["y"] - h["d"] / 2 - 0.45, 3.1, 2)
     # Signs: the crossing's notice, the stair's way-marker at the road, the lookout's name board.
     _sign("sign_crossing", "STOP  LOOK  LISTEN", -3.4, TRACK_Y - 3.0, TRACK_Z + 1.6, 0.0, 0.22, "#f4f1ea", "#c8332b", post=True)
-    _sign("sign_stair", "LOOKOUT  320 STEPS", 2.6, -23.0, ROAD_Z + 1.9, 0.0, 0.2, "#2f5d5a", "#f4f1ea", post=True)
+    from land import stair_steps
+    _sign("sign_stair", f"LOOKOUT  {stair_steps()[1]} STEPS", 2.6, -23.0, ROAD_Z + 1.9, 0.0, 0.2, "#2f5d5a", "#f4f1ea", post=True)
     _sign("sign_lookout", "CLOUDWATCH  HILL", -5.2, LOOKOUT_Y[0] + 1.0, 44.0 + 1.9, 0.0, 0.34, "#5a3a2c", "#f4e6c8", post=True)
     # Along the stair, readable from its steps: a board by the shrine's flight and one at the third terrace's landing.
     _sign("sign_shrine", "KUMOMI  SHRINE", 2.9, 41.5, profile_z(41.5) + 1.7, 0.0, 0.3, "#f4ecd8", "#c8332b", post=True)

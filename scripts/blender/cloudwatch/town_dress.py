@@ -21,7 +21,12 @@ def balcony_laundry(balconies, seed):
         [toon_material("futon_" + c[1:], c, stripes=("z", 0.18, "#d8c7a0", 0.12)) for c in FUTON]
     pole_m = len(CLOTH)
     bm = bmesh.new()
-    for b in balconies:
+    # The lines nearest the stair (seen from it and from the lookout) sway in the wind: their cloth goes into its own
+    # object hanging from the line (common.sway_object); the rest stays in the static piece.
+    from common import SWAY, sway_free, sway_object
+    near = sorted(range(len(balconies)), key=lambda i: abs(balconies[i]["x"]) + 0.3 * abs(balconies[i]["y"] - 60.0))
+    chosen = set(near[:max(0, SWAY["budget"] - 7)])
+    for bi, b in enumerate(balconies):
         nx, ny = b["nx"], b["ny"]
         ux, uy = -ny, nx  # along the balcony
         ln = b["len"] - 0.3
@@ -35,6 +40,9 @@ def balcony_laundry(balconies, seed):
             px, py = cx + ux * s * ln / 2, cy + uy * s * ln / 2
             add_cylinder(bm, (px, py, z), 0.022, hp + 0.05, segments=5, mat_index=pole_m)
         add_cylinder(bm, (cx - ux * ln / 2, cy - uy * ln / 2, z + hp), 0.016, ln, segments=5, mat_index=pole_m, axis=(ux, uy, 0))
+        sway = bi in chosen and sway_free()
+        cb = bmesh.new() if sway else bm
+        pv = (cx, cy, z + hp) if sway else (0.0, 0.0, 0.0)
         t = -ln / 2 + 0.2
         while t < ln / 2 - 0.35:
             w = r.uniform(0.3, 0.65)
@@ -42,8 +50,11 @@ def balcony_laundry(balconies, seed):
             m = r.randrange(len(CLOTH))
             px, py = cx + ux * (t + w / 2), cy + uy * (t + w / 2)
             size = (abs(ux) * w + abs(uy) * 0.02, abs(uy) * w + abs(ux) * 0.02, h)
-            add_box(bm, (px, py, z + hp - 0.01 - h / 2), size, mat_index=m)
+            add_box(cb, (px - pv[0], py - pv[1], z + hp - 0.01 - h / 2 - pv[2]), size, mat_index=m)
             t += w + r.uniform(0.06, 0.18)
+        if sway and cb.faces:
+            # Lines along x swing toward the onshore breeze (+y); lines along y only flutter.
+            sway_object(f"sway_bal_{bi}", cb, mats, pv, (ux, uy, 0.0), amp_deg=9.0, mean_deg=7.0 * ux if abs(ux) > 0.5 else 0.0)
         # A futon airing over the railing (only on railings that stand at the balcony edge).
         if not b.get("deck") and r.random() < 0.6:
             fl = min(1.6, b["len"] - 0.6)
@@ -90,19 +101,24 @@ def text_mesh(text, size, vertical=False):
 
 def nobori(name, x, y, yaw, text, cloth, ink, z_ground, seed=0):
     """A tall shop banner: a pole and a cloth with vertical invented text, standing on the ground at z_ground."""
-    bm, tw, th = text_mesh(text, 0.2, vertical=True)
-    for f in bm.faces:
+    cl, tw, th = text_mesh(text, 0.2, vertical=True)
+    for f in cl.faces:
         f.material_index = 1
     cw, ch = 0.46, max(1.5, th + 0.3)
     zc = 0.55 + ch / 2
-    for v in bm.verts:
+    for v in cl.verts:
         v.co = Vector((v.co.x + 0.05 + cw / 2, v.co.y - 0.02, v.co.z + zc))
-    add_box(bm, (0.05 + cw / 2, 0.0, zc), (cw, 0.025, ch), mat_index=0)
-    add_box(bm, (0.05 + cw / 2, 0.0, zc + ch / 2 + 0.03), (cw + 0.06, 0.03, 0.03), mat_index=2)
+    add_box(cl, (0.05 + cw / 2, 0.0, zc), (cw, 0.025, ch), mat_index=0)
+    add_box(cl, (0.05 + cw / 2, 0.0, zc + ch / 2 + 0.03), (cw + 0.06, 0.03, 0.03), mat_index=2)
+    bm = bmesh.new()
     add_cylinder(bm, (0.0, 0.0, 0.0), 0.028, zc + ch / 2 + 0.12, segments=6, mat_index=2)
     add_cylinder(bm, (0.0, 0.0, 0.0), 0.11, 0.06, segments=8, mat_index=2)  # weighted foot
     mats = [toon_material("nobori_" + cloth[1:], cloth), toon_material("ink_" + ink[1:], ink), toon_material("sign_post", "#6a6870")]
     ob = bm_object(name, bm, "props", mats=mats, prop=True, outline=True, recalc=False)
     ob.location = (x, y, z_ground)
     ob.rotation_euler = (0, 0, yaw)
+    # The cloth (with its top bar and text) turns about the pole in the wind, a flag's flutter.
+    from common import sway_object
+    sway_object(name.replace("sign_", "sway_"), cl, mats, (x, y, z_ground), (0.0, 0.0, 1.0), amp_deg=11.0,
+                     mean_deg=8.0, rot_z=yaw)
     return ob

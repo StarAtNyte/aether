@@ -614,11 +614,20 @@ def build_clouds():
 
 
 def build_light():
+    """The sun lamp and a physical sky (Nishita, no sun disc: the lamp is the sun), scaled by common.LIGHT so open shade
+    reads 1 (common.lref) and a face turned to the sun `sun_ratio` times that. Replaces an earlier sun and world."""
+    from common import LIGHT, lref, sky_strength
+    old = bpy.data.objects.get("sun")
+    if old is not None:
+        bpy.data.objects.remove(old)
     sd = sun_dir()
     ld = bpy.data.lights.new("sun", "SUN")
-    ld.energy = 8.0
-    ld.color = srgb("#ffc48a")[:3]
-    ld.angle = math.radians(0.6)
+    col = srgb(LIGHT["sun_col"])[:3]
+    lum = col[0] * 0.2126 + col[1] * 0.7152 + col[2] * 0.0722
+    # A sun lamp's strength is irradiance: a white face turned to it shows strength / pi.
+    ld.energy = math.pi * LIGHT["sun_ratio"] * lref() / lum
+    ld.color = col
+    ld.angle = math.radians(0.55)  # the real sun's disc: crisp, slightly soft shadow edges
     ob = bpy.data.objects.new("sun", ld)
     collection("lights").objects.link(ob)
     ob.rotation_mode = "QUATERNION"
@@ -627,9 +636,21 @@ def build_light():
     w = bpy.context.scene.world or bpy.data.worlds.new("World")
     bpy.context.scene.world = w
     w.use_nodes = True
-    bg = w.node_tree.nodes.get("Background")
-    bg.inputs["Color"].default_value = srgb("#9a93c8")
-    bg.inputs["Strength"].default_value = 0.22
+    nt = w.node_tree
+    bg = nt.nodes.get("Background")
+    sk = nt.nodes.get("cw_sky") or nt.nodes.new("ShaderNodeTexSky")
+    sk.name = "cw_sky"
+    sk.sky_type = "NISHITA"
+    sk.sun_disc = False
+    sk.sun_elevation = math.radians(SUN_EL)
+    sk.sun_rotation = math.radians(SUN_AZ)  # measured: Nishita's rotation is the compass azimuth (from +Y toward +X)
+    sk.altitude = 0.0  # (LIGHT["sky_up"] was measured with these defaults)
+    sk.air_density = 1.0
+    sk.dust_density = 1.0
+    sk.ozone_density = 1.0
+    nt.links.new(sk.outputs["Color"], bg.inputs["Color"])
+    bg.inputs["Strength"].default_value = sky_strength()
+    w.light_settings.distance = LIGHT["ao_dist"]  # the AO bake's and the AO node's reach
     return ob
 
 

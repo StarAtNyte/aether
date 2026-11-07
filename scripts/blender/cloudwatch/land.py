@@ -272,55 +272,105 @@ def build_sea():
     return ob
 
 
+RISER = 0.17   # m: an outdoor public stair (the comfortable 2 x riser + tread = 0.63 m)
+TREAD = 0.29
+FLIGHT = 16    # steps at most between landings
+
+
+def stair_profile(z0, z1, ys, length):
+    """Steps of one bank (z0 -> z1 over `length` m from ys): flights of at most FLIGHT steps with level landings sharing
+    what is left of the bank's length. Returns [(y_front, y_back, z_top)] for every tread and landing, in order."""
+    rise = z1 - z0
+    n = max(1, int(round(rise / RISER)))
+    rr = rise / n
+    m = max(0, -(-n // FLIGHT) - 1)  # landings inside the run
+    tread = TREAD
+    land = (length - n * tread) / m if m else 0.0
+    if m and land < 0.8:
+        # Too short for landings that deep: shorten the treads (never under 0.27 m).
+        tread = max(0.27, (length - 0.8 * m) / n)
+        land = (length - n * tread) / m
+    if not m:
+        tread = length / n
+    per = [n // (m + 1) + (1 if i < n % (m + 1) else 0) for i in range(m + 1)]  # steps per flight
+    out = []
+    y, k = ys, 0
+    for fi, cnt in enumerate(per):
+        for _ in range(cnt):
+            k += 1
+            out.append((y, y + tread, z0 + rr * k, "step"))
+            y += tread
+        if fi < m:
+            # The landing continues the last tread of the flight.
+            yb, ye, zt, _ = out[-1]
+            out[-1] = (yb, ye + land, zt, "landing")
+            y += land
+    return out, n
+
+
+def stair_steps():
+    """Every tread and landing of the whole stair, road to lookout: [(y_front, y_back, z_top, kind)] and the step count."""
+    allp, total = [], 0
+    for i in range(1, len(TERRACES)):
+        y0, z1 = TERRACES[i]
+        z0 = TERRACES[i - 1][1]
+        rise = z1 - z0
+        prof, n = stair_profile(z0, z1, y0 - 2 * rise, 2 * rise)
+        allp.append((z0, z1, y0 - 2 * rise, y0, prof))
+        total += n
+    return allp, total
+
+
 def build_stair():
     stone = toon_material("stair_stone", P["stone"], var="#d6cdbb", noise_scale=0.8)
     edge = toon_material("stair_edge", "#a99f91")
     rail = toon_material("handrail", "#7d8a8f")
+    nose = toon_material("stair_nosing", "#b3a998")
     bm = bmesh.new()
     W = 2.4
     hw = W / 2
-    # Steps on every bank and flat paving across each terrace, from the road to the lookout.
+    # Steps on every bank (risers 0.17 m, treads 0.29 m, a level landing every 16 steps at most) and flat paving across
+    # each terrace, from the road to the lookout. The top step of each bank is the terrace's own height.
     tr = terrace_ranges()
-    for i in range(1, len(TERRACES)):
-        y0, z1 = TERRACES[i]
-        z0 = TERRACES[i - 1][1]
-        rise = z1 - z0
-        n = int(round(rise / 0.16))
-        rr = rise / n
-        run = 2 * rise / n
-        ys = y0 - 2 * rise
-        for k in range(n):
-            zt = z0 + rr * (k + 1)
-            add_box(bm, (0, ys + run * (k + 0.5), (zt + z0 - 0.4) / 2), (W, run + 0.02, zt - z0 + 0.4), mat_index=0)
-        # Low parapets along both sides of the run: one sloped prism each, 0.55 m over the nosings.
+    runs, total = stair_steps()
+    for (z0, z1, ys, ye, prof) in runs:
+        for (ya, yb, zt, kind) in prof:
+            add_box(bm, (0, (ya + yb) / 2, (zt + z0 - 0.4) / 2), (W, yb - ya + 0.01, zt - z0 + 0.4), mat_index=0)
+            # A worn, slightly darker nosing strip on each step's front edge.
+            add_box(bm, (0, ya + 0.03, zt + 0.004), (W - 0.04, 0.06, 0.012), mat_index=3)
+        # Low parapets along both sides of the run: one sloped prism each, 0.55 m over the nosings on average.
         for side in (-1, 1):
             xa, xb = side * hw, side * (hw + 0.36)
             za0, za1 = z0 - 0.6, z1 - 0.6
             zt0, zt1 = z0 + 0.55, z1 + 0.55
-            v = [(xa, ys, za0), (xb, ys, za0), (xb, y0, za1), (xa, y0, za1), (xa, ys, zt0), (xb, ys, zt0), (xb, y0, zt1), (xa, y0, zt1)]
+            v = [(xa, ys, za0), (xb, ys, za0), (xb, ye, za1), (xa, ye, za1), (xa, ys, zt0), (xb, ys, zt0), (xb, ye, zt1), (xa, ye, zt1)]
             vs = [bm.verts.new(p) for p in v]
             for f in ((0, 3, 2, 1), (4, 5, 6, 7), (0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)):
                 fc = bm.faces.new([vs[i] for i in (f if side > 0 else tuple(reversed(f)))])
                 fc.material_index = 1
+        # Handrail down the middle: 0.9 m over the nosing line, a sloped pipe along each flight and a level one over each
+        # landing, posts at the flight ends and every ~3 m.
+        pts = [(ys, z0)]
+        for (ya, yb, zt, kind) in prof:
+            if kind == "landing":
+                pts.append((ya, zt))
+                pts.append((yb, zt))
+        pts.append((ye, z1))
+        for (ya, za), (yb, zb) in zip(pts[:-1], pts[1:]):
+            a = Vector((0, ya, za + 0.9))
+            b = Vector((0, yb, zb + 0.9))
+            if (b - a).length < 0.05:
+                continue
+            add_cylinder(bm, a, 0.035, (b - a).length, segments=6, mat_index=2, axis=(b - a))
+            npost = max(1, int((b - a).length / 3.0))
+            for k in range(npost + 1):
+                t = k / npost
+                add_cylinder(bm, (0, ya + (yb - ya) * t, za + (zb - za) * t), 0.03, 0.9, segments=6, mat_index=2)
     # Paving across the flats (between the stair runs).
     for (y_from, y_to, z) in tr[1:]:
         add_box(bm, (0, (y_from + y_to) / 2, z - 0.05), (W, y_to - y_from, 0.14), mat_index=0)
-    # Handrail down the middle of each run: posts and a sloped pipe.
-    for i in range(1, len(TERRACES)):
-        y0, z1 = TERRACES[i]
-        z0 = TERRACES[i - 1][1]
-        rise = z1 - z0
-        ys = y0 - 2 * rise
-        npost = max(2, int(2 * rise / 3.0))
-        for k in range(npost + 1):
-            t = k / npost
-            yy = ys + 2 * rise * t
-            zz = z0 + rise * t
-            add_cylinder(bm, (0, yy, zz), 0.03, 0.9, segments=6, mat_index=2)
-        a = Vector((0, ys, z0 + 0.9))
-        b = Vector((0, y0, z1 + 0.9))
-        add_cylinder(bm, a, 0.035, (b - a).length, segments=6, mat_index=2, axis=(b - a))
-    ob = bm_object("stair", bm, "stair", mats=[stone, edge, rail], outline=True)
+    ob = bm_object("stair", bm, "stair", mats=[stone, edge, rail, nose], outline=True)
+    ob["cw_steps"] = total
     return ob
 
 

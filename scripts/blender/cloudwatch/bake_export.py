@@ -26,14 +26,14 @@ import bpy  # noqa: E402
 import numpy as np  # noqa: E402
 from mathutils import Vector  # noqa: E402
 
-from common import P, RAMP, srgb  # noqa: E402
+from common import P, denoise_np, finish_np, srgb  # noqa: E402
 
 argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 ap = argparse.ArgumentParser()
 ap.add_argument("--out", required=True)
 ap.add_argument("--samples", type=int, default=96)
 ap.add_argument("--only", default="")
-ap.add_argument("--gpu", action="store_true", help="bake on the GPU (a busy shared GPU can return black bakes)")
+ap.add_argument("--gpu", default="", help="CUDA or OPTIX: bake on the GPU (each bake is checked for black output and redone on the CPU)")
 ap.add_argument("--tex-scale", type=float, default=1.0)
 A = ap.parse_args(argv)
 os.makedirs(A.out, exist_ok=True)
@@ -60,11 +60,13 @@ PIECES = {
     # The shrine on its own small atlas: in the dense town atlas the gate's round posts were thinner than a texel and
     # baked to nothing (black).
     "shrine": {"match": lambda n: n in ("shrine_hall", "shrine_gate"), "tex": 1024},
-    "infra": {"match": lambda n: n in ("stair", "lookout", "harbour", "lighthouse", "railway", "crossing", "poles_wires") or n.startswith("tunnel_portal"), "tex": 2048},
+    "infra": {"match": lambda n: n in ("stair", "lookout", "harbour", "lighthouse", "railway", "crossing", "poles_wires", "catenary") or n.startswith("tunnel_portal"), "tex": 2048},
     "props": {"match": lambda n: n.startswith(("stone_lantern", "stair_lantern", "vending", "bicycle", "laundry", "sign_", "boat_", "pots")) or n in ("ac_units", "mailbox", "roof_gear"), "tex": 2048},
     "people": {"match": lambda n: n.startswith("person_"), "tex": 1024},
     # The train (extras.py): baked over the open sea, unhazed, moved to its rest just inside the east tunnel.
-    "train": {"match": lambda n: n == "train", "tex": 1024, "haze": False},
+    "train": {"match": lambda n: n == "train", "tex": 2048, "haze": False},
+    # Cloth in the wind (common.sway_object): one atlas, split back into a node per line for its looping sway clip.
+    "laundry": {"match": lambda n: n.startswith("sway_"), "tex": 1024},
 }
 VERTEX_PIECES = {
     "trees": {"match": lambda n: n in ("trees_town", "hedges")},
@@ -75,23 +77,32 @@ VERTEX_PIECES = {
 
 def setup_cycles():
     sc = bpy.context.scene
+    import sky
+    sky.build_light()  # the physical sun and sky of common.LIGHT (also on a .blend built before them)
     sc.render.engine = "CYCLES"
     sc.cycles.samples = A.samples
     sc.cycles.use_denoising = False
+    # Real bounce: light off the sunlit walls and lanes into the shade (Open Image Denoise takes the grain off afterwards).
+    sc.cycles.diffuse_bounces = 4
+    sc.cycles.max_bounces = 8
+    sc.cycles.sample_clamp_indirect = 3.0  # bounce fireflies became blotches at the band edges
     sc.render.bake.margin = 6
     sc.render.bake.use_clear = True
+    sc.cycles.device = "CPU"
     if A.gpu:
         prefs = bpy.context.preferences.addons["cycles"].preferences
         try:
-            prefs.compute_device_type = "OPTIX"
+            prefs.compute_device_type = A.gpu.upper()
             prefs.get_devices()
+            n = 0
             for d in prefs.devices:
-                d.use = d.type == "OPTIX"
-            sc.cycles.device = "GPU"
-        except Exception:  # noqa: BLE001
-            sc.cycles.device = "CPU"
-    else:
-        sc.cycles.device = "CPU"
+                d.use = d.type == A.gpu.upper()
+                n += d.use
+            if n:
+                sc.cycles.device = "GPU"
+        except Exception as e:  # noqa: BLE001
+            print("AETHER_GPU unavailable:", e, flush=True)
+    print("AETHER_DEVICE", sc.cycles.device, A.gpu, flush=True)
     # Emissive sky pieces must not light the scene in the bake (in EEVEE they do not either): only the sun and the world.
     for ob in bpy.data.objects:
         if ob.get("cw_piece") in ("sky", "sea") or ob.name.startswith("cloud"):
@@ -100,19 +111,6 @@ def setup_cycles():
             ob.visible_transmission = False
             ob.visible_volume_scatter = False
             ob.visible_shadow = False
-
-
-def ramp_np(light):
-    """The toon ramp of common.RAMP on a light array (H, W) -> band multiplier (H, W, 3), in linear RGB."""
-    r = RAMP
-    sh = np.array(srgb(r["shadow"])[:3])
-    mid = np.array(srgb(r["mid"])[:3])
-    lit = np.array(srgb(r["lit"])[:3])
-    a0, a1 = r["t_shadow"], r["t_shadow"] + r["w_shadow"]
-    b0, b1 = r["t_lit"], r["t_lit"] + r["w_lit"]
-    t1 = np.clip((light - a0) / (a1 - a0), 0, 1)[..., None]
-    t2 = np.clip((light - b0) / (b1 - b0), 0, 1)[..., None]
-    return sh * (1 - t1) + mid * t1 * (1 - t2) + lit * t2
 
 
 def blur(img, k=2):
@@ -181,15 +179,6 @@ def aux_material(image):
     tex.image = image
     _aux_mat.node_tree.nodes.active = tex
     return _aux_mat
-
-
-def finish_np(Al, Lb, aux):
-    """The toon material's colour from the baked terms: albedo x ramp(light + terminator break), hazed with distance."""
-    from common import BRUSH, HAZE
-    Lb = Lb + (aux[..., 0] - 0.5) * BRUSH["edge"]
-    col = Al * ramp_np(Lb)
-    hz = np.clip(aux[..., 1], 0.0, 1.0)[..., None]
-    return col * (1 - hz) + np.array(srgb(HAZE["col"])[:3]) * hz
 
 
 def write_png(path, rgb01):
@@ -346,13 +335,47 @@ def unwrap(ob, uv_name="bake", size=None):
     else:
         bpy.ops.uv.pack_islands(margin=0.002, rotate=True)
     bpy.ops.object.mode_set(mode="OBJECT")
+    thin = []
     if size:
+        # Islands still under a texel or so (trims, poles, rails, the many small boxes) are shaded per vertex through the
+        # palette band anyway, but each one held a packed box with two-texel margins on every side: most of the atlas.
+        # Move them out of the pack (onto one texel of the palette band, overwritten after the bake) and pack the rest
+        # again, so walls, roofs and the ground get the freed room as bigger texels. Repeat once for islands the first
+        # pass left just above the threshold.
+        lp = np.empty(len(me.loops), np.int32)
+        for poly in me.polygons:
+            lp[poly.loop_start:poly.loop_start + poly.loop_total] = poly.index
+        already = np.zeros(len(me.polygons), bool)
+        park = (0.5 / size, 1.0 - 0.5 / size)
+        for _ in range(2):
+            found = [lps for lps in thin_islands(ob, size, uv_name=uv_name) if not already[lp[lps[0]]]]
+            if not found:
+                break
+            thin += found
+            uv = np.empty(len(me.loops) * 2, np.float32)
+            me.uv_layers[uv_name].data.foreach_get("uv", uv)
+            uv = uv.reshape(-1, 2)
+            for lps in found:
+                uv[lps] = park
+                already[lp[lps]] = True
+            me.uv_layers[uv_name].data.foreach_set("uv", uv.reshape(-1))
+            me.polygons.foreach_set("select", (~already).tolist())
+            bpy.context.scene.tool_settings.use_uv_select_sync = True
+            bpy.ops.object.mode_set(mode="EDIT")
+            bpy.ops.uv.pack_islands(shape_method="AABB", margin_method="FRACTION", margin=2.0 / size, rotate=True)
+            bpy.ops.object.mode_set(mode="OBJECT")
+            print(f"AETHER_UV {ob.name} repacked without {len(found)} thin islands", flush=True)
         # Keep the palette band free: squeeze the packed atlas below it.
         keep = 1.0 - PALETTE_ROWS / size
         uv = np.empty(len(me.loops) * 2, np.float32)
         me.uv_layers[uv_name].data.foreach_get("uv", uv)
         uv[1::2] *= keep
+        if thin:
+            uv2 = uv.reshape(-1, 2)
+            for lps in thin:
+                uv2[lps] = park  # in the palette band (the finish writes each island's own block)
         me.uv_layers[uv_name].data.foreach_set("uv", uv)
+    return thin
 
 
 def thin_islands(ob, size, min_px=1.25, uv_name="bake"):
@@ -376,16 +399,32 @@ def thin_islands(ob, size, min_px=1.25, uv_name="bake"):
     return out
 
 
-def bake_vertex(ob, pass_filter, name):
-    """Bake DIFFUSE with `pass_filter` into a float corner colour attribute; (n_loops, 3) linear RGB."""
+def bake_vertex(ob, pass_filter, name, kind="DIFFUSE", domain="CORNER"):
+    """Bake `kind` (DIFFUSE with `pass_filter`, or AO) into a float colour attribute; (n, 3) linear RGB."""
     me = ob.data
-    at = me.color_attributes.new(name, "FLOAT_COLOR", "CORNER")
+    at = me.color_attributes.new(name, "FLOAT_COLOR", domain)
     me.color_attributes.active_color = at
-    run_bake(ob, "DIFFUSE", pass_filter, target="VERTEX_COLORS")
-    a = np.empty(len(me.loops) * 4, np.float32)
+    run_bake(ob, kind, pass_filter, target="VERTEX_COLORS")
+    a = np.empty((len(me.loops) if domain == "CORNER" else len(me.vertices)) * 4, np.float32)
     me.color_attributes[name].data.foreach_get("color", a)
     me.color_attributes.remove(me.color_attributes[name])
     return a.reshape(-1, 4)[:, :3]
+
+
+class sun_only:
+    """Within it, the world lights nothing (strength 0): a DIFFUSE DIRECT bake is then the sun's own direct light, for the
+    sun mask of the ramp (common.ramp_np)."""
+
+    def __enter__(self):
+        bg = bpy.context.scene.world.node_tree.nodes["Background"]
+        self.keep = bg.inputs["Strength"].default_value
+        bg.inputs["Strength"].default_value = 0.0
+        self.samples = bpy.context.scene.cycles.samples
+        bpy.context.scene.cycles.samples = max(16, self.samples // 3)  # one small light: little noise
+
+    def __exit__(self, *a):
+        bpy.context.scene.world.node_tree.nodes["Background"].inputs["Strength"].default_value = self.keep
+        bpy.context.scene.cycles.samples = self.samples
 
 
 def bake_image(name, size, float_buffer=True):
@@ -394,9 +433,19 @@ def bake_image(name, size, float_buffer=True):
     return img
 
 
-def run_bake(ob, kind, pass_filter, target="IMAGE_TEXTURES"):
+def run_bake(ob, kind, pass_filter, target="IMAGE_TEXTURES", check=None):
+    """One Cycles bake. `check` (a callable returning the baked array) guards the GPU: a busy shared GPU has returned an
+    all-black bake without an error, so a black result is baked again on the CPU."""
     select_only([ob])
     bpy.ops.object.bake(type=kind, pass_filter=pass_filter, target=target, margin=6, use_clear=True)
+    sc = bpy.context.scene
+    if check is not None and sc.cycles.device == "GPU":
+        a = check()
+        if not np.isfinite(a).all() or float(np.nanmax(a)) <= 1e-6:
+            print(f"AETHER_GPU black {kind} bake of {ob.name}: again on the CPU", flush=True)
+            sc.cycles.device = "CPU"
+            bpy.ops.object.bake(type=kind, pass_filter=pass_filter, target=target, margin=6, use_clear=True)
+            sc.cycles.device = "GPU"
 
 
 def image_np(img):
@@ -426,6 +475,19 @@ def outline_after(ob, width_of):
     mod.thickness_vertex_group = 0.0
     select_only([ob])
     bpy.ops.object.modifier_apply(modifier=mod.name)
+    # The shell of `cw_noline` geometry (tile courses) has zero width: drop its faces rather than ship them.
+    nl = me.attributes.get("cw_noline")
+    if nl is not None and nl.domain == "POINT":
+        vals = np.zeros(len(me.vertices), np.float32)
+        nl.data.foreach_get("value", vals)
+        line_slot = len(me.materials) - 1
+        bm = bmesh.new()
+        bm.from_mesh(me)
+        drop = [f for f in bm.faces if f.material_index == line_slot and all(vals[v.index] > 0.5 for v in f.verts)]
+        bmesh.ops.delete(bm, geom=drop, context="FACES")
+        bm.to_mesh(me)
+        bm.free()
+        print(f"AETHER_OUTLINE dropped {len(drop)} zero-width shell faces", flush=True)
 
 
 # ---------------------------------------------------------------------------------------------------------------- atlas pieces
@@ -456,8 +518,7 @@ def atlas_piece(key, spec):
         bpy.ops.mesh.quads_convert_to_tris(quad_method="BEAUTY", ngon_method="BEAUTY")
         bpy.ops.object.mode_set(mode="OBJECT")
     size = int(spec["tex"] * A.tex_scale)
-    unwrap(j, size=size)
-    thin = thin_islands(j, size)
+    thin = unwrap(j, size=size)
     print(f"AETHER_UV {key} thin islands={len(thin)}", flush=True)
     light = bake_image(f"{key}_light", size)
     albedo = bake_image(f"{key}_albedo", size)
@@ -465,10 +526,33 @@ def atlas_piece(key, spec):
     emissive_slots = {i for i, m in enumerate(srcs) if m and m.get("cw_emissive")}
     for i, m in enumerate(srcs):
         j.data.materials[i] = bake_variant(m, light)
-    run_bake(j, "DIFFUSE", {"DIRECT", "INDIRECT"})
+    run_bake(j, "DIFFUSE", {"DIRECT", "INDIRECT"}, check=lambda: image_np(light)[..., :3])
     for i, m in enumerate(srcs):
         j.data.materials[i] = bake_variant(m, albedo)
-    run_bake(j, "DIFFUSE", {"COLOR"})
+    run_bake(j, "DIFFUSE", {"COLOR"}, check=lambda: image_np(albedo)[..., :3])
+    # Contact occlusion (world.light_settings.distance = LIGHT["ao_dist"]) and the world normal (a denoise guide).
+    sc = bpy.context.scene
+    keep_samples = sc.cycles.samples
+    occl = bake_image(f"{key}_ao", size)
+    for i, m in enumerate(srcs):
+        j.data.materials[i] = bake_variant(m, occl)
+    sc.cycles.samples = max(16, keep_samples // 2)
+    run_bake(j, "AO", set(), check=lambda: image_np(occl)[..., :3])
+    from common import RAMP
+    use_sun = RAMP["sun_mask"]
+    sunimg = bake_image(f"{key}_sun", size if use_sun else 8)
+    if use_sun:
+        for i, m in enumerate(srcs):
+            j.data.materials[i] = bake_variant(m, sunimg)
+        with sun_only():
+            run_bake(j, "DIFFUSE", {"DIRECT"}, check=lambda: image_np(sunimg)[..., :3])
+    nrm = bake_image(f"{key}_normal", size)
+    for i, m in enumerate(srcs):
+        j.data.materials[i] = bake_variant(m, nrm)
+    sc.cycles.samples = 2
+    sc.render.bake.normal_space = "OBJECT"
+    run_bake(j, "NORMAL", set())
+    sc.cycles.samples = keep_samples
     aux = bake_image(f"{key}_aux", size)
     am = aux_material(aux)
     for i in range(len(srcs)):
@@ -478,19 +562,40 @@ def atlas_piece(key, spec):
     sc.cycles.samples = 4  # emission only: a few samples anti-alias it
     run_bake(j, "EMIT", set())
     sc.cycles.samples = keep_samples
-    AX = image_np(aux)[..., :3]
+    # Read each bake once and free its image (a 4096 px float image is 268 MB; the denoise needs the room).
+    AX = np.ascontiguousarray(image_np(aux)[..., :3])
     if spec.get("haze") is False:
         AX[..., 1] = 0.0
-    L = image_np(light)[..., :3]
-    Al = image_np(albedo)[..., :3]
+    L = np.ascontiguousarray(image_np(light)[..., :3])
+    Al = np.ascontiguousarray(image_np(albedo)[..., :3])
+    AO = np.ascontiguousarray(image_np(occl)[..., 0])
+    NR = np.ascontiguousarray(image_np(nrm)[..., :3]) * 2.0 - 1.0
+    SN = np.ascontiguousarray(lum(image_np(sunimg)[..., :3])) if use_sun else None
+    for im in (aux, light, albedo, occl, nrm, sunimg):
+        bpy.data.images.remove(im)
+    import gc
+    gc.collect()
     if thin:
         for i, m in enumerate(srcs):
             j.data.materials[i] = bake_variant(m)
         Lv = bake_vertex(j, {"DIRECT", "INDIRECT"}, "cw_light_v")
         Av = bake_vertex(j, {"COLOR"}, "cw_albedo_v")
-    print(f"AETHER_STATS {key} light mean={float(np.nanmean(L)):.4f} max={float(np.nanmax(L)):.4f} albedo mean={float(np.nanmean(Al)):.4f} nan={int(np.isnan(L).sum())}", flush=True)
-    Lb = blur(lum(L), 1)
-    final = finish_np(Al, Lb, AX)
+        Ov = bake_vertex(j, set(), "cw_ao_v", kind="AO")
+        if use_sun:
+            with sun_only():
+                Sv = lum(bake_vertex(j, {"DIRECT"}, "cw_sun_v"))
+        else:
+            Sv = np.ones(len(j.data.loops), np.float32)
+    print(f"AETHER_STATS {key} light mean={float(np.nanmean(L)):.4f} max={float(np.nanmax(L)):.4f} albedo mean={float(np.nanmean(Al)):.4f} ao mean={float(AO.mean()):.3f} nan={int(np.isnan(L).sum())}", flush=True)
+    # Open Image Denoise on the light and the occlusion (albedo and normal guides keep island and crease edges), so the
+    # hard steps of the ramp draw the light's shapes, not the path tracer's grain.
+    tmp = os.path.join(A.out, "_tmp")
+    Lb = denoise_np(lum(L), tmp, albedo=Al, normal=NR)
+    AOd = np.clip(denoise_np(AO, tmp, albedo=Al, normal=NR), 0.0, 1.0)
+    # The sun's light is nearly noiseless (one small light): a light blur, no denoise, keeps its shadow edges sharp.
+    SNb = blur(SN, 1) if use_sun else None
+    del SN
+    final = finish_np(Al, Lb, AOd, AX, SNb)
     if thin:
         # One colour per thin island (vertex light through the same ramp, times vertex albedo) in a 2 x 2 texel block of
         # the palette band, and the island's UVs on the block's centre.
@@ -514,8 +619,10 @@ def atlas_piece(key, spec):
             col = 2 * (n % per)
             # The upper part of the island's corner light: corners where it meets other geometry are occluded.
             li = np.percentile(lv[loops], 70)
+            oi = float(np.percentile(Ov[loops, 0], 70))
+            si = float(np.percentile(Sv[loops], 70))
             aux1 = np.array([[0.5, float(hz_loop[loops].mean()), 0.0]], np.float32)
-            final[row:row + 2, col:col + 2] = finish_np(Av[loops].mean(axis=0)[None], np.array([li]), aux1)[0]
+            final[row:row + 2, col:col + 2] = finish_np(Av[loops].mean(axis=0)[None], np.array([li]), np.array([oi]), aux1, np.array([si]))[0]
             uv[loops] = ((col + 1) / size, (row + 1) / size)
         j.data.uv_layers["bake"].data.foreach_set("uv", uv.reshape(-1))
     # Linear -> sRGB for an 8-bit texture.
@@ -561,7 +668,13 @@ def vertex_piece(key, obs, decimate=None):
     me.vertices.foreach_get("co", vco)
     vco = vco.reshape(-1, 3)
     aux = np.stack([np.full(len(vco), 0.5, np.float32), haze_np(vco[:, 0], vco[:, 1]), np.zeros(len(vco), np.float32)], axis=1)
-    col = finish_np(alb, lum(light), aux)
+    occ = bake_vertex(j, set(), "cw_ao", kind="AO", domain="POINT")[:, 0]
+    from common import RAMP
+    sun = None
+    if RAMP["sun_mask"]:
+        with sun_only():
+            sun = lum(bake_vertex(j, {"DIRECT"}, "cw_sun", domain="POINT"))
+    col = finish_np(alb, lum(light), occ, aux, sun)
     fin = me.color_attributes.new("cw_color", "BYTE_COLOR", "POINT")
     rgba = np.concatenate([col, np.ones((len(col), 1), np.float32)], axis=1)
     fin.data.foreach_set("color", rgba.astype(np.float32).ravel())
@@ -774,8 +887,9 @@ def glitter_export(report):
     patterns = ["11011010", "01101101", "10110110", "11100011"]
     sc.render.fps = 24
     step = 6
+    reps = 4  # the 2 s twinkle four times: the clip is FOAM_LOOP long, for the foam's slower beat
     sc.frame_start = 0
-    sc.frame_end = step * 8
+    sc.frame_end = step * 8 * reps
     parts = []
     for i in range(4):
         src = bpy.data.objects.get(f"glitter_{i}")
@@ -805,10 +919,11 @@ def glitter_export(report):
         ob.animation_data.action = act
         for axis in range(3):
             fc = act.fcurves.new("scale", index=axis)
-            for k, on in enumerate(patterns[i] + patterns[i][0]):
+            for k, on in enumerate(patterns[i] * reps + patterns[i][0]):
                 kp = fc.keyframe_points.insert(k * step, 1.0 if on == "1" else 0.0)
                 kp.interpolation = "CONSTANT"
         parts.append(ob)
+    parts += foam_parts()
     select_only(parts)
     path = os.path.join(A.out, "glitter.glb")
     bpy.ops.export_scene.gltf(
@@ -827,6 +942,121 @@ def glitter_export(report):
     g = np.stack([co[:, 0], co[:, 2], -co[:, 1]], axis=1)
     report["glitter"] = {"file": "glitter.glb", "bytes": os.path.getsize(path), "triangles": tris, "min": g.min(axis=0).tolist(), "max": g.max(axis=0).tolist()}
     print(f"AETHER_EXPORT glitter tris={tris} bytes={os.path.getsize(path)}", flush=True)
+
+
+FOAM_LOOP = 8.0    # seconds: two laps of the swell on the quay and the rocks
+FOAM_STEPS = [0, 1, 2, 3, 3, 2, 1, 0]  # the foam drawing shown in each half-second step of a 4 s lap
+
+
+def _shorelines():
+    """Lines where the water meets something, each [(x, y)] with the unit direction out to sea at each point: the quay's
+    sea face, both sides of the breakwater, and the waterline of the two headlands (ground_z crossing the sea level)."""
+    from common import SEA_EDGE_Y, ground_z
+    lines = []
+    xs = np.arange(-94.0, 94.5, 1.0)
+    lines.append(([(float(x), SEA_EDGE_Y - 1.4) for x in xs], [(0.0, -1.0)] * len(xs)))
+    pts = []
+    for k in range(15):
+        t = k / 14
+        a = math.radians(-10 - 85 * t)
+        pts.append(Vector((62 + 70 * math.cos(a) * 0.75, SEA_EDGE_Y - 4 + 70 * math.sin(a) * 0.9, 0)))
+    dense = []
+    for p, q in zip(pts[:-1], pts[1:]):
+        for t in np.arange(0.0, 1.0, 0.2):
+            dense.append(p.lerp(q, float(t)))
+    for side in (-1, 1):
+        ln, nr = [], []
+        for i in range(len(dense) - 1):
+            d = (dense[i + 1] - dense[i]).normalized()
+            n = Vector((d.y, -d.x)) * side
+            ln.append((dense[i].x + n.x * 3.0, dense[i].y + n.y * 3.0))
+            nr.append((n.x, n.y))
+        lines.append((ln, nr))
+    for s in (-1, 1):
+        ln, nr = [], []
+        for y in np.arange(SEA_EDGE_Y - 2.0, SEA_EDGE_Y - 150.0, -1.5):
+            hit = None
+            for ax in np.arange(94.0, 400.0, 0.5):
+                if ground_z(s * ax, y) >= 0.0:
+                    hit = ax
+                    break
+            if hit is None:
+                break
+            ln.append((s * (hit - 0.2), float(y)))
+            nr.append((-float(s), 0.0))
+        if len(ln) > 3:
+            lines.append((ln, nr))
+    return lines
+
+
+def foam_parts():
+    """Foam on the water's edge as a flipbook on the sea glitter's clip: four drawings of broken white strokes, each a
+    little further out from the shore than the last, shown one at a time (a lap of the swell rolling in and back out,
+    on half-second steps, the way hand-drawn effects animate). Unlit, one material, four nodes."""
+    import random
+    from common import srgb
+    sc = bpy.context.scene
+    mat = unlit_color_material("foam_unlit", "#e8ebf7")
+    lines = _shorelines()
+    step = int(sc.render.fps * FOAM_LOOP / (2 * len(FOAM_STEPS)))
+    out = []
+    for g in range(4):
+        r = random.Random(500 + g)
+        dist = 0.25 + 0.42 * g
+        verts, faces = [], []
+        for (ln, nr) in lines:
+            # Walk the line laying dashes: 0.8-3.5 m strokes with gaps, tapering at both ends, thinner further out.
+            acc = r.uniform(0.0, 1.5)
+            cum = [0.0]
+            for a, b in zip(ln[:-1], ln[1:]):
+                cum.append(cum[-1] + math.hypot(b[0] - a[0], b[1] - a[1]))
+            total = cum[-1]
+            while acc < total - 0.5:
+                ln_d = r.uniform(0.8, 3.5)
+                w = r.uniform(0.12, 0.32) * (1.0 - 0.15 * g)
+                jit = r.uniform(-0.12, 0.12)
+                seg = []
+                for t in np.linspace(acc, min(total, acc + ln_d), 5):
+                    i = max(0, min(len(cum) - 2, int(np.searchsorted(cum, t)) - 1))
+                    u = (t - cum[i]) / max(1e-6, cum[i + 1] - cum[i])
+                    x = ln[i][0] + (ln[i + 1][0] - ln[i][0]) * u
+                    y = ln[i][1] + (ln[i + 1][1] - ln[i][1]) * u
+                    nx, ny = nr[i]
+                    seg.append((x + nx * (dist + jit), y + ny * (dist + jit), nx, ny))
+                base = len(verts)
+                for k, (x, y, nx, ny) in enumerate(seg):
+                    taper = math.sin(math.pi * k / (len(seg) - 1)) ** 0.6 if 0 < k < len(seg) - 1 else 0.0
+                    hw = w / 2 * taper + 0.01
+                    verts += [(x - nx * hw, y - ny * hw, 0.04), (x + nx * hw, y + ny * hw, 0.04)]
+                for k in range(len(seg) - 1):
+                    a = base + 2 * k
+                    faces.append((a, a + 2, a + 3, a + 1))
+                acc += ln_d + r.uniform(0.3, 1.6)
+        me = bpy.data.meshes.new(f"foam_{g}")
+        me.from_pydata(verts, [], faces)
+        me.update()
+        for p in me.polygons:
+            if p.normal.z < 0:
+                p.flip()
+        me.materials.append(mat)
+        c = sum((Vector(v) for v in verts), Vector()) / max(1, len(verts))
+        for v in me.vertices:
+            v.co -= c
+        ob = bpy.data.objects.new(f"foam_{g}_web", me)
+        sc.collection.objects.link(ob)
+        ob.location = c
+        ob.animation_data_create()
+        act = bpy.data.actions.new(f"foam_lap_{g}")
+        ob.animation_data.action = act
+        seq = FOAM_STEPS * 2 + FOAM_STEPS[:1]
+        for axis in range(3):
+            fc = act.fcurves.new("scale", index=axis)
+            for k, fr in enumerate(seq):
+                kp = fc.keyframe_points.insert(k * step, 1.0 if fr == g else 0.0)
+                kp.interpolation = "CONSTANT"
+        out.append(ob)
+    print(f"AETHER_FOAM drawings={len(out)} lines={len(lines)} strokes_quads={sum(len(o.data.polygons) for o in out)}", flush=True)
+    return out
 
 
 BIRD_LOOP = 16.0  # seconds: one circuit of the flock and one wing pattern
@@ -953,6 +1183,81 @@ def birds_export(report):
     print(f"AETHER_EXPORT birds tris={tris} bytes={os.path.getsize(path)}", flush=True)
 
 
+SWAY_LOOP = 6.0  # seconds; the sway's frequencies are whole multiples of 1 / SWAY_LOOP, so the clip loops seamlessly
+
+
+def sway_export(j, report):
+    """The baked cloth piece split into one node per line (faces by their `cw_sway_id`), each node's origin on the line
+    it hangs from and turned about that line by one looping clip: a slow swing toward the breeze plus a quicker flutter,
+    each line on its own phase. One baked material, so one draw a node."""
+    from mathutils import Quaternion
+    sc = bpy.context.scene
+    fps = 24
+    sc.render.fps = fps
+    n_frames = int(SWAY_LOOP * fps)
+    sc.frame_start, sc.frame_end = 0, n_frames
+    infos = {}
+    for o in bpy.data.objects:
+        if o.name.startswith("sway_") and not o.name.endswith(("__c", "_web")) and o.get("cw_sway"):
+            d = o["cw_sway"].to_dict()
+            infos[int(d["id"])] = d
+    merge_slots(j)
+    me = j.data
+    att = me.attributes.get("cw_sway_id")
+    ids = np.zeros(len(me.polygons), np.int32)
+    att.data.foreach_get("value", ids)
+    parts = []
+    for k, info in sorted(infos.items()):
+        bm = bmesh.new()
+        bm.from_mesh(me)
+        bm.faces.ensure_lookup_table()
+        drop = [f for f in bm.faces if ids[f.index] != k]
+        bmesh.ops.delete(bm, geom=drop, context="FACES")
+        if not bm.faces:
+            bm.free()
+            continue
+        pv = Vector(info["pivot"])
+        for v in bm.verts:
+            v.co -= pv
+        m2 = bpy.data.meshes.new(f"sway_{k}_web")
+        bm.to_mesh(m2)
+        bm.free()
+        for mat in me.materials:
+            m2.materials.append(mat)
+        ob = bpy.data.objects.new(f"sway_{k}_web", m2)
+        sc.collection.objects.link(ob)
+        ob.location = pv
+        ob.rotation_mode = "QUATERNION"
+        ob.animation_data_create()
+        ob.animation_data.action = bpy.data.actions.new(f"sway_{k}")
+        axis = Vector(info["axis"]).normalized()
+        a0, amp, ph, ph2 = math.radians(info["mean"]), math.radians(info["amp"]), info["phase"], info["phase2"]
+        for fr in range(n_frames + 1):
+            t = fr / fps
+            w = 2 * math.pi * t / SWAY_LOOP
+            ang = a0 + amp * (0.7 * math.sin(2 * w + ph) + 0.3 * math.sin(5 * w + ph2))
+            ob.rotation_quaternion = Quaternion(axis, ang)
+            ob.keyframe_insert("rotation_quaternion", frame=fr)
+        parts.append(ob)
+    sc.frame_set(0)
+    select_only(parts)
+    path = os.path.join(A.out, "laundry.glb")
+    bpy.ops.export_scene.gltf(
+        filepath=path, export_format="GLB", use_selection=True, export_apply=False, export_yup=True,
+        export_texcoords=True, export_normals=False, export_tangents=False, export_materials="EXPORT",
+        export_image_format="WEBP", export_image_quality=88, export_cameras=False, export_lights=False,
+        export_extras=False, export_animations=True, export_animation_mode="ACTIVE_ACTIONS", export_force_sampling=True,
+        export_frame_range=True,
+    )
+    sc.frame_set(0)
+    pts = [tuple(ob.matrix_world @ v.co) for ob in parts for v in ob.data.vertices]
+    co = np.asarray(pts, np.float32)
+    g = np.stack([co[:, 0], co[:, 2], -co[:, 1]], axis=1)
+    tris = sum(len(p.vertices) - 2 for ob in parts for p in ob.data.polygons)
+    report["laundry"] = {"file": "laundry.glb", "bytes": os.path.getsize(path), "triangles": tris, "min": g.min(axis=0).tolist(), "max": g.max(axis=0).tolist()}
+    print(f"AETHER_EXPORT laundry nodes={len(parts)} tris={tris} bytes={os.path.getsize(path)}", flush=True)
+
+
 def scale_about_eye(ob):
     from sky import EYE
     for v in ob.data.vertices:
@@ -1039,7 +1344,34 @@ def sun_piece():
 
 # ---------------------------------------------------------------------------------------------------------------- export
 
+def merge_slots(ob):
+    """One material slot per distinct material: after the bake every painted slot of a piece holds the same baked
+    material, and the glTF exporter writes a primitive (a draw) per slot, so the town drew 65 primitives for its three
+    materials. Remaps the faces and drops the duplicate slots."""
+    me = ob.data
+    mats = list(me.materials)
+    uniq, remap = [], []
+    for m in mats:
+        if m in uniq:
+            remap.append(uniq.index(m))
+        else:
+            uniq.append(m)
+            remap.append(len(uniq) - 1)
+    if len(uniq) == len(mats):
+        return
+    idx = np.zeros(len(me.polygons), np.int32)
+    me.polygons.foreach_get("material_index", idx)
+    idx = np.asarray(remap, np.int32)[np.clip(idx, 0, len(mats) - 1)]
+    me.materials.clear()
+    for m in uniq:
+        me.materials.append(m)
+    me.polygons.foreach_set("material_index", idx)
+    me.update()
+
+
 def export_glb(ob, key, report):
+    if ob.type == "MESH":
+        merge_slots(ob)
     select_only([ob])
     path = os.path.join(A.out, f"{key}.glb")
     bpy.ops.export_scene.gltf(
@@ -1063,7 +1395,7 @@ def main():
     setup_cycles()
     report = {}
     want = (lambda k: ONLY is None or k in ONLY)
-    widths = {"town": 0.06, "shrine": 0.035, "infra": 0.03, "props": 0.014, "people": 0.012, "train": 0.03}
+    widths = {"town": 0.06, "shrine": 0.035, "infra": 0.03, "props": 0.014, "people": 0.012, "train": 0.03, "laundry": 0.012}
     if want("train"):
         import extras
         extras.build_train()
@@ -1080,6 +1412,9 @@ def main():
             off = extras.rest_offset()
             for v in j.data.vertices:
                 v.co += off
+        if key == "laundry":
+            sway_export(j, report)
+            continue
         export_glb(j, key, report)
     if want("birds"):
         birds_export(report)

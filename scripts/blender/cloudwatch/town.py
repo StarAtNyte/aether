@@ -204,6 +204,41 @@ def _clear(blocks, me, face, u, z, half, reserved):
 
 # ---------------------------------------------------------------------------------------------------------------- roofs
 
+TILE_COURSE = 0.3   # m up the slope per course of tiles
+TILE_LIP = 0.038    # m: the butt of each course standing off the one below
+
+
+def mat_is_corr(mi):
+    return MATS[mi].name.startswith("corr_")
+
+
+def tile_courses(bm, P3, e0, e1, a, c, z_eave, z_ridge, mi):
+    """Courses of tiles on one slope (from the eave line `a` at z_eave up to the ridge line `c` at z_ridge): each a wedge
+    whose butt stands TILE_LIP off the slope, so the rows catch the low sun and throw a thin shadow line on the course
+    below. Their vertices go into the `cw_noline` layer: no outline shell along every course."""
+    nl = bm.verts.layers.float.get("cw_noline") or bm.verts.layers.float.new("cw_noline")
+    dx, dz = c - a, z_ridge - z_eave
+    Ls = math.hypot(dx, dz)
+    ux, uz = dx / Ls, dz / Ls          # up the slope
+    nx, nz = (-uz, ux) if ux > 0 else (uz, -ux)  # out of the slope (upward)
+    n = int((Ls - 0.35) / TILE_COURSE)
+    for k in range(n):
+        t0, t1 = 0.04 + k * TILE_COURSE, 0.04 + (k + 1) * TILE_COURSE
+        lo = (a + ux * t0, z_eave + uz * t0)
+        hi = (lo[0] + nx * TILE_LIP, lo[1] + nz * TILE_LIP)
+        up = (a + ux * t1, z_eave + uz * t1)
+        # Sunk 6 mm into the slab, so no face lies in the slab's top plane (no z-fighting in a double-sided draw).
+        sec = [(p[0] - nx * 0.006, p[1] - nz * 0.006) for p in (lo, hi, up)]
+        A = [bm.verts.new(P3(e0 + 0.03, p[0], p[1])) for p in sec]
+        B = [bm.verts.new(P3(e1 - 0.03, p[0], p[1])) for p in sec]
+        faces = [(A[0], B[0], B[1], A[1]), (A[1], B[1], B[2], A[2]), (A[2], B[2], B[0], A[0]), (A[0], A[1], A[2]), (B[2], B[1], B[0])]
+        for fv in faces:
+            f = bm.faces.new(fv)
+            f.material_index = mi
+        for v in A + B:
+            v[nl] = 1.0
+
+
 def roof_gable(bm, gear, b, axis, mat, r, trim, gutters=True):
     """Gable roof over block b with its ridge along `axis` ('x' or 'y'). Returns (ridge_top_z, info)."""
     x0, x1, y0, y1, top = b["x0"], b["x1"], b["y0"], b["y1"], b["z1"]
@@ -231,6 +266,8 @@ def roof_gable(bm, gear, b, axis, mat, r, trim, gutters=True):
             fs[k].material_index = trim
         L = e1 - e0
         mid = (e0 + e1) / 2
+        if not mat_is_corr(mat):
+            tile_courses(bm, P3, e0, e1, a, c, ze + th, zr + th, mat)
         if gutters:
             gs = (L - 0.1, 0.13, 0.11) if axis == "x" else (0.13, L - 0.1, 0.11)
             add_box(bm, P3(mid, a + s * 0.065, ze - 0.03), gs, mat_index=M("gutter"))
@@ -504,10 +541,16 @@ def finish_gear():
 
 def window(bm, face, u, zc, ww, wh, style, lit, trim, wall, sill=True):
     ax = "x" if face.n[1] else "y"
-    face.box(bm, u, zc, ww + 0.16, 0.06, wh + 0.16, 0.03, trim, bottom=False)
-    face.box(bm, u, zc, ww, 0.04, wh, 0.05, M("window_lit") if lit else M("window_glass"), bottom=False)
+    # The glass sits just off the wall; a frame of four bars stands 0.1 m proud of it (the head 0.14 m), so the pane reads
+    # as set back in a reveal: the bake's contact occlusion darkens its edges and the low sun draws the bars' shadows.
+    fw = 0.08
+    face.box(bm, u, zc, ww, 0.02, wh, 0.012, M("window_lit") if lit else M("window_glass"), bottom=False)
+    face.box(bm, u, zc + wh / 2 + fw / 2, ww + 2 * fw, 0.14, fw, 0.07, trim)
+    face.box(bm, u, zc - wh / 2 - fw / 2, ww + 2 * fw, 0.1, fw, 0.05, trim)
+    for s in (-1, 1):
+        face.box(bm, u + s * (ww / 2 + fw / 2), zc, fw, 0.1, wh, 0.05, trim, bottom=False)
     if ww > 1.3:
-        face.box(bm, u, zc, 0.05, 0.03, wh, 0.075, trim, bottom=False)
+        face.box(bm, u, zc, 0.05, 0.06, wh, 0.05, trim, bottom=False)
     if wh > 0.8 and sill:
         face.box(bm, u, zc - wh / 2 - 0.1, ww + 0.26, 0.15, 0.05, 0.075, trim)
     if style == "shutter":

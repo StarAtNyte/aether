@@ -29,9 +29,10 @@ Blender units are metres, Z up (Aether: Y up after glTF export). Sea level is z 
 | Hillside | rises north from the shore (y = -30) to the lookout (y = +100, z = 34); about 220 m wide (x from -110 to +110) |
 | Harbour | quay wall 1.6 m high along y = -30; a breakwater 70 m long curving east with a small red lighthouse (6 m); four fishing boats 6-9 m |
 | Harbour road | 7 m wide along the quay, z = 1.6 |
-| Railway | single track, standard gauge 1.067 m, on a terrace at z = 6.0, y = -4; one level crossing where the stair meets it |
+| Railway | single track, 1.067 m gauge, on a terrace at z = 6.0, y = -9.4; one level crossing where the stair meets it; electrified: steel H-masts south of the track every 25-30 m, a messenger wire in true catenaries and a level contact wire 5.0 m over the rail top, zigzagged 0.2 m |
+| Train | a two-car electric multiple unit: cars 20 m over the body, 2.9 m wide, roof 3.72 m over the rail, floor 1.15 m; tapered cab fronts with raked windscreens, four double doors a side, a single-arm pantograph raised to the contact wire, two bogies a car (0.86 m wheels, 2.1 m wheelbase) |
 | Town | 76 houses on four terraces (z = 6, 12, 18, 25) held by dressed-stone retaining walls 2.5-4 m high, in five forms (simple, L-shaped, stepped with a set-back upper storey, flat-roofed concrete blocks with parapets, tall narrow houses), 1-3 storeys; gabled, hipped, hip-and-gable and corrugated roofs with tile rows, eaves with fascias, lean-to roofs, balconies with railings, external steel stairs; antennas, water tanks on stands, solar heaters, AC units with pipe covers, gutters and downpipes, laundry and futons, potted plants, name boards and banners with invented text |
-| Stone stair | 2.4 m wide, risers 0.16 m, treads 0.32 m, landings every 12-16 steps, from the road (z = 1.6) to the lookout (z = 44) |
+| Stone stair | 2.4 m wide, 249 steps: risers 0.17 m, treads 0.29 m (2 x riser + tread = 0.63 m), a level landing at least every 16 steps inside each bank and the terraces between banks, a handrail 0.9 m over the nosings, from the road (z = 1.6) to the lookout (z = 44) |
 | Shrine gate | at the z = 18 terrace on the stair: 2 posts 0.36 m across, 4.6 m apart, lintels at 4.2 and 4.8 m, vermilion with dark caps; two stone lanterns 1.6 m |
 | Lookout | 16 x 10 m paved platform at z = 44, a railing 1.05 m with a gap where the stair arrives, a bench, a street lamp 4.5 m, a lone big tree |
 | Telegraph poles | 8 m concrete/wood poles every 25-30 m along the road, the track and up the stair; 3-4 wires each with catenary sag |
@@ -61,12 +62,24 @@ Blender units are metres, Z up (Aether: Y up after glTF export). Sea level is z 
 
 ## Lighting plan
 
-- Sun at azimuth 214° (south-south-west, low over the sea, inside the opening view), elevation 6.5°, colour `#ffc48a`, strength chosen so a lit wall reaches the
-  top band without clipping. Long shadows run north-east up the hill.
-- Sky light from the dome gradient, tinted lavender in shadow; no grey fill anywhere.
-- Toon ramp (on the diffuse light, 0 dark .. 1 full sun): shadow band below 0.32, a soft 0.06 step, a mid band to 0.62,
-  a narrow 0.04 step to the lit band; shadow colour multiplies the albedo by `#8f8cc8`, mid by `#d9c8d6`, lit by
-  `#fff0dc`. A rim term adds `#ffb47a` at grazing sun angles on lit faces.
+- Physically based light under the paint (`common.LIGHT`, `sky.build_light`): a sun lamp at azimuth 214° (south-south-west,
+  low over the sea, inside the opening view), elevation 6.5°, colour `#ffc48a`, a 0.55° disc (crisp, slightly soft shadow
+  edges), and a Nishita sky for the fill (no sun disc: the lamp is the sun; its rotation is the compass azimuth, measured).
+  Both are scaled so the diffuse light of an open, level surface in shade is 1 (`common.lref`) and a face turned to the sun
+  6 (`sun_ratio`, a clear sky at 6.5°: 5-7). Cycles carries four diffuse bounces, so walls facing sunlit lanes are lifted
+  by their bounce. In the browser's frame the sun is `[-0.558, 0.1005, 0.8237]` (Aether Y up = Blender (x, -z, y)).
+- Contact occlusion (an AO bake, 1.1 m reach) multiplies the light before the ramp: L x (0.32 + 0.68 x AO), so creases
+  (wall foot, eaves, under railings, risers) drop a band.
+- Toon ramp on the lit result, in stops: x = log2(L) plus the terminator break (`common.RAMP`). Five bands multiply the
+  albedo: contact shadow `#55508f` (x < -1.75), shade `#7b77bd` (to -0.25: walls in shade), open shade `#9d97cf` (to 0.45:
+  level surfaces under the sky, bounce-lit walls), low sun `#efc6aa` (to 1.75: level ground and grazing walls in the sun)
+  and lit `#ffe8c8` (faces turned to the sun). The steps inside the shadow side are soft (0.4 and 0.6 stops: with crisp
+  ones, the bake's residual noise and the bounce flickered walls between shade and open shade in blotches), the two
+  sunlit steps crisp (0.1 and 0.08 stops), so cast shadows keep hard painted edges; inside a band 0.2 stop of
+  brightness per stop of light is kept (clamped to 1 stop either side of the band's centre), so a band is a painted
+  gradation rather than a flat fill. The quantize replaces nothing: it bands the physical light.
+- Open Image Denoise (the compositor's Denoise node, guided by the baked albedo and normal) cleans the baked light and
+  occlusion before the ramp, so band edges follow the light's shapes, not the path tracer's grain.
 - Practical lights come on at dusk: lanterns along the stair, the shrine's stone lanterns, the crossing lamps, house
   windows (a few warm), the vending machine, the lighthouse.
 - Exposure: the sky's horizon band sits just under white; bloom only on the sun, glitter, lamps and windows.
@@ -134,6 +147,15 @@ the finished stills are 3840 x 2160.
   export, length along Blender x; and the gulls (`birds.glb`, entity `cw-birds`), twelve birds circling over the harbour
   mouth in one 16 s looping clip (circling, a bob, banking, flapping in bursts between glides; one unlit vertex-colour
   material, double-sided). The model loader centres a model on its frame-0 bounds, which the entity position matches.
+- Cloth in the wind (`laundry.glb`, entity `cw-laundry`): the laundry lines nearest the stair, two yard lines and the
+  shop's two nobori banners are built as `sway_*` objects (`common.sway_object`) whose origin is the line they hang from
+  (the pole, for a banner). The bake gives them one 1024 px atlas, then splits it back into a node per line (16 nodes,
+  one material each), every node turned about its own line by one 6 s looping clip: a lean toward the onshore breeze, a
+  slow swing (a 3 s beat) and a quicker flutter, each line on its own phase. The other lines stay still in `props`.
+- Foam on the water's edge (in `glitter.glb`, on its clip, now 8 s: the twinkle's 2 s pattern four times): broken
+  white strokes along the quay's sea face, both sides of the breakwater and the headlands' waterline (where `ground_z`
+  crosses the sea level), in four drawings each a little further out, shown one at a time on half-second steps (a lap
+  of the swell rolling in and back, twice a loop), the way hand-drawn effects animate. Unlit, one material.
 - Line art: inverted-hull outlines on buildings, gate, poles and people (a back-face shell, `#2a2235`), part of the glb.
 - Pieces: the town's terraces and lanes (4096 px atlas) and the rest of the hillside (2048 px) apart, so a texel by the
   crossing is about 5 cm; houses (4096 px), the shrine on its own small atlas (in the town's atlas the gate's round posts
@@ -271,12 +293,23 @@ forever. The player spawns at the foot of the stair on the harbour road; from th
 blender -b --factory-startup -P scripts/blender/cloudwatch/build.py -- --out <dir> [--size 3840x2160] [--shots A,B,C,D,S,P]
 blender -b <dir>/cloudwatch.blend -P scripts/blender/cloudwatch/check_props.py -- --json <dir>/gate.json # the gate
 blender -b <dir>/cloudwatch.blend -P scripts/blender/cloudwatch/bake_export.py -- --out <web> --samples 64
+blender -b <dir>/cloudwatch.blend -P scripts/blender/cloudwatch/bake_preview.py -- --out <dir> [--shots A,B,C]  # the bake's look in minutes
+blender -b --factory-startup -P scripts/blender/cloudwatch/glb_shots.py -- --glb <web> --out <dir> [--shots A,B,C,T]  # stills of the baked pieces
 npx tsx scripts/blender/cloudwatch/world.ts <web>    # copies the pieces, writes the template in canonical form
 STATIC_DIR=<dist> AETHER_FULL_QUALITY=1 AETHER_RENDER_TIER=high npx tsx scripts/blender/cloudwatch/aether-shots.ts --out=<dir>
 ```
 
-Run Blender under `systemd-run --user --scope -p MemoryMax=12G nice -n 10`. The bake runs on the CPU by default: on a
-shared GPU with little free memory, an OptiX bake came back black without an error (`--gpu` asks for it anyway). A full
+Run Blender under `systemd-run --user --scope -p MemoryMax=8000M nice -n 10`. The bake runs on the CPU by default: on a
+shared GPU with little free memory, an OptiX bake came back black without an error, and so did a CUDA bake on a GPU busy
+with another job. `--gpu CUDA` (or `OPTIX`) asks for it anyway; every GPU bake is checked and a black one is baked again
+on the CPU.
+
+`bake_preview.py` renders the shot cameras in Cycles with the passes the bake reads (diffuse direct and indirect light,
+diffuse colour, AO, emission, the terminator-break noise as an AOV, position) and runs the bake's own finish
+(`common.finish_np`) on them: the lighting and the ramp can be tuned in a minute a shot instead of a full bake.
+`glb_shots.py` imports the baked glb pieces into an empty scene (unlit, as the browser draws them) and renders the shots;
+shot T is a close-up of the train, moved out of the tunnel for it. The EEVEE toon stills of `build.py` show the toon
+materials (the same ramp and occlusion, EEVEE's own shadows), not the bake. A full
 bake takes about 35 minutes on 32 threads (the 4096 px terrain and town atlases take most of it); `--only` re-bakes
 named pieces into the same folder.
 
@@ -315,6 +348,32 @@ and a 0.1 m near plane, the creases where billows intersect 2 km away came out a
     regression shows; the sound costs little and nothing when muted (its graph is suspended).
   - Size: Kaho 583 KB to 614 KB (more skirt and hair rows, the braid, neckerchief, watch and charm); the story code adds
     about 30 KB of source (the sound module loads only with a film); concept art is in docs only (1.2 MB of WebP).
+- **Physical pass** (the bake read flat and washed out, the stair and the crossing most: one shadow value, no contact
+  shadow, cast shadows faint; the train a box; houses boxy; nothing moved but the glitter and the gulls):
+  - Light: a physical sun and Nishita sky at a measured 6 : 1 key to fill, four bounces, an AO contact pass and Open Image
+    Denoise, banded by a five-band ramp in stops (see Lighting plan). Long house, pole and railing shadows now cross the
+    lanes and the road, creases hold a contact band, sunlit walls warm against violet shade
+    (`before-after/15-bake-hero.webp`, `16-bake-stair.webp`, `17-bake-crossing.webp`: before left, after right, the baked
+    pieces rendered by `glb_shots.py`).
+  - Atlas: islands under ~1.25 texels leave the pack before it is redone (they are shaded per vertex anyway), so walls,
+    roofs and ground get the freed room (the town had 25k such islands, each holding a box with margins). Pieces now
+    export one primitive per distinct material: the town drew 65 primitives for 3 materials, the props 67 for 6; the
+    pieces hold 81 primitives in all (from 239), the 16 laundry nodes and 4 foam drawings included.
+  - The first crisp shadow-side steps showed the bake's residual noise and the bounce as blotches between shade and open
+    shade on walls and lanes; those two steps are now soft (0.4 / 0.6 stops) and the indirect light is clamped. A sun-only
+    pass that picks the sunlit bands by the sun alone (`RAMP["sun_mask"]`) is written but off until judged.
+  - Train: a real two-car EMU to scale (see Setting), single-arm pantograph to a new overhead line (masts, cantilevers,
+    messenger in catenaries, contact wire at 5.0 m) (`before-after/18-train.webp`). The train is now 40.9 m long (was
+    31.7); its base and centre line are unchanged, so the story's path still applies.
+  - Houses: window frames of four bars standing 0.1 m proud with the glass set back, tile courses as wedges on every
+    tiled gable slope (no outline shell on them), the stair rebuilt to 0.17 m risers, 0.29 m treads and landings, its
+    handrail following the landings. Telegraph wires hang in true catenaries (`common.catenary`).
+  - Motion: `laundry.glb` (16 swaying lines and banners) and the shoreline foam flipbook on the glitter clip (now 8 s).
+- **Gate** (this pass): 78 props checked, 0 failed; the one touching pair is the mother's and child's hands.
+- **Budget** (this pass): 17 pieces, 561 k triangles, 24.5 MB (from 16, 484 k, 21.4 MB): town 169 k / 10.0 MB (from
+  125 k / 8.6: window frames, tile courses, a fuller atlas), infra 68 k / 2.9 MB (stair landings and nosings, the
+  overhead line), train 10.5 k / 0.62 MB (from 3.5 k / 0.2: a 2048 px atlas for a hero seen at 5 m), laundry 2.9 k /
+  0.22 MB (new), glitter 14.5 k / 0.36 MB (foam), the rest within a few per cent of before.
 
 - **Painterly pass** (the look pass read as clean digital cel art: flat vector fills, one shadow value in the clouds, no
   depth past the headland; method step 6):
@@ -419,5 +478,10 @@ and a 0.1 m near plane, the creases where billows intersect 2 km away came out a
   - The laundry, futons and banners do not sway; the train is a simple box design.
   - (Fixed in the film pass below: Kaho's head turning on its own in a held close-up, and the film's missing sound.)
   - No in-browser video export of the film yet.
+  - The futons and the laundry lines away from the stair do not sway (draw budget); the foam is a flipbook, not a
+    simulation.
+  - Kaho's head turns on its own in a held close-up (the rig's look-at), so the film shows her from behind or at a
+    distance rather than face-on.
+  - The film has no music or sound of its own yet, and no in-browser video export.
   - In a headless capture the clock is frozen, so the glitter's twinkle shows only in the browser. Its clip was checked
     by stepping the animator in Node.

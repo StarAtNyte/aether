@@ -33,7 +33,17 @@ def wobble_group(ob, width=None):
     # Small things (people, props) wobble faster so a line still varies along a short edge.
     f = WOBBLE_FREQ * (2.5 if (width or 0.05) < 0.02 else 1.0)
     groups = {}
+    # Vertices in the `cw_noline` layer (tile courses) get no shell: a line along every course would hatch the roofs.
+    nl = ob.data.attributes.get("cw_noline")
+    off = set()
+    if nl is not None and nl.domain == "POINT":
+        vals = [0.0] * len(ob.data.vertices)
+        nl.data.foreach_get("value", vals)
+        off = {i for i, x in enumerate(vals) if x > 0.5}
     for v in ob.data.vertices:
+        if v.index in off:
+            groups.setdefault(0.0, []).append(v.index)
+            continue
         p = mw @ v.co
         n = noise.noise(p * f) * 0.75 + noise.noise(p * f * 4.1 + Vector((7.3, 1.1, 3.7))) * 0.25
         w = lo + (1.0 - lo) * min(1.0, max(0.0, 0.5 + 0.9 * n))
