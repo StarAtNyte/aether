@@ -89,13 +89,21 @@ export const StorySound = z.object({
 });
 export type StorySound = z.infer<typeof StorySound>;
 
-/** A named clip an entity plays during a shot (a person waving), `at` seconds in. */
-export const StoryAction = z.object({
-  entity: Id,
-  at: z.number().min(0),
-  clip: z.string().min(1).max(48),
-  loop: z.boolean().default(false),
-});
+/**
+ * Something a person does during a shot, `at` seconds in: a named clip (waving), and/or a facial expression (a morph
+ * target of the body by name: `smile`, `sad`, `surprised`, `teary`, `blink`, `mouth_open`, `determined`) eased to
+ * `weight` (0 lets it go).
+ */
+export const StoryAction = z
+  .object({
+    entity: Id,
+    at: z.number().min(0),
+    clip: z.string().min(1).max(48).optional(),
+    loop: z.boolean().default(false),
+    expression: z.string().min(1).max(32).optional(),
+    weight: z.number().min(0).max(1).default(1),
+  })
+  .refine((a) => a.clip !== undefined || a.expression !== undefined, 'an action needs a clip or an expression');
 export type StoryAction = z.infer<typeof StoryAction>;
 
 /** The ambience bed of a shot (0 silent .. 1 full), blended toward over the shot's first second. */

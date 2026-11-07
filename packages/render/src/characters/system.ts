@@ -182,7 +182,9 @@ export class CharacterSystem {
       const castShadow = (opts.castShadow ?? true) && this.opts.shadows !== false;
       const rig = new CharacterRig({
         scene,
-        clips: motionSrc.animations,
+        // The motion set, plus clips a body file carries of its own (a built character's extra beats: look_up,
+        // hand_to_chest, two_fingers…); a body clip of the same name as a shared one replaces it.
+        clips: bodySrc.animations && bodySrc.animations.length > 0 ? [...motionSrc.animations.filter((c) => !bodySrc.animations.some((b) => b.name === c.name)), ...bodySrc.animations] : motionSrc.animations,
         table: clipTable(look.body.gender),
         look,
         faces: look.body.faces,

@@ -50,8 +50,12 @@ const END_TAIL = END_HOLD_SECONDS + END_HANDOVER_SECONDS + 0.3;
 interface StoryRig {
   playClip(name: string, opts?: { loop?: boolean }): unknown;
   stopClip(): void;
+  setExpression?(name: string, weight: number): void;
   ground?: ((x: number, z: number, y: number) => number | null) | null;
 }
+
+/** The expressions a story may set (all let go at the end). */
+const FACES = ['smile', 'sad', 'surprised', 'teary', 'blink', 'mouth_open', 'determined'] as const;
 
 /** Spacing (m) of the fine ground samples on stairs and slopes (the feet are placed on them; a tread is 0.32 m). */
 const FEET_STEP = 0.06;
@@ -269,6 +273,8 @@ export class StoryRunner {
   private lastLocal = 0;
   /** Clips playing on people (stopped when the film ends or a later clip replaces them). */
   private readonly clipped = new Set<string>();
+  /** People whose face a shot set (their expressions are let go when the film ends). */
+  private readonly expressed = new Set<string>();
   /** The ground for the people's feet (stairs and slopes their paths cross). */
   private readonly feet = new FeetGround();
   private readonly feetFn = (x: number, z: number, y: number): number | null => this.feet.at(x, z, y);
@@ -529,8 +535,14 @@ export class StoryRunner {
       if (!(a.at > lo && a.at <= frame.local)) continue;
       const rig = this.renderer.characterRig?.(a.entity);
       if (!rig) continue;
-      rig.playClip(a.clip, { loop: a.loop });
-      this.clipped.add(a.entity);
+      if (a.clip) {
+        rig.playClip(a.clip, { loop: a.loop });
+        this.clipped.add(a.entity);
+      }
+      if (a.expression) {
+        rig.setExpression?.(a.expression, a.weight);
+        this.expressed.add(a.entity);
+      }
     }
   }
 
@@ -589,6 +601,8 @@ export class StoryRunner {
     this.renderer.setShotGrade?.(null);
     for (const id of this.clipped) this.renderer.characterRig?.(id)?.stopClip();
     this.clipped.clear();
+    for (const id of this.expressed) for (const e of FACES) this.renderer.characterRig?.(id)?.setExpression?.(e, 0);
+    this.expressed.clear();
     for (const id of this.people) {
       const rig = this.renderer.characterRig?.(id);
       if (rig && rig.ground === this.feetFn) rig.ground = null;

@@ -176,7 +176,7 @@ describe('Cloudwatch Harbour', () => {
     const d = storyDuration(w.story!);
     expect(d).toBeGreaterThanOrEqual(60);
     expect(d).toBeLessThanOrEqual(120);
-    for (const s of w.story!.shots) for (const m of s.moves) expect(Object.hasOwn(w.entities, m.entity) || m.entity === 'cw-train').toBe(true);
+    for (const s of w.story!.shots) for (const m of s.moves) expect(Object.hasOwn(w.entities, m.entity) || m.entity === 'cw-train' || m.entity === 'cw-mio').toBe(true);
     expect(w.entities['cw-kaho']?.character?.body).toBe('kaho');
   });
 

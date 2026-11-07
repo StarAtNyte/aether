@@ -16,7 +16,7 @@
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stableStringify, validateWorld, type WorldDocInput } from '@aether/core';
-import { KAHO, KAHO_END, STORY } from './story';
+import { KAHO, KAHO_END, MIO, MIO_START, STORY } from './story';
 
 const SLUG = 'cloudwatch-harbour';
 const REPO = join(import.meta.dirname, '..', '..', '..');
@@ -95,6 +95,23 @@ entities[KAHO] = {
   receiveShadow: false,
   state: {},
 };
+
+// Mio, Kaho's friend (the film's second person), once her body is in the original cast: on the lookout at the start
+// (the film's flashback puts her there), then riding the train.
+const cast = JSON.parse(readFileSync(join(REPO, 'assets/characters-original.json'), 'utf8')) as { cast: Array<{ id: string }> };
+if (cast.cast.some((c) => c.id === 'mio')) {
+  entities[MIO] = {
+    id: MIO,
+    name: 'Mio',
+    tags: ['person', 'story'],
+    transform: { position: MIO_START, rotation: [0, 180, 0], scale: [1, 1, 1] },
+    shape: { kind: 'none' },
+    character: { body: 'mio', gender: 'female', age: 'young' },
+    castShadow: false,
+    receiveShadow: false,
+    state: {},
+  };
+}
 
 // Shot A of the design doc (the lookout), Blender (x, y, z) -> glTF/Aether (x, z, -y).
 const eye: [number, number, number] = [2.0, 45.65, -130.9];

@@ -76,6 +76,42 @@ export class CharacterRig {
    * swing of each foot kept above its own ground. Absent: the feet stay where the clip puts them.
    */
   ground: ((x: number, z: number, y: number) => number | null) | null = null;
+  /** Facial expressions (morph targets by name): eased current and target weights. */
+  private readonly expressions = new Map<string, { cur: number; want: number }>();
+  /** Meshes of the body that carry morph targets. */
+  private morphMeshes: Mesh[] | null = null;
+
+  /**
+   * Ease a facial expression (a morph target of the body by name: `smile`, `sad`, `teary`…) to `weight` over about a
+   * fifth of a second. A body without that morph ignores it.
+   */
+  setExpression(name: string, weight: number): void {
+    const e = this.expressions.get(name) ?? { cur: 0, want: 0 };
+    e.want = Math.max(0, Math.min(1, weight));
+    this.expressions.set(name, e);
+  }
+
+  private updateExpressions(dt: number): void {
+    if (this.expressions.size === 0) return;
+    if (!this.morphMeshes) {
+      this.morphMeshes = [];
+      this.opts.scene.traverse((o) => {
+        const m = o as Mesh;
+        if (m.isMesh && m.morphTargetDictionary && m.morphTargetInfluences) this.morphMeshes!.push(m);
+      });
+    }
+    const k = 1 - Math.exp(-Math.max(0, dt) / 0.07);
+    for (const [name, e] of this.expressions) {
+      e.cur += (e.want - e.cur) * k;
+      const meshes: Mesh[] = this.morphMeshes;
+      for (const mesh of meshes) {
+        const slot: number | undefined = mesh.morphTargetDictionary?.[name];
+        const inf: number[] | undefined = mesh.morphTargetInfluences;
+        if (slot !== undefined && inf) inf[slot] = e.cur;
+      }
+    }
+  }
+
   /** A toon body's arms hang this far (radians) out from the clip's, so the hands clear a flared skirt. */
   armClearance = 0;
   /** 0..1: how far a toon body's head and neck are eased back to their rest while standing (the clip's glances). */
@@ -532,6 +568,7 @@ export class CharacterRig {
     if (detail >= 1) this.relaxAirArms(plan.state, step);
     if (detail >= 1) this.paddleStroke(plan.state, step);
     if (detail >= 1) this.toonPose(plan.state);
+    if (detail >= 1) this.updateExpressions(step);
     if (detail >= 2 && this.ground) this.groundFeet(plan.state, step);
     else this.feetPrimed = false;
     if (detail >= 1) {
