@@ -4,7 +4,7 @@
  *
  *   npx tsx scripts/cook-upload.ts [--out=cooked] <slug> [<slug> …]       upload packages already cooked into --out
  *   npx tsx scripts/cook-upload.ts --readme                               upload the dataset card (scripts/cook-dataset/README.md)
- *   STATIC_DIR=<dist> GEN_GPU=intel npx tsx scripts/cook-upload.ts --all [--only=a,b] [--retry-failed] [--clean] [--no-scope] [--tiers=…]
+ *   STATIC_DIR=<dist> GEN_GPU=intel npx tsx scripts/cook-upload.ts --all [--only=a,b] [--force] [--retry-failed] [--clean] [--no-scope] [--tiers=…]
  *   npx tsx scripts/cook-upload.ts --all --dry-run [--only=a,b] [--gen=…] list the templates whose hosted package is stale
  *
  * `--all` takes every template in apps/studio/src/showcase/manifest.ts, one at a time, and skips a template whose package on
@@ -151,7 +151,9 @@ async function all(): Promise<number> {
     const sha = worldSha(slug);
     const prev = state[slug];
     // The dataset decides: a package there that this build would read is never cooked again (another run uploaded it).
-    const why = await staleReason(slug, gen, (s) => ops.readManifest(s)).catch((e: unknown) => `could not check (${e instanceof Error ? e.message : String(e)})`);
+    // `--force` cooks the listed templates even when current: a change the version does not cover (the opening view).
+    const found = await staleReason(slug, gen, (s) => ops.readManifest(s)).catch((e: unknown) => `could not check (${e instanceof Error ? e.message : String(e)})`);
+    const why = found ?? (has('force') ? 'forced' : null);
     if (why === null) {
       log(`[${i + 1}/${slugs.length}] ${slug}: current on the dataset, skipped`);
       continue;

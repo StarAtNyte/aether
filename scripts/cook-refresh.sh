@@ -91,6 +91,13 @@ TSX="$REPO/node_modules/.bin/tsx"
 DRYOUT="$(capped "$TSX" scripts/cook-upload.ts --all --dry-run)"
 printf '%s\n' "$DRYOUT"
 STALE="$(printf '%s\n' "$DRYOUT" | sed -n 's/^stale: //p' | tail -1)"
+# AETHER_COOK_FORCE=a,b re-cooks those templates although current: a change the version does not cover (an opening
+# view chosen by new rules). `systemctl --user set-environment AETHER_COOK_FORCE=… && systemctl --user start …`.
+FORCE=""
+if [ -n "${AETHER_COOK_FORCE:-}" ]; then
+  STALE="$(printf '%s,%s' "$STALE" "$AETHER_COOK_FORCE" | tr ',' '\n' | sed '/^$/d' | awk '!seen[$0]++' | paste -sd, -)"
+  FORCE="--force"
+fi
 if [ -z "$STALE" ]; then
   log "every template is current: nothing to cook"
   exit 0
@@ -105,7 +112,7 @@ fi
 log "building $DIST"
 (cd apps/studio && capped node "$REPO/node_modules/vite/bin/vite.js" build --outDir "$DIST" --emptyOutDir)
 log "cooking $STALE"
-if STATIC_DIR="$DIST" nice -n 10 "$TSX" scripts/cook-upload.ts --all --retry-failed --clean --out="$OUT" --only="$STALE"; then
+if STATIC_DIR="$DIST" nice -n 10 "$TSX" scripts/cook-upload.ts --all $FORCE --retry-failed --clean --out="$OUT" --only="$STALE"; then
   log "refresh done"
 else
   log "refresh finished with failures (see $OUT/.cook-all-state.json)"
