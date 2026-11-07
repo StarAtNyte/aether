@@ -20,6 +20,7 @@ from mathutils.bvhtree import BVHTree
 from common import Part, activate, apply_modifiers, new_object, shade_smooth, smoothstep
 
 HEAD_BIAS = {}   # head object name -> per-vertex shade bias (face_bias)
+HEAD_RIM = {}    # head object name -> per-vertex rim strength
 
 EXPRESSIONS = ['smile', 'sad', 'surprised', 'teary', 'blink', 'mouth_open', 'determined']
 
@@ -189,6 +190,8 @@ def face_bias(ob, chin, u, spec):
     # under the jaw
     jaw = nss(0.15, 0.6, -nrm[:, 2]) * (1 - nss(0.02 * u, 0.05 * u, p[:, 2]))
     bias = bias * (1 - jaw) - 0.35 * jaw
+    # no warm rim over the face (it would draw a second shape along the cheek); the head's sides keep it
+    HEAD_RIM[ob.name] = 1 - zone
     return bias
 
 
@@ -355,7 +358,8 @@ def build_decals(head, chin, u, atlas, spec):
         part = Part(ob, 'decal', toon=(0.0, 0.1, 0.0, 0.0), bones={'Bip01_Head': 1.0})
         # and the head's shade bias at the same place (rim off, no outline: the decal sits flush in the face)
         bias = head_bias_at(head, layout)
-        part.toon_v = np.stack([np.zeros(len(layout)), bias, np.zeros(len(layout)), np.zeros(len(layout))], 1)
+        rim = head_bias_at(head, layout, HEAD_RIM)
+        part.toon_v = np.stack([np.zeros(len(layout)), bias, rim, np.zeros(len(layout))], 1)
         parts.append(part)
     proxy = bpy.data.objects.get('face-proxy')
     if proxy:
@@ -363,12 +367,13 @@ def build_decals(head, chin, u, atlas, spec):
     return parts
 
 
-def head_bias_at(head, pts):
-    """The head's per-vertex shade bias interpolated at points near its surface (inverse distance, 4 nearest)."""
+def head_bias_at(head, pts, table=None):
+    """The head's per-vertex shade bias (or another per-vertex table) interpolated at points near its surface
+    (inverse distance, 4 nearest)."""
     from mathutils import kdtree
-    bias = HEAD_BIAS.get(head.name)
+    bias = (HEAD_BIAS if table is None else table).get(head.name)
     if bias is None:
-        return np.full(len(pts), 0.1)
+        return np.full(len(pts), 0.1 if table is None else 0.0)
     kd = kdtree.KDTree(len(head.data.vertices))
     for v in head.data.vertices:
         kd.insert(v.co, v.index)

@@ -172,7 +172,8 @@ def build(spec, P, out):
     hb = FACE.HEAD_BIAS.get(head.name)
     if hb is not None:
         n = len(hb)
-        parts[1].toon_v = np.stack([np.full(n, 0.7), hb, np.ones(n), np.zeros(n)], 1)
+        hr = FACE.HEAD_RIM.get(head.name, np.ones(n))
+        parts[1].toon_v = np.stack([np.full(n, 0.7), hb, hr, np.zeros(n)], 1)
     if spec['style'] == 'anime':
         # the chin's shadow on the neck: the front of the neck just under the jaw falls into shadow first
         bco = np.array([v.co[:] for v in body.data.vertices])
@@ -477,7 +478,8 @@ def main():
             save_build(B, out)
         # what the pipeline can correct by itself
         fix = False
-        if any('interpenetration' in i for i in rep['issues']) and P['ease'] < 2.0:
+        # more ease helps the tight garments (the skirt hangs by its own envelope and weights, so not when it alone fails)
+        if any('interpenetration' in i and 'through skirt' not in i for i in rep['issues']) and P['ease'] < 2.0:
             P['ease'] = round(P['ease'] * 1.35, 3)
             fix = True
         if rep.get('triangles', 0) > 60000 and P['body_sub'] > 1:

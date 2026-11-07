@@ -326,12 +326,18 @@ def paint_hair(at, name, lin, grey=0.0):
     # clump edges darker (the separation between painted clumps)
     edge = smooth01((np.abs(U - 0.5) - 0.3) / 0.2)
     col *= (1 - 0.22 * edge)[..., None]
-    zig = 0.012 * np.sin(U * math.pi * 4 + 0.6) + 0.006 * np.sin(U * math.pi * 11)
+    dark = float(np.dot(base, [0.3, 0.59, 0.11])) < 0.25
+    if dark:
+        # black hair: darkening the edges does not show; lift each clump's middle with a cool sheen instead
+        col += (0.11 * (1 - edge) * np.sin(np.clip(U, 0, 1) * math.pi))[..., None] * np.array([0.85, 0.9, 1.1])
+    # the band: a clean arc across the clump with pointed ends (the classic angel ring cut into strands), not noise
+    zig = 0.01 * np.sin(U * math.pi * 2 + 0.6)
     mid = np.sin(np.clip(U, 0, 1) * math.pi)
-    band = cover(np.abs(V - 0.79 - zig) - 0.022 * mid ** 1.5, 3.0 / 256) * (mid > 0.3)
-    hl = np.clip(base * 1.28 + 0.07, 0, 1)
+    band = cover(np.abs(V - 0.79 - zig) - 0.026 * mid ** 2, 3.0 / 256) * (mid > 0.25)
+    hl = np.clip(base * 1.28 + 0.07, 0, 1) if not dark else np.clip(base * 1.3 + np.array([0.2, 0.21, 0.26]), 0, 1)
     layer(col, hl, band)
-    alpha = 1 - 0.4 * band
+    # the code is exact (0.6 where the band is, 1 elsewhere), so filtering never makes a half-highlight texel
+    alpha = np.where(band > 0.5, 0.6, 1.0)
     at.put(name, col, alpha, 2)
 
 

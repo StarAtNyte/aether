@@ -201,7 +201,8 @@ class Kit:
                     lim = z['neck'] - 0.012 * s + 0.5 * abs(p[0]) if collar else z['neck'] - 0.022 * s + 0.6 * abs(p[0])
                     if p[2] > lim:
                         return False
-                    if open_front and abs(p[0]) < 0.016 * s + max(0, (p[2] - z['chest']) * 0.5):
+                    # an open cardigan: the fronts stand apart down to the hem, the V widening to the neck
+                    if open_front and abs(p[0]) < 0.034 * s + max(0, (p[2] - z['chest'] + 0.04 * s) * 0.55):
                         return False
                 else:
                     if p[2] > z['neck'] - 0.004 * s and abs(p[0]) < 0.05 * s:
@@ -463,10 +464,14 @@ class Kit:
         # an A-line: per azimuth the straight line from the waist that clears the envelope everywhere below (the
         # pleats fall straight from the hips instead of belling out over them)
         tz = np.array([(top - zz) / max(1e-6, top - hem) for zz in zs])
-        slope = np.max((env[1:] - env[0][None, :]) / tz[1:, None], axis=0)
+        # (the line only has to clear the hips and thighs: below the knee a long skirt keeps flaring at a third of it)
+        tk = min(1.0, (top - (z['knee'] + 0.04 * s)) / max(1e-6, top - hem))
+        upto = tz <= tk + 1e-6
+        slope = np.max((env[1:][upto[1:]] - env[0][None, :]) / tz[1:][upto[1:], None], axis=0)
         for _ in range(3):
             slope = (np.roll(slope, 1) + 2 * slope + np.roll(slope, -1)) / 4
-        env = np.maximum(env, env[0][None, :] + tz[:, None] * slope[None, :])
+        tt = np.minimum(tz, tk) + 0.25 * np.maximum(0.0, tz - tk)
+        env = np.maximum(env, env[0][None, :] + tt[:, None] * slope[None, :])
         ease = 0.009 * s * EASE
         flare_k = 0.02 if length in ('knee', 'mini') else 0.03
         verts, uvs, wts = [], [], []
@@ -507,6 +512,8 @@ class Kit:
             self.springs.append({'name': f'skirt{k}', 'bones': [nm], 'tip': b2g_point(tip - at), 'stiffness': 0.34, 'drag': 0.24, 'gravity': 0.2, 'radius': 0.024, 'limit': round(0.75 + 0.6 * fb, 3)})
             names.append(nm)
         th_x = abs(self.J['Bip01_L_Thigh'].x)
+        # the crossfade between the thighs: narrow for a knee-length skirt, wide for a long one (whose middle hangs)
+        cf = 0.35 if length in ('knee', 'mini') else 1.0
         for r, zz in enumerate(zs):
             wv = smoothstep(attach + 0.01 * s, attach - 0.07 * s, zz)
             # over each thigh the cloth follows the thigh in part (a striding leg carries the front and back of the
@@ -526,14 +533,21 @@ class Kit:
                 w = {bb: x * (1 - wv) for bb, x in top_w.items()}
                 vx = verts[r * na + k].x
                 psi = THIGH_SHARE * deep * (0.6 + 0.4 * abs(math.cos(th)))
-                w[names[a]] = w.get(names[a], 0) + wv * (1 - t) * (1 - psi)
-                w[names[b]] = w.get(names[b], 0) + wv * t * (1 - psi)
+                # a long skirt's lower part does not swing out with the thigh like a lever: below the knee it hangs
+                # (that share goes to the calf instead: a kicked-up or striding shin carries the hem with it)
+                below_knee = smoothstep(z['knee'] + 0.06 * s, z['knee'] - 0.12 * s, zz)
+                # (more at the back, where a running heel kicks up into the hem)
+                psi_c = min(1.0 - psi * (1 - 0.45 * below_knee), psi * below_knee * (0.45 + 0.4 * max(0.0, -math.cos(th))))
+                psi *= 1 - 0.45 * below_knee
+                w[names[a]] = w.get(names[a], 0) + wv * (1 - t) * (1 - psi - psi_c)
+                w[names[b]] = w.get(names[b], 0) + wv * t * (1 - psi - psi_c)
                 if psi > 0.01:
                     # crossfaded between the thighs: the middle of the front and back hangs between the legs
-                    lt = smoothstep(-0.35 * th_x, 0.35 * th_x, vx)
-                    for tb, x in (('Bip01_L_Thigh', lt), ('Bip01_R_Thigh', 1 - lt)):
-                        if x > 0.01:
-                            w[tb] = w.get(tb, 0) + wv * psi * x
+                    lt = smoothstep(-cf * th_x, cf * th_x, vx)
+                    for bone, share in (('Thigh', psi), ('Calf', psi_c)):
+                        for sd, x in (('L', lt), ('R', 1 - lt)):
+                            if x * share > 0.005:
+                                w[f'Bip01_{sd}_{bone}'] = w.get(f'Bip01_{sd}_{bone}', 0) + wv * share * x
                 wts.append(w)
         groups(ob, wts)
         uvl = ob.data.uv_layers.new(name='UVMap')
@@ -780,6 +794,8 @@ class Kit:
         pts = [self.cast(bvh, g, 0.005 * s) for g in guide]
         for _ in range(3):
             pts[1:-1] = [(pts[i - 1] + 2 * pts[i] + pts[i + 1]) / 4 for i in range(1, len(pts) - 1)]
+            # smoothing pulls a strap across the chest's curve into it: back out over the body and every garment
+            pts = [self.clear(p, 0.006 * s) for p in pts]
         verts, faces = [], []
         for k, p in enumerate(pts):
             t = (pts[min(n, k + 1)] - pts[max(0, k - 1)]).normalized()
@@ -796,7 +812,8 @@ class Kit:
                 faces.append((a2, b2, b2 + 4, a2 + 4))
         ob = new_object('bag-strap', verts, faces)
         shade_smooth(ob)
-        self.flat_part(ob, ('bag', col), toon=(0.7, 0.0, 1.0, 0.0), bones='torso', layer=3)
+        # the body's own weights under the strap (over the shoulder the clavicle and arm carry it, like the cardigan)
+        self.flat_part(ob, ('bag', col), toon=(0.7, 0.0, 1.0, 0.0), bones='nearest', layer=3)
         # the bag at the hip, outside the skirt
         skirt_bvh = BVHTree.FromObject(self.skirt_ob, bpy.context.evaluated_depsgraph_get()) if getattr(self, 'skirt_ob', None) else bvh
         hp = self.on(skirt_bvh, hip + Vector((-sx * 0.05 * s, 0, -0.05 * s)), 0.02 * s)

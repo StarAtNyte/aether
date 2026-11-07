@@ -101,9 +101,12 @@ class Hair:
             wf = smoothstep(0.0, 0.18, t) * 0.55 + 0.45
             if tip == 'point':
                 wf *= 1 - smoothstep(0.55, 1.0, t) * 0.97
+            elif tip == 'longpoint':
+                # a long lock's end: full most of the way, then a short point
+                wf *= 1 - smoothstep(0.8, 1.0, t) * 0.95
             elif tip == 'curl':
                 # a bob's lock: a rounded, turned-in end (a short point, not a spike)
-                wf *= 1 - smoothstep(0.7, 1.0, t) * 0.8
+                wf *= 1 - smoothstep(0.66, 1.0, t) * 0.92
             elif tip == 'cut':
                 wf *= 1 - smoothstep(0.85, 1.0, t) * 0.5
             tf = wf ** 0.7
@@ -144,7 +147,7 @@ class Hair:
             return loc + n * margin
         return p
 
-    def lock(self, theta, phi_root, phi_leave, tip_z, width, thick, out, tip='curl', curl=0.02, flare=0.01, weights=None, swirl=0.0, theta_root=None):
+    def lock(self, theta, phi_root, phi_leave, tip_z, width, thick, out, tip='curl', curl=0.02, flare=0.01, weights=None, swirl=0.0, theta_root=None, around=10, along=20):
         """A clump from a root on the shell over the scalp to its hanging end at height `tip_z`."""
         th_r = theta if theta_root is None else theta_root
         pts = []
@@ -170,9 +173,10 @@ class Hair:
                 q = self.push_out(q, thick * 0.6 + 0.004 * self.u)
                 pts.append(q)
         if tip == 'curl' and drop > 0.02:
+            # the end turns in under the mass (a short, smooth hook: a bigger one bunches the tip into a knot)
             last = pts[-1]
-            pts.append(last + Vector((0, 0, 0.003 * self.u)) - radial * curl * 0.5)
-        self.clump(pts, width, thick, tip=tip, weights=weights)
+            pts.append(last + Vector((0, 0, -0.002 * self.u)) - radial * curl * 0.3)
+        self.clump(pts, width, thick, tip=tip, weights=weights, around=around, along=along)
         return pts
 
     def cap(self, head, hairline):
@@ -285,23 +289,26 @@ def build_hair(spec, J, head, form, chin, atlas, bones, body_bvh):
             tz = lerp(tip_front, tip_front - 0.012 * u, back)
             w = 0.066 * u
             phi_leave = math.radians(lerp(92, 108, back))
-            H.lock(theta, math.radians(10), phi_leave, tz, w, 0.018 * u, vol * (1.3 - 0.25 * back), tip='curl', curl=0.03 * u, flare=0.018 * u,
+            H.lock(theta, math.radians(10), phi_leave, tz, w, 0.018 * u, vol * (1.3 - 0.25 * back), tip='curl', curl=0.022 * u, flare=0.018 * u,
                    theta_root=math.radians(180) + (theta - math.radians(180)) * 0.2)
         side_locks(H, vol, chin_z + 0.0 * u, 'curl')
         # the back mass swings a little
     elif st == 'long':
         length = H.h['length']
         tip = top - length
-        n = 13
-        for i in range(n):
-            theta = math.radians(lerp(70, 290, i / (n - 1)))
-            back = (1 - math.cos(theta)) / 2
-            tz = tip + 0.03 * (1 - back) * u + 0.01 * math.sin(i * 1.7)
-            phi_leave = math.radians(lerp(102, 118, back))
-            side = 'L' if math.sin(theta) > 0.3 else 'R' if math.sin(theta) < -0.3 else 'C'
-            wf = None
-            H.lock(theta, math.radians(10), phi_leave, tz, 0.06 * u, 0.014 * u, vol, tip='cut', flare=0.012 * u,
-                   theta_root=math.radians(180) + (theta - math.radians(180)) * 0.25, weights=long_weights(H, side))
+        # two layers of clumps: an outer layer of broad locks with pointed ends at staggered lengths, and under it a
+        # second layer between them (so the mass reads as clumps with depth, not one sheet)
+        n = 15
+        for layer_k, (nn, off, wk, outk) in enumerate(((n, 0.0, 1.0, 1.0), (n - 1, 0.5, 0.8, 0.55))):
+            for i in range(nn):
+                theta = math.radians(lerp(68, 292, (i + off) / (n - 1)))
+                back = (1 - math.cos(theta)) / 2
+                tz = tip + 0.03 * (1 - back) * u + 0.035 * u * (0.5 + 0.5 * math.sin(i * 2.3 + layer_k)) + 0.02 * u * layer_k
+                phi_leave = math.radians(lerp(102, 118, back))
+                side = 'L' if math.sin(theta) > 0.3 else 'R' if math.sin(theta) < -0.3 else 'C'
+                H.lock(theta, math.radians(10), phi_leave, tz, 0.058 * u * wk, 0.013 * u, vol * outk, tip='longpoint', flare=0.012 * u * outk,
+                       theta_root=math.radians(180) + (theta - math.radians(180)) * 0.25, weights=long_weights(H, side), swirl=0.03 * math.sin(i * 1.3),
+                       around=8, along=13 if layer_k else 15)
         side_locks(H, vol, top - min(length, 0.42) + 0.02, 'cut')
     elif st == 'ponytail':
         for i in range(9):
@@ -338,7 +345,7 @@ def bangs(H, part_theta, vol, st):
     """Bangs from the parting over the front, laid on the forehead; tips at the brows, side-swept from a side parting."""
     u = H.u
     brow_z = H.chin.z + 0.128 * u
-    n = 5 if st == 'bob' else 7
+    n = 5 if st == 'bob' else 9 if st == 'long' else 7
     sweep = -0.35 if part_theta > 0 else 0.35 if part_theta < 0 else 0.0
     for i in range(n):
         f = i / (n - 1)
@@ -363,8 +370,9 @@ def bangs(H, part_theta, vol, st):
             q2.z = tz
             q2 = H.push_out(q2, 0.003 * u) if H.bvh else q2
             pts.append(Vector((q2.x, q2.y - 0.0015 * u, tz)))
-        bw = (0.052 if abs(f - 0.5) < 0.3 else 0.046) if n == 5 else (0.034 if abs(f - 0.5) < 0.3 else 0.03)
-        H.clump(pts, bw * u, 0.01 * u, tip='point')
+        bw = (0.052 if abs(f - 0.5) < 0.3 else 0.046) if n == 5 else 0.03 if n == 9 else (0.034 if abs(f - 0.5) < 0.3 else 0.03)
+        # a long style's fringe is soft: rounded, overlapping ends (a bob's bangs are a few large points)
+        H.clump(pts, (bw * 1.15 if n == 9 else bw) * u, 0.01 * u, tip='curl' if n == 9 else 'point')
 
 
 def side_locks(H, vol, tip_z, tip):
@@ -511,9 +519,9 @@ def hairband(H, acc):
         ph = abs(th)
         az = 90 if th > 0 else -90
         p = H.shell.point(ph * 0.98, math.radians(az) * 1.0, 0.0)
-        p = p + Vector((0, -0.028 * u, 0)) * math.cos(th)
+        p = p + Vector((0, -0.036 * u, 0)) * math.cos(th)
         d = (p - H.centre).normalized()
-        q = H.centre + d * ((p - H.centre).length + 0.0155 * u * H.h['volume'])
+        q = H.centre + d * ((p - H.centre).length + 0.019 * u * H.h['volume'])
         rings.append(q)
     verts, faces = [], []
     for i, q in enumerate(rings):
@@ -522,7 +530,7 @@ def hairband(H, acc):
         side = t.cross(d).normalized()
         for a in range(6):
             ang = 2 * math.pi * a / 6
-            verts.append(q + side * math.cos(ang) * 0.0055 * u + d * math.sin(ang) * 0.0018 * u)
+            verts.append(q + side * math.cos(ang) * 0.0085 * u + d * math.sin(ang) * 0.003 * u)
     for i in range(n):
         for a in range(6):
             k = i * 6 + a
