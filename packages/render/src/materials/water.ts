@@ -30,6 +30,7 @@ import type { SceneBackdrop } from './scene-backdrop';
 import { RIPPLE, WATER_CLASSES, waveSet, type WaterTier } from './water-params';
 import type { ResolvedWater } from './presets';
 import { currentWind, reflectionOn, reflectionY, rippleSlots, skyHorizon, skyZenith, waterClock, windSpeed } from './water-state';
+import { takeStableIds } from '../gpu/stable-node-ids';
 
 /** Handle on the shader of one water material: wind changes call {@link WaterShader.retune}. */
 export interface WaterShader {
@@ -91,6 +92,8 @@ export function applyWater(material: Material, water: ResolvedWater, tier: Water
   const { float, vec2, vec3, vec4, mix, smoothstep, step, saturate, dot, normalize, exp, sin, cos, pow, abs, max } = T;
   const cls = WATER_CLASSES[water.kind];
   const waves = T.uniformArray([new Vector4(), new Vector4(), new Vector4(), new Vector4()], 'vec4');
+  // Its block name comes from its node id: an id of its own keeps it the same in every load (gpu/stable-node-ids.ts).
+  takeStableIds('water', [waves]);
   const slopes = T.uniform(new Vector4());
   const flow = T.uniform(new Vector2(water.flow[0], water.flow[1]));
   const t = waterClock as unknown as Nd;

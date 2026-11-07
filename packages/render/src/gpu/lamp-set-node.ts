@@ -16,11 +16,13 @@ import { Color, Vector4 } from 'three';
 import * as TSL from 'three/tsl';
 import { AnalyticLightNode, type NodeBuilder } from 'three/webgpu';
 import { T, type Nd } from '../materials/tsl-lite';
+import { takeStableIds } from './stable-node-ids';
 import { MAX_LAMP_PORTALS } from '../sync/room-lamp';
 import type { LampSet } from '../sync/lamp-slots';
 import { PORTAL_REACH, PORTAL_SOFT, ROOM_LAMP_FADE } from './room-lamp-node';
 
 const FAR = 1e7;
+
 
 /** The few TSL pieces this node needs beyond the typed façade (loop, dynamic array index, int uniform, falloff). */
 interface LoopTsl {
@@ -90,6 +92,8 @@ export class LampSetNode extends AnalyticLightNode<LampSet> {
       pa: shared(T.uniformArray(this.portalsA, 'vec4')),
       pb: shared(T.uniformArray(this.portalsB, 'vec4')),
     };
+    // The arrays' block names come from their node ids: ids of their own keep them the same in every load.
+    takeStableIds('lamp', Object.values(this.u));
   }
 
   override update(): undefined {

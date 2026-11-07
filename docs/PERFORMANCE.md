@@ -1071,3 +1071,21 @@ buildings (1.26 M of 3.4 M in the view) and the per-cell shadow batches (2.4 M o
 here: the buildings are for HLOD streaming, and simplifying the shadow batches costs seconds of CPU at load.
 
 Still open: an adaptive-resolution step resizes the canvas, 35-130 ms on this GPU in either build.
+
+## Kits of small pieces keep every piece; uniform arrays keep their names (7 November 2026)
+
+**Virtual geometry lost whole pieces.** Lisbon Hills' quay-row flowers and the bougainvillea on the retaining walls (pieces
+of about 120 triangles, just over the kit test of `virtual/kit.ts`) are drawn as virtual geometry. Their cluster DAG
+simplified groups of separate pieces until no triangle was left; the children of such a group got a parent that was never
+built, and no cut reached them at any distance (the wall drapes of the "Retaining wall square" view, most window-box and
+facade flowers of the hero view, and holes in the wall's limestone lip were missing on main). A group simplified to
+nothing now keeps its clusters as roots (`cluster-dag.ts`; test in `virtual.test.ts`). The far-outside test that lets a
+shadow caster keep its last cut used the first root's LOD sphere, which is not a bound of the mesh; it now uses the mesh's
+bounding sphere (`virtual/view.ts` `sphereFarOutside`). DAGs are built in the viewer, so no package changes.
+
+**Uniform arrays named by node id.** The GLSL backend names a uniform array's block `buffer<node id>`, and three counts
+every node of the page, so the lamp set's seven arrays (and water's wave array) were named by how many nodes the load had
+made before them. Cooked Lisbon Hills on main: its low set was recorded with `buffer25779-25785`, the player drew with
+`buffer24607-24613`; the medium set matched by chance. They now take ids of their own per kind (`gpu/stable-node-ids.ts`).
+Cold player, medium, two runs each: links 93 and 93 against 95 and 104, programs drawn that are not in the cooked set 1
+against 4 and 7; warm 96 and 94 against 100 and 102. Every hosted program set holds the old names until it is cooked again.
