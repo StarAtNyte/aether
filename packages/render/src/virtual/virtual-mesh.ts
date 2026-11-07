@@ -14,8 +14,8 @@
  * Plain indexed draws only, so the WebGPU and WebGL2 backends behave alike.
  */
 import { BufferAttribute, BufferGeometry, FrontSide, Mesh, type Material, type PerspectiveCamera } from 'three';
-import { assembleCut, createCutScratch, cutIndexCount, LOD_STRIDE, selectCut, type ClusterDag, type CutScratch, type CutView } from './cluster-dag';
-import { createLocalView, localView } from './view';
+import { assembleCut, createCutScratch, cutIndexCount, selectCut, type ClusterDag, type CutScratch, type CutView } from './cluster-dag';
+import { createLocalView, localView, sphereFarOutside } from './view';
 
 export { isKitOfPieces, KIT_ISLAND_TRIANGLES, VIRTUAL_MIN_TRIANGLES } from './kit';
 
@@ -176,7 +176,7 @@ export class VirtualGroup {
             const dx = v.cx - lx, dy = v.cy - (last[1] as number), dz = v.cz - (last[2] as number);
             const moved = dx * dx + dy * dy + dz * dz;
             const dist2 = v.cx * v.cx + v.cy * v.cy + v.cz * v.cz;
-            if (moved < dist2 * CASTER_REUSE * CASTER_REUSE || this.farOutside(v.planes)) {
+            if (moved < dist2 * CASTER_REUSE * CASTER_REUSE || sphereFarOutside(mesh.geometry.boundingSphere, v.planes)) {
               total += inst.indexCount;
               continue;
             }
@@ -238,23 +238,6 @@ export class VirtualGroup {
       this.index.needsUpdate = true;
     }
     return true;
-  }
-
-  /**
-   * True when the mesh's root LOD sphere lies outside one of the frustum
-   * planes by more than three radii: a shadow caster that far off screen
-   * keeps its previous cut (LOD error in its shadow is invisible).
-   */
-  private farOutside(pl: Float64Array): boolean {
-    const roots = this.dag.roots;
-    if (roots.length === 0) return false;
-    const o = (roots[0] as number) * LOD_STRIDE + 1;
-    const lod = this.dag.lod;
-    const x = lod[o] as number, y = lod[o + 1] as number, z = lod[o + 2] as number, r = lod[o + 3] as number;
-    for (let p = 0; p < pl.length; p += 4) {
-      if ((pl[p] as number) * x + (pl[p + 1] as number) * y + (pl[p + 2] as number) * z + (pl[p + 3] as number) < -3 * r) return true;
-    }
-    return false;
   }
 
   /** Dispose every instance geometry (shared GPU buffers go with them). */
