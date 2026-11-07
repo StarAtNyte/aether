@@ -13,8 +13,8 @@
  *   cut, like a non-caster; the batch casts only while some caster member is not covered.
  */
 import { BufferAttribute, BufferGeometry, FrontSide, Material, Matrix3, Matrix4, Mesh, Vector3, type Object3D, type PerspectiveCamera, type TypedArray } from 'three';
-import { createCutScratch, cutIndexCount, LOD_STRIDE, selectCut, type ClusterDag, type CutScratch, type CutView } from './cluster-dag';
-import { createLocalView, localView } from './view';
+import { createCutScratch, cutIndexCount, selectCut, type ClusterDag, type CutScratch, type CutView } from './cluster-dag';
+import { createLocalView, localView, sphereFarOutside } from './view';
 import { VIRTUAL_ERROR_PX } from './virtual-mesh';
 import { releaseAfterUpload } from '../gpu/cpu-release';
 
@@ -242,7 +242,7 @@ export class VirtualCellBatch {
           const lx = last[0] as number;
           if (last[3] === cut.threshold && lx === lx) {
             const dx = v.cx - lx, dy = v.cy - (last[1] as number), dz = v.cz - (last[2] as number);
-            if (dx * dx + dy * dy + dz * dz < (v.cx * v.cx + v.cy * v.cy + v.cz * v.cz) * CASTER_REUSE * CASTER_REUSE || farOutside(s.m.dag, v.planes)) {
+            if (dx * dx + dy * dy + dz * dz < (v.cx * v.cx + v.cy * v.cy + v.cz * v.cz) * CASTER_REUSE * CASTER_REUSE || sphereFarOutside(mesh.geometry.boundingSphere, v.planes)) {
               total += s.indexCount;
               continue;
             }
@@ -322,17 +322,6 @@ function visibleUpward(o: Object3D | null): boolean {
   if (!o) return false;
   for (let p: Object3D | null = o; p; p = p.parent) if (!p.visible) return false;
   return true;
-}
-
-/** True when the DAG's root LOD sphere is more than three radii outside a frustum plane (as VirtualGroup). */
-function farOutside(dag: ClusterDag, pl: Float64Array): boolean {
-  const roots = dag.roots;
-  if (roots.length === 0) return false;
-  const o = (roots[0] as number) * LOD_STRIDE + 1;
-  const lod = dag.lod;
-  const x = lod[o] as number, y = lod[o + 1] as number, z = lod[o + 2] as number, r = lod[o + 3] as number;
-  for (let p = 0; p < pl.length; p += 4) if ((pl[p] as number) * x + (pl[p + 1] as number) * y + (pl[p + 2] as number) * z + (pl[p + 3] as number) < -3 * r) return true;
-  return false;
 }
 
 /** Owner hooks of {@link VirtualCellBatches}. */

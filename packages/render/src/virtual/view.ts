@@ -2,7 +2,7 @@
  * Camera → object-space view parameters shared by the virtual-geometry
  * systems (scatter fields and cluster DAG meshes). Allocation-free.
  */
-import { Frustum, Matrix4, Vector3, type Object3D, type PerspectiveCamera } from 'three';
+import { Frustum, Matrix4, Vector3, type Object3D, type PerspectiveCamera, type Sphere } from 'three';
 
 const _inv = new Matrix4();
 const _vp = new Matrix4();
@@ -65,4 +65,22 @@ export function localView(camera: PerspectiveCamera, object: Object3D, heightPx:
     out.planes[i * 4 + 3] = p.constant;
   }
   return out;
+}
+
+/**
+ * True when `sphere` (object space; the mesh's bounding sphere) lies more than three radii outside one of the planes of
+ * a {@link LocalView}: a shadow caster that far off screen keeps its previous cut. False without a sphere.
+ *
+ * The cluster DAG's root LOD sphere is not a bound of the mesh: a mesh of many separate pieces (a row's flowers) has a
+ * root sphere around one corner of it, and the whole mesh kept the cut it had when the view was elsewhere, often the
+ * coarsest one.
+ */
+export function sphereFarOutside(sphere: Sphere | null | undefined, planes: Float64Array): boolean {
+  if (!sphere || sphere.radius < 0) return false;
+  const { x, y, z } = sphere.center;
+  const r = sphere.radius;
+  for (let p = 0; p < planes.length; p += 4) {
+    if ((planes[p] as number) * x + (planes[p + 1] as number) * y + (planes[p + 2] as number) * z + (planes[p + 3] as number) < -3 * r) return true;
+  }
+  return false;
 }

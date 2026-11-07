@@ -204,8 +204,10 @@ export function buildClusterDag(positions: Float32Array, indices: Uint32Array, o
       }
       const target = Math.floor(n / 6) * 3;
       const res = simplifyMesh(localPos, localIdx, { targetIndexCount: target, locked: localLock, lockBorder: true, welded: true });
-      if (res.indices.length > n * MIN_REDUCTION) {
-        // Cannot simplify this group (all locked, or tiny): its clusters stay roots for now.
+      // Nothing left: a group of separate small pieces (flowers, pots) collapses whole pieces until none remain. With no
+      // clusters built from it, its children would get a parent that does not exist and no cut would reach them.
+      if (res.indices.length === 0 || res.indices.length > n * MIN_REDUCTION) {
+        // Cannot simplify this group (all locked, tiny, or simplified away): its clusters stay roots for now.
         for (const c of members) next.push(c);
         levelTris += n / 3;
         continue;

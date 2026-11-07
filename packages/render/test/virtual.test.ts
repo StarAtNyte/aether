@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { simplifyMesh, weldPositions } from '../src/virtual/simplify';
 import { buildClusters, clusterBounds, splitClusters } from '../src/virtual/clusters';
 import { assembleCut, backfacing, buildClusterDag, createCutScratch, cutIndexCount, LOD_STRIDE, selectCut, type CutView } from '../src/virtual/cluster-dag';
+import { Sphere, Vector3 } from 'three';
+import { sphereFarOutside } from '../src/virtual/view';
 import { floatKey, morton3, radixSortByKey } from '../src/virtual/sort';
 
 /** Closed icosphere (shared vertices), optionally bumpy. */
@@ -274,5 +276,62 @@ describe('cluster LOD DAG', () => {
     const written = assembleCut(dag, out, n, small);
     expect(written).toBeLessThanOrEqual(1000);
     expect(written % 3).toBe(0);
+  });
+});
+
+describe('sphereFarOutside', () => {
+  // A mesh 100 m wide around x = 50 (its bounding sphere), one frustum plane n = +x.
+  const plane = (d: number): Float64Array => {
+    const pl = new Float64Array(24);
+    pl[0] = 1;
+    pl[3] = d;
+    return pl;
+  };
+  const sphere = new Sphere(new Vector3(50, 0, 0), 50);
+  it('is false while any part of the mesh is near the frustum', () => {
+    expect(sphereFarOutside(sphere, plane(-60))).toBe(false);
+    expect(sphereFarOutside(sphere, plane(-199))).toBe(false);
+    expect(sphereFarOutside(null, plane(-1e6))).toBe(false);
+  });
+  it('is true when the whole mesh is far outside one plane', () => {
+    expect(sphereFarOutside(sphere, plane(-201))).toBe(true);
+  });
+});
+
+describe('cluster DAG of separate small pieces', () => {
+  it('reaches every level-0 cluster from its roots (a group simplified away keeps its clusters as roots)', () => {
+    // 240 separate small spheres along a 44 m row (a row of houses' flowers): groups of them collapse whole pieces.
+    const piece = icosphere(1);
+    const nv = piece.positions.length / 3;
+    const count = 240;
+    const positions = new Float32Array(piece.positions.length * count);
+    const indices = new Uint32Array(piece.indices.length * count);
+    for (let p = 0; p < count; p++) {
+      const ox = (p % 80) * 0.55, oy = Math.floor(p / 80) * 3, s = 0.12;
+      for (let i = 0; i < nv; i++) {
+        positions[(p * nv + i) * 3] = (piece.positions[i * 3] as number) * s + ox;
+        positions[(p * nv + i) * 3 + 1] = (piece.positions[i * 3 + 1] as number) * s + oy;
+        positions[(p * nv + i) * 3 + 2] = (piece.positions[i * 3 + 2] as number) * s;
+      }
+      for (let i = 0; i < piece.indices.length; i++) indices[p * piece.indices.length + i] = (piece.indices[i] as number) + p * nv;
+    }
+    const dag = buildClusterDag(positions, indices);
+    expect(dag.roots.length).toBeGreaterThan(0);
+    const seen = new Set<number>();
+    const stack = [...dag.roots];
+    let reached = 0, level0 = 0;
+    for (let c = 0; c < dag.count; c++) if ((dag.source[c] as number) < 0) level0++;
+    while (stack.length > 0) {
+      const c = stack.pop() as number;
+      if (seen.has(c)) continue;
+      seen.add(c);
+      const g = dag.source[c] as number;
+      if (g < 0) {
+        reached++;
+        continue;
+      }
+      for (let j = dag.groupOffsets[g] as number; j < (dag.groupOffsets[g + 1] as number); j++) stack.push(dag.groupClusters[j] as number);
+    }
+    expect(reached).toBe(level0);
   });
 });
