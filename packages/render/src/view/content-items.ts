@@ -10,6 +10,22 @@
 import { Box3, type Object3D } from 'three';
 import type { EntityId, Vec3 } from '@aether/core';
 import type { SceneSync } from '../sync/scene-sync';
+import type { EntityNode } from '../sync/entity-node';
+
+type EntityNodeView = Pick<Readonly<EntityNode>, 'id' | 'entity' | 'instances'>;
+
+/**
+ * The feature a tile entity belongs to (a procedural shape with `tile1 > tile0`: its generator, seed and other parameters),
+ * or null for an entity that is not a tile.
+ */
+export function tileFeatureKey(e: Readonly<EntityNode['entity']>): string | null {
+  const shape = e.shape;
+  if (shape.kind !== 'procedural') return null;
+  const { tile0, tile1, extent: _extent, ...rest } = shape.params as Record<string, unknown>;
+  if (typeof tile0 !== 'number' || typeof tile1 !== 'number' || !(tile1 > tile0)) return null;
+  const keys = Object.keys(rest).sort();
+  return `${shape.generator}|${shape.seed ?? ''}|${e.parent ?? ''}|${JSON.stringify(keys.map((k) => [k, rest[k]]))}`;
+}
 import type { FramingItem } from './framing';
 
 /** Entities with any of these tags never drive framing (unless explicitly focused). */
@@ -51,19 +67,15 @@ export function collectFramingItems(sync: SceneSync, focus: ReadonlySet<EntityId
     _box.setFromObject(b);
     if (!_box.isEmpty()) items.push({ min: _box.min.toArray() as Vec3, max: _box.max.toArray() as Vec3, focus: true });
   }
-  sync.forEachNode((node) => {
-    if (node.transient || node.entity.template || !node.object.visible) return;
-    if (buildings.size > 0 && (buildings.has(node.object) || inBuilding(node.object))) return;
+  const add = (node: EntityNodeView, box: Box3): void => {
     const focused = focus.has(node.id) || node.entity.tags.includes(FOCUS_TAG);
     const shape = node.entity.shape;
     const isScenery = !focused && (node.entity.tags.some((t) => FRAMING_EXCLUDED_TAGS.has(t)) || (shape.kind === 'procedural' && SCENERY_GENERATORS.has(shape.generator)));
-    _box.setFromObject(node.content);
-    if (_box.isEmpty()) return;
-    const sx = _box.max.x - _box.min.x;
-    const sy = _box.max.y - _box.min.y;
-    const sz = _box.max.z - _box.min.z;
+    const sx = box.max.x - box.min.x;
+    const sy = box.max.y - box.min.y;
+    const sz = box.max.z - box.min.z;
     const wide = Math.max(sx, sz);
-    const item: FramingItem = { min: _box.min.toArray() as Vec3, max: _box.max.toArray() as Vec3 };
+    const item: FramingItem = { min: box.min.toArray() as Vec3, max: box.max.toArray() as Vec3 };
     if (isScenery || (!focused && wide > HUGE_EXTENT)) {
       scenery.push(item);
       return;
@@ -78,6 +90,23 @@ export function collectFramingItems(sync: SceneSync, focus: ReadonlySet<EntityId
       item.extent = 0.3;
     }
     items.push(item);
+  };
+  // The tiles of one long feature (a row of houses, a street: `tile0`/`tile1` parameters) frame as the feature they make.
+  const tiles = new Map<string, { node: EntityNodeView; box: Box3 }>();
+  sync.forEachNode((node) => {
+    if (node.transient || node.entity.template || !node.object.visible) return;
+    if (buildings.size > 0 && (buildings.has(node.object) || inBuilding(node.object))) return;
+    _box.setFromObject(node.content);
+    if (_box.isEmpty()) return;
+    const key = tileFeatureKey(node.entity);
+    if (key !== null) {
+      const t = tiles.get(key);
+      if (t) t.box.union(_box);
+      else tiles.set(key, { node, box: _box.clone() });
+      return;
+    }
+    add(node, _box);
   });
+  for (const t of tiles.values()) add(t.node, t.box);
   return items.length > 0 ? items : scenery;
 }

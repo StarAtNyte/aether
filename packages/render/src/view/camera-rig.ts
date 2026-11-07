@@ -225,6 +225,11 @@ export class CameraRig {
     return this.focusT < 1;
   }
 
+  /** Where a running fly-to ends (the camera position), or null: streaming loads the cells there ahead of the camera. */
+  get flightDestination(): Vector3 | null {
+    return this.focusT < 1 ? this.toPos : null;
+  }
+
   /** True while a fly-through plays. */
   get touring(): boolean {
     return this.tour !== null && this.tour.active;

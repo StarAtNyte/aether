@@ -568,6 +568,8 @@ const INTERIOR_BALANCE = 1;
 const STREAM_INTERVAL_MS = 200;
 /** Longest wait of a streamed world's load for its cooked proxies (ms): past it, far cells load at full detail. */
 const HLOD_WAIT_MS = 10_000;
+/** Longest the view keeps its last picture while a cell next to the camera loads its full detail (ms). */
+const NEAR_HOLD_MAX_MS = 3000;
 /** Smallest base cell of a world whose cook bakes proxies (metres; the town scale of cell-grid.ts). */
 const HLOD_MIN_CELL = 64;
 /** The proxies' material (streaming/hlod-layer.ts): white, lit, its colour from the vertices. */
@@ -1871,11 +1873,33 @@ export class WorldRenderer {
   /** Last streaming update (ms). */
   private streamAt = 0;
   /** Streaming counters (window.__aetherStreaming, probes). */
-  private readonly streamLog = { applies: 0, applyMsMax: 0, applyMsSum: 0, revealed: 0, removed: 0, loadMsMax: 0, events: [] as Array<[number, string, number]> };
+  private readonly streamLog = { holds: 0, applies: 0, applyMsMax: 0, applyMsSum: 0, revealed: 0, removed: 0, loadMsMax: 0, events: [] as Array<[number, string, number]> };
 
   /** Cell streaming state (diagnostics, probes): null when the world is not streamed. */
-  get streaming(): (ReturnType<CellStreamer['stats']> & { applies: number; applyMsMax: number; applyMsSum: number; revealed: number; removed: number; loadMsMax: number; nodes: number; events: Array<[number, string, number]>; hlod: ReturnType<HlodLayer['stats']> | null }) | null {
+  get streaming(): (ReturnType<CellStreamer['stats']> & { holds: number; applies: number; applyMsMax: number; applyMsSum: number; revealed: number; removed: number; loadMsMax: number; nodes: number; events: Array<[number, string, number]>; hlod: ReturnType<HlodLayer['stats']> | null }) | null {
     return this.streamer ? { ...this.streamer.stats(), ...this.streamLog, nodes: this.sync.entityCount, hlod: this.hlod?.stats() ?? null } : null;
+  }
+
+  /** When the draws started waiting for near cells ({@link nearHeld}), 0 when they do not. */
+  private nearHoldSince = 0;
+
+  /** Whether this frame waits for the full detail of a cell next to the camera (see the frame loop). */
+  private nearHeld(): boolean {
+    const st = this.streamer;
+    if (!st || !this.hlod || !this.framed || this.loadingScreen) return false;
+    const cam = this.perspective.position;
+    if (!st.nearPending([{ x: cam.x, z: cam.z }])) {
+      this.nearHoldSince = 0;
+      return false;
+    }
+    const t = now();
+    if (this.nearHoldSince === 0) {
+      this.nearHoldSince = t;
+      // Look at the sources now, not at the next streaming step.
+      this.streamAt = 0;
+      this.streamLog.holds++;
+    }
+    return t - this.nearHoldSince < NEAR_HOLD_MAX_MS;
   }
 
   /** The cooked package's proxy cells (manifest `hlod`), null without proxies. */
@@ -1980,6 +2004,19 @@ export class WorldRenderer {
     return { proxies, stats };
   }
 
+  /**
+   * The cook's recording of a world a viewer streams (one whose cook bakes proxies): every entity stays resident, but the
+   * scene is batched as the streamed viewer batches it (props merged per streaming cell, streamed casters and merged
+   * meshes casting by themselves), so the program set it records is the one the viewer draws with.
+   */
+  private recordAsStreamed(world: WorldDoc): void {
+    const partition = worldPartition(world);
+    if (!partition || partition.cellSize < HLOD_MIN_CELL) return;
+    const plan = planStreaming(world, partition, assetSizeOf);
+    if (plan.entities.size === 0) return;
+    this.sync.setResidency(() => true, (id) => plan.entities.has(id), partition.cellSize);
+  }
+
   /** {@link bakeHlod} as the package's proxy file (streaming/hlod.ts) and its manifest cells; null when nothing streams. */
   async bakeHlodFile(): Promise<{ bytes: Uint8Array<ArrayBuffer>; cells: Array<{ cell: string; bounds: HlodProxy['bounds']; triangles: number }>; stats: NonNullable<Awaited<ReturnType<WorldRenderer['bakeHlod']>>>['stats'] } | null> {
     const baked = await this.bakeHlod();
@@ -2042,6 +2079,9 @@ export class WorldRenderer {
     const sources: StreamSource[] = [{ x: cam.x, z: cam.z, ...(len > 1e-3 ? { dir: [_streamDir.x / len, _streamDir.z / len] as [number, number] } : {}) }];
     const focus = this.orbitTarget(_streamFocus);
     if (Number.isFinite(focus[0]) && Number.isFinite(focus[2])) sources.push({ x: focus[0], z: focus[2] });
+    // A fly-to's end: its cells load while the camera travels there.
+    const dest = this.rig.flightDestination;
+    if (dest) sources.push({ x: dest.x, z: dest.z });
     const change = streamer.update(sources, t);
     // A cell with a proxy leaves under it: the proxy dithers in over the full detail first, and the nodes go once it covers
     // them. One that comes back before that keeps its nodes.
@@ -2684,6 +2724,7 @@ export class WorldRenderer {
     if (prev === null && (globalThis as { __AETHER_COOK_RECORD?: boolean }).__AETHER_COOK_RECORD === true) {
       const at = world.opening?.target ?? world.player?.spawn ?? [0, 0, 0];
       this.proxyLayer().warmMesh([at[0], at[1], at[2]]);
+      this.recordAsStreamed(world);
     }
     performance.mark('aether:sync-start');
     const done = this.sync.setWorld(world);
@@ -5189,6 +5230,12 @@ export class WorldRenderer {
         return false;
       }
       this.warming = false;
+    }
+    // The camera came where a near cell still draws its proxy (a jump to a tour stop, a view, the hero view): the last
+    // picture stays until that cell's full detail is in, at most NEAR_HOLD_MAX_MS.
+    if (this.nearHeld()) {
+      this.drewLastFrame = false;
+      return false;
     }
     // A still view inside a building: one more frame now and then so the picture can be read back for the room's exposure trim.
     const trimDue = opts.onDemand === true && !changed && !refine && this.trimIdleDue();

@@ -412,6 +412,19 @@ export class CellStreamer {
     return this.cells.get(key)?.proxied ?? false;
   }
 
+  /**
+   * Whether a proxied cell within the proxy near ring of `sources` is not drawn at full detail yet (not resident, or still
+   * loading): its proxy would sit next to the eye.
+   */
+  nearPending(sources: readonly StreamSource[]): boolean {
+    const r = this.config.proxyNearRadius;
+    for (const c of this.cells.values()) {
+      if (!c.proxied || (c.resident && !c.loading)) continue;
+      if (this.distance(c, sources) <= r) return true;
+    }
+    return false;
+  }
+
   private loadRadiusOf(c: CellState): number {
     return c.proxied ? this.config.proxyLoadRadius : this.config.loadRadius;
   }
@@ -578,7 +591,8 @@ export class CellStreamer {
     const load: string[] = [];
     for (const w of want) {
       if (loading >= maxLoading) break;
-      if (w.c.proxied && proxiedLoading >= this.config.proxyMaxLoading) continue;
+      // Near cells load at once (a proxy must never sit next to the eye); farther proxied cells one at a time.
+      if (w.c.proxied && proxiedLoading >= this.config.proxyMaxLoading && w.d > this.config.proxyNearRadius) continue;
       if (w.d > this.nearRadiusOf(w.c)) {
         // Make room: evict resident cells past the near ring, loaded long enough, clearly less urgent than this one.
         while (bytes + w.c.bytes > budgetBytes) {
