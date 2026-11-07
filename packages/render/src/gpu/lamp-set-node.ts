@@ -22,6 +22,12 @@ import { PORTAL_REACH, PORTAL_SOFT, ROOM_LAMP_FADE } from './room-lamp-node';
 
 const FAR = 1e7;
 
+/** First node id of the lamp-set arrays (far above three's running node count), and the ids each node reserves. */
+const STABLE_ID_BASE = 1_000_000_000;
+const STABLE_ID_STRIDE = 16;
+/** Lamp-set nodes made so far in this page (each takes the next block of ids). */
+let lampSetNodes = 0;
+
 /** The few TSL pieces this node needs beyond the typed façade (loop, dynamic array index, int uniform, falloff). */
 interface LoopTsl {
   Loop(count: Nd, body: (o: { i: Nd }) => void): void;
@@ -90,6 +96,14 @@ export class LampSetNode extends AnalyticLightNode<LampSet> {
       pa: shared(T.uniformArray(this.portalsA, 'vec4')),
       pb: shared(T.uniformArray(this.portalsB, 'vec4')),
     };
+    // The GLSL backend names each array's uniform block `buffer<node id>`, and node ids count every node made before: a
+    // load that builds its materials in another order (a streamed world, its proxies) gave the same lit program other
+    // sources, so a cooked program set recorded on one never matched the other. The arrays take ids of their own
+    // instead, in a range the global count never reaches, numbered by lamp-set node.
+    const base = STABLE_ID_BASE + lampSetNodes++ * STABLE_ID_STRIDE;
+    Object.values(this.u).forEach((node, j) => {
+      (node as unknown as { id: number }).id = base + j;
+    });
   }
 
   override update(): undefined {
