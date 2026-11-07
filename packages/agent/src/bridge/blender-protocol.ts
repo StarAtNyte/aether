@@ -24,11 +24,13 @@ export type BlenderState = (typeof BLENDER_STATES)[number];
 /** The MCP server's tools the server may call (everything else it offers is dropped). */
 export const BLENDER_MCP_TOOLS = ['get_scene_info', 'look', 'execute_blender_code'] as const;
 /** Actions of `/api/local/blender/plan`. */
-export const BLENDER_ACTIONS = ['get_scene_info', 'look', 'execute_blender_code', 'export_glb', 'render', 'bake'] as const;
+export const BLENDER_ACTIONS = ['get_scene_info', 'look', 'execute_blender_code', 'export_glb', 'render', 'bake', 'character_create', 'character_revise', 'character_review'] as const;
 /** One Blender action. */
 export type BlenderAction = (typeof BLENDER_ACTIONS)[number];
 /** Actions that run Python in Blender: confirmation required on every run. */
-export const BLENDER_PYTHON_ACTIONS: readonly BlenderAction[] = ['execute_blender_code', 'export_glb', 'render', 'bake'];
+export const BLENDER_PYTHON_ACTIONS: readonly BlenderAction[] = ['execute_blender_code', 'export_glb', 'render', 'bake', 'character_create', 'character_revise', 'character_review'];
+/** Actions of the character pipeline (a headless Blender run of `scripts/blender/character/build.py`, no MCP session). */
+export const BLENDER_CHARACTER_ACTIONS: readonly BlenderAction[] = ['character_create', 'character_revise', 'character_review'];
 
 /** Does `action` run Python in Blender? */
 export function blenderActionRunsPython(action: BlenderAction): boolean {
@@ -49,6 +51,37 @@ export type BlenderStatus = z.infer<typeof BlenderStatusSchema>;
 export const BlenderSettingsRequestSchema = z.object({ enabled: z.boolean() }).strict();
 
 const objectName = z.string().min(1).max(120);
+const characterId = z.string().regex(/^[a-z][a-z0-9-]{1,39}$/, 'character ids are lowercase slugs');
+/** Largest brief (JSON characters). */
+export const CHARACTER_BRIEF_MAX = 16_000;
+
+/**
+ * A character brief (the pipeline's input, `docs/BLENDER-HARNESS.md`): who the character is, in plain fields; the
+ * pipeline reads the ones it knows (body, face, hair, outfit, palette) and keeps the rest as notes.
+ */
+export const CharacterBriefSchema = z
+  .object({
+    id: characterId,
+    name: z.string().min(1).max(60),
+    style: z.enum(['anime', 'realistic']),
+    age: z.number().min(4).max(100).optional(),
+    height_m: z.number().min(0.8).max(2.3).optional(),
+    build: z.enum(['slim', 'average', 'sturdy']).optional(),
+    head_ratio: z.number().min(3).max(9).optional(),
+    gender: z.enum(['female', 'male', 'neutral']).optional(),
+    skin: z.string().max(40).optional(),
+    eyes: z.string().max(80).optional(),
+    hair: z.record(z.string(), z.unknown()).optional(),
+    outfit: z.array(z.record(z.string(), z.unknown())).max(24).optional(),
+    notes: z.string().max(2000).optional(),
+  })
+  .passthrough()
+  .refine((b) => JSON.stringify(b).length <= CHARACTER_BRIEF_MAX, 'the brief is too long');
+export type CharacterBrief = z.infer<typeof CharacterBriefSchema>;
+const sheetImage = z
+  .string()
+  .max(12 * 1024 * 1024)
+  .regex(/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/);
 const BAKE_TYPES = ['COMBINED', 'DIFFUSE', 'AO', 'SHADOW', 'EMIT', 'ROUGHNESS', 'NORMAL', 'GLOSSY'] as const;
 
 /** Inputs per action (strict: unknown keys, a confirmation flag included, are refused). */
@@ -86,6 +119,12 @@ export const BlenderInputs = {
       samples: z.number().int().min(1).max(1024).optional(),
     })
     .strict(),
+  /** Build a character from a brief (and a concept sheet: generated when missing and an image backend is there). */
+  character_create: z.object({ brief: CharacterBriefSchema, sheet: sheetImage.optional() }).strict(),
+  /** Rebuild a character made before, with notes (what to change) and brief changes. */
+  character_revise: z.object({ id: characterId, notes: z.string().min(1).max(2000), brief: z.record(z.string(), z.unknown()).optional() }).strict(),
+  /** The QA report and turnaround of a character made before (re-checked). */
+  character_review: z.object({ id: characterId }).strict(),
 } as const satisfies Record<BlenderAction, z.ZodType>;
 
 /** `POST …/blender/plan` body. */
@@ -96,6 +135,9 @@ export const BlenderPlanRequestSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('export_glb'), input: BlenderInputs.export_glb }).strict(),
   z.object({ action: z.literal('render'), input: BlenderInputs.render }).strict(),
   z.object({ action: z.literal('bake'), input: BlenderInputs.bake }).strict(),
+  z.object({ action: z.literal('character_create'), input: BlenderInputs.character_create }).strict(),
+  z.object({ action: z.literal('character_revise'), input: BlenderInputs.character_revise }).strict(),
+  z.object({ action: z.literal('character_review'), input: BlenderInputs.character_review }).strict(),
 ]);
 /** A plan request. */
 export type BlenderPlanRequest = z.infer<typeof BlenderPlanRequestSchema>;
@@ -125,6 +167,12 @@ export const BlenderRunResultSchema = z.object({
     .string()
     .max(24 * 1024 * 1024)
     .regex(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/)
+    .optional(),
+  /** A GLB data URL (character_create and character_revise: the built character). */
+  glb: z
+    .string()
+    .max(48 * 1024 * 1024)
+    .regex(/^data:model\/gltf-binary;base64,[A-Za-z0-9+/=]+$/)
     .optional(),
 });
 /** A run result. */

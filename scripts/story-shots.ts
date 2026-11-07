@@ -98,6 +98,22 @@ try {
   report['load'] = await page.evaluate(() => ({ path: (window as unknown as Win).__aetherCook?.path, reason: (window as unknown as Win).__aetherCook?.reason }));
   const shots = await page.evaluate(() => (window as unknown as Win).__aetherPlayer!.world.story!.shots.map((s) => ({ name: s.name ?? '', duration: s.duration })));
   report['programsAtStart'] = await programs(page);
+  // The start card: Watch (with sound) must start the film with its audio context running (a real click, as a visitor's).
+  const gate = await page.evaluate(() => (window as unknown as { __aetherPlayer?: { storyGate?: boolean } }).__aetherPlayer?.storyGate ?? false);
+  if (gate) {
+    await page.screenshot({ path: join(out, `${slug}-gate.png`) });
+    await page.click('[data-testid="pl-story-watch"]');
+    await page.waitForTimeout(2500);
+    // The meter over a few seconds of the film: the score and the ambience must be audible, not just a running context.
+    const levels: number[] = [];
+    for (let k = 0; k < 8; k++) {
+      await page.waitForTimeout(400);
+      levels.push(await page.evaluate(() => (window as unknown as { __aetherPlayer?: { story?: { audioLevel?: number } | null } }).__aetherPlayer?.story?.audioLevel ?? 0));
+    }
+    const audio = await page.evaluate(() => (window as unknown as { __aetherPlayer?: { story?: { audio?: string; time: number } | null } }).__aetherPlayer?.story ?? null);
+    report['sound'] = { gate, audio: audio?.audio ?? 'none', time: audio?.time ?? null, peakRms: Math.round(Math.max(...levels) * 1000) / 1000, ok: audio?.audio === 'running' && Math.max(...levels) > 0.005 };
+    log(`sound: ${JSON.stringify(report['sound'])}`);
+  }
   // Interpenetration check of the people's paths against the solid pieces' walls.
   const clear = (await page.evaluate(`(() => { const s = window.__aetherPlayer.story; return s && s.clearance ? s.clearance() : []; })()`)) as Array<{ shot: number; min: number }>;
   report['clearance'] = { paths: clear, tight: clear.filter((c) => c.min < 0.18) };

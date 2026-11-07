@@ -81,7 +81,11 @@ export class LocalAi {
         accountHome: async () => ({ id: await this.accounts.activeId(), home: await this.accounts.activeHome() }),
       });
     this.queue = new JobQueue(opts.maxWaiting ?? 4);
-    this.blender = opts.blender ?? new BlenderService({ dataDir: join(opts.dataDir, 'blender') });
+    // The character pipeline's concept step uses the same local image backend as the studio's image requests.
+    this.blender = opts.blender ?? new BlenderService({ dataDir: join(opts.dataDir, 'blender'), concept: async (prompt, signal) => {
+      const r = await this.image({ prompt }, signal);
+      return { bytes: r.bytes, mime: r.mime };
+    } });
     const common = {
       runWorker: run,
       queue: this.queue,

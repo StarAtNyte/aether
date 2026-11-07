@@ -29,6 +29,9 @@ import { BridgeError } from '../errors';
 import { detectBlender, missingDetail, type BlenderInstall } from './detect';
 import { BLENDER_HOST, BLENDER_PORT, connectBlenderMcp, type BlenderMcpSession } from './mcp';
 import { bakeCode, exportGlbCode, parseResult, renderCode } from './templates';
+import { characterJob, characterPlanText, conceptPrompt, defaultCharacterScript, ensureJobDir, readCharacterOutputs, runCharacterProcess, summarizeReport, writeDataUrl, type CharacterJob } from './characters';
+import { existsSync } from 'node:fs';
+import type { CharacterBrief } from '@aether/agent/blender';
 
 /** How long a plan may wait for its confirmation. */
 export const PLAN_TTL_MS = 10 * 60_000;
@@ -42,6 +45,12 @@ export interface BlenderServiceOptions {
   dataDir: string;
   port?: number;
   detect?: () => BlenderInstall;
+  /** The character pipeline's entry script (default: `scripts/blender/character/build.py` of this checkout). */
+  characterScript?: string;
+  /** Runs a character build's Blender process (tests replace it). */
+  runCharacter?: typeof runCharacterProcess;
+  /** Makes a concept sheet from a prompt when a brief comes without one (the local image backend). */
+  concept?: (prompt: string, signal?: AbortSignal) => Promise<{ bytes: Uint8Array; mime: string }>;
   /** Is something listening on 127.0.0.1:port? */
   probeSocket?: (port: number) => Promise<boolean>;
   /** Start and connect the MCP server. */
@@ -60,6 +69,8 @@ interface StoredPlan {
   /** MCP arguments of non-Python actions. */
   args?: Record<string, unknown>;
   out?: string;
+  /** A character pipeline run (no MCP session: a headless Blender process). */
+  character?: { job: CharacterJob; brief: Record<string, unknown> | null; sheet?: string; notes?: string; glb: boolean };
   expiresAt: number;
 }
 
@@ -94,8 +105,14 @@ export class BlenderService {
   private enabled: boolean | null = null;
   private readonly plans = new Map<string, StoredPlan>();
   private chain: Promise<unknown> = Promise.resolve();
+  private readonly characterScript: string;
+  private readonly runCharacter: typeof runCharacterProcess;
+  private readonly concept: BlenderServiceOptions['concept'];
 
   constructor(opts: BlenderServiceOptions) {
+    this.characterScript = opts.characterScript ?? defaultCharacterScript();
+    this.runCharacter = opts.runCharacter ?? runCharacterProcess;
+    this.concept = opts.concept;
     this.dir = resolve(opts.dataDir);
     this.port = opts.port ?? BLENDER_PORT;
     this.detect = opts.detect ?? (() => detectBlender());
@@ -238,6 +255,33 @@ export class BlenderService {
         stored = { action: request.action, python, code: bakeCode(out, request.input), out, expiresAt };
         break;
       }
+      case 'character_create':
+      case 'character_revise':
+      case 'character_review': {
+        const blender = this.detect().blender;
+        if (!blender) throw new BridgeError('blender_unavailable', 'Blender was not found on this computer.');
+        if (!existsSync(this.characterScript)) throw new BridgeError('blender_unavailable', 'The character pipeline (scripts/blender/character/build.py) is not in this installation: run the Aether server from a checkout of the repository.');
+        const id = request.action === 'character_create' ? request.input.brief.id : request.input.id;
+        const base = characterJob(this.dir, blender, this.characterScript, id);
+        const hadSheet = existsSync(join(base.dir, 'sheet.png'));
+        if (request.action === 'character_create') {
+          const sheet = request.input.sheet ?? undefined;
+          const job = characterJob(this.dir, blender, this.characterScript, id, { sheet: !!sheet || !!this.concept });
+          const brief = request.input.brief as Record<string, unknown>;
+          stored = { action: request.action, python, code: characterPlanText(job, brief), character: { job, brief, ...(sheet ? { sheet } : {}), glb: true }, expiresAt };
+        } else if (request.action === 'character_revise') {
+          if (!existsSync(base.brief)) throw new BridgeError('not_found', `No character "${id}" was built here yet: create it first.`);
+          const job = characterJob(this.dir, blender, this.characterScript, id, { sheet: hadSheet, revise: true });
+          const prev = JSON.parse(await readFile(base.brief, 'utf8')) as Record<string, unknown>;
+          const brief = { ...prev, ...(request.input.brief ?? {}), id, revision_notes: request.input.notes };
+          stored = { action: request.action, python, code: characterPlanText(job, brief, request.input.notes), character: { job, brief, notes: request.input.notes, glb: true }, expiresAt };
+        } else {
+          if (!existsSync(base.brief)) throw new BridgeError('not_found', `No character "${id}" was built here yet: create it first.`);
+          const job = characterJob(this.dir, blender, this.characterScript, id, { sheet: hadSheet, review: true });
+          stored = { action: request.action, python, code: characterPlanText(job, JSON.parse(await readFile(base.brief, 'utf8'))), character: { job, brief: null, glb: false }, expiresAt };
+        }
+        break;
+      }
     }
     this.plans.set(planId, stored);
     return { planId, action: stored.action, python, ...(stored.code !== undefined ? { code: stored.code } : {}), expiresAt };
@@ -255,6 +299,13 @@ export class BlenderService {
     }
     if (plan.python && !confirm) throw new BridgeError('confirmation_required', 'This Blender action runs Python: it needs your confirmation in the studio.');
     this.plans.delete(planId);
+    if (plan.character) {
+      // A headless Blender process of its own: the switch must be on, but no MCP session is needed.
+      if (!(await this.isEnabled())) throw new BridgeError('blender_unavailable', 'Blender is switched off in Settings → AI connection.');
+      const job = this.chain.then(() => this.executeCharacter(plan, signal));
+      this.chain = job.catch(() => undefined);
+      return job;
+    }
     const status = await this.status();
     if (status.state !== 'ready') throw new BridgeError('blender_unavailable', status.detail);
     const job = this.chain.then(() => this.execute(plan, signal)).catch(async (e: unknown) => {
@@ -300,6 +351,34 @@ export class BlenderService {
     } finally {
       if (plan.out) await rm(plan.out, { force: true }).catch(() => undefined);
     }
+  }
+
+  /** Run a character build (or review) and gather its report, turnaround and model. */
+  private async executeCharacter(plan: StoredPlan, signal?: AbortSignal): Promise<{ kind: 'json'; result: BlenderRunResult }> {
+    const c = plan.character!;
+    const job = c.job;
+    await ensureJobDir(job);
+    if (c.brief) await writeFile(job.brief, `${JSON.stringify(c.brief, null, 2)}\n`, { mode: 0o600 });
+    if (job.sheet && c.sheet) await writeDataUrl(job.sheet, c.sheet);
+    else if (job.sheet && plan.action === 'character_create' && !existsSync(job.sheet) && this.concept && c.brief) {
+      // No sheet sent: make one from the brief (the concept step of the method).
+      const img = await this.concept(conceptPrompt(c.brief as CharacterBrief), signal);
+      await writeFile(job.sheet, img.bytes);
+    }
+    if (job.sheet && !existsSync(job.sheet)) job.argv.splice(job.argv.indexOf('--sheet'), 2);
+    const run = await this.runCharacter(job, signal);
+    if (signal?.aborted) throw new BridgeError('backend_error', 'The character build was stopped.');
+    if (!existsSync(job.report)) throw new BridgeError('backend_error', `The character pipeline failed (exit ${run.code}): ${run.log.slice(-600)}`);
+    const out = await readCharacterOutputs(job, c.glb, BLENDER_MAX_GLB_BYTES);
+    const text = `${plan.action === 'character_review' ? 'Review' : 'Built'} character "${job.id}".\n${summarizeReport(out.report)}\nFiles: ${job.dir}`;
+    return {
+      kind: 'json',
+      result: {
+        text: text.slice(0, 20_000),
+        ...(out.image ? { image: out.image } : {}),
+        ...(out.glb ? { glb: `data:model/gltf-binary;base64,${Buffer.from(out.glb).toString('base64')}` } : {}),
+      },
+    };
   }
 
   /** Stop the MCP server. */

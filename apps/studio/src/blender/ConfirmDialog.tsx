@@ -16,6 +16,9 @@ const ACTION_TEXT: Record<GateRequest['action'], string> = {
   bake: 'Bake a texture of one object with Cycles in your Blender.',
   get_scene_info: 'Read the Blender scene.',
   look: 'Look at the Blender scene.',
+  character_create: 'Build a character with the Blender character pipeline (a separate headless Blender run on this computer), then import it into this project.',
+  character_revise: 'Rebuild a character with the Blender character pipeline from these notes, then import it into this project.',
+  character_review: 'Re-check a character built by the Blender character pipeline (its QA report and turnaround).',
 };
 
 /** The dialog body. */

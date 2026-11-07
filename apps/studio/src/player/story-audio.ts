@@ -24,6 +24,8 @@ export interface StorySoundSink {
 }
 
 interface Layers {
+  /** The melody (a soft flute-like lead singing the motif). */
+  lead: number;
   pad: number;
   piano: number;
   bass: number;
@@ -64,17 +66,28 @@ const MOTIF: ReadonlyArray<readonly [number, number]> = [[0, 0], [1, 5], [2.5, 4
 const MOTIF_LONG: ReadonlyArray<readonly [number, number]> = [[0, 0], [0.5, 2], [1, 5], [2, 4], [2.5, 2], [3, 4], [3.5, 5]];
 
 const CUES: Readonly<Record<StoryCue, CueDef>> = {
-  intro: { bpm: 72, layers: { pad: 0.55, piano: 0.5, bass: 0.25, pulse: 0, strings: 0, bells: 0.25 }, chords: PROG_A, phrase: MOTIF },
-  run: { bpm: 124, layers: { pad: 0.35, piano: 0.45, bass: 0.5, pulse: 0.5, strings: 0.15, bells: 0 }, chords: PROG_B, phrase: MOTIF_LONG },
-  tension: { bpm: 96, layers: { pad: 0.5, piano: 0.3, bass: 0.45, pulse: 0.3, strings: 0.35, bells: 0 }, chords: PROG_T, phrase: [[0, 7], [1, 7], [2, 7], [3, 7]] },
-  hush: { bpm: 60, layers: { pad: 0.28, piano: 0.35, bass: 0, pulse: 0, strings: 0, bells: 0.15 }, chords: PROG_T, phrase: [[0, 4], [3, 2]] },
-  hope: { bpm: 88, layers: { pad: 0.5, piano: 0.55, bass: 0.35, pulse: 0.2, strings: 0.3, bells: 0.2 }, chords: PROG_A, phrase: MOTIF_LONG },
-  climax: { bpm: 84, layers: { pad: 0.6, piano: 0.6, bass: 0.5, pulse: 0.15, strings: 0.6, bells: 0.35 }, chords: PROG_B, phrase: MOTIF_LONG },
-  coda: { bpm: 66, layers: { pad: 0.45, piano: 0.45, bass: 0.2, pulse: 0, strings: 0.15, bells: 0.25 }, chords: PROG_A, phrase: MOTIF },
+  intro: { bpm: 72, layers: { lead: 0.45, pad: 0.55, piano: 0.5, bass: 0.25, pulse: 0, strings: 0, bells: 0.25 }, chords: PROG_A, phrase: MOTIF },
+  run: { bpm: 124, layers: { lead: 0.3, pad: 0.35, piano: 0.45, bass: 0.5, pulse: 0.5, strings: 0.15, bells: 0 }, chords: PROG_B, phrase: MOTIF_LONG },
+  tension: { bpm: 96, layers: { lead: 0, pad: 0.5, piano: 0.3, bass: 0.45, pulse: 0.3, strings: 0.35, bells: 0 }, chords: PROG_T, phrase: [[0, 7], [1, 7], [2, 7], [3, 7]] },
+  hush: { bpm: 60, layers: { lead: 0.0, pad: 0.28, piano: 0.35, bass: 0, pulse: 0, strings: 0, bells: 0.15 }, chords: PROG_T, phrase: [[0, 4], [3, 2]] },
+  hope: { bpm: 88, layers: { lead: 0.55, pad: 0.5, piano: 0.55, bass: 0.35, pulse: 0.2, strings: 0.3, bells: 0.2 }, chords: PROG_A, phrase: MOTIF_LONG },
+  climax: { bpm: 84, layers: { lead: 0.8, pad: 0.6, piano: 0.6, bass: 0.5, pulse: 0.15, strings: 0.6, bells: 0.35 }, chords: PROG_B, phrase: MOTIF_LONG },
+  coda: { bpm: 66, layers: { lead: 0.5, pad: 0.45, piano: 0.45, bass: 0.2, pulse: 0, strings: 0.15, bells: 0.25 }, chords: PROG_A, phrase: MOTIF },
 };
 
-const LAYER_KEYS: ReadonlyArray<keyof Layers> = ['pad', 'piano', 'bass', 'pulse', 'strings', 'bells'];
-const SILENT: Layers = { pad: 0, piano: 0, bass: 0, pulse: 0, strings: 0, bells: 0 };
+const LAYER_KEYS: ReadonlyArray<keyof Layers> = ['lead', 'pad', 'piano', 'bass', 'pulse', 'strings', 'bells'];
+const SILENT: Layers = { lead: 0, pad: 0, piano: 0, bass: 0, pulse: 0, strings: 0, bells: 0 };
+
+/**
+ * The melody, four bars that loop: [beat in the phrase, MIDI note, beats long]. It opens on the motif (a rising sixth,
+ * then a step down: the two whistles), answers it, climbs, and comes home.
+ */
+const MELODY: ReadonlyArray<readonly [number, number, number]> = [
+  [0, 74, 1], [1, 83, 1.5], [2.5, 81, 1.5],
+  [4, 79, 1], [5, 78, 1], [6, 76, 2],
+  [8, 74, 1], [9, 83, 1], [10, 81, 1], [11, 83, 1],
+  [12, 86, 2], [14, 85, 0.5], [14.5, 83, 0.5], [15, 81, 1],
+];
 /** Ambience channels. */
 const BEDS = ['wind', 'waves', 'cicadas', 'gulls', 'town'] as const;
 
@@ -103,6 +116,8 @@ export interface StoryAudioOptions {
 export class StoryAudio implements StorySoundSink {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
+  private meter: AnalyserNode | null = null;
+  private readonly meterBuf = new Float32Array(2048);
   private scoreBus: GainNode | null = null;
   private ambBus: GainNode | null = null;
   private sfxBus: GainNode | null = null;
@@ -143,6 +158,10 @@ export class StoryAudio implements StorySoundSink {
     comp.attack.value = 0.01;
     comp.release.value = 0.25;
     master.connect(comp).connect(ctx.destination);
+    // A meter on the mix (the player's check that the film is really audible: `level()`).
+    this.meter = ctx.createAnalyser();
+    this.meter.fftSize = 2048;
+    comp.connect(this.meter);
     this.master = master;
     this.reverb = ctx.createConvolver();
     this.reverb.buffer = this.impulse(3.2, 2.6);
@@ -150,7 +169,7 @@ export class StoryAudio implements StorySoundSink {
     wet.gain.value = 0.32;
     this.reverb.connect(wet).connect(master);
     this.scoreBus = ctx.createGain();
-    this.scoreBus.gain.value = this.opts.music;
+    this.scoreBus.gain.value = this.scoreLevel();
     this.scoreBus.connect(master);
     this.scoreBus.connect(this.reverb);
     this.ambBus = ctx.createGain();
@@ -183,6 +202,20 @@ export class StoryAudio implements StorySoundSink {
     return true;
   }
 
+  /** The audio context's state (`running`, `suspended`, `closed`), or `none` before it exists. */
+  get state(): string {
+    return this.ctx?.state ?? 'none';
+  }
+
+  /** RMS level of the mix right now (0 silent .. about 0.3 loud), or 0 before the context runs. */
+  level(): number {
+    if (!this.meter || this.ctx?.state !== 'running') return 0;
+    this.meter.getFloatTimeDomainData(this.meterBuf);
+    let sum = 0;
+    for (const v of this.meterBuf) sum += v * v;
+    return Math.sqrt(sum / this.meterBuf.length);
+  }
+
   /** Whether the browser is holding the sound until a gesture. */
   get blocked(): boolean {
     return this.ctx?.state === 'suspended';
@@ -199,7 +232,7 @@ export class StoryAudio implements StorySoundSink {
     const ctx = this.ctx;
     if (!ctx || !this.master || !this.scoreBus) return;
     this.master.gain.setTargetAtTime(this.masterLevel(), ctx.currentTime, 0.08);
-    this.scoreBus.gain.setTargetAtTime(this.opts.music, ctx.currentTime, 0.08);
+    this.scoreBus.gain.setTargetAtTime(this.scoreLevel(), ctx.currentTime, 0.08);
     // Muted, the graph stops rendering altogether (no audio thread work); the score's grid picks up on resume.
     if (this.opts.muted) setTimeout(() => void (this.opts.muted && ctx.state === 'running' ? ctx.suspend() : undefined), 400);
     else if (ctx.state === 'suspended') void ctx.resume();
@@ -207,6 +240,11 @@ export class StoryAudio implements StorySoundSink {
 
   get muted(): boolean {
     return this.opts.muted;
+  }
+
+  /** The score over the ambience: the film's music is the lead of its mix (the player's music setting scales it). */
+  private scoreLevel(): number {
+    return 1.6 * this.opts.music;
   }
 
   private masterLevel(): number {
@@ -333,6 +371,11 @@ export class StoryAudio implements StorySoundSink {
       if (inBar === 0 || inBar === 2) this.thump(t);
     } else if (inBar === 0 || inBar === 2) this.bassNote(root - 12, t, spb * 1.8);
     else if (def.layers.pulse > 0) this.shaker(t);
+    // The melody: the beats of the four-bar phrase that fall in this beat.
+    if (def.layers.lead > 0) {
+      const at = beat % 16;
+      for (const [b, note, len] of MELODY) if (b >= at && b < at + 1) this.lead(note, t + (b - at) * spb, len * spb);
+    }
     // The piano phrase over every other bar (the first of each pair), an octave answer on the next.
     const answer = bar % 2 === 1;
     for (const [off, step] of def.phrase) {
@@ -419,12 +462,59 @@ export class StoryAudio implements StorySoundSink {
       o.frequency.value = f * m;
       const g = ctx.createGain();
       g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(a * vel * 0.16, t + 0.005);
+      g.gain.linearRampToValueAtTime(a * vel * 0.26, t + 0.005);
       g.gain.exponentialRampToValueAtTime(1e-4, t + d);
       o.connect(g).connect(out);
       o.start(t);
       o.stop(t + d + 0.05);
     }
+  }
+
+  /** A soft, breathy lead: a sine and a quiet octave triangle, a slow attack, vibrato after the onset. */
+  private lead(note: number, t: number, dur: number): void {
+    const ctx = this.ctx as AudioContext;
+    const out = this.layerGain.get('lead') as GainNode;
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.value = 3200;
+    f.connect(out);
+    const vib = ctx.createOscillator();
+    vib.frequency.value = 5.1;
+    const vg = ctx.createGain();
+    vg.gain.setValueAtTime(0, t);
+    vg.gain.linearRampToValueAtTime(7, t + Math.min(0.5, dur * 0.6));
+    vib.connect(vg);
+    vib.start(t);
+    vib.stop(t + dur + 0.6);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.14, t + 0.09);
+    g.gain.setTargetAtTime(0.1, t + 0.09, dur * 0.5);
+    g.gain.setTargetAtTime(0, t + dur, 0.18);
+    g.connect(f);
+    for (const [type, mul, amp] of [['sine', 1, 1], ['triangle', 2, 0.18]] as Array<[OscillatorType, number, number]>) {
+      const o = ctx.createOscillator();
+      o.type = type;
+      o.frequency.value = hz(note) * mul;
+      vg.connect(o.detune);
+      const a = ctx.createGain();
+      a.gain.value = amp;
+      o.connect(a).connect(g);
+      o.start(t);
+      o.stop(t + dur + 0.6);
+    }
+    // Breath: a little filtered noise at the onset.
+    const n = ctx.createBufferSource();
+    n.buffer = this.noise;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = hz(note) * 2;
+    bp.Q.value = 2;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.025, t);
+    ng.gain.exponentialRampToValueAtTime(1e-4, t + 0.25);
+    n.connect(bp).connect(ng).connect(out);
+    n.start(t, this.rand() * 3, 0.3);
   }
 
   private bellTone(note: number, t: number, vel: number): void {
@@ -813,4 +903,4 @@ export class StoryAudio implements StorySoundSink {
 }
 
 /** Each bed's full level (so a shot's 0..1 reads the same across beds). */
-const BED_LEVEL: Readonly<Record<(typeof BEDS)[number], number>> = { wind: 0.22, waves: 0.4, cicadas: 0.05, gulls: 0.6, town: 0.12 };
+const BED_LEVEL: Readonly<Record<(typeof BEDS)[number], number>> = { wind: 0.16, waves: 0.28, cicadas: 0.04, gulls: 0.45, town: 0.08 };

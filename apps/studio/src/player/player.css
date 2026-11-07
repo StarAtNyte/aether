@@ -1187,6 +1187,11 @@ kbd {
   animation: pl-story-in 1.2s ease both;
 }
 
+/* The start card sits on the bright opening sky: a deeper scrim. */
+.pl-story.is-gate .pl-story__end {
+  background: radial-gradient(ellipse 70% 55% at 50% 50%, rgb(14 10 28 / 0.72), rgb(14 10 28 / 0.15) 100%);
+}
+
 .pl-story__end h2 {
   margin: 0 0 6px;
   font: 300 clamp(28px, 4.6vw, 56px) / 1.1 var(--font-display);

@@ -152,6 +152,14 @@ export async function runBlenderAction(deps: BlenderHostDeps, request: BlenderPl
       return { ok: true, text: `Imported from Blender as user asset "${r.id}" (${r.summary}). Place it with apply_patches: an entity with shape {"kind":"asset","id":"${r.id}"}.`, asset: { id: r.id, summary: r.summary } };
     }
     const out = await deps.api.run(plan.planId, confirmed, signal);
+    if (out.glb) {
+      // A built character: into the project as a user asset, like an export.
+      const bytes = Uint8Array.from(atob(out.glb.slice(out.glb.indexOf(',') + 1)), (ch) => ch.charCodeAt(0));
+      const name = request.action === 'character_create' ? request.input.brief.name : request.action === 'character_revise' ? request.input.id : 'Character';
+      const r = await deps.importGlb(bytes, name);
+      if (!r.ok) return { ok: false, text: `${out.text}\nThe built model was refused: ${r.error}` };
+      return { ok: true, text: `${out.text}\nImported as user asset "${r.id}" (${r.summary}). Place it with apply_patches: an entity with shape {"kind":"asset","id":"${r.id}"}.`, ...(out.image ? { image: out.image } : {}), asset: { id: r.id, summary: r.summary } };
+    }
     return { ok: true, text: out.text, ...(out.image ? { image: out.image } : {}) };
   } catch (e) {
     if (signal?.aborted) throw e;
@@ -169,7 +177,33 @@ export const BLENDER_TOOL_ACTIONS: Readonly<Record<string, BlenderAction>> = {
   blender_export_asset: 'export_glb',
   blender_render: 'render',
   blender_bake: 'bake',
+  character_create: 'character_create',
+  character_revise: 'character_revise',
+  character_review: 'character_review',
 };
+
+const briefSchema = {
+  type: 'object',
+  required: ['id', 'name', 'style'],
+  properties: {
+    id: { type: 'string', pattern: '^[a-z][a-z0-9-]{1,39}$', description: 'Slug, e.g. "harbour-fisherman"' },
+    name: { type: 'string', maxLength: 60 },
+    style: { type: 'string', enum: ['anime', 'realistic'] },
+    age: { type: 'number', minimum: 4, maximum: 100 },
+    height_m: { type: 'number', minimum: 0.8, maximum: 2.3 },
+    build: { type: 'string', enum: ['slim', 'average', 'sturdy'] },
+    head_ratio: { type: 'number', minimum: 3, maximum: 9, description: 'Heads tall (anime teen about 6.5, adult 7-7.5)' },
+    gender: { type: 'string', enum: ['female', 'male', 'neutral'] },
+    skin: { type: 'string', maxLength: 40, description: 'A colour (#rrggbb) or words' },
+    eyes: { type: 'string', maxLength: 80 },
+    hair: { type: 'object', description: '{ style: bob | long | ponytail | short | ..., colour, length, parting, accessories: [...] }' },
+    outfit: { type: 'array', maxItems: 24, items: { type: 'object' }, description: 'Kit items with colours, e.g. { item: "pleated-skirt", colour: "#2a3358", pleats: 12, length: "knee" }' },
+    notes: { type: 'string', maxLength: 2000 },
+  },
+} as const;
+
+/** The character pipeline's tools (filled below). */
+export const BLENDER_CHARACTER_TOOLS: ToolDef[] = [];
 
 /** Tool definitions offered while Blender is ready. */
 export const BLENDER_TOOLS: readonly ToolDef[] = [
@@ -205,10 +239,29 @@ export const BLENDER_TOOLS: readonly ToolDef[] = [
   },
 ];
 
+/** The character pipeline's tools (a headless Blender run each; see docs/BLENDER-HARNESS.md). */
+BLENDER_CHARACTER_TOOLS.push(
+  {
+    name: 'character_create',
+    description: 'Build a rigged, animated character (anime cel or realistic) from a brief with the Blender character pipeline on this computer: base body, face, hair, outfit, rig on the shared human skeleton (the standard clips play), shading, LODs, and a QA loop (turnaround vs the concept sheet, proportions, palette, clothes interpenetration, budget). A concept sheet is generated when none is given. Imports the result as a user asset and returns the QA report and a turnaround picture. The user must allow it; it takes minutes.',
+    inputSchema: { type: 'object', additionalProperties: false, required: ['brief'], properties: { brief: briefSchema, sheet: { type: 'string', description: 'Optional concept sheet (front and side), a PNG, JPEG or WebP data URL' } } },
+  },
+  {
+    name: 'character_revise',
+    description: 'Rebuild a character made with character_create, applying notes (what to change, e.g. "the bangs stick out in profile; make the skirt knee-length") and brief changes; QA runs again. Imports the new model. The user must allow it.',
+    inputSchema: { type: 'object', additionalProperties: false, required: ['id', 'notes'], properties: { id: { type: 'string', pattern: '^[a-z][a-z0-9-]{1,39}$' }, notes: { type: 'string', maxLength: 2000 }, brief: { type: 'object' } } },
+  },
+  {
+    name: 'character_review',
+    description: 'Re-run the QA of a character made with character_create (turnaround, silhouette against its sheet, proportions, palette, interpenetration through the clips, budget, weights) and see the report and turnaround. Use it to judge a character before placing it.',
+    inputSchema: { type: 'object', additionalProperties: false, required: ['id'], properties: { id: { type: 'string', pattern: '^[a-z][a-z0-9-]{1,39}$' } } },
+  },
+);
+
 /** The agent's Blender tools over a host (see `AgentOptions.blender`). */
 export function createBlenderToolRunner(deps: BlenderHostDeps): HostToolRunner {
   return {
-    tools: BLENDER_TOOLS,
+    tools: [...BLENDER_TOOLS, ...BLENDER_CHARACTER_TOOLS],
     async run(name, input, signal) {
       const action = BLENDER_TOOL_ACTIONS[name];
       if (!action) return { text: `Unknown Blender tool "${name.slice(0, 40)}".`, isError: true };
