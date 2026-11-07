@@ -71,7 +71,7 @@ import { captureMime, captureNeedsResize, pixelsAreBlank, captureSize, MAX_VIEWS
 import { FrameStats } from './view/frame-stats';
 import { gradeFor, gradeWithPreset, NEUTRAL_GRADE } from './gpu/grade';
 import { animeEffects, autoTier, degrade, effectsKey, effectsOf, evScale, GRADE_PRESETS, isGradePresetId, presetFor, RENDER_TIERS, resolveEffects, type EffectOverrides, type GradePreset, type GradePresetId, type PostEffects, type RenderTier } from './gpu/finishing';
-import { CameraTour, DRONE_TOUR_RADIUS, TOUR_SECONDS, droneTourKeys, tourKeys, tourSections } from './view/tour';
+import { CameraTour, type TourKey, DRONE_TOUR_RADIUS, TOUR_SECONDS, droneTourKeys, tourKeys, tourSections } from './view/tour';
 import { AdaptiveResolution, MOTION_PROFILES, motionOptions, passFloorOf, type MotionProfile } from './view/adaptive-resolution';
 import { MeshBasicNodeMaterial } from 'three/webgpu';
 import { textureWork } from './gpu/task-queue';
@@ -95,7 +95,8 @@ import { ArchView, type ArchViewState } from './view/arch-view';
 import { daylightLampFactor, FORWARD_LIGHTS, LAMP_CUTOFF, lightIntensity } from './sync/lights';
 import type { RelightLighting } from './environment/relight';
 import { installFirstDrawPacer, type FirstDrawPacer } from './gpu/first-draw-pacer';
-import { collectFramingItems, FOCUS_TAG } from './view/content-items';
+import { collectFramingItems, FOCUS_TAG, groundSheet } from './view/content-items';
+import { edgeShy } from './view/edge-shy';
 import { drainSteps, nearestInView, nearZone, rankOpeningViews, rankOpeningViewsSteps, type OpeningPose, type OpeningStats, type OpeningSun } from './view/opening-view';
 import type { ArchBuilding, ArchOpening } from './view/arch-hero';
 import { archStopsSteps, MAX_STOPS, quickSceneStopsSteps, sceneStopsSteps, VEGETATION_NAME, viewpointName, type QuickStopProbe, type RoomArea, type ViewStopPose } from './view/view-stops';
@@ -2322,6 +2323,7 @@ export class WorldRenderer {
           },
         };
         const plan = droneTourKeys({ pos: [cam.x, cam.y, cam.z], target: this.orbitTarget() }, sections, f.center, f.radius, probe);
+        plan.keys = this.keysOffRim(plan.keys);
         this.rig.startTour(new CameraTour(plan.keys, seconds ?? TOUR_SECONDS, seconds === undefined ? plan.times : undefined));
         this.needsDraw = true;
         return true;
@@ -2333,10 +2335,29 @@ export class WorldRenderer {
       if (item.focus || (item.weight === undefined && (item.max[1] - item.min[1]) > f.radius * 0.08)) focus.push([(item.min[0] + item.max[0]) / 2, item.min[1] + (item.max[1] - item.min[1]) * 0.45, (item.min[2] + item.max[2]) / 2]);
     }
     const target = this.orbitTarget();
-    const keys = tourKeys({ pos: [cam.x, cam.y, cam.z], target }, f.center, f.radius, focus, Math.max(0.5, this.rig.floorY));
+    const keys = this.keysOffRim(tourKeys({ pos: [cam.x, cam.y, cam.z], target }, f.center, f.radius, focus, Math.max(0.5, this.rig.floorY)));
     this.rig.startTour(new CameraTour(keys, seconds ?? TOUR_SECONDS));
     this.needsDraw = true;
     return true;
+  }
+
+  /** The aerial view `pos` to `target` kept off the rim of the terrain (see `edge-shy.ts`); null when it needs no change. */
+  private keepOffRim(pos: Vec3, target: Vec3): { pos: Vec3; target: Vec3 } | null {
+    const sheet = groundSheet(this.sync);
+    if (!sheet) return null;
+    const out = edgeShy(pos, target, sheet, this.perspective.fov, this.perspective.aspect);
+    return out.pos === pos ? null : out;
+  }
+
+  /** A tour's keys with every aerial one kept off the terrain's rim; the first and last key (the camera as it is) stay. */
+  private keysOffRim(keys: TourKey[]): TourKey[] {
+    const sheet = groundSheet(this.sync);
+    if (!sheet) return keys;
+    return keys.map((k, i) => {
+      if (i === 0 || i === keys.length - 1) return k;
+      const out = edgeShy(k.pos, k.target, sheet, this.perspective.fov, this.perspective.aspect);
+      return out.pos === k.pos ? k : { pos: out.pos, target: out.target };
+    });
   }
 
   /** Stop a running tour (the camera stays where it is). */
@@ -3759,8 +3780,10 @@ export class WorldRenderer {
     });
     const pose = view?.pose ?? framingPose(framing, base);
     const azimuthDeg = view?.candidate.azimuthDeg ?? DEFAULT_FRAMING_AZIMUTH;
-    _pos.set(pose.position[0], pose.position[1], pose.position[2]);
-    _target.set(pose.target[0], pose.target[1], pose.target[2]);
+    // An aerial overview of a terrain must not show the rim of the sheet (a title card's backdrop): tilted down, walked in.
+    const shy = arch ? null : this.keepOffRim(pose.position, pose.target);
+    _pos.set(...(shy?.pos ?? pose.position));
+    _target.set(...(shy?.target ?? pose.target));
     const duration = opts.duration ?? FRAME_DURATION;
     if (opts.flyIn) {
       const wide = framingPose(framing, { fovDeg: cam.fov, aspect: cam.aspect, groundY, margin: 1.7, elevationDeg: 46, azimuthDeg });
@@ -6866,6 +6889,7 @@ export class WorldRenderer {
         this.adaptive.enabled = false;
         this.renderer.setPixelRatio(1);
         this.renderer.setSize(w, h, false);
+        this.bufferCss = [0, 0];
         this.vignetteOff = !vignette;
         this.post?.setVignette(vignette ? this.vignetteStrength() : 0);
         if (this.boundsDirty) this.refresh();
@@ -7489,12 +7513,14 @@ export class WorldRenderer {
     const ch = _size.y;
     this.renderer.setPixelRatio(1);
     this.renderer.setSize(w, h, false);
+    this.bufferCss = [0, 0];
     try {
       return fn();
     } finally {
       this.needsDraw = true;
       this.renderer.setPixelRatio(pr);
       this.renderer.setSize(cw, ch, false);
+      this.bufferCss = [0, 0];
       this.perspective.aspect = aspect;
       this.perspective.updateProjectionMatrix();
     }
@@ -7515,6 +7541,9 @@ export class WorldRenderer {
     this.needsDraw = true;
   }
 
+  /** CSS size the drawing buffer was last set for (see {@link sizeBuffer}). */
+  private bufferCss: [number, number] = [0, 0];
+
   /** The drawing buffer and camera for `width`×`height` CSS pixels (no frame is requested). */
   private sizeBuffer(width: number, height: number): void {
     this.cssWidth = width;
@@ -7525,8 +7554,13 @@ export class WorldRenderer {
     const ss = this.supersample();
     const budget = ss > 1 ? { pixelRatioCap: this.budget.pixelRatioCap * ss, maxPixels: Math.max(this.budget.maxPixels, ULTRA_MAX_PIXELS) } : this.budget;
     const ratio = effectivePixelRatio(Math.min(dpr, this.ratioCap) * ss * (viaPass ? 1 : this.adaptive.scale), width, height, budget);
-    if (ratio !== this.renderer.getPixelRatio()) this.renderer.setPixelRatio(ratio);
-    this.renderer.setSize(width, height, false);
+    // Setting a canvas size again, even to the same value, clears and reallocates its buffer: only a change goes through.
+    const same = ratio === this.renderer.getPixelRatio() && this.bufferCss[0] === width && this.bufferCss[1] === height;
+    if (!same) {
+      if (ratio !== this.renderer.getPixelRatio()) this.renderer.setPixelRatio(ratio);
+      this.renderer.setSize(width, height, false);
+      this.bufferCss = [width, height];
+    }
     this.perspective.aspect = width / height;
     this.perspective.updateProjectionMatrix();
   }
@@ -7547,7 +7581,10 @@ export class WorldRenderer {
 
   /** The adaptive scale is applied to the scene pass of the light chain (upsampled and sharpened in its composite), not to the drawing buffer. */
   private scalesViaPass(): boolean {
-    return this.qualityPlan.moveEffects !== null && !this.atRest && !this.captureActive && this.post?.sceneScalable === true;
+    // A realtime tier without a lighter chain (moveEffects null) scales the same way when its chain has no pre-pass: a step of
+    // adaptive resolution then moves the scene pass's target, not the canvas (a canvas resize cost 35-130 ms on an Intel iGPU).
+    const moving = this.qualityPlan.moveEffects === null || !this.atRest;
+    return moving && !this.captureActive && this.post?.sceneScalable === true;
   }
 
   /** Whether the drawing buffer was last sized for the scene pass taking the adaptive scale. */

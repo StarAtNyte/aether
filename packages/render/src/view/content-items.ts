@@ -11,6 +11,7 @@ import { Box3, type Object3D } from 'three';
 import type { EntityId, Vec3 } from '@aether/core';
 import type { SceneSync } from '../sync/scene-sync';
 import type { FramingItem } from './framing';
+import type { GroundSheet } from './edge-shy';
 
 /** Entities with any of these tags never drive framing (unless explicitly focused). */
 export const FRAMING_EXCLUDED_TAGS: ReadonlySet<string> = new Set(['backdrop', 'background', 'terrain', 'ground', 'sky', 'skybox']);
@@ -80,4 +81,22 @@ export function collectFramingItems(sync: SceneSync, focus: ReadonlySet<EntityId
     items.push(item);
   });
   return items.length > 0 ? items : scenery;
+}
+
+/**
+ * The terrain sheet of the world: the union of its terrain entities' boxes (tagged `terrain`, or the `terrain` generator),
+ * or null without one. What an aerial view keeps its frame on (see `edge-shy.ts`).
+ */
+export function groundSheet(sync: SceneSync): GroundSheet | null {
+  const sheet = new Box3();
+  sync.root.updateMatrixWorld(true);
+  sync.forEachNode((node) => {
+    if (node.transient || node.entity.template || !node.object.visible) return;
+    const shape = node.entity.shape;
+    if (!(node.entity.tags.includes('terrain') || (shape.kind === 'procedural' && shape.generator === 'terrain'))) return;
+    _box.setFromObject(node.content);
+    if (!_box.isEmpty()) sheet.union(_box);
+  });
+  if (sheet.isEmpty() || ![...sheet.min.toArray(), ...sheet.max.toArray()].every(Number.isFinite)) return null;
+  return { minX: sheet.min.x, maxX: sheet.max.x, minZ: sheet.min.z, maxZ: sheet.max.z, minY: sheet.min.y, maxY: sheet.max.y };
 }

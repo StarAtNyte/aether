@@ -52,6 +52,8 @@ const wantDead = args.includes('--dead');
 const wantLinks = args.includes('--links');
 /** `--drop`: force the ladder's tier drop after the load and report what it cost. */
 const wantDrop = args.includes('--drop');
+/** `--steps`: force adaptive-resolution steps (1, 0.85, 0.7, 0.85, 1) in a moving view and report what each cost a frame. */
+const wantSteps = args.includes('--steps');
 /** `--tier=<tier>` (with `--player`): start on that render tier, chosen (no ladder): two builds then compare at one tier. */
 const tierChoice = flag('tier');
 /** `--tris`: triangles per frame by pass and by mesh during the orbit. */
@@ -327,7 +329,11 @@ async function main(): Promise<void> {
         if (titleMs > 0) {
           const linksNow = (): Promise<number> => page.evaluate(() => (globalThis as unknown as { __probe: { gl: Record<string, { n: number }> } }).__probe.gl['linkProgram']?.n ?? 0);
           const l0 = await linksNow();
-          await page.waitForTimeout(titleMs);
+          // With --shots the title card's backdrop is shot eight times over the wait (`title-<n>.png`).
+          for (let i = 0; i < 8; i++) {
+            await page.waitForTimeout(titleMs / 8);
+            if (wantShots) await page.screenshot({ path: join(out, `title-${i}.png`) });
+          }
           log(`${run}: title ${titleMs / 1000} s, links ${(await linksNow()) - l0}`);
         }
         let drop: Record<string, unknown> | null = null;
@@ -376,6 +382,41 @@ async function main(): Promise<void> {
             return { tier: r.renderTier, level: r.stats().performanceLevel, links, linkMs: Math.round(linkMs), longTasks: lt.map(([t, d]) => `${Math.round(t - at)}+${d}`).join(' '), longestTask: Math.max(0, ...lt.map(([, d]) => d)), transition: r.qualityTransition };
           }, { at: c0.at, links: c1.links - c0.links, linkMs: c1.linkMs - c0.linkMs });
           log(`${run}: drop: one step -> tier ${tier}; 6 s after: ${JSON.stringify(drop)}`);
+        }
+        if (wantSteps) {
+          type R = { adaptive: { enabled: boolean; scale: number }; cssWidth: number; cssHeight: number; resize(w: number, h: number): void; setCameraPose(x: number, y: number, z: number, yaw: number, pitch: number): void; camera: { position: { x: number; y: number; z: number }; rotation: { y: number } }; holdQuality(on: boolean): void; stats(): { resolutionScale: number } };
+          const steps = await page.evaluate(async () => {
+            const r = (window as unknown as { __aether: { simulation: { renderer: R } } }).__aether.simulation.renderer;
+            r.holdQuality(true);
+            r.adaptive.enabled = false;
+            const p = { x: r.camera.position.x, y: r.camera.position.y, z: r.camera.position.z };
+            const yaw = r.camera.rotation.y;
+            let n = 0;
+            const frame = async (): Promise<number> => {
+              const t = performance.now();
+              r.setCameraPose(p.x + Math.sin(n++ * 0.05) * 0.5, p.y, p.z, yaw, -0.1);
+              await new Promise((res) => requestAnimationFrame(res));
+              return performance.now() - t;
+            };
+            const base: number[] = [];
+            for (let i = 0; i < 40; i++) base.push(await frame());
+            base.sort((a, b) => a - b);
+            const median = base[base.length >> 1] ?? 0;
+            const rows: Array<{ to: number; call: number; worst: number; over: number; canvas: string }> = [];
+            for (const to of [0.85, 0.7, 0.85, 1, 0.8, 1]) {
+              const t = performance.now();
+              r.adaptive.scale = to;
+              r.resize(r.cssWidth, r.cssHeight);
+              const call = performance.now() - t;
+              let worst = 0;
+              for (let i = 0; i < 12; i++) worst = Math.max(worst, await frame());
+              const c = document.querySelector('canvas') as HTMLCanvasElement;
+              rows.push({ to, call: Math.round(call), worst: Math.round(worst), over: Math.round(worst - median), canvas: `${c.width}x${c.height}` });
+              for (let i = 0; i < 20; i++) await frame();
+            }
+            return { median: Math.round(median), rows };
+          });
+          log(`${run}: adaptive steps: ${JSON.stringify(steps)}`);
         }
         if (wantTris) {
           await page.evaluate(() => {

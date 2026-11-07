@@ -129,6 +129,14 @@ const CASES: Record<string, (page: Page, steps: Array<Record<string, unknown>>) 
     await page.waitForTimeout(8000);
     await shot(page, 'lisbon-hills', '3-drone-tour-later', steps);
   },
+  // Highland Trail (game): the title card's backdrop over its 60 s tour, where the terrain's edge must never show.
+  async 'highland-trail'(page, steps) {
+    await page.waitForFunction(() => (window as unknown as { __aetherPlayer?: { phase: string } }).__aetherPlayer?.phase === 'title', null, { timeout: 120_000 });
+    for (const [i, wait] of [1500, 6000, 8000, 8000, 8000, 8000, 8000, 8000].entries()) {
+      await page.waitForTimeout(wait);
+      await shot(page, 'highland-trail', `title-${i}`, steps);
+    }
+  },
   async 'kestrel-outpost'(page, steps) {
     await page.waitForFunction(() => (window as unknown as { __aetherPlayer?: { phase: string } }).__aetherPlayer?.phase === 'title', null, { timeout: 60_000 });
     await page.waitForTimeout(1500);
