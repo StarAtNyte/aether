@@ -198,10 +198,12 @@ def write_meta(path, spec, springs, colliders):
     return meta
 
 
-def finish(repo, blender_glb, meta, out, install):
+def finish(repo, blender_glb, meta, out, install, lod1=False):
     cmd = ['npx', 'tsx', 'scripts/characters/finish-character.ts', '--in', blender_glb, '--meta', meta, '--out', out]
     if install:
         cmd.append('--install')
+    if lod1:
+        cmd.append('--lod1')
     r = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, timeout=600)
     if r.returncode != 0:
         raise RuntimeError(f'finish-character failed: {r.stderr[-800:]}')

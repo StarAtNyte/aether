@@ -2,7 +2,7 @@
  * The character pipeline's last step (`scripts/blender/character/build.py` calls it; see docs/BLENDER-HARNESS.md):
  * turn the Blender export of a character into a body the runtime plays, and optionally install it in the asset library.
  *
- *   npx tsx scripts/characters/finish-character.ts --in <dir>/<id>.blender.glb --meta <dir>/<id>.meta.json --out <dir>/<id>.glb [--install]
+ *   npx tsx scripts/characters/finish-character.ts --in <dir>/<id>.blender.glb --meta <dir>/<id>.meta.json --out <dir>/<id>.glb [--install] [--lod1]
  *
  * - Checks the skeleton is the shared Biped (the `Bip01_*` bones the female and male motion sets drive), so every clip of
  *   the motion set plays on it; clips the file carries (a character's extra beats) are kept, and the runtime adds them to
@@ -14,6 +14,9 @@
  *   export's glTF PBR materials.
  * - Meshopt compression; with `--install`, `assets/lib/c/<id>.<hash8>.glb` and the original cast entries
  *   (`assets/characters-original.json`, `packages/assets/src/characters/original.ts`), keeping the other originals.
+ * - `--lod1` (with `--install`): the input is the far level of detail (no morphs, the same skeleton, clips' rest and
+ *   springs); it goes to `assets/lib/c/<id>.lod1.<hash8>.glb` and the installed entry gains `lod1: { file, triangles,
+ *   bytes }`. Install the body first: a new body drops the old entry's `lod1`.
  */
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -56,6 +59,8 @@ interface CastEntry {
   faces: 1 | -1;
   bytes: number;
   style?: 'toon';
+  /** The far level of detail (`--lod1`). */
+  lod1?: { file: string; triangles: number; bytes: number };
 }
 
 const arg = (k: string): string | undefined => {
@@ -97,7 +102,7 @@ function toonAccessor(doc: Document, prim: Primitive): void {
   if (col) prim.setAttribute('COLOR_0', null);
 }
 
-export async function finishCharacter(inFile: string, meta: CharacterMeta, outFile: string, install: boolean): Promise<{ entry: CastEntry; sha: string }> {
+export async function finishCharacter(inFile: string, meta: CharacterMeta, outFile: string, install: boolean, lod1 = false): Promise<{ entry: CastEntry; sha: string }> {
   const io = await gltfIO();
   const doc = await io.read(inFile);
   const root = doc.getRoot();
@@ -167,7 +172,7 @@ export async function finishCharacter(inFile: string, meta: CharacterMeta, outFi
   const glb = await io.writeBinary(doc);
   writeFileSync(outFile, glb);
   const sha = createHash('sha256').update(glb).digest('hex');
-  const rel = `c/${meta.id}.${sha.slice(0, 8)}.glb`;
+  const rel = `c/${meta.id}${lod1 ? '.lod1' : ''}.${sha.slice(0, 8)}.glb`;
   const entry: CastEntry = {
     id: meta.id,
     gender: meta.gender ?? 'female',
@@ -180,19 +185,39 @@ export async function finishCharacter(inFile: string, meta: CharacterMeta, outFi
     bytes: glb.byteLength,
     ...(anime ? { style: 'toon' as const } : {}),
   };
-  if (install) installCast(entry, glb, sha);
+  if (install && lod1) installLod(entry, glb);
+  else if (install) installCast(entry, glb, sha);
   return { entry, sha };
 }
+
+const RECORD = join(REPO, 'assets/characters-original.json');
+type CastRecord = { cast: Array<CastEntry & { sha256: string }> };
+const readRecord = (): CastRecord => (existsSync(RECORD) ? (JSON.parse(readFileSync(RECORD, 'utf8')) as CastRecord) : { cast: [] });
 
 /** Write the body into the library and its entry into the original cast (the other originals kept). */
 export function installCast(entry: CastEntry, glb: Uint8Array, sha: string): void {
   const dir = join(REPO, 'assets/lib/c');
-  for (const f of readdirSync(dir)) if (new RegExp(`^${entry.id}\\.[0-9a-f]{8}\\.glb$`).test(f)) rmSync(join(dir, f));
+  for (const f of readdirSync(dir)) if (new RegExp(`^${entry.id}\\.(lod1\\.)?[0-9a-f]{8}\\.glb$`).test(f)) rmSync(join(dir, f));
   writeFileSync(join(REPO, 'assets/lib', entry.file), glb);
-  const recordFile = join(REPO, 'assets/characters-original.json');
-  const record = existsSync(recordFile) ? (JSON.parse(readFileSync(recordFile, 'utf8')) as { cast: Array<CastEntry & { sha256: string }> }) : { cast: [] };
-  const cast = record.cast.filter((c) => c.id !== entry.id);
+  const cast = readRecord().cast.filter((c) => c.id !== entry.id);
   cast.push({ ...entry, sha256: sha });
+  writeCast(cast);
+}
+
+/** Write a far level of detail beside its installed body and record it on the body's entry. */
+export function installLod(lod: CastEntry, glb: Uint8Array): void {
+  const cast = readRecord().cast;
+  const body = cast.find((c) => c.id === lod.id);
+  if (!body) throw new Error(`--lod1: ${lod.id} is not installed (install the body first)`);
+  const dir = join(REPO, 'assets/lib/c');
+  for (const f of readdirSync(dir)) if (new RegExp(`^${lod.id}\\.lod1\\.[0-9a-f]{8}\\.glb$`).test(f)) rmSync(join(dir, f));
+  writeFileSync(join(REPO, 'assets/lib', lod.file), glb);
+  body.lod1 = { file: lod.file, triangles: lod.triangles, bytes: lod.bytes };
+  writeCast(cast);
+}
+
+function writeCast(cast: Array<CastEntry & { sha256: string }>): void {
+  const recordFile = RECORD;
   cast.sort((a, b) => a.id.localeCompare(b.id));
   writeFileSync(recordFile, `${JSON.stringify({ source: 'scripts/blender/character/build.py (scripts/characters/finish-character.ts)', licence: 'MIT', author: 'this project', cast }, null, 1)}\n`);
   const entries = cast.map(({ sha256: _sha, ...e }) => e);
@@ -208,6 +233,6 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.
   const outFile = arg('out');
   if (!inFile || !metaFile || !outFile) throw new Error('usage: finish-character.ts --in <x.blender.glb> --meta <x.meta.json> --out <x.glb> [--install]');
   const meta = JSON.parse(readFileSync(metaFile, 'utf8')) as CharacterMeta;
-  const { entry } = await finishCharacter(inFile, meta, outFile, process.argv.includes('--install'));
+  const { entry } = await finishCharacter(inFile, meta, outFile, process.argv.includes('--install'), process.argv.includes('--lod1'));
   console.log(JSON.stringify(entry));
 }

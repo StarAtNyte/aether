@@ -588,8 +588,9 @@ def finish_build(saved, out, spec, rep, P, iters, history):
         lod_glb = os.path.join(out, f'{cid}.lod1.blender.glb')
         EXPORT.export_glb(lod_glb, arm, lo, with_anim=False)
         EXPORT.patch(lod_glb, B['trs'], f'{cid}-body', B['atlas_png'])
-        e2 = EXPORT.finish(REPO, lod_glb, meta_path, os.path.join(out, f'{cid}.lod1.glb'), False)
-        lods.append({'level': 1, 'triangles': e2.get('triangles'), 'bytes': e2.get('bytes'), 'file': f'{cid}.lod1.glb'})
+        # installed beside the body (the cast entry's `lod1`) when the body is
+        e2 = EXPORT.finish(REPO, lod_glb, meta_path, os.path.join(out, f'{cid}.lod1.glb'), spec['install'], lod1=True)
+        lods.append({'level': 1, 'triangles': e2.get('triangles'), 'bytes': e2.get('bytes'), 'file': f'{cid}.lod1.glb', 'installed': e2.get('file') if spec['install'] else None})
     except Exception as e:  # a missing level of detail is reported, not fatal
         rep['issues'].append(f'lod: {e}')
     rep['bytes'] = entry.get('bytes')
