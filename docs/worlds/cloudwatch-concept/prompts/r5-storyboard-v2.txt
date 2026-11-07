@@ -1,0 +1,18 @@
+Use your built-in image generation tool to create exactly 2 images, then save each as a PNG in the current directory with the file names below. If copying fails, just list where the tool saved them. Do not write code or any other files.
+
+Storyboard pages for "Two Whistles", an ORIGINAL ~100-second animated short (no resemblance to any existing film, character, studio or artist). Rough storyboard style: loose pencil and grey marker with a touch of warm colour for the sky, 6 widescreen panels (2.39:1) per page in 2 columns x 3 rows, each with a small shot number, no other text. Two 15-year-old girls: KAHO (chin-length dark-brown bob, a thin braid behind her left ear, white short-sleeve sailor blouse with a light-blue collar and a teal neckerchief, navy pleated skirt) and her best friend MIO (long straight black hair with a thin white hairband, a pale mint cardigan over a white T-shirt, a long beige pleated skirt). A hillside harbour town at summer sunset: a long stone stair, a single-track railway with a level crossing, a two-car cream-and-green commuter train, a lookout high above the sea, a shore viaduct on a cape.
+
+1) storyboard-v2-1.png:
+ 1. Flashback, soft and warm: the two girls from behind at the lookout rail, the sunset sea beyond.
+ 2. Two-shot, side: Mio holds up two fingers to Kaho with a small smile.
+ 3. Close on Kaho promising, smiling.
+ 4. Today: Mio alone at the train window, chin on her hand, looking out sadly.
+ 5. Kaho running up stone steps toward the camera, determined.
+ 6. The level crossing: the train passing, Kaho at the barrier reaching out.
+2) storyboard-v2-2.png:
+ 7. Through the train window: Mio sees Kaho, one hand pressed to her chest, then holding two fingers against the glass.
+ 8. Close on Kaho, Dutch tilt, tears welling as the train's lit windows blur past.
+ 9. Cross-cut: the little train on a low shore viaduct along the cape, the sea below.
+ 10. Kaho stumbling on the last stone step, catching herself on the rail.
+ 11. Long lens: the train on the cape far away; at one window a tiny figure waving.
+ 12. Close, low, frontal: Kaho at the lookout, tears and a big smile, waving with her whole arm.
