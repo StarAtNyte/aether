@@ -764,7 +764,15 @@ with the hub; `api/cook-upload.ts`):
   - programs: the pairs this page used per tier (`WorldRenderer.sessionPrograms`), the ones used before the first
     picture as the boot pairs (`ProgramCache.sessionBoot`), encoded as format 3 files;
   - the opening is the renderer's `openingPose()`, the start mode the IR's `startMode`, else `play`; the profile follows
-    the start mode.
+    the start mode;
+  - a building's baked light (worlds with a building whose `lightBake` is not `off`): the re-lightable lightmap and light
+    volume at the Node cook's publish quality, baked in the page's workers through the worker scheduler, or on this
+    computer when the local server offers a baker, in `<id>/light/` (docs/LIGHTING-BAKE.md, "From the editor").
+- **Playability check** first, for a world played on foot (`@aether/physics` `makePlayable`, also run when Play starts in the
+  editor and the spawn has no ground): ground under the spawn, the player's controller standing on it for two seconds, the
+  floor reachable over a one-metre grid. When the spawn has no ground and static meshes have no colliders, they are made solid
+  in the published copy (models as triangle meshes from the loaded glTF, others with automatic colliders; a sky over the spawn
+  left out). The findings show in the dialog; a world that opens in `play` with no ground under its spawn is not published.
 - **Stored on the dataset** under `users/<anon>/<world>/manifest.json` and `users/<anon>/<world>/<id>/…`. `<world>` is
   the first 16 hex of the IR hash: a changed world is a new path; publishing the same world again rewrites the same one.
 - **Upload function** (`api/cook-upload.ts`, Vercel, 60 s; protocol in `api/_lib/cook-upload.ts`). The Hugging Face write
@@ -784,8 +792,9 @@ with the hub; `api/cook-upload.ts`):
     them, checks the file's SHA-256 and stores it (one PUT; the multipart transfer when the storage asks for it). The
     chunks stay in LFS storage unreferenced.
   - `?op=commit`: the manifest and each file's SHA-256. Checked: `parseCookManifest`, the world id against the IR hash
-    and the ticket, the folder (16 hex), no lightmap, the world file present (`world.json.gz`, its hash the manifest's),
-    file names only `packs/<nnnn>.bin` (in order), `programs/<tier>.bin` and `world.json.gz`, the file list equal to the
+    and the ticket, the folder (16 hex), baked light only in `light/` with a version and every file listed (one `index.json`
+    of at most 4 KB, `.lmap` and `.lvol` files named by their keys), the world file present (`world.json.gz`, its hash the manifest's),
+    file names only `packs/<nnnn>.bin` (in order), `programs/<tier>.bin`, `light/…` and `world.json.gz`, the file list equal to the
     manifest's, each file at most 32 MiB, at most 120 files and 200 MiB in all, the request at most 4,000,000 bytes. Then
     the limits again, the LFS batch API must report every file stored, one commit adds the files and a second the manifest
     (re-serialized from the parsed one, titled `Point <root>/<anon>/<world> at cooked package <id>`), so a reader never

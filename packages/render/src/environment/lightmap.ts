@@ -641,7 +641,8 @@ export class LightmapBaker {
         const sp = this.input.split;
         while (this.cursor < n) {
           const i = this.cursor++;
-          if (!sp || i % sp.count === sp.index) this.gatherTexel(this.order[i] as number);
+          if (!sp) this.gatherTexel(this.order[i] as number, this.order[i] as number);
+          else if (i % sp.count === sp.index) this.gatherTexel(this.order[i] as number, (i - sp.index) / sp.count);
           if ((this.cursor & 15) === 0 && now() > until) return false;
         }
         if (sp) {
@@ -667,9 +668,12 @@ export class LightmapBaker {
     const list: number[] = [];
     for (let o = 0; o < t.cov.length; o++) if (t.cov[o] === 1) list.push(o);
     this.order = Int32Array.from(list);
-    this.vis = new Float32Array(t.size * t.size);
-    this.bounce = new Float32Array(t.size * t.size * this.PL);
-    this.bad = new Uint8Array(t.size * t.size);
+    // A share of a split bake keeps only its own texels (a 1024² atlas of 18 parts is 216 MB per baker otherwise).
+    const sp = this.input.split;
+    const slots = sp ? Math.max(0, Math.ceil((this.order.length - sp.index) / sp.count)) : t.size * t.size;
+    this.vis = new Float32Array(slots);
+    this.bounce = new Float32Array(slots * this.PL);
+    this.bad = new Uint8Array(slots);
     this.stage = 'gather';
     this.cursor = 0;
   }
@@ -690,9 +694,11 @@ export class LightmapBaker {
    * `index`), the visibility, the parts' RGB and whether it lay inside a wall (filled from its neighbours later).
    */
   gathered(): { vis: Float32Array; bounce: Float32Array; bad: Uint8Array; rays: number } {
-    const sp = this.input.split ?? { index: 0, count: 1 };
+    // A share stores its texels compactly, in order (see raster).
+    if (this.input.split) return { vis: this.vis.slice(), bounce: this.bounce.slice(), bad: this.bad.slice(), rays: this.rays };
+    const sp = { index: 0, count: 1 };
     const PL = this.PL;
-    const n = Math.max(0, Math.ceil((this.order.length - sp.index) / sp.count));
+    const n = this.order.length;
     const vis = new Float32Array(n);
     const bounce = new Float32Array(n * PL);
     const bad = new Uint8Array(n);
@@ -805,7 +811,8 @@ export class LightmapBaker {
     for (let k = 0; k < PL; k++) this.vals[put * PL + k] = out[k] as number;
   }
 
-  private gatherTexel(o: number): void {
+  /** Gather texel `o` of the atlas into storage slot `w` (`o` itself, or its place in a split bake's share). */
+  private gatherTexel(o: number, w: number): void {
     const t = this.texels as Texels;
     const { scene, proxies, ground } = this.input;
     const PL = this.PL;
@@ -885,11 +892,11 @@ export class LightmapBaker {
     scene.skipLo = scene.skipHi = 0;
     // A texel inside a wall (most rays leave through its back faces) has no light of its own: it takes its neighbours'.
     if (back / R > 0.3) {
-      this.bad[o] = 1;
+      this.bad[w] = 1;
       return;
     }
-    this.vis[o] = escaped / R;
-    for (let q = 0; q < PL; q++) this.bounce[o * PL + q] = sum[q]! / R;
+    this.vis[w] = escaped / R;
+    for (let q = 0; q < PL; q++) this.bounce[w * PL + q] = sum[q]! / R;
   }
 
   /** Luminance of a texel's parts under unit weights (the sky gradient left out: it is signed): what the denoiser compares. */

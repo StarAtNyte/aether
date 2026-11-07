@@ -44,6 +44,8 @@ export { ModelCache, createGltfModelLoader, isSafeModelUrl, instantiateModel, in
 export { TextureCache, createTextureSource, createPoster, shareMaterials, type TextureSource } from './geometry/poster';
 export { AssetAnimator, gaitFor, GAIT, FADE_SECONDS } from './sync/asset-animator';
 export { planLightmap, LIGHTMAP_VERSION, type LightmapQuality, type LightmapPlan } from './environment/lightmap';
+export { BAKED_LIGHT_VERSION } from './environment/relight';
+export { encodeBakeJob } from './environment/lightmap-job';
 export { LIGHTMAP_MAX_ASSET_BYTES } from './environment/lightmap-asset';
 export type { LightmapStatus, LightmapState } from './view/lightmap-controller';
 export type { TransitionState, TransitionStage } from './view/quality-transition';

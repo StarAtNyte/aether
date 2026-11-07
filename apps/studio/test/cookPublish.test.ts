@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { createWorld, type WorldDoc } from '@aether/core';
-import { DDC_CODE_VERSION, parseCookManifest, parseCookedProgramSet, worldIrHash, worldOutputKeys } from '@aether/render';
+import { BAKED_LIGHT_VERSION, DDC_CODE_VERSION, parseCookManifest, parseCookedProgramSet, worldIrHash, worldOutputKeys } from '@aether/render';
 import { readProgramSetFile } from '../../../packages/render/src/cook/format';
 import { CHUNK_BYTES, handleCookUpload, RateLimiter, type UploadDeps } from '../../../api/_lib/cook-upload';
-import { ANON_KEY, cookAndPublish, cookInBrowser, type CookRenderer } from '../src/publish/cook-publish';
+import { ANON_KEY, cookAndPublish, cookInBrowser, publishBakeQuality, type CookRenderer } from '../src/publish/cook-publish';
 import { loadGame, loadPublished, sharedCookRoute, sharedCookUrl } from '../src/player/source';
 import { decodeWorldFile, encodeShare } from '../src/publish/share';
 import { datasetFetch, fakeHub, sha, TOKEN } from './fakeCookHub';
@@ -161,6 +161,45 @@ describe('publishing from the editor', () => {
     s.hub.stored.set(file[1].oid!, real);
     const none = await loadPublished({ anon, world: '0'.repeat(16), startMode: null }, datasetFetch(s.hub, base), base);
     expect(none.kind === 'error' && none.message).toMatch(/not found/);
+  });
+
+  it("bakes a building's light at publish quality and ships it in light/, with progress, an estimate and the manifest's files", async () => {
+    const lamp = { id: 'lamp', name: 'lamp', transform: { position: [0, 2, 0] }, shape: { kind: 'none' }, light: { type: 'point', intensity: 2, color: '#ffffff', range: 6 }, arch: { role: 'light', kind: 'pendant' } };
+    const base = world();
+    const w = createWorld({ ...base, entities: { ...base.entities, lamp } } as never);
+    expect(publishBakeQuality(w)).toBe('high');
+    expect(publishBakeQuality(base)).toBeNull();
+    expect(publishBakeQuality(createWorld({ ...w, environment: { ...w.environment, lightBake: { quality: 'off' } } } as never))).toBeNull();
+    const { cache } = await storedEntries(w);
+    const asked: Array<{ quality: string; samples: number }> = [];
+    const lmKey = `lm5-${'d'.repeat(32)}`;
+    const lvKey = `lv3-${'e'.repeat(32)}`;
+    const baking: CookRenderer = {
+      ...renderer,
+      publishLightBake: async (o) => {
+        asked.push({ quality: o.quality, samples: o.samples });
+        for (const f of [0, 0.3, 0.6, 0.96]) o.onProgress?.({ stage: 'lightmap', fraction: f, etaSeconds: f > 0 ? 90 * (1 - f) : null, label: 'Baking light on 6 of 6 workers' });
+        return { lightmap: { key: lmKey, bytes: new Uint8Array(4_500_000).fill(3) }, volume: { key: lvKey, bytes: new Uint8Array(1000).fill(4) }, baker: 'page-6', ms: 1234 };
+      },
+    };
+    const s = site();
+    const steps: Array<[number, string]> = [];
+    const r = await cookAndPublish({ world: w, renderer: baking, startMode: 'walkthrough', signal: new AbortController().signal, onProgress: (p, l) => steps.push([p, l]), fetch: s.fetch, storage: s.storage, caches: fakeCaches(cache) });
+    expect(asked).toEqual([{ quality: 'high', samples: 256 }]);
+    expect(r.light).toEqual({ lightmapBytes: 4_500_000, volumeBytes: 1000, baker: 'page-6', ms: 1234 });
+    expect(steps.every(([p], i) => i === 0 || p >= steps[i - 1]![0])).toBe(true);
+    expect(steps.some(([, l]) => /about 1 min left/.test(l))).toBe(true);
+    const anon = (JSON.parse(s.kept.get(ANON_KEY)!) as { anon: string }).anon;
+    const wid = (await worldIrHash(w)).slice(0, 16);
+    const m = parseCookManifest(JSON.parse(s.hub.files.get(`users/${anon}/${wid}/manifest.json`)!.text!));
+    expect(m.ok).toBe(true);
+    if (!m.ok) return;
+    expect(m.manifest.lightmap).toMatchObject({ base: 'light/', version: BAKED_LIGHT_VERSION });
+    expect(m.manifest.lightmap!.files!.map((f) => f.file).sort()).toEqual([`light/${lmKey}.lmap`, `light/${lvKey}.lvol`, 'light/index.json'].sort());
+    const dir = `users/${anon}/${wid}/${m.manifest.dir}`;
+    expect(s.hub.files.get(`${dir}light/${lmKey}.lmap`)?.size).toBe(4_500_000);
+    const index = [...s.hub.stored.entries()].map(([, b]) => new TextDecoder().decode(b)).find((t) => t.startsWith('{"keys"'));
+    expect(JSON.parse(index!)).toEqual({ keys: [lmKey], volumes: [lvKey] });
   });
 
   it('opens old long links with their cooked copy, short links through the dataset, and plain links without one', async () => {

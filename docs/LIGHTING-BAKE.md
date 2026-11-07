@@ -104,6 +104,26 @@ sat at the code's floor and flickered between it and nothing from texel to texel
 reads them only when `version` is its own `BAKED_LIGHT_VERSION`; an older package loads without baked light, and the template
 refresh (`scripts/cook-upload.ts`) counts a building template whose package has no current baked light as stale.
 
+### From the editor
+
+A world published from the editor (Publish → Fast-loading link, `apps/studio/src/publish/cook-publish.ts`) gets the same
+baked light, made in the publisher's browser: `WorldRenderer.publishLightBake` waits for the light volume on screen, takes the
+page's bake job (`LightmapController.bakeJob`, high: 1024², 256 rays, or the world's `lightBake`) and bakes it
+
+- on this computer when the studio is served by the local server: `POST /api/local/bake/lightmap` (apps/server
+  `local-bake.ts`) runs scripts/blender-bake.ts as the Node cook does (Cycles on the GPU, else the threaded CPU baker), the job
+  sent as `.lbjob` (render `encodeBakeJob`);
+- else on the page's workers (`view/publish-bake.ts`): one lane per worker of the page's budget, `max(1, cores − 2)`, each
+  taking a `bake` token of the worker scheduler before its worker gets work (so at most the budget less one bake at once, and
+  none while the view moves or a drag runs); the job cut into three shares per lane (`LightmapBaker` `split`, every `count`-th
+  covered texel, a share keeping only its own texels); one worker finishes from all the shares (denoise, encode, the lossless
+  image, `packAsset`), so the main thread only posts messages and sums progress.
+
+The publish dialog shows the bake's progress and an estimate of the time left, and Cancel stops every worker. Only worlds
+that bake publish light (a building, `lightBake` not `off`). The files go to `light/` in the package with the manifest's
+`lightmap` naming them (`files`: the upload function only accepts a package whose files are all listed); the upload sends the
+`.lmap` (about 5.5 MB for Casa del Patio, over one request) in 4 MB chunks it joins again.
+
 Keys: a lightmap file is named by the building (geometry rounded to 2 cm, the plan's atlas size and density, the volume grid, the
 sun keys, the lamps at full strength), never by the light, so the hour never misses it.
 

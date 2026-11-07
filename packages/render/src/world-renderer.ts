@@ -930,6 +930,8 @@ export class WorldRenderer {
   /** Firefox on WebGL2 with a real GPU: nearest shadow comparison, cleared targets and a light start that climbs (gpu/gecko-safe.ts). */
   private readonly geckoSafe: boolean;
   private cuts: PerformanceCuts = cutsAt(0);
+  /** A publish bake runs ({@link publishLightBake}): the light volume stays on whatever the ladder cut. */
+  private publishBaking = false;
   /** Told when the governor gave something up: the step and what it was. */
   onPerformanceStep: ((level: number, step: string, up?: boolean) => void) | null = null;
   /** Told when the black-screen watchdog stepped down or a shader failed to build (see {@link WatchdogEvent}). */
@@ -1200,6 +1202,7 @@ export class WorldRenderer {
     this.lowMemory = opts.lowMemory === true || opts.lowPower === true;
     this.lightmap = new LightmapController(this.lightVolume.light, {
       gather: () => this.gatherLightmap(),
+      gatherBuilt: () => this.gatherLightmap(true),
       volume: () => (this.lightVolume.baking ? null : this.lightVolume.bakedVolume),
       settled: () => this.syncing === 0 && !this.grow.active && !this.disposed,
       onChange: () => this.onLightmap(),
@@ -1851,6 +1854,12 @@ export class WorldRenderer {
   /** A new light volume is on the GPU: the analytic fills step aside, the eye re-adapts, the view redraws. */
   private onLightVolume(): void {
     if (this.disposed) return;
+    // A volume baked for a publish only (the ladder cut it) is not shown.
+    this.syncLightNode();
+    if (!this.volumeShown) {
+      this.lightmap.volumeChanged();
+      return;
+    }
     this.env.setVolumeLit(true);
     this.lightmap.volumeChanged();
     this.roomLights = null;
@@ -1865,9 +1874,11 @@ export class WorldRenderer {
 
   /** Interior light follows the world: the analytic fills, and the baked volume for buildings. */
   private syncInteriorLight(): void {
-    const on = this.archView.active && !this.lowMemory && this.cuts.lightVolume;
+    const on = this.volumeShown;
     this.env.setInteriorBounce(this.archView.active);
-    this.lightVolume.setEnabled(on);
+    // A publish bake needs the volume even where the performance ladder cut it (the lightmap's later bounces come from it): it
+    // bakes then without being shown, so no material changes (and no program is linked) while the publish runs.
+    this.lightVolume.setEnabled(on || (this.publishBaking && this.archView.active && !this.lowMemory));
     // The baked lightmap outlives the volume cut by the performance ladder (it is the cheaper of the two): only a building
     // without a view, or the low-memory mode, takes it away.
     this.lightmap.setEnabled(this.archView.active && !this.lowMemory);
@@ -1878,7 +1889,12 @@ export class WorldRenderer {
 
   /** The light node serves the volume or the lightmap: it stays in the scene while either is on. */
   private syncLightNode(): void {
-    this.lightVolume.light.visible = this.lightVolume.active || this.lightmap.hasMeshes;
+    this.lightVolume.light.visible = (this.lightVolume.active && this.volumeShown) || this.lightmap.hasMeshes;
+  }
+
+  /** The light volume lights the view (a building, not cut by the performance ladder or the low-memory mode). */
+  private get volumeShown(): boolean {
+    return this.archView.active && !this.lowMemory && this.cuts.lightVolume;
   }
 
   /** A lightmap was applied or taken away: the analytic fills step aside or return, the view redraws. */
@@ -1941,7 +1957,8 @@ export class WorldRenderer {
   }
 
   /** What a lightmap bake reads: the building's own meshes (merge members too), the volume's trace parts and the light. */
-  private gatherLightmap(): LightmapScene | null {
+  /** `asBuilt`: every wall as built, also one the view has sectioned (a publish bakes the building a viewer sees). */
+  private gatherLightmap(asBuilt = false): LightmapScene | null {
     const g = this.gatherLightVolume();
     if (!g) return null;
     const meshes: Mesh[] = [];
@@ -1951,8 +1968,8 @@ export class WorldRenderer {
     const walls: Array<{ meshes: Mesh[]; cut: boolean }> = [];
     for (const p of order) {
       // A wall the view has sectioned (`drawn` set: the part holds the wall as built) draws other geometry than the wall as built.
-      const wall = p.role === 'wall' ? { meshes: [] as Mesh[], cut: p.drawn !== undefined } : null;
-      for (const vm of p.drawn ?? p.meshes) {
+      const wall = p.role === 'wall' ? { meshes: [] as Mesh[], cut: !asBuilt && p.drawn !== undefined } : null;
+      for (const vm of asBuilt ? p.meshes : (p.drawn ?? p.meshes)) {
         if (vm.seeThrough || seen.has(vm.mesh)) continue;
         seen.add(vm.mesh);
         (wall ? wall.meshes : meshes).push(vm.mesh);
@@ -1984,6 +2001,81 @@ export class WorldRenderer {
   /** The `.lvol` file of the light volume on screen and its key (the cook ships it beside the lightmap), or null. */
   async lightVolumeAsset(): Promise<{ key: string; bytes: Uint8Array } | null> {
     return this.lightVolume.asset();
+  }
+
+  /**
+   * The publish bake of the buildings' re-lightable light (docs/LIGHTING-BAKE.md, "Bake at publish"), for a package made in
+   * this page (the editor's cooked publish): the light volume on screen, then the lightmap at `quality` and `samples`, baked
+   * by `outside` when it can (a baker on this computer, given the job) else split over the page's workers
+   * (`view/publish-bake.ts`). Nothing is applied on screen. Null when there is no building or no light volume came up within
+   * `volumeWaitMs`.
+   */
+  async publishLightBake(opts: {
+    quality: LightmapQuality;
+    samples: number;
+    signal?: AbortSignal;
+    onProgress?(p: { stage: 'volume' | 'lightmap' | 'finish'; fraction: number; etaSeconds: number | null; label: string }): void;
+    outside?(job: { key: string; quality: string; triCounts: number[]; request: unknown }, signal?: AbortSignal): Promise<Uint8Array | null>;
+    lanes?: number;
+    volumeWaitMs?: number;
+  }): Promise<{ lightmap: { key: string; bytes: Uint8Array }; volume: { key: string; bytes: Uint8Array }; baker: string; ms: number; lanes: number } | null> {
+    const { signal } = opts;
+    if (!this.archView.active || this.lowMemory) return null;
+    this.publishBaking = true;
+    this.syncInteriorLight();
+    try {
+      return await this.publishLightBakeOn(opts);
+    } finally {
+      this.publishBaking = false;
+      this.syncInteriorLight();
+    }
+  }
+
+  private async publishLightBakeOn(opts: Parameters<WorldRenderer['publishLightBake']>[0]): ReturnType<WorldRenderer['publishLightBake']> {
+    const { signal } = opts;
+    const t0 = performance.now();
+    // The volume first: the lightmap's later bounces come from it (and it ships beside the lightmap).
+    const waitUntil = t0 + (opts.volumeWaitMs ?? 600_000);
+    while (!(this.lightVolume.ready && !this.lightVolume.baking)) {
+      if (signal?.aborted) throw signal.reason instanceof Error ? signal.reason : new DOMException('cancelled', 'AbortError');
+      if (performance.now() > waitUntil) return null;
+      opts.onProgress?.({ stage: 'volume', fraction: 0, etaSeconds: null, label: this.lightVolume.baking ? 'Baking the light volume' : 'Waiting for the light volume' });
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    // Pieces still growing in (the ones the publish just generated) are surfaces at a fraction of their size: the bake waits.
+    const growUntil = performance.now() + 120_000;
+    while ((this.grow.active || this.syncing > 0) && performance.now() < growUntil) {
+      if (signal?.aborted) throw signal.reason instanceof Error ? signal.reason : new DOMException('cancelled', 'AbortError');
+      opts.onProgress?.({ stage: 'volume', fraction: 0, etaSeconds: null, label: 'Waiting for the building to settle' });
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    const job = await this.lightmap.bakeJob(opts.quality, opts.samples);
+    if (!job) return null;
+    let bytes: Uint8Array | null = null;
+    let baker = '';
+    let lanes = 0;
+    if (opts.outside) {
+      opts.onProgress?.({ stage: 'lightmap', fraction: 0, etaSeconds: null, label: 'Baking light on this computer' });
+      bytes = await opts.outside({ key: job.key, quality: opts.quality, triCounts: job.triCounts, request: job.request }, signal).catch(() => null);
+      if (bytes) baker = 'local';
+    }
+    if (!bytes) {
+      const { bakeLightmapSplit } = await import('./view/publish-bake');
+      const r = await bakeLightmapSplit(
+        { key: job.key, request: job.request, triCounts: job.triCounts, quality: opts.quality },
+        {
+          ...(signal ? { signal } : {}),
+          ...(opts.lanes !== undefined ? { lanes: opts.lanes } : {}),
+          onProgress: (p) => opts.onProgress?.({ stage: p.fraction >= 0.96 ? 'finish' : 'lightmap', fraction: p.fraction, etaSeconds: p.etaSeconds, label: p.fraction >= 0.96 ? 'Finishing the lightmap' : `Baking light on ${p.running} of ${p.lanes} workers` }),
+        },
+      );
+      bytes = r.bytes;
+      baker = `page-${r.lanes}`;
+      lanes = r.lanes;
+    }
+    const volume = await this.lightVolume.asset();
+    if (!volume) return null;
+    return { lightmap: { key: job.key, bytes }, volume, baker, ms: performance.now() - t0, lanes };
   }
 
   /** Stop a running or waiting lightmap bake. */

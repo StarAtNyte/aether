@@ -312,6 +312,20 @@ describe('lightmap controller', () => {
     expect(meshTriangleCount({ positions: new Float32Array(18), index: null })).toBe(2);
   });
 
+  it("a viewer takes a package's only lightmap baked under another key (the editor's publish) when its meshes match", async () => {
+    const donor = setup();
+    donor.ctl.setEnabled(true);
+    donor.ctl.request('low', 8);
+    await until(() => donor.ctl.ready);
+    const bytes = donor.ctl.asset!;
+    donor.ctl.dispose();
+    const t = setup({ cache: null, worker: false, autoLoad: true, staticBytes: new Map([['lm5-0123456789abcdef0123456789abcdef', bytes]]) });
+    t.ctl.setEnabled(true);
+    await until(() => t.ctl.ready);
+    expect(t.ctl.lastBake!.source).toBe('static');
+    t.ctl.dispose();
+  });
+
   it('finds the bundled file of a building whose view has sectioned a wall, and leaves that wall to the light volume', async () => {
     const donor = setup({ walls: 'whole' });
     donor.ctl.setEnabled(true);

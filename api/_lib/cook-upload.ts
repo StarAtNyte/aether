@@ -7,6 +7,7 @@
  *   users/<anon>/<world>/<id>/world.json.gz          the world (the share payload, gzipped): short links carry none
  *   users/<anon>/<world>/<id>/packs/<nnnn>.bin       geometry
  *   users/<anon>/<world>/<id>/programs/<t>.bin       program sets
+ *   users/<anon>/<world>/<id>/light/…                 baked light of a building (`<key>.lmap`, `<key>.lvol`, `index.json`)
  *
  * `<world>` is the first 16 hex of the IR hash (a changed world is a new path), `<id>` the cook's folder. Every request is
  * a POST with `?op=`:
@@ -48,7 +49,10 @@ export const MAX_MANIFEST_BYTES = CHUNK_BYTES;
 export const TICKET_MS = 60 * 60 * 1000;
 
 /** Allowed file names inside the cook folder. */
-const FILE_NAME = /^(?:packs\/\d{4}\.bin|programs\/(?:low|medium|high|ultra)\.bin|world\.json\.gz)$/;
+const FILE_NAME = /^(?:packs\/\d{4}\.bin|programs\/(?:low|medium|high|ultra)\.bin|world\.json\.gz|light\/(?:lm\d+-[0-9a-f]{32}\.lmap|lv\d+-[0-9a-f]{32}\.lvol|index\.json))$/;
+/** The baked light's folder in a package, and the largest index of it. */
+const LIGHT_BASE = 'light/';
+const MAX_LIGHT_INDEX_BYTES = 4096;
 const HEX16 = /^[0-9a-f]{16}$/;
 const HEX64 = /^[0-9a-f]{64}$/;
 
@@ -379,7 +383,14 @@ export function checkCommit(body: unknown): CheckedCommit {
   const m = parsed.manifest;
   if (m.irHash.slice(0, 16) !== world) return bad('the world id is not the manifest IR hash');
   if (!/^[0-9a-f]{16}\/$/.test(m.dir)) return bad('bad cook folder');
-  if (m.lightmap !== null) return bad('lightmaps are not accepted');
+  // Baked light: in `light/`, every file listed (one index, at least one lightmap and one volume).
+  const light = m.lightmap;
+  if (light !== null) {
+    if (light.base !== LIGHT_BASE || !light.version || !light.files) return bad('baked light must be in light/, versioned, its files listed');
+    const names = light.files.map((f) => f.file);
+    if (names.filter((n) => n === `${LIGHT_BASE}index.json`).length !== 1 || !names.some((n) => n.endsWith('.lmap')) || !names.some((n) => n.endsWith('.lvol'))) return bad('baked light needs one index.json, a .lmap and a .lvol');
+    if (light.files.some((f) => f.file === `${LIGHT_BASE}index.json` && f.bytes > MAX_LIGHT_INDEX_BYTES)) return bad('the baked light index is too large');
+  }
   if (!m.ir || m.ir.file !== WORLD_FILE) return bad(`the package has no ${WORLD_FILE}`);
   m.packs.forEach((p, i) => {
     if (p.file !== `packs/${String(i).padStart(4, '0')}.bin`) bad(`bad pack name ${p.file.slice(0, 40)}`);
@@ -388,7 +399,7 @@ export function checkCommit(body: unknown): CheckedCommit {
   const names = cookFiles(m);
   if (names.length > MAX_FILES) return bad(`more than ${MAX_FILES} files`);
   if (new Set(names).size !== names.length) return bad('a file is named twice');
-  const sizes = new Map<string, number>([...m.packs.map((p) => [p.file, p.bytes] as const), ...Object.values(m.programs).map((p) => [p!.file, p!.bytes] as const), [m.ir.file, m.ir.bytes]]);
+  const sizes = new Map<string, number>([...m.packs.map((p) => [p.file, p.bytes] as const), ...Object.values(m.programs).map((p) => [p!.file, p!.bytes] as const), [m.ir.file, m.ir.bytes], ...(light?.files ?? []).map((f) => [f.file, f.bytes] as const)]);
   let total = 0;
   for (const [n, size] of sizes) {
     if (!FILE_NAME.test(n)) return bad(`file name not allowed: ${n.slice(0, 40)}`);

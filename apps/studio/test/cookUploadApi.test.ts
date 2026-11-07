@@ -63,11 +63,31 @@ describe('cook upload: validation', () => {
     expect(ok(manifest([], { cells: [] }), {})().files).toHaveLength(1);
   });
 
+  it('accepts baked light in light/ with its files listed, and refuses it anywhere else or unlisted', () => {
+    const LM = 'light/lm5-' + HEX('d', 32) + '.lmap';
+    const LV = 'light/lv3-' + HEX('e', 32) + '.lvol';
+    const files = [{ file: LM, bytes: 5_500_000 }, { file: LV, bytes: 3_300_000 }, { file: 'light/index.json', bytes: 120 }];
+    const light = { base: 'light/', version: 'r1', files };
+    const listed = { 'packs/0000.bin': HEX('1'), [LM]: HEX('3'), [LV]: HEX('4'), 'light/index.json': HEX('5') };
+    const c = ok(manifest([{ file: 'packs/0000.bin', bytes: 16 }], { lightmap: light }), listed)();
+    expect(c.files.map((f) => f.file).sort()).toEqual(['light/index.json', LM, LV, 'packs/0000.bin', 'world.json.gz'].sort());
+    expect(c.bytes).toBe(16 + WORLD_BYTES.byteLength + 5_500_000 + 3_300_000 + 120);
+    // Unlisted, unversioned, outside light/, a missing part, a foreign name or a large index: refused.
+    expect(ok(manifest([{ file: 'packs/0000.bin', bytes: 16 }], { lightmap: { base: 'light/', version: 'r1' } }), { 'packs/0000.bin': HEX('1') })).toThrow(/baked light/);
+    expect(ok(manifest([{ file: 'packs/0000.bin', bytes: 16 }], { lightmap: { base: 'light/', files } }), listed)).toThrow(/baked light/);
+    expect(ok(manifest([{ file: 'packs/0000.bin', bytes: 16 }], { lightmap: { base: 'lm/', version: 'r1', files: files.map((f) => ({ ...f, file: f.file.replace('light/', 'lm/') })) } }), { 'packs/0000.bin': HEX('1') })).toThrow(/baked light/);
+    expect(ok(manifest([{ file: 'packs/0000.bin', bytes: 16 }], { lightmap: { ...light, files: files.slice(0, 2) } }), { 'packs/0000.bin': HEX('1'), [LM]: HEX('3'), [LV]: HEX('4') })).toThrow(/index\.json/);
+    expect(ok(manifest([{ file: 'packs/0000.bin', bytes: 16 }], { lightmap: { ...light, files: [...files, { file: 'light/x.html', bytes: 9 }] } }), { ...listed, 'light/x.html': HEX('6') })).toThrow(/not allowed/);
+    expect(ok(manifest([{ file: 'packs/0000.bin', bytes: 16 }], { lightmap: { ...light, files: [files[0]!, files[1]!, { file: 'light/index.json', bytes: 9000 }] } }), listed)).toThrow(/index is too large/);
+    // A listed file must be in the commit's file list.
+    expect(ok(manifest([{ file: 'packs/0000.bin', bytes: 16 }], { lightmap: light }), { 'packs/0000.bin': HEX('1') })).toThrow(/does not match/);
+  });
+
   it('refuses a bad manifest, a wrong world id, a lightmap and a package without its world', () => {
     expect(ok(manifest([{ file: 'packs/0000.bin', bytes: 16 }], { format: 3 }), { 'packs/0000.bin': HEX('1') })).toThrow(/manifest rejected/);
     expect(ok(manifest([{ file: 'packs/0000.bin', bytes: 16 }], { irHash: 'nothex' }), { 'packs/0000.bin': HEX('1') })).toThrow(/manifest rejected/);
     expect(() => checkCommit({ world: HEX('c', 16), manifest: manifest([{ file: 'packs/0000.bin', bytes: 16 }]), files: { 'packs/0000.bin': HEX('1'), 'world.json.gz': WORLD_OID } })).toThrow(/world id/);
-    expect(ok(manifest([{ file: 'packs/0000.bin', bytes: 16 }], { lightmap: { base: 'lm/' } }), { 'packs/0000.bin': HEX('1') })).toThrow(/lightmap/);
+    expect(ok(manifest([{ file: 'packs/0000.bin', bytes: 16 }], { lightmap: { base: 'lm/' } }), { 'packs/0000.bin': HEX('1') })).toThrow(/baked light/);
     expect(() => checkCommit({ world: WORLD, manifest: manifest([{ file: 'packs/0000.bin', bytes: 16 }], { ir: null }), files: { 'packs/0000.bin': HEX('1') } })).toThrow(/world\.json\.gz/);
     expect(ok(manifest([{ file: 'packs/0000.bin', bytes: 16 }], { ir: { file: 'w.json', bytes: 40, sha256: WORLD_OID } }), { 'packs/0000.bin': HEX('1') })).toThrow(/world\.json\.gz/);
     // The world file's hash in the list must be the manifest's.

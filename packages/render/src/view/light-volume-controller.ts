@@ -596,6 +596,14 @@ export class LightVolumeController {
         const a = bytes ? await unpackVolumeAsset(bytes) : null;
         if (a && a.key === key && a.grid.nx === grid.nx && a.grid.ny === grid.ny && a.grid.nz === grid.nz && a.keys.length === keys.length) return { data: a.data, light: a.light, source: 'static' };
         if (a) log.warn(`bundled light volume ${key} does not fit this building`);
+      } else if (have.size === 1) {
+        // The package's only volume, baked for this building elsewhere (the editor's publish, geometry a hair off): taken when
+        // its grid and sun keys are this building's.
+        const only = [...have][0] as string;
+        const bytes = await this.fetchBytes(`${this.staticBase}${only}.lvol`);
+        const a = bytes ? await unpackVolumeAsset(bytes) : null;
+        const fits = (x: number, y: number): boolean => Math.abs(x - y) < 1e-3;
+        if (a && a.grid.nx === grid.nx && a.grid.ny === grid.ny && a.grid.nz === grid.nz && fits(a.grid.spacing, grid.spacing) && a.grid.min.every((v, i) => fits(v, grid.min[i] as number)) && a.keys.length === keys.length) return { data: a.data, light: a.light, source: 'static' };
       }
     }
     if (this.cache) {

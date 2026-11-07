@@ -55,6 +55,8 @@ export interface AppDeps {
   local?: LocalAi | null;
   /** Loopback check for `/api/local/*` (tests). */
   isLoopback?: LocalRouteDeps['isLoopback'];
+  /** The publish bake on this computer (`local-bake.ts`; tests: a fake, null: none); absent: found in this checkout. */
+  localBaker?: LocalRouteDeps['baker'];
   /** Graceful shutdown requested by the `aether` CLI (`POST /api/admin/shutdown`, session secret required). */
   requestShutdown?: () => void;
   /** On-demand model import service override (tests: mocked search, fetch and converter). */
@@ -181,6 +183,7 @@ export function createApp(config: ServerConfig, deps: AppDeps = {}): Hono<AppEnv
       ...(config.local.sessionSecret ? { sessionSecret: config.local.sessionSecret } : {}),
       ...(deps.bridge ? { bridge: deps.bridge } : {}),
       ...(deps.isLoopback ? { isLoopback: deps.isLoopback } : {}),
+      ...(deps.localBaker !== undefined ? { baker: deps.localBaker } : {}),
       ...(deps.shutdownSignal ? { shutdownSignal: deps.shutdownSignal } : {}),
     });
     const services = deps.publishServices ?? createPublishServices({ dir: `${config.dataDir}/published`, playerDir: config.staticDir, now, ...deps.publish });

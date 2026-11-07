@@ -7,7 +7,10 @@
  *   editor did not keep (cheap outputs, spawn templates never drawn) generated first, packed per cell with the cook's own
  *   packer (render cook/pack.ts);
  * - the program sets this page recorded, per tier (the load's own programs first);
- * - the opening view and the start mode.
+ * - the opening view and the start mode;
+ * - a building's baked light (`light/`: the re-lightable lightmap and light volume, docs/LIGHTING-BAKE.md), baked here at
+ *   the Node cook's publish quality (1024² atlas, 256 rays) on the page's workers through its worker scheduler, or by a baker
+ *   on this computer when the local server offers one, so a viewer never bakes.
  *
  * The files go to the upload function (api/cook-upload.ts) one request each, a file over the request cap in chunks it
  * joins again; it stores them on the public dataset under `users/<anon>/<world>/`, the manifest last. The share link then
@@ -16,7 +19,7 @@
  */
 import type { WorldDoc } from '@aether/core';
 import { loadCatalog } from '@aether/assets';
-import { assetGeneratorShape, cookManifest, DDC_CACHE_NAME, DDC_CODE_VERSION, encodeProgramSetFile, packGeometry, profileForStartMode, programSetBody, sourceHash, WORLD_FILE, worldIrHash, worldOutputKeys, type CookManifest, type StartMode } from '@aether/render';
+import { assetGeneratorShape, BAKED_LIGHT_VERSION, cookManifest, DDC_CACHE_NAME, DDC_CODE_VERSION, encodeProgramSetFile, packGeometry, profileForStartMode, programSetBody, sourceHash, WORLD_FILE, worldIrHash, worldOutputKeys, type CookManifest, type LightmapQuality, type StartMode } from '@aether/render';
 import { decodeWorldFile, encodeWorldFile, type ShareMeta } from './share';
 
 /** The upload function, on this site. */
@@ -40,8 +43,45 @@ export interface CookRenderer {
   /** Tour stops of the player's tour bar (WorldRenderer.viewStops); absent: the player computes them. */
   viewStops?(): Array<{ position: [number, number, number]; target: [number, number, number]; fov?: number; name?: string }>;
   sessionPrograms(): Array<{ tier: 'low' | 'medium' | 'high' | 'ultra'; boot: number; pairs: Array<[string, string]> }>;
+  /** The publish bake of the buildings' light (WorldRenderer.publishLightBake); absent: the package has no baked light. */
+  publishLightBake?(opts: PublishLightBakeOptions): Promise<PublishedLight | null>;
   /** Generate into the geometry cache the outputs named (WorldRenderer.storeOutputsForCook); absent: they are left out. */
   storeOutputsForCook?(missing: ReadonlySet<string>, opts: { signal?: AbortSignal; onProgress?(done: number, total: number): void }): Promise<{ generated: number; failed: number }>;
+}
+
+/** What {@link CookRenderer.publishLightBake} is asked. */
+export interface PublishLightBakeOptions {
+  quality: LightmapQuality;
+  samples: number;
+  signal?: AbortSignal;
+  onProgress?(p: { stage: 'volume' | 'lightmap' | 'finish'; fraction: number; etaSeconds: number | null; label: string }): void;
+  outside?(job: { key: string; quality: string; triCounts: number[]; request: unknown }, signal?: AbortSignal): Promise<Uint8Array | null>;
+}
+
+/** The files of a publish bake. */
+export interface PublishedLight {
+  lightmap: { key: string; bytes: Uint8Array };
+  volume: { key: string; bytes: Uint8Array };
+  baker: string;
+  ms: number;
+}
+
+/** Rays per texel of the publish bake (scripts/cook.ts `--samples` default). */
+export const PUBLISH_BAKE_SAMPLES = 256;
+
+/** The quality a world's publish bakes its light at, or null when it bakes none (scripts/cook-upload.ts `templateBakes`: buildings, not turned off). */
+export function publishBakeQuality(world: WorldDoc): LightmapQuality | null {
+  const want = world.environment.lightBake?.quality;
+  if (want === 'off' || !Object.values(world.entities).some((e) => e.arch !== undefined)) return null;
+  return want ?? 'high';
+}
+
+/** `m min s` of a number of seconds, for an estimate. */
+export function etaLabel(seconds: number): string {
+  const s = Math.max(1, Math.round(seconds));
+  if (s < 60) return `${s} s`;
+  const m = Math.floor(s / 60);
+  return s % 60 >= 5 ? `${m} min ${s % 60} s` : `${m} min`;
 }
 
 export interface CookPublishInput {
@@ -59,6 +99,8 @@ export interface CookPublishInput {
   storage?: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> | null;
   /** Cache Storage (tests pass a fake). */
   caches?: Pick<CacheStorage, 'open'>;
+  /** A lightmap baker on this computer (the local server): the `.lmap` of a job, or null (the page's workers bake it). */
+  localBake?: PublishLightBakeOptions['outside'];
 }
 
 export interface CookPublishResult {
@@ -72,6 +114,8 @@ export interface CookPublishResult {
   /** Outputs generated for the package (the editor had not kept them). */
   generated: number;
   programs: number;
+  /** The baked light shipped, or null. */
+  light: BrowserPackage['light'];
 }
 
 /** A package made in the browser, before upload. */
@@ -83,6 +127,8 @@ export interface BrowserPackage {
   skipped: number;
   /** Outputs generated for the package. */
   generated: number;
+  /** The baked light shipped (null: the world bakes none, or the renderer cannot). */
+  light: { lightmapBytes: number; volumeBytes: number; baker: string; ms: number } | null;
 }
 
 function concat(parts: Uint8Array[], bytes: number): Uint8Array {
@@ -109,8 +155,11 @@ async function presentKeys(cache: Cache | null, wanted: ReadonlyMap<string, unkn
 }
 
 /** Make the package of `world`: the world file, the geometry (generating what is missing) and the program record. */
-export async function cookInBrowser(input: Pick<CookPublishInput, 'world' | 'meta' | 'proof' | 'renderer' | 'startMode' | 'signal' | 'onProgress' | 'caches'>): Promise<BrowserPackage> {
+export async function cookInBrowser(input: Pick<CookPublishInput, 'world' | 'meta' | 'proof' | 'renderer' | 'startMode' | 'signal' | 'onProgress' | 'caches' | 'localBake'>): Promise<BrowserPackage> {
   const { renderer, startMode, signal } = input;
+  // With a light bake the bake takes most of the time: the geometry gets the first fifth of the bar, the bake the rest.
+  const bakes = publishBakeQuality(input.world) !== null && !!renderer.publishLightBake;
+  const onProgress = bakes ? (p: number, label: string): void => input.onProgress((p * 0.2) / 0.45, label) : input.onProgress;
   const genVersion = DDC_CODE_VERSION;
   // The world exactly as the player reads it from the file: its IR hash is what the player and the cooked load check.
   const worldFile = await encodeWorldFile(input.world, input.meta ?? {}, input.proof ?? null);
@@ -132,8 +181,8 @@ export async function cookInBrowser(input: Pick<CookPublishInput, 'world' | 'met
   let generated = 0;
   const missing = new Set([...wanted.keys()].filter((k) => !requests.has(k)));
   if (missing.size > 0 && cache && renderer.storeOutputsForCook) {
-    input.onProgress(0.02, `Generating ${missing.size} pieces the editor did not keep`);
-    const r = await renderer.storeOutputsForCook(missing, { signal, onProgress: (done, total) => input.onProgress(0.02 + (0.2 * done) / Math.max(1, total), `Generating ${done} of ${total} pieces`) });
+    onProgress(0.02, `Generating ${missing.size} pieces the editor did not keep`);
+    const r = await renderer.storeOutputsForCook(missing, { signal, onProgress: (done, total) => onProgress(0.02 + (0.2 * done) / Math.max(1, total), `Generating ${done} of ${total} pieces`) });
     generated = r.generated;
     // The lanes write each entry just after its reply: wait until they are all there, or stop arriving.
     let last = requests.size;
@@ -159,7 +208,7 @@ export async function cookInBrowser(input: Pick<CookPublishInput, 'world' | 'met
     writePack: (file, parts, bytes) => void files.set(file, concat(parts, bytes)),
     packTarget: PACK_TARGET,
     maxEntryBytes: MAX_FILE_BYTES,
-    onEntry: (done, total) => input.onProgress(0.22 + (0.2 * done) / Math.max(1, total), 'Packing geometry'),
+    onEntry: (done, total) => onProgress(0.22 + (0.2 * done) / Math.max(1, total), 'Packing geometry'),
     signal,
     asset: assetGeneratorShape,
   });
@@ -184,11 +233,45 @@ export async function cookInBrowser(input: Pick<CookPublishInput, 'world' | 'met
     programs[tier] = { file, bytes: bytes.byteLength, programs: body.pairs.length };
   }
   files.set(WORLD_FILE, worldFile);
-  input.onProgress(0.45, 'Packed');
-  const manifest: CookManifest = { ...(await cookManifest(rec, profileForStartMode(startMode), geometry, programs)), ir: { file: WORLD_FILE, bytes: worldFile.byteLength, sha256: await bytesHex(worldFile) } };
+  onProgress(0.45, 'Packed');
+
+  // The building's baked light, at the Node cook's publish quality (a viewer never bakes).
+  let lightmap: CookManifest['lightmap'] = null;
+  let light: BrowserPackage['light'] = null;
+  const quality = publishBakeQuality(world);
+  if (quality && renderer.publishLightBake) {
+    const at = 0.2;
+    input.onProgress(at, 'Baking light');
+    const baked = await renderer.publishLightBake({
+      quality,
+      samples: world.environment.lightBake?.samples ?? PUBLISH_BAKE_SAMPLES,
+      signal,
+      ...(input.localBake ? { outside: input.localBake } : {}),
+      onProgress: (p) => {
+        const pct = Math.round(p.fraction * 100);
+        const eta = p.etaSeconds !== null && p.stage === 'lightmap' ? ` (about ${etaLabel(p.etaSeconds)} left)` : '';
+        input.onProgress(at + 0.55 * p.fraction, p.stage === 'volume' ? p.label : `${p.label}: ${pct} %${eta}`);
+      },
+    });
+    if (signal.aborted) throw signal.reason;
+    if (baked) {
+      const lm = `light/${baked.lightmap.key}.lmap`;
+      const lv = `light/${baked.volume.key}.lvol`;
+      const index = new TextEncoder().encode(JSON.stringify({ keys: [baked.lightmap.key], volumes: [baked.volume.key] }));
+      if (baked.lightmap.bytes.byteLength <= MAX_FILE_BYTES && baked.volume.bytes.byteLength <= MAX_FILE_BYTES) {
+        files.set(lm, baked.lightmap.bytes);
+        files.set(lv, baked.volume.bytes);
+        files.set('light/index.json', index);
+        lightmap = { base: 'light/', version: BAKED_LIGHT_VERSION, files: [{ file: lm, bytes: baked.lightmap.bytes.byteLength }, { file: lv, bytes: baked.volume.bytes.byteLength }, { file: 'light/index.json', bytes: index.byteLength }] };
+        light = { lightmapBytes: baked.lightmap.bytes.byteLength, volumeBytes: baked.volume.bytes.byteLength, baker: baked.baker, ms: baked.ms };
+      }
+    }
+    input.onProgress(0.75, light ? 'Light baked' : 'No baked light: the building has no light volume');
+  }
+  const manifest: CookManifest = { ...(await cookManifest(rec, profileForStartMode(startMode), geometry, programs, undefined, lightmap)), ir: { file: WORLD_FILE, bytes: worldFile.byteLength, sha256: await bytesHex(worldFile) } };
   let bytes = 0;
   for (const b of files.values()) bytes += b.byteLength;
-  return { manifest, files, bytes, skipped: geometry.stats.tooLarge + geometry.stats.malformed + (wanted.size - requests.size), generated };
+  return { manifest, files, bytes, skipped: geometry.stats.tooLarge + geometry.stats.malformed + (wanted.size - requests.size), generated, light };
 }
 
 class UploadError extends Error {
@@ -290,7 +373,9 @@ export async function cookAndPublish(input: CookPublishInput): Promise<CookPubli
   input.onProgress(0, 'Reading the world');
   const pkg = await cookInBrowser(input);
   if (pkg.bytes > MAX_PACKAGE_BYTES) throw new Error(`the cooked world is ${Math.round(pkg.bytes / 1e6)} MB, over the ${Math.round(MAX_PACKAGE_BYTES / 1048576)} MB limit`);
-  const up = await uploadPackage(pkg, input);
+  // After a bake the upload is the last quarter of the bar.
+  const upload = pkg.light || (publishBakeQuality(input.world) !== null && input.renderer.publishLightBake) ? { ...input, onProgress: (p: number, label: string) => input.onProgress(0.75 + ((p - 0.45) * 0.25) / 0.55, label) } : input;
+  const up = await uploadPackage(pkg, upload);
   input.onProgress(1, 'Published');
-  return { ref: up.ref, path: up.path, files: pkg.files.size, bytes: pkg.bytes, entries: Object.keys(pkg.manifest.entries).length, generated: pkg.generated, programs: Object.values(pkg.manifest.programs).reduce((n, p) => n + (p?.programs ?? 0), 0) };
+  return { ref: up.ref, path: up.path, files: pkg.files.size, bytes: pkg.bytes, entries: Object.keys(pkg.manifest.entries).length, generated: pkg.generated, programs: Object.values(pkg.manifest.programs).reduce((n, p) => n + (p?.programs ?? 0), 0), light: pkg.light };
 }

@@ -24,7 +24,7 @@ import { Box3, type BufferGeometry, type Mesh } from 'three';
 import { WorkerSlot } from '@aether/core';
 import { log } from '../log';
 import { LIGHTMAP_ATTRIBUTE, LightVolume } from '../environment/light-volume-light';
-import { MAX_TRACE_TRIANGLES, partsField, type TraceInput, type V3, type VolumeGrid } from '../environment/light-volume';
+import { MAX_TRACE_TRIANGLES, partsField, partsFieldSliced, type TraceInput, type V3, type VolumeGrid } from '../environment/light-volume';
 import { partCount, RELIGHT_VERSION } from '../environment/relight';
 import {
   LIGHTMAP_VERSION,
@@ -87,6 +87,8 @@ export interface LightmapWorkerLike {
 export interface LightmapOptions {
   /** Called when a bake starts: the scene (null: nothing to bake). */
   gather: () => LightmapScene | null;
+  /** The building as built (no wall sectioned by the view), for a bake made for a viewer ({@link LightmapController.bakeJob}); default `gather`. */
+  gatherBuilt?: () => LightmapScene | null;
   /** The finished light volume on screen with its re-lightable parts, or null. */
   volume: () => { grid: VolumeGrid; data: Float32Array; light: Float32Array; keys: readonly V3[] } | null;
   /** The world has stopped changing (geometry built, no grow-in). */
@@ -631,6 +633,13 @@ export class LightmapController implements LightmapSource {
         const bytes = await (this.opts.fetchBytes ?? defaultFetch)(`${base}${key}.lmap`);
         if (bytes) return { bytes, source: 'static' };
       }
+      // A package baked for this one building elsewhere (the editor's publish: its geometry sub-millimetre off the cooked
+      // geometry's, so the key differs): its only file, which `applyAsset` takes only if every mesh's triangle count matches.
+      if (have.size === 1 && !this.requested) {
+        const only = [...have][0] as string;
+        const bytes = await (this.opts.fetchBytes ?? defaultFetch)(`${base}${only}.lmap`);
+        if (bytes) return { bytes, source: 'static' };
+      }
     }
     if (this.cache) {
       for (const key of keys) {
@@ -728,7 +737,7 @@ export class LightmapController implements LightmapSource {
   }
 
   /** The worker's request for prepared surfaces and a plan (copies of every array: the request is transferred). */
-  private request0(p: Prepared, id: number, plan: LightmapPlan): LightmapRequest {
+  private request0(p: Prepared, id: number, plan: LightmapPlan, fields?: { field: Float32Array; stride: number; codes: Float32Array }): LightmapRequest {
     const proxyArr = new Float32Array(p.proxies.length * 7);
     p.proxies.forEach((b, i) => proxyArr.set([...b.lo, ...b.hi, b.tri], i * 7));
     const l = p.lighting;
@@ -744,7 +753,7 @@ export class LightmapController implements LightmapSource {
       twoSided: p.input.twoSided.slice(),
       proxies: proxyArr,
       grid: p.grid,
-      ...partsField(p.grid.nx * p.grid.ny * p.grid.nz, p.volume, p.volumeLight, partCount(p.keys.length)),
+      ...(fields ?? partsField(p.grid.nx * p.grid.ny * p.grid.nz, p.volume, p.volumeLight, partCount(p.keys.length))),
       sunKeys: p.keys.map((k) => [k[0], k[1], k[2]] as V3),
       ground: { y: p.groundY, albedo: l.groundAlbedo },
       lamps: l.lamps.slice(0, 64).map((x) => ({ position: [...x.position] as V3, color: [...x.color] as V3, range: x.range })),
@@ -759,12 +768,17 @@ export class LightmapController implements LightmapSource {
   async bakeJob(quality: LightmapQuality, samples?: number): Promise<{ key: string; request: LightmapRequest; triCounts: number[] } | null> {
     if (!this.enabled || this.disposed) return null;
     const vol = this.opts.volume();
-    const scene = vol ? this.opts.gather() : null;
+    const scene = vol ? (this.opts.gatherBuilt ?? this.opts.gather)() : null;
     if (!vol || !scene) return null;
     const plan = planLightmap(quality, samples);
     const p = await this.prepare(scene, vol, this.gen);
     if (!p) return null;
-    return { key: this.keyOf(p, plan), request: this.request0(p, 0, plan), triCounts: p.data.map((d) => meshTriangleCount(d)) };
+    const key = this.keyOf(p, plan);
+    // Built in slices (the volume's field is tens of megabytes): the page stays responsive while a publish takes the job.
+    await new Promise((r) => setTimeout(r, 0));
+    const fields = await partsFieldSliced(p.grid.nx * p.grid.ny * p.grid.nz, p.volume, p.volumeLight, partCount(p.keys.length));
+    await new Promise((r) => setTimeout(r, 0));
+    return { key, request: this.request0(p, 0, plan, fields), triCounts: p.data.map((d) => meshTriangleCount(d)) };
   }
 
   /**

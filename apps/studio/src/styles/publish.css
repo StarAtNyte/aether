@@ -169,6 +169,15 @@
   font-weight: 600;
 }
 
+.pub-warnings {
+  margin: 0 0 var(--s-2);
+  padding-left: var(--s-4);
+  color: var(--warning-text);
+  font-size: var(--fs-12);
+  line-height: var(--lh-12);
+  overflow-wrap: anywhere;
+}
+
 .pub-sec__hint,
 .pub-muted {
   margin: 0 0 var(--s-2);

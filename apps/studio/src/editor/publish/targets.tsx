@@ -546,7 +546,7 @@ const CookedSection = memo(function CookedSection(): ReactElement {
   const cooked = useStore(studio.publish.state, (s) => s.cooked);
   const working = cooked.status === 'working';
   return (
-    <Section title="Fast-loading link" hint="Stores the world, its geometry and its shaders on a public dataset (Hugging Face), under an anonymous id kept in this browser: the link becomes short and opens without generating the world again, and a world too large for a link can be shared. Anyone with the link can download them. If the cooked copy goes stale, the link loads the world live.">
+    <Section title="Fast-loading link" hint="Stores the world, its geometry, its shaders and a building's baked light (baked here, on this computer's cores) on a public dataset (Hugging Face), under an anonymous id kept in this browser: the link becomes short and opens without generating the world again, and a world too large for a link can be shared. Anyone with the link can download them. If the cooked copy goes stale, the link loads the world live.">
       <div className="pub-link">
         {working ? (
           <button type="button" className="btn btn--sm" onClick={() => studio.publish.cancelCooked()} data-testid="publish-cooked-cancel">
@@ -568,6 +568,13 @@ const CookedSection = memo(function CookedSection(): ReactElement {
           {cooked.label}
           {cooked.status === 'done' ? ' The link above is now short and opens the cooked copy.' : ''}
         </p>
+      )}
+      {cooked.warnings && cooked.warnings.length > 0 && (
+        <ul className="pub-warnings" aria-label="Playability check" data-testid="publish-cooked-warnings">
+          {cooked.warnings.map((w) => (
+            <li key={w}>{w}</li>
+          ))}
+        </ul>
       )}
     </Section>
   );

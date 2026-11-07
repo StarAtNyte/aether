@@ -119,7 +119,15 @@ export interface PublishState {
   plan: { building: string | null; level: number; format: 'svg' | 'pdf'; scale: 50 | 100 };
   share: { value: string | null; chars: number; fits: boolean; qr: string | null; qrSize: number; note: string | null };
   /** A cooked copy of the world on the public dataset (publish/cook-publish.ts): the share link names it while the world is unchanged. */
-  cooked: { status: 'idle' | 'working' | 'done' | 'failed'; progress: number; label: string | null; ref: string | null; startMode: 'play' | 'walkthrough' | 'orbit' | 'story' };
+  cooked: {
+    status: 'idle' | 'working' | 'done' | 'failed';
+    progress: number;
+    label: string | null;
+    ref: string | null;
+    startMode: 'play' | 'walkthrough' | 'orbit' | 'story';
+    /** What the playability check found (spawn ground, fall-through, walkable floor, colliders made), shown in the dialog. */
+    warnings?: string[];
+  };
   /** Where share links point: `<origin><path>/play` of a hosted copy of the studio (or this one). */
   playerBase: string;
   /** This page runs on this computer or the local network: its links do not work elsewhere. */
@@ -1066,28 +1074,45 @@ export class PublishController {
   async publishCooked(): Promise<void> {
     const sim = this.sim;
     if (!sim || this.state.getState().cooked.status === 'working') return;
-    const world = this.host.history.current;
+    const current = this.host.history.current;
+    let world = current;
     const startMode = world.startMode ?? 'play';
     const ctrl = new AbortController();
     this.cookAbort = ctrl;
+    let warnings: string[] = [];
     const progress = (p: number, label: string): void => {
-      if (!ctrl.signal.aborted) this.set({ cooked: { status: 'working', progress: p, label, ref: null, startMode } });
+      if (!ctrl.signal.aborted) this.set({ cooked: { status: 'working', progress: p, label, ref: null, startMode, warnings } });
     };
-    progress(0, 'Starting');
+    progress(0, 'Checking that the world plays');
     try {
+      // Playability: a world played on foot must have ground under its spawn (static meshes without colliders are made solid
+      // in the published copy when that gives it some); a world that opens in play without it is not published.
+      const check = await sim.playability(world).catch(() => null);
+      if (ctrl.signal.aborted || this.host.history.current !== current) return;
+      if (check) {
+        warnings = check.report.issues.map((i) => i.message);
+        if (!check.report.ok && startMode === 'play') {
+          const why = check.report.issues.find((i) => i.severity === 'error')?.message ?? 'the player has no ground under the spawn';
+          this.set({ cooked: { status: 'failed', progress: 0, label: `Not published: this world opens in play, and ${why.charAt(0).toLowerCase()}${why.slice(1)}`, ref: null, startMode, warnings } });
+          return;
+        }
+        if (check.derived.length > 0) world = check.world;
+      }
       const st = this.state.getState();
-      const [{ cookAndPublish }, { cleanMeta }] = await Promise.all([import('../publish/cook-publish'), import('../publish/share')]);
+      const [{ cookAndPublish }, { cleanMeta }, { localLightmapBake }] = await Promise.all([import('../publish/cook-publish'), import('../publish/share'), import('../publish/local-bake')]);
       const meta = cleanMeta({ title: st.meta.title || world.name, description: st.meta.description, author: st.meta.author, controls: st.meta.controls, ...(st.music ? { music: st.music } : {}) });
       const proof = await this.sealCurrent();
-      if (ctrl.signal.aborted || this.host.history.current !== world) return;
-      const r = await cookAndPublish({ world, meta, proof, renderer: sim.renderer, startMode, signal: ctrl.signal, onProgress: progress });
-      if (ctrl.signal.aborted || this.host.history.current !== world) return;
+      if (ctrl.signal.aborted || this.host.history.current !== current) return;
+      const localBake = await localLightmapBake();
+      const r = await cookAndPublish({ world, meta, proof, renderer: sim.renderer, startMode, signal: ctrl.signal, onProgress: progress, ...(localBake ? { localBake } : {}) });
+      if (ctrl.signal.aborted || this.host.history.current !== current) return;
       const made = r.generated > 0 ? `, ${r.generated} made for it` : '';
-      this.set({ cooked: { status: 'done', progress: 1, label: `Published: ${r.entries} geometry entries${made}, ${r.programs} shaders, ${sizeLabel(r.bytes)}`, ref: r.ref, startMode } });
+      const light = r.light ? `, baked light ${sizeLabel(r.light.lightmapBytes + r.light.volumeBytes)} in ${Math.round(r.light.ms / 1000)} s` : '';
+      this.set({ cooked: { status: 'done', progress: 1, label: `Published: ${r.entries} geometry entries${made}, ${r.programs} shaders${light}, ${sizeLabel(r.bytes)}`, ref: r.ref, startMode, warnings } });
       void this.makeShareLink();
     } catch (e) {
       if (ctrl.signal.aborted) return;
-      this.set({ cooked: { status: 'failed', progress: 0, label: `Not published: ${errorMessage(e)}`, ref: null, startMode } });
+      this.set({ cooked: { status: 'failed', progress: 0, label: `Not published: ${errorMessage(e)}`, ref: null, startMode, warnings } });
     } finally {
       if (this.cookAbort === ctrl) this.cookAbort = null;
     }

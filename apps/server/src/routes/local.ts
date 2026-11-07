@@ -28,6 +28,7 @@ import {
 import { BridgeError, DEFAULT_ACCOUNT_ID, type LocalAi } from '@aether/bridge';
 import { BlenderPlanRequestSchema, BlenderRunRequestSchema, BlenderSettingsRequestSchema } from '@aether/agent/blender';
 import type { AppEnv } from '../app-env';
+import { localBaker, MAX_BAKE_JOB_BYTES, type LocalBaker } from '../local-bake';
 import { readJsonBody } from '../http';
 import { ADMIN_HEADER, hasSession, secretEquals } from '../local-guard';
 import type { Logger } from '../logger';
@@ -44,6 +45,8 @@ export interface LocalRouteDeps {
   sessionSecret?: string;
   /** In-process bridge for hosted studios; `POST /api/local/bridge/pair` hands the CLI a pairing code and link. */
   bridge?: LocalBridgeInfo;
+  /** The publish bake on this computer (`local-bake.ts`); default: found in this checkout; null: none. */
+  baker?: LocalBaker | null;
 }
 
 /** What the CLI needs to pair a hosted studio with the in-process bridge. */
@@ -220,6 +223,29 @@ export function registerLocalRoutes(app: Hono<AppEnv>, deps: LocalRouteDeps): vo
       return c.json(out.result);
     } catch (e) {
       return toError(c, e, logger);
+    } finally {
+      c.req.raw.signal.removeEventListener('abort', onAbort);
+      deps.shutdownSignal?.removeEventListener('abort', onAbort);
+    }
+  });
+
+  // The publish bake of a building's lightmap on this computer (Cycles on the GPU, else the threaded CPU baker): the studio's
+  // cooked publish sends the bake job and gets the `.lmap` back. Loopback + session secret like every /api/local route.
+  const baker = deps.baker === undefined ? localBaker((l) => logger.info('local bake', { line: l })) : deps.baker;
+  app.get('/api/local/bake/status', (c) => c.json({ available: baker !== null, bakers: baker?.bakers ?? [] }));
+  app.post('/api/local/bake/lightmap', async (c) => {
+    if (!baker) return errorBody(c, 'not_found', 'No baker on this computer.', 404);
+    const len = Number(c.req.header('content-length') ?? '0');
+    if (!Number.isFinite(len) || len <= 0 || len > MAX_BAKE_JOB_BYTES) return errorBody(c, 'invalid_request', 'Send the bake job (at most 256 MB).', 413);
+    const job = new Uint8Array(await c.req.arrayBuffer());
+    const ctrl = new AbortController();
+    const onAbort = (): void => ctrl.abort();
+    c.req.raw.signal.addEventListener('abort', onAbort, { once: true });
+    deps.shutdownSignal?.addEventListener('abort', onAbort, { once: true });
+    try {
+      const r = await baker.bake(job, ctrl.signal);
+      if (!r) return errorBody(c, 'backend_error', 'The bake on this computer failed.', 502);
+      return c.body(r.bytes as Uint8Array<ArrayBuffer>, 200, { 'content-type': 'application/octet-stream', 'cache-control': 'no-store', 'x-aether-baker': r.baker });
     } finally {
       c.req.raw.signal.removeEventListener('abort', onAbort);
       deps.shutdownSignal?.removeEventListener('abort', onAbort);

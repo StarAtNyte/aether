@@ -34,6 +34,15 @@ function halvesPerProbe(keys: number): number {
 
 /** Serialise a volume (uncompressed; see {@link packVolumeAsset}). */
 export function encodeVolumeAsset(a: VolumeAsset): Uint8Array {
+  const run = encodeSteps(a);
+  while (!run.step(Infinity)) {
+    /* at once */
+  }
+  return run.out;
+}
+
+/** The encoding of {@link encodeVolumeAsset} in steps of about `ms` milliseconds (the page's thread: a publish packs it). */
+function encodeSteps(a: VolumeAsset): { out: Uint8Array; step(ms: number): boolean } {
   const g = a.grid;
   const probes = g.nx * g.ny * g.nz;
   const head = new TextEncoder().encode(JSON.stringify({ version: VOLUME_ASSET_VERSION, key: a.key, grid: g, keys: a.keys }));
@@ -46,15 +55,24 @@ export function encodeVolumeAsset(a: VolumeAsset): Uint8Array {
   out.set(head, 8);
   const halves = new Uint16Array(out.buffer, 8 + head.length + pad, probes * H);
   const PF = volumeLightFloats(a.keys.length);
-  for (let i = 0; i < probes; i++) {
-    const o = i * H;
-    const d = i * FLOATS_PER_PROBE;
-    for (let k = 0; k < 4; k++) halves[o + k] = toHalf(a.data[d + k] as number);
-    halves[o + 4] = toHalf(a.data[d + GEOMETRY_OFFSET] as number);
-    halves[o + 5] = toHalf(a.data[d + GEOMETRY_OFFSET + 1] as number);
-    for (let k = 0; k < PF; k++) halves[o + 6 + k] = toHalf(a.light[i * PF + k] as number);
-  }
-  return out;
+  let i = 0;
+  const step = (ms: number): boolean => {
+    const until = Number.isFinite(ms) ? performance.now() + ms : Infinity;
+    for (; i < probes; i++) {
+      const o = i * H;
+      const d = i * FLOATS_PER_PROBE;
+      for (let k = 0; k < 4; k++) halves[o + k] = toHalf(a.data[d + k] as number);
+      halves[o + 4] = toHalf(a.data[d + GEOMETRY_OFFSET] as number);
+      halves[o + 5] = toHalf(a.data[d + GEOMETRY_OFFSET + 1] as number);
+      for (let k = 0; k < PF; k++) halves[o + 6 + k] = toHalf(a.light[i * PF + k] as number);
+      if ((i & 255) === 255 && performance.now() > until) {
+        i++;
+        return i >= probes;
+      }
+    }
+    return true;
+  };
+  return { out, step };
 }
 
 /** Parse an uncompressed volume file; null when it is malformed or from another version. */
@@ -115,7 +133,10 @@ async function pipe(bytes: Uint8Array, stream: CompressionStream | Decompression
 
 /** The file's bytes: the encoding gzipped. */
 export async function packVolumeAsset(a: VolumeAsset): Promise<Uint8Array> {
-  return pipe(encodeVolumeAsset(a), new CompressionStream('gzip'));
+  // Encoded in slices with the event loop between them (19 k probes of 100 floats held the page for a few hundred ms).
+  const run = encodeSteps(a);
+  while (!run.step(8)) await new Promise((r) => setTimeout(r, 0));
+  return pipe(run.out, new CompressionStream('gzip'));
 }
 
 /** A file's volume; null when it does not decompress or parse. */

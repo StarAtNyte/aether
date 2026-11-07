@@ -96,9 +96,10 @@ export interface CookManifest {
   /**
    * The baked light (lightmap and light volume files, lightmap-controller `staticBase`), relative to the package folder `dir`, when
    * there is one, and the version of its format (`environment/relight.ts` `BAKED_LIGHT_VERSION`; absent before re-lightable
-   * bakes). A viewer reads it only when the version is its own.
+   * bakes). A viewer reads it only when the version is its own. `files` (relative to the package folder, under `base`: each
+   * `.lmap`, `.lvol` and the `index.json`) lists them for an upload that must name every file (the editor's publish).
    */
-  lightmap: { base: string; version?: string } | null;
+  lightmap: { base: string; version?: string; files?: CookFile[] } | null;
   /**
    * The world itself, for a world published from the editor (short share links carry no world): {@link WORLD_FILE} in the
    * cook folder, the share payload as gzipped JSON, with its byte size and SHA-256. Absent (null) in a template's cook.
@@ -211,7 +212,17 @@ export function parseCookManifest(v: unknown): ManifestResult {
     if (!isObj(v.lightmap) || typeof v.lightmap.base !== 'string' || !REL.test(v.lightmap.base)) return bad('bad lightmap');
     const ver = v.lightmap.version;
     if (ver !== undefined && (typeof ver !== 'string' || !/^[A-Za-z0-9._-]{1,64}$/.test(ver))) return bad('bad lightmap version');
-    lightmap = { base: v.lightmap.base, ...(typeof ver === 'string' ? { version: ver } : {}) };
+    let lightFiles: CookFile[] | undefined;
+    if (v.lightmap.files !== undefined) {
+      if (!Array.isArray(v.lightmap.files) || v.lightmap.files.length > 64) return bad('bad lightmap files');
+      lightFiles = [];
+      for (const f of v.lightmap.files) {
+        const cf = file(f);
+        if (!cf || !cf.file.startsWith(v.lightmap.base)) return bad('bad lightmap file');
+        lightFiles.push(cf);
+      }
+    }
+    lightmap = { base: v.lightmap.base, ...(typeof ver === 'string' ? { version: ver } : {}), ...(lightFiles ? { files: lightFiles } : {}) };
   }
   let ir: CookManifest['ir'] = null;
   if (v.ir !== null && v.ir !== undefined) {
@@ -246,5 +257,5 @@ export function parseCookManifest(v: unknown): ManifestResult {
 
 /** The files of a cook, relative to its `<id>/` folder: every pack and program set the manifest names, and the world file. */
 export function cookFiles(m: CookManifest): string[] {
-  return [...m.packs.map((p) => p.file), ...Object.values(m.programs).map((p) => p!.file), ...(m.ir ? [m.ir.file] : [])];
+  return [...m.packs.map((p) => p.file), ...Object.values(m.programs).map((p) => p!.file), ...(m.ir ? [m.ir.file] : []), ...(m.lightmap?.files ?? []).map((f) => f.file)];
 }

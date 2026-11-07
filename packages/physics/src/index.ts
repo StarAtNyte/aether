@@ -36,5 +36,6 @@ export { scatterInstances, type ScatterInstance } from './scatter';
 export { clearColliderCache, colliderCacheStats, MAX_COLLIDER_CACHE_BYTES } from './source';
 export { entityBounds, type Aabb } from './bounds';
 export { yieldToHost } from './yield';
+export { checkPlayability, deriveStaticColliders, makePlayable, playedOnFoot, PLAYABILITY_LIMITS, type PlayabilityCode, type PlayabilityIssue, type PlayabilityOptions, type PlayabilityReport, type PlayableResult } from './playability';
 export { assetColliderDescs, assetGeneratorShape, usesAssets, ensureAssetCatalog } from './asset-colliders';
 export { entityColliderBounds, entityWorldBounds } from './bounds';

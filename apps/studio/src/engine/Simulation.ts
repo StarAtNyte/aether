@@ -1190,6 +1190,18 @@ export class Simulation {
     return this.transition;
   }
 
+  /**
+   * The playability check of `world` (default the current one) with this page's colliders (loaded models included):
+   * ground under the spawn, no fall-through, the floor reachable; with the static meshes made solid when that fixes it
+   * (@aether/physics `makePlayable`). Null for a world not played on foot.
+   */
+  async playability(world: WorldDoc = this.history.current): Promise<import('@aether/physics').PlayableResult | null> {
+    const { makePlayable, playedOnFoot } = await import('@aether/physics');
+    if (!playedOnFoot(world) || findAvatar(world) || world.voxel !== undefined) return null;
+    if (world === this.history.current) await this.whenSynced();
+    return makePlayable(world, { colliders: this.colliders });
+  }
+
   /** Leave play mode and restore the pre-play world exactly. */
   stop(): Promise<void> {
     this.transition = this.transition.then(() => this.endSession()).catch((err: unknown) => {
@@ -1228,12 +1240,12 @@ export class Simulation {
   private async startSession(): Promise<void> {
     if (this.session || this.disposed) return;
     this.editPose = this.renderer.cameraPose();
-    const world = this.history.current;
+    let world = this.history.current;
     this.requestSync(world);
     await this.whenSynced();
     if (this.disposed) return;
     // Lazy: the Rapier chunk is only downloaded/compiled when the user first plays.
-    const { PhysicsWorld, CharacterController, CHARACTER_FEEL } = await import('@aether/physics');
+    const { PhysicsWorld, CharacterController, CHARACTER_FEEL, makePlayable, playedOnFoot } = await import('@aether/physics');
     if (this.disposed) return;
     let pw: PhysicsWorld | null = null;
     let scripts: ScriptRunner | undefined;
@@ -1242,6 +1254,22 @@ export class Simulation {
     let core: SessionCore | null = null;
     try {
       pw = await PhysicsWorld.create(world, { colliders: this.colliders, fixedDt: FIXED_DT });
+      // Nothing solid under the spawn of a world played on foot (an imported scene without colliders): its static meshes are
+      // made solid for this session (the publish check does the same for the published copy), else the player is told.
+      const s = world.player.spawn;
+      if (playedOnFoot(world) && !(world.voxel !== undefined && this.voxel?.active) && !findAvatar(world) && !pw.raycast([s[0], s[1] + 0.5, s[2]], [0, -1, 0], 500)) {
+        const fix = await makePlayable(world, { colliders: this.colliders });
+        if (this.disposed) throw new Error('simulation disposed');
+        if (fix.derived.length > 0) {
+          pw.dispose();
+          pw = null;
+          world = fix.world;
+          pw = await PhysicsWorld.create(world, { colliders: this.colliders, fixedDt: FIXED_DT });
+          this.listener.onMessage?.(`${fix.derived.length} mesh${fix.derived.length === 1 ? '' : 'es'} without colliders made solid for play: the spawn had no ground.`, 4);
+        } else {
+          this.listener.onMessage?.(fix.report.issues.find((i) => i.severity === 'error')?.message ?? 'The spawn has no ground: the player will fall.', 6);
+        }
+      }
       try {
         if (usesScripts(world)) {
           await initScripting();

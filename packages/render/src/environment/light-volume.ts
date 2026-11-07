@@ -1064,27 +1064,46 @@ export function combineVolume(probes: number, data: Float32Array, light: Float32
  * chroma again) and its free-distance codes: what the lightmap bake reads.
  */
 export function partsField(probes: number, data: Float32Array, light: Float32Array, parts: number): { field: Float32Array; stride: number; codes: Float32Array } {
+  const run = partsFieldSteps(probes, data, light, parts);
+  run.step(Infinity);
+  return run.out;
+}
+
+/** {@link partsField} with the event loop between slices of about `sliceMs` (the page's thread: a publish bake's job). */
+export async function partsFieldSliced(probes: number, data: Float32Array, light: Float32Array, parts: number, sliceMs = 8): Promise<{ field: Float32Array; stride: number; codes: Float32Array }> {
+  const run = partsFieldSteps(probes, data, light, parts);
+  while (!run.step(sliceMs)) await new Promise((r) => setTimeout(r, 0));
+  return run.out;
+}
+
+function partsFieldSteps(probes: number, data: Float32Array, light: Float32Array, parts: number): { out: { field: Float32Array; stride: number; codes: Float32Array }; step(ms: number): boolean } {
   const stride = 4 + parts * PART_FLOATS;
   const keys = parts - PART_SUN0;
   const LF = volumeLightFloats(keys);
   const field = new Float32Array(probes * stride);
   const codes = new Float32Array(probes * 2);
   const ch: [number, number, number] = [1, 1, 1];
-  for (let i = 0; i < probes; i++) {
-    const d = i * FLOATS_PER_PROBE;
-    const o = i * stride;
-    const l = i * LF;
-    for (let k = 0; k < 4; k++) field[o + k] = data[d + k]!;
-    for (let k = 0; k < 36; k++) field[o + 4 + k] = light[l + k]!;
-    chromaOf(light, l, ch);
-    for (let k = 0; k < keys; k++) {
-      const q = o + 4 + (PART_SUN0 + k) * PART_FLOATS;
-      for (let c = 0; c < 3; c++) for (let j = 0; j < 4; j++) field[q + c * 4 + j] = light[l + VOLUME_SUN + k * 4 + j]! * ch[c]!;
+  let i = 0;
+  const step = (ms: number): boolean => {
+    const until = Number.isFinite(ms) ? performance.now() + ms : Infinity;
+    for (; i < probes; i++) {
+      if ((i & 255) === 0 && i > 0 && performance.now() > until) return false;
+      const d = i * FLOATS_PER_PROBE;
+      const o = i * stride;
+      const l = i * LF;
+      for (let k = 0; k < 4; k++) field[o + k] = data[d + k]!;
+      for (let k = 0; k < 36; k++) field[o + 4 + k] = light[l + k]!;
+      chromaOf(light, l, ch);
+      for (let k = 0; k < keys; k++) {
+        const q = o + 4 + (PART_SUN0 + k) * PART_FLOATS;
+        for (let c = 0; c < 3; c++) for (let j = 0; j < 4; j++) field[q + c * 4 + j] = light[l + VOLUME_SUN + k * 4 + j]! * ch[c]!;
+      }
+      codes[i * 2] = data[d + GEOMETRY_OFFSET]!;
+      codes[i * 2 + 1] = data[d + GEOMETRY_OFFSET + 1]!;
     }
-    codes[i * 2] = data[d + GEOMETRY_OFFSET]!;
-    codes[i * 2 + 1] = data[d + GEOMETRY_OFFSET + 1]!;
-  }
-  return { field, stride, codes };
+    return true;
+  };
+  return { out: { field, stride, codes }, step };
 }
 
 /**

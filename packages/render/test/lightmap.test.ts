@@ -206,6 +206,25 @@ describe('lightmap: bake', () => {
     expect(b.progress).toBe(1);
   });
 
+  it('a bake split into shares keeps only its own texels and finishes close to the whole bake', () => {
+    const { input } = bakeInput(true, 12);
+    const whole = new LightmapBaker(input).run();
+    const count = 3;
+    const shares = Array.from({ length: count }, (_, index) => {
+      const b = new LightmapBaker({ ...input, split: { index, count } });
+      b.run();
+      return b.gathered();
+    });
+    const covered = shares.reduce((n, s) => n + s.vis.length, 0);
+    expect(covered).toBe(whole.texels);
+    expect(shares[0]!.bounce.length).toBe(shares[0]!.vis.length * partCount(KEYS.length) * 3);
+    const split = new LightmapBaker(input).finishFrom(shares);
+    let diff = 0;
+    for (let i = 0; i < whole.rgba.length; i++) diff += Math.abs((whole.rgba[i] as number) - (split.rgba[i] as number));
+    expect(diff / whole.rgba.length).toBeLessThan(3);
+    expect(split.texels).toBe(whole.texels);
+  });
+
   it('darkens the sky visibility of a floor deep in the room and corners, and lights it under the window', () => {
     const { input } = bakeInput(true, 32);
     const out = new LightmapBaker(input).run();

@@ -175,3 +175,91 @@ export function parseLightmapReply(raw: unknown, triCounts: readonly number[], k
 export function gridFits(grid: VolumeGrid): boolean {
   return grid.nx <= VOLUME_ALLOC.nx && grid.ny <= VOLUME_ALLOC.ny && grid.nz <= VOLUME_ALLOC.nz;
 }
+
+// --- A bake split over several workers (the publish bake, `view/publish-bake.ts`) ---------------------------------------
+
+/** Most shares of one split bake. */
+export const MAX_SHARES = 512;
+
+/** Gather share `index` of `count` of the job the worker holds (sent after the request with `hold: true`). */
+export interface ShareRequest {
+  type: 'share';
+  id: number;
+  index: number;
+  count: number;
+}
+
+/** A share's gather: per texel of the share, in order, the visibility, the parts' RGB and the inside-a-wall flag. */
+export interface ShareReply {
+  type: 'share';
+  id: number;
+  index: number;
+  count: number;
+  vis: Float32Array;
+  bounce: Float32Array;
+  bad: Uint8Array;
+  rays: number;
+}
+
+/** Finish the held job from every share, in index order, and pack its `.lmap` file. */
+export interface FinishRequest {
+  type: 'finish';
+  id: number;
+  shares: Array<{ vis: Float32Array; bounce: Float32Array; bad: Uint8Array; rays: number }>;
+  meta: { key: string; quality: string; bakeMs: number; triCounts: number[] };
+}
+
+/** The finished file of a split bake. */
+export interface FileReply {
+  type: 'file';
+  id: number;
+  bytes: Uint8Array;
+  texels: number;
+  rays: number;
+  image: 'webp' | 'png' | 'raw';
+}
+
+const intIn = (v: unknown, lo: number, hi: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= lo && v <= hi;
+
+/** Validate a share request (worker side). */
+export function parseShare(raw: unknown): ShareRequest | null {
+  const r = raw as Record<string, unknown> | null;
+  if (!r || r['type'] !== 'share' || !intIn(r['id'], 0, Number.MAX_SAFE_INTEGER) || !intIn(r['count'], 1, MAX_SHARES) || !intIn(r['index'], 0, (r['count'] as number) - 1)) return null;
+  return { type: 'share', id: r['id'] as number, index: r['index'] as number, count: r['count'] as number };
+}
+
+/** Validate a share's gather; `parts` is the job's part count (`relight.ts` `partCount`). */
+export function parseShareReply(raw: unknown, parts: number): ShareReply | null {
+  const r = raw as Record<string, unknown> | null;
+  if (!r || r['type'] !== 'share' || !isNum(r['id']) || !intIn(r['count'], 1, MAX_SHARES) || !intIn(r['index'], 0, (r['count'] as number) - 1) || !isNum(r['rays'])) return null;
+  const { vis, bounce, bad } = r;
+  if (!(vis instanceof Float32Array) || !(bounce instanceof Float32Array) || !(bad instanceof Uint8Array)) return null;
+  if (bounce.length !== vis.length * parts * 3 || bad.length !== vis.length) return null;
+  return { type: 'share', id: r['id'] as number, index: r['index'] as number, count: r['count'] as number, vis, bounce, bad, rays: r['rays'] as number };
+}
+
+/** Validate a finish request (worker side). */
+export function parseFinish(raw: unknown): FinishRequest | null {
+  const r = raw as Record<string, unknown> | null;
+  if (!r || r['type'] !== 'finish' || !intIn(r['id'], 0, Number.MAX_SAFE_INTEGER)) return null;
+  const shares = r['shares'];
+  const meta = r['meta'] as Record<string, unknown> | null;
+  if (!Array.isArray(shares) || shares.length < 1 || shares.length > MAX_SHARES || !meta) return null;
+  for (const s of shares as unknown[]) {
+    const q = s as Record<string, unknown> | null;
+    if (!q || !(q['vis'] instanceof Float32Array) || !(q['bounce'] instanceof Float32Array) || !(q['bad'] instanceof Uint8Array) || !isNum(q['rays'])) return null;
+    if ((q['bad'] as Uint8Array).length !== (q['vis'] as Float32Array).length) return null;
+  }
+  const { key, quality, bakeMs, triCounts } = meta;
+  if (typeof key !== 'string' || !/^lm\d+-[0-9a-f]{32}$/.test(key) || typeof quality !== 'string' || quality.length > 16 || !isNum(bakeMs) || !Array.isArray(triCounts) || !triCounts.every((t) => intIn(t, 0, 1e8))) return null;
+  return { type: 'finish', id: r['id'] as number, shares: shares as FinishRequest['shares'], meta: { key, quality, bakeMs, triCounts: triCounts as number[] } };
+}
+
+/** Validate the finished file (main side). */
+export function parseFileReply(raw: unknown): FileReply | null {
+  const r = raw as Record<string, unknown> | null;
+  if (!r || r['type'] !== 'file' || !isNum(r['id']) || !(r['bytes'] instanceof Uint8Array) || !isNum(r['texels']) || !isNum(r['rays'])) return null;
+  const image = r['image'];
+  if (image !== 'webp' && image !== 'png' && image !== 'raw') return null;
+  return { type: 'file', id: r['id'] as number, bytes: r['bytes'] as Uint8Array, texels: r['texels'] as number, rays: r['rays'] as number, image };
+}
