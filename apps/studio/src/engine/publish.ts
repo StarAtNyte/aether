@@ -119,7 +119,7 @@ export interface PublishState {
   plan: { building: string | null; level: number; format: 'svg' | 'pdf'; scale: 50 | 100 };
   share: { value: string | null; chars: number; fits: boolean; qr: string | null; qrSize: number; note: string | null };
   /** A cooked copy of the world on the public dataset (publish/cook-publish.ts): the share link names it while the world is unchanged. */
-  cooked: { status: 'idle' | 'working' | 'done' | 'failed'; progress: number; label: string | null; ref: string | null; startMode: 'play' | 'walkthrough' | 'orbit' };
+  cooked: { status: 'idle' | 'working' | 'done' | 'failed'; progress: number; label: string | null; ref: string | null; startMode: 'play' | 'walkthrough' | 'orbit' | 'story' };
   /** Where share links point: `<origin><path>/play` of a hosted copy of the studio (or this one). */
   playerBase: string;
   /** This page runs on this computer or the local network: its links do not work elsewhere. */

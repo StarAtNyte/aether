@@ -440,6 +440,8 @@ export function resolveShapeColliders(
     case 'trimesh': {
       const mesh = outputTrimesh(geometry());
       if (mesh) return { colliders: [at({ kind: 'trimesh', positions: mesh.positions, indices: mesh.indices })], warnings };
+      // A model's triangles come from the provider (the renderer reads them from the loaded file).
+      if (entity.shape.kind === 'model' && geo.colliders?.some((c) => c.shape.kind === 'trimesh')) return { colliders: geo.colliders, warnings };
       warnings.push(`${entity.id}: no triangle geometry for a trimesh (or too large); using the auto colliders`);
       return { colliders: geo.colliders ?? [boxFromBounds(b)], warnings };
     }

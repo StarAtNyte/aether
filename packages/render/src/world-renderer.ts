@@ -118,6 +118,7 @@ import { AdaptiveTier } from './gpu/adaptive-tier';
 import { HEAVY_WORLD, capTier, cutsAt, forwardLightBudget, GOVERNOR_DEFAULTS, hardwareTierCap, interiorContent, interiorDrawDistance, lodHeightScale, PerformanceGovernor, startLevel, PERFORMANCE_STEPS, readHardware, sunMapSoftRefreshFrames, WEAK_PIXEL_RATIO, weakHardware, type HardwareHints, type PerformanceCuts } from './gpu/performance';
 import { classifyGpu, effectivePixelRatio, estimateFramebufferMB, estimateShadowMB, renderBudget, type GpuTier, type RenderBudget } from './gpu/budget';
 import { createPostPipeline, VIGNETTE_STRENGTH, type PostPipeline, type PostQuality } from './gpu/post';
+import { isPracticalMaterial, resolveSatsuei, type SatsueiState, type ShotGrade } from './gpu/satsuei';
 import { planSunShadows } from './environment/sun-shadow-plan';
 import { geckoSafePath, geckoStartLevel } from './gpu/gecko-safe';
 import { autoTierReason } from './gpu/tier-reason';
@@ -136,6 +137,8 @@ import { slicedUploads, type SlicedUploadStats } from './streaming/sliced-upload
 import { sweepUploads } from './gpu/cpu-release';
 import { UploadStreamer } from './streaming/upload-streamer';
 import { postQualityOf, qualityPlan, Refinement, studioAvailable, stillPlan, type QualityPlan, type RenderQuality, type StillPlan } from './gpu/render-quality';
+import { modelColliderDescs } from './geometry/model-colliders';
+import type { ColliderDesc } from '@aether/procgen';
 import { ComputeClient, generate, GeneratorCache, generationLanes, proceduralOutputKey, type GenerateOptions } from '@aether/procgen';
 import { assetGeneratorShape } from './cook/asset-shape';
 import { worldOutputShapes } from './cook/pack';
@@ -499,6 +502,9 @@ const JPEG_QUALITY = 0.8;
 const VIEW_NAMES: ReadonlySet<string> = new Set(['top', 'front', 'side', 'iso']);
 
 // Scratch (per-frame paths must not allocate).
+const _toonSun = new Vector3();
+/** People moved from code keep animating this long after the last move in an idle editor (ms). */
+const PEOPLE_DRIVEN_GRACE_MS = 4000;
 const _ndc = new Vector2();
 const _bounds = new Box3();
 /** Vertical field of view (degrees) of the first-person walk camera. */
@@ -1422,7 +1428,7 @@ export class WorldRenderer {
       if (want) {
         // Shafts march a shadow map that exists only after the first draw: the pipeline is then built by the first frames.
         if (!want.shafts || wr.env.shaftLight) {
-          wr.post = await createPostPipeline(renderer, wr.scene, camera, 0.4, postQualityOf(want) ?? 'standard', { effects: want, sun: wr.env.shaftLight ?? wr.env.sun, contactLight: wr.env.sun });
+          wr.post = await createPostPipeline(renderer, wr.scene, camera, 0.4, postQualityOf(want) ?? 'standard', { effects: want, sun: wr.env.shaftLight ?? wr.env.sun, contactLight: wr.env.sun, satsueiSun: () => wr.satsueiSun() });
           wr.applyLook();
         }
       }
@@ -3379,6 +3385,17 @@ export class WorldRenderer {
     return this.sync.animatedCount;
   }
 
+  /**
+   * Trimesh colliders of a loaded `model` entity, in its own frame (physics asks for them when the entity's collider is
+   * `trimesh`); undefined until the model is in.
+   */
+  modelColliders(id: EntityId): ColliderDesc[] | undefined {
+    const obj = this.sync.object(id);
+    if (!obj) return undefined;
+    const descs = modelColliderDescs(obj);
+    return descs.length > 0 ? descs : undefined;
+  }
+
   /** Generator output of an entity (procedural colliders for physics). */
   getGeneratorOutput(id: EntityId): GeneratorOutput | undefined {
     return this.sync.getOutput(id);
@@ -3397,6 +3414,7 @@ export class WorldRenderer {
   /** Apply packed physics poses (`PhysicsWorld.writeTransforms`). Zero allocations. */
   applyTransforms(packed: Float32Array, order: EntityId[]): void {
     this.sync.applyTransforms(packed, order);
+    if (this.characters.size > 0) this.peopleDriven = true;
     // Bodies moved by the simulation are animated casters: the sun map refreshes on the throttled soft path
     // (see sunMapSoftRefreshFrames) instead of every caster being drawn again every frame of play.
     this.frameInvalidation.change();
@@ -3407,6 +3425,7 @@ export class WorldRenderer {
   setEntityProperty(id: EntityId, path: string, value: Json): void {
     if (!this.sync.setProperty(id, path, value)) return;
     this.needsDraw = true;
+    if (path.startsWith('transform') && this.sync.hasCharacter(id)) this.peopleDriven = true;
     // Only geometry-affecting paths change bounds (material/light tweaks must not trigger refits).
     if (path === 'visible' || path.startsWith('transform') || path.startsWith('shape')) this.boundsDirty = true;
   }
@@ -3578,12 +3597,21 @@ export class WorldRenderer {
     return this.characters.size;
   }
 
+  /** A person's entity was moved from code since the last frame: people animate even in an idle editor. */
+  private peopleDriven = false;
+  /** Until when (ms, `now()`) people keep animating after the last move (they settle into idle instead of freezing mid-step). */
+  private peopleDrivenUntil = 0;
+
   /** The last {@link stepAnimations} moved something that casts into the sun map (an animated asset, a shown person in range). */
   private animatedCasters = false;
 
   /** Advance people and animated assets; true when a redraw is needed (see {@link animatedCasters} for the sun map). */
   private stepAnimations(dt: number): boolean {
     this.characters.setCamera(this.perspective);
+    // Toon bodies band their cel shading by the sun (direction toward it, and its hue).
+    const ld = this.env.skyState.lightDirection;
+    const sun = this.env.sun;
+    this.characters.setToonLight(sun.visible && sun.intensity > 0 ? _toonSun.set(ld[0], ld[1], ld[2]) : null, sun.color);
     let animated = this.sync.updateAnimations(dt, this.perspective.position);
     this.animatedCasters = animated;
     if (this.characters.update(dt)) animated = true;
@@ -4819,7 +4847,13 @@ export class WorldRenderer {
    */
   render(dt: number, opts: { onDemand?: boolean; animate?: boolean } = {}): boolean {
     if (this.disposed || this.lost || this.captureActive || this.tracing) return false;
+    // A person moved from code (a cinematic in an idle editor) keeps walking: their animation runs this frame.
     const t0 = now();
+    if (this.peopleDriven) {
+      this.peopleDrivenUntil = t0 + PEOPLE_DRIVEN_GRACE_MS;
+      this.peopleDriven = false;
+    }
+    if (opts.animate === false && t0 < this.peopleDrivenUntil) opts = { ...opts, animate: true };
     this.trackTransition();
     // Only a walk made inside this frame counts as fresh (prepareBatches also runs outside the frame loop).
     this.matricesFresh = false;
@@ -5986,6 +6020,70 @@ export class WorldRenderer {
     this.needsDraw = true;
   }
 
+  /** The shot grade a cinematic set (null: the world's defaults). */
+  private shotGrade: ShotGrade | null = null;
+  /** The compositing state last applied. */
+  private satsuei: SatsueiState = resolveSatsuei(null, null);
+
+  /**
+   * A per-shot grade over the world's look (a cinematic calls it every frame; null: back to the world's defaults). Uniforms
+   * only: exposure, white balance, saturation and contrast, the bloom and the compositing layer of a painted world (its
+   * programs are built at load whenever the look is anime), the vignette, the letterbox, and the emission of the world's
+   * practical lights. Never builds or links a program.
+   */
+  setShotGrade(g: ShotGrade | null): void {
+    this.shotGrade = g ? { ...g } : null;
+    this.applyLook();
+    this.applyPracticals();
+    this.needsDraw = true;
+  }
+
+  /** Direction toward the sun of the compositing layer: the world's painted sun (`look.satsuei.sunDirection`), else the sun light. */
+  private satsueiSun(): readonly [number, number, number] | null {
+    const d = this.docLook?.satsuei?.sunDirection;
+    if (d) return d;
+    const p = this.env.sun.position;
+    const t = this.env.sun.target.position;
+    return [p.x - t.x, p.y - t.y, p.z - t.z];
+  }
+
+  /** Emissive model materials (lamps, windows, lanterns) and their authored strength, gathered once per set of models. */
+  private practicals: Array<{ m: { emissiveIntensity: number }; base: number }> = [];
+  private practicalsKey = -1;
+  private practicalsScale = 1;
+
+  /** Scale the practicals' emission to the shot grade's `practicals` (as authored without one). */
+  private applyPracticals(): void {
+    const want = this.shotGrade?.practicals;
+    const scale = want !== undefined && Number.isFinite(want) ? Math.max(0, Math.min(1, want)) : 1;
+    // Models stream in after their entities: gather again at most every 1.5 s while the practicals are scaled.
+    const key = Math.floor(now() / 1500);
+    if (scale !== 1 && key !== this.practicalsKey) {
+      this.practicalsKey = key;
+      const known = new Map(this.practicals.map((e) => [e.m, e.base]));
+      const seen = new Set<object>();
+      const list: Array<{ m: { emissiveIntensity: number }; base: number }> = [];
+      this.sync.root.traverse((o) => {
+        const mats = (o as { material?: unknown }).material;
+        if (!mats) return;
+        for (const m of (Array.isArray(mats) ? mats : [mats]) as Array<{ emissive?: { isColor?: boolean; r: number; g: number; b: number }; emissiveIntensity?: number; name?: string }>) {
+          if (seen.has(m) || !m.emissive?.isColor || typeof m.emissiveIntensity !== 'number') continue;
+          seen.add(m);
+          const lit = m.emissive.r + m.emissive.g + m.emissive.b > 0.05;
+          if (!lit || !isPracticalMaterial(m.name ?? '')) continue;
+          // A material already scaled keeps the strength it was authored with.
+          const base = known.get(m as { emissiveIntensity: number }) ?? m.emissiveIntensity;
+          if (base > 0) list.push({ m: m as { emissiveIntensity: number }, base });
+        }
+      });
+      this.practicals = list;
+      this.practicalsScale = Number.NaN;
+    }
+    if (scale === this.practicalsScale) return;
+    this.practicalsScale = scale;
+    for (const e of this.practicals) e.m.emissiveIntensity = e.base * scale;
+  }
+
   /** The colour-grade preset in effect. */
   get gradePreset(): GradePresetId {
     return this.look.id;
@@ -6006,7 +6104,11 @@ export class WorldRenderer {
       ? { ...base, ...(g.temperature !== undefined ? { temperature: within(g.temperature, -GRADE_TEMPERATURE_MAX, GRADE_TEMPERATURE_MAX, base.temperature) } : {}), ...(g.tint !== undefined ? { tint: within(g.tint, -GRADE_TINT_MAX, GRADE_TINT_MAX, base.tint) } : {}), ...(g.saturation !== undefined ? { saturation: g.saturation } : {}), ...(g.contrast !== undefined ? { contrast: g.contrast } : {}), ...(g.exposureEv !== undefined ? { exposureEv: base.exposureEv + g.exposureEv } : {}) }
       : base;
     this.look = preset;
-    const tw = this.lookTweak;
+    const shot = anime ? resolveSatsuei(this.docLook?.satsuei, this.shotGrade, { lowTier: this.qualityPlan.tier === 'low', tiled: this.vignetteOff }) : null;
+    this.satsuei = shot ?? this.satsuei;
+    const lt = this.lookTweak;
+    // A painted world's shot grade adds to the look-development tweak (stops and warmth add, saturation and contrast multiply).
+    const tw = shot ? { contrast: lt.contrast * shot.contrast, saturation: lt.saturation * shot.saturation, exposureEv: lt.exposureEv + shot.exposureEv, temperature: lt.temperature + shot.temperature } : lt;
     // Look development: multipliers on the preset (neutral by default).
     const shown: GradePreset = tw.contrast === 1 && tw.saturation === 1 && tw.exposureEv === 0 && tw.temperature === 0 ? preset : { ...preset, contrast: preset.contrast * tw.contrast, saturation: preset.saturation * tw.saturation, exposureEv: preset.exposureEv + tw.exposureEv, temperature: preset.temperature + tw.temperature };
     const post = this.post;
@@ -6032,8 +6134,9 @@ export class WorldRenderer {
       const grade = anime ? gradeWithPreset(NEUTRAL_GRADE, shown) : gradeWithPreset(gradeFor(sky), warm !== 0 ? { ...shown, temperature: shown.temperature + warm } : shown);
       // The eye's exposure is in the renderer's tone mapping (which the post output applies too): the grade keeps only the preset's.
       post.setGrade(grade);
-      post.setBloom(this.env.bloom * preset.bloom);
+      post.setBloom(this.env.bloom * preset.bloom * (shot?.bloom ?? 1));
       if (!this.vignetteOff) post.setVignette(this.vignetteStrength());
+      if (shot) post.setSatsuei(shot);
     }
   }
 
@@ -6042,9 +6145,9 @@ export class WorldRenderer {
     return this.docLook?.style === 'anime';
   }
 
-  /** Edge darkening of the picture: the world's `look.vignette`, else the renderer's default. */
+  /** Edge darkening of the picture: a painted world's shot grade, the world's `look.vignette`, else the renderer's default. */
   private vignetteStrength(): number {
-    return this.docLook?.vignette ?? VIGNETTE_STRENGTH;
+    return (this.animeStyle ? this.satsuei.vignette : null) ?? this.docLook?.vignette ?? VIGNETTE_STRENGTH;
   }
 
   /** Smoothed interior factor of the eye (0 outdoors, 1 under a ceiling), see `view/eye-adapt.ts`. */
@@ -6431,7 +6534,7 @@ export class WorldRenderer {
     this.postShadowSize = this.env.shaftMapSize;
     const gen = ++this.postGen;
     const builtAt = this.postShadowSize;
-    createPostPipeline(this.renderer, this.scene, this.perspective, this.env.bloom, postQualityOf(want) ?? 'standard', { effects: want, sun: this.env.shaftLight ?? this.env.sun, contactLight: this.env.sun, aoScale: this.qualityPlan.moveEffects !== null ? 0.5 : undefined, screenOcclusion: this.qualityPlan.moveEffects !== null && (globalThis as { __AETHER_SCREEN_OCCLUSION?: boolean }).__AETHER_SCREEN_OCCLUSION !== false, linkNow: (run) => (this.linkPostAsync ? run() : this.preparation.synchronous(() => this.programs.synchronous(run))) })
+    createPostPipeline(this.renderer, this.scene, this.perspective, this.env.bloom, postQualityOf(want) ?? 'standard', { effects: want, sun: this.env.shaftLight ?? this.env.sun, contactLight: this.env.sun, aoScale: this.qualityPlan.moveEffects !== null ? 0.5 : undefined, screenOcclusion: this.qualityPlan.moveEffects !== null && (globalThis as { __AETHER_SCREEN_OCCLUSION?: boolean }).__AETHER_SCREEN_OCCLUSION !== false, linkNow: (run) => (this.linkPostAsync ? run() : this.preparation.synchronous(() => this.programs.synchronous(run))), satsueiSun: () => this.satsueiSun() })
       .then((p) => {
         this.postPending = false;
         if (!p) {
@@ -6498,7 +6601,7 @@ export class WorldRenderer {
     const gen = this.postGen;
     const builtAt = this.env.shaftMapSize;
     this.postShadowSize = builtAt;
-    createPostPipeline(this.renderer, this.scene, this.perspective, this.env.bloom, postQualityOf(other) ?? 'standard', { effects: other, sun: this.env.shaftLight ?? this.env.sun, contactLight: this.env.sun, aoScale: 0.5, screenOcclusion: (globalThis as { __AETHER_SCREEN_OCCLUSION?: boolean }).__AETHER_SCREEN_OCCLUSION !== false, linkNow: (run) => (this.linkPostAsync ? run() : this.preparation.synchronous(() => this.programs.synchronous(run))) })
+    createPostPipeline(this.renderer, this.scene, this.perspective, this.env.bloom, postQualityOf(other) ?? 'standard', { effects: other, sun: this.env.shaftLight ?? this.env.sun, contactLight: this.env.sun, aoScale: 0.5, screenOcclusion: (globalThis as { __AETHER_SCREEN_OCCLUSION?: boolean }).__AETHER_SCREEN_OCCLUSION !== false, linkNow: (run) => (this.linkPostAsync ? run() : this.preparation.synchronous(() => this.programs.synchronous(run))), satsueiSun: () => this.satsueiSun() })
       .then((p) => {
         this.postPending = false;
         if (!p) return;
@@ -6932,6 +7035,7 @@ export class WorldRenderer {
         this.renderer.setSize(w, h, false);
         this.bufferCss = [0, 0];
         this.vignetteOff = !vignette;
+        if (!vignette && this.animeStyle) this.applyLook();
         this.post?.setVignette(vignette ? this.vignetteStrength() : 0);
         if (this.boundsDirty) this.refresh();
       },
@@ -6972,6 +7076,7 @@ export class WorldRenderer {
         this.captureTargets.trim();
         hidden.forEach((o, i) => (o.visible = wasVisible[i] ?? true));
         this.vignetteOff = false;
+        if (this.animeStyle) this.applyLook();
         this.post?.setVignette(this.vignetteStrength());
         this.adaptive.enabled = adaptive;
         this.captureActive = false;

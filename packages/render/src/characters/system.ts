@@ -16,6 +16,8 @@ import { cloneModel, COMPRESSED_SOURCE_KEY, type ModelCache } from '../geometry/
 import { CharacterRig, type Foot } from './rig';
 import { DEFAULT_REFS, decodeMasks, hasTint, materialsOf, originalBaseColours, partOf, tintedMaterialAsync, tintKey, type Tint, type TintMasks, type TintRefs } from './tint';
 import type { Prop } from './props';
+import { isToonScene, ToonShading } from './toon';
+import type { ColliderDef, SpringChainDef } from './springs';
 
 /** Distances (m) at which detail steps down. */
 export const LOD_NEAR = 16;
@@ -25,6 +27,17 @@ export const LOD_FAR = 90;
 export const MAX_FULL_DETAIL = 10;
 /** Most characters in a scene; later ones are not mounted (a hostile world cannot ask for thousands). */
 export const MAX_CHARACTERS = 160;
+/** Toon bodies pose on twos: the skeleton steps at this rate (the body still moves smoothly with its entity). */
+export const TOON_POSE_FPS = 12;
+
+/**
+ * Time to hand a body's rig this frame, or 0 to hold its pose: a body posing at `fps` keeps accumulating until a pose
+ * step is due (a frame that is more than due steps once with all the time gathered). `fps` 0 steps every frame.
+ */
+export function poseStep(accumulated: number, fps: number): number {
+  if (!(fps > 0)) return accumulated;
+  return accumulated >= 1 / fps - 1e-4 ? accumulated : 0;
+}
 
 /** Options of {@link CharacterSystem}. */
 export interface CharacterSystemOptions {
@@ -49,6 +62,8 @@ interface Entry {
   shadowsOn: boolean;
   dist: number;
   tintKey: string | null;
+  /** Pose rate (0: every frame; toon bodies pose on twos). */
+  poseFps: number;
 }
 
 /** Recoloured materials of one variant (shared by every person wearing it). */
@@ -90,8 +105,15 @@ export class CharacterSystem {
    */
   castersMoved = false;
   private readonly sorted: Entry[] = [];
+  /** Shared cel materials of the toon bodies. */
+  readonly toon = new ToonShading();
 
   constructor(private readonly opts: CharacterSystemOptions) {}
+
+  /** The light toon bodies are banded by: `dir` toward the sun (world), its linear colour; null = a soft default. */
+  setToonLight(dir: Vector3 | null, color: import('three').Color | null): void {
+    this.toon.setLight(dir, color);
+  }
 
   /** Number of live characters. */
   get size(): number {
@@ -139,7 +161,9 @@ export class CharacterSystem {
       }
       const tint = tintOf(look);
       let tintKeyStr: string | null = null;
-      if (hasTint(tint)) {
+      const toon = isToonScene(bodySrc);
+      // Toon bodies keep their painted colours (no outfit masks).
+      if (hasTint(tint) && !toon) {
         tintKeyStr = `${look.body.id}|${tintKey(tint)}`;
         const set = this.acquireTint(tintKeyStr, look.body, bodySrc, tint, base);
         await set.ready;
@@ -153,6 +177,8 @@ export class CharacterSystem {
       const scene = cloneModel(bodySrc);
       this.fixBounds(scene);
       if (tintKeyStr) this.applyTint(scene, tintKeyStr);
+      if (toon) this.toon.apply(scene);
+      const toonData = toon ? (scene.userData['toon'] as { springs?: SpringChainDef[]; colliders?: ColliderDef[] }) : null;
       const castShadow = (opts.castShadow ?? true) && this.opts.shadows !== false;
       const rig = new CharacterRig({
         scene,
@@ -163,6 +189,7 @@ export class CharacterSystem {
         hip: look.body.hip,
         motionHip: set.hip,
         castShadow,
+        ...(toonData ? { toon: { springs: toonData.springs ?? [], colliders: toonData.colliders ?? [] } } : {}),
         onFootstep: this.opts.onFootstep
           ? (foot, speed, r) => {
               const bone = r.root.getObjectByName(foot === 'L' ? 'Bip01_L_Foot' : 'Bip01_R_Foot');
@@ -177,7 +204,7 @@ export class CharacterSystem {
       rig.autoMotion = opts.autoMotion ?? true;
       if (opts.track !== undefined) rig.track(opts.track ?? null);
       parent.add(rig.root);
-      const entry: Entry = { id, rig, key, bodyUrl, motionUrl, body: look.body, accumulated: 0, frame: 0, shadowsOn: castShadow, dist: 0, tintKey: tintKeyStr };
+      const entry: Entry = { id, rig, key, bodyUrl, motionUrl, body: look.body, accumulated: 0, frame: 0, shadowsOn: castShadow, dist: 0, tintKey: tintKeyStr, poseFps: toon ? TOON_POSE_FPS : 0 };
       this.entries.set(id, entry);
       this.list.push(entry);
       this.mounted++;
@@ -330,7 +357,7 @@ export class CharacterSystem {
         if (shown(e.rig.root)) this.castersMoved = true;
         e.shadowsOn = shadows;
         e.rig.root.traverse((o) => {
-          if (o instanceof Mesh) o.castShadow = shadows;
+          if (o instanceof Mesh && o.userData['toonOutline'] !== true) o.castShadow = shadows;
         });
       }
       // Far characters step their mixer less often (accumulated time keeps their clips in step).
@@ -338,7 +365,9 @@ export class CharacterSystem {
       e.accumulated += dt;
       e.frame++;
       if (every > 1 && (e.frame + (e.id.length & 3)) % every !== 0) continue;
-      e.rig.update(e.accumulated, detail);
+      const step = poseStep(e.accumulated, e.poseFps);
+      if (step <= 0) continue;
+      e.rig.update(step, detail);
       e.accumulated = 0;
       if (!this.castersMoved && (e.shadowsOn || e.rig.shadowOnlyBody) && shown(e.rig.root)) this.castersMoved = true;
     }
@@ -355,6 +384,7 @@ export class CharacterSystem {
     this.disposed = true;
     for (const id of [...this.entries.keys()]) this.remove(id);
     this.pending.clear();
+    this.toon.dispose();
   }
 }
 

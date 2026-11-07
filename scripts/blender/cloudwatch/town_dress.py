@@ -45,7 +45,7 @@ def balcony_laundry(balconies, seed):
             add_box(bm, (px, py, z + hp - 0.01 - h / 2), size, mat_index=m)
             t += w + r.uniform(0.06, 0.18)
         # A futon airing over the railing (only on railings that stand at the balcony edge).
-        if not b.get("deck") and r.random() < 0.4:
+        if not b.get("deck") and r.random() < 0.6:
             fl = min(1.6, b["len"] - 0.6)
             off = r.uniform(-b["len"] / 4, b["len"] / 4)
             ox = b["x"] + nx * (b["dep"] / 2 + 0.06) + ux * off

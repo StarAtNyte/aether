@@ -100,7 +100,7 @@ function clampEffects(base: PostEffects, cap: RenderTier | null | undefined): Po
   if (!cap || cap === 'ultra') return base;
   const allow = effectsOf(cap);
   const out = { ...base };
-  for (const k of Object.keys(out) as (keyof PostEffects)[]) out[k] = base[k] && allow[k];
+  for (const k of Object.keys(out) as (keyof PostEffects)[]) out[k] = base[k] === true && allow[k] === true;
   return out;
 }
 

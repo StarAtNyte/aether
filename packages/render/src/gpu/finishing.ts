@@ -47,10 +47,16 @@ export interface PostEffects {
   grain: boolean;
   /** Depth of field around the orbit target (final stills only). */
   dof: boolean;
+  /**
+   * The compositing layer of a painted (anime) world, built into the composite (see `satsuei.ts`): diffusion glow, light
+   * rays from the sun, lens flare, dust motes, corner fringe, grain, gradient layer and letterbox, all driven by uniforms.
+   * Optional: absent is off (realistic worlds never set it).
+   */
+  satsuei?: boolean;
 }
 
 /** The effect keys, in the order they degrade when one fails (first dropped first). */
-export const DEGRADE_ORDER: readonly (keyof PostEffects)[] = Object.freeze(['dof', 'gi', 'shafts', 'ssr', 'contact', 'halation', 'aberration', 'taa', 'ao'] as (keyof PostEffects)[]);
+export const DEGRADE_ORDER: readonly (keyof PostEffects)[] = Object.freeze(['dof', 'gi', 'satsuei', 'shafts', 'ssr', 'contact', 'halation', 'aberration', 'taa', 'ao'] as (keyof PostEffects)[]);
 
 /** Effects that need the normal / velocity pre-pass. */
 export function needsPrePass(e: PostEffects): boolean {
@@ -126,7 +132,8 @@ export function degrade(effects: PostEffects): { effects: PostEffects; dropped: 
 
 /** Stable key of an effect set (a pipeline is rebuilt when it changes). */
 export function effectsKey(e: PostEffects): string {
-  return (Object.keys(NONE) as (keyof PostEffects)[]).map((k) => (e[k] ? '1' : '0')).join('');
+  // The compositing layer adds a character only when on: the keys of realistic chains stay as they were.
+  return (Object.keys(NONE) as (keyof PostEffects)[]).map((k) => (e[k] ? '1' : '0')).join('') + (e.satsuei ? 's' : '');
 }
 
 // ---------------------------------------------------------------------------
@@ -183,12 +190,13 @@ export const GRADE_PRESETS: Readonly<Record<GradePresetId, GradePreset>> = Objec
 });
 
 /**
- * The effects an `anime` world keeps: the composite (bloom, vignette), anti-aliasing and halation. Ambient occlusion, contact
+ * The effects an `anime` world keeps: the composite (bloom, vignette), anti-aliasing and halation, plus the compositing layer
+ * (`satsuei`, with its own grain and corner fringe) whenever the composite runs. Ambient occlusion, contact
  * shadows, reflections, GI, sun shafts, aberration and grain shade or texture the picture, and a painted flat colour has
  * nothing for them to add.
  */
 export function animeEffects(e: PostEffects): PostEffects {
-  return { ...e, ao: false, gi: false, contact: false, ssr: false, shafts: false, aberration: false, grain: false };
+  return { ...e, ao: false, gi: false, contact: false, ssr: false, shafts: false, aberration: false, grain: false, satsuei: e.composite };
 }
 
 /** True when `value` names a preset. */

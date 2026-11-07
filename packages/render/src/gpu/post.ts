@@ -15,12 +15,13 @@
  * pre-pass of the opaque scene, so the effects only cost what they are switched on for.
  */
 import type { Camera, DirectionalLight, PerspectiveCamera, RenderTarget, Scene, ToneMapping } from 'three';
-import type { WebGPURenderer } from 'three/webgpu';
+import type { Node as TslNode, WebGPURenderer } from 'three/webgpu';
 import { errorMessage, log } from '../log';
 import { ABERRATION_STRENGTH, GRAIN_AMPLITUDE, effectsKey, needsPrePass, type PostEffects } from './finishing';
 import { NEUTRAL_GRADE, type Grade } from './grade';
 import { createUpsampler, type Upsampler } from './upsample';
 import { installAgxLook } from './agx-look';
+import { resolveSatsuei, type SatsueiState } from './satsuei';
 
 /** Post pipeline variant: composite only, or with the opaque pre-pass (AO, TAA, reflections, shafts, DOF). */
 export type PostQuality = 'standard' | 'studio';
@@ -91,6 +92,8 @@ export interface PostPipeline {
   setAo(tuning: { radius?: number; scale?: number; thickness?: number; resolutionScale?: number; samples?: number }): void;
   /** Focus the depth of field on `distance` metres in front of the camera (no-op without DOF). */
   setFocus(distance: number): void;
+  /** The compositing layer of a painted world (uniforms only; no-op unless built with `effects.satsuei`). */
+  setSatsuei(state: SatsueiState): void;
   dispose(): void;
 }
 
@@ -175,7 +178,41 @@ export interface PostOptions {
    * turn of the camera) composited empty targets: a black or orange flash.
    */
   linkNow?: (run: () => void) => void;
+  /** Direction toward the sun the compositing layer's rays and flare come from (world space; read every frame). */
+  satsueiSun?: () => readonly [number, number, number] | null;
 }
+
+/**
+ * The compositing layer (see `satsuei.ts`). Gains turn the 0..1 amounts into the shader's units; the light rays are a
+ * radial blur of the bright sky round the sun at a quarter of the frame's resolution, `rayTaps` samples per texel.
+ */
+export const SATSUEI_TUNING = Object.freeze({
+  /** Bloom high pass of the diffusion glow: linear luminance where it starts and where it is full, and its gain at amount 1. */
+  diffusionLo: 0.6,
+  diffusionHi: 1.4,
+  diffusionGain: 0.3,
+  rayTaps: 24,
+  rayScale: 0.25,
+  /** Luminance of the sky that sheds rays (start, full), how tightly round the sun (per frame-height unit), the gain. */
+  rayLo: 0.7,
+  rayHi: 1.4,
+  rayFocus: 5,
+  rayGain: 0.9,
+  flareGain: 0.6,
+  dustGain: 0.9,
+  /** Display-space grain amplitude at amount 1. */
+  grainGain: 0.04,
+  /** Corner fringe (UV units at the corner) at amount 1. */
+  chromaGain: 0.012,
+});
+
+/** Lens-flare ghosts: position along the sun-centre axis (1 = the centre), radius (frame heights), colour, weight. */
+const FLARE_GHOSTS: ReadonlyArray<{ t: number; r: number; c: [number, number, number]; w: number }> = [
+  { t: 0.5, r: 0.035, c: [1.0, 0.72, 0.42], w: 0.35 },
+  { t: 1.3, r: 0.028, c: [0.55, 0.8, 1.0], w: 0.4 },
+  { t: 1.62, r: 0.075, c: [0.8, 0.6, 1.0], w: 0.22 },
+  { t: 2.05, r: 0.13, c: [0.55, 0.95, 0.75], w: 0.12 },
+];
 
 /** Share of the occlusion and of the contact shadows kept when they multiply the composite (see PostOptions.screenOcclusion). */
 const SCREEN_AO_WEIGHT = 0.7;
@@ -205,8 +242,8 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
       effects.aberration ? import('three/addons/tsl/display/ChromaticAberrationNode.js') : Promise.resolve(null),
       contactLight ? import('three/addons/tsl/display/SSSNode.js') : Promise.resolve(null),
     ]);
-    const { RenderPipeline, Vector3, UnsignedByteType, HalfFloatType, RGFormat, Color } = three;
-    const { pass, screenUV, screenSize, screenCoordinate, smoothstep, float, uniform, vec2, vec3, vec4, dot, mix, pow, max, min, clamp, mrt, packNormalToRGB, unpackRGBToNormal, normalView, velocity, sample, context, diffuseColor, convertToTexture, renderOutput, interleavedGradientNoise, metalness, roughness } = tsl;
+    const { RenderPipeline, Vector2, Vector3, UnsignedByteType, HalfFloatType, RGFormat, Color } = three;
+    const { Fn, luminance, exp, length, floor, fract, sin, step, pass, screenUV, screenSize, screenCoordinate, smoothstep, float, uniform, vec2, vec3, vec4, dot, mix, pow, max, min, clamp, mrt, packNormalToRGB, unpackRGBToNormal, normalView, velocity, sample, context, diffuseColor, convertToTexture, renderOutput, interleavedGradientNoise, metalness, roughness } = tsl;
     const { bloom } = bloomMod;
     const agxLook = installAgxLook(renderer, three, tsl);
     const disposables: Array<{ dispose(): void }> = [];
@@ -400,9 +437,69 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
         disposables.push(shafts);
       }
     }
+    const sats = effects.satsuei === true;
+    const T = SATSUEI_TUNING;
+    // Compositing-layer uniforms (only read by the nodes built when `sats`).
+    const uHard = uniform(bloomStrength(strength));
+    const uSoft = uniform(0);
+    const uSunUV = uniform(new Vector2(0.5, 0.25));
+    const uRays = uniform(0);
+    const uFlare = uniform(0);
+    const uDust = uniform(0);
+    const uChroma = uniform(0);
+    const uSatGrain = uniform(0);
+    const uGradTop = uniform(new Vector3(0.5, 0.5, 0.5));
+    const uGradBottom = uniform(new Vector3(0.5, 0.5, 0.5));
+    const uGradAmount = uniform(0);
+    const uLetterbox = uniform(0);
+    const uTime = uniform(0);
+    let satsState: SatsueiState = resolveSatsuei(null, null);
+    type Tex = { sample(uv: unknown): ReturnType<typeof vec4> };
+    let raysTexture: (Tex & { autoUpdate: boolean }) | null = null;
+    const aspect = screenSize.x.div(screenSize.y);
+    const toSun = (p: TslNode<'vec2'>): TslNode<'float'> => length(p.sub(uSunUV).mul(vec2(aspect, 1)));
+    if (sats) {
+      // Corner fringe: red pushed out and blue pulled in, growing with the square of the distance from the centre.
+      const off = screenUV.sub(0.5);
+      const shift = off.mul(dot(off, off).mul(uChroma));
+      hdr = hdr.add(vec3(color.sample(screenUV.add(shift)).r.sub(color.r), 0, color.sample(screenUV.sub(shift)).b.sub(color.b)));
+    }
     const bloomNode = bloom(color, bloomStrength(strength), BLOOM_RADIUS, BLOOM_THRESHOLD);
     disposables.push(bloomNode);
+    if (sats) {
+      // One bloom carries both: what is brighter than white at the bloom strength, and the bright mid-tones at the diffusion's.
+      const highPass = Fn(({ input, threshold, smoothWidth }: { input: ReturnType<typeof vec4>; threshold: Value; smoothWidth: Value }) => {
+        const v = luminance(input.rgb);
+        const hard = smoothstep(threshold, threshold.add(smoothWidth), v);
+        const soft = smoothstep(float(T.diffusionLo), float(T.diffusionHi), v);
+        return vec4(input.rgb.mul(hard.mul(uHard).add(soft.mul(uSoft))), 1);
+      });
+      (bloomNode as unknown as { highPassFn: unknown }).highPassFn = highPass;
+      bloomNode.strength.value = 1;
+    }
     hdr = hdr.add(bloomNode.rgb);
+    if (sats) {
+      // Light rays: each texel gathers the bright sky round the sun along its line to the sun (a quarter-resolution pass).
+      const rays = Fn(() => {
+        const uv = screenUV;
+        const delta = uSunUV.sub(uv);
+        const jitter = interleavedGradientNoise(screenCoordinate);
+        let acc: TslNode<'vec3'> = vec3(0);
+        for (let i = 0; i < T.rayTaps; i++) {
+          const p = uv.add(delta.mul(float(i).add(jitter).div(T.rayTaps)));
+          const c = color.sample(p).rgb;
+          const inside = step(0, p.x).mul(step(p.x, 1)).mul(step(0, p.y)).mul(step(p.y, 1));
+          const mask = smoothstep(float(T.rayLo), float(T.rayHi), luminance(c)).mul(exp(toSun(p).mul(-T.rayFocus))).mul(inside);
+          acc = acc.add(min(c, vec3(1.5)).mul(mask));
+        }
+        return vec4(acc.div(T.rayTaps).mul(exp(toSun(uv).mul(-2))), 1);
+      })();
+      const raysRtt = convertToTexture(rays) as unknown as Tex & { setResolutionScale(s: number): void; autoUpdate: boolean; dispose(): void };
+      raysRtt.setResolutionScale(T.rayScale);
+      raysTexture = raysRtt;
+      disposables.push(raysRtt);
+      hdr = hdr.add(raysRtt.sample(screenUV).rgb.mul(uRays));
+    }
     if (effects.halation) {
       const halo = bloom(color, HALATION_TUNING.strength, HALATION_TUNING.radius, HALATION_TUNING.threshold);
       disposables.push(halo);
@@ -473,7 +570,56 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
     const uGrain = uniform(effects.grain ? GRAIN_AMPLITUDE : 0);
     const uSeed = uniform(0);
     const pipeline = new RenderPipeline(renderer);
-    if (effects.grain) {
+    if (sats) {
+      // Lens flare and dust over the resolved picture (after the temporal AA, which would smear what moves on its own).
+      const ax = vec2(0.5, 0.5).sub(uSunUV);
+      const d0 = toSun(screenUV);
+      // The sun is hidden behind a roof or a cloud: the picture at its position is no longer brighter than white.
+      const sunSeen = smoothstep(float(0.8), float(2.5), luminance(color.sample(uSunUV).rgb));
+      let flare: TslNode<'vec3'> = vec3(0);
+      for (const g of FLARE_GHOSTS) {
+        const d = length(screenUV.sub(uSunUV.add(ax.mul(g.t))).mul(vec2(aspect, 1)));
+        // A soft disc with a slightly brighter rim.
+        const disc = smoothstep(float(g.r), float(g.r * 0.55), d).mul(0.7).add(smoothstep(float(g.r * 0.12), float(0), d.sub(g.r * 0.9).abs()).mul(0.3));
+        flare = flare.add(vec3(...g.c).mul(disc.mul(g.w)));
+      }
+      // A veiling glow round the sun and a faint ring.
+      flare = flare.add(vec3(1.0, 0.78, 0.55).mul(exp(d0.mul(-7)).mul(0.12).add(exp(d0.sub(0.36).div(0.025).pow(2).negate()).mul(0.03))));
+      flare = flare.mul(uFlare.mul(sunSeen).mul(T.flareGain));
+      // Dust motes: two layers of cells drifting up and across, one mote in some cells, lit by the rays and the glow round the sun.
+      const raysAt = raysTexture ? raysTexture.sample(screenUV).rgb : vec3(0);
+      const light = luminance(raysAt).mul(3).add(exp(d0.mul(-2.5)).mul(0.4)).add(0.02);
+      const hash = (p: TslNode<'vec2'>, k: number): TslNode<'float'> => fract(sin(dot(p, vec2(127.1 + k, 311.7 - k))).mul(43758.5453));
+      let motes: TslNode<'float'> = float(0);
+      for (const [cells, sx, sy, size, k, density] of [[14, 0.004, -0.007, 0.1, 1, 0.8], [30, -0.002, -0.004, 0.08, 9, 0.9]] as const) {
+        const q = screenUV.mul(vec2(aspect, 1)).add(vec2(uTime.mul(sx), uTime.mul(sy))).mul(cells);
+        const cell = floor(q);
+        const f = fract(q);
+        const h1 = hash(cell, k);
+        const h2 = hash(cell, k + 3.1);
+        const h3 = hash(cell, k + 7.7);
+        const centre = vec2(h1, h2).mul(0.6).add(0.2).add(vec2(sin(uTime.mul(0.6).add(h3.mul(6.283))), sin(uTime.mul(0.45).add(h1.mul(6.283)))).mul(0.12));
+        const r = float(size).mul(h3.mul(0.6).add(0.4));
+        const twinkle = sin(uTime.mul(h2.mul(1.5).add(0.8)).add(h1.mul(6.283))).mul(0.35).add(0.65);
+        motes = motes.add(smoothstep(r, float(0), length(f.sub(centre))).mul(step(density, h3)).mul(twinkle));
+      }
+      const dust = vec3(1.0, 0.86, 0.66).mul(motes.mul(light).mul(uDust).mul(T.dustGain));
+      pipeline.outputColorTransform = false;
+      const mapped = renderOutput(vec4(output.rgb.add(flare).add(dust), output.a));
+      // The gradient layer in display space (soft light: mid grey leaves the picture as it is).
+      const gc = mix(uGradTop, uGradBottom, screenUV.y);
+      const c = clamp(mapped.rgb, vec3(0), vec3(1));
+      const softLight = vec3(1).sub(gc.mul(2)).mul(c.mul(c)).add(gc.mul(2).mul(c));
+      let shown: TslNode<'vec3'> = mix(c, softLight, uGradAmount);
+      const noise = interleavedGradientNoise(screenCoordinate.add(vec2(uSeed.mul(5.588238), uSeed.mul(2.7132)))).sub(0.5);
+      shown = shown.add(noise.mul(uSatGrain));
+      // Letterbox toward 2.39:1, its edge one pixel soft.
+      const bar = max(float(0), float(1).sub(aspect.div(2.39)).mul(0.5)).mul(uLetterbox);
+      const edge = float(1).div(screenSize.y);
+      const y = screenUV.y;
+      const open = smoothstep(bar, bar.add(edge), y).mul(smoothstep(bar, bar.add(edge), float(1).sub(y)));
+      pipeline.outputNode = vec4(shown.mul(mix(float(1), open, step(1e-4, uLetterbox))), mapped.a);
+    } else if (effects.grain) {
       // Tone curve and sRGB first, then grain in display space: it dithers 8-bit banding and sells the "photograph".
       pipeline.outputColorTransform = false;
       const mapped = renderOutput(output);
@@ -484,10 +630,38 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
     }
     let seed = 0;
     let sceneScale = 1;
+    const sunPoint = new Vector3();
+    const sunView = new Vector3();
+    const t0 = performance.now();
+    /** The compositing layer's per-frame uniforms: the sun's place on the frame (and how far it is off it), the clock. */
+    const satsueiFrame = (): void => {
+      const light = opts.sun;
+      const dir = opts.satsueiSun?.() ?? (light ? [light.position.x - light.target.position.x, light.position.y - light.target.position.y, light.position.z - light.target.position.z] : null);
+      uTime.value = (performance.now() - t0) / 1000;
+      let rays = 0;
+      let flare = 0;
+      if (dir) {
+        sunView.set(dir[0], dir[1], dir[2]).normalize().transformDirection(camera.matrixWorldInverse);
+        if (sunView.z < -1e-3) {
+          sunPoint.set(dir[0], dir[1], dir[2]).normalize().multiplyScalar(1000).add(camera.position).project(camera);
+          const u = sunPoint.x * 0.5 + 0.5;
+          const v = 0.5 - sunPoint.y * 0.5;
+          uSunUV.value.set(u, v);
+          const out = Math.max(Math.abs(u - 0.5), Math.abs(v - 0.5));
+          const fade = (a: number, b: number): number => Math.max(0, Math.min(1, (b - out) / (b - a)));
+          rays = fade(0.5, 1.1) * Math.min(1, -sunView.z * 4);
+          flare = fade(0.48, 0.56);
+        }
+      }
+      uRays.value = satsState.godRays * T.rayGain * rays;
+      uFlare.value = satsState.flare * flare;
+      if (raysTexture) raysTexture.autoUpdate = uRays.value > 0 || satsState.dust > 0;
+    };
     /** One frame of the chain: the scene passes first, then the effects. */
     const renderOnce = (): void => {
       seed = (seed + 1) % 4096;
       uSeed.value = seed;
+      if (sats) satsueiFrame();
       upsampler?.begin();
       try {
         // The scene passes first, from the top: three keys render state (and with it every mesh's render objects and
@@ -539,7 +713,20 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
         renderOnce();
       },
       setBloom: (s: number) => {
-        bloomNode.strength.value = bloomStrength(s);
+        if (sats) uHard.value = bloomStrength(s);
+        else bloomNode.strength.value = bloomStrength(s);
+      },
+      setSatsuei: (st: SatsueiState) => {
+        if (!sats) return;
+        satsState = st;
+        uSoft.value = st.diffusion * T.diffusionGain;
+        uDust.value = st.dust;
+        uChroma.value = st.chroma * T.chromaGain;
+        uSatGrain.value = st.grain * T.grainGain;
+        uGradTop.value.set(...st.gradientTop);
+        uGradBottom.value.set(...st.gradientBottom);
+        uGradAmount.value = st.gradientAmount;
+        uLetterbox.value = st.letterbox;
       },
       setShaftScale: (k: number) => {
         if (!shaftNodes) return;

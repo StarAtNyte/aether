@@ -15,6 +15,7 @@ import { z } from 'zod';
 import { VoxelEdit, VoxelTerrain } from './voxel-schema';
 import { NpcSpec } from './npc-schema';
 import { CharacterSpec } from './character-schema';
+import { Story } from './story-schema';
 import { EntityVfx, FeelEvent, FeelSpec, VfxPreset } from './feel-schema';
 import { MAX_SURFACE_LAYERS, SHADER_LIMITS, SURFACE_LAYER_KINDS, shaderChannelError, type ShaderChannel } from './shader-lang';
 
@@ -22,6 +23,7 @@ export * from './voxel-schema';
 export * from './feel-schema';
 export * from './npc-schema';
 export * from './character-schema';
+export * from './story-schema';
 
 export const Vec3 = z.tuple([z.number(), z.number(), z.number()]);
 export type Vec3 = z.infer<typeof Vec3>;
@@ -776,6 +778,34 @@ export const Environment = z.object({
        * shadows, reflections, GI, sun shafts, aberration, grain) that would muddy flat colour. Bloom stays. Absent: realistic.
        */
       style: z.enum(['realistic', 'anime']).optional(),
+      /**
+       * Additive, read only by `style: 'anime'`: the compositing layer's defaults (a cinematic's shot grade animates over
+       * them). Amounts 0 none .. 1 strong; omitted fields keep the renderer's defaults (docs/worlds/CLOUDWATCH_HARBOUR.md).
+       */
+      satsuei: z
+        .object({
+          /** Soft glow of the bright mid-tones (sky round the sun, sunlit cloud tops). */
+          diffusion: z.number().min(0).max(1).optional(),
+          /** Light rays from the sun through the clouds (screen space). */
+          godRays: z.number().min(0).max(1).optional(),
+          /** Faint lens-flare ghosts of the sun. */
+          flare: z.number().min(0).max(1).optional(),
+          /** Dust motes drifting in the light. */
+          dust: z.number().min(0).max(1).optional(),
+          /** Fine film grain. */
+          grain: z.number().min(0).max(1).optional(),
+          /** Colour fringe toward the frame corners. */
+          chroma: z.number().min(0).max(1).optional(),
+          /** Gradient layer: a top and a bottom colour blended over the frame (soft light) at `gradientAmount`. */
+          gradientTop: Color.optional(),
+          gradientBottom: Color.optional(),
+          gradientAmount: z.number().min(0).max(1).optional(),
+          /** Letterbox bars, 0 none .. 1 full 2.39:1. */
+          letterbox: z.number().min(0).max(1).optional(),
+          /** Direction toward a painted sun (world space, need not be unit); absent: the world's sun light. */
+          sunDirection: Vec3.optional(),
+        })
+        .optional(),
     })
     .optional(),
   /**
@@ -1115,14 +1145,17 @@ export const WorldDoc = z.object({
   opening: OpeningView.optional(),
   /**
    * Additive: how a published (cooked) world starts at its opening: `play` (the game, from its title card), `walkthrough`
-   * (on foot through an architectural world) or `orbit` (a free camera around a showcase scene). Absent: the player decides
+   * (on foot through an architectural world), `orbit` (a free camera around a showcase scene) or `story` (the world's short
+   * film, {@link Story}, then explore or play). Absent: the player decides
    * from the world. The editor ignores it.
    */
-  startMode: z.enum(['play', 'walkthrough', 'orbit']).optional(),
+  startMode: z.enum(['play', 'walkthrough', 'orbit', 'story']).optional(),
   /** Additive: the publish profile (see {@link WorldProfile}). Absent: the player derives it from `startMode`. The editor ignores it. */
   profile: WorldProfile.optional(),
   /** Additive: authored tour stops (see {@link ViewStop}). Absent: computed by the player or the cook. The editor ignores them. */
   views: z.array(ViewStop).max(MAX_VIEW_STOPS).optional(),
+  /** Additive: the world's short film (see {@link Story}); played first when `startMode` is `story`. The editor ignores it. */
+  story: Story.optional(),
   /** Additive: game feel — feedback tier and per-event cues (visual only; absent = the `normal` tier). See `feel-schema.ts`. */
   feel: FeelSpec.optional(),
   /** Additive: texture sets of the project (see {@link TextureSetDef}); absent for worlds without photographed or generated maps. */

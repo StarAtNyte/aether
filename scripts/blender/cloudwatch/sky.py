@@ -70,10 +70,10 @@ class Nodes:
     def remap(self, v, f0, f1, t0=0.0, t1=1.0, smooth=False):
         n = self.node("ShaderNodeMapRange", interpolation_type="SMOOTHSTEP" if smooth else "LINEAR")
         self._in(n.inputs["Value"], v)
-        n.inputs["From Min"].default_value = f0
-        n.inputs["From Max"].default_value = f1
-        n.inputs["To Min"].default_value = t0
-        n.inputs["To Max"].default_value = t1
+        self._in(n.inputs["From Min"], f0)
+        self._in(n.inputs["From Max"], f1)
+        self._in(n.inputs["To Min"], t0)
+        self._in(n.inputs["To Max"], t1)
         return n.outputs[0]
 
     def mix(self, fac, a, b, blend="MIX"):
@@ -125,6 +125,49 @@ class Nodes:
 
 # ---------------------------------------------------------------------------------------------------------------- dome
 
+# Far coast painted on the dome above the sea line, in layers that grow paler and bluer with distance (atmospheric
+# perspective): (azimuth from, to, feather (degrees), base height, height swing (radians of elevation), wiggle frequency,
+# seed, colour, a town's lights along its foot). The sea's far edge is about 1.1 degrees under the eye's level.
+RIDGE_FOOT = -0.022
+RIDGES = [
+    (124.0, 199.0, 16.0, 0.013, 0.020, 0.11, 1.0, "#c9b8d8", False),   # a far peninsula under the cloud tower
+    (136.0, 182.0, 10.0, 0.007, 0.012, 0.16, 5.0, "#a3a2d2", True),     # a nearer one, with a far town at its foot
+    (224.0, 306.0, 18.0, 0.016, 0.026, 0.09, 9.0, "#c2b4da", False),   # far ranges west, beyond the headland
+    (240.0, 284.0, 11.0, 0.008, 0.016, 0.14, 13.0, "#9b9dce", False),
+]
+
+
+def _far_ridges(b, col, dz, dx, dy):
+    az = b.math("MULTIPLY", b.math("ARCTAN2", dx, dy), 180.0 / math.pi)
+    az = b.math("ADD", az, b.math("MULTIPLY", b.math("LESS_THAN", az, 0.0), 360.0))  # 0..360 from north, clockwise
+    for (a0, a1, fe, h0, hv, fq, seed, hexcol, town) in RIDGES:
+        mask = b.math("MULTIPLY", b.remap(az, a0, a0 + fe, 0.0, 1.0, smooth=True), b.remap(az, a1, a1 - fe, 0.0, 1.0, smooth=True))
+        nz = b.node("ShaderNodeTexNoise", noise_dimensions="1D")
+        nz.inputs["Scale"].default_value = 1.0
+        nz.inputs["Detail"].default_value = 6.0
+        nz.inputs["Roughness"].default_value = 0.58
+        b._in(nz.inputs["W"], b.math("ADD", b.math("MULTIPLY", az, fq), seed * 17.0))
+        wig = b.remap(nz.outputs["Fac"], 0.3, 0.7, 0.0, 1.0)
+        top = b.math("ADD", RIDGE_FOOT, b.math("MULTIPLY", mask, b.math("ADD", h0, b.math("MULTIPLY", wig, hv))))
+        # Inside the silhouette, with an edge a fraction of a texel soft.
+        inside = b.math("MULTIPLY", b.remap(dz, top, b.math("SUBTRACT", top, 0.0007), 0.0, 1.0), b.math("GREATER_THAN", mask, 0.02))
+        # Paler at the foot, where the haze over the sea is thickest; a faint lit edge along the top.
+        foot = b.remap(dz, RIDGE_FOOT + 0.012, RIDGE_FOOT, 0.0, 1.0, smooth=True)
+        rc = b.mix(b.math("MULTIPLY", foot, 0.45), hexcol, "#f2c6b4")
+        col = b.mix(inside, col, rc)
+        if town:
+            vo = b.node("ShaderNodeTexVoronoi", feature="F1")
+            vo.inputs["Scale"].default_value = 1.0
+            vo.inputs["Randomness"].default_value = 0.9
+            b._in(vo.inputs["Vector"], b.combine(b.math("MULTIPLY", az, 5.0), b.math("MULTIPLY", dz, 57.3 * 9.0), 0.0))
+            dot = b.remap(vo.outputs["Distance"], 0.16, 0.08, 0.0, 1.0)
+            pick = b.math("GREATER_THAN", vo.outputs["Color"], 0.55)
+            band = b.math("MULTIPLY", b.remap(dz, RIDGE_FOOT + 0.0045, RIDGE_FOOT + 0.002, 0.0, 1.0), b.remap(mask, 0.5, 0.8, 0.0, 1.0))
+            lit = b.math("MULTIPLY", b.math("MULTIPLY", dot, pick), b.math("MULTIPLY", band, inside))
+            col = b.mix(lit, col, "#ffe2a0")
+    return col
+
+
 def _dome_material():
     m = bpy.data.materials.new("cw_sky")
     b = Nodes(m)
@@ -140,11 +183,25 @@ def _dome_material():
     sunward = b.math("POWER", sun_az, 2.0)
     cosang = b.vmath("DOT_PRODUCT", d, (sd.x, sd.y, sd.z))
     # Elevation gradient: the sun side warm and bright, the far side cooler and pinker.
-    warm = b.ramp(e, [(0.0, "#ffd79a"), (0.018, "#ffbe86"), (0.05, "#f59f86"), (0.10, "#d98ea4"), (0.18, "#a98bc0"),
-                      (0.30, "#7f82c8"), (0.48, "#5d6fc4"), (0.75, "#3c4f9a"), (1.0, P["zenith"])], "EASE")
-    cool = b.ramp(e, [(0.0, "#f2b496"), (0.03, "#e9a3a0"), (0.08, "#c993b2"), (0.16, "#9a8cc4"), (0.30, "#7480c6"),
-                      (0.48, "#5a6cc0"), (0.75, "#3a4c96"), (1.0, P["zenith"])], "EASE")
+    # More steps than a two-tone wash: a lemon-gold rim, apricot, coral rose, a lilac turn, then periwinkle into a
+    # saturated cobalt (the upper sky carries the picture's strongest blue).
+    warm = b.ramp(e, [(0.0, "#ffe2a4"), (0.014, "#ffc68a"), (0.04, "#f9a585"), (0.08, "#e88f9a"), (0.13, "#c08bbd"),
+                      (0.20, "#928ad0"), (0.31, "#6c78cf"), (0.46, "#5064c2"), (0.68, "#3a4ea6"), (1.0, "#26377e")], "EASE")
+    cool = b.ramp(e, [(0.0, "#f4b896"), (0.03, "#eba2a2"), (0.075, "#d093b6"), (0.14, "#a48ccc"), (0.24, "#7e82d0"),
+                      (0.38, "#5d6dc6"), (0.58, "#4255aa"), (0.8, "#32448f"), (1.0, "#26377e")], "EASE")
     col = b.mix(sunward, cool, warm)
+    # Soft brush strokes across the wash: long level strokes a little lighter or darker (a painted sky, not a vector fill).
+    bs = b.node("ShaderNodeMapping")
+    bs.inputs["Scale"].default_value = (1.0, 1.0, 7.0)
+    b._in(bs.inputs[0], d)
+    bn = b.node("ShaderNodeTexNoise")
+    bn.inputs["Scale"].default_value = 2.2
+    bn.inputs["Detail"].default_value = 5.0
+    bn.inputs["Roughness"].default_value = 0.6
+    bn.inputs["Distortion"].default_value = 0.8
+    b._in(bn.inputs["Vector"], bs.outputs[0])
+    stroke = b.remap(bn.outputs["Fac"], 0.34, 0.66, 0.955, 1.045, smooth=True)
+    col = b.vmath("SCALE", col, scale=stroke)
     # The horizon glow band: a thin, bright apricot-gold strip hugging the sea line, strongest under the sun.
     band = b.math("POWER", b.remap(e, 0.0, 0.07, 1.0, 0.0, smooth=True), 2.2)
     band_w = b.math("MULTIPLY", band, b.math("ADD", b.math("MULTIPLY", sunward, 0.75), 0.25))
@@ -189,6 +246,7 @@ def _dome_material():
     # A fainter, broader veil beside each strand (the brush's dry edge).
     veil = b.math("MULTIPLY", b.math("MULTIPLY", b.remap(wave.outputs["Fac"], 0.52, 0.66, 0.0, 1.0, smooth=True), clumpm), fade)
     col = b.mix(b.math("MULTIPLY", veil, 0.18), col, cir_col, blend="SCREEN")
+    col = _far_ridges(b, col, dz, dx, dy)
     sky = b.emit(col)
     # The sun disc and its tight glow (bright: blooms).
     core = b.remap(cosang, 0.99990, 0.99995)
@@ -220,8 +278,9 @@ def build_dome():
 
 # ---------------------------------------------------------------------------------------------------------------- cloud shading
 
-CLOUD_BANDS = [  # light value -> colour, hard steps (cel bands): shadow, a thin warm terminator, lit, sunlit crowns
-    (0.0, "#7b73b3"),
+CLOUD_BANDS = [  # light value -> colour, hard steps (cel bands): core shadow, shadow, a thin warm terminator, lit, sunlit crowns
+    (0.0, "#6a63a8"),
+    (0.21, "#7d75b5"),
     (0.40, "#e99aa2"),
     (0.43, "#ffc39c"),
     (0.80, "#fff0dc"),
@@ -242,7 +301,20 @@ def _cloud_material():
     light = b.node("ShaderNodeAttribute", attribute_type="GEOMETRY", attribute_name="cw_light").outputs["Fac"]
     # (No ambient-occlusion crease term: its screen-space noise, stepped by the bands, serrated every terminator at 4K.
     # The creases come from the billows' own normals meeting where they intersect.)
+    # Painted band edges: the light is nudged by a brush noise (tens of metres across) so each band's edge wanders and
+    # breaks the way a loaded brush leaves it, instead of following the geometry exactly.
+    bnz = b.node("ShaderNodeTexNoise")
+    bnz.inputs["Scale"].default_value = 0.013
+    bnz.inputs["Detail"].default_value = 1.0
+    bnz.inputs["Roughness"].default_value = 0.62
+    bnz.inputs["Distortion"].default_value = 0.6
+    b._in(bnz.inputs["Vector"], geo.outputs["Position"])
+    light = b.math("ADD", light, b.remap(bnz.outputs["Fac"], 0.3, 0.7, -0.035, 0.035))
     col = b.ramp(light, CLOUD_BANDS, "CONSTANT")
+    # Soft inner glow: the shadow side lifts toward a warm lilac as it nears the terminator (light scattered inside the
+    # cloud), the one soft gradient among the hard bands.
+    glow = b.math("MULTIPLY", b.remap(light, 0.22, 0.40, 0.0, 1.0, smooth=True), b.math("LESS_THAN", light, 0.40))
+    col = b.mix(b.math("MULTIPLY", glow, 0.6), col, "#b190c6")
     # Cool underside: faces turned down toward the sea go deep blue-lavender, with a faint pink bounce at the very base.
     attr_base = b.node("ShaderNodeAttribute", attribute_type="OBJECT", attribute_name="cw_base_z")
     attr_h = b.node("ShaderNodeAttribute", attribute_type="OBJECT", attribute_name="cw_height")
@@ -262,6 +334,11 @@ def _cloud_material():
     rim = b.math("MULTIPLY", sil, sunside)
     rim = b.math("MULTIPLY", rim, b.math("SUBTRACT", 1.0, b.math("MULTIPLY", under, 0.8)))
     col = b.mix(rim, col, "#fff0c6")
+    # Sun-bleached edge: the silhouettes of the lit side burn out to near white, a crisp line inside the outline.
+    bleach = b.math("MULTIPLY", b.remap(lw.outputs["Facing"], 0.44, 0.52, 0.0, 1.0), b.math("GREATER_THAN", light, 0.56))
+    bleach = b.math("MULTIPLY", bleach, b.math("SUBTRACT", 1.0, under))
+    col = b.mix(bleach, col, "#fffaf0")
+    rim = b.math("MAXIMUM", rim, b.math("MULTIPLY", bleach, 0.6))
     # Aerial depth: farther clouds take on the horizon's haze (per object).
     attr_hz = b.node("ShaderNodeAttribute", attribute_type="OBJECT", attribute_name="cw_haze")
     col = b.mix(attr_hz.outputs["Fac"], col, "#e9b0a8")

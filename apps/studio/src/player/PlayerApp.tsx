@@ -9,8 +9,9 @@
  *
  * Every kind of world opens its own way (`experience.ts`): a game on its title card; architecture on a hero view and a
  * guided tour of its rooms at eye level (click the floor to glide, dollhouse, plan); a showcase with a fly-in, then
- * orbit and viewpoints; a city on a street-level view, then a drone tour. P plays any of them as the character, Tab or
- * O explores (the explore controller and bar load lazily), Esc pauses.
+ * orbit and viewpoints; a city on a street-level view, then a drone tour; a world with a story (`world.story`, start mode
+ * `story`) plays its short film first, then its end card. P plays any of them as the character, Tab or O explores (the
+ * explore controller and bar load lazily), Esc pauses (in a story: skips to the end card).
  */
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { History, type Json, type WorldDoc } from '@aether/core';
@@ -37,6 +38,8 @@ import { experienceFor, keyAction, keyHint, type Experience, type PlayerPhase } 
 import type { ExploreController, ExploreState } from './explore';
 import type { CookView, ViewStopPose } from '@aether/render';
 import { TIME_PRESETS } from '../state/archUi';
+import type { StoryOverlay, StoryRunner } from './story-runner';
+import { storyCast } from './story';
 
 /** Hour of each time-of-day key (Digit1 … Digit4). */
 const TIME_PRESETS_BY_DIGIT: Readonly<Record<string, number>> = Object.freeze(Object.fromEntries(TIME_PRESETS.map((p) => [`Digit${p.key}`, p.hour])));
@@ -78,6 +81,10 @@ interface PlayerHandle {
   readonly explore: ExploreState | null;
   /** The explore controller (test drivers: stops, dollhouse, glides), null outside explore mode. */
   readonly exploreController: ExploreController | null;
+  /** The running story (time, duration), null outside it. */
+  readonly story: { time: number; duration: number; overlay: StoryOverlay | null } | null;
+  /** Play the story from `at` seconds (story worlds). */
+  playStory(at?: number): void;
   start(): void;
   /** Tab: explore mode. */
   enterExplore(): void;
@@ -91,7 +98,7 @@ interface CookHandle {
   /** 'cooked': geometry and programs from the package; 'live': generated here. */
   path: 'cooked' | 'live';
   reason: string | null;
-  startMode: 'play' | 'walkthrough' | 'orbit' | null;
+  startMode: 'play' | 'walkthrough' | 'orbit' | 'story' | null;
   /** The world is loaded and the first picture is up. */
   ready: boolean;
   /** Recording run only. */
@@ -229,6 +236,68 @@ const CreditsPanel = memo(function CreditsPanel({ game, credits, onBack }: { gam
   );
 });
 
+/**
+ * The story's overlay: cinema bars, the title card, subtitle lines and, at the end, the end card. Play, Explore and Skip
+ * stay on screen the whole time.
+ */
+const StoryView = memo(function StoryView({ story, overlay, title, onSkip, onReplay, onExplore, onPlay, canPlay }: { story: NonNullable<WorldDoc['story']>; overlay: StoryOverlay | null; title: string; onSkip: () => void; onReplay: () => void; onExplore: () => void; onPlay: () => void; canPlay: boolean }): ReactElement {
+  const done = overlay?.done ?? false;
+  const end = story.endCard;
+  return (
+    <div className={`pl-story${done ? ' is-done' : ''}`} style={{ ['--lb' as string]: String(story.letterbox) }} data-testid="pl-story">
+      <div className="pl-story__bar pl-story__bar--top" aria-hidden="true" />
+      <div className="pl-story__bar pl-story__bar--bottom" aria-hidden="true" />
+      {!done && overlay?.title && (
+        <div className="pl-story__title" key={`t${overlay.index}`}>
+          <h1>{overlay.title}</h1>
+          {overlay.subtitle && <p>{overlay.subtitle}</p>}
+        </div>
+      )}
+      {!done && overlay?.caption && (
+        <p className="pl-story__caption" key={`c${overlay.index}${overlay.caption}`} aria-live="polite">
+          {overlay.caption}
+        </p>
+      )}
+      {done && (
+        <div className="pl-story__end" role="dialog" aria-label="The end">
+          <h2>{end?.title ?? story.title ?? title}</h2>
+          {(end?.lines ?? []).map((l) => (
+            <p key={l}>{l}</p>
+          ))}
+          <div className="pl-stack pl-stack--row">
+            {canPlay && (
+              <Button primary onClick={onPlay} autoFocus testId="pl-story-play">
+                Play
+              </Button>
+            )}
+            <Button onClick={onExplore} testId="pl-story-explore">
+              Explore
+            </Button>
+            <Button onClick={onReplay} testId="pl-story-replay">
+              Watch again
+            </Button>
+          </div>
+        </div>
+      )}
+      {!done && (
+        <div className="pl-story__controls">
+          {canPlay && (
+            <button type="button" className="pl-story__chip" onClick={onPlay} data-testid="pl-story-play">
+              Play <kbd>P</kbd>
+            </button>
+          )}
+          <button type="button" className="pl-story__chip" onClick={onExplore} data-testid="pl-story-explore">
+            Explore <kbd>Tab</kbd>
+          </button>
+          <button type="button" className="pl-story__chip" onClick={onSkip} data-testid="pl-story-skip">
+            Skip <kbd>Space</kbd>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+});
+
 /** The running game: canvas, title screen, HUD and menus. */
 const GameView = memo(function GameView({ game }: { game: GameManifest }): ReactElement {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -257,7 +326,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const world = game.world;
-  const exp = useMemo(() => experienceFor(game.startMode, game.profile, hasBuilding(world)), [game.startMode, game.profile, world]);
+  const exp = useMemo(() => experienceFor(game.startMode, game.profile, hasBuilding(world), !!world.story), [game.startMode, game.profile, world]);
   const [explore, setExplore] = useState<ExploreState | null>(null);
   const [exploreMod, setExploreMod] = useState<ExploreModule | null>(null);
   const exploreRef = useRef<ExploreController | null>(null);
@@ -269,6 +338,13 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
   const stopsSearch = useRef<Promise<void> | null>(null);
   /** Where the pause menu returns to. */
   const pausedFrom = useRef<'playing' | 'exploring'>('playing');
+  /** The story being played (story worlds), its overlay and its fade layer. */
+  const storyRef = useRef<StoryRunner | null>(null);
+  const [storyOverlay, setStoryOverlay] = useState<StoryOverlay | null>(null);
+  const storyOverlayRef = useRef<StoryOverlay | null>(null);
+  const storyFadeRef = useRef<HTMLDivElement>(null);
+  /** The story's views were drawn once (see StoryRunner.prewarm). */
+  const storyWarm = useRef(false);
 
   const go = useCallback((p: Phase) => {
     phaseRef.current = p;
@@ -328,6 +404,49 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
     setExplore(null);
   }, []);
 
+  const leaveStory = useCallback(() => {
+    storyRef.current?.dispose();
+    storyRef.current = null;
+    storyOverlayRef.current = null;
+    setStoryOverlay(null);
+  }, []);
+
+  /** The world's short film from `at` seconds (the story's runner and overlay load lazily). */
+  const playStory = useCallback(
+    async (at = 0) => {
+      const sim = simRef.current;
+      const story = world.story;
+      if (!sim || !story) return;
+      const { StoryRunner } = await import('./story-runner');
+      if (simRef.current !== sim) return;
+      leaveExplore();
+      leaveStory();
+      if (sim.mode === 'play') {
+        stopMusic();
+        await sim.stop();
+      }
+      const runner = new StoryRunner(sim.renderer, world, story, {
+        onOverlay: (o) => {
+          storyOverlayRef.current = o;
+          setStoryOverlay(o);
+        },
+        fadeEl: () => storyFadeRef.current,
+        reduceMotion: settingsRef.current.reduceMotion,
+      });
+      runner.prepare();
+      storyRef.current = runner;
+      go('story');
+      // The first time, each shot's view is drawn once under the opening fade (no upload stalls on the cuts).
+      if (!storyWarm.current) {
+        storyWarm.current = true;
+        await runner.prewarm();
+        if (storyRef.current !== runner) return;
+      }
+      runner.start(at);
+    },
+    [go, leaveExplore, leaveStory, stopMusic, world],
+  );
+
   /**
    * Explore mode: the kind's camera and the tour bar. `entry`: the kind's opening (hero view and tour, fly-in, street
    * view and drone); `from`: stand there (Tab from play in a walk).
@@ -377,6 +496,11 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
       await sim.openWorld({ duration: 0 });
       return;
     }
+    if (exp.kind === 'story') {
+      await sim.openWorld({ duration: 0 });
+      await playStory(0);
+      return;
+    }
     if (exp.kind !== 'game') {
       await sim.openWorld({ duration: 0 });
       await enterExplore(true);
@@ -387,15 +511,18 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
     setTimeout(() => {
       if (phaseRef.current === 'title' && simRef.current === sim) sim.renderer.startTour(60);
     }, 900);
-  }, [enterExplore, exp.kind]);
+  }, [enterExplore, exp.kind, playStory]);
 
   const start = useCallback(async () => {
     const sim = simRef.current;
     const from = phaseRef.current;
-    if (!sim || (from !== 'title' && from !== 'over' && from !== 'exploring' && !(from === 'paused' && pausedFrom.current === 'exploring'))) return;
-    // Play from explore mode: a walk hands its spot over (the character stands where the visitor stood).
-    const standing = exploreRef.current?.standing ?? null;
+    if (!sim || (from !== 'title' && from !== 'over' && from !== 'exploring' && from !== 'story' && !(from === 'paused' && pausedFrom.current === 'exploring'))) return;
+    // Play from explore mode: a walk hands its spot over (the character stands where the visitor stood); from a story,
+    // where its film puts the visitor.
+    const playFrom = world.story?.playFrom;
+    const standing = exploreRef.current?.standing ?? (from === 'story' && playFrom ? { feet: playFrom.position, yawDeg: playFrom.yaw } : null);
     leaveExplore();
+    leaveStory();
     go('starting');
     sim.renderer.stopTour();
     sim.renderer.stopGhost();
@@ -414,9 +541,11 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
       if (standing) sim.placePlayer(standing.feet, standing.yawDeg);
       sim.setCameraView('follow');
     }
+    // The story's people step aside: the visitor plays the one the film followed.
+    for (const id of storyCast(world)) sim.renderer.setEntityProperty(id, 'visible', false);
     go('playing');
     startMusic();
-  }, [enterExplore, exp.kind, go, leaveExplore, startMusic]);
+  }, [enterExplore, exp.kind, go, leaveExplore, leaveStory, startMusic, world]);
 
   /** Tab or O: explore mode from play or from the title card. */
   const toExplore = useCallback(async () => {
@@ -428,6 +557,11 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
       await enterExplore(false);
       return;
     }
+    if (p === 'story') {
+      leaveStory();
+      await enterExplore(false);
+      return;
+    }
     if (p !== 'playing') return;
     const feet = sim.playerPosition;
     const from = feet ? { feet: [feet[0], feet[1], feet[2]] as [number, number, number], yaw: (-sim.playerHeading() * Math.PI) / 180 } : null;
@@ -435,7 +569,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
     setCombat(null);
     await sim.stop();
     await enterExplore(false, from);
-  }, [enterExplore, stopMusic]);
+  }, [enterExplore, leaveStory, stopMusic]);
 
   const pause = useCallback(
     (on: boolean) => {
@@ -592,7 +726,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
                 }
               : {}),
             // A game the visitor plays: the person loads with the world (its programs are drawn behind the load screen).
-            ...(game.startMode === 'play' ? { preloadPlayer: true } : {}),
+            ...(game.startMode === 'play' || game.startMode === 'story' ? { preloadPlayer: true } : {}),
             onProgress: (msg) => setLoading(msg),
           },
         );
@@ -651,6 +785,8 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
     return () => {
       disposed = true;
       stopMusic();
+      storyRef.current?.dispose();
+      storyRef.current = null;
       exploreRef.current?.dispose();
       exploreRef.current = null;
       simRef.current?.dispose();
@@ -678,6 +814,10 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
       if (!action) return;
       const ctrl = exploreRef.current;
       switch (action) {
+        case 'skip':
+          e.preventDefault();
+          storyRef.current?.skip();
+          break;
         case 'pause':
           e.preventDefault();
           if (ctrl?.snapshot.photo) ctrl.setPhoto(false);
@@ -752,13 +892,18 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
       get exploreController() {
         return exploreRef.current;
       },
+      get story() {
+        const r = storyRef.current;
+        return r ? { time: r.time, duration: r.duration, overlay: storyOverlayRef.current } : null;
+      },
+      playStory: (at?: number) => void playStory(at),
       start: () => void start(),
       enterExplore: () => void toExplore(),
     };
     return () => {
       delete window.__aetherPlayer;
     };
-  }, [exp, game.title, start, toExplore, world]);
+  }, [exp, game.title, playStory, start, toExplore, world]);
 
   const menu = (inGame: boolean): ReactElement => {
     if (panel === 'settings') return <SettingsPanel settings={settings} onChange={updateSettings} onBack={() => setPanel('main')} hasMusic={game.music !== null} />;
@@ -772,6 +917,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
               Resume
             </Button>
             <Button onClick={() => void start()}>Play as the character</Button>
+            {world.story && <Button onClick={() => void playStory(0)}>Watch the story</Button>}
             <Button onClick={() => setPanel('settings')}>Settings</Button>
             <Button onClick={() => setPanel('credits')}>Credits</Button>
             {exp.kind === 'game' && <Button onClick={() => void quitToTitle()}>Title screen</Button>}
@@ -879,6 +1025,10 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
           )}
         </>
       )}
+      {phase === 'story' && world.story && (
+        <StoryView story={world.story} overlay={storyOverlay} title={game.title} onSkip={() => storyRef.current?.skip()} onReplay={() => void playStory(0)} onExplore={() => void toExplore()} onPlay={() => void start()} canPlay={!world.voxel} />
+      )}
+      <div className="pl-story__fade" ref={storyFadeRef} aria-hidden="true" />
       <div className={`pl-fade${explore?.fading && phase === 'exploring' ? ' is-on' : ''}`} aria-hidden="true" />
       {hint && (phase === 'exploring' || phase === 'playing' || phase === 'title') && (
         <p className="pl-hint" data-testid="pl-hint">

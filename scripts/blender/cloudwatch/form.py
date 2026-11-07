@@ -179,7 +179,9 @@ def tree(bm, base, height, crown, seed, mat=0, subdiv=2, clumps=7):
         # Scalloped silhouette: push vertices by a noise field.
         for v in vs:
             n = noise.noise(v.co * (1.6 / max(rad, 0.5)) + Vector((seed, 0, 0)))
-            v.co = c + (v.co - c) * (1.0 + 0.12 * n)
+            # Broken edges: a faster, ridged noise bites leaf-clump notches into the outline (a brush's dabs).
+            n2 = 1.0 - 2.0 * abs(noise.noise(v.co * (5.2 / max(rad, 0.5)) + Vector((0, seed, 3.1))))
+            v.co = c + (v.co - c) * (1.0 + 0.12 * n + 0.07 * n2)
 
 
 def build_trees():

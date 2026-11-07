@@ -19,8 +19,8 @@ export const MAX_PROGRAM_SOURCE_CHARS = 64 * 1024 * 1024;
 export const PROGRAM_SET_FORMAT = 3;
 
 /** How a published world starts (next to the IR's `opening`). */
-export type StartMode = 'play' | 'walkthrough' | 'orbit';
-export const START_MODES: readonly StartMode[] = ['play', 'walkthrough', 'orbit'];
+export type StartMode = 'play' | 'walkthrough' | 'orbit' | 'story';
+export const START_MODES: readonly StartMode[] = ['play', 'walkthrough', 'orbit', 'story'];
 /**
  * Publish kinds: profiles on one cook. The player presents each its own way: `game` (title card, then play),
  * `walkthrough` (eye-level tour of rooms), `showcase` (fly-in, orbit, viewpoints), `city` (street hero view, drone tour).

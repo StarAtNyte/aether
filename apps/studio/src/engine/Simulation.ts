@@ -510,7 +510,9 @@ export class Simulation {
 
   /** Colliders for physics: procedural outputs the renderer already generated (physics falls back to its defaults). */
   readonly colliders: ColliderProvider = (entity: Entity) =>
-    this.renderer.getGeneratorOutput(entity.id)?.colliders ?? (entity.shape.kind === 'asset' ? (assetColliderDescs(entity.shape) ?? undefined) : undefined);
+    entity.shape.kind === 'model' && entity.physics?.collider === 'trimesh'
+      ? this.renderer.modelColliders(entity.id)
+      : (this.renderer.getGeneratorOutput(entity.id)?.colliders ?? (entity.shape.kind === 'asset' ? (assetColliderDescs(entity.shape) ?? undefined) : undefined));
 
   // ---------------------------------------------------------------------------
   // Edit-mode world sync

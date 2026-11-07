@@ -63,8 +63,10 @@ export function resolveLook(spec: CharacterSpec | CharacterSpecInput | undefined
   }
   let body = s.body ? castById(s.body) : undefined;
   if (!body) {
-    const pool = CAST.filter((c) => !s.gender || c.gender === s.gender);
-    const candidates = pool.length > 0 ? pool : CAST;
+    // Toon bodies are a deliberate choice (named), never a random passer-by.
+    const realistic = CAST.filter((c) => c.style !== 'toon');
+    const pool = realistic.filter((c) => !s.gender || c.gender === s.gender);
+    const candidates = pool.length > 0 ? pool : realistic;
     const scored = candidates.map((c) => {
       let score = 0;
       if (age) score += c.traits.age === age ? 4 : age === 'adult' && c.traits.age !== 'old' ? 1 : 0;
@@ -171,6 +173,7 @@ export function lookFromText(text: string): CharacterSpecInput | null {
   else if (/\b(young|youth|teen|teenage|student|boy|girl|lad)\b/.test(t)) out.age = 'young';
   const mood = words.map((w) => MOOD_WORDS[w]).find((m) => m !== undefined);
   if (mood) out.mood = mood;
+  if (/\b(anime|kaho)\b/.test(t)) out.body = 'kaho';
   for (let i = 0; i < words.length; i++) {
     const w = words[i] as string;
     if ((w === 'with' || w === 'holding' || w === 'carrying') && i + 1 < words.length) {

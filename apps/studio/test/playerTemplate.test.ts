@@ -90,7 +90,7 @@ describe('template publish settings', () => {
     expect(Object.keys(TEMPLATE_PUBLISH).sort()).toEqual([...slugs].sort());
     for (const e of SHOWCASE) {
       const p = templatePublish(e.slug, e.kind);
-      expect(['play', 'walkthrough', 'orbit']).toContain(p.startMode);
+      expect(['play', 'walkthrough', 'orbit', 'story']).toContain(p.startMode);
       expect(['game', 'walkthrough', 'showcase', 'city', 'vr']).toContain(p.profile);
       // Games start as games; a city with a game goal keeps its city profile for its explore mode.
       if (e.kind === 'game') expect(p, e.slug).toEqual({ startMode: 'play', profile: e.slug === 'neon-rain-city' ? 'city' : 'game' });
@@ -99,6 +99,7 @@ describe('template publish settings', () => {
     expect(templatePublish('lisbon-hills')).toEqual({ startMode: 'orbit', profile: 'city' });
     expect(templatePublish('neon-rain-city')).toEqual({ startMode: 'play', profile: 'city' });
     expect(templatePublish('cliff-sanctuary')).toEqual({ startMode: 'orbit', profile: 'showcase' });
+    expect(templatePublish('cloudwatch-harbour')).toEqual({ startMode: 'story', profile: 'showcase' });
     expect(templatePublish('not-a-template', 'architecture')).toEqual(publishForKind('architecture'));
     expect(templatePublish('constructor')).toEqual(publishForKind(undefined));
   });

@@ -45,6 +45,32 @@ RAMP = {
     "t_shadow": 0.30, "w_shadow": 0.06, "t_lit": 0.62, "w_lit": 0.04,
 }
 
+# Painterly finish (shared with the bake): brush strokes in the albedo and a broken terminator. Both are noise in world
+# position (metres), so the EEVEE stills and the bake agree whatever object a surface was joined into.
+BRUSH = {
+    "scale": 0.55,        # stroke noise frequency, per metre (strokes about 1-2 m long)
+    "stretch": 4.5,       # strokes run level: the noise is squeezed this much vertically
+    "value": 0.08,        # albedo value swing across a stroke (x 1 -/+ value/2)
+    "warm": "#fff1dc",    # tint of the light strokes
+    "cool": "#e4e2f6",    # tint of the dark strokes
+    "edge": 0.09,         # terminator break: light +/- edge/2 before the toon ramp
+    "edge_scale": 0.9,
+}
+
+# Atmospheric perspective (shared with the bake): surfaces far from the town (the ridges, the headlands, the forest beyond
+# the cove) take on a blue-lavender haze, mixed over the shaded colour by horizontal distance from the town's middle.
+HAZE = {"col": "#a9b0dc", "max": 0.62, "d0": 50.0, "d1": 450.0, "pow": 0.85, "centre": (0.0, 55.0)}
+
+
+def haze_np(x, y):
+    """The haze factor at world positions (arrays): the numpy twin of haze_socket."""
+    import numpy as np
+    h = HAZE
+    d = np.hypot(np.asarray(x) - h["centre"][0], np.asarray(y) - h["centre"][1])
+    t = np.clip((d - h["d0"]) / (h["d1"] - h["d0"]), 0.0, 1.0)
+    return h["max"] * np.power(t, h["pow"])
+
+
 # ---------------------------------------------------------------------------------------------------------------- terrain profile
 
 # (y_start, z) of each terrace; transitions between terraces are 2 x rise deep (the stair's own slope, 0.16 / 0.32).
@@ -253,7 +279,102 @@ def _ramp_node(nt, x, y):
     return ramp
 
 
-def toon_material(name, base, var=None, noise_scale=1.5, var_amount=0.35, emission=None, emission_strength=0.0, stripes=None, line=False):
+def _world_pos(nt):
+    geo = nt.nodes.new("ShaderNodeNewGeometry")
+    return geo.outputs["Position"]
+
+
+def _stretched_noise(nt, pos, scale, stretch, detail=4.0, rough=0.55, distort=0.3):
+    mp = nt.nodes.new("ShaderNodeMapping")
+    mp.inputs["Scale"].default_value = (1.0, 1.0, stretch)
+    nt.links.new(pos, mp.inputs[0])
+    nz = nt.nodes.new("ShaderNodeTexNoise")
+    nz.inputs["Scale"].default_value = scale
+    nz.inputs["Detail"].default_value = detail
+    nz.inputs["Roughness"].default_value = rough
+    nz.inputs["Distortion"].default_value = distort
+    nt.links.new(mp.outputs[0], nz.inputs["Vector"])
+    return nz.outputs["Fac"]
+
+
+def brush_edge_socket(nt):
+    """Terminator break noise, 0..1 (world space): the bake's aux pass emits the same graph."""
+    return _stretched_noise(nt, _world_pos(nt), BRUSH["edge_scale"], 1.8, detail=6.0, rough=0.7, distort=1.4)
+
+
+def haze_socket(nt):
+    """Haze factor (world space) as a node socket, the twin of haze_np."""
+    h = HAZE
+    sep = nt.nodes.new("ShaderNodeSeparateXYZ")
+    nt.links.new(_world_pos(nt), sep.inputs[0])
+    comb = nt.nodes.new("ShaderNodeCombineXYZ")
+    for i in (0, 1):
+        sm = nt.nodes.new("ShaderNodeMath")
+        sm.operation = "SUBTRACT"
+        nt.links.new(sep.outputs[i], sm.inputs[0])
+        sm.inputs[1].default_value = h["centre"][i]
+        nt.links.new(sm.outputs[0], comb.inputs[i])
+    ln = nt.nodes.new("ShaderNodeVectorMath")
+    ln.operation = "LENGTH"
+    nt.links.new(comb.outputs[0], ln.inputs[0])
+    mr = nt.nodes.new("ShaderNodeMapRange")
+    mr.inputs["From Min"].default_value = h["d0"]
+    mr.inputs["From Max"].default_value = h["d1"]
+    mr.clamp = True
+    nt.links.new(ln.outputs["Value"], mr.inputs["Value"])
+    pw = nt.nodes.new("ShaderNodeMath")
+    pw.operation = "POWER"
+    nt.links.new(mr.outputs["Result"], pw.inputs[0])
+    pw.inputs[1].default_value = h["pow"]
+    mu = nt.nodes.new("ShaderNodeMath")
+    mu.operation = "MULTIPLY"
+    nt.links.new(pw.outputs[0], mu.inputs[0])
+    mu.inputs[1].default_value = h["max"]
+    return mu.outputs[0]
+
+
+def _brush_albedo(nt, albedo_socket, amount):
+    """Brush strokes over a painted albedo: long level strokes a little lighter and warmer or darker and cooler, with a
+    finer dry-brush grain inside them."""
+    b = BRUSH
+    pos = _world_pos(nt)
+    big = _stretched_noise(nt, pos, b["scale"], b["stretch"])
+    fine = _stretched_noise(nt, pos, b["scale"] * 6.0, b["stretch"] * 1.6, detail=3.0, rough=0.5, distort=0.4)
+    mix_n = nt.nodes.new("ShaderNodeMix")
+    mix_n.data_type = "FLOAT"
+    mix_n.inputs["Factor"].default_value = 0.3
+    nt.links.new(big, mix_n.inputs[2])
+    nt.links.new(fine, mix_n.inputs[3])
+    st = nt.nodes.new("ShaderNodeMapRange")
+    st.inputs["From Min"].default_value = 0.36
+    st.inputs["From Max"].default_value = 0.64
+    st.interpolation_type = "SMOOTHSTEP"
+    nt.links.new(mix_n.outputs[0], st.inputs["Value"])
+    k = amount
+    c0, c1 = srgb(b["cool"]), srgb(b["warm"])
+    tint = nt.nodes.new("ShaderNodeMix")
+    tint.data_type = "RGBA"
+    nt.links.new(st.outputs["Result"], tint.inputs["Factor"])
+    tint.inputs[6].default_value = tuple(1.0 + (c - 1.0) * k for c in c0[:3]) + (1.0,)
+    tint.inputs[7].default_value = tuple(1.0 + (c - 1.0) * k for c in c1[:3]) + (1.0,)
+    val = nt.nodes.new("ShaderNodeMapRange")
+    val.inputs["To Min"].default_value = 1.0 - b["value"] * k / 2
+    val.inputs["To Max"].default_value = 1.0 + b["value"] * k / 2
+    nt.links.new(st.outputs["Result"], val.inputs["Value"])
+    m1 = nt.nodes.new("ShaderNodeMix")
+    m1.data_type = "RGBA"
+    m1.blend_type = "MULTIPLY"
+    m1.inputs["Factor"].default_value = 1.0
+    nt.links.new(albedo_socket, m1.inputs[6])
+    nt.links.new(tint.outputs[2], m1.inputs[7])
+    m2 = nt.nodes.new("ShaderNodeVectorMath")
+    m2.operation = "SCALE"
+    nt.links.new(m1.outputs[2], m2.inputs[0])
+    nt.links.new(val.outputs["Result"], m2.inputs["Scale"])
+    return m2.outputs[0]
+
+
+def toon_material(name, base, var=None, noise_scale=1.5, var_amount=0.35, emission=None, emission_strength=0.0, stripes=None, line=False, brush=1.0):
     """A cel-shaded material: diffuse light -> toon bands -> times a painted albedo, drawn as emission (EEVEE).
 
     The node named ALBEDO is the painted base colour; the bake reads it. `var` is a second colour mixed in by a soft noise
@@ -331,6 +452,8 @@ def toon_material(name, base, var=None, noise_scale=1.5, var_amount=0.35, emissi
         nt.links.new(albedo_socket, mix2.inputs[6])
         nt.links.new(srgb_line.outputs[0], mix2.inputs[7])
         albedo_socket = mix2.outputs[2]
+    if brush > 0 and emission is None:
+        albedo_socket = _brush_albedo(nt, albedo_socket, brush)
     alb = nt.nodes.new("NodeReroute")
     alb.name = "ALBEDO"
     alb.label = "ALBEDO"
@@ -355,8 +478,17 @@ def toon_material(name, base, var=None, noise_scale=1.5, var_amount=0.35, emissi
         bw = nt.nodes.new("ShaderNodeRGBToBW")
         bw.location = (50, -200)
         nt.links.new(s2r.outputs["Color"], bw.inputs[0])
+        # Broken terminator: the light is nudged by a brush noise before the ramp, so band edges wander like a brush.
+        en = nt.nodes.new("ShaderNodeMapRange")
+        en.inputs["To Min"].default_value = -BRUSH["edge"] / 2
+        en.inputs["To Max"].default_value = BRUSH["edge"] / 2
+        nt.links.new(brush_edge_socket(nt), en.inputs["Value"])
+        lb = nt.nodes.new("ShaderNodeMath")
+        lb.operation = "ADD"
+        nt.links.new(bw.outputs[0], lb.inputs[0])
+        nt.links.new(en.outputs["Result"], lb.inputs[1])
         ramp = _ramp_node(nt, 200, -200)
-        nt.links.new(bw.outputs[0], ramp.inputs[0])
+        nt.links.new(lb.outputs[0], ramp.inputs[0])
         mul = nt.nodes.new("ShaderNodeMix")
         mul.data_type = "RGBA"
         mul.blend_type = "MULTIPLY"
@@ -364,9 +496,15 @@ def toon_material(name, base, var=None, noise_scale=1.5, var_amount=0.35, emissi
         mul.location = (450, 0)
         nt.links.new(alb.outputs[0], mul.inputs[6])
         nt.links.new(ramp.outputs["Color"], mul.inputs[7])
+        # Atmospheric perspective over the shaded colour.
+        hz = nt.nodes.new("ShaderNodeMix")
+        hz.data_type = "RGBA"
+        nt.links.new(haze_socket(nt), hz.inputs["Factor"])
+        nt.links.new(mul.outputs[2], hz.inputs[6])
+        hz.inputs[7].default_value = srgb(HAZE["col"])
         em = nt.nodes.new("ShaderNodeEmission")
         em.location = (650, 0)
-        nt.links.new(mul.outputs[2], em.inputs["Color"])
+        nt.links.new(hz.outputs[2], em.inputs["Color"])
         nt.links.new(em.outputs[0], out.inputs[0])
     m["cw_base"] = base
     _mats[name] = m

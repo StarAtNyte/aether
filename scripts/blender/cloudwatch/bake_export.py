@@ -61,8 +61,10 @@ PIECES = {
     # baked to nothing (black).
     "shrine": {"match": lambda n: n in ("shrine_hall", "shrine_gate"), "tex": 1024},
     "infra": {"match": lambda n: n in ("stair", "lookout", "harbour", "lighthouse", "railway", "crossing", "poles_wires") or n.startswith("tunnel_portal"), "tex": 2048},
-    "props": {"match": lambda n: n.startswith(("stone_lantern", "stair_lantern", "vending", "bicycle", "laundry", "sign_", "boat_")) or n in ("pots", "ac_units", "mailbox", "roof_gear"), "tex": 2048},
+    "props": {"match": lambda n: n.startswith(("stone_lantern", "stair_lantern", "vending", "bicycle", "laundry", "sign_", "boat_", "pots")) or n in ("ac_units", "mailbox", "roof_gear"), "tex": 2048},
     "people": {"match": lambda n: n.startswith("person_"), "tex": 1024},
+    # The train (extras.py): baked over the open sea, unhazed, moved to its rest just inside the east tunnel.
+    "train": {"match": lambda n: n == "train", "tex": 1024, "haze": False},
 }
 VERTEX_PIECES = {
     "trees": {"match": lambda n: n in ("trees_town", "hedges")},
@@ -150,6 +152,46 @@ def bake_variant(mat, image=None):
     return m
 
 
+_aux_mat = None
+
+
+def aux_material(image):
+    """Emits (terminator break noise, haze factor, 0): the world-space terms of the toon material the light and albedo
+    bakes do not carry (the same node graphs as common.toon_material)."""
+    global _aux_mat
+    from common import brush_edge_socket, haze_socket
+    if _aux_mat is None:
+        m = bpy.data.materials.new("cw_aux__bake")
+        m.use_nodes = True
+        nt = m.node_tree
+        for n in list(nt.nodes):
+            nt.nodes.remove(n)
+        out = nt.nodes.new("ShaderNodeOutputMaterial")
+        comb = nt.nodes.new("ShaderNodeCombineColor")
+        nt.links.new(brush_edge_socket(nt), comb.inputs[0])
+        nt.links.new(haze_socket(nt), comb.inputs[1])
+        comb.inputs[2].default_value = 0.0
+        em = nt.nodes.new("ShaderNodeEmission")
+        nt.links.new(comb.outputs[0], em.inputs["Color"])
+        nt.links.new(em.outputs[0], out.inputs[0])
+        tex = nt.nodes.new("ShaderNodeTexImage")
+        nt.nodes.active = tex
+        _aux_mat = m
+    tex = next(n for n in _aux_mat.node_tree.nodes if n.type == "TEX_IMAGE")
+    tex.image = image
+    _aux_mat.node_tree.nodes.active = tex
+    return _aux_mat
+
+
+def finish_np(Al, Lb, aux):
+    """The toon material's colour from the baked terms: albedo x ramp(light + terminator break), hazed with distance."""
+    from common import BRUSH, HAZE
+    Lb = Lb + (aux[..., 0] - 0.5) * BRUSH["edge"]
+    col = Al * ramp_np(Lb)
+    hz = np.clip(aux[..., 1], 0.0, 1.0)[..., None]
+    return col * (1 - hz) + np.array(srgb(HAZE["col"])[:3]) * hz
+
+
 def write_png(path, rgb01):
     """Write an (H, W, 3) array in 0..1 (top row last, Blender's order) as an 8-bit PNG and load it as an image."""
     import struct
@@ -205,15 +247,28 @@ def unlit_color_material(name, hexcol=None, attribute=None):
 _emit_cache = {}
 
 
+# Lamps, lanterns, lit windows, vending machines and the lighthouse: the runtime switches these on at dusk by scaling
+# their emissive intensity, so they export as `practical_<name>` (a runtime looks them up by that prefix). Their base
+# colour is the unlit glass, paper or bulb (a dim, greyed version of the glow), so "off" reads as an unlit lamp, not a hole.
+PRACTICALS = {"window_lit", "lantern_paper", "lantern_glow", "vend_front", "vend_rows", "lighthouse_lamp", "lamp_glow"}
+
+
+def _off_colour(hexcol):
+    c = srgb(hexcol)
+    g = (c[0] + c[1] + c[2]) / 3
+    return tuple((0.55 * x + 0.45 * g) * 0.32 for x in c[:3]) + (1.0,)
+
+
 def emissive_export_material(src):
-    """A Principled material with a dark base and the source's emission (glTF emissive + emissive_strength)."""
+    """A Principled material with an unlit-glass base and the source's emission (glTF emissive + emissive_strength)."""
     if src.name in _emit_cache:
         return _emit_cache[src.name]
-    m = bpy.data.materials.new(src.name + "__emit")
+    practical = src.name.split(".")[0] in PRACTICALS
+    m = bpy.data.materials.new(("practical_" + src.name) if practical else (src.name + "__emit"))
     m.use_nodes = True
     nt = m.node_tree
     bsdf = nt.nodes.get("Principled BSDF")
-    bsdf.inputs["Base Color"].default_value = (0.02, 0.02, 0.02, 1)
+    bsdf.inputs["Base Color"].default_value = _off_colour(src["cw_emissive"]) if practical else (0.02, 0.02, 0.02, 1)
     bsdf.inputs["Emission Color"].default_value = srgb(src["cw_emissive"])
     bsdf.inputs["Emission Strength"].default_value = float(src.get("cw_emissive_strength", 2.0))
     bsdf.inputs["Roughness"].default_value = 1.0
@@ -365,9 +420,10 @@ def outline_after(ob, width_of):
     mod.use_flip_normals = True
     mod.use_rim = False
     mod.material_offset = len(me.materials) - 1
-    vg = ob.vertex_groups.get("cw_outline")
-    if vg is not None:
-        mod.vertex_group = vg.name
+    from finish import WOBBLE_MAX, wobble_group
+    mod.vertex_group = wobble_group(ob, width_of).name
+    mod.thickness = width_of * WOBBLE_MAX
+    mod.thickness_vertex_group = 0.0
     select_only([ob])
     bpy.ops.object.modifier_apply(modifier=mod.name)
 
@@ -413,6 +469,18 @@ def atlas_piece(key, spec):
     for i, m in enumerate(srcs):
         j.data.materials[i] = bake_variant(m, albedo)
     run_bake(j, "DIFFUSE", {"COLOR"})
+    aux = bake_image(f"{key}_aux", size)
+    am = aux_material(aux)
+    for i in range(len(srcs)):
+        j.data.materials[i] = am
+    sc = bpy.context.scene
+    keep_samples = sc.cycles.samples
+    sc.cycles.samples = 4  # emission only: a few samples anti-alias it
+    run_bake(j, "EMIT", set())
+    sc.cycles.samples = keep_samples
+    AX = image_np(aux)[..., :3]
+    if spec.get("haze") is False:
+        AX[..., 1] = 0.0
     L = image_np(light)[..., :3]
     Al = image_np(albedo)[..., :3]
     if thin:
@@ -422,7 +490,7 @@ def atlas_piece(key, spec):
         Av = bake_vertex(j, {"COLOR"}, "cw_albedo_v")
     print(f"AETHER_STATS {key} light mean={float(np.nanmean(L)):.4f} max={float(np.nanmax(L)):.4f} albedo mean={float(np.nanmean(Al)):.4f} nan={int(np.isnan(L).sum())}", flush=True)
     Lb = blur(lum(L), 1)
-    final = Al * ramp_np(Lb)
+    final = finish_np(Al, Lb, AX)
     if thin:
         # One colour per thin island (vertex light through the same ramp, times vertex albedo) in a 2 x 2 texel block of
         # the palette band, and the island's UVs on the block's centre.
@@ -430,6 +498,14 @@ def atlas_piece(key, spec):
         if len(thin) > per * (PALETTE_ROWS // 2):
             raise RuntimeError(f"{key}: {len(thin)} thin islands do not fit the palette")
         lv = lum(Lv)
+        from common import haze_np
+        me = j.data
+        vco = np.empty(len(me.vertices) * 3, np.float32)
+        me.vertices.foreach_get("co", vco)
+        vco = vco.reshape(-1, 3)
+        lvi = np.empty(len(me.loops), np.int32)
+        me.loops.foreach_get("vertex_index", lvi)
+        hz_loop = haze_np(vco[lvi, 0], vco[lvi, 1]) * (0.0 if spec.get("haze") is False else 1.0)
         uv = np.empty(len(j.data.loops) * 2, np.float32)
         j.data.uv_layers["bake"].data.foreach_get("uv", uv)
         uv = uv.reshape(-1, 2)
@@ -438,7 +514,8 @@ def atlas_piece(key, spec):
             col = 2 * (n % per)
             # The upper part of the island's corner light: corners where it meets other geometry are occluded.
             li = np.percentile(lv[loops], 70)
-            final[row:row + 2, col:col + 2] = Av[loops].mean(axis=0) * ramp_np(np.array([li]))[0]
+            aux1 = np.array([[0.5, float(hz_loop[loops].mean()), 0.0]], np.float32)
+            final[row:row + 2, col:col + 2] = finish_np(Av[loops].mean(axis=0)[None], np.array([li]), aux1)[0]
             uv[loops] = ((col + 1) / size, (row + 1) / size)
         j.data.uv_layers["bake"].data.foreach_set("uv", uv.reshape(-1))
     # Linear -> sRGB for an 8-bit texture.
@@ -479,7 +556,12 @@ def vertex_piece(key, obs, decimate=None):
     me.color_attributes["cw_albedo"].data.foreach_get("color", alb)
     light = light.reshape(-1, 4)[:, :3]
     alb = alb.reshape(-1, 4)[:, :3]
-    col = alb * ramp_np(lum(light))
+    from common import haze_np
+    vco = np.empty(len(me.vertices) * 3, np.float32)
+    me.vertices.foreach_get("co", vco)
+    vco = vco.reshape(-1, 3)
+    aux = np.stack([np.full(len(vco), 0.5, np.float32), haze_np(vco[:, 0], vco[:, 1]), np.zeros(len(vco), np.float32)], axis=1)
+    col = finish_np(alb, lum(light), aux)
     fin = me.color_attributes.new("cw_color", "BYTE_COLOR", "POINT")
     rgba = np.concatenate([col, np.ones((len(col), 1), np.float32)], axis=1)
     fin.data.foreach_set("color", rgba.astype(np.float32).ravel())
@@ -747,6 +829,130 @@ def glitter_export(report):
     print(f"AETHER_EXPORT glitter tris={tris} bytes={os.path.getsize(path)}", flush=True)
 
 
+BIRD_LOOP = 16.0  # seconds: one circuit of the flock and one wing pattern
+BIRD_CENTRE = Vector((12.0, -78.0, 0.0))  # over the harbour mouth
+
+
+def _vc_mesh(name, verts, faces, cols):
+    """A mesh with one colour per face corner from per-vertex colours (sRGB hex), for the unlit vertex-colour material."""
+    me = bpy.data.meshes.new(name)
+    me.from_pydata(verts, [], faces)
+    me.update()
+    at = me.color_attributes.new("cw_color", "BYTE_COLOR", "POINT")
+    rgba = []
+    for c in cols:
+        rgba += list(srgb(c))
+    at.data.foreach_set("color", rgba)
+    me.color_attributes.active_color = at
+    return me
+
+
+def _gull_meshes():
+    """Body (+x forward) and a left wing (+y out, root at the origin) of a gull, 1.5 m span, in painted flat colours."""
+    from common import _ico_template
+    tv, tf = _ico_template(1)
+    bv, bc = [], []
+    for p in tv:
+        x, y, z = p.x * 0.27, p.y * 0.085, p.z * 0.085
+        if x > 0.12:  # the head sits a little up, the tail tapers flat
+            z += 0.03 * (x - 0.12) / 0.15
+        if x < -0.1:
+            y *= 0.6
+            z *= 0.45
+        bv.append((x, y, z))
+        bc.append("#fff1e2" if p.z > -0.2 else "#b4aed2")  # sunlit back, lavender belly
+    body = _vc_mesh("gull_body", bv, [tuple(f) for f in tf], bc)
+    # The wing: an inner panel and a swept, tapered outer panel with a dark tip.
+    wv = [(0.10, 0.0, 0.0), (-0.12, 0.0, 0.0), (-0.16, 0.36, 0.02), (0.07, 0.36, 0.02), (-0.30, 0.75, -0.02), (-0.12, 0.72, -0.01)]
+    wf = [(0, 1, 2, 3), (3, 2, 4, 5)]
+    wc = ["#ece9f0", "#d2d0e0", "#c6c4d8", "#e4e1ec", "#2f2a35", "#3a3442"]
+    wing = _vc_mesh("gull_wing", wv, wf, wc)
+    return body, wing
+
+
+def birds_export(report):
+    """A flock of twelve gulls circling over the harbour, one looping clip: each bird flies a circle (its own radius,
+    height and phase, a gentle bob, banked into the turn) once per BIRD_LOOP, flapping in bursts between glides (the
+    wings are child nodes keyed about their roots). One unlit vertex-colour material, double-sided."""
+    import random
+    sc = bpy.context.scene
+    fps = 24
+    sc.render.fps = fps
+    n_frames = int(BIRD_LOOP * fps)
+    sc.frame_start = 0
+    sc.frame_end = n_frames
+    mat = unlit_color_material("vc_birds", attribute="cw_color")
+    mat.use_backface_culling = False
+    body_me, wing_me = _gull_meshes()
+    body_me.materials.append(mat)
+    wing_me.materials.append(mat)
+    r = random.Random(41)
+    parts = []
+    for i in range(12):
+        rad = r.uniform(16.0, 38.0)
+        alt = r.uniform(14.0, 30.0)
+        phase = (i // 4) * 2.1 + r.uniform(-0.35, 0.35)  # three loose groups
+        bob = r.uniform(0.6, 1.6)
+        scale = r.uniform(0.9, 1.15)
+        flap_on = r.uniform(0.0, BIRD_LOOP)
+        body = bpy.data.objects.new(f"gull_{i}", body_me)
+        sc.collection.objects.link(body)
+        body.scale = (scale, scale, scale)
+        body.rotation_mode = "XYZ"
+        wings = []
+        for side in (1, -1):
+            w = bpy.data.objects.new(f"gull_{i}_wing_{'l' if side > 0 else 'r'}", wing_me)
+            sc.collection.objects.link(w)
+            w.parent = body
+            w.location = (0.0, side * 0.05, 0.03)
+            w.scale = (1.0, side, 1.0)
+            w.rotation_mode = "XYZ"
+            wings.append((w, side))
+        body.animation_data_create()
+        body.animation_data.action = bpy.data.actions.new(f"gull_{i}_fly")
+        for w, _ in wings:
+            w.animation_data_create()
+            w.animation_data.action = bpy.data.actions.new(f"{w.name}_flap")
+        for fr in range(0, n_frames + 1):
+            t = fr / fps
+            th = phase + 2 * math.pi * t / BIRD_LOOP
+            p = BIRD_CENTRE + Vector((math.cos(th) * rad, math.sin(th) * rad * 0.7, alt + bob * math.sin(2 * th + i)))
+            body.location = p
+            # Heading along the circle (counter-clockwise), banked into the turn, nose a little down when it bobs down.
+            vx, vy = -math.sin(th) * rad, math.cos(th) * rad * 0.7
+            body.rotation_euler = (math.radians(-18.0), -0.15 * math.cos(2 * th + i), math.atan2(vy, vx))
+            body.keyframe_insert("location", frame=fr)
+            body.keyframe_insert("rotation_euler", frame=fr)
+            # Flap in bursts: a smooth envelope over a 6 s burst in each loop, glides between; 0.5 s a beat.
+            u = ((t - flap_on) % BIRD_LOOP) / 6.0
+            env = math.sin(math.pi * u) ** 0.5 if u < 1.0 else 0.0
+            ang = math.radians(7.0) + env * math.radians(30.0) * math.sin(2 * math.pi * t / 0.5 + i)
+            for w, side in wings:
+                w.rotation_euler = (side * ang, 0.0, 0.0)
+                w.keyframe_insert("rotation_euler", frame=fr)
+        parts.append(body)
+        parts += [w for w, _ in wings]
+    sc.frame_set(0)  # the nodes' rest transforms (and the bounds the model loader centres on) are the loop's first frame
+    select_only(parts)
+    path = os.path.join(A.out, "birds.glb")
+    bpy.ops.export_scene.gltf(
+        filepath=path, export_format="GLB", use_selection=True, export_apply=False, export_yup=True,
+        export_texcoords=False, export_normals=False, export_tangents=False, export_materials="EXPORT",
+        export_vertex_color="MATERIAL", export_cameras=False, export_lights=False, export_extras=False,
+        export_animations=True, export_animation_mode="ACTIVE_ACTIONS", export_force_sampling=True,
+        export_frame_range=True,
+    )
+    # Bounds at frame 0 in glTF coordinates (what the loader centres on; the clip moves the nodes from there).
+    sc.frame_set(0)
+    pts = [tuple(ob.matrix_world @ v.co) for ob in parts for v in ob.data.vertices]
+    co = np.asarray(pts, np.float32)
+    g = np.stack([co[:, 0], co[:, 2], -co[:, 1]], axis=1)
+    g_lo, g_hi = g.min(axis=0), g.max(axis=0)
+    tris = 12 * (len(body_me.polygons) + 2 * 4)
+    report["birds"] = {"file": "birds.glb", "bytes": os.path.getsize(path), "triangles": tris, "min": g_lo.tolist(), "max": g_hi.tolist()}
+    print(f"AETHER_EXPORT birds tris={tris} bytes={os.path.getsize(path)}", flush=True)
+
+
 def scale_about_eye(ob):
     from sky import EYE
     for v in ob.data.vertices:
@@ -857,7 +1063,10 @@ def main():
     setup_cycles()
     report = {}
     want = (lambda k: ONLY is None or k in ONLY)
-    widths = {"town": 0.06, "shrine": 0.035, "infra": 0.03, "props": 0.014, "people": 0.012}
+    widths = {"town": 0.06, "shrine": 0.035, "infra": 0.03, "props": 0.014, "people": 0.012, "train": 0.03}
+    if want("train"):
+        import extras
+        extras.build_train()
     for key, spec in PIECES.items():
         if not want(key):
             continue
@@ -866,7 +1075,14 @@ def main():
             continue
         if key in widths:
             outline_after(j, widths[key])
+        if key == "train":
+            import extras
+            off = extras.rest_offset()
+            for v in j.data.vertices:
+                v.co += off
         export_glb(j, key, report)
+    if want("birds"):
+        birds_export(report)
     if want("trees"):
         obs = [o for o in bpy.data.objects if VERTEX_PIECES["trees"]["match"](o.name)]
         j = vertex_piece("trees", obs, decimate=0.45)

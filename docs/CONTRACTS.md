@@ -1652,6 +1652,14 @@ floor plan (draw a room, add a door, undo) → walk in through the front door
   preset factor, no eye adaptation or trim), and `animeEffects()` drops AO, GI, contact shadows, SSR, sun shafts,
   aberration and grain from the tier's effects (bloom, halation, TAA and the vignette stay). First user: Cloudwatch Harbour
   (`docs/worlds/CLOUDWATCH_HARBOUR.md`).
+- `Environment.look.satsuei?` (additive, read only by `style: 'anime'`): `diffusion`, `godRays`, `flare`, `dust`, `grain`,
+  `chroma`, `gradientAmount`, `letterbox` in 0..1, `gradientTop` / `gradientBottom` `#rrggbb`, `sunDirection` Vec3; renderer
+  defaults in `SATSUEI_DEFAULTS` (`gpu/satsuei.ts`). `animeEffects()` adds `PostEffects.satsuei` (optional; its key gains an
+  `s`, realistic keys unchanged) whenever the composite runs. `WorldRenderer.setShotGrade(g: ShotGrade | null)` (uniforms
+  only, never builds or links a program; null = the world's defaults): `exposureEv` (added), `saturation` / `contrast`
+  (multiplied), `temperature` (added), `bloom` (multiplies the world's), the layer's amounts and gradient, `vignette`
+  (absolute), `practicals` (0..1 on the authored `emissiveIntensity` of emissive model materials but sun, moon, sky and glitter
+  ones), `letterbox`. `resolveSatsuei(look, shot, { lowTier, tiled })` is the pure resolution.
 - Room description (`@aether/arch/photo`): beds gain `headboardStyle` (slab, panel, tufted, slats), `pattern` (plain, floral,
   stripe, damask), `canopy` and `canopyHeight`; nightstands gain `style` (cabinet, round, wire), `height`, `diameter`; plants
   gain the `palm` species. `applyReality` repairs implausible numbers of a description (and reports them as fixes).

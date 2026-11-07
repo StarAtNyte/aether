@@ -211,16 +211,16 @@ def build_glitter():
     the browser (the export keys their visibility)."""
     from sky import EYE, SUN_AZ
     r = rng(77)
-    mat = toon_material("glitter", P["glitter"], emission="#fff0c8", emission_strength=3.2)
-    mat_hot = toon_material("glitter_hot", P["glitter"], emission="#fff6e0", emission_strength=5.0)
+    mat = toon_material("glitter", P["glitter"], emission="#fff0c8", emission_strength=3.6)
+    mat_hot = toon_material("glitter_hot", P["glitter"], emission="#fffaf0", emission_strength=5.0)
     groups = [bmesh.new() for _ in range(4)]
     az0 = math.radians(SUN_AZ)
     n = 0
     tries = 0
-    while n < 1400 and tries < 20000:
+    while n < 2300 and tries < 40000:
         tries += 1
         d = math.exp(r.uniform(math.log(70.0), math.log(2150.0)))
-        width = math.radians(2.2 + 7.0 * (1.0 - min(1.0, d / 1200.0)) ** 2)
+        width = math.radians(2.8 + 8.5 * (1.0 - min(1.0, d / 1200.0)) ** 2)
         off = r.gauss(0.0, width * 0.5)
         if abs(off) > width * 1.4:
             continue
@@ -230,7 +230,7 @@ def build_glitter():
             continue
         core = max(0.0, 1.0 - abs(off) / (width * 1.2))
         # Lengths along the view's tangent, thickness toward the eye sized so a streak stays a fine line on screen.
-        length = d * r.uniform(0.004, 0.011) * (0.5 + core)
+        length = d * r.uniform(0.004, 0.012) * (0.5 + core)
         thick = min(0.0011 * d * d / EYE.z * r.uniform(0.6, 1.2), d * 0.08) + 0.05
         tx, ty = math.cos(a), -math.sin(a)
         fx, fy = math.sin(a), math.cos(a)
@@ -239,7 +239,7 @@ def build_glitter():
         vs = [bm.verts.new((x + tx * sx * length / 2 + fx * sy * thick / 2, y + ty * sx * length / 2 + fy * sy * thick / 2, z))
               for (sx, sy) in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
         f = bm.faces.new(vs)
-        f.material_index = 1 if (core > 0.55 and r.random() < 0.5) else 0
+        f.material_index = 1 if (core > 0.45 and r.random() < 0.6) else 0
         n += 1
     obs = []
     for i, bm in enumerate(groups):

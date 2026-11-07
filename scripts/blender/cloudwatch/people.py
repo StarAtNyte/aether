@@ -1063,7 +1063,7 @@ def bench_elder():
 
 
 def build():
-    lookout_girl()
+    # (No static girl at the lookout rail: the world's animated girl walks there and stands at the railing.)
     stair_walker()
     crossing_pair()
     shop_boy()

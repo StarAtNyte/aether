@@ -21,12 +21,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 /** The credit line for the people of a world. `ids` are the cast ids it uses (all when omitted). */
 export function characterCredit(ids?: readonly string[]): Credit {
   const used = ids && ids.length > 0 ? CAST.filter((c) => ids.includes(c.id)) : CAST;
+  // The project's own bodies are not Rocketbox work; they move with Rocketbox's motion set, which is credited here.
+  const own = used.filter((c) => c.style === 'toon');
+  const rocketbox = used.filter((c) => c.style !== 'toon');
   return {
     source: 'Microsoft Rocketbox avatars and animations',
     author: 'Microsoft (Rocketbox Libraries), © 2020 Microsoft',
     licence: 'MIT',
     licenceUrl: 'https://github.com/microsoft/Microsoft-Rocketbox/blob/master/LICENSE.md',
     url: 'https://github.com/microsoft/Microsoft-Rocketbox',
-    assets: used.map((c) => `${c.id} (${c.look})`).sort(),
+    assets: [...rocketbox.map((c) => `${c.id} (${c.look})`), ...(own.length > 0 ? [`${own[0]?.gender ?? 'female'} motion set (animating ${own.map((c) => c.id).join(', ')}, this project's own bodies, MIT)`] : [])].sort(),
   };
 }

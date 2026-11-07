@@ -9,7 +9,7 @@ import bpy
 from mathutils import Vector
 from mathutils.bvhtree import BVHTree
 
-from common import LOOKOUT_Y, P, ROAD_Z, add_box, add_cylinder, add_sphere, bm_object, collection, rng, toon_material
+from common import LOOKOUT_Y, P, ROAD_Z, add_box, add_cylinder, add_sphere, bm_object, collection, profile_z, rng, toon_material
 from form import TRACK_Y, TRACK_Z
 from town import HOUSES
 
@@ -413,7 +413,7 @@ def build_small_props():
             # On the front wall above the door (shot D sees it), unless a balcony is there.
             if h["storeys"] < 2 or any(b["ny"] == -1 and abs(b["x"] - h["door_x"]) < b["len"] / 2 + 1.6 for b in h.get("balconies", [])):
                 continue
-            _sign(f"sign_house_{k}", text, h["door_x"], h["y"] - h["d"] / 2 - 0.03, zs, 0.0, 0.2, bc, ic)
+            _sign(f"sign_house_{k}", text, h["door_x"], h["y"] - h["d"] / 2 - 0.03, zs, 0.0, min(0.3, (h["w"] - 1.0) / (0.6 * len(text))), bc, ic)
         else:
             # On the back wall, facing the lookout; only on a ground block whose back is the lot's back, with no
             # balcony or outdoor unit on that wall.
@@ -422,14 +422,16 @@ def build_small_props():
             if not blk or any(b["ny"] == 1 for b in h.get("balconies", [])) or any(s["ny"] == 1 for s in h.get("ac_spots", [])):
                 continue
             b = blk[0]
-            _sign(f"sign_house_{k}", text, (b[0] + b[1]) / 2, b[3] + 0.03, zs, math.pi, 0.2, bc, ic)
+            _sign(f"sign_house_{k}", text, (b[0] + b[1]) / 2, b[3] + 0.03, zs, math.pi, min(0.42, (b[1] - b[0] - 0.7) / (0.6 * len(text))), bc, ic)
         k += 1
     flats = [h for h in HOUSES if h.get("kind") == "flat" and h.get("deck_ac")]
     if flats:
         h = max(flats, key=lambda q: q["y"])
         b = max(h["blocks"], key=lambda q: q[4])
         # On posts just inside the back parapet, raised above it, facing the lookout.
-        _sign("sign_roof", "HOTEL SHIOSAI", (b[0] + b[1]) / 2, b[3] - 0.3, b[4] + 0.04 + 1.35, math.pi, 0.34, "#f4f1ea", "#c8332b",
+        # Sized to the roof (letters up to 1.5 m, readable from the lookout 60-100 m away).
+        rs_size = max(0.34, min(0.75, (b[1] - b[0] - 0.8) / (0.6 * 13)))
+        _sign("sign_roof", "HOTEL SHIOSAI", (b[0] + b[1]) / 2, b[3] - 0.3, b[4] + 0.04 + 1.0 + rs_size, math.pi, rs_size, "#f4f1ea", "#c8332b",
               base_z=b[4] + 0.04)
     t3 = [h for h in HOUSES if abs(h["z"] - 18.0) < 0.1]
     if t3:
@@ -443,7 +445,40 @@ def build_small_props():
     # Signs: the crossing's notice, the stair's way-marker at the road, the lookout's name board.
     _sign("sign_crossing", "STOP  LOOK  LISTEN", -3.4, TRACK_Y - 3.0, TRACK_Z + 1.6, 0.0, 0.22, "#f4f1ea", "#c8332b", post=True)
     _sign("sign_stair", "LOOKOUT  320 STEPS", 2.6, -23.0, ROAD_Z + 1.9, 0.0, 0.2, "#2f5d5a", "#f4f1ea", post=True)
-    _sign("sign_lookout", "CLOUDWATCH  HILL", -6.0, LOOKOUT_Y[0] + 1.0, 44.0 + 1.75, 0.0, 0.26, "#5a3a2c", "#f4e6c8", post=True)
+    _sign("sign_lookout", "CLOUDWATCH  HILL", -5.2, LOOKOUT_Y[0] + 1.0, 44.0 + 1.9, 0.0, 0.34, "#5a3a2c", "#f4e6c8", post=True)
+    # Along the stair, readable from its steps: a board by the shrine's flight and one at the third terrace's landing.
+    _sign("sign_shrine", "KUMOMI  SHRINE", 2.9, 41.5, profile_z(41.5) + 1.7, 0.0, 0.3, "#f4ecd8", "#c8332b", post=True)
+    _sign("sign_kissa", "KISSA  NAGI", -2.9, 71.0, profile_z(71.0) + 1.6, 0.0, 0.28, "#2f3d66", "#ffcf7a", post=True)
+    lookout_dress()
+
+
+def lookout_dress():
+    """The lookout's own lived-in things: a vending machine glowing at the back of the deck, a street lamp (4.5 m)
+    over the bench end, potted plants by the stair head, a bicycle left against the railing."""
+    deck = 44.0 + 0.05
+    vending_machine("vending_3", 6.4, LOOKOUT_Y[0] + 9.3, 0.0, 1)
+    metal = toon_material("lamp_metal", "#4a4d5a")
+    paper = toon_material("lantern_paper", "#ffd8a0", emission="#ffb25c", emission_strength=3.5)
+    bm = bmesh.new()
+    x, y = -7.2, LOOKOUT_Y[0] + 8.6
+    add_box(bm, (x, y, deck + 0.06), (0.3, 0.3, 0.12), mat_index=0)
+    add_cylinder(bm, (x, y, deck + 0.12), 0.07, 4.3, segments=8, mat_index=0, radius_top=0.05)
+    add_box(bm, (x + 0.35, y, deck + 4.42), (0.8, 0.08, 0.08), mat_index=0)
+    add_box(bm, (x + 0.72, y, deck + 4.36), (0.34, 0.34, 0.06), mat_index=0)  # the hood
+    add_cylinder(bm, (x + 0.72, y, deck + 4.02), 0.12, 0.33, segments=10, mat_index=1, radius_top=0.15)  # the glass
+    ob = bm_object("stair_lantern_lookout", bm, "props", mats=[metal, paper], prop=True, outline=True)
+    ob["cw_line_w"] = 0.016
+    pot_m = [toon_material("pot", "#b5653e"), toon_material("plant", "#4f8a4a", var="#7aa04e", noise_scale=3)]
+    bmp = bmesh.new()
+    r = rng(57)
+    for (px, py) in ((2.0, LOOKOUT_Y[0] + 0.85), (2.6, LOOKOUT_Y[0] + 1.25), (-7.0, LOOKOUT_Y[0] + 7.6)):
+        rr = r.uniform(0.18, 0.26)
+        z = drop_min(px, py, rr, rr)
+        add_cylinder(bmp, (px, py, z - 0.02), rr, rr * 2.0, segments=8, mat_index=0, radius_top=rr * 1.2, cap=False)
+        add_sphere(bmp, (px, py, z + rr * 2.0 + rr * 0.9), rr * 1.55, mat_index=1, subdiv=2, scale=(1, 1, 1.15))
+    ob = bm_object("pots_lookout", bmp, "props", mats=pot_m, prop=True, outline=True)
+    ob["cw_line_w"] = 0.016
+    bicycle("bicycle_3", 4.0, LOOKOUT_Y[0] + 2.4, math.pi + 0.06, 0)
 
 
 def _sign(name, text, x, y, z, yaw, size, board, ink, post=False, vertical=False, base_z=None, bracket=0.0):

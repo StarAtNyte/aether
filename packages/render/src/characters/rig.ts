@@ -15,6 +15,7 @@ import { disposeModelInstance } from '../geometry/model-loader';
 import { buildProp, type Prop } from './props';
 import { buildGear, disposeGear, fitBody, type GearPiece } from './gear';
 import { contactShadow } from './surface';
+import { SpringSystem, type ColliderDef, type SpringChainDef } from './springs';
 import { airPoseOf, ArmSpring, jumpArmTarget, jumpClipPhase, landKeep, PELVIS_ABOVE_SEAT, seatBlendOf } from './motion';
 
 /** Foot of a footstep event. */
@@ -37,6 +38,8 @@ export interface RigOptions {
   onFootstep?: (foot: Foot, speed: number, rig: CharacterRig) => void;
   /** Called when the held prop changes (null: nothing held, or the rig was disposed); effects attach to `prop.flame`. */
   onProp?: (prop: Prop | null, rig: CharacterRig) => void;
+  /** A toon body: its spring chains (hair, skirt) and their colliders, from the body file. */
+  toon?: { springs: readonly SpringChainDef[]; colliders: readonly ColliderDef[] };
 }
 
 const _v = new Vector3();
@@ -144,6 +147,10 @@ export class CharacterRig {
   private strokeAmp = 0;
   private strokePhase = 0;
   private readonly meshes: Mesh[] = [];
+  /** Toon outline hulls (hidden far away). */
+  private readonly outlines: Mesh[] = [];
+  /** Hair and skirt springs of a toon body. */
+  readonly springs: SpringSystem | null = null;
   private shadowOnly = false;
   private swapped = new Map<Mesh, Material | Material[]>();
   private readonly shadowMaterials = new Map<Material, Material>();
@@ -158,11 +165,15 @@ export class CharacterRig {
     opts.scene.traverse((o) => {
       if (o instanceof Mesh) {
         o.frustumCulled = false;
-        o.castShadow = opts.castShadow;
-        o.receiveShadow = opts.castShadow;
+        // A toon outline hull never casts or takes a shadow.
+        const hull = o.userData['toonOutline'] === true;
+        o.castShadow = opts.castShadow && !hull;
+        o.receiveShadow = opts.castShadow && !hull;
+        if (hull) this.outlines.push(o);
         this.meshes.push(o);
       }
     });
+    if (opts.toon && opts.toon.springs.length > 0) this.springs = new SpringSystem(opts.scene, opts.toon.springs, opts.toon.colliders);
     this.blob = contactShadow();
     this.root.add(this.blob);
     for (const c of opts.clips) this.clips.set(c.name, c);
@@ -298,6 +309,7 @@ export class CharacterRig {
     if ((this.shownDetail > 0) === near && this.shownDetail >= 0) return;
     this.shownDetail = detail;
     if (this.blob) this.blob.visible = near;
+    for (const o of this.outlines) o.visible = near;
     if (this.shadowOnly) return;
     for (const g of this.gear) if (g.bone !== 'head' && g.bone !== 'spine') g.group.visible = near;
   }
@@ -456,7 +468,8 @@ export class CharacterRig {
         const raw = Math.min(30, Math.hypot(dx, dz) / step);
         // A jump larger than any gait is a teleport: do not read it as a sprint.
         const speed = raw > 12 ? 0 : raw;
-        this.smoothSpeed += (speed - this.smoothSpeed) * Math.min(1, step * 9);
+        // About a 0.2 s time constant whatever the step (a body posing on twos steps at 12 Hz).
+        this.smoothSpeed += (speed - this.smoothSpeed) * (1 - Math.exp(-step / 0.2));
         this.input.speed = this.smoothSpeed < 0.04 ? 0 : this.smoothSpeed;
       }
       this.last.copy(_v);
@@ -465,8 +478,13 @@ export class CharacterRig {
 
     const plan = this.machine.update(step, this.input);
     this.plan = plan;
-    if (plan.changed || !this.current) this.transition(plan);
-    if (this.current) {
+    if (this.forced) {
+      // A clip played by name holds until it is stopped.
+    } else if (plan.changed || !this.current || this.forceReplan) {
+      this.forceReplan = false;
+      this.transition(plan);
+    }
+    if (this.current && !this.forced) {
       this.timeScale += (plan.timeScale - this.timeScale) * Math.min(1, step * 10);
       this.current.timeScale = plan.loop && plan.state === 'loco' ? this.timeScale : plan.timeScale;
       // Backing off with the facing imposed: the gait runs backwards (the clip's own stride, the other way).
@@ -495,7 +513,47 @@ export class CharacterRig {
       this.updateLook(step, detail);
       if (detail >= 2) this.updateCarry();
     }
+    if (this.springs) {
+      if (detail >= 1) {
+        this.root.updateMatrixWorld(true);
+        this.springs.update(step);
+      } else this.springs.reset();
+    }
   }
+
+  /**
+   * Play a named clip of the motion set now (`wave`, `jump_start`, `sit`, `idle_look` ...): one-shot actions known to the
+   * state machine go through it and return to locomotion; any other clip is played directly, once or looping, until
+   * {@link stopClip}. Returns false when the clip does not exist.
+   */
+  playClip(name: string, opts: { loop?: boolean; fade?: number; timeScale?: number } = {}): boolean {
+    if (this.machine.trigger(name as ActionName)) return true;
+    const a = this.action(name);
+    if (!a) return false;
+    const fade = opts.fade ?? 0.25;
+    a.reset();
+    a.setLoop(opts.loop ? LoopRepeat : LoopOnce, opts.loop ? Infinity : 1);
+    a.clampWhenFinished = !opts.loop;
+    a.timeScale = opts.timeScale ?? 1;
+    a.enabled = true;
+    a.setEffectiveWeight(1);
+    a.play();
+    if (this.current && this.current !== a) this.current.crossFadeTo(a, fade, false);
+    this.forced = a;
+    this.current = a;
+    this.currentName = name;
+    return true;
+  }
+
+  /** End a clip started with {@link playClip}: locomotion takes over again. */
+  stopClip(): void {
+    this.forced = null;
+    this.plan = null;
+    this.forceReplan = true;
+  }
+
+  private forced: AnimationAction | null = null;
+  private forceReplan = false;
 
   /**
    * The mixer only writes a bone when the animated value changed since its last write (a static pose such as the

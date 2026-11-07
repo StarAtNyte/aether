@@ -70,12 +70,12 @@ export function templateCookUrl(slug: string, base: string = cookedBase()): stri
  * `#w=…&c=…&m=…` (the world in the link, the package only for its cooked copy). Its manifest is
  * `users/<anon>/<world>/manifest.json` under the cooked base; the cooked load checks it against the world as for a template.
  */
-export function sharedCookRoute(hash: string): { anon: string; world: string; startMode: 'play' | 'walkthrough' | 'orbit' | null } | null {
+export function sharedCookRoute(hash: string): { anon: string; world: string; startMode: 'play' | 'walkthrough' | 'orbit' | 'story' | null } | null {
   const q = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash);
   const m = /^([0-9a-f]{16})\.([0-9a-f]{16})$/.exec(q.get('c') ?? '');
   if (!m) return null;
   const s = q.get('m');
-  return { anon: m[1]!, world: m[2]!, startMode: s === 'play' || s === 'walkthrough' || s === 'orbit' ? s : null };
+  return { anon: m[1]!, world: m[2]!, startMode: s === 'play' || s === 'walkthrough' || s === 'orbit' || s === 'story' ? s : null };
 }
 
 /** The manifest of a world published from the editor under `base` (this build's by default). */

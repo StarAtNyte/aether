@@ -1053,6 +1053,161 @@ kbd {
   }
 }
 
+/* Story mode: a short film over the live world (cinema bars, a title card, subtitle lines, an end card). */
+.pl-story {
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  pointer-events: none;
+  /* Bar height of a 2.39:1 frame, scaled by the story's letterbox amount. */
+  --bar: calc(max(0px, (100vh - 100vw / 2.39) / 2) * var(--lb, 1));
+}
+
+.pl-story__bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: var(--bar);
+  background: #050404;
+  transition: height 0.8s ease;
+}
+
+.pl-story__bar--top {
+  top: 0;
+}
+
+.pl-story__bar--bottom {
+  bottom: 0;
+}
+
+.pl-story__fade {
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.pl-story__title {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--bar) + 9vh);
+  padding: 4vh 0;
+  text-align: center;
+  /* A soft dark band so thin title type holds over a bright sky or sea. */
+  background: radial-gradient(ellipse 46% 60% at 50% 50%, rgb(24 14 34 / 0.32), transparent 72%);
+  animation: pl-story-in 1.6s ease both;
+}
+
+.pl-story__title h1 {
+  margin: 0;
+  font: 400 clamp(30px, 5.2vw, 62px) / 1.05 var(--font-display);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #fff6e8;
+  text-shadow:
+    0 0 1px rgb(30 16 40 / 0.6),
+    0 2px 24px rgb(30 16 40 / 0.6);
+}
+
+.pl-story__title p {
+  margin: 14px 0 0;
+  font-size: clamp(13px, 1.4vw, 17px);
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: rgb(255 240 222 / 0.85);
+  text-shadow: 0 1px 14px rgb(40 20 50 / 0.6);
+}
+
+.pl-story__caption {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--bar) + 22px);
+  transform: translateX(-50%);
+  max-width: min(86vw, 64ch);
+  margin: 0;
+  text-align: center;
+  font: 500 clamp(17px, 1.9vw, 25px) / 1.4 var(--font);
+  letter-spacing: 0.01em;
+  color: #fffaf2;
+  text-shadow:
+    0 0 2px rgb(20 12 24 / 0.9),
+    0 1px 10px rgb(20 12 24 / 0.75);
+  animation: pl-story-in 0.5s ease both;
+}
+
+.pl-story__controls {
+  position: absolute;
+  right: 16px;
+  top: calc(max(12px, var(--bar) - 40px) + env(safe-area-inset-top, 0px));
+  display: flex;
+  gap: 8px;
+  pointer-events: auto;
+  opacity: 0.55;
+  transition: opacity 0.2s ease;
+}
+
+.pl-story__controls:hover,
+.pl-story__controls:focus-within {
+  opacity: 1;
+}
+
+.pl-story__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid rgb(255 255 255 / 0.22);
+  border-radius: 999px;
+  background: rgb(10 9 8 / 0.45);
+  color: var(--text);
+  font: 500 13px / 1 var(--font);
+  cursor: pointer;
+}
+
+.pl-story__chip kbd {
+  font: 11px / 1 var(--font);
+  color: var(--muted);
+}
+
+.pl-story__end {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+  pointer-events: auto;
+  animation: pl-story-in 1.2s ease both;
+}
+
+.pl-story__end h2 {
+  margin: 0 0 6px;
+  font: 300 clamp(28px, 4.6vw, 56px) / 1.1 var(--font-display);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.pl-story__end p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 15px;
+}
+
+.pl-story__end .pl-stack {
+  margin-top: 20px;
+}
+
+@keyframes pl-story-in {
+  from {
+    opacity: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .pl-fade {
     transition: none;

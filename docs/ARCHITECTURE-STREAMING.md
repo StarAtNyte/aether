@@ -565,12 +565,12 @@ cooked/<slug>/<id>/programs/<tier>.bin    program set of a tier, immutable (cook
 ```
 
 `<id>` is 16 hex of SHA-256(IR hash, geometry code version). The IR hash is SHA-256 of the parsed world's canonical JSON
-(sorted keys), without `opening`, `startMode` and the presentation fields `profile` and `views`. The geometry code version is `DDC_CODE_VERSION`: `__AETHER_GEN_VERSION__`
+(sorted keys), without `opening`, `startMode` and the presentation fields `profile`, `views` and `story`. The geometry code version is `DDC_CODE_VERSION`: `__AETHER_GEN_VERSION__`
 (a hash of the code generator output depends on, §3.5.2) plus the preparation and entry versions.
 
 **Manifest** (`CookManifest`, `cook/format.ts`; validated in full by `parseCookManifest`):
 - `format` (2), `irHash`, `genVersion`, `dir` (`<id>/`), `cookedAt`, `world` (id, name, entity count);
-- `opening` (position, target, fov) and `startMode` (`play` | `walkthrough` | `orbit`, also an additive IR field next to
+- `opening` (position, target, fov) and `startMode` (`play` | `walkthrough` | `orbit` | `story`, also an additive IR field next to
   `opening`), `profile` (`game` | `walkthrough` | `showcase` | `city` | `vr`; also an additive IR field);
 - `views` (optional, at most 12): the tour stops of the player's tour bar (position, target, fov, name). The IR's own
   `views` travel with the IR; otherwise the cook stores the 4 to 8 the renderer computes (`WorldRenderer.viewStops`,
@@ -667,7 +667,9 @@ gzip and brotli sizes. `--install=<dist>` copies it into a dist.
    cooked is written into IndexedDB: the session's save keeps the programs it used, as on a live load.
 4. The world starts in its `startMode` at its opening (the cook's opening fills in an IR without one). `play` shows the
    title card over the attract tour as before; `orbit` and `walkthrough` stay on the opening view. Their play-mode UI is
-   later work.
+   later work. `story` plays the world's short film (`world.story`, a shot list: see `packages/core/src/story-schema.ts`
+   and `apps/studio/src/player/story.ts`), then its end card; play and explore are offered throughout. A cook of a
+   story world records the play session too (the visitor can press P at any moment).
 
 **Measured** (6 November 2026, Intel UHD 770, headless Chrome, `GEN_GPU=intel`, shared machine;
 `first-picture-probe --player [--live]`, cold then warm on one profile, live and cooked interleaved):
@@ -835,7 +837,7 @@ The player uses a package only when its manifest's `genVersion` equals the build
 equals the loaded world's (`cook/cooked.ts`); anything else loads live. The id of the package folder is derived from the
 same two values, so a re-cook writes a new folder and never overwrites files a cached manifest still names.
 
-**The world.** Any change to the template's world IR except `opening`, `startMode`, `profile` and `views` (the player's
+**The world.** Any change to the template's world IR except `opening`, `startMode`, `profile`, `views` and `story` (the player's
 presentation, which the manifest carries itself).
 
 **The generator code version** `DDC_CODE_VERSION` = `<__AETHER_GEN_VERSION__>.p<PREPARE_VERSION>.e<ENTRY_VERSION>`.

@@ -50,7 +50,7 @@ export async function sha256Hex(s: string): Promise<string> {
  * the tour stops `views`), which change no geometry.
  */
 export function worldIrHash(world: object): Promise<string> {
-  const { opening: _o, startMode: _s, profile: _p, views: _v, ...rest } = world as Record<string, unknown>;
+  const { opening: _o, startMode: _s, profile: _p, views: _v, story: _t, ...rest } = world as Record<string, unknown>;
   return sha256Hex(stableStringify(rest));
 }
 

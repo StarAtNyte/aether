@@ -1,0 +1,22 @@
+{
+ "source": "scripts/characters/anime-kaho.ts",
+ "licence": "MIT",
+ "author": "this project",
+ "cast": [
+  {
+   "id": "kaho",
+   "gender": "female",
+   "look": "anime girl, summer sailor uniform, chestnut bob with a short ponytail",
+   "file": "c/kaho.848867ff.glb",
+   "height": 1.535,
+   "hip": 0.848,
+   "triangles": 41312,
+   "faces": 1,
+   "bytes": 583444,
+   "style": "toon",
+   "sha256": "848867ff7554790369822ce98d195fe93d36deaa875559a30c4808f8ad518f49",
+   "vertices": 21287,
+   "bones": 68
+  }
+ ]
+}

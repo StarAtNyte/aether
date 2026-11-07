@@ -125,7 +125,8 @@ function clipFile(prefix: string, base: string): string | null {
 async function main(): Promise<void> {
   const nio = await io();
   mkdirSync(OUT, { recursive: true });
-  for (const f of readdirSync(OUT)) rmSync(join(OUT, f));
+  // The project's own bodies (scripts/characters/anime-kaho.ts) live here too and are not rebuilt from Rocketbox.
+  for (const f of readdirSync(OUT)) if (!/^kaho\./.test(f)) rmSync(join(OUT, f));
   const cast: Array<Record<string, unknown>> = [];
   let firstSkeleton: Document | null = null;
   let boneSet = new Set<string>();

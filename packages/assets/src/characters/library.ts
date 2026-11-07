@@ -7,6 +7,7 @@
  * renderer and tests.
  */
 import { GENERATED_LIBRARY } from './generated';
+import { ORIGINAL_CAST } from './original';
 import { libraryUrl } from '../registry';
 
 /** One baked body as written by the build. */
@@ -30,6 +31,12 @@ export interface CastFile {
   tintTop?: number;
   tintBottom?: number;
   tintHair?: number;
+  /**
+   * Drawing style: `toon` bodies (the project's own anime cast, `scripts/characters/anime-kaho.ts`) are cel shaded with
+   * an outline, swing spring bones and pose on twos; absent = the realistic Rocketbox look. Toon bodies are only used when
+   * named (`character.body`), never picked at random.
+   */
+  style?: 'toon';
 }
 
 /** One clip of a motion set. */
@@ -85,6 +92,7 @@ export const CAST_TRAITS: Readonly<Record<string, CastTraits>> = {
   edith: { age: 'old', skin: 'light', wardrobes: ['elder', 'villager', 'traveller', 'merchant'], words: ['grandmother', 'granny'] },
   rosa: { age: 'adult', skin: 'tan', wardrobes: ['villager', 'merchant', 'formal'], words: ['dress'] },
   juno: { age: 'young', skin: 'light', wardrobes: ['casual', 'traveller', 'worker'], words: ['blonde', 'blond'] },
+  kaho: { age: 'young', skin: 'light', wardrobes: ['casual', 'traveller'], words: ['anime', 'schoolgirl', 'uniform', 'ponytail', 'sailor'] },
 };
 
 /** A cast member with its traits. */
@@ -94,8 +102,13 @@ export interface CastMember extends CastFile {
 
 const FALLBACK_TRAITS: CastTraits = { age: 'adult', skin: 'light', wardrobes: ['casual'], words: [] };
 
-/** Every body of the library. */
-export const CAST: readonly CastMember[] = GENERATED_LIBRARY.cast.map((c) => ({ ...c, traits: CAST_TRAITS[c.id] ?? FALLBACK_TRAITS }));
+/** Every body of the library: the Rocketbox cast, then the project's own bodies. */
+export const CAST: readonly CastMember[] = [...GENERATED_LIBRARY.cast, ...ORIGINAL_CAST].map((c) => ({ ...c, traits: CAST_TRAITS[c.id] ?? FALLBACK_TRAITS }));
+
+/** True for a body drawn in the toon style. */
+export function isToonBody(c: Pick<CastFile, 'style'>): boolean {
+  return c.style === 'toon';
+}
 
 /** A body by id. */
 export function castById(id: string): CastMember | undefined {

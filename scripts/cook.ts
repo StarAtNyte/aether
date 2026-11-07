@@ -339,8 +339,8 @@ async function session(server: env.TestServer, profileDir: string, slug: string,
         await new Promise((res) => requestAnimationFrame(res));
       }
     });
-    if (info.startMode === 'play') {
-      // Play: the player's person, the HUD's and the session's programs.
+    if (info.startMode === 'play' || info.startMode === 'story') {
+      // Play: the player's person, the HUD's and the session's programs (a story offers play at any time).
       await page.evaluate(() => (window as unknown as Win).__aetherPlayer!.start());
       await page.waitForFunction(() => (window as unknown as Win).__aetherPlayer?.phase === 'playing', null, { timeout: 60_000, polling: 250 }).catch(() => log('play did not start'));
       await page.waitForTimeout(8000);

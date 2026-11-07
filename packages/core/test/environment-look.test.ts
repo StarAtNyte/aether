@@ -22,6 +22,17 @@ describe('Environment.look', () => {
     expect(Environment.safeParse({ look: { style: 'cartoon' } }).success).toBe(false);
   });
 
+  it('takes bounded compositing-layer defaults (satsuei), all optional', () => {
+    const satsuei = { diffusion: 0.4, godRays: 0.3, flare: 0.2, dust: 0.25, grain: 0.3, chroma: 0.2, gradientTop: '#ffd9b0', gradientBottom: '#6a5a9a', gradientAmount: 0.15, letterbox: 0, sunDirection: [-0.55, 0.1, 0.83] };
+    expect(Environment.parse({ look: { style: 'anime', satsuei } }).look?.satsuei).toEqual(satsuei);
+    expect(Environment.parse({ look: { style: 'anime', satsuei: {} } }).look?.satsuei).toEqual({});
+    expect(Environment.parse({ look: { style: 'anime' } }).look?.satsuei).toBeUndefined();
+    expect(Environment.safeParse({ look: { satsuei: { godRays: 1.5 } } }).success).toBe(false);
+    expect(Environment.safeParse({ look: { satsuei: { dust: -0.1 } } }).success).toBe(false);
+    expect(Environment.safeParse({ look: { satsuei: { gradientTop: 'peach' } } }).success).toBe(false);
+    expect(Environment.safeParse({ look: { satsuei: { sunDirection: [0, 1] } } }).success).toBe(false);
+  });
+
   it('merges through setEnvironment and a null drops one field back to the renderer default', () => {
     let w = createWorld();
     w = applyPatches(w, [{ op: 'setEnvironment', set: { look: { interiorWarmth: 0.8, vignette: 0.5 } } }]).world;

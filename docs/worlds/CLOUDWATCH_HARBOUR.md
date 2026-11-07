@@ -35,7 +35,7 @@ Blender units are metres, Z up (Aether: Y up after glTF export). Sea level is z 
 | Shrine gate | at the z = 18 terrace on the stair: 2 posts 0.36 m across, 4.6 m apart, lintels at 4.2 and 4.8 m, vermilion with dark caps; two stone lanterns 1.6 m |
 | Lookout | 16 x 10 m paved platform at z = 44, a railing 1.05 m with a gap where the stair arrives, a bench, a street lamp 4.5 m, a lone big tree |
 | Telegraph poles | 8 m concrete/wood poles every 25-30 m along the road, the track and up the stair; 3-4 wires each with catenary sag |
-| People | seven static figures (`people.py`), adults 6.8-7 heads tall, a child 5.2, built from joints with bent elbows and knees, shaped torsos, hair (long, bob, ponytail, spiky, grey) and colour-blocked summer clothes: a schoolgirl in a sailor uniform leaning on the lookout rail, an old man on a bench there, a man in a straw hat climbing the stair, a mother holding a pointing child's hand at the crossing, a boy with his bicycle at the shop, a woman in a sundress walking along the harbour road |
+| People | six static figures (`people.py`), adults 6.8-7 heads tall, a child 5.2, built from joints with bent elbows and knees, shaped torsos, hair (long, bob, ponytail, spiky, grey) and colour-blocked summer clothes (the girl at the lookout rail is the world's animated character, not baked): an old man on a bench at the lookout, a man in a straw hat climbing the stair, a mother holding a pointing child's hand at the crossing, a boy with his bicycle at the shop, a woman in a sundress walking along the harbour road |
 | Cloudscape | a cumulonimbus with a flattened anvil and an overshooting top in the left third of the opening view (az 170, scaled down to 2.4 km out, 0.78 km tall, its base on the horizon), six satellite cumulus at 1.3-2.4 km, a broken bank on the horizon, cumulus over the hills to the north, cirrus on the sky dome |
 
 ## Palette (sRGB)
@@ -95,15 +95,45 @@ the finished stills are 3840 x 2160.
 4. Lived-in detail: laundry, bicycles, vending machines, potted plants, air-conditioner units, water tanks, signs with
    invented text, a mailbox, the crossing's barriers and signals.
 5. Finishing: line art, bloom, glare, light shafts, sea glitter.
-6. Gate: a floating and interpenetration check over every placed prop (`check-props.py`): each prop's base must touch the
+6. Painterly finish (`common.BRUSH`, `common.HAZE`, shared by the EEVEE materials and the bake):
+   - brush strokes in every toon albedo: long level strokes (world-space noise squeezed vertically) a few per cent lighter
+     and warmer or darker and cooler, with a finer dry-brush grain inside them;
+   - a broken terminator: the light is nudged by a second brush noise before the toon ramp, so band edges wander;
+   - atmospheric perspective: the shaded colour is mixed toward `#a9b0dc` by horizontal distance from the town's middle
+     (none within 50 m, up to 62 % at 450 m and beyond), so the headlands, the far forest and the hill tops go bluer and
+     lighter;
+   - far coast layers painted on the dome above the sea line (`sky.RIDGES`): a far peninsula and a nearer one with a far
+     town's lights under the cloud tower, two ranges west beyond the headland, each paler and bluer with distance;
+   - the cloud bands in four values (core shadow, shadow, lit, sunlit crowns) plus the thin warm terminator, their edges
+     broken by a broad brush noise, a soft lilac inner glow on the shadow side near the terminator, and a sun-bleached
+     near-white edge along the lit silhouettes;
+   - outlines with a hand-drawn wobble: each shell's width swells and thins along an edge (a `cw_wobble` vertex group of
+     slow world-space noise, 0.45-1.3 times the nominal width, `finish.wobble_group`);
+   - foliage clumps with broken edges (a ridged noise bites notches into each clump's outline).
+7. Gate: a floating and interpenetration check over every placed prop (`check-props.py`): each prop's base must touch the
    surface under it within 3 cm, and no prop may sink more than 3 cm into another.
 
 ## Bringing it into Aether
 
 - The look is baked: Cycles bakes the diffuse light of every surface into a lightmap UV; the same toon ramp and shadow tint
-  run on it in NumPy and multiply the painted albedo, giving one colour texture per piece. Pieces draw unlit
+  run on it in NumPy and multiply the painted albedo, giving one colour texture per piece. A third, emission-only bake
+  (a few samples) writes the world-space terms the other two do not carry: the terminator-break noise (red) and the haze
+  factor (green); `bake_export.finish_np` applies them exactly as the EEVEE material does. Vertex pieces (trees, forest)
+  and the per-vertex thin islands take the haze from their vertex positions. Pieces draw unlit
   (`KHR_materials_unlit`), so the renderer's PBR lighting cannot fight the painted look; emissive parts carry
   `KHR_materials_emissive_strength` so bloom finds them.
+- Practicals: every lamp, lantern, lit window and vending machine is an emissive-only part whose material is named
+  `practical_<name>`: `practical_window_lit` (house and train windows, the train's headlights and destination board),
+  `practical_lantern_paper` (stair lanterns, the lookout's street lamp), `practical_lantern_glow` (the shrine's stone
+  lanterns), `practical_vend_front` and `practical_vend_rows` (vending machines), `practical_lighthouse_lamp`. A runtime
+  switches them on at dusk by scaling their emissive intensity; their base colour is the unlit glass, paper or bulb (a
+  dim, greyed version of the glow), so off reads as an unlit lamp. The sun disc, the glitter and the crossing's signal
+  lamps stay `<name>__emit` (always on).
+- Moving extras (`extras.py`, created by the bake): the train (`train.glb`, entity `cw-train`), a two-car commuter train
+  baked over the open sea (lit by the sun and the sky alone) and moved to its rest just inside the east tunnel for the
+  export, length along Blender x; and the gulls (`birds.glb`, entity `cw-birds`), twelve birds circling over the harbour
+  mouth in one 16 s looping clip (circling, a bob, banking, flapping in bursts between glides; one unlit vertex-colour
+  material, double-sided). The model loader centres a model on its frame-0 bounds, which the entity position matches.
 - Line art: inverted-hull outlines on buildings, gate, poles and people (a back-face shell, `#2a2235`), part of the glb.
 - Pieces: the town's terraces and lanes (4096 px atlas) and the rest of the hillside (2048 px) apart, so a texel by the
   crossing is about 5 cm; houses (4096 px), the shrine on its own small atlas (in the town's atlas the gate's round posts
@@ -128,7 +158,71 @@ the finished stills are 3840 x 2160.
 - An opt-in `environment.look.style: 'anime'` profile: a palette-preserving tone curve (no ACES hue shift or AgX
   desaturation), no automatic exposure trim, the grade's saturation and contrast caps lifted to cel-friendly values, a
   gentle bloom. Realistic worlds do not set it and are unchanged.
-- Start mode `orbit` (showcase): the scene is a picture to look around, opened on shot A.
+- The compositing layer of the anime look (`gpu/satsuei.ts`, built into the composite of `gpu/post.ts` whenever the world's
+  look is anime and the composite runs; original, it imitates no studio or film):
+  - bloom on what is brighter than white and a soft diffusion glow of the bright mid-tones, both carried by the chain's one
+    bloom (its high pass takes the two thresholds);
+  - light rays from the sun: each texel of a quarter-resolution pass gathers the bright sky round the sun along its line to
+    the sun (24 taps), so clouds, roofs and the headland cut shafts into the glow;
+  - faint lens-flare ghosts mirrored through the frame centre, a veiling glow round the sun (all hidden when the picture at
+    the sun is no longer brighter than white: a roof or a cloud in front), dust motes drifting in the light;
+  - a colour fringe toward the corners, the vignette, a fine display-space grain, a gradient layer (a top and a bottom colour,
+    soft light, at an amount) and letterbox bars toward 2.39:1.
+  - Defaults come from `environment.look.satsuei` (`diffusion`, `godRays`, `flare`, `dust`, `grain`, `chroma`,
+    `gradientTop`, `gradientBottom`, `gradientAmount`, `letterbox`, all 0..1, and `sunDirection`: the painted sun piece is
+    not where the sky's sun light is, so Cloudwatch names it). Cloudwatch sets `sunDirection [-0.558, 0.1005, 0.8237]` and a
+    gradient of `#9a8cd8` over `#ffc89a` at 0.12.
+  - `renderer.setShotGrade(g | null)` (type `ShotGrade`, `@aether/render`) moves every one of them per shot, plus exposure
+    (stops), saturation and contrast (multipliers), temperature, bloom (a multiplier on the world's), the vignette and
+    `practicals` (0..1, the emission of the models' lamp, lantern, window and sign materials; the sun disc and the glitter
+    are left alone). Uniforms only: the programs are linked at load, so a cinematic animating it links nothing. The low
+    tier drops rays, flare and dust by their amounts; a tiled capture drops what depends on the frame.
+  - `scripts/blender/cloudwatch/satsuei-shots.ts` shoots it through the post chain (`aether-shots.ts` draws without it) under
+    a colour script: `world`, `off`, `afternoon`, `golden`, `dusk`, `blue`. Stills in `docs/screenshots/cloudwatch/satsuei/`.
+- Start mode `story` (profile `showcase`): the world opens on its short film (see The film below); P plays as Kaho,
+  Tab or O explores with the orbit camera, from the film or after it.
+
+## The film: "The Last Light"
+
+An original slice-of-life short of about 80 seconds, written as data in the world (`world.story`, the shot list in
+`scripts/blender/cloudwatch/story.ts`, written into the template by `world.ts`). Class ran late, and a girl, Kaho, races
+from the harbour road up the hill stair to reach the lookout before the sun touches the sea. The train passes while she
+waits at the crossing, the lamps come on as she arrives, and the film holds on the town going blue.
+
+| # | Shot | Length | Grammar |
+|---|---|---|---|
+| 1 | The sky over the sea, the title | 9 s | fade in, a slow tilt down from the cumulonimbus to the glitter path |
+| 2 | The harbour road | 6 s | establishing wide; she runs in and turns up the stair; first line |
+| 3 | Up the first steps | 3.2 s | low behind her, a tracked tilt |
+| 4 | The crossing | 7.5 s | side-on, she waits in the right third; the train crosses the frame; second line |
+| 5 | The first terraces | 5 s | high, down the run she climbs; golden |
+| 6 | Through the shrine gate | 5.5 s | low behind her, framed by the gate's posts |
+| 7 | The cloud and the gulls | 5 s | a held "ma" beat, the colour turns magenta |
+| 8 | The last stair | 7 s | from the lookout down the stair, she climbs into the frame |
+| 9 | Arrival | 5.5 s | medium; the lamps, lanterns and windows come on; third line |
+| 10 | Over her shoulder | 4.5 s | the sun on the sea past her hair |
+| 11 | The held wide | 13 s | the longest shot: she is small at the rail as the sun touches the sea; magenta to blue hour |
+| 12 | The town at blue hour | 7.5 s | fade; the town from the harbour with its windows lit |
+
+- Colour script: warm afternoon, golden, magenta dusk, blue hour, as `grade` / `gradeTo` on the shots
+  (`renderer.setShotGrade`: exposure, white balance, the gradient layer, glow, rays, grain, practicals). The pieces are
+  baked and unlit, so the time of day is carried by the grade and the practicals; `hour` moves only the dynamic light on
+  Kaho (18.5 to 18.7; a later hour darkens the painted town to mud).
+- The player (`apps/studio/src/player/story.ts`, `story-runner.ts`) plays it: the camera through `lookAt`, the people and
+  the train through one packed `applyTransforms` a frame (Kaho walks or runs by her speed), Kaho's paths laid onto the
+  solid pieces by rays, cinema bars at 2.39:1, the title, subtitle lines and an end card in the page. Space, Enter or Esc
+  skip to the end card; Play, Explore and Skip stay on screen. Before the first shot every shot's views are drawn once
+  under the opening fade, so no cut uploads textures or geometry; the programs are the load's.
+- `scripts/story-shots.ts` shoots frames of any story world, the end card, frame times over the whole film and a play
+  check.
+
+## Play
+
+The pieces people stand on (terrain near and far, the stair, lookout, harbour and railway, the houses, the shrine) are
+static triangle-mesh bodies (`physics: { collider: 'trimesh' }` on a `model`): the simulation asks the renderer for the
+loaded model's triangles (`WorldRenderer.modelColliders`, `geometry/model-colliders.ts`; outline shells and transparent
+cards left out). Before this, no entity had a body and the world had no ground, so the character fell from the spawn
+forever. The player spawns at the foot of the stair on the harbour road; from the film, at Kaho's place at the lookout.
 
 ## How to rebuild
 
@@ -151,6 +245,32 @@ and a 0.1 m near plane, the creases where billows intersect 2 km away came out a
 
 ## Result (7 November 2026)
 
+- **Painterly pass** (the look pass read as clean digital cel art: flat vector fills, one shadow value in the clouds, no
+  depth past the headland; method step 6):
+  - Brush strokes in every painted surface and a broken terminator (`before-after/11-stair-brush.webp`). The first
+    strokes (noise squeezed 2.6 times, 11 % value swing, strong distortion) read as marbled, dirty plaster on the walls
+    by the stair; they are now long and level (squeezed 4.5 times), 8 % and barely distorted.
+  - Clouds in four values with broken edges, a lilac inner glow and a sun-bleached edge (`before-after/9-cloud-values.webp`).
+    The first edge break (a fine 35 m noise) spotted the plateaus of the light with lit dapples; the break is now a
+    single broad 80 m octave, which moves band edges in big painted lobes.
+  - The sky: a ten-stop gradient per side (a lemon-gold rim, apricot, coral rose, a lilac turn, periwinkle, a
+    saturated cobalt above) under soft level strokes.
+  - Atmospheric perspective: the headlands, the far forest and the hill tops go bluer and lighter with distance, and
+    far coast layers sit on the horizon under the tower and west of the headland (`before-after/12-far-coast.webp`,
+    `14-aether-harbour-haze.webp`).
+  - The sun path: 2300 glitter streaks (from 1400) over a wider path. A first try that also widened and brightened the
+    warm column in the water and pushed the streaks to 4.2 / 7.5 bloomed into one white blob under the sun; the column
+    is back as it was and the streaks are 3.6 / 5.0, so the path reads as separate sparks
+    (`before-after/10-glitter-haze.webp`).
+  - Lived-in detail readable from the stair and the lookout: the house name boards are up to 0.42 m letters (from 0.2),
+    the roof billboard up to 0.75 m, two new boards along the stair (`KUMOMI SHRINE`, `KISSA NAGI`), more futons over
+    balcony rails; the lookout has a vending machine, a 4.5 m street lamp, potted plants and a bicycle.
+  - Outlines wobble in width along their length; foliage clumps have notched, broken edges.
+  - Practicals: lamps, lanterns, lit windows and vending machines export as `practical_*` emissive materials with an
+    unlit-glass base colour (see Bringing it into Aether).
+  - Moving extras for the film: the train (`cw-train`) and the gulls (`cw-birds`). The static schoolgirl at the lookout
+    rail is gone (the world's animated girl stands there).
+  - Before/after: `before-after/8-painterly-hero.webp` (Blender, shot A) and `13-aether-hero.webp` (Aether, shot A).
 - **Look pass** (the opening view was pleasant low-poly, not background art):
   - The hero cloud was a soft lumpy blob of a few big metaballs with a smooth ramp. It is now a union of about 600
     spheres in a cumulonimbus anatomy: a flat shelf, congestus towers, a stacked column with turrets, an overshooting top
@@ -183,24 +303,27 @@ and a 0.1 m near plane, the creases where billows intersect 2 km away came out a
       shore band.
   - The lookout deck sat at z = 34, buried 10 m under its own 44 m terrace. It now stands on the terrace, with a gap in
     the railing for the stair.
-- **Gate**: 73 props checked, 0 failed (0 floating, 0 buried). One pair touches within tolerance: the mother's and
+- **Gate**: 78 props checked, 0 failed (0 floating, 0 buried). One pair touches within tolerance: the mother's and
   child's joined hands, 1.4 cm.
-- **Budget**: 14 glb pieces, 485 k triangles, 20.5 MB (from 376 k / 11.9 MB before the look pass):
+- **Budget**: 16 glb pieces, 484 k triangles, 21.4 MB (20.5 MB / 485 k before the painterly pass, 376 k / 11.9 MB
+  before the look pass):
 
   | Piece | Triangles | Size |
   |---|---|---|
   | town | 125 k | 8.6 MB |
-  | props | 96 k | 5.0 MB |
+  | props | 101 k | 5.2 MB |
   | infra | 53 k | 2.6 MB |
   | forest | 99 k | 1.8 MB |
-  | people | 57 k | 1.5 MB |
-  | trees | 34 k | 0.6 MB |
-  | terrain near / far | 2 k / 5 k | 0.5 / 0.1 MB |
+  | people (six figures) | 45 k | 1.2 MB |
+  | trees | 34 k | 0.7 MB |
+  | terrain near / far | 2 k / 5 k | 0.8 / 0.1 MB |
   | sky | 9 k | 0.3 MB |
-  | clouds (8 cards) | 16 | 0.24 MB |
-  | sea | 1 k | 0.09 MB |
-  | glitter | 2.8 k | 0.09 MB |
-  | shrine | 0.6 k | 0.05 MB |
+  | birds (12 gulls, a 16 s clip) | 0.3 k | 0.3 MB |
+  | clouds (8 cards) | 16 | 0.23 MB |
+  | train | 3.5 k | 0.2 MB |
+  | glitter | 4.6 k | 0.15 MB |
+  | sea | 1 k | 0.1 MB |
+  | shrine | 0.6 k | 0.06 MB |
 
   Triangle counts include the outline shells.
 - **First picture** (`first-picture-probe --player`, Intel UHD 770, `GEN_GPU=intel`, 5 GB scope):
@@ -217,6 +340,14 @@ and a 0.1 m near plane, the creases where billows intersect 2 km away came out a
   - before/after pairs for each change of the look pass (`before-after/`).
 - **Known weak spots**:
   - The figures are neat mannequins up close: mitten hands, a simple knee bend.
-  - The house signs are too small to read from the lookout.
+  - The front name boards stay at 0.3 m letters (between the storeys there is no more room); from the lookout only the
+    back boards and the roof billboard read.
+  - The far coast is painted on the dome at about 11 texels a degree: soft at 4K, and in Aether (the sea pulled in to
+    1.4 km) it stands about 0.7 degrees taller than in Blender.
+  - The brush texture lives in the 4096 px town atlas: up close (a metre from a wall) it is soft rather than crisp.
+  - The laundry, futons and banners do not sway; the train is a simple box design.
+  - Kaho's head turns on its own in a held close-up (the rig's look-at), so the film shows her from behind or at a
+    distance rather than face-on.
+  - The film has no music or sound of its own yet, and no in-browser video export.
   - In a headless capture the clock is frozen, so the glitter's twinkle shows only in the browser. Its clip was checked
     by stepping the animator in Node.
