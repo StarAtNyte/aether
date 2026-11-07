@@ -178,7 +178,7 @@ def shape_body(ob, J, spec):
         if p.y < 0 and abs(p.x) < 0.14 * s:
             dz = (p.z - (sp2.z - 0.005 * s)) / (0.055 * s)
             dx = (abs(p.x) - 0.055 * s) / (0.05 * s)
-            p.y -= 0.016 * s * fem * math.exp(-dz * dz - dx * dx) * smoothstep(0.0, -0.04 * s, p.y)
+            p.y -= 0.021 * s * fem * math.exp(-dz * dz - dx * dx) * smoothstep(0.0, -0.04 * s, p.y)
 
 
 SEGMENTS = [

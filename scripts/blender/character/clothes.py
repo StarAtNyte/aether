@@ -221,12 +221,12 @@ class Kit:
             lab = self.lab[i]
             o = base
             if lab.startswith('upperarm') and not long_sleeves:
-                o += 0.012 * s * min(1.0, self.tp[i] / sl) ** 1.5
+                o += 0.019 * s * min(1.0, self.tp[i] / sl) ** 1.3
             if lab.startswith(('upperarm', 'forearm')) and long_sleeves:
                 o += 0.006 * s
             if lab == 'torso' or lab.startswith('thigh'):
                 # looser below the chest, the blouse hanging over the waist
-                o += 0.008 * s * smoothstep(z['chest'], z['waist'] - 0.03 * s, p[2])
+                o += 0.011 * s * smoothstep(z['chest'], z['waist'] - 0.03 * s, p[2])
             return o
 
         name = 'outer' if outer else 'top'
@@ -262,7 +262,8 @@ class Kit:
         zv = z['chest'] - 0.005 * s
         lift = 0.013 * s * EASE
         nz = z['neck']
-        fw = 0.112 * s
+        # half-width of the back flap: inside the shoulder line (the trunk's surface turns into the arms past it)
+        fw = min(0.112 * s, abs(self.J['Bip01_L_UpperArm'].x) - 0.012 * s)
         zb = nz - 0.15 * s
         hit = bvh.ray_cast(Vector((0, -0.4, zv)), Vector((0, 1, 0)), 0.5)
         F = -hit[0].y if hit[0] is not None else 0.08 * s
@@ -277,7 +278,7 @@ class Kit:
             v_in = Vector((0.0, zv))
             n_in = Vector((sx * neck_r * 0.9, nz))
             v_out = Vector((sx * 0.016 * s, zv + 0.003 * s))
-            n_out = Vector((sx * 0.105 * s, nz - 0.03 * s))
+            n_out = Vector((sx * (fw - 0.007 * s), nz - 0.03 * s))
             def plane(a, b, keep_side):
                 d = (b - a).normalized()
                 nrm = Vector((-d.y, d.x))
@@ -318,7 +319,7 @@ class Kit:
                     r = 1 - min(1.0, max(0.0, edge) / (0.045 * s))
                 else:
                     sx = 1 if k == 1 else -1
-                    a2 = Vector((sx * 0.016 * s, zv)); b2 = Vector((sx * 0.105 * s, nz - 0.03 * s))
+                    a2 = Vector((sx * 0.016 * s, zv)); b2 = Vector((sx * (fw - 0.007 * s), nz - 0.03 * s))
                     d = (b2 - a2).normalized()
                     q = Vector((p.x, p.z)) - a2
                     edge = abs(q.x * d.y - q.y * d.x)
@@ -434,13 +435,13 @@ class Kit:
         self.palette['skirt'] = col
         N = int(it.get('pleats', 12))
         length = str(it.get('length', 'knee'))
-        hem = {'knee': z['knee'] + 0.06 * s, 'mid-calf': lerp(z['knee'], z['ankle'], 0.5), 'long': z['ankle'] + 0.1 * s, 'mini': z['knee'] + 0.15 * s}.get(length, z['knee'] + 0.045 * s)
+        hem = {'knee': z['knee'] + 0.08 * s, 'mid-calf': lerp(z['knee'], z['ankle'], 0.5), 'long': z['ankle'] + 0.1 * s, 'mini': z['knee'] + 0.15 * s}.get(length, z['knee'] + 0.045 * s)
         top = z['waist'] - 0.012 * s
         hipz = z['hip'] - 0.01 * s
         m = 6 if N <= 16 else 4
         na = N * m
         rows = 20
-        cy = 0.008 * s
+        cy = 0.02 * s
         # body radius by angle and height (cast inward from outside), the envelope hanging from above
         thetas = [2 * math.pi * k / na for k in range(na)]
         zs = [lerp(top, hem, (r / rows) ** 1.0) for r in range(rows + 1)]
@@ -459,8 +460,15 @@ class Kit:
         # smooth around
         for _ in range(4):
             env = (np.roll(env, 1, 1) + 2 * env + np.roll(env, -1, 1)) / 4
+        # an A-line: per azimuth the straight line from the waist that clears the envelope everywhere below (the
+        # pleats fall straight from the hips instead of belling out over them)
+        tz = np.array([(top - zz) / max(1e-6, top - hem) for zz in zs])
+        slope = np.max((env[1:] - env[0][None, :]) / tz[1:, None], axis=0)
+        for _ in range(3):
+            slope = (np.roll(slope, 1) + 2 * slope + np.roll(slope, -1)) / 4
+        env = np.maximum(env, env[0][None, :] + tz[:, None] * slope[None, :])
         ease = 0.009 * s * EASE
-        flare_k = 0.09 if length in ('knee', 'mini') else 0.07
+        flare_k = 0.02 if length in ('knee', 'mini') else 0.03
         verts, uvs, wts = [], [], []
         for r, zz in enumerate(zs):
             below = max(0.0, hipz - zz)
@@ -468,7 +476,7 @@ class Kit:
             depth = 0.017 * s * smoothstep(hipz + 0.03 * s, hipz - 0.1 * s, zz)
             for k in range(na):
                 j = k % m
-                base = env[r, k] + ease + below * flare_k + 0.012 * s * smoothstep(hipz, hipz - 0.1 * s, zz)
+                base = env[r, k] + ease + below * flare_k + 0.006 * s * smoothstep(hipz, hipz - 0.1 * s, zz)
                 saw = (j / (m - 1)) * depth   # out from the envelope: the tucked end of a pleat still clears the body
                 rr = base + saw
                 th = thetas[k]
@@ -568,7 +576,7 @@ class Kit:
         s = self.s
         z = self.z
         h = str(it.get('height', 'mid-calf'))
-        top = {'ankle': z['ankle'] + 0.05 * s, 'mid-calf': lerp(z['knee'], z['ankle'], 0.64), 'knee': z['knee'] - 0.03 * s}.get(h, lerp(z['knee'], z['ankle'], 0.64))
+        top = {'ankle': z['ankle'] + 0.05 * s, 'mid-calf': lerp(z['knee'], z['ankle'], 0.7), 'knee': z['knee'] - 0.03 * s}.get(h, lerp(z['knee'], z['ankle'], 0.7))
         self.extract('socks', lambda i: self.region(i, 'calf', 'foot') and self.co[i][2] < top,
                      lambda i: 0.0018 * s + 0.0015 * s * smoothstep(top - 0.02 * s, top, self.co[i][2]), ('socks', it['rgb']), layer=0, solid=0.0012, toon=(0.8, 0.0, 1.0, 0.0), hide_margin=0.02 * s)
 

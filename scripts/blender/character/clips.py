@@ -71,11 +71,14 @@ def sheet_pose(rest):
         ua = W[f'Bip01_{side}_UpperArm'].translation
         fa = W[f'Bip01_{side}_Forearm'].translation
         cur = math.atan2(-(fa - ua).y, abs((fa - ua).x))
-        g.rotate_world(f'Bip01_{side}_UpperArm', Z, -sx * (rad(81) - cur))
+        g.rotate_world(f'Bip01_{side}_UpperArm', Z, -sx * (rad(79) - cur))
         g.rotate_world(f'Bip01_{side}_Forearm', X, rad(-8))
         g.rotate_world(f'Bip01_{side}_Hand', Z, -sx * rad(8))
         for f, a in (('1', 18), ('2', 24), ('3', 28), ('4', 32), ('0', 10)):
             curl(g, side, f, rad(a))
+        # the feet a little apart, as a model sheet stands
+        g.rotate_world(f'Bip01_{side}_Thigh', Z, -sx * rad(1.0))
+        g.rotate_world(f'Bip01_{side}_Foot', Z, sx * rad(1.0))
     return g
 
 

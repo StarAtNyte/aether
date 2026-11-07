@@ -40,7 +40,8 @@ class HeadForm:
         self.jaw_a = np.array([0, -0.012, 0.086]) * u
         self.jaw_b = np.array([0, -0.05 - 0.004 * male, 0.019 + 0.004 * male]) * u
         self.jaw_ra = jaw_w * u
-        self.jaw_rb = (0.018 + 0.012 * male) * u
+        # the chin: soft and round for an anime girl, squarer for men
+        self.jaw_rb = (0.018 + 0.012 * male + (0.005 if anime and not male else 0)) * u
         self.cheek_c = np.array([0.037 + 0.004 * male, -0.036, 0.07]) * u
         self.cheek_r = 0.026 * u
         self.k = 0.03 * u
@@ -181,7 +182,7 @@ def face_bias(ob, chin, u, spec):
     zone *= 1 - nss(0.062 * u, 0.08 * u, np.abs(p[:, 0]))
     bias = 0.1 + 0.45 * zone
     # under the bangs: the forehead above the brows, its lower edge in points like the bangs' tips
-    ez = 0.098 if not spec['old'] > 0.3 else 0.104
+    ez = eye_z(spec)
     lo = (ez + 0.024) * u + 0.004 * u * np.abs(np.sin(p[:, 0] / (0.018 * u) * math.pi))
     bang = nss(lo, lo + 0.008 * u, p[:, 2]) * front
     bias = bias - 0.72 * bang
@@ -254,13 +255,20 @@ def apply_transform(ob):
 # ---------------------------------------------------------------------------------------------------------------------
 # Decals.
 
+def eye_z(spec):
+    """Height of the eyes' centre above the chin (head units): anime girls' eyes sit a little lower, under a taller forehead."""
+    if spec['old'] > 0.3:
+        return 0.104
+    return 0.094 if spec['style'] == 'anime' and spec['gender'] != 'male' else 0.098
+
+
 def decal_layout(spec):
     """Feature decals: name, atlas cell, centre (x, z from the chin, head units), size (w, h), offset (m), rest visible."""
     old = spec['old']
     male = spec['gender'] == 'male'
     ex = 0.035 + 0.002 * male
-    ez = 0.098 if not old > 0.3 else 0.104
-    ew = (0.044 if not male else 0.034) if spec['style'] == 'anime' else 0.026
+    ez = eye_z(spec)
+    ew = (0.048 if not male else 0.035) if spec['style'] == 'anime' else 0.026
     if old > 0.3:
         ew *= 0.9
     ew *= spec.get('eye_scale', 1.0)

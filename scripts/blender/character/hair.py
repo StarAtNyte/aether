@@ -102,7 +102,8 @@ class Hair:
             if tip == 'point':
                 wf *= 1 - smoothstep(0.55, 1.0, t) * 0.97
             elif tip == 'curl':
-                wf *= 1 - smoothstep(0.62, 1.0, t) * 0.96
+                # a bob's lock: a rounded, turned-in end (a short point, not a spike)
+                wf *= 1 - smoothstep(0.7, 1.0, t) * 0.8
             elif tip == 'cut':
                 wf *= 1 - smoothstep(0.85, 1.0, t) * 0.5
             tf = wf ** 0.7
@@ -276,15 +277,15 @@ def build_hair(spec, J, head, form, chin, atlas, bones, body_bvh):
         bangs(H, part_theta, vol, st)
     if st == 'bob':
         tip_front = chin_z + 0.004 * u - (H.h['length'] - 0.25) * 0.5
-        n = 11
+        n = 13
         for i in range(n):
             # azimuth around the sides and back, skipping the face
             theta = math.radians(lerp(62, 298, i / (n - 1)))
             back = (1 - math.cos(theta)) / 2
             tz = lerp(tip_front, tip_front - 0.012 * u, back)
-            w = 0.062 * u
+            w = 0.066 * u
             phi_leave = math.radians(lerp(92, 108, back))
-            H.lock(theta, math.radians(10), phi_leave, tz, w, 0.018 * u, vol * (1.3 + 0.25 * back), tip='curl', curl=0.03 * u, flare=0.018 * u,
+            H.lock(theta, math.radians(10), phi_leave, tz, w, 0.018 * u, vol * (1.3 - 0.25 * back), tip='curl', curl=0.03 * u, flare=0.018 * u,
                    theta_root=math.radians(180) + (theta - math.radians(180)) * 0.2)
         side_locks(H, vol, chin_z + 0.0 * u, 'curl')
         # the back mass swings a little
