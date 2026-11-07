@@ -1089,3 +1089,50 @@ made before them. Cooked Lisbon Hills on main: its low set was recorded with `bu
 `buffer24607-24613`; the medium set matched by chance. They now take ids of their own per kind (`gpu/stable-node-ids.ts`).
 Cold player, medium, two runs each: links 93 and 93 against 95 and 104, programs drawn that are not in the cooked set 1
 against 4 and 7; warm 96 and 94 against 100 and 102. Every hosted program set holds the old names until it is cooked again.
+
+## Quantized geometry on the GPU (7 November 2026)
+
+The cooked packs store geometry quantized, but the lanes decode it to float32 and three uploaded what the CPU held: 12 bytes
+a position, 12 a normal, 12 a colour. Registered geometry now goes up as integers while its CPU arrays stay float, so every
+CPU reader (picking, merges, shadow batches, physics, lightmaps, export) is unchanged (`gpu/quantized-geometry.ts`):
+
+- positions: normalized int16 on a power-of-two grid around the origin or the box centre, at least the packs' 2^-11 m
+  (cooked positions keep their values) and at most 2^-10 m (an error of at most 0.5 mm; 2^-9 m for geometry whose
+  anti-tiled material hashes its origin, which may not be translated; 2^-7 m for the depth-only shadow batches). The
+  dequantization is folded into the object's world matrix for the draw (`M · T(c) · S`, a uniform scale), so no shader
+  changes and the cooked program sets still match. Larger geometry keeps float positions. Not for instanced, batched or
+  skinned meshes, nor materials with a position node, displacement, layers or shading expressions (object space); a
+  geometry drawn by one after its upload goes back to float positions;
+- normals: 10:10:10:2 snorm in one word (an error under 0.12°); colours and layer weights within 0..1: unorm16, other
+  colours half floats; UVs within 0..1 (atlases, the lightmap) or -1..1: unorm16 or snorm16. Metre UVs stay float;
+- the virtual-geometry index is 16-bit when the mesh's vertices fit, and sized for the finest cut of each instance (it was
+  three times the base level or 196,608 triangles, whichever was more, for every mesh; it grows when an instance joins);
+  virtual cell batches and per-cell shadow batches of up to 65,535 vertices take 16-bit indices too.
+
+Entities' generator parts, merges, virtual-geometry instances, virtual and shadow cell batches, the ground and the land
+ring are registered. WebGL2 only: on WebGPU the vertex format comes from the CPU array, and nothing changes there. No
+change to cooked output or the generator code version.
+
+**Measured** (cooked player, Intel UHD 770, `GEN_GPU=intel`, automatic tier, live GL buffer bytes once the cell batches
+settled, `first-picture-probe --player` with a `bufferData`/`deleteBuffer` tally; interleaved, main `3eda6a64`):
+
+| | Lisbon Hills main | this build | Kestrel Outpost main | this build |
+|---|---|---|---|---|
+| GPU geometry (MB, cold / warm) | 642-702 / 640-645 | 343 / 344-346 (-47 %) | 22.9-23.2 | 14.7 (-36 %) |
+| index buffers (MB) | 278-304 | 113 | 3.5 | 2.7 |
+| first picture cold (s), mean | 25.6, 30.0 (27.8) | 25.9, 27.9 (26.9) | 11.3-12.7 (12.2) | 11.3-14.4 (12.4) |
+| first picture warm (s), mean | 21.8, 22.8 (22.3) | 22.6, 21.1 (21.9) | 6.2-7.6 (6.9) | 6.0-7.8 (7.0) |
+| links cold / warm | 99-101 / 92-94 | 97-99 / 94-98 | 75 / 69-75 | 69-75 / 69-75 |
+
+Two interleaved pairs on Lisbon, four on Kestrel, a contended machine. `complete-geometry-probe --cooked`: both worlds OK
+(0 render objects without attributes, 0 merges shown empty). Opening views (`experience-shots.ts`, live): Lisbon's street
+hero against main 0.26 mean (0-255; main against itself differed by up to 100, the second run caught another moment),
+Kestrel's play view 1.29-1.52 against main's 0.78 run to run, the differences in the dust, the pines' sway, the fire and the
+character: no geometry moved, no seams.
+
+What is still float on Lisbon: 100 MB of positions in geometry beyond 64 m (cell batches and merges of 160 m cells, half of
+it needing 2^-9 m, half 2^-8 m), 23 MB of metre UVs. Virtual-geometry groups whose every instance is drawn by a cell batch
+keep their own vertex buffers (about 70 MB on Lisbon); freeing them is not in this change (a first try was measured on a
+live load by mistake and is undecided). Encoding
+costs the main thread about 70 ms per million vertices (positions, normals, UVs, colours), within the noise of the first
+picture. ANGLE on D3D11 has no three-component 16-bit or signed 10:10:10:2 vertex formats and widens them at upload.

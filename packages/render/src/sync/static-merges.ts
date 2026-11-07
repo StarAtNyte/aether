@@ -34,6 +34,7 @@ import { MergeBuildClient, type MergeJob } from './merge-client';
 import { mergeGeometryStamp, mergeRequest, type MergeRequest } from './merge-wire';
 import { errorMessage, log } from '../log';
 import { releaseAfterUpload } from '../gpu/cpu-release';
+import { quantizeOnGpu } from '../gpu/quantized-geometry';
 import { interiorContent } from '../gpu/performance';
 
 /** Marks the merge key of room contents (see `rebuild`). */
@@ -573,6 +574,7 @@ export class StaticMerges {
    * picking, physics and lightmaps). Exports rebuild it from the members, shadow batches read the members' positions.
    */
   private releaseCopy(merge: Merge, geometry: BufferGeometry): void {
+    quantizeOnGpu(geometry, merge.mesh);
     releaseAfterUpload(geometry, {
       restore: () => (this.merges.includes(merge) && merge.mesh.geometry === geometry ? this.build(merge.members.map((m) => m.mesh), merge.members) : null),
       pieces: () => merge.members.map((m) => ({ geometry: m.geometry, matrix: new Matrix4().fromArray(m.rel) })),

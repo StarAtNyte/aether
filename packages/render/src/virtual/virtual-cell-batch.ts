@@ -17,6 +17,7 @@ import { createCutScratch, cutIndexCount, selectCut, type ClusterDag, type CutSc
 import { createLocalView, localView, sphereFarOutside } from './view';
 import { VIRTUAL_ERROR_PX } from './virtual-mesh';
 import { releaseAfterUpload } from '../gpu/cpu-release';
+import { quantizeOnGpu } from '../gpu/quantized-geometry';
 
 /** Attributes a batch carries (those VirtualGroup draws). */
 const ATTRIBUTES = ['position', 'normal', 'color', 'uv', 'splat'] as const;
@@ -138,7 +139,7 @@ export class VirtualCellBatch {
       base += n;
     }
     // Static usage: changes go up as ranged updates (see VirtualGroup).
-    this.index = new BufferAttribute(new Uint32Array(Math.max(3, capacity * 3)), 1);
+    this.index = new BufferAttribute(vertices <= 65536 ? new Uint16Array(Math.max(3, capacity * 3)) : new Uint32Array(Math.max(3, capacity * 3)), 1);
     geometry.setIndex(this.index);
     geometry.setDrawRange(0, 0);
     geometry.computeBoundingSphere();
@@ -149,6 +150,7 @@ export class VirtualCellBatch {
     releaseAfterUpload(geometry, { restore: () => this.restore(from) }, ATTRIBUTES);
     const src = members[0]!.source;
     const mesh = new Mesh(geometry, src.material as Material);
+    quantizeOnGpu(geometry, mesh);
     mesh.name = `aether:cell-virtual#${key}`;
     mesh.matrixAutoUpdate = false;
     mesh.receiveShadow = src.receiveShadow;
@@ -173,7 +175,7 @@ export class VirtualCellBatch {
       geometry.setAttribute(name, new BufferAttribute(array, a.itemSize, a.normalized));
     }
     for (const slot of this.slots) writeVertices(arrays, slot.geometry, _m.multiplyMatrices(toBatch, slot.world), slot.base);
-    geometry.setIndex(new BufferAttribute((this.index.array as Uint32Array).slice(), 1));
+    geometry.setIndex(new BufferAttribute((this.index.array as Uint32Array | Uint16Array).slice(), 1));
     geometry.setDrawRange(now.drawRange.start, now.drawRange.count);
     geometry.boundingBox = now.boundingBox?.clone() ?? null;
     geometry.boundingSphere = now.boundingSphere?.clone() ?? null;
@@ -275,7 +277,7 @@ export class VirtualCellBatch {
       for (const s of slots) s.hash = -1;
     }
     if (first < 0) return false;
-    const target = this.index.array as Uint32Array;
+    const target = this.index.array as Uint32Array | Uint16Array;
     const start = first > 0 ? (slots[first - 1] as Slot).start + (slots[first - 1] as Slot).length : 0;
     let w = start;
     for (let k = first; k < slots.length; k++) {

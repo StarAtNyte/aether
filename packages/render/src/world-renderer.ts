@@ -7,6 +7,8 @@
  * GPU-specific code is confined to `create`, `render`, `screenshot` and
  * `renderViews`; everything else lives in GPU-free modules with unit tests.
  */
+import { installGpuQuantize } from './gpu/quantized-geometry';
+import { trackAttributeOwner } from './gpu/attribute-release';
 import { prepareCompileTextures } from './gpu/compile-textures';
 import { AssetSkinCache } from './gpu/asset-skin-cache';
 import { warmRaycastTrees } from './geometry/raycast-bvh';
@@ -1171,6 +1173,9 @@ export class WorldRenderer {
     // Render-only geometry gives its CPU arrays back once uploaded (gpu/cpu-release.ts). On a timer as well as each frame: during
     // the load the preparation queue uploads most of it without a frame being drawn.
     this.cpuReleaseTimer = setInterval(() => { if (!this.disposed && !this.lost) sweepUploads(renderer.backend); }, CPU_RELEASE_MS);
+    // Before the preparation queue: it draws through the `_renderObjectDirect` it finds (gpu/quantized-geometry.ts).
+    installGpuQuantize(renderer);
+    trackAttributeOwner(renderer);
     this.preparation = deferRenderPreparation(renderer, {
       ready: () => this.requestPreparedFrame(),
       error: e => log.warn(`render preparation failed: ${errorMessage(e)}`),

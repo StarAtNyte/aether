@@ -11,6 +11,7 @@
  * Everything is classic three.js materials (identical on WebGPU and WebGL2), costs three to five draw calls, never
  * enters the physics world, the light volume or the lightmap trace, and is rebuilt only when the data or the sky changes.
  */
+import { quantizeOnGpu } from '../gpu/quantized-geometry';
 import {
   BufferAttribute,
   BufferGeometry,
@@ -656,6 +657,7 @@ function landRing(p: LandPlan): Mesh {
   const material = new MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   const m = new Mesh(g, material);
   m.name = 'aether:land';
+  quantizeOnGpu(g, m);
   m.frustumCulled = false;
   m.castShadow = false;
   m.receiveShadow = false;

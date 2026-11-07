@@ -470,7 +470,7 @@ export function backfacing(cones: Float32Array, q: number, vx: number, vy: numbe
  * Copy the triangles of `count` selected clusters into `target` starting at
  * `offset`; returns the index count written (stops before exceeding capacity).
  */
-export function assembleCut(dag: ClusterDag, selected: Uint32Array, count: number, target: Uint32Array, offset = 0): number {
+export function assembleCut(dag: ClusterDag, selected: Uint32Array, count: number, target: Uint32Array | Uint16Array, offset = 0): number {
   let w = offset;
   for (let i = 0; i < count; i++) {
     const c = selected[i] as number;

@@ -16,6 +16,8 @@
 import { BufferAttribute, BufferGeometry, FrontSide, Mesh, type Material, type PerspectiveCamera } from 'three';
 import { assembleCut, createCutScratch, cutIndexCount, selectCut, type ClusterDag, type CutScratch, type CutView } from './cluster-dag';
 import { createLocalView, localView, sphereFarOutside } from './view';
+import { quantizeOnGpu } from '../gpu/quantized-geometry';
+import { releaseGpuAttribute } from '../gpu/attribute-release';
 
 export { isKitOfPieces, KIT_ISLAND_TRIANGLES, VIRTUAL_MIN_TRIANGLES } from './kit';
 
@@ -50,7 +52,9 @@ const CASTER_REUSE = 0.015;
 export class VirtualGroup {
   private readonly instances: Instance[] = [];
   private readonly scratch: CutScratch;
-  private readonly index: BufferAttribute;
+  private index: BufferAttribute;
+  /** Most triangles the index may hold (the budget). */
+  private readonly maxTriangles: number;
   private readonly attributes: Array<[string, BufferAttribute]> = [];
   private readonly view = createLocalView();
   private readonly cut: CutView = { cx: 0, cy: 0, cz: 0, pixelScale: 1, threshold: VIRTUAL_ERROR_PX, planes: null, backface: false };
@@ -62,7 +66,8 @@ export class VirtualGroup {
   /**
    * @param dag the mesh's cluster hierarchy
    * @param source geometry of the source part (its vertex arrays are shared, never copied)
-   * @param capacityTriangles size of the shared index buffer
+   * @param capacityTriangles most triangles the shared index buffer holds: it is sized for the finest cut of every
+   *   instance (a cut never draws more than the base level), up to this
    */
   constructor(readonly dag: ClusterDag, source: BufferGeometry, capacityTriangles: number) {
     this.scratch = createCutScratch(dag);
@@ -70,12 +75,32 @@ export class VirtualGroup {
       const a = source.getAttribute(name);
       if (a instanceof BufferAttribute) this.attributes.push([name, new BufferAttribute(a.array, a.itemSize, a.normalized)]);
     }
-    const cap = Math.max(3, Math.floor(Math.max(1, capacityTriangles)) * 3);
+    this.maxTriangles = Math.max(1, Math.floor(Math.max(1, capacityTriangles)));
+    const cap = this.sizeFor(1) * 3;
     // Static usage on purpose: three re-uploads DynamicDrawUsage buffers on every use (every
     // mesh, every pass). Changes go up through version bumps with update ranges instead.
-    this.index = new BufferAttribute(new Uint32Array(cap), 1);
+    // A cut indexes the source's vertices only: 16 bits when they fit (half the GPU memory of the buffer).
+    const vertices = source.getAttribute('position')?.count ?? Infinity;
+    this.index = new BufferAttribute(vertices <= 65536 ? new Uint16Array(cap) : new Uint32Array(cap), 1);
     this.sourceBox = source.boundingBox;
     this.sourceSphere = source.boundingSphere;
+  }
+
+  /** Index triangles for `n` instances: each at its finest cut, at most the budget. */
+  private sizeFor(n: number): number {
+    return Math.max(1, Math.min(this.maxTriangles, this.dag.baseTriangles * n));
+  }
+
+  /** Grow the shared index to hold every instance's finest cut (cuts already packed keep their place). */
+  private grow(): void {
+    const need = this.sizeFor(this.instances.length) * 3;
+    const old = this.index;
+    if (need <= old.count) return;
+    const array = new (old.array.constructor as new (n: number) => Uint16Array | Uint32Array)(need);
+    array.set(old.array as Uint16Array | Uint32Array);
+    this.index = new BufferAttribute(array, 1);
+    for (const inst of this.instances) inst.mesh.geometry.setIndex(this.index);
+    releaseGpuAttribute(old);
   }
 
   private readonly sourceBox: BufferGeometry['boundingBox'];
@@ -109,7 +134,10 @@ export class VirtualGroup {
     // Keep three's per-object culling (bounding sphere = the source's): an instance outside the
     // view or the shadow camera is not submitted at all in that pass.
     mesh.frustumCulled = true;
+    // The shared vertex streams go up as integers (gpu/quantized-geometry.ts); every instance draws them the same way.
+    quantizeOnGpu(g, mesh);
     this.instances.push({ mesh, source, selected: new Uint32Array(Math.max(1, this.dag.count)), count: 0, indexCount: 0, hash: -1, last: new Float64Array(4).fill(Number.NaN), batched: false });
+    this.grow();
     return mesh;
   }
 
@@ -218,7 +246,7 @@ export class VirtualGroup {
     if (!changed) return false;
     if (first < 0) first = 0;
     // Cuts are packed back to back: instances before the first change keep their ranges.
-    const target = this.index.array as Uint32Array;
+    const target = this.index.array as Uint32Array | Uint16Array;
     const start = first > 0 ? (this.instances[first - 1] as Instance).mesh.geometry.drawRange.start + (this.instances[first - 1] as Instance).mesh.geometry.drawRange.count : 0;
     let w = start;
     for (let k = first; k < this.instances.length; k++) {

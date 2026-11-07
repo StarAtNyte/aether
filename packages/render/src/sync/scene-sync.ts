@@ -88,6 +88,7 @@ import { areaLightsReady, chooseForwardLights, createEntityLight, disposeEntityL
 import { createEntityNode, ENTITY_ID_KEY, type EntityNode, type MeshBinding } from './entity-node';
 import { renderableIds } from './renderable';
 import { TERRAIN_RENDER_ORDER } from '../gpu/render-order';
+import { quantizeOnGpu } from '../gpu/quantized-geometry';
 import { withWaterKind } from './water-surfaces';
 import { COVER_MAX_INSTANCES, COVER_MIN_HEIGHT, OccluderGrid, partBounds, posesFromMatrices } from '../view/occluders';
 import { setEntityPath } from './property-path';
@@ -2075,6 +2076,8 @@ export class SceneSync {
         continue;
       }
       node.geometryKeys.push(geometryKey);
+      // Generator output never changes once made: its streams go up as integers (gpu/quantized-geometry.ts).
+      quantizeOnGpu(mesh.geometry, mesh);
       mesh.matrixAutoUpdate = false;
       mesh.name = `${node.id}:part${i}`;
       node.content.add(mesh);

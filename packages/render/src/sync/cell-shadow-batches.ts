@@ -25,6 +25,7 @@ import { createCutScratch, selectCut, type ClusterDag, type CutView } from '../v
 import { ancestorCell, assignCell, partitionFor, PERSISTENT_CELL, type CellPartition } from '../streaming/cell-grid';
 import { BATCHED_LAYER } from './static-batches';
 import { cpuPieces, releaseAfterUpload, released } from '../gpu/cpu-release';
+import { quantizeOnGpu } from '../gpu/quantized-geometry';
 
 /** The cast flag, material and layer test that apply to a candidate: a virtual stand-in answers with its source. */
 function casterOf(mesh: Mesh, virtual: { source: Mesh } | null | undefined): { casts: boolean; material: Material } {
@@ -561,7 +562,9 @@ export class CellShadowBatches {
     };
     for (const c of group) {
       const n = c.virtual ? c.virtual.dag.vertexCount : c.mesh.geometry.getAttribute('position').count;
-      if (chunk.length > 0 && vertices + n > MAX_BATCH_VERTICES) flush();
+      // A batch of at most 65,535 vertices takes 16-bit indices (half the GPU memory of its index), as long as it has
+      // members enough to be a batch.
+      if ((chunk.length > 0 && vertices + n > MAX_BATCH_VERTICES) || (chunk.length >= MIN_MEMBERS && vertices <= 65535 && vertices + n > 65535)) flush();
       chunk.push(c); vertices += n;
     }
     flush();
@@ -593,6 +596,8 @@ export class CellShadowBatches {
     // Only the GPU reads the positions once uploaded; the index stays (an eviction rewrites a range of it).
     releaseAfterUpload(geometry, {}, ['position']);
     const mesh = new Mesh(geometry, this.materialFor(members[0]!.material));
+    // Depth only: a grid of up to 2^-7 m (an error of 4 mm, far under a texel of the sun map).
+    quantizeOnGpu(geometry, mesh, { maxStep: 2 ** -7 });
     mesh.name = `aether:cell-shadow#${key}`;
     mesh.castShadow = true;
     mesh.receiveShadow = false;

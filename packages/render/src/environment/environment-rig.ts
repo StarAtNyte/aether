@@ -4,6 +4,7 @@
  * fog scaled to the content, ground plane plus a horizon skirt, and weather —
  * all driven by `world.environment`. Pure three.js core (no renderer access).
  */
+import { quantizeOnGpu } from '../gpu/quantized-geometry';
 import { HeightFog } from './height-fog';
 import { AMBIENT_MIN_RATIO, SUN_MIN_RATIO, boundTint, chroma, limitChroma } from './light-balance';
 import {
@@ -608,6 +609,7 @@ export class EnvironmentRig {
     ground.receiveShadow = true;
     ground.castShadow = false;
     ground.matrixAutoUpdate = false;
+    quantizeOnGpu(ground.geometry, ground);
     this.ground = ground;
     this.group.add(ground);
     if (spec.skirt !== false && size / 2 < GROUND_SKIRT_RADIUS) {
@@ -617,6 +619,7 @@ export class EnvironmentRig {
       skirt.receiveShadow = false;
       skirt.castShadow = false;
       skirt.matrixAutoUpdate = false;
+      quantizeOnGpu(skirt.geometry, skirt);
       this.skirt = skirt;
       this.group.add(skirt);
     }
