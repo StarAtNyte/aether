@@ -574,6 +574,8 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
             saveBase: `game-${musicSeed(JSON.stringify(world.voxel ?? world.name)).toString(36)}`,
             ...(sandbox ? { sandbox } : {}),
             ...(cooked ? { cooked } : {}),
+            // Big worlds stream their cells around the camera; the cook's recording needs every cell.
+            ...(route?.cook !== 'record' ? { streaming: true } : {}),
             // A viewer never bakes: baked light comes from the cooked package (a re-lightable bake the hour only re-weights).
             bakedLight: 'viewer',
             // The package's geometry differs from what this build makes (a spot check in the generation lanes): remember it

@@ -28,6 +28,7 @@ import {
   Sphere,
   StaticDrawUsage,
   Vector3,
+  type BufferAttribute,
   type BufferGeometry,
   type Light,
   type LightShadow,
@@ -799,7 +800,7 @@ export class SceneSync {
     if (diff && diff.added.length === 0 && diff.removed.length === 0 && diff.changed.length === 0 && diff.generatorsChanged.length === 0 && diff.meshesChanged.length === 0) return RESOLVED;
 
     this.ensurePartition(world);
-    const renderable = renderableIds(world);
+    const renderable = this.residentIds(world);
     const started: Promise<void>[] = [];
     const rebuild = new Set<EntityId>();
     const attach = new Set<EntityId>();
@@ -874,6 +875,148 @@ export class SceneSync {
     return Promise.all(started).then(() => {
       this.batchesStale = true;
     });
+  }
+
+  /**
+   * Cell streaming (streaming/cell-streaming.ts): only entities whose top-level ancestor passes `test` get scene nodes.
+   * Null: every entity does. Takes effect on the next {@link setWorld} or {@link applyResidency}.
+   */
+  setResidency(test: ((topLevel: EntityId) => boolean) | null): void {
+    this.residency = test;
+  }
+
+  private residency: ((topLevel: EntityId) => boolean) | null = null;
+
+  /** The renderable entities of `world` that are resident. */
+  private residentIds(world: WorldDoc): Set<EntityId> {
+    const ids = renderableIds(world);
+    const test = this.residency;
+    if (!test) return ids;
+    for (const id of ids) {
+      let top = id;
+      for (let depth = 0; depth < 64; depth++) {
+        const p = world.entities[top]?.parent;
+        if (!p || !world.entities[p]) break;
+        top = p;
+      }
+      if (!test(top)) ids.delete(id);
+    }
+    return ids;
+  }
+
+  /**
+   * Bring the scene in line with the residency test on the current world: nodes of entities that left are taken down
+   * (their geometry, materials and models released), entities that came in are created and built. New nodes start
+   * hidden when `hidden`, so a cell shows once it is complete ({@link revealNodes}). Resolves when the builds finished.
+   */
+  applyResidency(hidden = false): { added: EntityId[]; removed: number; done: Promise<void> } {
+    const world = this.current;
+    if (!world || this.disposed) return { added: [], removed: 0, done: RESOLVED };
+    const renderable = this.residentIds(world);
+    let removed = 0;
+    for (const [id, node] of this.nodes) {
+      if (node.transient || renderable.has(id)) continue;
+      this.removeNode(node);
+      removed++;
+    }
+    const added: EntityId[] = [];
+    for (const id of renderable) {
+      if (this.nodes.has(id)) continue;
+      const entity = world.entities[id];
+      if (!entity) continue;
+      const node = this.createNode(entity, false);
+      if (hidden) node.object.visible = false;
+      added.push(id);
+    }
+    if (added.length === 0) {
+      if (removed > 0) this.batchesStale = true;
+      return { added, removed, done: RESOLVED };
+    }
+    // Parents first, then children (attach re-parents survivors whose parent came back).
+    for (const id of added) {
+      const node = this.nodes.get(id);
+      if (node) this.attach(node);
+    }
+    for (const node of this.nodes.values()) {
+      const parentId = node.entity.parent;
+      if (parentId !== null && node.object.parent === this.root && this.nodes.has(parentId)) this.attach(node);
+    }
+    const started: Promise<void>[] = [];
+    this.batching = true;
+    try {
+      for (const id of added) {
+        const node = this.nodes.get(id);
+        if (node) started.push(this.rebuild(node));
+      }
+    } finally {
+      this.batching = false;
+    }
+    this.relayoutDependents(new Set(added), started);
+    if (this.lightsDirty) this.applyShadowCap();
+    this.batchesStale = true;
+    return { added, removed, done: Promise.all(started).then(() => { this.batchesStale = true; }) };
+  }
+
+  /**
+   * Geometry bytes the nodes of `ids` (and their child entities) hold: the larger of their meshes' vertex and index data
+   * and their generated outputs' arrays (meshes merged, instanced or drawn as virtual geometry live outside the nodes,
+   * while the output stays with them). Each geometry and array once.
+   */
+  geometryBytes(ids: Iterable<EntityId>): number {
+    const seen = new Set<unknown>();
+    let mesh = 0;
+    let output = 0;
+    const arrays = (v: unknown, depth: number): void => {
+      if (v === null || typeof v !== 'object' || depth > 6 || seen.has(v)) return;
+      seen.add(v);
+      if (ArrayBuffer.isView(v)) {
+        output += v.byteLength;
+        return;
+      }
+      if (Array.isArray(v)) {
+        for (const x of v) arrays(x, depth + 1);
+        return;
+      }
+      for (const key in v as Record<string, unknown>) arrays((v as Record<string, unknown>)[key], depth + 1);
+    };
+    const visit = (o: Object3D): void => {
+      const id: unknown = o.userData[ENTITY_ID_KEY];
+      if (typeof id === 'string') {
+        const out = this.nodes.get(id)?.keyed?.output;
+        if (out) arrays(out, 0);
+      }
+      const g = (o as Mesh).geometry as BufferGeometry | undefined;
+      if (g && g.isBufferGeometry && !seen.has(g)) {
+        seen.add(g);
+        for (const name in g.attributes) {
+          const a = g.attributes[name] as BufferAttribute;
+          mesh += a.count * a.itemSize * ((a.array as { BYTES_PER_ELEMENT?: number } | undefined)?.BYTES_PER_ELEMENT ?? 4);
+        }
+        const ix = g.index;
+        if (ix) mesh += ix.count * ((ix.array as { BYTES_PER_ELEMENT?: number } | undefined)?.BYTES_PER_ELEMENT ?? 4);
+      }
+      for (const c of o.children) visit(c);
+    };
+    for (const id of ids) {
+      const node = this.nodes.get(id);
+      if (node) visit(node.object);
+    }
+    return Math.max(mesh, output);
+  }
+
+  /** Show nodes {@link applyResidency} created hidden (the ones still present and still hidden by it). */
+  revealNodes(ids: readonly EntityId[]): void {
+    let any = false;
+    for (const id of ids) {
+      const node = this.nodes.get(id);
+      if (!node || node.object.visible || node.entity.visible === false) continue;
+      node.object.visible = true;
+      any = true;
+    }
+    if (any) {
+      this.batchesStale = true;
+      this.shadowCastersChanged();
+    }
   }
 
   /** Add a runtime-spawned entity that is not part of the document. Returns false on id conflicts. */

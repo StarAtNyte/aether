@@ -73,8 +73,12 @@ setInterval(() => {
 }, 250).unref();
 
 const INSTR = `(() => {
-  const S = (globalThis.__probe = { gl: {}, links: [], firstPicture: -1, progAtFirst: -1, linksAtFirst: -1, heapMax: 0 });
-  setInterval(() => { const m = performance.memory; if (m && m.usedJSHeapSize > S.heapMax) S.heapMax = m.usedJSHeapSize; }, 200);
+  const S = (globalThis.__probe = { gl: {}, links: [], firstPicture: -1, progAtFirst: -1, linksAtFirst: -1, heapMax: 0, gpuMax: 0 });
+  setInterval(() => {
+    const m = performance.memory; if (m && m.usedJSHeapSize > S.heapMax) S.heapMax = m.usedJSHeapSize;
+    // three's estimate of GPU memory (vertex, index and texture data).
+    try { const g = window.__aether.simulation.renderer.renderer.info.memory; const b = g.attributesSize + g.indexAttributesSize + g.texturesSize; if (b > S.gpuMax) S.gpuMax = b; } catch {}
+  }, 200);
   S.bigCalls = [];
   const add = (k, ms) => { const e = S.gl[k] || (S.gl[k] = { n: 0, ms: 0, max: 0 }); e.n++; e.ms += ms; if (ms > e.max) e.max = ms; if (ms > 15 && S.firstPicture < 0) S.bigCalls.push([Math.round(performance.now()), k, Math.round(ms)]); };
   const P = WebGL2RenderingContext.prototype;
@@ -272,6 +276,7 @@ async function main(): Promise<void> {
           return {
             firstPictureMs: Math.round(P.firstPicture),
             heapMaxMB: Math.round((P as unknown as { heapMax: number }).heapMax / 1048576),
+            gpuMaxMB: Math.round((P as unknown as { gpuMax: number }).gpuMax / 1048576),
             marks,
             timeline: all.map(([k, t]) => `${t} ${k}`),
             states: P.states.map(([t, s]) => `${t} ${s}`),
@@ -318,6 +323,7 @@ async function main(): Promise<void> {
           const draws = (): number => n('drawArrays') + n('drawElements') + n('drawArraysInstanced') + n('drawElementsInstanced');
           const u0 = n('useProgram'), d0 = draws(), l0 = n('linkProgram'), prog0 = r.renderer.info.memory.programs;
           const dts: number[] = [];
+          const slow: Array<[number, number]> = [];
           const t0 = performance.now();
           let last = t0;
           while (performance.now() - t0 < 8000) {
@@ -326,6 +332,7 @@ async function main(): Promise<void> {
             r.setCameraPose(x, p0.y, z, Math.atan2(x - cx, z - cz), pitch);
             const ts = await new Promise<number>((res) => requestAnimationFrame(res));
             dts.push(ts - last);
+            if (ts - last > 50 && dts.length > 1) slow.push([Math.round(ts), Math.round(ts - last)]);
             last = ts;
           }
           dts.shift();
@@ -335,7 +342,13 @@ async function main(): Promise<void> {
           const frames = dts.length;
           const s = [...dts].sort((a, b) => a - b);
           const q = (p: number): number => Math.round((s[Math.min(s.length - 1, Math.floor(s.length * p))] ?? 0) * 10) / 10;
-          return { frames, p50: q(0.5), p95: q(0.95), max: q(1), useProgramPerFrame: Math.round((n('useProgram') - u0) / frames), drawsPerFrame: Math.round((draws() - d0) / frames), linksDuringOrbit: n('linkProgram') - l0, busy, programsAdded: r.renderer.info.memory.programs - prog0 };
+          // Cell streaming (stage 4b): what it did during the orbit, and the slow frames that ended within 150 ms after one of
+          // its steps (applying a residency change, revealing a loaded cell).
+          const st = (globalThis as unknown as { __aetherStreaming?: () => { events: Array<[number, string, number]> } & Record<string, unknown> }).__aetherStreaming?.() ?? null;
+          const steps = st ? st.events.filter((e) => e[0] >= t0).map((e) => e[0]) : [];
+          const nearStreaming = slow.filter(([ts, dt]) => steps.some((t) => t >= ts - dt - 5 && t <= ts + 150));
+          const streaming = st ? { ...st, events: undefined, orbitSteps: steps.length, slowFrames: slow.length, slowNearStreaming: nearStreaming.map(([ts, dt]) => `${ts}+${dt}`).join(' ') } : null;
+          return { frames, p50: q(0.5), p95: q(0.95), max: q(1), useProgramPerFrame: Math.round((n('useProgram') - u0) / frames), drawsPerFrame: Math.round((draws() - d0) / frames), linksDuringOrbit: n('linkProgram') - l0, busy, programsAdded: r.renderer.info.memory.programs - prog0, streaming };
         });
         log(`${run}: quality ${(await page.evaluate(() => (globalThis as unknown as { __probe: { quality: Array<[number, string, boolean]> } }).__probe.quality)).map(([t, q, after]) => `${after ? '+' : ''}${(t / 1000).toFixed(1)} s ${q}`).join(', ')}`);
         // The frames of the first 6 s after the first picture (interval, GL calls by kind, scale).
@@ -350,6 +363,7 @@ async function main(): Promise<void> {
         });
         if (playLinks) log(`${run}: play started at ${(playLinks.playAt / 1000).toFixed(1)} s, links in its first 10 s (after the first picture) ${playLinks.links}${playLinks.elapsed < 10_000 ? ` (only ${playLinks.elapsed} ms of play so far)` : ''}`);
         log(`${run}: orbit p50 ${orbit.p50} p95 ${orbit.p95} max ${orbit.max}, useProgram/frame ${orbit.useProgramPerFrame}, draws/frame ${orbit.drawsPerFrame}, links ${orbit.linksDuringOrbit}`);
+        if (orbit.streaming) log(`${run}: streaming ${JSON.stringify(orbit.streaming)}`);
         if (wantLinks) {
           const links = await page.evaluate(() => {
             const P = (globalThis as unknown as { __probe: { firstPicture: number; linkPairs: Array<{ at: number; v: string; f: string; used: number | false; ms: number }> } }).__probe;
@@ -416,7 +430,8 @@ async function main(): Promise<void> {
         if (process.env['KEEP_TRACE'] !== '1') rmSync(tracePath, { force: true });
         if (gpuMain) log(`${run}: GPU-process tasks > 50 ms before the first picture ${gpuMain.before.n} (${gpuMain.before.ms} ms, longest ${gpuMain.before.max}), after ${gpuMain.after.n} (${gpuMain.after.ms} ms, longest ${gpuMain.after.max})`);
         const cgPeakMB = Math.round(cgPeak / 1048576);
-        log(`${run}: JS heap peak ${load.heapMaxMB} MB, scope peak ${cgPeakMB} MB`);
+        const gpuEnd = await page.evaluate(() => (globalThis as unknown as { __probe: { gpuMax: number } }).__probe.gpuMax);
+        log(`${run}: JS heap peak ${load.heapMaxMB} MB, GPU estimate peak ${load.gpuMaxMB} MB at the load, ${Math.round(gpuEnd / 1048576)} MB to the end, scope peak ${cgPeakMB} MB`);
         results[run] = { ...load, orbit, playLinks, gpuMain, cgPeakMB };
       } finally {
         await ctx.close().catch(() => undefined);

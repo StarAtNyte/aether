@@ -234,6 +234,8 @@ export interface SimulationOptions {
   cooked?: CookedPackage | null;
   /** A spot check of the cooked package failed (see the render package's `onCookMismatch`). */
   onCookMismatch?: (m: CookMismatch, purged: Promise<void>) => void;
+  /** Stream the cells of a big world around the camera (see the render package's `streaming`): viewers only. */
+  streaming?: boolean;
   /** Backend policy (default 'auto'). */
   backend?: BackendPreference;
   /** Why WebGL2 is forced (recorded in the backend report). */
@@ -403,8 +405,28 @@ export class Simulation {
   /** Feel cues played this session (diagnostics, e2e). */
   private feelPlayed = 0;
 
+  /** Static bodies of this session whose colliders came from their generated output (see {@link onStreamedIn}). */
+  private builtColliders = new Set<EntityId>();
+
+  /**
+   * Streamed cells came in (the render package's `onStreamedIn`): a static body whose output was not generated when the
+   * session's physics was built gets its generator collider now. Colliders stay when their cell streams out again.
+   */
+  private onStreamedIn(ids: readonly EntityId[]): void {
+    const s = this.session;
+    if (!s) return;
+    for (const id of ids) {
+      const e = s.world.entities[id];
+      if (!e?.physics || e.template || e.parent !== null || e.physics.body !== 'static' || s.destroyed.has(id) || this.builtColliders.has(id)) continue;
+      if (!this.renderer.getGeneratorOutput(id)) continue;
+      this.builtColliders.add(id);
+      s.pw.addEntity(e, { trusted: true });
+    }
+  }
+
   private constructor(renderer: WorldRenderer, history: History, listener: SimulationListener, opts: SimulationOptions) {
     this.renderer = renderer;
+    renderer.onStreamedIn = (ids) => this.onStreamedIn(ids);
     this.history = history;
     this.listener = listener;
     this.pointerLock = opts.pointerLock === true;
@@ -453,6 +475,7 @@ export class Simulation {
       ...(opts.bakedLight ? { bakedLight: opts.bakedLight } : {}),
       ...(opts.cooked ? { cooked: opts.cooked } : {}),
       ...(opts.onCookMismatch ? { onCookMismatch: opts.onCookMismatch } : {}),
+      ...(opts.streaming ? { streaming: true } : {}),
       onLightmapStatus: (status) => listener.onLightmap?.(status),
       onContextLost: (info) => listener.onContextLost?.(info),
       ...(opts.sandbox ? { sandbox: opts.sandbox } : {}),
@@ -1280,6 +1303,9 @@ export class Simulation {
       if (t) this.table.ensure(id, t.position, t.quaternion);
     }
     this.session = session;
+    // Bodies built from a generated output now; the rest get theirs when their cell streams in.
+    this.builtColliders = new Set();
+    for (const id in world.entities) if (world.entities[id]?.physics && this.renderer.getGeneratorOutput(id)) this.builtColliders.add(id);
     this.wasGrounded = true;
     this.fallSpeed = 0;
     this.feelStep = 0;

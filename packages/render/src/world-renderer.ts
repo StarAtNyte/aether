@@ -45,7 +45,8 @@ function breakdownMB(b: TextureBreakdown | null): RenderMemoryStats['textureBrea
 import { createTextureSource, TextureCache, type TextureSource } from './geometry/poster';
 import type { HdriSource } from './environment/hdri';
 import { photoFinishResolver } from './materials/photo-finishes';
-import { getCatalog, loadCatalog } from '@aether/assets';
+import { assetInfo, effectiveAssetId, fitScale, getCatalog, loadCatalog } from '@aether/assets';
+import { CellStreamer, cookedCellBytes, planStreaming, streamingBudget, streamingConfig, worldPartition, type StreamSource } from './streaming/cell-streaming';
 import { SceneSync } from './sync/scene-sync';
 import { installShadowSkip, SHADOW_BATCH_LAYER, shadowSkipTest } from './sync/cell-shadow-batches';
 import type { EntityNode } from './sync/entity-node';
@@ -143,7 +144,7 @@ import { disposeProfileTextures, registerLightSupport, type IesSpotLightCtor } f
 import { errorMessage, log } from './log';
 import { GameFeel } from './feel/game-feel';
 import type { VoxelLayer } from './voxel/voxel-layer';
-import type { Environment } from '@aether/core';
+import type { AssetShape, Environment } from '@aether/core';
 
 /** Renderer construction options. */
 /** What the black-screen watchdog (or a shader failure) tells the host. */
@@ -268,6 +269,13 @@ export interface RendererOptions {
   onCookMismatch?: (m: CookMismatch, purged: Promise<void>) => void;
   /** The baked lightmap started, progressed, applied, failed or was cancelled (a status line, a cancel button). */
   onLightmapStatus?: (status: LightmapStatus) => void;
+  /**
+   * Stream the cells of a big world (streaming/cell-streaming.ts, docs/ARCHITECTURE-STREAMING.md stage 4b): only static
+   * scenery near the camera has scene nodes; far cells unload. A viewer only (the editor, captures and the cook's recording
+   * need the whole world). A world whose cells all lie near its opening view loads whole, as without it.
+   * `__AETHER_STREAMING = false` turns it off.
+   */
+  streaming?: boolean;
 }
 
 /** Details of a lost GPU device / WebGL context. */
@@ -552,6 +560,24 @@ const INTERIOR_BALANCE = 1;
  * What `next` changes of the building's light relative to `prev`: `geometry` when a building part changed (the baked light
  * bakes again), `light` when only a light did, null when neither.
  */
+/** How often streaming looks at its sources (ms). */
+const STREAM_INTERVAL_MS = 200;
+const _streamDir = new Vector3();
+const _streamFocus: Vec3 = [0, 0, 0];
+const _streamBox = new Box3();
+
+/** Top-level ancestor of entity `id` in `world` (`id` itself without a world or parent). */
+function topLevelOf(world: WorldDoc | null, id: EntityId): EntityId {
+  if (!world) return id;
+  let cur = id;
+  for (let depth = 0; depth < 64; depth++) {
+    const p = world.entities[cur]?.parent;
+    if (!p || !world.entities[p]) return cur;
+    cur = p;
+  }
+  return cur;
+}
+
 function archChangeKind(prev: WorldDoc, next: WorldDoc): 'geometry' | 'light' | null {
   if (prev.entities === next.entities) return null;
   let kind: 'geometry' | 'light' | null = null;
@@ -1184,6 +1210,8 @@ export class WorldRenderer {
     this.gpu = Object.freeze({ description: gpu.description, tier: classifyGpu(gpu.description), report: gpu.report });
     this.geckoSafe = geckoSafePath(backend, gpu.description);
     this.lowMemory = opts.lowMemory === true || opts.lowPower === true;
+    this.streamingWanted = opts.streaming === true && (globalThis as { __AETHER_STREAMING?: boolean }).__AETHER_STREAMING !== false;
+    this.cookedCells = opts.cooked?.manifest.cells ?? null;
     this.lightmap = new LightmapController(this.lightVolume.light, {
       gather: () => this.gatherLightmap(),
       volume: () => (this.lightVolume.baking ? null : this.lightVolume.bakedVolume),
@@ -1295,7 +1323,12 @@ export class WorldRenderer {
       // Low-memory mode keeps no hierarchy cache beyond the meshes on screen.
       virtual: opts.virtualGeometry === false ? false : { triangles: this.budget.virtualTriangles, dag: { cacheBytes: this.lowMemory ? 0 : 96 * 1024 * 1024 } },
       onBatchesChanged: () => this.requestPreparedFrame(false),
-      onContentChanged: () => {
+      onContentChanged: (id) => {
+        // A streamed cell coming in or going out leaves the framing (fog, shadow fit, orbit reach) as the world opened.
+        if (this.streamer && this.framed && this.streamer.streams(topLevelOf(this.sync.world, id))) {
+          this.needsDraw = true;
+          return;
+        }
         this.boundsDirty = true;
         this.debugDirty = true;
         this.needsDraw = true;
@@ -1791,6 +1824,121 @@ export class WorldRenderer {
     return () => {
       for (const o of hidden) o.visible = true;
     };
+  }
+
+  /** Entities of a streamed cell were built and shown (top-level and children); the host adds their colliders. */
+  onStreamedIn: ((ids: readonly EntityId[]) => void) | null = null;
+
+  /** Cell streaming of this world (null: the whole world is resident). */
+  private streamer: CellStreamer | null = null;
+  private readonly streamingWanted: boolean;
+  /** The cooked package's cells (stored bytes per level-0 cell), for the first estimate of each streamed cell's weight. */
+  private readonly cookedCells: ReadonlyArray<{ key: string; bytes: number }> | null;
+  /** Last streaming update (ms). */
+  private streamAt = 0;
+  /** Streaming counters (window.__aetherStreaming, probes). */
+  private readonly streamLog = { applies: 0, applyMsMax: 0, applyMsSum: 0, revealed: 0, removed: 0, loadMsMax: 0, events: [] as Array<[number, string, number]> };
+
+  /** Cell streaming state (diagnostics, probes): null when the world is not streamed. */
+  get streaming(): (ReturnType<CellStreamer['stats']> & { applies: number; applyMsMax: number; applyMsSum: number; revealed: number; removed: number; loadMsMax: number; nodes: number; events: Array<[number, string, number]> }) | null {
+    return this.streamer ? { ...this.streamer.stats(), ...this.streamLog, nodes: this.sync.entityCount } : null;
+  }
+
+  /**
+   * Set up cell streaming for a first world: plan which top-level entities stream, and make resident the cells near its
+   * opening view (the first picture waits for those only). A world all of whose cells are near the opening loads whole.
+   */
+  private startStreaming(world: WorldDoc): void {
+    const partition = worldPartition(world);
+    const eye = world.opening?.position ?? world.player?.spawn;
+    if (!partition || !eye) return;
+    const assetSize = (shape: AssetShape): readonly [number, number, number] | null => {
+      const info = assetInfo(effectiveAssetId(shape));
+      if (!info || info.kind !== 'model') return null;
+      const k = fitScale(info.size, shape.fitSize);
+      return [info.size[0] * k, info.size[1] * k, info.size[2] * k];
+    };
+    const plan = planStreaming(world, partition, assetSize);
+    if (plan.entities.size === 0) return;
+    const budget = streamingBudget(this.gpu.tier === 'integrated' || this.gpu.tier === 'unknown' || this.lowMemory);
+    const streamer = new CellStreamer(plan, streamingConfig(partition.cellSize, this.autoTierNow(), budget));
+    if (this.cookedCells) cookedCellBytes(world, partition, streamer, this.cookedCells);
+    const target = world.opening?.target;
+    const dx = target ? target[0] - eye[0] : 0, dz = target ? target[2] - eye[2] : 0;
+    const len = Math.hypot(dx, dz);
+    const sources: StreamSource[] = [{ x: eye[0], z: eye[2], ...(len > 1e-3 ? { dir: [dx / len, dz / len] as [number, number] } : {}) }];
+    streamer.primeAround(sources, now());
+    const s = streamer.stats();
+    log.info(`streaming: ${s.entities} of ${Object.keys(world.entities).length} entities stream in ${s.cells} cells (${partition.cellSize} m), ${s.resident} at the opening (${s.residentMB} of ${s.budgetMB} MB); pinned ${JSON.stringify(plan.pinned)}`);
+    if (s.resident === s.cells) return;
+    this.streamer = streamer;
+    this.sync.setResidency((id) => streamer.resident(id));
+    // The cells of the opening are part of the load: once the world is built they are loaded and weighed.
+    const opening = streamer.loadingKeys();
+    // After this task: the world's builds start right after this call (sync.setWorld), and are what is waited for.
+    void Promise.resolve().then(() => this.sync.whenIdle()).then(() => {
+      if (this.streamer !== streamer) return;
+      for (const key of opening) {
+        streamer.loaded(key);
+        streamer.setBytes(key, this.sync.geometryBytes(streamer.members(key)), true);
+      }
+    });
+    (globalThis as { __aetherStreaming?: () => unknown }).__aetherStreaming = () => this.streaming;
+  }
+
+  /** Every {@link STREAM_INTERVAL_MS}: load the cells the sources came near, unload those left behind. */
+  private updateStreaming(t: number): void {
+    const streamer = this.streamer;
+    if (!streamer || t - this.streamAt < STREAM_INTERVAL_MS || this.sync.world === null) return;
+    this.streamAt = t;
+    const cam = this.perspective.position;
+    this.perspective.getWorldDirection(_streamDir);
+    const len = Math.hypot(_streamDir.x, _streamDir.z);
+    const sources: StreamSource[] = [{ x: cam.x, z: cam.z, ...(len > 1e-3 ? { dir: [_streamDir.x / len, _streamDir.z / len] as [number, number] } : {}) }];
+    const focus = this.orbitTarget(_streamFocus);
+    if (Number.isFinite(focus[0]) && Number.isFinite(focus[2])) sources.push({ x: focus[0], z: focus[2] });
+    const change = streamer.update(sources, t);
+    if (change.load.length === 0 && change.unload.length === 0) return;
+    const t0 = now();
+    const r = this.sync.applyResidency(true);
+    const ms = now() - t0;
+    const log_ = this.streamLog;
+    log_.applies++;
+    log_.applyMsSum += ms;
+    log_.applyMsMax = Math.max(log_.applyMsMax, ms);
+    log_.removed += r.removed;
+    for (const k of change.unload) log_.events.push([Math.round(t0), `unload ${k}`, Math.round(ms)]);
+    for (const k of change.load) log_.events.push([Math.round(t0), `load ${k}`, Math.round(ms)]);
+    if (log_.events.length > 200) log_.events.splice(0, log_.events.length - 200);
+    this.needsDraw = true;
+    if (change.load.length === 0) return;
+    // Generation and mounts order themselves from the camera.
+    this.sync.setGenerationFocus([cam.x, cam.y, cam.z]);
+    const added = r.added;
+    const cells = change.load;
+    void r.done.then(() => {
+      if (this.disposed || this.streamer !== streamer) return;
+      const r0 = now();
+      this.sync.revealNodes(added);
+      log_.events.push([Math.round(r0), `reveal ${added.length}`, Math.round(now() - r0)]);
+      log_.revealed += added.length;
+      log_.loadMsMax = Math.max(log_.loadMsMax, now() - t0);
+      for (const id of added) {
+        if (!streamer.streams(id)) continue;
+        this.sync.entityBounds(id, _streamBox);
+        if (!_streamBox.isEmpty()) streamer.learn(id, [_streamBox.min.x, _streamBox.min.z, _streamBox.max.x, _streamBox.max.z]);
+      }
+      for (const k of cells) {
+        streamer.loaded(k);
+        streamer.setBytes(k, this.sync.geometryBytes(streamer.members(k)), true);
+      }
+      this.needsDraw = true;
+      try {
+        this.onStreamedIn?.(added);
+      } catch (e) {
+        log.warn(`streamed-in handler failed: ${errorMessage(e)}`);
+      }
+    });
   }
 
   /** Pending asynchronous work, independent of optional performance-stat collection. */
@@ -2366,6 +2514,7 @@ export class WorldRenderer {
     // lower before anything is built, so the program pre-warm links the tier the load will draw with, not the boot guess
     // (Lisbon Hills, cooked: 93 links of the medium set during generation, then the world settled on low).
     if (hold && prev === null) this.startForWeight(Object.keys(world.entities).length);
+    if (prev === null && this.streamingWanted) this.startStreaming(world);
     performance.mark('aether:sync-start');
     const done = this.sync.setWorld(world);
     this.fx.setWorld(world);
@@ -4765,6 +4914,7 @@ export class WorldRenderer {
     this.cullSmallMeshes();
     const step = Number.isFinite(dt) ? Math.min(Math.max(dt, 0), 0.1) : 0;
     const cameraMoved = this.rig.update(step);
+    if (this.streamer && this.framed && !this.loadingScreen) this.updateStreaming(t0);
     // The view or the content was asked to change from outside (camera, edits, resizes), as against content that merely animates.
     const motion = cameraMoved || this.frameInvalidation.motion;
     this.frameBudget.beginFrame(motion);
