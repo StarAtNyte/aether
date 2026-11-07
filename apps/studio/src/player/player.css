@@ -1182,6 +1182,8 @@ kbd {
   gap: 10px;
   text-align: center;
   pointer-events: auto;
+  /* The end card sits over the living scene (the last shot's view): a soft scrim keeps it legible. */
+  background: radial-gradient(ellipse 60% 45% at 50% 50%, rgb(14 10 28 / 0.5), rgb(14 10 28 / 0) 100%);
   animation: pl-story-in 1.2s ease both;
 }
 

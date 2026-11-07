@@ -6,17 +6,17 @@
   {
    "id": "kaho",
    "gender": "female",
-   "look": "anime girl, summer sailor uniform, chestnut bob with a short ponytail",
-   "file": "c/kaho.848867ff.glb",
+   "look": "anime girl, summer sailor uniform with a sky-blue collar and a teal neckerchief, chin-length chestnut bob with a thin braid and a seashell charm",
+   "file": "c/kaho.92067d24.glb",
    "height": 1.535,
    "hip": 0.848,
-   "triangles": 41312,
+   "triangles": 45304,
    "faces": 1,
-   "bytes": 583444,
+   "bytes": 629040,
    "style": "toon",
-   "sha256": "848867ff7554790369822ce98d195fe93d36deaa875559a30c4808f8ad518f49",
-   "vertices": 21287,
-   "bones": 68
+   "sha256": "92067d246eb7265b56cc55a523ab45f5596181bae77b725909c00b10221bba55",
+   "vertices": 23407,
+   "bones": 69
   }
  ]
 }

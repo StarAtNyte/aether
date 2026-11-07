@@ -26,6 +26,9 @@ const log = (s: string): void => void process.stdout.write(`[${((Date.now() - T0
 const world = JSON.parse(readFileSync(join(dist, 'templates/worlds/cloudwatch-harbour.json'), 'utf8')) as { world: { id: string; name: string; entities: Record<string, unknown>; startMode?: string } };
 world.world.id = 'kaho-proof';
 world.world.name = 'Kaho proof';
+// The proof world opens on the orbit view, not on the film (whose cameras would take over the shots).
+delete (world.world as { story?: unknown }).story;
+world.world.startMode = 'orbit';
 world.world.entities['kaho-test'] = {
   behaviors: [], castShadow: true, id: 'kaho-test', name: 'Kaho', parent: null, receiveShadow: true,
   shape: { kind: 'primitive', primitive: 'box', size: [0.5, 1.6, 0.5] }, state: {}, tags: [], template: false,

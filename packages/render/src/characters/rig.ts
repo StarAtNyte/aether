@@ -42,6 +42,10 @@ export interface RigOptions {
   toon?: { springs: readonly SpringChainDef[]; colliders: readonly ColliderDef[] };
 }
 
+/** A toon body's arms out from the clip's (radians, about 6 degrees): the hands clear the pleated skirt. */
+const TOON_ARM_CLEARANCE = 0.11;
+/** How far a standing toon body's head returns to rest from the idle clip's glances. */
+const TOON_HEAD_STEADY = 0.8;
 const _v = new Vector3();
 const _v2 = new Vector3();
 const _q = new Quaternion();
@@ -66,6 +70,16 @@ export class CharacterRig {
   autoMotion = true;
   /** World point to look at, or null. */
   lookTarget: Vector3 | null = null;
+  /**
+   * The walkable height under a point (world x, z; `y` a hint of the height near it), or null where nothing is known:
+   * when set, the feet are placed on it (stair treads, slopes) with the pelvis lowered so the lower foot reaches, and the
+   * swing of each foot kept above its own ground. Absent: the feet stay where the clip puts them.
+   */
+  ground: ((x: number, z: number, y: number) => number | null) | null = null;
+  /** A toon body's arms hang this far (radians) out from the clip's, so the hands clear a flared skirt. */
+  armClearance = 0;
+  /** 0..1: how far a toon body's head and neck are eased back to their rest while standing (the clip's glances). */
+  headSteady = 0;
   /**
    * Hips turned away from the chest (radians, about up) toward where the body walks while the facing is imposed (a player
    * strafing with a gun): the legs step that way, the chest and the gun stay on the aim. 0 for everyone else.
@@ -114,6 +128,8 @@ export class CharacterRig {
   };
   /** Every bone with the pose the mixer last left it in (before any correction): see {@link restoreClean}. */
   private readonly allBones: Object3D[] = [];
+  /** Every bone's bind rotation (the order of {@link allBones}). */
+  private restQ = new Float32Array(0);
   private cleanQ: Float32Array = new Float32Array(0);
   private cleanP: Float32Array = new Float32Array(0);
   private cleanS: Float32Array = new Float32Array(0);
@@ -174,6 +190,10 @@ export class CharacterRig {
       }
     });
     if (opts.toon && opts.toon.springs.length > 0) this.springs = new SpringSystem(opts.scene, opts.toon.springs, opts.toon.colliders);
+    if (opts.toon) {
+      this.armClearance = TOON_ARM_CLEARANCE;
+      this.headSteady = TOON_HEAD_STEADY;
+    }
     this.blob = contactShadow();
     this.root.add(this.blob);
     for (const c of opts.clips) this.clips.set(c.name, c);
@@ -207,6 +227,8 @@ export class CharacterRig {
       if (o !== s && !(o as Mesh).isMesh) this.allBones.push(o as Bone);
     });
     this.cleanQ = new Float32Array(this.allBones.length * 4);
+    this.restQ = new Float32Array(this.allBones.length * 4);
+    for (let i = 0; i < this.allBones.length; i++) (this.allBones[i] as Object3D).quaternion.toArray(this.restQ, i * 4);
     this.cleanP = new Float32Array(this.allBones.length * 3);
     this.cleanS = new Float32Array(this.allBones.length * 3);
     this.input.mood = opts.look.mood;
@@ -509,6 +531,9 @@ export class CharacterRig {
     if (detail >= 1) this.applyBodyPose(plan.state, step);
     if (detail >= 1) this.relaxAirArms(plan.state, step);
     if (detail >= 1) this.paddleStroke(plan.state, step);
+    if (detail >= 1) this.toonPose(plan.state);
+    if (detail >= 2 && this.ground) this.groundFeet(plan.state, step);
+    else this.feetPrimed = false;
     if (detail >= 1) {
       this.updateLook(step, detail);
       if (detail >= 2) this.updateCarry();
@@ -767,6 +792,98 @@ export class CharacterRig {
 
   private airArms = 0;
   private pelvisRestY = 0;
+
+  /**
+   * A toon body's corrections after the clip: the arms a little out from the body (the motion set was made for a slimmer
+   * silhouette than a pleated skirt), and, standing, the head and neck eased toward their rest so an idle clip's glances
+   * do not turn the head on its own in a held close-up (the look-at still turns it, within its limits).
+   */
+  private toonPose(state: string): void {
+    const b = this.bones;
+    const standing = state === 'loco' && this.smoothSpeed < 0.05;
+    if (this.armClearance > 0 && !this.forced && state !== 'sit' && state !== 'sit_down' && state !== 'stand_up') {
+      this.root.updateWorldMatrix(true, true);
+      this.model.getWorldQuaternion(_qm);
+      for (const [bone, sign] of [[b.lUpper, 1], [b.rUpper, -1]] as const) {
+        const parent = bone?.parent;
+        if (!bone || !parent) continue;
+        parent.getWorldQuaternion(_qp);
+        bone.quaternion.copy(armRelaxed(bone.quaternion, _qp, _qm, sign * this.armClearance));
+      }
+    }
+    if (this.headSteady > 0 && standing && !this.forced) {
+      for (const [bone, k] of [[b.neck, 0.7], [b.head, 1]] as const) {
+        if (!bone) continue;
+        const i = this.allBones.indexOf(bone as Bone);
+        if (i < 0) continue;
+        _q.fromArray(this.restQ, i * 4);
+        bone.quaternion.slerp(_q, this.headSteady * k);
+      }
+    }
+  }
+
+  /** Feet placement state: the eased height offset of each foot and the pelvis drop (m). */
+  private readonly feetOff = [0, 0];
+  private feetDrop = 0;
+  private feetPrimed = false;
+
+  /**
+   * Feet on uneven ground ({@link ground}): each ankle is moved by the height of the ground under it relative to the
+   * ground under the body, the pelvis drops by the lower foot's share, and two-bone IK bends each leg to reach. The swing
+   * height the clip gives a foot is kept, so a step clears the tread's nosing.
+   */
+  private groundFeet(state: string, dt: number): void {
+    const b = this.bones;
+    const ground = this.ground;
+    if (!ground || (state !== 'loco' && state !== 'land')) {
+      this.feetPrimed = false;
+      return;
+    }
+    this.root.updateWorldMatrix(true, true);
+    this.root.getWorldPosition(_v2);
+    const baseY = _v2.y;
+    const e = this.root.matrixWorld.elements;
+    const yaw = Math.atan2(e[8] as number, e[10] as number);
+    const fx = Math.sin(yaw);
+    const fz = Math.cos(yaw);
+    const k = this.feetPrimed ? 1 - Math.exp(-dt / 0.05) : 1;
+    const legs = [[b.lThigh, b.lCalf, b.lFoot], [b.rThigh, b.rCalf, b.rFoot]] as const;
+    let low = 0;
+    for (let i = 0; i < 2; i++) {
+      const foot = legs[i]?.[2];
+      if (!foot) continue;
+      foot.getWorldPosition(_v);
+      // Under the ball of the foot as well as the heel: a foot over a tread's edge stands on the higher of the two.
+      const g0 = ground(_v.x, _v.z, baseY);
+      const g1 = ground(_v.x + fx * 0.09, _v.z + fz * 0.09, baseY);
+      const g = g0 === null ? g1 : g1 === null ? g0 : Math.max(g0, g1);
+      const want = g === null ? 0 : MathUtils.clamp(g - baseY, -0.32, 0.32);
+      this.feetOff[i] = (this.feetOff[i] as number) + (want - (this.feetOff[i] as number)) * k;
+      low = Math.min(low, this.feetOff[i] as number);
+    }
+    this.feetDrop += (low - this.feetDrop) * k;
+    this.feetPrimed = true;
+    if (Math.abs(this.feetDrop) < 1e-4 && Math.abs(this.feetOff[0] as number) < 1e-4 && Math.abs(this.feetOff[1] as number) < 1e-4) return;
+    // Ankle targets before the pelvis moves.
+    const targets = [_feet[0] as Vector3, _feet[1] as Vector3];
+    for (let i = 0; i < 2; i++) {
+      const foot = legs[i]?.[2];
+      if (!foot) continue;
+      foot.getWorldPosition(targets[i] as Vector3);
+      (targets[i] as Vector3).y += this.feetOff[i] as number;
+    }
+    const parentScale = this.model.parent ? this.model.parent.getWorldScale(_v).y : 1;
+    this.model.position.y += this.feetDrop / (parentScale || 1);
+    this.model.updateMatrixWorld(true);
+    for (let i = 0; i < 2; i++) {
+      const [thigh, calf, foot] = legs[i] as readonly [Bone | null, Bone | null, Bone | null];
+      if (!thigh || !calf || !foot) continue;
+      thigh.getWorldPosition(_pole);
+      _pole.x -= fx * 0.6;
+      _pole.z -= fz * 0.6;
+      solveTwoBone(thigh, calf, foot, targets[i] as Vector3, _pole, 1);
+    }
+  }
 
   /** Standing pelvis height above the feet (m), measured once from the idle pose. */
   private pelvisRest(sc: number): number {

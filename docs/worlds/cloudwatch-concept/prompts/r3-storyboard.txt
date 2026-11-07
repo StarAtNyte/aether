@@ -1,0 +1,27 @@
+Use your built-in image generation tool to create exactly 3 images, then save each as a PNG in the current directory with the file names below. If copying fails, just list where the tool saved them. Do not write code or any other files.
+
+These are storyboard pages for "Two Whistles", an ORIGINAL 100-second animated short (no resemblance to any existing film, character, studio or artist). Rough storyboard style: loose pencil and grey marker, a touch of warm colour for the sky only, each page a grid of 6 widescreen panels (2.39:1) in 2 columns x 3 rows, read left-to-right, top-to-bottom, each panel with a small shot number. No other text in the panels. The girl Kaho (15, chin-length dark bob, a thin braid behind her left ear, white short-sleeve sailor blouse with a light-blue collar, navy pleated skirt) lives in a small hillside harbour town at summer sunset: a long stone stair climbs from the harbour road over a single-track railway level crossing, through a vermilion shrine gate, to a lookout high above the sea with a huge cumulonimbus cloud over the sea and a low sun in the south-west.
+
+1) storyboard-1.png, panels:
+ 1. Wide sky over the sea, the huge cloud, the camera tilting down to the sun's glitter path.
+ 2. Low insert: her loafers pounding the harbour road, side view at ground level.
+ 3. Long lens down the harbour road toward the low sun: she runs away from us into the glare, the town and wires compressed around her.
+ 4. Profile tracking shot alongside her as she runs up the first stone steps, the sun behind her (rim light), moving left to right.
+ 5. Close-up insert: the level crossing's twin red lamps flashing against the sky.
+ 6. Medium: she arrives at the crossing as the barrier is down and a two-car commuter train rushes across the frame.
+
+2) storyboard-2.png, panels:
+ 7. Close-up of her profile, Dutch tilt, the train a blur of lit windows right behind her, hair blown by the wind of the train.
+ 8. Held wide: the empty crossing, the barrier rising, the train's tail lights gone; she is small, seen from behind. Stillness.
+ 9. Very low angle looking up at her face against the sky and the cloud; she looks up the hill, remembering.
+ 10. High angle down the long stair (wide lens, strong depth): she climbs fast toward the camera.
+ 11. Long lens from above the shrine gate, looking down through its posts at her running up toward us, the town and the sea behind her.
+ 12. Held shot: the giant cloud and gulls over the sea, no people (a quiet beat).
+
+3) storyboard-3.png, panels:
+ 13. Low insert: her feet on the last stone steps, one foot landing on a step.
+ 14. Reverse from the lookout down the stair: she climbs into frame, out of breath.
+ 15. Over her shoulder at the railing, long lens: far below, the little train runs along the coast toward the cape.
+ 16. Close-up, slightly low, front: Kaho smiling through tears in the golden light, waving.
+ 17. Crane-up wide: rising behind her to reveal the whole town, the harbour, the sea and the sun touching the horizon, lamps coming on.
+ 18. Blue hour: the town seen from the harbour, windows lit.

@@ -3,8 +3,8 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { Story, storyDuration, validateWorld, type StoryInput } from '@aether/core';
 import { worldIrHash } from '@aether/render';
-import { actorPoses, alongPath, blendGrade, ease, pathLengths, shotAt, shotStarts, storyCast, storyFrame } from '../src/player/story';
-import { groundPath } from '../src/player/story-runner';
+import { actorPoses, alongPath, blendGrade, ease, END_HANDOVER_SECONDS, END_HOLD_SECONDS, pathLengths, shotAt, shotStarts, splineAt, storyCast, storyFrame } from '../src/player/story';
+import { FeetGround, groundPath, TriangleGround } from '../src/player/story-runner';
 import { experienceFor, keyAction, keyHint } from '../src/player/experience';
 import { templatePublish } from '../src/showcase/publish';
 
@@ -57,9 +57,36 @@ describe('story timeline', () => {
     expect(storyFrame(story, starts, 1).caption).toBeNull();
     expect(storyFrame(story, starts, 7.5).hour).toBe(19);
     expect(storyFrame(story, starts, 7.5).fade.alpha).toBeGreaterThan(0.1);
-    const end = storyFrame(story, starts, 9);
+    // After the last shot: black under the end card's title, then the black lifts onto the live world, which stays in the
+    // last shot's view and grade (never a black screen behind Play, Explore and Watch again).
+    const total = starts[starts.length - 1] as number;
+    const end = storyFrame(story, starts, total + 0.1);
     expect(end.done).toBe(true);
     expect(end.fade.alpha).toBe(1);
+    expect(end.camera.position).toEqual([1, 1, 1]);
+    expect(end.grade).toMatchObject({ exposureEv: -1, practicals: 1 });
+    expect(storyFrame(story, starts, total + END_HOLD_SECONDS + END_HANDOVER_SECONDS / 2).fade.alpha).toBeCloseTo(0.5, 1);
+    expect(storyFrame(story, starts, total + END_HOLD_SECONDS + END_HANDOVER_SECONDS + 0.1).fade.alpha).toBe(0);
+    expect(storyFrame(story, starts, total + 600).fade.alpha).toBe(0);
+  });
+
+  it('cranes through via poses on a spline, rolls for a Dutch tilt, and carries music cues and ambience', () => {
+    const crane = Story.parse({
+      shots: [
+        { duration: 4, camera: { position: [0, 0, 0], target: [0, 0, -1], roll: 0 }, via: [{ position: [5, 5, 0], target: [0, 0, -1], roll: 10 }], cameraTo: { position: [10, 0, 0], target: [0, 0, -1], roll: 0 }, ease: 'linear', music: 'intro', ambience: { waves: 0.8 } },
+        { duration: 2, camera: { position: [0, 0, 0], target: [0, 0, -1] }, music: 'none', ambience: { wind: 0.3 }, sounds: [{ at: 0.5, sound: 'gull' }], actions: [{ entity: 'girl', at: 1, clip: 'wave' }] },
+      ],
+    });
+    const st = shotStarts(crane);
+    const mid = storyFrame(crane, st, 2);
+    expect(mid.camera.position[0]).toBeCloseTo(5);
+    expect(mid.camera.position[1]).toBeCloseTo(5);
+    expect(mid.camera.roll).toBeCloseTo(10);
+    expect(storyFrame(crane, st, 1).camera.position[1]).toBeGreaterThan(2);
+    expect(mid.music).toBe('intro');
+    expect(storyFrame(crane, st, 5).music).toBeNull();
+    expect(storyFrame(crane, st, 5).ambience).toEqual({ waves: 0.8, wind: 0.3 });
+    expect(splineAt([[0, 0, 0], [1, 1, 1]], 0.5)).toEqual([0.5, 0.5, 0.5]);
   });
 
   it('carries people along their paths, faces the way they go, then turns to face a point', () => {
@@ -91,6 +118,21 @@ describe('story timeline', () => {
     expect(groundPath([[0, 5, 0], [1, 5, 0]], () => null)[2]).toEqual([1, 5, 0]);
   });
 
+  it('finds the ground for the feet: vertical rays on triangles, and the nearest fine sample', () => {
+    const tri = new TriangleGround();
+    // A step: a tread at y 0 for z 0..1 and a tread at y 0.17 for z 1..2.
+    tri.addMesh([0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0.17, 1, 1, 0.17, 1, 1, 0.17, 2, 0, 0.17, 2], [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7], [0, 0, 0], () => true);
+    expect(tri.size).toBe(4);
+    expect(tri.at(0.5, 1, 0.5)).toBeCloseTo(0);
+    expect(tri.at(0.5, 1, 1.5)).toBeCloseTo(0.17);
+    expect(tri.at(0.5, 0.1, 1.5)).toBeNull();
+    const feet = new FeetGround();
+    feet.add(0, 0, 0.5);
+    feet.add(0, 0.17, 1.5);
+    expect(feet.at(0.05, 1.4, 0.1)).toBeCloseTo(0.17);
+    expect(feet.at(5, 5, 0)).toBeNull();
+  });
+
   it('names the people a story moves', () => {
     expect(storyCast({ story, entities: { girl: { character: {} } } })).toEqual(['girl']);
     expect(storyCast({ story, entities: { girl: {} } })).toEqual([]);
@@ -112,6 +154,7 @@ describe('story start mode', () => {
     expect(keyAction(k('KeyP'), 'story', exp)).toBe('play');
     expect(keyAction(k('Tab'), 'story', exp)).toBe('explore');
     expect(keyAction(k('KeyO'), 'story', exp)).toBe('explore');
+    expect(keyAction(k('KeyM'), 'story', exp)).toBe('mute');
     expect(keyHint('story', exp)).toContain('skip');
   });
 

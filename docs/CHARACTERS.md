@@ -133,11 +133,17 @@ result is an ordinary base colour texture; variants share materials by key
 
 ## Kaho, the toon body
 
-`kaho` (`style: 'toon'`, 1.535 m, about 6.7 heads, 41 k triangles, 583 KB with
-its 2048x1024 PNG atlas) is an original anime-style girl in a summer sailor
-uniform: white short-sleeve blouse, navy collar with one white stripe, red
-ribbon, navy pleated skirt, white socks, brown loafers, a chestnut bob with
-bangs, two side locks and a short ponytail with a red scrunchie, teal eyes.
+`kaho` (`style: 'toon'`, 1.535 m, about 6.7 heads, 45 k triangles, 614 KB with
+its 2048x1024 PNG atlas) is an original anime-style girl, built to match her
+model sheet (`docs/worlds/cloudwatch-concept/`, generated concept art used as
+reference only): a summer sailor uniform (white short-sleeve blouse with a chest
+pocket, a sky-blue collar with two white lines, a deep-teal neckerchief with two
+pointed tails, a knee-length navy skirt in twelve knife pleats), white socks,
+brown loafers, a black digital watch on her left wrist, a chin-length chestnut
+bob in large clumps curling in at the tips, side-parted bangs laid on the
+forehead, a thin braid behind her left ear ending in a seashell charm, and brown
+eyes. (Before November 2026 she had a ponytail, a red ribbon and teal eyes; the
+bangs stood off the forehead in profile and the hands clipped the skirt.)
 
 - Build: `npx tsx scripts/characters/anime-kaho.ts` (no inputs besides the
   library's `juno` body, for the skeleton). Modules under
@@ -155,8 +161,16 @@ bangs, two side locks and a short ponytail with a red scrunchie, teal eyes.
 - The file holds the skinned body twice (`kaho-body` and `kaho-outline`
   nodes sharing one geometry), materials marked `toon: body|outline` in their
   extras, a `_TOON` vertex attribute (outline width, shade bias, rim strength)
-  and, in the scene extras, `toon.springs` (eight skirt panels, the ponytail,
-  the side locks) and `toon.colliders` (thighs, hands, head, back, hips).
+  and, in the scene extras, `toon.springs` (eight skirt panels, the braid, the
+  side locks, the neckerchief's two tails) and `toon.colliders` (thighs,
+  calves, forearms, hands, head, back, chest, hips). A spring link is kept out
+  of a capsule at its tip and at its middle, so a skirt panel cannot cut
+  through a thigh.
+- Runtime corrections of a toon body after the clip (`rig.ts`): the arms hang
+  6 degrees out (`armClearance`); standing, the head and neck ease back to
+  rest from the idle clip's glances (`headSteady`), so a held close-up does not
+  turn the head on its own; with `CharacterRig.ground` set (the story runner
+  sets it from the stair's triangles) the feet stand on the treads.
 - Runtime (`packages/render/src/characters/toon.ts`, `springs.ts`):
   `ToonShading` swaps in two shared node materials, so every toon person costs
   two programs (plus the shadow depth variant). The body is unlit like the

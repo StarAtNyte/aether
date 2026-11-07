@@ -1660,6 +1660,14 @@ floor plan (draw a room, add a door, undo) → walk in through the front door
   (multiplied), `temperature` (added), `bloom` (multiplies the world's), the layer's amounts and gradient, `vignette`
   (absolute), `practicals` (0..1 on the authored `emissiveIntensity` of emissive model materials but sun, moon, sky and glitter
   ones), `letterbox`. `resolveSatsuei(look, shot, { lowTier, tiled })` is the pure resolution.
+- `world.story` additions (all optional; a story without them plays as before): `StoryCamera.roll` (degrees, a Dutch
+  tilt), `StoryShot.via` (camera poses the move passes through on a centripetal spline), `trackLag` (seconds the aim lags a
+  tracked entity), `music` (a score cue: `intro`, `run`, `tension`, `hush`, `hope`, `climax`, `coda`, `none`), `sounds`
+  (`{ at, sound, gain, seconds }`, sounds the player synthesizes), `ambience` (`wind`, `waves`, `cicadas`, `gulls`, `town`
+  levels 0..1) and `actions` (`{ entity, at, clip, loop }`, a named clip). After the last shot the end card's black lifts
+  onto the live world in the last shot's view (`END_HOLD_SECONDS`, `END_HANDOVER_SECONDS` in `player/story.ts`).
+  `WorldRenderer.lookAt(pos, target, fov?, roll?)` takes the roll. `CharacterRig.ground` (a height under x, z) places a
+  rig's feet on stairs and slopes; `armClearance` and `headSteady` are a toon body's corrections after the clip.
 - Room description (`@aether/arch/photo`): beds gain `headboardStyle` (slab, panel, tufted, slats), `pattern` (plain, floral,
   stripe, damask), `canopy` and `canopyHeight`; nightstands gain `style` (cabinet, round, wire), `height`, `diameter`; plants
   gain the `palm` species. `applyReality` repairs implausible numbers of a description (and reports them as fixes).

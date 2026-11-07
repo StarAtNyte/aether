@@ -39,6 +39,7 @@ import type { ExploreController, ExploreState } from './explore';
 import type { CookView, ViewStopPose } from '@aether/render';
 import { TIME_PRESETS } from '../state/archUi';
 import type { StoryOverlay, StoryRunner } from './story-runner';
+import type { StoryAudio } from './story-audio';
 import { storyCast } from './story';
 
 /** Hour of each time-of-day key (Digit1 … Digit4). */
@@ -82,7 +83,7 @@ interface PlayerHandle {
   /** The explore controller (test drivers: stops, dollhouse, glides), null outside explore mode. */
   readonly exploreController: ExploreController | null;
   /** The running story (time, duration), null outside it. */
-  readonly story: { time: number; duration: number; overlay: StoryOverlay | null } | null;
+  readonly story: { time: number; duration: number; overlay: StoryOverlay | null; clearance(): Array<{ shot: number; entity: string; min: number; at: number[] | null }> } | null;
   /** Play the story from `at` seconds (story worlds). */
   playStory(at?: number): void;
   start(): void;
@@ -240,7 +241,7 @@ const CreditsPanel = memo(function CreditsPanel({ game, credits, onBack }: { gam
  * The story's overlay: cinema bars, the title card, subtitle lines and, at the end, the end card. Play, Explore and Skip
  * stay on screen the whole time.
  */
-const StoryView = memo(function StoryView({ story, overlay, title, onSkip, onReplay, onExplore, onPlay, canPlay }: { story: NonNullable<WorldDoc['story']>; overlay: StoryOverlay | null; title: string; onSkip: () => void; onReplay: () => void; onExplore: () => void; onPlay: () => void; canPlay: boolean }): ReactElement {
+const StoryView = memo(function StoryView({ story, overlay, title, onSkip, onReplay, onExplore, onPlay, canPlay, muted, onMute }: { story: NonNullable<WorldDoc['story']>; overlay: StoryOverlay | null; title: string; onSkip: () => void; onReplay: () => void; onExplore: () => void; onPlay: () => void; canPlay: boolean; muted: boolean; onMute: () => void }): ReactElement {
   const done = overlay?.done ?? false;
   const end = story.endCard;
   return (
@@ -276,6 +277,9 @@ const StoryView = memo(function StoryView({ story, overlay, title, onSkip, onRep
             <Button onClick={onReplay} testId="pl-story-replay">
               Watch again
             </Button>
+            <Button onClick={onMute} testId="pl-story-sound-end">
+              {muted ? 'Sound off' : 'Sound on'}
+            </Button>
           </div>
         </div>
       )}
@@ -288,6 +292,9 @@ const StoryView = memo(function StoryView({ story, overlay, title, onSkip, onRep
           )}
           <button type="button" className="pl-story__chip" onClick={onExplore} data-testid="pl-story-explore">
             Explore <kbd>Tab</kbd>
+          </button>
+          <button type="button" className="pl-story__chip" onClick={onMute} aria-pressed={!muted} data-testid="pl-story-sound">
+            {muted ? 'Sound off' : 'Sound on'} <kbd>M</kbd>
           </button>
           <button type="button" className="pl-story__chip" onClick={onSkip} data-testid="pl-story-skip">
             Skip <kbd>Space</kbd>
@@ -343,6 +350,29 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
   const [storyOverlay, setStoryOverlay] = useState<StoryOverlay | null>(null);
   const storyOverlayRef = useRef<StoryOverlay | null>(null);
   const storyFadeRef = useRef<HTMLDivElement>(null);
+  /** The film's sound (one per run of the film; muted or not is remembered, `aether.player.mute`). */
+  const storyAudioRef = useRef<StoryAudio | null>(null);
+  const [storyMuted, setStoryMuted] = useState(() => {
+    try {
+      return localStorage.getItem('aether.player.mute') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const storyMutedRef = useRef(storyMuted);
+  storyMutedRef.current = storyMuted;
+  const toggleStoryMute = useCallback(() => {
+    const m = !storyMutedRef.current;
+    storyMutedRef.current = m;
+    setStoryMuted(m);
+    storyAudioRef.current?.set({ muted: m });
+    if (!m) storyAudioRef.current?.resume();
+    try {
+      localStorage.setItem('aether.player.mute', m ? '1' : '0');
+    } catch {
+      /* private mode */
+    }
+  }, []);
   /** The story's views were drawn once (see StoryRunner.prewarm). */
   const storyWarm = useRef(false);
 
@@ -407,6 +437,8 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
   const leaveStory = useCallback(() => {
     storyRef.current?.dispose();
     storyRef.current = null;
+    storyAudioRef.current?.dispose();
+    storyAudioRef.current = null;
     storyOverlayRef.current = null;
     setStoryOverlay(null);
   }, []);
@@ -417,7 +449,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
       const sim = simRef.current;
       const story = world.story;
       if (!sim || !story) return;
-      const { StoryRunner } = await import('./story-runner');
+      const [{ StoryRunner }, { StoryAudio }] = await Promise.all([import('./story-runner'), import('./story-audio')]);
       if (simRef.current !== sim) return;
       leaveExplore();
       leaveStory();
@@ -425,7 +457,10 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
         stopMusic();
         await sim.stop();
       }
+      const audio = new StoryAudio({ volume: settingsRef.current.volume, music: settingsRef.current.music, muted: storyMutedRef.current });
+      storyAudioRef.current = audio;
       const runner = new StoryRunner(sim.renderer, world, story, {
+        audio,
         onOverlay: (o) => {
           storyOverlayRef.current = o;
           setStoryOverlay(o);
@@ -818,6 +853,10 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
           e.preventDefault();
           storyRef.current?.skip();
           break;
+        case 'mute':
+          e.preventDefault();
+          toggleStoryMute();
+          break;
         case 'pause':
           e.preventDefault();
           if (ctrl?.snapshot.photo) ctrl.setPhoto(false);
@@ -894,7 +933,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
       },
       get story() {
         const r = storyRef.current;
-        return r ? { time: r.time, duration: r.duration, overlay: storyOverlayRef.current } : null;
+        return r ? { time: r.time, duration: r.duration, overlay: storyOverlayRef.current, clearance: () => r.clearance() } : null;
       },
       playStory: (at?: number) => void playStory(at),
       start: () => void start(),
@@ -1026,7 +1065,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
         </>
       )}
       {phase === 'story' && world.story && (
-        <StoryView story={world.story} overlay={storyOverlay} title={game.title} onSkip={() => storyRef.current?.skip()} onReplay={() => void playStory(0)} onExplore={() => void toExplore()} onPlay={() => void start()} canPlay={!world.voxel} />
+        <StoryView story={world.story} overlay={storyOverlay} title={game.title} onSkip={() => storyRef.current?.skip()} onReplay={() => void playStory(0)} onExplore={() => void toExplore()} onPlay={() => void start()} canPlay={!world.voxel} muted={storyMuted} onMute={toggleStoryMute} />
       )}
       <div className="pl-story__fade" ref={storyFadeRef} aria-hidden="true" />
       <div className={`pl-fade${explore?.fading && phase === 'exploring' ? ' is-on' : ''}`} aria-hidden="true" />

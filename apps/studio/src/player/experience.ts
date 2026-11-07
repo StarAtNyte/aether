@@ -56,7 +56,7 @@ export function experienceFor(startMode: StartModeLike, profile: ProfileLike, ha
 export type PlayerPhase = 'booting' | 'title' | 'story' | 'starting' | 'exploring' | 'playing' | 'paused' | 'over' | 'failed';
 
 /** What a key does. */
-export type KeyAction = 'play' | 'explore' | 'pause' | 'resume' | 'next' | 'prev' | 'autoplay' | 'dollhouse' | 'photo' | 'time' | 'skip' | null;
+export type KeyAction = 'play' | 'explore' | 'pause' | 'resume' | 'next' | 'prev' | 'autoplay' | 'dollhouse' | 'photo' | 'time' | 'skip' | 'mute' | null;
 
 /** The key event fields {@link keyAction} reads. */
 export interface KeyLike {
@@ -75,6 +75,7 @@ export interface KeyLike {
 export function keyAction(e: KeyLike, phase: PlayerPhase, exp: Experience, typing = false, voxel = false): KeyAction {
   if (typing || e.ctrlKey || e.metaKey || e.altKey) return null;
   if (phase === 'story' && !e.repeat && (e.code === 'Escape' || e.key === 'Escape' || e.code === 'Space' || e.code === 'Enter')) return 'skip';
+  if (phase === 'story' && !e.repeat && e.code === 'KeyM') return 'mute';
   if (e.code === 'Escape' || e.key === 'Escape') {
     if (phase === 'playing') return voxel ? null : 'pause';
     if (phase === 'paused') return 'resume';
@@ -103,6 +104,6 @@ export function keyHint(phase: PlayerPhase, exp: Experience, touch = false): str
   }
   if (phase === 'playing') return touch ? '' : 'Tab explore · Esc pause';
   if (phase === 'title') return touch ? '' : 'P play · Tab explore';
-  if (phase === 'story') return touch ? '' : 'Space skip · P play · Tab explore';
+  if (phase === 'story') return touch ? '' : 'Space skip · M sound · P play · Tab explore';
   return '';
 }

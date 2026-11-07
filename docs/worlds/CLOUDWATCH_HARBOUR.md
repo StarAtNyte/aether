@@ -182,39 +182,80 @@ the finished stills are 3840 x 2160.
 - Start mode `story` (profile `showcase`): the world opens on its short film (see The film below); P plays as Kaho,
   Tab or O explores with the orbit camera, from the film or after it.
 
-## The film: "The Last Light"
+## The film: "Two Whistles"
 
-An original slice-of-life short of about 80 seconds, written as data in the world (`world.story`, the shot list in
-`scripts/blender/cloudwatch/story.ts`, written into the template by `world.ts`). Class ran late, and a girl, Kaho, races
-from the harbour road up the hill stair to reach the lookout before the sun touches the sea. The train passes while she
-waits at the crossing, the lamps come on as she arrives, and the film holds on the town going blue.
+An original slice-of-life short of about 100 seconds, written as data in the world (`world.story`, the shot list in
+`scripts/blender/cloudwatch/story.ts`, written into the template by `world.ts`). It replaces "The Last Light" (80 s, a
+girl races the sunset to the lookout), which had a goal but no turn, and whose last three shots repeated one framing.
 
-| # | Shot | Length | Grammar |
-|---|---|---|---|
-| 1 | The sky over the sea, the title | 9 s | fade in, a slow tilt down from the cumulonimbus to the glitter path |
-| 2 | The harbour road | 6 s | establishing wide; she runs in and turns up the stair; first line |
-| 3 | Up the first steps | 3.2 s | low behind her, a tracked tilt |
-| 4 | The crossing | 7.5 s | side-on, she waits in the right third; the train crosses the frame; second line |
-| 5 | The first terraces | 5 s | high, down the run she climbs; golden |
-| 6 | Through the shrine gate | 5.5 s | low behind her, framed by the gate's posts |
-| 7 | The cloud and the gulls | 5 s | a held "ma" beat, the colour turns magenta |
-| 8 | The last stair | 7 s | from the lookout down the stair, she climbs into the frame |
-| 9 | Arrival | 5.5 s | medium; the lamps, lanterns and windows come on; third line |
-| 10 | Over her shoulder | 4.5 s | the sun on the sea past her hair |
-| 11 | The held wide | 13 s | the longest shot: she is small at the rail as the sun touches the sea; magenta to blue hour |
-| 12 | The town at blue hour | 7.5 s | fade; the town from the harbour with its windows lit |
+Beat sheet:
 
-- Colour script: warm afternoon, golden, magenta dusk, blue hour, as `grade` / `gradeTo` on the shots
-  (`renderer.setShotGrade`: exposure, white balance, the gradient layer, glow, rays, grain, practicals). The pieces are
-  baked and unlit, so the time of day is carried by the grade and the practicals; `hour` moves only the dynamic light on
-  Kaho (18.5 to 18.7; a later hour darkens the painted town to mud).
-- The player (`apps/studio/src/player/story.ts`, `story-runner.ts`) plays it: the camera through `lookAt`, the people and
-  the train through one packed `applyTransforms` a frame (Kaho walks or runs by her speed), Kaho's paths laid onto the
-  solid pieces by rays, cinema bars at 2.39:1, the title, subtitle lines and an end card in the page. Space, Enter or Esc
-  skip to the end card; Play, Explore and Skip stay on screen. Before the first shot every shot's views are drawn once
-  under the opening fade, so no cut uploads textures or geometry; the programs are the load's.
-- `scripts/story-shots.ts` shoots frames of any story world, the end card, frame times over the whole film and a play
-  check.
+- **Goal** (1-4). Kaho's best friend Mio leaves town tonight on the evening train, which Mio's father drives. Class ran
+  late; Kaho races from the harbour road up to the level crossing to say goodbye ("6:31. Mio's train passes the crossing
+  at 6:40.").
+- **The turn** (5-8). The crossing bell; she arrives as the train is already passing; she waves, it does not stop
+  ("Mio—!"); a Dutch-tilted close-up as it goes; a held silence on the empty crossing ("…I didn't even say goodbye.").
+- **Memory** (9). Low against the sky she remembers Mio's promise: "If you ever miss me, run to the lookout. Dad always
+  whistles twice at the cape."
+- **The run** (10-14). The whole hill stair: high and wide down it, through the shrine gate on a long lens, a held "ma"
+  on the cloud and the gulls, an insert of her feet on the last steps, the reverse from the lookout as she climbs in.
+- **Payoff** (15-19). At the rail, over her shoulder toward the cape; two long whistles carry over the water; close and
+  low she waves ("…See you, Mio."); the camera cranes up and back to the whole town, the sea and the sun touching it as
+  the lamps come on.
+- **Coda** (20). The town at blue hour from the harbour; the end card.
+
+Storyboard: `docs/worlds/cloudwatch-concept/storyboard-{1,2,3}.webp` (generated reference, eighteen panels). The railway
+cannot be seen from the lookout (the terraces' houses hide it), so the payoff is heard, with a caption for viewers
+without sound, rather than shown.
+
+| # | Shot | Length | Grammar | Lens |
+|---|---|---|---|---|
+| 1 | The sky over the sea, the title | 8 s | fade in, tilt down from the cloud to the glitter | 50 deg |
+| 2 | Insert: her loafers on the road | 2.6 s | ground-level tracking alongside | 36 deg |
+| 3 | The harbour road | 5 s | long lens into the low sun, she runs away from us; first line | 8 deg (telephoto) |
+| 4 | The first steps | 4 s | leading three-quarter front, tracking up with her | 34 deg |
+| 5 | Insert: the crossing lamps | 2.2 s | low, the bell starts | 24 deg |
+| 6 | The crossing | 6 s | side-on, she in the right third, the train crosses the frame against her | 34 to 30 deg |
+| 7 | Her face, the train behind | 3 s | close, Dutch tilt 11 to 13 deg (the only one) | 19 deg |
+| 8 | Too late | 4.2 s | held wide, no move | 36 deg |
+| 9 | She remembers | 6.4 s | very low, looking up at her against the sky and the cloud; push in | 27 to 24 deg |
+| 10 | Down the stair | 5 s | high and wide, she climbs toward us | 44 deg |
+| 11 | The shrine gate | 5 s | long lens from above the gate, framed by its posts, the sea behind | 22 deg |
+| 12 | Ma: the cloud and the gulls | 4.5 s | held, a slow eased pan | 46 deg |
+| 13 | Insert: her feet on the last steps | 2.6 s | low, leading down the stair | 30 deg |
+| 14 | The last stair | 5 s | reverse from the lookout, push in | 34 to 25 deg |
+| 15 | Arrival | 4.2 s | low three-quarter, she turns to the sea | 27 deg |
+| 16 | Toward the cape | 5 s | over her shoulder | 24 deg |
+| 17 | Two whistles | 4.6 s | long lens on the cape; the sound carries it | 9 deg |
+| 18 | See you, Mio | 5.2 s | close, low and frontal; she waves | 24 deg |
+| 19 | The crane up | 12 s | from behind her low, up and back on a spline to the town, the sea and the sun | 40 to 52 deg |
+| 20 | The town at blue hour | 7 s | fade; from the harbour, windows lit | 40 deg |
+
+- Cinematography: her way is screen right all film long; the cameras keep to the inland or east side of her line, which
+  also puts the low sun ahead of the lens (back light and warm rims instead of flat front light); the train runs against
+  her, screen left. Inserts (shoes, lamps, feet), a low angle against the sky, a high angle down the stair, two long-lens
+  shots that compress the town and the cloud, one over-the-shoulder, one reverse, one Dutch tilt at the turn, one crane.
+  Moves are eased (`inOut`); tracked shots aim through a lag (`trackLag`, a camera operator's weight); the crane runs on a
+  centripetal spline through a `via` pose.
+- Colour script: warm afternoon, golden, magenta dusk, blue hour, as `grade` / `gradeTo` on the shots (now with a little
+  more contrast); the crossing lamps light for their insert (they are practicals), the town's lamps come on in the crane.
+- Sound (`apps/studio/src/player/story-audio.ts`, WebAudio, all synthesized, nothing loaded): an original score in cues
+  (`intro`, `run`, `tension`, `hush`, `hope`, `climax`, `coda`) built from a two-note motif (a rising sixth and a step
+  down, the two whistles), an ambience bed (wind, waves, cicadas, gulls, the town) set per shot, and one-shot sounds
+  (the crossing bell, the train passing with its rail joints and Doppler, the whistle with the valley's echo, gulls,
+  steps, a gust, a chime, a heartbeat). M or the Sound chip mutes it (remembered); the player's volume and music levels
+  apply; a browser that holds sound until a gesture starts it on the first key or click.
+- The end: after the last shot the picture holds black under the end card's title for 0.8 s, then the black lifts over
+  2.4 s onto the live world in the last shot's view and grade; Play, Explore, Watch again and Sound sit over the living
+  scene on a soft scrim. Before, the end card stayed on full black (the story frame's fade was 1 for as long as the
+  card showed), which read as a broken black screen. The same holds after a skip: the camera goes to the last shot's view.
+- Kaho's feet on the stair: her path is laid on the ground every 0.5 m as before, and where it climbs the runner also
+  samples the treads every 6 cm from the solid pieces' collider triangles (`TriangleGround`, vertical rays on a 2 m grid:
+  a few thousand samples in milliseconds; the renderer's scene ray took about 50 ms each), and the rig places each foot on
+  them (`CharacterRig.ground`): the pelvis drops by the lower foot's share and two-bone IK bends each leg, keeping the
+  clip's swing height.
+- Story format: all additions are optional fields (`camera.roll`, `via`, `trackLag`, `music`, `sounds`, `ambience`,
+  `actions`); a story without them plays as before.
 
 ## Play
 
@@ -244,6 +285,36 @@ clouds, the clouds alone with the near plane at 300 m, and the coverage of every
 and a 0.1 m near plane, the creases where billows intersect 2 km away came out as depth-precision staircases at 4K.
 
 ## Result (7 November 2026)
+
+- **Film pass** ("Two Whistles", Kaho rebuilt; see The film above):
+  - Concept first: three generated design directions, the chosen one's turnaround, expressions, details with the palette
+    and a silhouette study, and three storyboard pages (`docs/worlds/cloudwatch-concept/`, generated reference only).
+  - Kaho rebuilt to the sheet (`docs/screenshots/cloudwatch/character/kaho-vs-sheet.webp`, before/after
+    `before-after/16-kaho-before-after.webp`): bob in clumps, bangs on the forehead in profile, the braid and shell charm,
+    sky-blue collar, teal neckerchief on springs, twelve pleats to the knee, the watch; the hands clear the skirt (arms 6
+    degrees out, forearm colliders, springs checked at the link's middle); the head no longer turns on its own standing.
+  - The film: twenty shots, the grammar and lenses in the table above; contact sheets before and after in
+    `before-after/15-film-before-after.webp`, frames in `story/`.
+  - Six passes of contact sheets, each critiqued for framing, screen direction, subject size and lens; what changed:
+    the stair profile shot that framed a blank embankment became a leading three-quarter front with the stair and the sea
+    behind; the Dutch close-up and the arrival were moved round to three-quarter front (from the back of her head); the
+    gate shot's camera was inside the shrine hall (solid purple) and the feet insert's inside a wall; the mother and
+    child crowded her at the crossing, so she waits a step to the right; the train passed outside the frame at the
+    crossing; the railway proved invisible from the lookout (probe views at eight points along it), so the payoff became
+    the sound of two whistles over a long lens on the cape.
+  - End of the film: the black screen after the end card is gone (the card now fades onto the live last view, also after
+    a skip); `story-shots.ts` checks it (mean brightness 49 of 255 after both, threshold 25).
+  - Interpenetration of her path: `story-shots.ts` reports the closest wall to her body along every laid path
+    (`clearance`); the step from the stair to her waiting place came within 0.15 m of the stair's side wall and was
+    rerouted; every path now keeps at least 0.33 m (a shoulder is about 0.2 m from the body axis).
+  - Programs: none linked by the film's own shots (the crane's middle pose was not prewarmed and linked one at 92 s; it
+    is now). A single link at a varying time in the first 13 s happens in the old build too (29 to 30), so it is not the
+    film's.
+  - Frame times over the whole film on the Intel GPU, old film and new back to back on a machine at load 45-70 (so the
+    numbers are noisy): old p50 17.3, 24.5, 26.1, 28.9, 25.7 ms; new 26.1, 26.3, 24.9, 21.9 ms (muted 24.3, 18.7). No
+    regression shows; the sound costs little and nothing when muted (its graph is suspended).
+  - Size: Kaho 583 KB to 614 KB (more skirt and hair rows, the braid, neckerchief, watch and charm); the story code adds
+    about 30 KB of source (the sound module loads only with a film); concept art is in docs only (1.2 MB of WebP).
 
 - **Painterly pass** (the look pass read as clean digital cel art: flat vector fills, one shadow value in the clouds, no
   depth past the headland; method step 6):
@@ -346,8 +417,7 @@ and a 0.1 m near plane, the creases where billows intersect 2 km away came out a
     1.4 km) it stands about 0.7 degrees taller than in Blender.
   - The brush texture lives in the 4096 px town atlas: up close (a metre from a wall) it is soft rather than crisp.
   - The laundry, futons and banners do not sway; the train is a simple box design.
-  - Kaho's head turns on its own in a held close-up (the rig's look-at), so the film shows her from behind or at a
-    distance rather than face-on.
-  - The film has no music or sound of its own yet, and no in-browser video export.
+  - (Fixed in the film pass below: Kaho's head turning on its own in a held close-up, and the film's missing sound.)
+  - No in-browser video export of the film yet.
   - In a headless capture the clock is frozen, so the glitter's twinkle shows only in the browser. Its clip was checked
     by stepping the animator in Node.

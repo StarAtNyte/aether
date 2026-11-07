@@ -5,13 +5,13 @@ export const ORIGINAL_CAST: CastFile[] = [
  {
   "id": "kaho",
   "gender": "female",
-  "look": "anime girl, summer sailor uniform, chestnut bob with a short ponytail",
-  "file": "c/kaho.848867ff.glb",
+  "look": "anime girl, summer sailor uniform with a sky-blue collar and a teal neckerchief, chin-length chestnut bob with a thin braid and a seashell charm",
+  "file": "c/kaho.92067d24.glb",
   "height": 1.535,
   "hip": 0.848,
-  "triangles": 41312,
+  "triangles": 45304,
   "faces": 1,
-  "bytes": 583444,
+  "bytes": 629040,
   "style": "toon"
  }
 ] as CastFile[];

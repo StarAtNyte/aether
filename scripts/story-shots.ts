@@ -2,10 +2,11 @@
  * Frames of a world's short film (`world.story`, start mode `story`) in the real player, plus a play check:
  *
  *   STATIC_DIR=<dist> GEN_GPU=intel npx tsx scripts/story-shots.ts --out=<dir> [--slug=cloudwatch-harbour] [--cook=0|local|use]
- *       [--at=0.5,0.9] [--shots=0,3,7] [--play] [--frames] [--size=1600x900]
+ *       [--at=0.5,0.9] [--shots=0,3,7] [--play] [--frames] [--mute] [--size=1600x900]
  *
  * For each shot (or the ones named) it seeks the film to `at` fractions of the shot, lets it run 1.2 s (overlay fades), and
- * writes `<slug>-s<NN>-<at>.png`; then the end card. `--play` presses P from the story and walks: it records where the
+ * writes `<slug>-s<NN>-<at>.png`; then the end card, and the hand-over to the live world after it: the picture must not be
+ * black, both when the film runs to its end and after a skip (`end-live.png`, `skip-live.png`). `--play` presses P from the story and walks: it records where the
  * character is each second (it must stand on the ground and move) and shoots the follow view. `--frames` reports
  * frame times over the whole film (p50 / p95 / worst, and programs linked during it). Writes `report.json`.
  */
@@ -54,12 +55,32 @@ const programs = (page: Page): Promise<number> =>
   });
 
 const report: Record<string, unknown> = { slug, cook };
+
+/** Mean brightness (0..255) of a screenshot, decoded in the page (no image library in Node). */
+async function brightness(page: Page, png: Buffer): Promise<number> {
+  return page.evaluate(async (b64) => {
+    const img = new Image();
+    img.src = `data:image/png;base64,${b64}`;
+    await img.decode();
+    const c = document.createElement('canvas');
+    c.width = 160;
+    c.height = 90;
+    const g = c.getContext('2d')!;
+    g.drawImage(img, 0, 0, 160, 90);
+    const d = g.getImageData(0, 0, 160, 90).data;
+    let sum = 0;
+    for (let i = 0; i < d.length; i += 4) sum += (d[i]! + d[i + 1]! + d[i + 2]!) / 3;
+    return Math.round((sum / (d.length / 4)) * 10) / 10;
+  }, png.toString('base64'));
+}
 const server = await env.startServer(() => undefined);
 const browser = await chromium.launch({ executablePath: env.findChrome(), args: [...env.CHROME_ARGS], headless: env.HEADLESS });
 try {
   const page = await browser.newPage({ viewport: { width: W, height: H } });
   if (process.env['GEN_GPU'] === 'intel') await page.addInitScript({ content: 'delete Navigator.prototype.gpu; try { delete navigator.gpu; } catch {}' });
-  await page.addInitScript({ content: 'window.__links = 0; { const l = WebGL2RenderingContext.prototype.linkProgram; WebGL2RenderingContext.prototype.linkProgram = function (p) { window.__links++; return l.call(this, p); }; }' });
+  await page.addInitScript({ content: 'window.__links = 0; window.__linkAt = []; { const l = WebGL2RenderingContext.prototype.linkProgram; WebGL2RenderingContext.prototype.linkProgram = function (p) { window.__links++; const s = window.__aetherPlayer && window.__aetherPlayer.story; window.__linkAt.push(s ? Math.round(s.time * 10) / 10 : -1); return l.call(this, p); }; }' });
+  // `--mute`: the film's sound starts muted (its audio graph suspended), for frame times without it.
+  if (args.includes('--mute')) await page.addInitScript({ content: "try { localStorage.setItem('aether.player.mute', '1'); } catch {}" });
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message.slice(0, 300)));
   page.on('console', (m) => {
@@ -77,6 +98,10 @@ try {
   report['load'] = await page.evaluate(() => ({ path: (window as unknown as Win).__aetherCook?.path, reason: (window as unknown as Win).__aetherCook?.reason }));
   const shots = await page.evaluate(() => (window as unknown as Win).__aetherPlayer!.world.story!.shots.map((s) => ({ name: s.name ?? '', duration: s.duration })));
   report['programsAtStart'] = await programs(page);
+  // Interpenetration check of the people's paths against the solid pieces' walls.
+  const clear = (await page.evaluate(`(() => { const s = window.__aetherPlayer.story; return s && s.clearance ? s.clearance() : []; })()`)) as Array<{ shot: number; min: number }>;
+  report['clearance'] = { paths: clear, tight: clear.filter((c) => c.min < 0.18) };
+  log(`clearance: ${JSON.stringify(clear.map((c) => [c.shot, c.min]))}`);
   if (args.includes('--frames')) {
     // The whole film from the start, frame times from rAF.
     const p0 = await programs(page);
@@ -101,7 +126,7 @@ try {
     const times = run.dts;
     const sorted = [...times].sort((a, b) => a - b);
     const q = (f: number): number => Math.round((sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * f))] ?? 0) * 10) / 10;
-    report['frames'] = { n: times.length, p50: q(0.5), p95: q(0.95), p99: q(0.99), worst: q(1), over50ms: times.filter((t) => t > 50).length, slow: run.slow.slice(0, 60), programsBefore: p0, programsAfter: await programs(page) };
+    report['frames'] = { n: times.length, p50: q(0.5), p95: q(0.95), p99: q(0.99), worst: q(1), over50ms: times.filter((t) => t > 50).length, slow: run.slow.slice(0, 60), programsBefore: p0, programsAfter: await programs(page), linkedAt: await page.evaluate((n) => ((window as unknown as { __linkAt?: number[] }).__linkAt ?? []).slice(Math.max(0, n)), p0) };
     log(`frames: ${JSON.stringify(report['frames'])}`);
   }
   let start = 0;
@@ -129,6 +154,17 @@ try {
   await page.evaluate((t) => (window as unknown as Win).__aetherPlayer!.playStory(t), start - 0.3);
   await page.waitForTimeout(2000);
   await page.screenshot({ path: join(out, `${slug}-end.png`) });
+  // The hand-over: the end card's black lifts onto the live world (the last shot's view), never a black screen.
+  await page.waitForTimeout(3500);
+  const endLive = await page.screenshot({ path: join(out, `${slug}-end-live.png`) });
+  await page.evaluate(() => (window as unknown as Win).__aetherPlayer!.playStory(4));
+  await page.waitForTimeout(1500);
+  await page.keyboard.press('Space');
+  await page.waitForTimeout(4500);
+  const skipLive = await page.screenshot({ path: join(out, `${slug}-skip-live.png`) });
+  const live = { end: await brightness(page, endLive), skip: await brightness(page, skipLive), phase: await page.evaluate(() => (window as unknown as Win).__aetherPlayer!.phase) };
+  report['handover'] = { ...live, ok: live.end > 25 && live.skip > 25 };
+  log(`hand-over: ${JSON.stringify(report['handover'])}`);
   if (args.includes('--play')) {
     await page.keyboard.press('KeyP');
     await page.waitForFunction(() => (window as unknown as Win).__aetherPlayer?.phase === 'playing', null, { timeout: 60_000, polling: 250 });

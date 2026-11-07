@@ -64,6 +64,7 @@ interface Capsule {
 const _h = new Vector3();
 const _t = new Vector3();
 const _n = new Vector3();
+const _m = new Vector3();
 const _v = new Vector3();
 const _d0 = new Vector3();
 const _d1 = new Vector3();
@@ -158,12 +159,17 @@ export class SpringSystem {
         _n.copy(link.cur).sub(link.prev).multiplyScalar(keep).add(link.cur);
         _n.y -= fall;
         _n.lerp(_t, k);
-        // Stay out of the capsules.
+        // Stay out of the capsules: the tip, and the link's middle (a skirt panel must not cut through a thigh between its
+        // waist and its hem; a push at the middle moves the tip twice as far, about the link's root).
         for (const c of this.capsules) {
           closestOnSegment(_n, c.a, c.b, _v);
           const r = c.radius + d.radius;
           const dd = _n.distanceTo(_v);
           if (dd < r && dd > 1e-6) _n.sub(_v).multiplyScalar(r / dd).add(_v);
+          _m.copy(_n).sub(_h).multiplyScalar(0.5).add(_h);
+          closestOnSegment(_m, c.a, c.b, _v);
+          const dm = _m.distanceTo(_v);
+          if (dm < r && dm > 1e-6) _n.addScaledVector(_m.sub(_v), (2 * (r - dm)) / dm);
         }
         // Keep the bone's length.
         _n.sub(_h);

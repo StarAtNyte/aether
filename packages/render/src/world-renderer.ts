@@ -6985,11 +6985,39 @@ export class WorldRenderer {
     return exportSceneGltf(this.sync.root, this.perspective, opts);
   }
 
-  /** Place the editor camera at `pos` looking at `target` (immediately), optionally with a field of view. */
-  lookAt(pos: Vec3, target: Vec3, fov?: number): void {
+  /**
+   * Place the editor camera at `pos` looking at `target` (immediately), optionally with a field of view and a roll
+   * about the view axis (degrees, + clockwise: a Dutch tilt; the camera's up vector carries it, 0 restores world up).
+   */
+  lookAt(pos: Vec3, target: Vec3, fov?: number, roll?: number): void {
     if (this.disposed || !pos.every(Number.isFinite) || !target.every(Number.isFinite)) return;
     _pos.set(pos[0], pos[1], pos[2]);
     _target.set(target[0], target[1], target[2]);
+    const up = this.perspective.up;
+    if (roll !== undefined && Number.isFinite(roll) && Math.abs(roll) > 1e-3) {
+      // Up rolled about the view direction: world up made perpendicular to the view, turned toward the right vector.
+      const fx = _target.x - _pos.x;
+      const fy = _target.y - _pos.y;
+      const fz = _target.z - _pos.z;
+      const fl = Math.hypot(fx, fy, fz) || 1;
+      const ax = fx / fl;
+      const ay = fy / fl;
+      const az = fz / fl;
+      // right = f x Y
+      let rx = -az;
+      let rz = ax;
+      const rl = Math.hypot(rx, rz) || 1;
+      rx /= rl;
+      rz /= rl;
+      // u0 = right x f
+      const ux = -rz * ay;
+      const uy = rz * ax - rx * az;
+      const uz = rx * ay;
+      const r = (roll * Math.PI) / 180;
+      const c = Math.cos(r);
+      const s = Math.sin(r);
+      up.set(ux * c + rx * s, uy * c, uz * c + rz * s).normalize();
+    } else if (up.x !== 0 || up.y !== 1 || up.z !== 0) up.set(0, 1, 0);
     this.rig.flyTo(_pos, _target, 0);
     if (fov !== undefined && Number.isFinite(fov) && Math.abs(fov - this.perspective.fov) > 1e-6) {
       this.perspective.fov = Math.min(120, Math.max(5, fov));

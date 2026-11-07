@@ -11,6 +11,10 @@ type V3 = [number, number, number];
 export const STORY_FOV = 50;
 /** How long the end card holds before the player offers its buttons alone (s). */
 export const END_CARD_SECONDS = 6;
+/** After the last shot the picture stays black this long (s), under the end card's title… */
+export const END_HOLD_SECONDS = 0.8;
+/** …then the black lifts over this long (s), handing over to the live world in the last shot's view and grade. */
+export const END_HANDOVER_SECONDS = 2.4;
 
 /** The pose of a moved entity at a time. */
 export interface ActorPose {
@@ -25,7 +29,11 @@ export interface StoryFrame {
   index: number;
   /** Seconds into the shot. */
   local: number;
-  camera: { position: V3; target: V3; fov: number };
+  camera: { position: V3; target: V3; fov: number; roll: number };
+  /** The score's cue in force (the latest a shot at or before this one set), null for none. */
+  music: string | null;
+  /** The ambience bed in force (levels 0..1, keys absent when no shot set them). */
+  ambience: Record<string, number>;
   grade: StoryGrade;
   /** Black or white over the picture (a fade or a flash entering a shot), 0..1. */
   fade: { color: 'black' | 'white'; alpha: number };
@@ -168,8 +176,43 @@ export function actorPoses(story: Pick<Story, 'shots'>, starts: readonly number[
   return out;
 }
 
-function cameraOf(c: StoryCamera, fov: number): { position: V3; target: V3; fov: number } {
-  return { position: [...c.position] as V3, target: [...c.target] as V3, fov: c.fov ?? fov };
+function cameraOf(c: StoryCamera, fov: number, roll = 0): { position: V3; target: V3; fov: number; roll: number } {
+  return { position: [...c.position] as V3, target: [...c.target] as V3, fov: c.fov ?? fov, roll: c.roll ?? roll };
+}
+
+/** Centripetal Catmull-Rom point between `p1` and `p2` at `u` (0..1), with neighbours `p0` and `p3`. */
+function catmull(p0: readonly number[], p1: readonly number[], p2: readonly number[], p3: readonly number[], u: number): V3 {
+  const knot = (a: readonly number[], b: readonly number[]): number => Math.max(1e-4, Math.sqrt(Math.hypot((b[0] as number) - (a[0] as number), (b[1] as number) - (a[1] as number), (b[2] as number) - (a[2] as number))));
+  const t1 = knot(p0, p1);
+  const t2 = t1 + knot(p1, p2);
+  const t3 = t2 + knot(p2, p3);
+  const t = t1 + (t2 - t1) * u;
+  const out: V3 = [0, 0, 0];
+  for (let k = 0; k < 3; k++) {
+    const a1 = ((t1 - t) * (p0[k] as number) + t * (p1[k] as number)) / t1;
+    const a2 = ((t2 - t) * (p1[k] as number) + (t - t1) * (p2[k] as number)) / (t2 - t1);
+    const a3 = ((t3 - t) * (p2[k] as number) + (t - t2) * (p3[k] as number)) / (t3 - t2);
+    const b1 = ((t2 - t) * a1 + t * a2) / t2;
+    const b2 = ((t3 - t) * a2 + (t - t1) * a3) / (t3 - t1);
+    out[k] = ((t2 - t) * b1 + (t - t1) * b2) / (t2 - t1);
+  }
+  return out;
+}
+
+/** A point at `u` (0..1, evenly split between the keys) along a spline through `keys` (end tangents mirrored). */
+export function splineAt(keys: readonly (readonly number[])[], u: number): V3 {
+  const n = keys.length;
+  if (n === 1) return [...(keys[0] as readonly number[])] as V3;
+  if (n === 2) return lerp3(keys[0] as readonly number[], keys[1] as readonly number[], u);
+  const x = Math.min(1, Math.max(0, u)) * (n - 1);
+  const i = Math.min(n - 2, Math.floor(x));
+  const f = x - i;
+  const p1 = keys[i] as readonly number[];
+  const p2 = keys[i + 1] as readonly number[];
+  const mirror = (a: readonly number[], b: readonly number[]): number[] => [2 * (a[0] as number) - (b[0] as number), 2 * (a[1] as number) - (b[1] as number), 2 * (a[2] as number) - (b[2] as number)];
+  const p0 = i > 0 ? (keys[i - 1] as readonly number[]) : mirror(p1, p2);
+  const p3 = i + 2 < n ? (keys[i + 2] as readonly number[]) : mirror(p2, p1);
+  return catmull(p0, p1, p2, p3, f);
 }
 
 /** Deterministic hand-held breath (metres) at time `t` for `amount` 0..1. */
@@ -198,8 +241,20 @@ export function storyFrame(story: Story, starts: readonly number[], t: number, a
   }
   const u = shot.cameraTo ? ease(shot.ease, local / shot.duration) : 0;
   const from = cameraOf(shot.camera, fov);
-  const to = shot.cameraTo ? cameraOf(shot.cameraTo, from.fov) : from;
-  const camera = { position: lerp3(from.position, to.position, u), target: lerp3(from.target, to.target, u), fov: lerp(from.fov, to.fov, u) };
+  const to = shot.cameraTo ? cameraOf(shot.cameraTo, from.fov, from.roll) : from;
+  let camera: StoryFrame['camera'];
+  if (shot.cameraTo && shot.via && shot.via.length > 0) {
+    // A crane or a curved dolly: a spline through every key, the fov and roll eased key to key.
+    const keys = [from, ...shot.via.map((v) => cameraOf(v, from.fov, from.roll)), to];
+    const x = u * (keys.length - 1);
+    const k = Math.min(keys.length - 2, Math.floor(x));
+    const f = x - k;
+    const a = keys[k] as ReturnType<typeof cameraOf>;
+    const b = keys[k + 1] as ReturnType<typeof cameraOf>;
+    camera = { position: splineAt(keys.map((c) => c.position), u), target: splineAt(keys.map((c) => c.target), u), fov: lerp(a.fov, b.fov, f), roll: lerp(a.roll, b.roll, f) };
+  } else {
+    camera = { position: lerp3(from.position, to.position, u), target: lerp3(from.target, to.target, u), fov: lerp(from.fov, to.fov, u), roll: lerp(from.roll, to.roll, u) };
+  }
   if (shot.track) {
     const a = actors?.get(shot.track);
     if (a) {
@@ -224,6 +279,13 @@ export function storyFrame(story: Story, starts: readonly number[], t: number, a
     const h = (story.shots[k] as StoryShot).hour;
     if (h !== undefined) hour = h;
   }
+  let music: string | null = null;
+  const ambience: Record<string, number> = {};
+  for (let k = 0; k <= i; k++) {
+    const s = story.shots[k] as StoryShot;
+    if (s.music !== undefined) music = s.music === 'none' ? null : s.music;
+    if (s.ambience) for (const [key, v] of Object.entries(s.ambience)) if (v !== undefined) ambience[key] = v;
+  }
   // A fade or a flash entering the shot; the film fades to black over its last second into the end card.
   let fade: StoryFrame['fade'] = { color: 'black', alpha: 0 };
   if (shot.transition !== 'cut' && shot.transitionSeconds > 0 && local < shot.transitionSeconds) {
@@ -233,12 +295,20 @@ export function storyFrame(story: Story, starts: readonly number[], t: number, a
   if (idx >= 0 && i === lastIdx && story.endCard && total - t < 1.2) fade = { color: 'black', alpha: Math.max(fade.alpha, ease('in', 1 - (total - t) / 1.2)) };
   const [c0, c1] = shot.captionAt ?? [Math.min(0.4, shot.duration * 0.1), shot.duration - Math.min(0.4, shot.duration * 0.1)];
   const caption = idx >= 0 && shot.caption && local >= c0 && local <= c1 ? shot.caption : null;
+  // After the last shot: black under the end card's title, then the black lifts onto the live world in the last shot's
+  // view and grade (the end card's buttons over the living scene; never a black screen).
+  if (idx < 0) {
+    const after = t - total;
+    fade = { color: 'black', alpha: story.endCard ? 1 - ease('inOut', (after - END_HOLD_SECONDS) / END_HANDOVER_SECONDS) : 0 };
+  }
   return {
     index: idx,
     local,
     camera,
+    music,
+    ambience,
     grade,
-    fade: idx < 0 && story.endCard ? { color: 'black', alpha: 1 } : fade,
+    fade,
     caption,
     title: idx >= 0 ? (shot.title ?? null) : null,
     subtitle: idx >= 0 ? (shot.subtitle ?? null) : null,

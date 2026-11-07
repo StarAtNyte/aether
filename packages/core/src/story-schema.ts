@@ -33,6 +33,8 @@ export const StoryCamera = z.object({
   target: V3,
   /** Vertical field of view in degrees (default: the previous shot's, else 50). */
   fov: z.number().min(8).max(100).optional(),
+  /** Dutch tilt: roll about the view axis in degrees (+ clockwise); keep it for the story's turn. */
+  roll: z.number().min(-45).max(45).optional(),
 });
 export type StoryCamera = z.infer<typeof StoryCamera>;
 
@@ -76,6 +78,36 @@ export const StoryMove = z.object({
 });
 export type StoryMove = z.infer<typeof StoryMove>;
 
+/** A one-shot sound of a shot, `at` seconds in (the player's procedural sound set: no files). */
+export const StorySound = z.object({
+  at: z.number().min(0),
+  /** A sound the player synthesizes: `crossing-bell`, `train-pass`, `train-whistle`, `gull`, `steps`, `wind-gust`, `chime`, `heartbeat`. */
+  sound: z.string().min(1).max(32),
+  gain: z.number().min(0).max(2).default(1),
+  /** How long it lasts (s), for sustained sounds (the crossing bell, a train passing). */
+  seconds: z.number().min(0).max(30).optional(),
+});
+export type StorySound = z.infer<typeof StorySound>;
+
+/** A named clip an entity plays during a shot (a person waving), `at` seconds in. */
+export const StoryAction = z.object({
+  entity: Id,
+  at: z.number().min(0),
+  clip: z.string().min(1).max(48),
+  loop: z.boolean().default(false),
+});
+export type StoryAction = z.infer<typeof StoryAction>;
+
+/** The ambience bed of a shot (0 silent .. 1 full), blended toward over the shot's first second. */
+export const StoryAmbience = z.object({
+  wind: z.number().min(0).max(1).optional(),
+  waves: z.number().min(0).max(1).optional(),
+  cicadas: z.number().min(0).max(1).optional(),
+  gulls: z.number().min(0).max(1).optional(),
+  town: z.number().min(0).max(1).optional(),
+});
+export type StoryAmbience = z.infer<typeof StoryAmbience>;
+
 export const StoryShot = z.object({
   name: z.string().min(1).max(60).optional(),
   duration: z.number().min(0.4).max(MAX_SHOT_SECONDS),
@@ -103,6 +135,21 @@ export const StoryShot = z.object({
   /** The grade the shot ends on (blended from `grade`). */
   gradeTo: StoryGrade.optional(),
   moves: z.array(StoryMove).max(8).default([]),
+  /**
+   * Camera poses the move passes through between `camera` and `cameraTo` (a crane or a curved dolly): the path is a
+   * centripetal spline through them, timed by `ease`.
+   */
+  via: z.array(StoryCamera).max(6).optional(),
+  /** Seconds the camera's aim lags a tracked entity (a camera operator's weight; 0 locks on). */
+  trackLag: z.number().min(0).max(2).optional(),
+  /** The score's cue from this shot on (the player's procedural score): `intro`, `run`, `tension`, `hush`, `hope`, `climax`, `coda`, or `none`. */
+  music: z.string().min(1).max(32).optional(),
+  /** One-shot sounds. */
+  sounds: z.array(StorySound).max(16).optional(),
+  /** The ambience bed from this shot on. */
+  ambience: StoryAmbience.optional(),
+  /** Clips the shot's people play. */
+  actions: z.array(StoryAction).max(8).optional(),
 });
 export type StoryShot = z.infer<typeof StoryShot>;
 

@@ -25,7 +25,7 @@ export const EYE_X = 0.035;
 /** Size of the painted eyes relative to their authored shapes. */
 export const EYE_SCALE = 1.1;
 
-export type Swatch = 'skin' | 'blouse' | 'blouseInner' | 'cuff' | 'ribbon' | 'sock' | 'skirt' | 'skirtInner' | 'shoe' | 'sole' | 'hairInner' | 'scrunchie';
+export type Swatch = 'skin' | 'blouse' | 'blouseInner' | 'cuff' | 'ribbon' | 'sock' | 'skirt' | 'skirtInner' | 'shoe' | 'sole' | 'hairInner' | 'scrunchie' | 'pocket' | 'watch' | 'watchFace' | 'shell';
 
 const SWATCH_CELL: Record<Swatch, [number, number]> = {
   skin: [0, 0],
@@ -40,34 +40,47 @@ const SWATCH_CELL: Record<Swatch, [number, number]> = {
   shoe: [2, 1],
   sole: [3, 1],
   hairInner: [4, 1],
+  pocket: [5, 1],
+  watch: [6, 1],
+  watchFace: [0, 2],
+  shell: [1, 2],
 };
 
 type RGB = [number, number, number];
 const hex = (h: string): RGB => [parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16) / 255, parseInt(h.slice(5, 7), 16) / 255];
 
+/** Colours of the model sheet (`docs/worlds/cloudwatch-concept/kaho-details.png`, its palette row). */
 export const PALETTE = {
-  skin: hex('#fbdccb'),
-  blouse: hex('#f7f6f1'),
-  blouseInner: hex('#d9dae8'),
-  navy: hex('#24305a'),
-  ribbon: hex('#d22f3e'),
-  sock: hex('#f5f4f0'),
-  skirt: hex('#28335c'),
-  skirtInner: hex('#1a2244'),
-  shoe: hex('#4b2b21'),
+  skin: hex('#f9d9c2'),
+  blouse: hex('#f6f5f2'),
+  blouseInner: hex('#d6d5e2'),
+  /** The sky-blue sailor collar and its two white lines. */
+  collar: hex('#8eaedb'),
+  ribbon: hex('#1f6a6c'),
+  sock: hex('#f3f1ec'),
+  skirt: hex('#2a3358'),
+  skirtInner: hex('#1b2242'),
+  shoe: hex('#6b3a26'),
   sole: hex('#2a1915'),
-  hair: hex('#5a3127'),
-  hairDeep: hex('#45241d'),
-  hairLight: hex('#8e5343'),
+  hair: hex('#5b3426'),
+  hairDeep: hex('#3f2219'),
+  hairLight: hex('#8f5a42'),
+  watch: hex('#26262b'),
+  watchFace: hex('#8a9688'),
+  shell: hex('#f1e4cf'),
 };
 
 const SWATCH_COLOUR: Record<Swatch, RGB> = {
   skin: PALETTE.skin,
   blouse: PALETTE.blouse,
   blouseInner: PALETTE.blouseInner,
-  cuff: PALETTE.navy,
+  cuff: hex('#e6e5ec'),
   ribbon: PALETTE.ribbon,
-  scrunchie: PALETTE.ribbon,
+  scrunchie: PALETTE.hairDeep,
+  pocket: hex('#ebeaf0'),
+  watch: PALETTE.watch,
+  watchFace: PALETTE.watchFace,
+  shell: PALETTE.shell,
   sock: PALETTE.sock,
   skirt: PALETTE.skirt,
   skirtInner: PALETTE.skirtInner,
@@ -102,8 +115,8 @@ export function collarUv(dist: number): [number, number] {
   return [(1536 + 64) / ATLAS_W, (v * 512) / ATLAS_H];
 }
 export const COLLAR_RANGE = 0.05;
-/** The white stripe of the collar, as distances from the edge (m). */
-export const COLLAR_STRIPE: [number, number] = [0.0075, 0.0125];
+/** The collar's two white lines, as distances from the edge (m): [start, end] of each. */
+export const COLLAR_STRIPES: ReadonlyArray<[number, number]> = [[0.0055, 0.0078], [0.0102, 0.0125]];
 
 /** Hair strip highlight centre (fraction of `down`) at `across`. */
 export const HAIR_BAND = 0.24;
@@ -185,16 +198,17 @@ function lidL(ex: number): number {
   return -0.0015 + (0.0012 + 0.0015) * u - 0.0138 * Math.pow(Math.sin(Math.PI * Math.pow(u, 1.1)), 0.9);
 }
 
-const IRIS_TOP = hex('#18224c');
-const IRIS_MID = hex('#2a6a92');
-const IRIS_LOW = hex('#4fb9c4');
-const IRIS_GLOW = hex('#a6ece0');
-const PUPIL = hex('#0e1430');
+// Warm brown irises (the model sheet): a dark top under the lid, amber low, a honey crescent.
+const IRIS_TOP = hex('#2a1610');
+const IRIS_MID = hex('#5e3420');
+const IRIS_LOW = hex('#a8683a');
+const IRIS_GLOW = hex('#e6b27a');
+const PUPIL = hex('#140a08');
 const WHITE = hex('#fbf9fb');
 const WHITE_SHADE = hex('#c4bddc');
 const LASH = hex('#3a1f2e');
 const LASH_SOFT = hex('#7a4652');
-const BROW = hex('#4d2a22');
+const BROW = hex('#4a2a1f');
 const MOUTH = hex('#9b3d45');
 const BLUSH = hex('#f39a9c');
 const HATCH = hex('#e47a84');
@@ -355,11 +369,12 @@ export function paintAtlas(): Uint8Array {
       put(1024 + ix, iy, rgba);
     }
   }
-  // Collar strip: navy with one white stripe.
+  // Collar strip: sky blue with two white lines near the edge.
   for (let iy = 0; iy < 512; iy++) {
     const d = ((iy + 0.5) / 512) * COLLAR_RANGE;
-    const w = sstep(COLLAR_STRIPE[0] - 0.0004, COLLAR_STRIPE[0] + 0.0004, d) * (1 - sstep(COLLAR_STRIPE[1] - 0.0004, COLLAR_STRIPE[1] + 0.0004, d));
-    const c = mixc(PALETTE.navy, PALETTE.blouse, w);
+    let w = 0;
+    for (const [a, b] of COLLAR_STRIPES) w = Math.max(w, sstep(a - 0.0003, a + 0.0003, d) * (1 - sstep(b - 0.0003, b + 0.0003, d)));
+    const c = mixc(PALETTE.collar, PALETTE.blouse, w);
     for (let ix = 1536; ix < 1664; ix++) put(ix, iy, [...c, ALPHA_NORMAL]);
   }
   // Swatches.

@@ -1,8 +1,13 @@
 /**
- * Kaho's body, built from the proportioned skeleton: head (signed-distance
- * shape with a painted face), hair (cap, bangs, bob locks, side locks and a
- * short ponytail), summer sailor uniform (blouse, collar with a stripe,
- * ribbon, short sleeves, pleated skirt), socks, loafers, arms and hands.
+ * Kaho's body, built from the proportioned skeleton to match her model sheet
+ * (docs/worlds/cloudwatch-concept/, generated concept art used as reference
+ * only): head (signed-distance shape with a painted face), hair (cap, a
+ * chin-length bob in large clumps curling in at the tips, side-parted bangs
+ * laid on the forehead, a thin braid behind her left ear with a seashell
+ * charm), summer sailor uniform (blouse with a chest pocket, a sky-blue collar
+ * with two white lines, a deep-teal neckerchief, short sleeves, a knee-length
+ * skirt in twelve knife pleats), a digital wristwatch, socks, loafers, arms
+ * and hands.
  *
  * Everything is in the bind pose, metres, +Y up, facing +Z, her left at +X.
  */
@@ -46,6 +51,11 @@ const T_HAIR: Toon = [1, 0.02, 1, 0];
 const T_SMALL: Toon = [0.55, 0.05, 0.6, 0];
 
 const V = (x: number, y: number, z: number): Vector3 => new Vector3(x, y, z);
+/** Skirt hem half-width and half-depth (m): a moderate flare, so the hanging hands clear it. */
+const HEM_X = 0.2;
+const HEM_Z = 0.168;
+/** Knife pleats round the skirt (the sheet's twelve). */
+const PLEATS = 12;
 
 /** Build the whole body; adds secondary bones to `bones`. */
 export function buildBody(bones: KBone[]): BuiltBody {
@@ -80,13 +90,27 @@ export function buildBody(bones: KBone[]): BuiltBody {
   const hairPoint = (lon: number, lat: number, lift = 0): Vector3 => HAIR_C.clone().add(hairDir(lon, lat).multiply(HAIR_R).multiplyScalar(1 + lift));
   const crownY = HAIR_C.y + HAIR_R.y;
   const hairV = (y: number): number => clamp((crownY - y) / 0.3, 0, 1);
+  const HEAD_CENTRE = V(0, 0.095, 0.004);
+  /** The skull surface along the ray from the head's centre through `p`, pushed out by `gap` (m). */
+  const onHead = (p: Vector3, gap: number): Vector3 => {
+    const d = p.clone().sub(O).sub(HEAD_CENTRE).normalize();
+    let lo = 0;
+    let hi = 0.3;
+    for (let k = 0; k < 32; k++) {
+      const m = (lo + hi) / 2;
+      if (headSdf(HEAD_CENTRE.clone().addScaledVector(d, m)) < 0) lo = m;
+      else hi = m;
+    }
+    return O.clone().add(HEAD_CENTRE).addScaledVector(d, (lo + hi) / 2 + gap);
+  };
 
   // -------------------------------------------------------------------------
   // Secondary bones (added before skinning so indices are known)
   // -------------------------------------------------------------------------
   // Skirt: eight panels hanging from the waist.
   const SKIRT_TOP = 1.0;
-  const SKIRT_HEM = 0.62;
+  // Knee-length, as on the sheet: the hem a hand above the knee joint.
+  const SKIRT_HEM = J('Bip01_L_Calf').y + 0.075;
   const SKIRT_N = 8;
   const skirtBones: number[] = [];
   const pelvis = J('Bip01_Pelvis');
@@ -96,26 +120,21 @@ export function buildBody(bones: KBone[]): BuiltBody {
     skirtBones.push(addSecondary(bones, `Skirt_${k}`, 'Bip01_Pelvis', at));
   }
   // Hem point of each panel at rest (the tip of the chain).
-  const skirtHem = (a: number): Vector3 => V(Math.sin(a) * 0.215, SKIRT_HEM, pelvis.z - 0.005 + Math.cos(a) * 0.17);
+  const skirtHem = (a: number): Vector3 => V(Math.sin(a) * HEM_X, SKIRT_HEM, pelvis.z - 0.005 + Math.cos(a) * HEM_Z);
   for (let k = 0; k < SKIRT_N; k++) {
     const a = (k / SKIRT_N) * Math.PI * 2;
     const bone = bones[skirtBones[k] as number] as KBone;
     const tip = skirtHem(a).sub(bone.pos);
-    springs.push({ name: `skirt${k}`, bones: [bone.name], tip: [tip.x, tip.y, tip.z], stiffness: 0.32, drag: 0.22, gravity: 0.4, radius: 0.02, limit: 0.75 });
+    springs.push({ name: `skirt${k}`, bones: [bone.name], tip: [tip.x, tip.y, tip.z], stiffness: 0.34, drag: 0.24, gravity: 0.2, radius: 0.022, limit: 0.6 });
   }
-  // Ponytail: tied high at the back.
-  const tieLon = Math.PI;
-  const tieLat = 1.12;
-  const tie = hairPoint(tieLon, tieLat, 0.03);
-  const tieN = hairDir(tieLon, tieLat).multiply(V(1 / HAIR_R.x, 1 / HAIR_R.y, 1 / HAIR_R.z)).normalize();
-  const up = V(0, 1, 0);
-  const ponyPath = [tie.clone(), tie.clone().addScaledVector(tieN, 0.04).addScaledVector(up, 0.02), tie.clone().addScaledVector(tieN, 0.08).addScaledVector(up, -0.03), tie.clone().addScaledVector(tieN, 0.09).addScaledVector(up, -0.12), tie.clone().addScaledVector(tieN, 0.075).addScaledVector(up, -0.21)];
-  const p1 = addSecondary(bones, 'Hair_Pony_1', 'Bip01_Head', spline(ponyPath, 0.12));
-  const p2 = addSecondary(bones, 'Hair_Pony_2', 'Hair_Pony_1', spline(ponyPath, 0.45));
-  const p3 = addSecondary(bones, 'Hair_Pony_3', 'Hair_Pony_2', spline(ponyPath, 0.72));
+  // The braid: a thin three-strand braid behind her left ear (+X), from under the bob to below the jaw, with the
+  // seashell charm at its end. Two spring bones.
+  const braidPath = [hairPoint(1.86, 1.2, 0.012), hairPoint(1.9, 1.48, 0.03), hairPoint(1.92, 1.72, 0.05), hairPoint(1.93, 1.72, 0.05).add(V(0.004, -0.06, -0.004)), hairPoint(1.93, 1.72, 0.05).add(V(0.006, -0.125, -0.006))];
+  const br1 = addSecondary(bones, 'Hair_Braid_1', 'Bip01_Head', spline(braidPath, 0.45));
+  const br2 = addSecondary(bones, 'Hair_Braid_2', 'Hair_Braid_1', spline(braidPath, 0.74));
   {
-    const tip = spline(ponyPath, 1).sub((bones[p3] as KBone).pos);
-    springs.push({ name: 'ponytail', bones: ['Hair_Pony_1', 'Hair_Pony_2', 'Hair_Pony_3'], tip: [tip.x, tip.y, tip.z], stiffness: 0.18, drag: 0.16, gravity: 0.55, radius: 0.03, limit: 1.1 });
+    const tip = spline(braidPath, 1).add(V(0, -0.026, 0)).sub((bones[br2] as KBone).pos);
+    springs.push({ name: 'braid', bones: ['Hair_Braid_1', 'Hair_Braid_2'], tip: [tip.x, tip.y, tip.z], stiffness: 0.22, drag: 0.18, gravity: 0.6, radius: 0.012, limit: 0.9 });
   }
   // Side locks, framing the face.
   const sideLock: Record<number, { path: Vector3[]; bones: number[] }> = {};
@@ -123,8 +142,8 @@ export function buildBody(bones: KBone[]): BuiltBody {
     const lon = side * 1.32;
     const s0 = hairPoint(lon, 0.75, 0.035);
     const s1 = hairPoint(lon, 1.32, 0.045);
-    const hang = s1.clone().add(V(side * 0.004, -0.06, 0.012));
-    const tipP = s1.clone().add(V(side * -0.002, -0.155, 0.022));
+    const hang = s1.clone().add(V(side * 0.002, -0.05, 0.012));
+    const tipP = s1.clone().add(V(side * -0.012, -0.112, 0.02));
     const path = [s0, hairPoint(lon, 1.05, 0.04), s1, hang, tipP];
     const name = side > 0 ? 'L' : 'R';
     const b1 = addSecondary(bones, `Hair_Side${name}_1`, 'Bip01_Head', spline(path, 0.5));
@@ -140,7 +159,20 @@ export function buildBody(bones: KBone[]): BuiltBody {
     const calf = bones[B(`Bip01_${s}_Calf`)] as KBone;
     colliders.push({ bone: thigh.name, head: [0.02, 0, 0], tail: [calf.t.x * 0.75, calf.t.y * 0.75, calf.t.z * 0.75], radius: 0.075 });
   }
+  for (const s of ['L', 'R']) {
+    const calf = bones[B(`Bip01_${s}_Calf`)] as KBone;
+    const foot = bones[B(`Bip01_${s}_Foot`)] as KBone;
+    colliders.push({ bone: calf.name, head: [0, 0, 0], tail: [foot.t.x * 0.6, foot.t.y * 0.6, foot.t.z * 0.6], radius: 0.05 });
+  }
   for (const s of ['L', 'R']) colliders.push({ bone: `Bip01_${s}_Hand`, head: [0, 0, 0], tail: [0.06, 0, 0], radius: 0.035 });
+  for (const s of ['L', 'R']) {
+    // Forearms too: a swinging arm pushes the skirt panels out instead of passing through them.
+    const fore = bones[B(`Bip01_${s}_Forearm`)] as KBone;
+    const hand = bones[B(`Bip01_${s}_Hand`)] as KBone;
+    colliders.push({ bone: fore.name, head: [0, 0, 0], tail: [hand.t.x, hand.t.y, hand.t.z], radius: 0.032 });
+  }
+  // The chest (the neckerchief's tails rest on it).
+  colliders.push({ bone: 'Bip01_Spine2', head: localOf(bones, 'Bip01_Spine2', V(0.05, 1.15, 0.035)), tail: localOf(bones, 'Bip01_Spine2', V(-0.05, 1.15, 0.035)), radius: 0.075 });
   colliders.push({ bone: 'Bip01_Head', head: localOf(bones, 'Bip01_Head', O.clone().add(V(0, 0.11, -0.005))), tail: localOf(bones, 'Bip01_Head', O.clone().add(V(0, 0.05, 0.0))), radius: 0.09 });
   colliders.push({ bone: 'Bip01_Spine2', head: localOf(bones, 'Bip01_Spine2', V(0.09, 1.2, -0.04)), tail: localOf(bones, 'Bip01_Spine2', V(-0.09, 1.2, -0.04)), radius: 0.07 });
   colliders.push({ bone: 'Bip01_Pelvis', head: localOf(bones, 'Bip01_Pelvis', V(0, 0.92, -0.01)), tail: localOf(bones, 'Bip01_Pelvis', V(0, 0.84, -0.01)), radius: 0.1 });
@@ -449,10 +481,36 @@ export function buildBody(bones: KBone[]): BuiltBody {
     }
     part.merge(collar);
 
-    // Ribbon at the V.
+    // The neckerchief's knot at the V, its two tails on spring bones.
     const vCurve = curveOf(0);
-    const vp = at(vCurve, D_V + 0.004).p.add(V(0, 0.0, 0.012));
-    buildRibbon(part, vp, [[B('Bip01_Spine2'), 1]], 1.3);
+    const vp = at(vCurve, D_V - 0.004).p.add(V(0, 0.0, 0.01));
+    const tails: number[] = [];
+    for (const side of [1, -1]) {
+      const name = side > 0 ? 'L' : 'R';
+      const b = addSecondary(bones, `Tie_${name}`, 'Bip01_Spine2', vp.clone().add(V(side * 0.004, -0.012, 0.004)));
+      tails.push(b);
+      springs.push({ name: `tie${name}`, bones: [`Tie_${name}`], tip: [side * 0.02, -0.1, 0.01], stiffness: 0.42, drag: 0.26, gravity: 0.35, radius: 0.012, limit: 0.5 });
+    }
+    buildNeckerchief(part, vp, B('Bip01_Spine2'), tails as [number, number], (y) => torsoPoint(0, y).z);
+
+    // Chest pocket on her left: a thin patch laid on the blouse, with a hem at its mouth.
+    const pocket = new Part('pocket');
+    const PH = [1.125, 1.178];
+    const PP = [0.34, 0.66];
+    const grid: number[][] = [];
+    for (let i = 0; i <= 4; i++) {
+      const y = lerp(PH[0] as number, PH[1] as number, i / 4);
+      const row: number[] = [];
+      for (let j = 0; j <= 4; j++) {
+        const phi = lerp(PP[0] as number, PP[1] as number, j / 4);
+        const p0 = torsoPoint(phi, y, 0.0026);
+        row.push(pocket.vertex(p0, swatchUv(i === 4 ? 'blouseInner' : 'pocket'), torsoSkin(p0), T_CLOTH));
+      }
+      grid.push(row);
+    }
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) pocket.quad((grid[i] as number[])[j] as number, (grid[i] as number[])[j + 1] as number, (grid[i + 1] as number[])[j + 1] as number, (grid[i + 1] as number[])[j] as number);
+    orientOutward(pocket, (q) => V(q.x, 0, q.z - torsoZ(q.y)));
+    part.merge(pocket);
   }
 
   // -------------------------------------------------------------------------
@@ -460,19 +518,21 @@ export function buildBody(bones: KBone[]): BuiltBody {
   // -------------------------------------------------------------------------
   {
     const skirt = new Part('skirt');
-    const PLEATS = 22;
-    const SEG = PLEATS * 4;
-    const ROWS = 12;
+    const SEG = PLEATS * 12;
+    // The hip line stays at its height whatever the skirt's length (a longer skirt must not pull it down over the thighs).
+    const T_HIP = clamp((SKIRT_TOP - 0.885) / (SKIRT_TOP - SKIRT_HEM), 0.1, 0.5);
+    const ROWS = 16;
     const ringAt = (t: number, off: number): Ring => {
       const y = lerp(SKIRT_TOP, SKIRT_HEM, t);
       const [hw, fr, bk] = torsoAt(Math.max(y, 0.99));
       const waist = V(hw + 0.008, fr + 0.008, bk + 0.008);
-      const hem = V(0.215, 0.178, 0.178);
-      const hip = V(0.152, 0.118, 0.118);
+      const hem = V(HEM_X, HEM_Z + 0.002, HEM_Z + 0.002);
+      const hip = V(0.157, 0.123, 0.123);
       const tt = smoothstep(0, 1, t);
-      let w = t < 0.28 ? waist.clone().lerp(hip, smoothstep(0, 0.28, t)) : hip.clone().lerp(hem, (t - 0.28) / 0.72);
+      let w = t < T_HIP ? waist.clone().lerp(hip, smoothstep(0, T_HIP, t)) : hip.clone().lerp(hem, (t - T_HIP) / (1 - T_HIP));
       w = w.addScalar(off);
-      const amp = 0.0015 + 0.011 * tt;
+      // Pleats closed at the waistband, opening toward the hem.
+      const amp = 0.0018 + 0.0105 * tt;
       return {
         c: V(0, y, lerp(torsoZ(SKIRT_TOP), pelvis.z - 0.005, smoothstep(0, 0.4, t))),
         x: V(1, 0, 0),
@@ -481,7 +541,7 @@ export function buildBody(bones: KBone[]): BuiltBody {
           const pa = (a / (Math.PI * 2)) * PLEATS;
           const f = pa - Math.floor(pa);
           // Knife pleats: a sharp fold then a long face.
-          const fold = f < 0.22 ? f / 0.22 : 1 - (f - 0.22) / 0.78;
+          const fold = f < 0.2 ? f / 0.2 : 1 - (f - 0.2) / 0.8;
           const r = 1 + (amp * (fold - 0.5) * 2) / Math.max(0.1, w.x);
           const c = Math.cos(a);
           const s = Math.sin(a);
@@ -638,7 +698,7 @@ export function buildBody(bones: KBone[]): BuiltBody {
     // Short puffed sleeve: a shell from over the shoulder to a third of the upper arm, with a navy cuff.
     const sleeve = new Part(`sleeve${s}`);
     const sEnd = 0.035 / total + (S.distanceTo(E) / total) * 0.42;
-    const puff = (t: number): number => 1.32 + 0.14 * Math.sin(Math.PI * clamp(t / sEnd, 0, 1));
+    const puff = (t: number): number => 1.22 + 0.08 * Math.sin(Math.PI * clamp(t / sEnd, 0, 1));
     const so = armRings(0, sEnd, 10, puff, 0.004);
     const si = armRings(0, sEnd, 10, puff, -0.0005);
     const sleeveSkin = (p: Vector3): Skin => mixSkin(envelope(p, armSegs(s), 4), torsoSkin(p), 0.25 * smoothstep(sEnd * 0.6, 0, 0));
@@ -657,6 +717,25 @@ export function buildBody(bones: KBone[]): BuiltBody {
     const cr = armRings(sEnd - 0.022, sEnd + 0.002, 3, () => puff(sEnd) + 0.02, 0.0045);
     loft(cuff, cr, { seg: 20, uv: sw('cuff'), skin: sleeveSkin, toon: () => T_CLOTH });
     part.merge(cuff);
+    if (s === 'L') {
+      // A cheap digital wristwatch: a strap round the wrist and a squarish case on its back.
+      const tw = 1 - 0.045 / total;
+      const watch = new Part('watch');
+      loft(watch, armRings(tw - 0.011, tw + 0.011, 3, () => 1.08, 0.0024), { seg: 16, uv: sw('watch'), skin: (p) => envelope(p, armSegs(s), 5), toon: () => T_SMALL });
+      const c = spline(path, tw);
+      const tan = spline(path, Math.min(1, tw + 0.01)).sub(spline(path, tw - 0.01)).normalize();
+      // The back of the wrist: world up made square to the forearm (the bind pose has the palms down).
+      const back = V(0, 1, 0).addScaledVector(tan, -tan.y).normalize();
+      const side = tan.clone().cross(back).normalize();
+      const [rx] = radius(tw);
+      const caseRings: Ring[] = [];
+      for (let i = 0; i <= 2; i++) {
+        const cc = c.clone().addScaledVector(back, rx * 1.08 + 0.0012 + i * 0.0026);
+        caseRings.push({ c: cc, x: side, y: tan, shape: section(0.0105 - i * 0.0008, 0.0115 - i * 0.0008, 0.0115 - i * 0.0008, 3.2) });
+      }
+      loft(watch, caseRings, { seg: 16, capEnd: 0.006, uv: (t) => swatchUv(t > 0.9 ? 'watchFace' : 'watch'), skin: (p) => envelope(p, armSegs(s), 5), toon: () => T_SMALL });
+      part.merge(watch);
+    }
     buildHand(part, bones, s, J, B);
   }
 
@@ -705,12 +784,16 @@ export function buildBody(bones: KBone[]): BuiltBody {
     part.merge(lp);
   };
   /** A lock that follows the hair mass from `lat0` to `lat1` at `lon`, then hangs `hang` metres, flaring out. */
-  const massLock = (lon: number, lat0: number, lat1: number, hang: number, width: number, opts: { lift?: number; flare?: number; curl?: number; thick?: number; tipY?: number; sphere?: number; uvDark?: boolean; drift?: number } = {}): void => {
+  const massLock = (lon: number, lat0: number, lat1: number, hang: number, width: number, opts: { lift?: number; flare?: number; curl?: number; thick?: number; tipY?: number; sphere?: number; uvDark?: boolean; drift?: number; hug?: number } = {}): void => {
     const pts: Vector3[] = [];
     const lift = opts.lift ?? 0.0;
     for (let k = 0; k <= 7; k++) {
       const lat = lerp(lat0, lat1, k / 7);
-      pts.push(hairPoint(lon + (opts.drift ?? 0) * (k / 7), lat, lift + 0.01 * (k / 7)));
+      let p = hairPoint(lon + (opts.drift ?? 0) * (k / 7), lat, lift + 0.01 * (k / 7));
+      // Bangs lie on the forehead: below the hairline the lock is pulled onto the skull plus a small gap, so in profile
+      // it follows the brow instead of standing off it on the hair mass's ellipsoid.
+      if (opts.hug !== undefined) p = p.lerp(onHead(p, opts.hug + 0.004 * (1 - k / 7)), smoothstep(0.55, 1.15, lat));
+      pts.push(p);
     }
     if (hang > 0) {
       const end = pts[pts.length - 1] as Vector3;
@@ -731,17 +814,22 @@ export function buildBody(bones: KBone[]): BuiltBody {
     [1.45, 0.085, 0.05], [1.8, 0.1, 0.055], [2.15, 0.11, 0.058], [2.5, 0.115, 0.058], [2.82, 0.12, 0.06], [Math.PI, 0.112, 0.06],
     [-1.45, 0.085, 0.05], [-1.8, 0.1, 0.055], [-2.15, 0.11, 0.058], [-2.5, 0.115, 0.058], [-2.82, 0.12, 0.06],
   ];
-  for (const [lon, hang, w] of bob) massLock(lon, 0.22, 1.42, hang, w * 1.2, { lift: 0.0, flare: 0.016, curl: 0.008 });
+  // The tips turn in under the jaw (the sheet's soft inward curl).
+  for (const [lon, hang, w] of bob) massLock(lon, 0.22, 1.42, hang, w * 1.25, { lift: 0.0, flare: 0.012, curl: 0.022 });
   // Second, shorter layer over the bob for depth.
   for (const lon of [1.7, 2.2, 2.75, -1.7, -2.2, -2.75]) massLock(lon, 0.3, 1.36, 0.06, 0.05, { lift: 0.022, flare: 0.012, curl: 0.004 });
   // Crown locks running back from the parting.
   for (const lon of [0.55, 0.95, 1.25, -0.55, -0.95, -1.25]) massLock(lon, 0.12, 1.25, 0.0, 0.055, { lift: 0.006, drift: Math.sign(lon) * 0.25 });
   // Bangs: from the top of the head over the forehead, tips at the brows; one longer strand between the eyes.
-  const bangs: Array<[number, number, number]> = [
-    // lon, end lat, width
-    [0.0, 1.56, 0.034], [0.2, 1.5, 0.036], [-0.2, 1.53, 0.035], [0.42, 1.47, 0.038], [-0.42, 1.44, 0.038], [0.64, 1.42, 0.036], [-0.64, 1.4, 0.036], [0.86, 1.46, 0.032], [-0.86, 1.5, 0.032], [0.1, 1.64, 0.022], [-0.32, 1.6, 0.02],
+  // Parted a little to her left (+lon): the clumps sweep away from the parting toward her right, the longest one between
+  // the eyes; few and large, with pointed tips at the brows.
+  const PART = 0.22;
+  const bangs: Array<[number, number, number, number]> = [
+    // lon, end lat, width, sweep
+    [PART - 0.12, 1.6, 0.042, -0.2], [PART - 0.36, 1.55, 0.046, -0.24], [PART - 0.6, 1.5, 0.044, -0.22], [PART - 0.84, 1.47, 0.04, -0.14],
+    [PART + 0.14, 1.54, 0.04, 0.12], [PART + 0.38, 1.47, 0.04, 0.14], [PART + 0.62, 1.44, 0.036, 0.1], [PART - 0.22, 1.66, 0.024, -0.16],
   ];
-  for (const [lon, lat1, w] of bangs) massLock(lon, 0.2, lat1, 0.0, w, { lift: -0.006, thick: 0.0068, sphere: 0.55, drift: -lon * 0.12 });
+  for (const [lon, lat1, w, sweep] of bangs) massLock(lon, 0.18, lat1, 0.0, w * 1.35, { lift: -0.004, thick: 0.0088, sphere: 0.55, drift: sweep, hug: 0.0046 });
   // Side locks (spring).
   for (const side of [1, -1]) {
     const sl = sideLock[side] as { path: Vector3[]; bones: number[] };
@@ -755,43 +843,63 @@ export function buildBody(bones: KBone[]): BuiltBody {
       skin: (_p, t) => (t < 0.45 ? hairSkin : t < 0.7 ? normaliseSkin([[headBone, 1 - (t - 0.45) / 0.25], [chainB[0] as number, (t - 0.45) / 0.25]]) : normaliseSkin([[chainB[0] as number, 1 - smoothstep(0.7, 0.9, t)], [chainB[1] as number, smoothstep(0.7, 0.9, t)]])),
     });
   }
-  // Ponytail: a bundle of locks from the tie, and the scrunchie.
+  // The braid: lumps alternating side to side along the path (three strands read as a zig-zag), tied off above the
+  // seashell charm.
   {
-    const chain = [headBone, p1, p2, p3];
-    const ponySkin = (_p: Vector3, t: number): Skin => {
-      const f = t * 3.2;
-      const k = Math.min(2, Math.floor(f));
-      const u = smoothstep(0.3, 1, f - k);
-      return normaliseSkin([[chain[k] as number, 1 - u], [chain[k + 1] as number, u]]);
+    const chain = [headBone, br1, br2];
+    const braidSkin = (t: number): Skin => {
+      if (t < 0.35) return hairSkin;
+      if (t < 0.62) return normaliseSkin([[headBone, 1 - smoothstep(0.35, 0.62, t)], [br1, smoothstep(0.35, 0.62, t)]]);
+      return normaliseSkin([[br1, 1 - smoothstep(0.62, 0.85, t)], [br2, smoothstep(0.62, 0.85, t)]]);
     };
-    const spreads: Array<[number, number, number, number]> = [
-      // sideways, up-down, length scale, width
-      [0, 0, 1, 0.05], [0.02, 0.008, 0.9, 0.042], [-0.02, 0.008, 0.92, 0.042], [0.012, -0.014, 0.8, 0.04], [-0.012, -0.014, 0.84, 0.04], [0, 0.016, 0.75, 0.04],
-    ];
-    const lat = V(1, 0, 0);
-    for (const [dx, dy, ls, w] of spreads) {
-      const path = ponyPath.map((p, i) => {
-        const f = i / (ponyPath.length - 1);
-        return tie.clone().lerp(p, i === 0 ? 0 : 1).addScaledVector(lat, dx * Math.sin(Math.PI * Math.min(1, f * 1.3)) * 1.5).add(V(0, dy * f, 0)).sub(tie).multiplyScalar(i === 0 ? 1 : ls).add(tie);
-      });
-      lock({ path, width: w, thick: 0.009, out: () => tieN.clone().add(V(0, 0.4, 0)).normalize(), sphere: 0.15, skin: ponySkin, rootWidth: 0.5 });
+    void chain;
+    const bp = new Part('braid');
+    const N = 9;
+    for (let k = 0; k < N; k++) {
+      const t0 = k / N;
+      const t1 = (k + 1.25) / N;
+      const lump: Ring[] = [];
+      const side = k % 2 === 0 ? 1 : -1;
+      for (let i = 0; i <= 6; i++) {
+        const u = i / 6;
+        const t = Math.min(1, lerp(t0, t1, u));
+        const c = spline(braidPath, t);
+        const tan = spline(braidPath, Math.min(1, t + 0.02)).sub(spline(braidPath, Math.max(0, t - 0.02))).normalize();
+        const out = c.clone().sub(HAIR_C).setY(0).normalize();
+        const across = tan.clone().cross(out).normalize();
+        const tilt = across.clone().multiplyScalar(Math.cos(0.5 * side)).addScaledVector(tan, Math.sin(0.5 * side) * 0.5).normalize();
+        const r = 0.0062 * (1 - 0.25 * (k / N)) * Math.sin(Math.PI * clamp(u, 0.04, 0.96));
+        lump.push({ c: c.clone().addScaledVector(across, side * 0.0018), x: tilt, y: out, shape: (a2) => [Math.cos(a2) * r, Math.sin(a2) * r * 0.8] });
+      }
+      const tk = (t0 + t1) / 2;
+      loft(bp, lump, { seg: 8, uv: () => hairUv(0.5, 0.3 + 0.4 * tk), skin: () => braidSkin(tk), toon: () => T_HAIR });
     }
-    // Scrunchie: a puffy ring around the tie.
-    const scr = new Part('scrunchie');
-    const axis = ponyPath[1]!.clone().sub(ponyPath[0]!).normalize();
-    const f = frame(axis, V(1, 0, 0));
+    bp.smoothNormals();
+    part.merge(bp);
+    // The tie: a small dark band.
+    const end = spline(braidPath, 1);
+    const tie = new Part('braidTie');
+    const tieRings: Ring[] = [];
+    for (let i = 0; i <= 2; i++) tieRings.push({ c: end.clone().add(V(0, -0.003 * i, 0)), x: V(1, 0, 0), y: V(0, 0, 1), shape: section(0.0046, 0.0046, 0.0046, 2) });
+    loft(tie, tieRings, { seg: 10, capStart: 0.002, capEnd: 0.002, uv: sw('scrunchie'), skin: () => braidSkin(1), toon: () => T_SMALL });
+    part.merge(tie);
+    // The seashell charm: a scallop (a fan, ribbed, with two small ears at its hinge) hanging below the tie.
+    const shell = new Part('shell');
+    const top = end.clone().add(V(0, -0.008, 0));
+    const face = V(1, 0, 0.35).normalize();
+    const flat = V(0, 1, 0).cross(face).normalize();
     const rings: Ring[] = [];
-    const NRS = 16;
-    for (let i = 0; i < NRS; i++) {
-      const a = (i / NRS) * Math.PI * 2;
-      const c = tie.clone().addScaledVector(axis, 0.01).addScaledVector(f.x, Math.cos(a) * 0.016).addScaledVector(f.y, Math.sin(a) * 0.016);
-      const radial = c.clone().sub(tie.clone().addScaledVector(axis, 0.01)).normalize();
-      rings.push({ c, x: radial, y: axis.clone(), shape: (b) => [Math.cos(b) * (0.009 + 0.0015 * Math.sin(i * 2.4)), Math.sin(b) * 0.009] });
+    for (let i = 0; i <= 8; i++) {
+      const u = i / 8;
+      const w = 0.004 + 0.0105 * Math.sin(Math.PI * 0.5 * Math.min(1, u * 1.25)) * (u > 0.85 ? Math.sqrt(Math.max(0, 1 - ((u - 0.85) / 0.15) * 0.6)) : 1);
+      rings.push({ c: top.clone().add(V(0, -0.022 * u, 0)), x: flat, y: face, shape: (a2) => {
+        const rib = 1 + 0.06 * Math.cos(a2 * 9) * u;
+        return [Math.cos(a2) * w * rib, Math.sin(a2) * (Math.sin(a2) > 0 ? 0.0028 : 0.0016) * (0.6 + 0.4 * u)];
+      } });
     }
-    rings.push(rings[0] as Ring);
-    loft(scr, rings, { seg: 10, uv: sw('scrunchie'), skin: () => [[headBone, 0.7], [p1, 0.3]], toon: () => T_SMALL });
-    scr.smoothNormals();
-    part.merge(scr);
+    loft(shell, rings, { seg: 18, capStart: 0.001, capEnd: 0.002, uv: sw('shell'), skin: () => braidSkin(1), toon: () => T_SMALL });
+    shell.smoothNormals();
+    part.merge(shell);
   }
 
   return { part, springs, colliders };
@@ -842,46 +950,37 @@ function buildLock(part: Part, o: LockSpec, hairV: (y: number) => number, skin: 
   });
 }
 
-/** The chest ribbon: a knot, two loops and two tails. */
-function buildRibbon(part: Part, at: Vector3, skin: Skin, scale = 1): void {
-  const rb = new Part('ribbon');
+/**
+ * The neckerchief: a soft square knot at the collar's V and two tails hanging from it, widening and then cut to a point,
+ * splayed a little; each tail skinned to its spring bone.
+ */
+function buildNeckerchief(part: Part, at: Vector3, chest: number, tails: [number, number], front: (y: number) => number): void {
+  const nk = new Part('neckerchief');
   const T: Toon = [0.7, 0.04, 0.8, 0];
   const uv = (): readonly [number, number] => swatchUv('ribbon');
-  for (const s of [1, -1]) {
-    // Loop: a flattened teardrop from the knot outward.
+  for (const [k, side] of [[0, 1], [1, -1]] as const) {
+    const bone = tails[k];
     const rings: Ring[] = [];
     for (let i = 0; i <= 10; i++) {
       const t = i / 10;
-      const c = at.clone().add(V(s * 0.04 * t, 0.004 * Math.sin(Math.PI * t) - 0.002 * t, -0.004 * t));
-      const h = 0.006 + 0.012 * Math.sin(Math.PI * Math.pow(t, 0.7)) * (1 - 0.3 * t);
-      rings.push({ c, x: V(0, 1, 0), y: V(0, 0, 1), shape: (a) => [Math.cos(a) * h, Math.sin(a) * (0.004 + 0.002 * Math.sin(Math.PI * t))] });
+      const c = at.clone().add(V(side * (0.005 + 0.02 * t), -0.008 - 0.1 * t, 0));
+      // Lying on the blouse: never behind the chest's front.
+      c.z = Math.max(at.z + 0.004 - 0.01 * t, front(c.y) + 0.007);
+      // Wider toward the end, then a pointed cut.
+      const w = (0.009 + 0.016 * Math.sin(Math.PI * 0.5 * Math.min(1, t / 0.72))) * (t > 0.72 ? 1 - ((t - 0.72) / 0.28) * 0.94 : 1);
+      rings.push({ c, x: V(1, -0.22 * side, 0).normalize(), y: V(0, 0, 1), shape: (a) => [Math.cos(a) * w, Math.sin(a) * 0.0019] });
     }
-    loft(rb, rings, { seg: 12, capEnd: 0.004, uv, skin: () => skin, toon: () => T });
-    // Tail: a tapering strip hanging down and out.
-    const tail: Ring[] = [];
-    for (let i = 0; i <= 8; i++) {
-      const t = i / 8;
-      const c = at.clone().add(V(s * (0.006 + 0.016 * t), -0.006 - 0.05 * t, 0.003 + 0.012 * t));
-      const w = 0.0095 * (1 - 0.25 * t);
-      tail.push({ c, x: V(1, -0.25 * s, 0).normalize(), y: V(0, 0, 1), shape: (a) => [Math.cos(a) * w, Math.sin(a) * 0.0018] });
-    }
-    loft(rb, tail, { seg: 10, capStart: 0, capEnd: 0.002, uv, skin: () => skin, toon: () => T });
+    loft(nk, rings, { seg: 10, capStart: 0.0, capEnd: 0.001, uv, skin: (_p, t) => normaliseSkin([[chest, 1 - smoothstep(0.05, 0.4, t)], [bone, smoothstep(0.05, 0.4, t)]]), toon: () => T });
   }
-  // Knot.
+  // The knot: a squat rounded block, its fold lines given by the outline.
   const knot: Ring[] = [];
-  for (let i = 0; i <= 4; i++) {
-    const t = i / 4;
-    knot.push({ c: at.clone().add(V(0, 0.009 - 0.018 * t, 0.002)), x: V(1, 0, 0), y: V(0, 0, 1), shape: section(0.0075 * Math.sin(Math.PI * (0.15 + 0.7 * t)), 0.006, 0.005, 2) });
+  for (let i = 0; i <= 5; i++) {
+    const t = i / 5;
+    knot.push({ c: at.clone().add(V(0, 0.011 - 0.024 * t, 0.003 + 0.002 * Math.sin(Math.PI * t))), x: V(1, 0, 0), y: V(0, 0, 1), shape: section(0.0105 * (0.75 + 0.25 * Math.sin(Math.PI * t)), 0.0062, 0.005, 2.3) });
   }
-  loft(rb, knot, { seg: 12, capStart: 0.002, capEnd: 0.002, uv, skin: () => skin, toon: () => T });
-  for (let i = 0; i < rb.count; i++) {
-    const p = rb.p(i).sub(at).multiplyScalar(scale).add(at);
-    rb.pos[i * 3] = p.x;
-    rb.pos[i * 3 + 1] = p.y;
-    rb.pos[i * 3 + 2] = p.z;
-  }
-  rb.smoothNormals();
-  part.merge(rb);
+  loft(nk, knot, { seg: 14, capStart: 0.003, capEnd: 0.003, uv, skin: () => [[chest, 1]], toon: () => T });
+  nk.smoothNormals();
+  part.merge(nk);
 }
 
 /** A hand: palm and five fingers along the finger bones. */
