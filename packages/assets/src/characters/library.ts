@@ -7,7 +7,7 @@
  * renderer and tests.
  */
 import { GENERATED_LIBRARY } from './generated';
-import { ORIGINAL_CAST } from './original';
+import { ORIGINAL_CAST, ORIGINAL_LODS } from './original';
 import { libraryUrl } from '../registry';
 
 /** One baked body as written by the build. */
@@ -37,6 +37,15 @@ export interface CastFile {
    * named (`character.body`), never picked at random.
    */
   style?: 'toon';
+  /** The far level of detail (the same skeleton, clips and materials, fewer triangles, no morphs), when one was built. */
+  lod1?: LodFile;
+}
+
+/** A reduced level of detail of a body, under the library base. */
+export interface LodFile {
+  file: string;
+  triangles: number;
+  bytes: number;
 }
 
 /** One clip of a motion set. */
@@ -108,6 +117,11 @@ export const CAST: readonly CastMember[] = [...GENERATED_LIBRARY.cast, ...ORIGIN
 /** True for a body drawn in the toon style. */
 export function isToonBody(c: Pick<CastFile, 'style'>): boolean {
   return c.style === 'toon';
+}
+
+/** The far level of detail of a body (its cast entry's, or the project's own bodies' `ORIGINAL_LODS`), or null. */
+export function farLevelOf(c: Pick<CastFile, 'id' | 'lod1'>): LodFile | null {
+  return c.lod1 ?? ORIGINAL_LODS[c.id] ?? null;
 }
 
 /** A body by id. */

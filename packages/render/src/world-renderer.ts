@@ -3715,6 +3715,7 @@ export class WorldRenderer {
   /** Advance people and animated assets; true when a redraw is needed (see {@link animatedCasters} for the sun map). */
   private stepAnimations(dt: number): boolean {
     this.characters.setCamera(this.perspective);
+    this.characters.setViewHeight(this.cssHeight);
     // Toon bodies band their cel shading by the sun (direction toward it, and its hue).
     const ld = this.env.skyState.lightDirection;
     const sun = this.env.sun;

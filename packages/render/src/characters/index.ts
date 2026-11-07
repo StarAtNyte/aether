@@ -4,3 +4,4 @@ export { CharacterSystem, type CharacterSystemOptions, LOD_NEAR, LOD_MID, LOD_FA
 export { buildProp, type Prop } from './props';
 export { tintedMaterial, tintKey, hasTint, type Tint, type TintRefs, DEFAULT_REFS } from './tint';
 export { applyLook, LookController, wrapAngle, LOOK_MAX_YAW, LOOK_MAX_PITCH, solveTwoBone, rotateBoneWorld, type LookState, type LookBones } from './ik';
+export { BodyLevels, attachFarLevel, isFarLevel, LOD_FAR_PX, LOD_NEAR_PX, LOD_FADE_S } from './lod';

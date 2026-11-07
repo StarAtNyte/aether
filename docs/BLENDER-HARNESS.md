@@ -220,6 +220,23 @@ like culottes in a sprint; hands are simple (no nails; the thumb is a plain chai
 expressions set right after a one-shot clip did not take in the proof run (the rig eases them only at the near level of
 detail), so take the expression shots on their own.
 
-The far level of detail is installed but not loaded yet. The runtime can pick `ORIGINAL_LODS[id].file` (the same skeleton,
-clips, springs and toon extras; no morphs, so no expressions) when the body is beyond the rig's near distance or under
-about 150 px tall on screen, and swap back with some hysteresis.
+### The far level at runtime
+
+`CharacterSystem` loads a body's far level beside it (`farLevelOf(body)`: the cast entry's `lod1`, or `ORIGINAL_LODS`
+for the project's own bodies; any pipeline character with `--lod1` gets it) and `attachFarLevel` (`packages/render/src/
+characters/lod.ts`) moves its meshes into the body: under the same armature node, bound to the body's own skeleton (one
+bone palette when the bind matches) and drawn with the body's own materials, so the tint and the toon pair are shared
+and no program is linked for it. `BodyLevels` switches by the body's height on screen (CSS px): to the far level under
+140 px, back over 175 px; a camera cut snaps, a body walking away cross-fades over 0.3 s of simulation time through a
+complementary screen-space dither (the toon materials' `maskNode`, a per-object uniform; other materials switch at the
+threshold). A far body casts its far level into the sun's map (on the scatter fields' stand-in layer,
+`FIELD_SHADOW_LAYER`, the near level skipped there); a near body casts its full mesh, since the far one shadowing the
+full surface it does not quite match speckled her hair with self-shadow. No morphs at the far level, so no expressions under 140 px.
+`CharacterSystem.setFarLevels(false)` turns it off (A/B); `scripts/character-lod-probe.ts` measures both. The Rocketbox
+cast has no far levels (its entries carry no `lod1`), so it is unchanged.
+
+Measured over the whole of "Two Whistles" (Intel, WebGL2, 1600x900; the hosted cook was being refreshed, so the live
+world; a loaded machine, so read the GPU times as a trend): off / on, the people's triangles in the view 157,938 /
+124,057 a frame on average, in the sun's map 67,914 / 58,469; GPU time mean 16.4 / 15.4 ms, p95 20.8 / 17.7 ms; at least
+one body at its far level in 94 % of the frames; no program linked in either pass. Kestrel Outpost (cooked): its one
+person is a Rocketbox body, no far level, nothing changes.

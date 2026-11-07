@@ -18,6 +18,7 @@
  */
 import { BackSide, Color, FrontSide, Mesh, Vector3, type Material, type MeshStandardMaterial, type Object3D, type Texture } from 'three';
 import { MeshBasicNodeMaterial, type Node } from 'three/webgpu';
+import { lodDitherMask } from './lod';
 import { attribute, cameraPosition, clamp, dot, float, length, max, mix, modelViewMatrix, normalize, normalLocal, normalWorld, positionLocal, positionWorld, pow, smoothstep, sqrt, texture, uniform, uv, vec3, vec4 } from 'three/tsl';
 
 /** Look constants of the toon style (linear colours). */
@@ -149,6 +150,8 @@ export class ToonShading {
     const rim = smoothstep(float(0.6), float(0.67), fres).mul(rimSide).mul(info.z).mul(float(1).sub(unshaded));
     col = mix(col, litCol.mul(1.12).add((u.rim as unknown as Node<'color'>).mul(0.22)), rim.mul(0.8));
     m.colorNode = vec4(col.mul(u.exposure as unknown as Node<"float">), 1) as unknown as Node<"vec4">;
+    // Cross-fade between a body's levels of detail (a per-object dither; 0 keeps every pixel).
+    m.maskNode = lodDitherMask() as unknown as Node<'bool'>;
     return m;
   }
 
@@ -168,6 +171,7 @@ export class ToonShading {
     const line = vec3(TOON_STYLE.line.r, TOON_STYLE.line.g, TOON_STYLE.line.b);
     const col = pow(base, vec3(1.35, 1.35, 1.35)).mul(line).mul(u.litTint as unknown as Node<'color'>);
     m.colorNode = vec4(col.mul(u.exposure as unknown as Node<"float">), 1) as unknown as Node<"vec4">;
+    m.maskNode = lodDitherMask() as unknown as Node<'bool'>;
     return m;
   }
 

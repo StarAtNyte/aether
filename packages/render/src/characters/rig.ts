@@ -16,6 +16,7 @@ import { buildProp, type Prop } from './props';
 import { buildGear, disposeGear, fitBody, type GearPiece } from './gear';
 import { contactShadow } from './surface';
 import { SpringSystem, type ColliderDef, type SpringChainDef } from './springs';
+import { BodyLevels, isFarLevel } from './lod';
 import { airPoseOf, ArmSpring, jumpArmTarget, jumpClipPhase, landKeep, PELVIS_ABOVE_SEAT, seatBlendOf } from './motion';
 
 /** Foot of a footstep event. */
@@ -40,6 +41,8 @@ export interface RigOptions {
   onProp?: (prop: Prop | null, rig: CharacterRig) => void;
   /** A toon body: its spring chains (hair, skirt) and their colliders, from the body file. */
   toon?: { springs: readonly SpringChainDef[]; colliders: readonly ColliderDef[] };
+  /** The far level's meshes are dithered in and out (their materials read `lodDitherMask`); else they switch at once. */
+  ditherLevels?: boolean;
 }
 
 /** A toon body's arms out from the clip's (radians, about 6 degrees): the hands clear the pleated skirt. */
@@ -201,6 +204,8 @@ export class CharacterRig {
   private readonly meshes: Mesh[] = [];
   /** Toon outline hulls (hidden far away). */
   private readonly outlines: Mesh[] = [];
+  /** The body's two levels of detail (null: the body has only one; see `lod.ts`). */
+  readonly levels: BodyLevels | null = null;
   /** Hair and skirt springs of a toon body. */
   readonly springs: SpringSystem | null = null;
   private shadowOnly = false;
@@ -225,6 +230,12 @@ export class CharacterRig {
         this.meshes.push(o);
       }
     });
+    const far = this.meshes.filter(isFarLevel);
+    if (far.length > 0) {
+      const near = this.meshes.filter((m) => !isFarLevel(m));
+      this.levels = new BodyLevels(near, far, (m) => m.userData['toonOutline'] === true, opts.ditherLevels ?? false);
+      // Expressions are morphs of the near level only.
+    }
     if (opts.toon && opts.toon.springs.length > 0) this.springs = new SpringSystem(opts.scene, opts.toon.springs, opts.toon.colliders);
     if (opts.toon) {
       this.armClearance = TOON_ARM_CLEARANCE;
@@ -367,7 +378,8 @@ export class CharacterRig {
     if ((this.shownDetail > 0) === near && this.shownDetail >= 0) return;
     this.shownDetail = detail;
     if (this.blob) this.blob.visible = near;
-    for (const o of this.outlines) o.visible = near;
+    if (this.levels) this.levels.setOutlines(near);
+    else for (const o of this.outlines) o.visible = near;
     if (this.shadowOnly) return;
     for (const g of this.gear) if (g.bone !== 'head' && g.bone !== 'spine') g.group.visible = near;
   }
@@ -403,7 +415,10 @@ export class CharacterRig {
     if (gear.includes('helmet') || gear.includes('beanie')) {
       for (const m of this.meshes) {
         const name = (Array.isArray(m.material) ? m.material[0]?.name : m.material.name) ?? '';
-        if (/hair/i.test(name)) m.visible = false;
+        if (/hair/i.test(name)) {
+          m.visible = false;
+          m.userData['gearHidden'] = true;
+        }
       }
     }
   }

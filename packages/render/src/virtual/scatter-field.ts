@@ -50,6 +50,16 @@ export function fieldShadowSkipped(object: object): boolean {
   return standIns.has(object);
 }
 
+/** Skip `source` in a shadow camera with {@link FIELD_SHADOW_LAYER}: a stand-in on that layer casts for it (a character's far level). */
+export function addShadowStandIn(source: object): void {
+  standIns.add(source);
+}
+
+/** Undo {@link addShadowStandIn}: `source` casts for itself again. */
+export function removeShadowStandIn(source: object): void {
+  standIns.delete(source);
+}
+
 /** Triangles per instance the default switch points ({@link DEFAULT_LOD_PIXELS}) suit. */
 export const LOD_REFERENCE_TRIANGLES = 1_000;
 

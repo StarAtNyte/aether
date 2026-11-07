@@ -10,9 +10,11 @@
  * meshes are frustum culled with a fixed generous bounding sphere (the
  * bind-pose sphere would be wrong once animated).
  */
-import { Box3, Mesh, Sphere, Vector3, type Camera, type Material, type MeshStandardMaterial, type Object3D, type Texture } from 'three';
-import { castById, characterUrl, clipTable, getCatalog, loadCatalog, motionSet, type CastMember, type ResolvedLook } from '@aether/assets';
-import { cloneModel, COMPRESSED_SOURCE_KEY, type ModelCache } from '../geometry/model-loader';
+import { Box3, Mesh, Sphere, Vector3, type Camera, type PerspectiveCamera, type SkinnedMesh, type Material, type MeshStandardMaterial, type Object3D, type Texture } from 'three';
+import { castById, characterUrl, clipTable, farLevelOf, getCatalog, loadCatalog, motionSet, type CastMember, type ResolvedLook } from '@aether/assets';
+import { cloneModel, COMPRESSED_SOURCE_KEY, disposeModelInstance, type ModelCache } from '../geometry/model-loader';
+import { fieldShadowSkipped } from '../virtual/scatter-field';
+import { attachFarLevel, LOD_FAR_PX, LOD_NEAR_PX, OWN_SKELETON_KEY } from './lod';
 import { CharacterRig, type Foot } from './rig';
 import { DEFAULT_REFS, decodeMasks, hasTint, materialsOf, originalBaseColours, partOf, tintedMaterialAsync, tintKey, type Tint, type TintMasks, type TintRefs } from './tint';
 import type { Prop } from './props';
@@ -64,6 +66,11 @@ interface Entry {
   tintKey: string | null;
   /** Pose rate (0: every frame; toon bodies pose on twos). */
   poseFps: number;
+  /** The far level's file (released with the body) and its cloned scene (its meshes live in the body's), or null. */
+  lodUrl: string | null;
+  lodScene: Object3D | null;
+  /** Height on screen (CSS px) at the last update (0: not yet). */
+  lastPx: number;
 }
 
 /** Recoloured materials of one variant (shared by every person wearing it). */
@@ -153,10 +160,23 @@ export class CharacterSystem {
       const base = getCatalog()?.base;
       const bodyUrl = characterUrl(look.body.file, base);
       const motionUrl = characterUrl(set.file, base);
-      const [bodySrc, motionSrc] = await Promise.all([this.opts.models.acquire(bodyUrl), this.opts.models.acquire(motionUrl)]);
+      const far = farLevelOf(look.body);
+      let lodUrl = far ? characterUrl(far.file, base) : null;
+      const [bodySrc, motionSrc, lodSrc] = await Promise.all([
+        this.opts.models.acquire(bodyUrl),
+        this.opts.models.acquire(motionUrl),
+        // A far level that fails to load leaves the body with its one level.
+        lodUrl ? this.opts.models.acquire(lodUrl).catch(() => null) : Promise.resolve(null),
+      ]);
+      if (lodUrl && !lodSrc) lodUrl = null;
+      const releaseLod = (): void => {
+        if (lodUrl) this.opts.models.release(lodUrl);
+        lodUrl = null;
+      };
       if (this.disposed || this.pending.get(id) !== ticket) {
         this.opts.models.release(bodyUrl);
         this.opts.models.release(motionUrl);
+        releaseLod();
         return null;
       }
       const tint = tintOf(look);
@@ -171,11 +191,24 @@ export class CharacterSystem {
           this.releaseTintKey(tintKeyStr);
           this.opts.models.release(bodyUrl);
           this.opts.models.release(motionUrl);
+          releaseLod();
           return null;
         }
       }
       const scene = cloneModel(bodySrc);
       this.fixBounds(scene);
+      // The far level joins the body before its materials are swapped: it takes the body's own, so the tint and the
+      // toon pair (and their programs) are shared.
+      let lodScene: Object3D | null = null;
+      if (lodSrc) {
+        lodScene = cloneModel(lodSrc);
+        this.fixBounds(lodScene);
+        if (!attachFarLevel(scene, lodScene)) {
+          disposeModelInstance(lodScene);
+          lodScene = null;
+          releaseLod();
+        }
+      }
       if (tintKeyStr) this.applyTint(scene, tintKeyStr);
       if (toon) this.toon.apply(scene);
       const toonData = toon ? (scene.userData['toon'] as { springs?: SpringChainDef[]; colliders?: ColliderDef[] }) : null;
@@ -191,6 +224,7 @@ export class CharacterSystem {
         hip: look.body.hip,
         motionHip: set.hip,
         castShadow,
+        ditherLevels: toon,
         ...(toonData ? { toon: { springs: toonData.springs ?? [], colliders: toonData.colliders ?? [] } } : {}),
         onFootstep: this.opts.onFootstep
           ? (foot, speed, r) => {
@@ -206,7 +240,8 @@ export class CharacterSystem {
       rig.autoMotion = opts.autoMotion ?? true;
       if (opts.track !== undefined) rig.track(opts.track ?? null);
       parent.add(rig.root);
-      const entry: Entry = { id, rig, key, bodyUrl, motionUrl, body: look.body, accumulated: 0, frame: 0, shadowsOn: castShadow, dist: 0, tintKey: tintKeyStr, poseFps: toon ? TOON_POSE_FPS : 0 };
+      const entry: Entry = { id, rig, key, bodyUrl, motionUrl, body: look.body, accumulated: 0, frame: 0, shadowsOn: castShadow, dist: 0, tintKey: tintKeyStr, poseFps: toon ? TOON_POSE_FPS : 0, lodUrl, lodScene, lastPx: 0 };
+      if (!this.farLevels) rig.levels?.setEnabled(false);
       this.entries.set(id, entry);
       this.list.push(entry);
       this.mounted++;
@@ -227,10 +262,20 @@ export class CharacterSystem {
     this.entries.delete(id);
     const i = this.list.indexOf(e);
     if (i >= 0) this.list.splice(i, 1);
+    const own: SkinnedMesh[] = [];
+    e.lodScene?.traverse((o) => {
+      if (o.userData[OWN_SKELETON_KEY] === true) own.push(o as SkinnedMesh);
+    });
+    e.rig.root.traverse((o) => {
+      if (o.userData[OWN_SKELETON_KEY] === true) own.push(o as SkinnedMesh);
+    });
     e.rig.dispose();
+    if (e.lodScene) disposeModelInstance(e.lodScene);
+    for (const m of new Set(own)) m.skeleton?.dispose();
     this.releaseTintKey(e.tintKey);
     this.opts.models.release(e.bodyUrl);
     this.opts.models.release(e.motionUrl);
+    if (e.lodUrl) this.opts.models.release(e.lodUrl);
   }
 
   private fixBounds(scene: Object3D): void {
@@ -309,6 +354,53 @@ export class CharacterSystem {
     this.tinted.delete(key);
   }
 
+  private viewHeight = 0;
+  private farLevels = true;
+
+  /** Use the bodies' far levels of detail (default) or only their full meshes (diagnostics, A/B measurements). */
+  setFarLevels(on: boolean): void {
+    this.farLevels = on;
+    for (const e of this.list) {
+      e.rig.levels?.setEnabled(on);
+      e.lastPx = 0;
+    }
+  }
+
+  /** Height of the view in CSS pixels: bodies with a far level switch by their height on screen (0: never switch). */
+  setViewHeight(px: number): void {
+    this.viewHeight = px > 0 ? px : 0;
+  }
+
+  /** Triangles of the bodies' levels as drawn now (diagnostics): the view's and the sun shadow map's. */
+  drawnTriangles(): { view: number; shadow: number } {
+    let view = 0;
+    let shadow = 0;
+    for (const e of this.list) {
+      if (!shown(e.rig.root)) continue;
+      e.rig.root.traverse((o) => {
+        const m = o as Mesh;
+        if (!m.isMesh || !m.visible) return;
+        const g = m.geometry;
+        const tris = (g.index ? g.index.count : (g.attributes['position']?.count ?? 0)) / 3;
+        if (m.layers.isEnabled(0)) view += tris;
+        if (m.castShadow && m.userData['toonOutline'] !== true && !fieldShadowSkipped(m)) shadow += tris;
+      });
+    }
+    return { view, shadow };
+  }
+
+  /** A body's height on screen (CSS px), Infinity when unknown or not a perspective view. */
+  private screenHeight(e: Entry): number {
+    const cam = this.camera as PerspectiveCamera | null;
+    if (!cam || !(cam as { isPerspectiveCamera?: boolean }).isPerspectiveCamera || this.viewHeight <= 0) return Number.POSITIVE_INFINITY;
+    const m = e.rig.root.matrixWorld.elements;
+    const scale = Math.hypot(m[4] as number, m[5] as number, m[6] as number);
+    const h = e.body.height * scale;
+    const d = Math.max(0.05, e.dist - h * 0.25);
+    const t = Math.tan(((cam.fov * Math.PI) / 180) * 0.5) / Math.max(1e-3, cam.zoom);
+    return (h / (2 * d * t)) * this.viewHeight;
+  }
+
   private shadowBudget = Number.POSITIVE_INFINITY;
   private shadowRange = LOD_FAR;
 
@@ -348,6 +440,15 @@ export class CharacterSystem {
     let casting = 0;
     for (const e of sorted) {
       const d = e.dist;
+      const levels = e.rig.levels;
+      if (levels) {
+        const px = this.screenHeight(e);
+        // A cut (or the first frame) jumps to the right level at once; a body walking away fades.
+        const jump = e.lastPx <= 0 || px > e.lastPx * 1.5 || px < e.lastPx / 1.5;
+        if (jump) levels.snap(px < (LOD_FAR_PX + LOD_NEAR_PX) / 2 ? 1 : 0);
+        else levels.update(px, dt);
+        e.lastPx = Number.isFinite(px) ? px : 1e6;
+      }
       let detail: 0 | 1 | 2 = d < LOD_NEAR && full < MAX_FULL_DETAIL ? 2 : d < LOD_MID ? 1 : 0;
       if (detail === 2) full++;
       if (d >= LOD_MID && list.length > MAX_FULL_DETAIL) detail = 0;
