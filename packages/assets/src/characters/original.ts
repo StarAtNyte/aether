@@ -18,12 +18,12 @@ export const ORIGINAL_CAST: CastFile[] = [
   "id": "mio",
   "gender": "female",
   "look": "anime girl, pale mint short-sleeve cardigan over a white T-shirt, long light-beige pleated skirt, long straight black hair with a fringe and a white hairband",
-  "file": "c/mio.310670e8.glb",
+  "file": "c/mio.90164c34.glb",
   "height": 1.549,
   "hip": 0.824,
-  "triangles": 59644,
+  "triangles": 42624,
   "faces": 1,
-  "bytes": 999736,
+  "bytes": 789200,
   "style": "toon"
  }
 ] as CastFile[];
@@ -36,8 +36,8 @@ export const ORIGINAL_LODS: Record<string, { file: string; triangles: number; by
   "bytes": 480580
  },
  "mio": {
-  "file": "c/mio.lod1.17a86f3b.glb",
-  "triangles": 23857,
-  "bytes": 513048
+  "file": "c/mio.lod1.d02f4981.glb",
+  "triangles": 17049,
+  "bytes": 398508
  }
 };

@@ -25,18 +25,18 @@
    "id": "mio",
    "gender": "female",
    "look": "anime girl, pale mint short-sleeve cardigan over a white T-shirt, long light-beige pleated skirt, long straight black hair with a fringe and a white hairband",
-   "file": "c/mio.310670e8.glb",
+   "file": "c/mio.90164c34.glb",
    "height": 1.549,
    "hip": 0.824,
-   "triangles": 59644,
+   "triangles": 42624,
    "faces": 1,
-   "bytes": 999736,
+   "bytes": 789200,
    "style": "toon",
-   "sha256": "310670e81ae22d227812dc979ff3dd83ddd86304e822f917fd7d64cd52421073",
+   "sha256": "90164c340e3b32d6f8f0073f78ea432f80110597dfdf597a0e9b8e7bf498a328",
    "lod1": {
-    "file": "c/mio.lod1.17a86f3b.glb",
-    "triangles": 23857,
-    "bytes": 513048
+    "file": "c/mio.lod1.d02f4981.glb",
+    "triangles": 17049,
+    "bytes": 398508
    }
   }
  ]

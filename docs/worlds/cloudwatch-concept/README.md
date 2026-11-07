@@ -27,8 +27,22 @@ with two pointed tails on spring bones; the chest pocket; plain short sleeves; t
 pleats; white socks, brown loafers; the black digital watch on her left wrist; the palette row. Shots of the model
 against the sheet are in `docs/screenshots/cloudwatch/character/`.
 
+## Mio
+
+| File | What |
+|---|---|
+| `mio-turnaround.webp` | Kaho's friend Mio: front, left profile, back (made after her first build, from the brief in `prompts/r4-mio.txt`) |
+| `mio-expressions.webp` | Her expressions (with two fingers, waving through a window) and palette |
+
+Her model was rebuilt against this sheet by the character pipeline (`scripts/blender/character/briefs/mio.json`):
+`docs/screenshots/cloudwatch/character/mio-vs-sheet.webp`. Still off the sheet: the skirt flares wider, the cardigan
+does not show its buttons and pockets, and the sheet's mint and beige are too close to its grey background for the
+silhouette check to segment them (its IoU, 0.6, is not meaningful for this sheet).
+
 ## Storyboard
 
-`storyboard-1.webp` to `storyboard-3.webp`: eighteen panels for the beat sheet (see "The film" in
+`storyboard-v2-1.webp` and `storyboard-v2-2.webp`: twelve panels for the second film (Mio seen: the promise, the
+window, two fingers through the glass, the viaduct, the wave). `storyboard-1.webp` to `storyboard-3.webp`: the first
+version's eighteen panels for the beat sheet (see "The film" in
 `../CLOUDWATCH_HARBOUR.md`). The shot list in `scripts/blender/cloudwatch/story.ts` follows them, adjusted where the
 real town's geometry decides (the railway cannot be seen from the lookout, so the payoff is heard from the cape).
