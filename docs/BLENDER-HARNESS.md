@@ -91,7 +91,7 @@ Run it with the character's folder as the working directory; on a loaded machine
 | `silhouette.png` | with a sheet: our masks (blue) over the sheet's (red), per view |
 | `<id>.blender.glb`, `<id>.meta.json` | the Blender export and its meta (springs, colliders, style) |
 | `<id>.glb` | the runtime body, made by `scripts/characters/finish-character.ts` (`--install` when the brief says `"install": true`) |
-| `<id>.lod1.glb` | the reduced level (decimated to 40 %, no morphs) |
+| `<id>.lod1.glb` | the reduced level (decimated to 40 %, no morphs); installed with the body as `c/<id>.lod1.<hash8>.glb`, recorded in `ORIGINAL_LODS` (`original.ts`) |
 | `<id>.blend`, `<id>.build.json` | the build, for `--review` (the QA again) and `--revise` |
 
 `--revise` reads the brief's `revision_notes` and the last report's parameters and rebuilds. Notes are plain directives
@@ -129,30 +129,46 @@ line). Colours are words or hex, the hex winning. Missing fields default from st
    Each vertex is labelled by its nearest limb segment: the regions garments and weights use.
 3. **Face** (`face.py`). A quad sphere ray-marched onto a smooth union of forms (cranium, forehead, the face's cone to a
    soft chin, cheeks), subdivided and projected again, a nose bridge and tip pushed out, small ears. For anime the front
-   takes its normals from an ellipsoid proxy (Data Transfer, weighted to fade at the jaw and temples), so the cel shadow
-   crosses the face as one clean curve. Features are decals cast onto the face, with their own atlas cells and the
-   proxy's normals: eyes (lids, layered iris, pupil, two catchlights, lashes with an outer flick, the crease), brows,
+   takes its normals from an ellipsoid proxy (Data Transfer, weighted to fade at the jaw and temples), and the face is
+   lit as one shape: a per-vertex shade bias (`_TOON` y, added to N.L) of +0.55 over the face keeps it in the lit band
+   unless the light comes from well behind its side, fading to the head's 0.1 at the jaw, temples and hairline; a band
+   under the bangs (its lower edge in points), the underside of the jaw and the front of the neck under the chin take a
+   negative bias, so those soft shadows come first; no rim over the face. Features are decals cast onto the face, with
+   their own guttered atlas cells (6 px of edge colour round each, so filtering and mip levels never pull a neighbour
+   in) and the head's final normals and bias interpolated under them, so their skin margins shade exactly like the skin
+   around: eyes (lids, layered iris, pupil, two catchlights, lashes with an outer flick, the crease), brows,
    nose, six mouths, blush, tears, marks. Morphs move decals: `smile`, `sad`, `surprised`, `teary`, `blink`,
    `mouth_open`, `determined`; a feature only an expression shows (an open mouth, the closed eye) is collapsed to a point
    at rest and opens in its morph.
 4. **Hair** (`hair.py`). Clumps are lens-section locks lofted on the hair shell (the head pushed out by the volume),
    wide axis tangent to it, roots buried, falling with a flare to the style's tip; a cap under them closes the gaps; UV v
-   follows height, so the strip's highlight band lines up into one ring (alpha 0.6: lit side only). Styles: `bob` (11
-   locks with the inward curl, 7 bangs on the forehead, side-swept from a side parting, two side locks), `long` (13
-   locks on three spring chains, a fringe, side locks), `ponytail`, `short`, `bald`; accessories: braid (nine
+   follows height, so the strip's highlight band (a clean arc per clump, alpha exactly 0.6: the toon shader shows it on
+   the lit side only) lines up into one ring; black hair gets a cool sheen down each clump's middle instead of darker
+   edges. Styles: `bob` (13 locks with the volume at the crown and cheeks, tapering to a rounded, turned-in end; five
+   large pointed bangs, side-swept from a side parting; two side locks), `long` (two layers of clumps, 15 and 14, with
+   pointed ends at staggered lengths, on three spring chains; a soft fringe of nine rounded locks; side locks),
+   `ponytail`, `short`, `bald`; accessories: braid (nine
    alternating lobes on a two-bone chain, a bead and a ribbed seashell charm), hairband, knit cap; beard and moustache.
 5. **Clothes** (`clothes.py`). Tight garments are cut from the body's own surface (by region), pushed out by ease and
    layer, cut with straight plane cuts at the hem and sleeve ends, solidified, and keep the body's weights vertex for
    vertex: blouse and T-shirt (a sailor blouse closes high under its collar), cardigan and jacket (open front, short or
    long sleeves), trousers, socks, boot shafts. The others are fitted by casting against the body: the pleated skirt
-   (pleat count, real knife-pleat depth growing from the hips, an envelope hanging from the body's widest above each
-   height, an A-line flare, 8 panel springs), the sailor collar (cut from the trunk's surface over the blouse: back
+   (knife pleats: each pleat's face steps out across its width, 1.7 cm at the hem, and folds back under the next, the
+   fold its own dark texels and each face shaded toward its tucked end with a light line on its folded edge; an
+   envelope hanging from the body's widest above each height, then an A-line, the straight line from the waist that
+   clears the hips and thighs, flaring at a quarter of that below the knee; 12 panel springs), the sailor collar (its
+   back flap kept inside the shoulder line; cut from the trunk's surface over the blouse: back
    flap and lapels by plane cuts, two lines near its edge), the neckerchief (knot and two tails on springs), loafers,
    sneakers and boots (lofted shells with soles, the loafer's strap), a watch on the back of the wrist, a bag strap
    across the body and its bag. Body faces under tight garments are removed (farther than 2-3.5 cm from an opening).
 6. **Rig** (`rig.py`). Bone heat on a helper armature whose bones point at their child joints, two smoothing passes,
    hands, feet and neck kept to their own chains, at most four influences, normalized; garments keep the body's weights,
-   other parts take them from the nearest trunk surface, the skirt blends from the pelvis into its panels.
+   other parts take them from the nearest trunk surface. The skirt blends from the pelvis into its panels, and below the
+   hips its front and back mostly follow the thighs (up to 97 % at the front and back, 58 % at the sides; crossfaded
+   between the legs in the middle, narrowly for a knee-length skirt, widely for a long one), so a striding, running or
+   climbing leg carries the cloth instead of cutting through it; below the knee a long skirt hands part of that to the
+   calves (more at the back, where a heel kicks up). The panels' springs swing at most 0.75 rad at the sides and 1.35
+   rad at the front and back. The bag strap is kept clear of everything under it and takes the body's own weights.
 7. **Clips** (`clips.py`): `look_up`, `hand_to_chest`, `two_fingers` (the right hand beside the face, a V), `run_stop`
    (replaces the shared one), keyed from the motion set's idle pose (sampled by `motion-poses.ts`) with world-axis
    turns, two-bone IK for the hands and finger curls. They are written into the file as glTF animations in the file's
@@ -160,7 +176,8 @@ line). Colours are words or hex, the hex winning. Missing fields default from st
 8. **Shading** (`shading.py`). One 1024² atlas (flat swatches and the painted cells) whose alpha is the toon code;
    per-vertex `_TOON` (outline width, shade bias, rim): decals have no outline, the face a thinner one. Anime goes
    through finish-character's toon path (two programs); realistic keeps glTF PBR. The QA preview mirrors toon.ts in
-   EEVEE: two tones split by the sun, the violet shadow, unshaded eyes, an inverted-hull outline.
+   EEVEE: N.L against the preview sun plus the shade bias, banded smoothstep(-0.02, 0.04) like the runtime, the violet
+   shadow, unshaded eyes, an inverted-hull outline.
 9. **Export** (`export.py`). The glTF from Blender, then the patch (exact rest transforms, inverse bind matrices, the
    painted atlas with its alpha), the clips, `meta.json`, finish-character, the LOD.
 
@@ -170,28 +187,39 @@ Each build is checked, and the loop rebuilds when it can correct something by it
 garment: more ease; over the budget: one subdivision less), keeping the best-scoring build. The pictures still need an
 art director's eye every pass; the checks support that.
 
-- `silhouette_iou`: with a sheet, each view's mask against the sheet's figure (the background flooded from the border,
-  guide lines removed by an opening, the three neighbouring views that match best), height-normalized and centred.
+- `silhouette_iou`: with a sheet, each view's mask against the sheet's figure (guide and floor lines removed by an
+  opening first, then the background flooded from the border, so the gap between the legs stays background; the three
+  neighbouring views that match best), height-normalized and centred, our model in the sheet's stance (arms down, the
+  feet a little apart).
 - `proportions`: heads tall against the brief, hip over height, leg length and shoulder width in heads.
 - `palette`: each colour role's median rendered lit tone against the brief (CIE delta E), and with a sheet against the
   sheet's colour at the same place.
 - `interpenetration`: the skin under each garment (well inside it: tilted rays hit it too) through sampled frames of
   walk, run, sprint, sit, crouch, jump, wave, pickup and the character's own clips; a vertex counts when the garment is
-  no longer above it within its rest distance plus 1.5 cm. Skirt panels are first pushed out of the thigh capsules as
-  the runtime springs do, and the skirt is checked through locomotion only.
+  no longer above it within its rest distance plus 1.5 cm. For the skirt a thigh vertex counts when the cloth lies
+  between it and the thigh bone (the leg crossed it; a thigh leaving under the hem does not count). Skirt panels are
+  first pushed out of the thigh capsules as the runtime springs do, within their swing limit, and the skirt is checked
+  through locomotion only. `through` lists the frames over 0.5 %. The loop adds ease only when a tight garment fails.
 - `weights` (unweighted, over four influences, not normalized), `topology` (triangles, open edges, loose vertices,
   morphs), `triangles` (anime 30-60 k), `bytes`, `lods`, `clips`, `skeleton`.
 
-The first builds (November 2026):
+The builds (November 2026; the first ones in brackets):
 
 | | Triangles | GLB | LOD1 | IoU vs sheet (front / side / back) | Palette dE | Interpenetration (worst frame) |
 |---|---|---|---|---|---|---|
-| kaho | 58,160 | 908 KB | 23,263, 467 KB | 0.66 / 0.76 / 0.66 | ≤ 0.4 vs brief; 2-5 vs sheet (hair, skin, blouse, skirt, collar) | blouse 0 %; skirt 63 % of the checked thigh vertices (sprint) |
-| mio | 57,516 | 897 KB | 23,005, 462 KB | no sheet | ≤ 0.5 | T-shirt, cardigan 0 %; skirt 56 % (sprint) |
-| harbour-fisherman | 54,100 | 846 KB | 21,639, 436 KB | no sheet | ≤ 0.6 (hair 5.8) | T-shirt 10 % at 10 mm (run); jacket 6.6 % |
+| kaho | 57,392 (58,160) | 945 KB | 22,956, 481 KB | 0.82 / 0.77 / 0.85 (0.66 / 0.76 / 0.66) | ≤ 0.4 vs brief | blouse 0 %; skirt 0.5 %, 1.9 mm (sprint) (first: 63 % by the old test) |
+| mio | 59,644 (57,516) | 1,000 KB | 23,857, 513 KB | no sheet | ≤ 0.5; hair 9.2 (the sheen on black) | T-shirt, cardigan 0 %; skirt 6.6 % (walk) |
+| harbour-fisherman | 54,032 (54,100) | 856 KB | 21,612, 439 KB | no sheet | ≤ 0.6 (hair 5.8) | T-shirt 10 % at 4.8 mm (run); jacket 3.8 % |
 
-Known limits: the silhouette IoU stays near 0.7 (the sheet's fuller skirt and hair, its legs apart); in sprint frames
-the thighs come through the skirt (8 panels swinging at most 0.6 rad); faint decal rectangles show where the cel
-terminator crosses an eye or the mouth; hands are simple (no nails; the thumb is a plain chain); the clumps have no
-inner strands; expressions set right after a one-shot clip did not take in the proof run (the rig eases them only at
-the near level of detail), so take the expression shots on their own.
+About a third of the IoU gain is the mask fix (the sheet's gap between the legs), the rest the model: the A-line skirt,
+narrower shoulders, the fuller bob, the stance.
+
+Known limits: Mio's long skirt still lets a striding shin touch its front in some walk frames (6.6 % of the checked
+thigh vertices), and a sprinting hand dips into Kaho's skirt at the hip; the skirt following the thighs reads a little
+like culottes in a sprint; hands are simple (no nails; the thumb is a plain chain); the clumps have no inner strands;
+expressions set right after a one-shot clip did not take in the proof run (the rig eases them only at the near level of
+detail), so take the expression shots on their own.
+
+The far level of detail is installed but not loaded yet. The runtime can pick `ORIGINAL_LODS[id].file` (the same skeleton,
+clips, springs and toon extras; no morphs, so no expressions) when the body is beyond the rig's near distance or under
+about 150 px tall on screen, and swap back with some hysteresis.

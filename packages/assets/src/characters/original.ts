@@ -6,24 +6,38 @@ export const ORIGINAL_CAST: CastFile[] = [
   "id": "kaho",
   "gender": "female",
   "look": "anime girl, summer sailor uniform with a sky-blue collar and a teal neckerchief, chin-length chestnut bob with a thin braid and a seashell charm",
-  "file": "c/kaho.6566c7d4.glb",
-  "height": 1.539,
+  "file": "c/kaho.2f283bcd.glb",
+  "height": 1.54,
   "hip": 0.824,
-  "triangles": 58160,
+  "triangles": 57392,
   "faces": 1,
-  "bytes": 907716,
+  "bytes": 945152,
   "style": "toon"
  },
  {
   "id": "mio",
   "gender": "female",
   "look": "anime girl, pale mint short-sleeve cardigan over a white T-shirt, long light-beige pleated skirt, long straight black hair with a fringe and a white hairband",
-  "file": "c/mio.b51a3dc7.glb",
-  "height": 1.545,
+  "file": "c/mio.310670e8.glb",
+  "height": 1.549,
   "hip": 0.824,
-  "triangles": 57516,
+  "triangles": 59644,
   "faces": 1,
-  "bytes": 897172,
+  "bytes": 999736,
   "style": "toon"
  }
 ] as CastFile[];
+
+/** Far levels of detail by body id (the same skeleton, clips and toon extras; no morphs), under the library base. */
+export const ORIGINAL_LODS: Record<string, { file: string; triangles: number; bytes: number }> = {
+ "kaho": {
+  "file": "c/kaho.lod1.ae47ca86.glb",
+  "triangles": 22956,
+  "bytes": 480580
+ },
+ "mio": {
+  "file": "c/mio.lod1.17a86f3b.glb",
+  "triangles": 23857,
+  "bytes": 513048
+ }
+};

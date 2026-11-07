@@ -7,27 +7,37 @@
    "id": "kaho",
    "gender": "female",
    "look": "anime girl, summer sailor uniform with a sky-blue collar and a teal neckerchief, chin-length chestnut bob with a thin braid and a seashell charm",
-   "file": "c/kaho.6566c7d4.glb",
-   "height": 1.539,
+   "file": "c/kaho.2f283bcd.glb",
+   "height": 1.54,
    "hip": 0.824,
-   "triangles": 58160,
+   "triangles": 57392,
    "faces": 1,
-   "bytes": 907716,
+   "bytes": 945152,
    "style": "toon",
-   "sha256": "6566c7d4b8bd80fa8752db01af60942ccda5dcfe3deb11f595689558eadac14c"
+   "sha256": "2f283bcd2ccdbc87c7569d7b7b7d56666dcb48e9f247a04eda9129eb91e91f9a",
+   "lod1": {
+    "file": "c/kaho.lod1.ae47ca86.glb",
+    "triangles": 22956,
+    "bytes": 480580
+   }
   },
   {
    "id": "mio",
    "gender": "female",
    "look": "anime girl, pale mint short-sleeve cardigan over a white T-shirt, long light-beige pleated skirt, long straight black hair with a fringe and a white hairband",
-   "file": "c/mio.b51a3dc7.glb",
-   "height": 1.545,
+   "file": "c/mio.310670e8.glb",
+   "height": 1.549,
    "hip": 0.824,
-   "triangles": 57516,
+   "triangles": 59644,
    "faces": 1,
-   "bytes": 897172,
+   "bytes": 999736,
    "style": "toon",
-   "sha256": "b51a3dc799a6992cf7ee30c7f3af2ead7f18ed0cfc92ef887b1affe8b0b79732"
+   "sha256": "310670e81ae22d227812dc979ff3dd83ddd86304e822f917fd7d64cd52421073",
+   "lod1": {
+    "file": "c/mio.lod1.17a86f3b.glb",
+    "triangles": 23857,
+    "bytes": 513048
+   }
   }
  ]
 }

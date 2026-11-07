@@ -133,24 +133,26 @@ result is an ordinary base colour texture; variants share materials by key
 
 ## Kaho, Mio and the character pipeline
 
-`kaho` (`style: 'toon'`, 1.539 m, 6.45 heads, 58 k triangles, 908 KB) and `mio` (1.545 m, 57.5 k triangles, 897 KB)
+`kaho` (`style: 'toon'`, 1.54 m, 6.45 heads, 57.4 k triangles, 945 KB) and `mio` (1.54 m, 59.6 k triangles, 1,000 KB)
 are built by the Blender character pipeline (`scripts/blender/character/build.py`; docs/BLENDER-HARNESS.md,
 "Characters") from their briefs in `scripts/blender/character/briefs/`, and installed by
 `scripts/characters/finish-character.ts` into `assets/lib/c/<id>.<hash8>.glb`, `assets/characters-original.json` and
 `packages/assets/src/characters/original.ts` (`ORIGINAL_CAST`, appended to `CAST`). Kaho follows her model sheet
 (`docs/worlds/cloudwatch-concept/`, generated concept art used as reference only): a summer sailor uniform (white
 blouse; a sky-blue collar with two white lines and a square back flap; a deep-teal neckerchief with a knot and two
-tails; a knee-length navy skirt in twelve knife pleats with real depth), off-white socks, brown loafers with a strap, a
-black watch on her left wrist, a chin-length chestnut bob with the inward curl and side-swept bangs on the forehead, a
+tails; a knee-length navy A-line skirt in twelve knife pleats with a fold and a shadow side), off-white socks to
+mid-calf, brown loafers with a strap and a heel, a
+black watch on her left wrist, a chin-length chestnut bob, full at the crown and cheeks, with the inward curl and five
+large side-swept bangs, a
 braid behind her left ear ending in a seashell charm, brown eyes. Mio follows her brief
 (`docs/worlds/cloudwatch-concept/prompts/r4-mio.txt`): a pale mint cardigan open over a white T-shirt, a long
-light-beige skirt in 24 pleats, white sneakers, a brown bag strap across her body, long straight black hair with a
-fringe and a white hairband, droopy dark grey-brown eyes, a beauty mark under her left eye. (Until November 2026 Kaho
+light-beige skirt in 24 pleats, white sneakers, a brown bag strap across her body, long straight black hair in two
+layers of clumps with a soft fringe and a white hairband, droopy dark grey-brown eyes, a beauty mark under her left eye. (Until November 2026 Kaho
 was lofted from primitives by `scripts/characters/anime-kaho.ts`, kept for reference; running it would replace the
 pipeline's body.) Proof: `docs/screenshots/cloudwatch/character/kaho-vs-sheet.webp`, `mio-turnaround.webp`.
 
 - One skinned mesh on the shared Biped, rest rotations exact and only bone offsets changed (long legs, short torso),
-  so the female motion set plays unchanged. Secondary bones: 8 skirt panels, the braid (Kaho) or three chains of long
+  so the female motion set plays unchanged. Secondary bones: 12 skirt panels, the braid (Kaho) or three chains of long
   hair (Mio), the side locks, the neckerchief's tails; 13 springs each, with capsules on the thighs, calves, forearms,
   hands, head, back, chest and hips.
 - Morph targets `smile`, `sad`, `surprised`, `teary`, `blink`, `mouth_open`, `determined` (decals on the face, driven by
@@ -159,8 +161,11 @@ pipeline's body.) Proof: `docs/screenshots/cloudwatch/character/kaho-vs-sheet.we
 - The file holds the skinned body twice (`<id>-body` and `<id>-outline` nodes sharing one geometry and its morphs),
   materials marked `toon: body|outline` in their extras, a `_TOON` vertex attribute (outline width, shade bias, rim
   strength) and, in the scene extras, `toon.springs` and `toon.colliders`. A spring link is kept out of a capsule at its
-  tip and at its middle, so a skirt panel cannot cut through a thigh. Each build also writes a far level of detail
-  (`<id>.lod1.glb`, about 23 k triangles) beside it; the runtime does not load it yet.
+  tip and at its middle, so a skirt panel cannot cut through a thigh; below the hips the skirt's front and back are
+  weighted mostly to the thighs, so the legs carry it. A per-vertex shade bias keeps the face lit as one shape
+  (docs/BLENDER-HARNESS.md, "Stages"). Each build also writes a far level of detail (about 23 k triangles, no morphs),
+  installed as `assets/lib/c/<id>.lod1.<hash8>.glb`, recorded as `lod1: { file, triangles, bytes }` in
+  `assets/characters-original.json` and as `ORIGINAL_LODS[id]` in `original.ts`; the runtime does not load it yet.
 - Rebuild: docs/BLENDER-HARNESS.md, "How to run" (about 30 s per character).
 - Runtime corrections of a toon body after the clip (`rig.ts`): the arms hang
   6 degrees out (`armClearance`); standing, the head and neck ease back to
