@@ -12,7 +12,7 @@
 import { FLOATS_PER_PROBE, type VolumeGrid } from './light-volume';
 
 /** Bump when the bake's algorithm, its constants or its output layout change: older entries stop matching. */
-export const VOLUME_BAKE_VERSION = 1;
+export const VOLUME_BAKE_VERSION = 2;
 /** Most entries kept. */
 export const CACHE_MAX_ENTRIES = 12;
 /** Most bytes of probe data kept. */
@@ -53,6 +53,24 @@ export function hashWords(view: ArrayBufferView, seed = 0): string {
 export function volumeKey(grid: VolumeGrid, arrays: { positions: Float32Array; albedo: Float32Array; twoSided: Uint8Array }, scalars: unknown): string {
   const small = hashWords(new TextEncoder().encode(JSON.stringify([VOLUME_BAKE_VERSION, FLOATS_PER_PROBE, grid, scalars])));
   return `v${VOLUME_BAKE_VERSION}:${grid.nx}x${grid.ny}x${grid.nz}:${small}:${hashWords(arrays.positions)}${hashWords(arrays.albedo)}${hashWords(arrays.twoSided)}`;
+}
+
+/** Numbers as integers in steps of 1 / `perUnit` (two builds that differ by less than a step hash the same). */
+function quantize(values: Float32Array, perUnit: number): Int32Array {
+  const out = new Int32Array(values.length);
+  for (let i = 0; i < values.length; i++) out[i] = Math.round((values[i] as number) * perUnit);
+  return out;
+}
+
+/**
+ * The key of a re-lightable bake, file-safe (`lv<version>-<32 hex digits>`): the trace scene rounded (2 cm, 1 % albedo, as the
+ * lightmap's key: two backends build the same building a fraction of a millimetre apart, and a cooked file must match on both),
+ * the grid and `scalars` (the ground, the lamps at full strength, the sun keys). No light: the hour never changes it.
+ */
+export function volumeFileKey(grid: VolumeGrid, arrays: { positions: Float32Array; albedo: Float32Array; twoSided: Uint8Array }, scalars: unknown): string {
+  const small = hashWords(new TextEncoder().encode(JSON.stringify([VOLUME_BAKE_VERSION, FLOATS_PER_PROBE, grid, scalars])));
+  const big = hashWords(quantize(arrays.positions, 50)) + hashWords(quantize(arrays.albedo, 100), 1) + hashWords(arrays.twoSided, 2);
+  return `lv${VOLUME_BAKE_VERSION}-${hashWords(new TextEncoder().encode(small + big))}${small}`;
 }
 
 const DB = 'aether-light-volumes';

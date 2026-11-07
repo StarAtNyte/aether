@@ -534,7 +534,7 @@ cook/
   cells/L0_<ix>_<iz>.glb     full detail: meshopt + quantized, per-entity nodes (ids in extras), material refs by key
   cells/L0_<ix>_<iz>.col     colliders (compact binary, Rapier-ready)
   hlod/L1_<ix>_<iz>.glb      proxies (3.3), hlod/L2_...
-  lightmaps/...              existing bake output
+  light/...                  the publish bake (re-lightable lightmap and light volume, docs/LIGHTING-BAKE.md)
 ```
 
 **Player load:**
@@ -585,8 +585,11 @@ cooked/<slug>/<id>/programs/<tier>.bin    program set of a tier, immutable (cook
 - `fingerprints` (optional): per entry key, the geometry fingerprint (16 hex, `geometry/fingerprint.ts`) of what the entry
   decodes to, for the player's spot check (§3.5.2). `scripts/cook.ts` writes them; the editor's publish does not;
 - `programs`: per tier its file, bytes and program count;
-- `lightmap`: an optional bundled lightmap folder (`lightmap-controller` `staticBase`), relative to the cook folder. Null
-  until the publish bake exists.
+- `lightmap`: the publish bake's baked light, `{ base, version }`: a folder relative to the package folder `dir` (`light/`, so `<id>/light/`) with the
+  re-lightable lightmap (`<key>.lmap`), the light volume (`<key>.lvol`) and their `index.json` (`{ keys, volumes }`), read by
+  `lightmap-controller` and `light-volume-controller` as `staticBase`. A viewer reads it only when `version` is its
+  `BAKED_LIGHT_VERSION` (`environment/relight.ts`); null for a world without buildings or with `environment.lightBake` off.
+  Format and measurements: docs/LIGHTING-BAKE.md.
 
 **Geometry packs.** Each entry is a generator output in the geometry cache's own encoding, 8-byte aligned. Entries go to
 the cell of the nearest entity that uses them; outputs no top-level entity places (spawn templates, scatter pieces) go to
@@ -823,7 +826,7 @@ with the hub; `api/cook-upload.ts`):
   the package is stale once the deployment's generator code changes (then it loads live; §3.5.2); a manifest over 4,000,000
   bytes (tens of thousands of entries) cannot be committed in one request.
 
-Hooks left for later work: `cells`/`packs` per cell, for cell streaming and unloading; `lightmap`, for the publish bake;
+Hooks left for later work: `cells`/`packs` per cell, for cell streaming and unloading;
 `GameManifest.cook`, for a self-hosted game build that ships its package.
 
 ### 3.5.2 What makes a cooked package stale (implemented)

@@ -21,6 +21,8 @@ export interface Nd {
   sample(uv: Nd): Nd;
   /** A texture read at an explicit mip level (legal in non-uniform control flow on every backend). */
   level(l: Nd | number): Nd;
+  /** The layer of an array texture read. */
+  depth(layer: Nd | number): Nd;
   lessThan(o: Nd | number): Nd;
   greaterThan(o: Nd | number): Nd;
   and(o: Nd): Nd;
@@ -55,6 +57,7 @@ export interface Tsl {
   /** A shader branch; `Else` takes the other side. */
   If(cond: Nd, body: () => void): { Else(body: () => void): void };
   float(v: NodeArg): Nd;
+  int(v: NodeArg): Nd;
   vec2(...v: NodeArg[]): Nd;
   vec3(...v: Array<NodeArg | import('three').Color | import('three').Vector3>): Nd;
   vec4(...v: NodeArg[]): Nd;
@@ -66,6 +69,7 @@ export interface Tsl {
   dot(a: Nd, b: Nd): Nd;
   normalize(a: Nd): Nd;
   exp(a: Nd): Nd;
+  exp2(a: Nd): Nd;
   sin(a: Nd): Nd;
   cos(a: Nd): Nd;
   pow(a: Nd, b: NodeArg): Nd;

@@ -1,7 +1,7 @@
 /**
  * Lightmap worker (module worker): unwraps the building's surfaces and path-traces their lightmap off the main thread
  * (seconds to a minute of CPU for a house). Runs only our own bake code; requests are validated, progress is reported
- * every ~200 ms and the atlas comes back as a transferred buffer. Cancelling is terminating the worker.
+ * every ~200 ms and the atlas layers come back as a transferred buffer. Cancelling is terminating the worker.
  *
  * `{ type: 'pause', on }` parks the bake between two of its slices (the page's worker scheduler gives the core to more
  * urgent work, or the view moves) and resumes it; the bake looks at its messages every {@link YIELD_MS}.
@@ -53,7 +53,7 @@ scope.onmessage = async (e: MessageEvent): Promise<void> => {
       const p = req.proxies;
       proxies.push({ lo: [p[i]!, p[i + 1]!, p[i + 2]!], hi: [p[i + 3]!, p[i + 4]!, p[i + 5]!], tri: p[i + 6]! });
     }
-    const baker = new LightmapBaker({ scene, proxies, meshes: req.meshes, layout, grid: req.grid, volume: req.volume, sun: req.sun, ambient: req.ambient, ground: req.ground, lamps: req.lamps, samples: req.samples });
+    const baker = new LightmapBaker({ scene, proxies, meshes: req.meshes, layout, grid: req.grid, field: req.field, stride: req.stride, codes: req.codes, sunKeys: req.sunKeys, ground: req.ground, lamps: req.lamps, samples: req.samples });
     let last = performance.now();
     let looked = last;
     while (!baker.step(100)) {
@@ -70,8 +70,8 @@ scope.onmessage = async (e: MessageEvent): Promise<void> => {
     }
     const out = baker.output!;
     scope.postMessage(
-      { type: 'lightmap', id: req.id, ok: true, size: out.size, scale: out.scale, density: layout.density, charts: layout.charts, texels: out.texels, rays: out.rays, rgba: out.rgba, uv: layout.uv } satisfies LightmapReply,
-      [out.rgba.buffer, ...layout.uv.filter((u): u is Float32Array => u !== null).map((u) => u.buffer)],
+      { type: 'lightmap', id: req.id, ok: true, size: out.size, layers: out.layers, scales: out.scales, density: layout.density, charts: layout.charts, texels: out.texels, rays: out.rays, rgba: out.rgba, uv: layout.uv } satisfies LightmapReply,
+      [out.rgba.buffer, out.scales.buffer, ...layout.uv.filter((u): u is Float32Array => u !== null).map((u) => u.buffer)],
     );
   } catch (err) {
     scope.postMessage({ type: 'lightmap', id: req.id, ok: false, error: (err instanceof Error ? err.message : String(err)).slice(0, 300) } satisfies LightmapReply);

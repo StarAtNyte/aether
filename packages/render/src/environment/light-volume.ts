@@ -15,6 +15,8 @@
  * - `B(n)`: the irradiance arriving after up to six bounces ({@link VOLUME_PASSES}): sun patches on the floor, the sunlit
  *   ground outside the window, sky light on the window reveals, lamps on the walls, all reflected by
  *   the surfaces' own colours. Warm floors make warm ceilings; a white room is brighter than a dark one.
+ *   `B` is re-lightable (`relight.ts`): baked as parts for unit sources and combined for the live light on the CPU
+ *   ({@link combineVolume}, milliseconds), so the hour never bakes the volume again.
  *
  * The bake is CPU work, deterministic (fixed ray sets, fixed order: the same input gives the same bytes,
  * however the work is sliced over frames) and pure (no three.js): {@link TraceScene} is a small BVH over
@@ -22,6 +24,8 @@
  * lays the result out for one RGBA 3D texture and {@link sampleVolume} reads it back on the CPU
  * (eye adaptation without reading pixels).
  */
+
+import { groundFactors, LUM, partCount, PART_LAMP, PART_SKY0, PART_SKY1, PART_SUN0, VOLUME_CHROMA, VOLUME_SUN, volumeLightFloats } from './relight';
 
 export type V3 = readonly [number, number, number];
 
@@ -55,6 +59,10 @@ export const VOLUME_PASSES = 6;
 export const FLOATS_PER_PROBE = 20;
 /** Floats per probe that carry light (the rest is geometry). */
 export const LIGHT_FLOATS = 16;
+/** Floats of one re-lightable part per probe: R, G, B irradiance as L1 SH. */
+export const PART_FLOATS = 12;
+/** Most sun keys a bake takes (one bit each per ray hit). */
+export const MAX_SUN_KEYS = 16;
 /** Offset of the packed free-distance codes in a probe's floats. */
 export const GEOMETRY_OFFSET = 16;
 /** Sub-volumes in the atlas (vis, R, G, B, free distances). */
@@ -368,15 +376,11 @@ export interface VolumeLamp {
 export interface VolumeBakeInput {
   grid: VolumeGrid;
   scene: TraceScene;
-  /** Direction toward the sun (unit) and its irradiance on a surface facing it; null at night. */
-  sun: { direction: V3; irradiance: V3 } | null;
-  /**
-   * The ambient light the renderer gives an unoccluded surface with normal `n`: `a + b * n.y` per channel
-   * (sky hemisphere plus image light). The bake uses it to light the surfaces the rays hit.
-   */
-  ambient: { a: V3; b: V3 };
+  /** Directions toward the sun of the re-lightable bake's sun keys (`relight.ts` `sunKeyDirections`), at most {@link MAX_SUN_KEYS}. */
+  sunKeys: readonly V3[];
   /** The open ground around the building (rays that leave the scene downward land on it). */
   ground: { y: number; albedo: V3 };
+  /** The lamps at full strength (the run time scales their part for daylight). */
   lamps: readonly VolumeLamp[];
   rays?: number;
   passes?: number;
@@ -467,53 +471,79 @@ function hash01(n: number): number {
 type Stage = 'trace' | 'bounce' | 'finish' | 'done';
 
 /**
- * Bakes a {@link VolumeBakeInput} in time slices: {@link step} does as much as fits in a budget and
- * returns true once the volume is complete. The result ({@link data}, {@link FLOATS_PER_PROBE} floats per
- * probe in x-fastest, then y, then z order) does not depend on how the work was sliced.
+ * Bakes a {@link VolumeBakeInput} in time slices: {@link step} does as much as fits in a budget and returns true once the
+ * volume is complete. The result does not depend on how the work was sliced:
+ *
+ * - {@link data}: {@link FLOATS_PER_PROBE} floats per probe (x fastest, then y, then z) holding the sky visibility and the
+ *   free distances; its light floats are zero until {@link combineVolume} fills them for a light;
+ * - {@link light}: the re-lightable parts (`relight.ts`) as stored, `volumeLightFloats(keys)` floats per probe: the sky's two
+ *   parts and the lamps as R, G, B irradiance in L1 SH, the sun keys' chroma, and each sun key's luminance in L1 SH.
+ *
+ * The rays are traced once; each bounce pass then carries every part at once (one read of the field per ray).
  */
 export class LightVolumeBaker {
   readonly data: Float32Array;
+  /** The re-lightable parts as stored, `volumeLightFloats(keys)` floats per probe. */
+  readonly light: Float32Array;
   /** 1 for probes in free space, 0 for probes buried in walls (filled from their neighbours at the end). */
   readonly valid: Uint8Array;
   readonly probes: number;
+  readonly parts: number;
+  private readonly stride: number;
   private readonly rays: number;
   private readonly passes: number;
   private readonly dirs: Float32Array;
   private readonly rotated: Float32Array;
   private readonly hitTri: Int32Array;
   private readonly hitT: Float32Array;
-  private readonly hitDirect: Float32Array;
-  /** Bounce irradiance from the open ground (constant over passes), 12 per probe. */
-  private readonly groundB: Float32Array;
-  private prev: Float32Array;
+  /** Per hit: one bit per sun key whose sun the hit point sees. */
+  private readonly hitSun: Uint16Array;
+  /** Per hit: the lamps' direct irradiance (RGB, full strength). */
+  private readonly hitLamp: Float32Array;
+  /** Per probe: the ground's share of the probe's rays as L1 SH (4 floats, unit radiance, cosine lobes applied). */
+  private readonly groundSH: Float32Array;
+  /** Per part and channel: radiance of the open ground under the part's unit source. */
+  private readonly groundL: Float32Array;
+  private readonly keys: readonly V3[];
+  /** The field being bounced: per probe the visibility (4) then the parts; `prev` is the last pass's. */
+  private readonly field: Float32Array;
+  private readonly prev: Float32Array;
+  /** Free-distance codes (2 per probe). */
+  private readonly codes2: Float32Array;
   private stage: Stage = 'trace';
   private pass = 1;
   private cursor = 0;
-  private readonly groundL: [number, number, number];
   private readonly nrm: [number, number, number] = [0, 0, 0];
-  private readonly sampleOut = new Float32Array(FLOATS_PER_PROBE);
+  private readonly sampleOut: Float32Array;
   /** Per-probe accumulator (reused: the bake allocates nothing per probe). */
-  private readonly acc = new Float64Array(LIGHT_FLOATS);
+  private readonly acc: Float64Array;
 
   constructor(private readonly input: VolumeBakeInput) {
     const g = input.grid;
     this.probes = g.nx * g.ny * g.nz;
+    this.keys = input.sunKeys.slice(0, MAX_SUN_KEYS);
+    this.parts = partCount(this.keys.length);
+    this.stride = 4 + this.parts * PART_FLOATS;
     this.rays = Math.max(8, Math.min(256, Math.floor(input.rays ?? VOLUME_RAYS)));
     this.passes = Math.max(1, Math.min(6, Math.floor(input.passes ?? VOLUME_PASSES)));
     this.dirs = sphereDirections(this.rays);
     this.rotated = new Float32Array(this.rays * 3);
     this.data = new Float32Array(this.probes * FLOATS_PER_PROBE);
-    this.prev = new Float32Array(this.probes * FLOATS_PER_PROBE);
+    this.light = new Float32Array(this.probes * volumeLightFloats(this.keys.length));
+    this.field = new Float32Array(this.probes * this.stride);
+    this.prev = new Float32Array(this.probes * this.stride);
+    this.codes2 = new Float32Array(this.probes * 2);
     this.valid = new Uint8Array(this.probes);
     this.hitTri = new Int32Array(this.probes * this.rays);
     this.hitT = new Float32Array(this.probes * this.rays);
-    this.hitDirect = new Float32Array(this.probes * this.rays * 3);
-    this.groundB = new Float32Array(this.probes * 12);
-    // Radiance of the open ground: sunlit (unshadowed: the building's own shadow is small next to the land in view) plus sky.
-    const sun = input.sun;
-    const sy = sun ? Math.max(0, sun.direction[1]) : 0;
-    const amb = input.ambient;
-    this.groundL = [0, 1, 2].map((c) => (clamp01(input.ground.albedo[c as 0 | 1 | 2]) / Math.PI) * ((sun ? sun.irradiance[c as 0 | 1 | 2] * sy : 0) + Math.max(0, amb.a[c as 0 | 1 | 2] + amb.b[c as 0 | 1 | 2]))) as [number, number, number];
+    this.hitSun = new Uint16Array(this.probes * this.rays);
+    this.hitLamp = new Float32Array(input.lamps.length > 0 ? this.probes * this.rays * 3 : 0);
+    this.groundSH = new Float32Array(this.probes * 4);
+    this.sampleOut = new Float32Array(this.stride);
+    this.acc = new Float64Array(this.parts * PART_FLOATS);
+    const gf = groundFactors(this.keys);
+    this.groundL = new Float32Array(this.parts * 3);
+    for (let p = 0; p < this.parts; p++) for (let c = 0; c < 3; c++) this.groundL[p * 3 + c] = (clamp01(input.ground.albedo[c as 0 | 1 | 2]) / Math.PI) * gf[p]!;
   }
 
   /** Share of the work done (0..1). */
@@ -560,12 +590,12 @@ export class LightVolumeBaker {
     if (this.stage === 'trace') {
       this.stage = 'bounce';
       this.pass = 1;
-      this.prev.set(this.data);
+      this.prev.set(this.field);
       return;
     }
     if (this.pass < this.passes) {
       this.pass++;
-      this.prev.set(this.data);
+      this.prev.set(this.field);
       return;
     }
     this.stage = 'finish';
@@ -605,17 +635,17 @@ export class LightVolumeBaker {
   private readonly pos: [number, number, number] = [0, 0, 0];
   private readonly codes = new Int32Array(6);
 
-  /** Trace a probe's rays once: hits, direct light at each hit, sky visibility and the ground's bounce. */
+  /** Trace a probe's rays once: hits, which sun keys and lamps light each hit, sky visibility and the ground's share. */
   private traceProbe(i: number): void {
-    const { scene, sun, lamps, ground } = this.input;
+    const { scene, lamps, ground } = this.input;
+    const keys = this.keys;
     const p = this.pos;
     this.probePos(i, p);
     this.rotate(i);
     const R = this.rays;
     const w = (4 * Math.PI) / R;
     let v0 = 0, v1 = 0, v2 = 0, v3 = 0;
-    const gb = this.acc;
-    gb.fill(0);
+    let g0 = 0, g1 = 0, g2 = 0, g3 = 0;
     let back = 0;
     const n = this.nrm;
     const maxT = Math.max(30, this.input.grid.spacing * Math.max(this.input.grid.nx, this.input.grid.ny, this.input.grid.nz) * 2);
@@ -633,13 +663,10 @@ export class LightVolumeBaker {
           this.hitTri[slot] = MISS;
         } else {
           this.hitTri[slot] = GROUND_HIT;
-          for (let c = 0; c < 3; c++) {
-            const L = this.groundL[c]!;
-            gb[c * 4] = gb[c * 4]! + L * Y0;
-            gb[c * 4 + 1] = gb[c * 4 + 1]! + L * Y1 * dx;
-            gb[c * 4 + 2] = gb[c * 4 + 2]! + L * Y1 * dy;
-            gb[c * 4 + 3] = gb[c * 4 + 3]! + L * Y1 * dz;
-          }
+          g0 += Y0;
+          g1 += Y1 * dx;
+          g2 += Y1 * dy;
+          g3 += Y1 * dz;
         }
         continue;
       }
@@ -647,48 +674,44 @@ export class LightVolumeBaker {
       this.hitTri[slot] = tri;
       this.hitT[slot] = t;
       scene.normal(tri, n);
-      let facing = n[0] * dx + n[1] * dy + n[2] * dz;
-      if (facing > 0) {
+      if (n[0] * dx + n[1] * dy + n[2] * dz > 0) {
         if (!scene.twoSided[tri]) back++;
         n[0] = -n[0];
         n[1] = -n[1];
         n[2] = -n[2];
-        facing = -facing;
       }
       const hx = p[0] + dx * t + n[0] * 2e-3;
       const hy = p[1] + dy * t + n[1] * 2e-3;
       const hz = p[2] + dz * t + n[2] * 2e-3;
-      let er = 0, eg = 0, eb = 0;
-      if (sun) {
-        const s = sun.direction;
-        const cos = n[0] * s[0] + n[1] * s[1] + n[2] * s[2];
-        if (cos > 0 && !scene.occluded(hx, hy, hz, s[0], s[1], s[2], maxT)) {
-          er += sun.irradiance[0] * cos;
-          eg += sun.irradiance[1] * cos;
-          eb += sun.irradiance[2] * cos;
+      let mask = 0;
+      for (let k = 0; k < keys.length; k++) {
+        const s = keys[k]!;
+        if (n[0] * s[0] + n[1] * s[1] + n[2] * s[2] > 0 && !scene.occluded(hx, hy, hz, s[0], s[1], s[2], maxT)) mask |= 1 << k;
+      }
+      this.hitSun[slot] = mask;
+      if (lamps.length > 0) {
+        let er = 0, eg = 0, eb = 0;
+        for (const lamp of lamps) {
+          const lx = lamp.position[0] - hx, ly = lamp.position[1] - hy, lz = lamp.position[2] - hz;
+          const d2 = lx * lx + ly * ly + lz * lz;
+          const d = Math.sqrt(d2);
+          if (!(d > 1e-3) || d >= lamp.range) continue;
+          const cos = (n[0] * lx + n[1] * ly + n[2] * lz) / d;
+          if (cos <= 0) continue;
+          const f = 1 - (d / lamp.range) ** 4;
+          const att = (f * f) / Math.max(0.01, d2);
+          if (scene.occluded(hx, hy, hz, lx / d, ly / d, lz / d, d - 0.05)) continue;
+          er += lamp.color[0] * att * cos;
+          eg += lamp.color[1] * att * cos;
+          eb += lamp.color[2] * att * cos;
         }
+        this.hitLamp[slot * 3] = er;
+        this.hitLamp[slot * 3 + 1] = eg;
+        this.hitLamp[slot * 3 + 2] = eb;
       }
-      for (const lamp of lamps) {
-        const lx = lamp.position[0] - hx, ly = lamp.position[1] - hy, lz = lamp.position[2] - hz;
-        const d2 = lx * lx + ly * ly + lz * lz;
-        const d = Math.sqrt(d2);
-        if (!(d > 1e-3) || d >= lamp.range) continue;
-        const cos = (n[0] * lx + n[1] * ly + n[2] * lz) / d;
-        if (cos <= 0) continue;
-        const f = 1 - (d / lamp.range) ** 4;
-        const att = (f * f) / Math.max(0.01, d2);
-        if (scene.occluded(hx, hy, hz, lx / d, ly / d, lz / d, d - 0.05)) continue;
-        er += lamp.color[0] * att * cos;
-        eg += lamp.color[1] * att * cos;
-        eb += lamp.color[2] * att * cos;
-      }
-      this.hitDirect[slot * 3] = er;
-      this.hitDirect[slot * 3 + 1] = eg;
-      this.hitDirect[slot * 3 + 2] = eb;
     }
     // Buried in a wall, or under the open ground (nothing the bake knows lies there): filled from neighbours.
     this.valid[i] = back / R > BURIED_SHARE || p[1] < ground.y - 0.05 ? 0 : 1;
-    const o = i * FLOATS_PER_PROBE;
     // Free distance along each axis (up to a spacing): which interpolation neighbours this probe can see.
     const sp = this.input.grid.spacing;
     const codes = this.codes;
@@ -702,23 +725,42 @@ export class LightVolumeBaker {
     // A probe buried in a wall (or under the ground) sees nothing: it never takes part in a read.
     if (!this.valid[i]) codes.fill(0);
     const packed = packFreeDistances(codes);
-    this.data[o + GEOMETRY_OFFSET] = packed[0];
-    this.data[o + GEOMETRY_OFFSET + 1] = packed[1];
+    this.codes2[i * 2] = packed[0];
+    this.codes2[i * 2 + 1] = packed[1];
     // vis(n) = (1/π) E(n) for unit sky radiance: a = Y0 c0, b = (2/3) Y1 c1.
-    this.data[o] = Y0 * v0 * w;
-    this.data[o + 1] = (2 / 3) * Y1 * v1 * w;
-    this.data[o + 2] = (2 / 3) * Y1 * v2 * w;
-    this.data[o + 3] = (2 / 3) * Y1 * v3 * w;
-    for (let k = 0; k < 12; k++) {
-      const c = k % 4 === 0 ? Math.PI * Y0 : ((2 * Math.PI) / 3) * Y1;
-      this.groundB[i * 12 + k] = gb[k]! * w * c;
-      this.data[o + 4 + k] = this.groundB[i * 12 + k]!;
+    const o = i * this.stride;
+    this.field[o] = Y0 * v0 * w;
+    this.field[o + 1] = (2 / 3) * Y1 * v1 * w;
+    this.field[o + 2] = (2 / 3) * Y1 * v2 * w;
+    this.field[o + 3] = (2 / 3) * Y1 * v3 * w;
+    const gs = this.groundSH;
+    gs[i * 4] = g0 * w * Math.PI * Y0;
+    gs[i * 4 + 1] = g1 * w * ((2 * Math.PI) / 3) * Y1;
+    gs[i * 4 + 2] = g2 * w * ((2 * Math.PI) / 3) * Y1;
+    gs[i * 4 + 3] = g3 * w * ((2 * Math.PI) / 3) * Y1;
+    this.writeGround(i, o);
+  }
+
+  /** The ground's bounce into every part of probe `i` (field offset `o`): where every pass starts. */
+  private writeGround(i: number, o: number): void {
+    const gs = this.groundSH;
+    for (let p = 0; p < this.parts; p++) {
+      for (let c = 0; c < 3; c++) {
+        const L = this.groundL[p * 3 + c]!;
+        const q = o + 4 + p * PART_FLOATS + c * 4;
+        this.field[q] = gs[i * 4]! * L;
+        this.field[q + 1] = gs[i * 4 + 1]! * L;
+        this.field[q + 2] = gs[i * 4 + 2]! * L;
+        this.field[q + 3] = gs[i * 4 + 3]! * L;
+      }
     }
   }
 
-  /** One bounce pass for a probe: every hit reflects its direct light plus the ambient the previous pass left there. */
+  /** One bounce pass for a probe: every hit reflects, per part, its direct light plus the ambient the previous pass left there. */
   private bounceProbe(i: number): void {
-    const { scene, ambient } = this.input;
+    const { scene, grid } = this.input;
+    const keys = this.keys;
+    const P = this.parts;
     const p = this.pos;
     this.probePos(i, p);
     this.rotate(i);
@@ -728,7 +770,8 @@ export class LightVolumeBaker {
     acc.fill(0);
     const n = this.nrm;
     const s = this.sampleOut;
-    const half = this.input.grid.spacing * 0.5;
+    const half = grid.spacing * 0.5;
+    const lit = this.hitLamp.length > 0;
     for (let r = 0; r < R; r++) {
       const slot = i * R + r;
       const tri = this.hitTri[slot]!;
@@ -742,40 +785,58 @@ export class LightVolumeBaker {
         n[2] = -n[2];
       }
       // The light already around the hit point, read on its lit side (half a spacing out along the normal).
-      sampleField(this.input.grid, this.prev, this.valid, p[0] + dx * t + n[0] * half, p[1] + dy * t + n[1] * half, p[2] + dz * t + n[2] * half, s);
+      sampleStrided(grid, this.prev, this.stride, this.codes2, this.valid, p[0] + dx * t + n[0] * half, p[1] + dy * t + n[1] * half, p[2] + dz * t + n[2] * half, s);
       const vis = clamp01(s[0]! + s[1]! * n[0] + s[2]! * n[1] + s[3]! * n[2]);
-      for (let c = 0; c < 3; c++) {
-        const o = 4 + c * 4;
-        const bounce = Math.max(0, s[o]! + s[o + 1]! * n[0] + s[o + 2]! * n[1] + s[o + 3]! * n[2]);
-        const amb = Math.max(0, ambient.a[c as 0 | 1 | 2] + ambient.b[c as 0 | 1 | 2] * n[1]);
-        const E = this.hitDirect[slot * 3 + c]! + vis * amb + bounce;
-        const L = (scene.albedo[tri * 3 + c]! / Math.PI) * E;
-        acc[c * 4] = acc[c * 4]! + L * Y0;
-        acc[c * 4 + 1] = acc[c * 4 + 1]! + L * Y1 * dx;
-        acc[c * 4 + 2] = acc[c * 4 + 2]! + L * Y1 * dy;
-        acc[c * 4 + 3] = acc[c * 4 + 3]! + L * Y1 * dz;
+      const mask = this.hitSun[slot]!;
+      for (let part = 0; part < P; part++) {
+        // Direct light of the part at the hit (white for the sky and sun parts, the lamps' own colour) and its ambient factor.
+        let direct = 0;
+        let amb = 0;
+        if (part === PART_SKY0) amb = 1;
+        else if (part === PART_SKY1) amb = n[1];
+        else if (part >= PART_SUN0) {
+          const k = part - PART_SUN0;
+          if (mask & (1 << k)) {
+            const d = keys[k]!;
+            direct = Math.max(0, n[0] * d[0] + n[1] * d[1] + n[2] * d[2]);
+          }
+        }
+        for (let c = 0; c < 3; c++) {
+          const so = 4 + part * PART_FLOATS + c * 4;
+          let bounce = s[so]! + s[so + 1]! * n[0] + s[so + 2]! * n[1] + s[so + 3]! * n[2];
+          // The sky's gradient part is signed (a ceiling takes less of it than a wall); every other part is light, never negative.
+          if (part !== PART_SKY1 && bounce < 0) bounce = 0;
+          const E = (part === PART_LAMP && lit ? this.hitLamp[slot * 3 + c]! : direct) + vis * amb + bounce;
+          if (E === 0) continue;
+          const L = (scene.albedo[tri * 3 + c]! / Math.PI) * E;
+          const ao = part * PART_FLOATS + c * 4;
+          acc[ao] = acc[ao]! + L * Y0;
+          acc[ao + 1] = acc[ao + 1]! + L * Y1 * dx;
+          acc[ao + 2] = acc[ao + 2]! + L * Y1 * dy;
+          acc[ao + 3] = acc[ao + 3]! + L * Y1 * dz;
+        }
       }
     }
-    const o = i * FLOATS_PER_PROBE;
-    for (let k = 0; k < 12; k++) {
+    const o = i * this.stride;
+    this.writeGround(i, o);
+    for (let k = 0; k < P * PART_FLOATS; k++) {
       const c = k % 4 === 0 ? Math.PI * Y0 : ((2 * Math.PI) / 3) * Y1;
-      this.data[o + 4 + k] = this.groundB[i * 12 + k]! + acc[k]! * w * c;
+      this.field[o + 4 + k] = this.field[o + 4 + k]! + acc[k]! * w * c;
     }
   }
 
   /** Probes buried in walls take the mean of their free neighbours (repeatedly), the rest the mean of all free probes. */
   private finish(): void {
     const g = this.input.grid;
-    const F = FLOATS_PER_PROBE;
-    // Only the light is filled in; a buried probe keeps its own (short) free distances, so it stays out of the reads.
-    const L = LIGHT_FLOATS;
+    const F = this.stride;
     const ok = this.valid.slice();
-    const mean = new Float64Array(L);
+    const mean = new Float64Array(F);
+    const sum = new Float64Array(F);
     let free = 0;
     for (let i = 0; i < this.probes; i++) {
       if (!ok[i]) continue;
       free++;
-      for (let k = 0; k < L; k++) mean[k] = mean[k]! + this.data[i * F + k]!;
+      for (let k = 0; k < F; k++) mean[k] = mean[k]! + this.field[i * F + k]!;
     }
     for (let round = 0; round < 4; round++) {
       const filled: number[] = [];
@@ -784,7 +845,7 @@ export class LightVolumeBaker {
         const ix = i % g.nx;
         const iy = Math.floor(i / g.nx) % g.ny;
         const iz = Math.floor(i / (g.nx * g.ny));
-        const sum = new Float64Array(L);
+        sum.fill(0);
         let cnt = 0;
         for (const [ox, oy, oz] of NEIGHBOURS) {
           const jx = ix + ox, jy = iy + oy, jz = iz + oz;
@@ -792,10 +853,10 @@ export class LightVolumeBaker {
           const j = jx + g.nx * (jy + g.ny * jz);
           if (!ok[j]) continue;
           cnt++;
-          for (let k = 0; k < L; k++) sum[k] = sum[k]! + this.data[j * F + k]!;
+          for (let k = 0; k < F; k++) sum[k] = sum[k]! + this.field[j * F + k]!;
         }
         if (cnt === 0) continue;
-        for (let k = 0; k < L; k++) this.data[i * F + k] = sum[k]! / cnt;
+        for (let k = 0; k < F; k++) this.field[i * F + k] = sum[k]! / cnt;
         filled.push(i);
       }
       for (const i of filled) ok[i] = 1;
@@ -803,10 +864,19 @@ export class LightVolumeBaker {
     }
     for (let i = 0; i < this.probes; i++) {
       if (ok[i]) continue;
-      for (let k = 0; k < L; k++) this.data[i * F + k] = free > 0 ? mean[k]! / free : k === 0 ? 1 : 0;
+      for (let k = 0; k < F; k++) this.field[i * F + k] = free > 0 ? mean[k]! / free : k === 0 ? 1 : 0;
     }
     this.denoise();
-    for (let k = 0; k < this.data.length; k++) if (!Number.isFinite(this.data[k]!)) this.data[k] = 0;
+    // Split the field: visibility and free distances to `data`, the parts (stored form) to `light`.
+    const LF = volumeLightFloats(this.keys.length);
+    for (let i = 0; i < this.probes; i++) {
+      const o = i * F;
+      const d = i * FLOATS_PER_PROBE;
+      for (let k = 0; k < 4; k++) this.data[d + k] = finite(this.field[o + k]!);
+      this.data[d + GEOMETRY_OFFSET] = this.codes2[i * 2]!;
+      this.data[d + GEOMETRY_OFFSET + 1] = this.codes2[i * 2 + 1]!;
+      storeVolumeParts(this.field, o + 4, this.keys.length, this.light, i * LF);
+    }
   }
 
   /**
@@ -816,33 +886,31 @@ export class LightVolumeBaker {
    */
   private denoise(): void {
     const g = this.input.grid;
-    const F = FLOATS_PER_PROBE;
-    const L = LIGHT_FLOATS;
+    const F = this.stride;
     const n = this.probes;
     // Per probe, a bit per axis direction (order of AXES) that is free for a whole spacing.
     const open = new Uint8Array(n);
     for (let i = 0; i < n; i++) {
-      const a = Math.round(this.data[i * F + GEOMETRY_OFFSET]!);
-      const b = Math.round(this.data[i * F + GEOMETRY_OFFSET + 1]!);
+      const a = Math.round(this.codes2[i * 2]!);
+      const b = Math.round(this.codes2[i * 2 + 1]!);
       const codes = [a % 8, Math.floor(a / 8) % 8, Math.floor(a / 64) % 8, b % 8, Math.floor(b / 8) % 8, Math.floor(b / 64) % 8];
       let bits = 0;
       for (let k = 0; k < 6; k++) if (codes[k] === FREE_STEPS) bits |= 1 << k;
       open[i] = this.valid[i] ? bits : 0;
     }
     const steps = [-1, 1, -g.nx, g.nx, -g.nx * g.ny, g.nx * g.ny];
-    const src = new Float32Array(n * L);
+    const src = this.prev;
+    const acc = new Float64Array(F);
     for (let pass = 0; pass < DENOISE_PASSES; pass++) {
-      for (let i = 0; i < n; i++) for (let k = 0; k < L; k++) src[i * L + k] = this.data[i * F + k]!;
+      src.set(this.field);
       for (let i = 0; i < n; i++) {
         const bits = open[i]!;
         if (bits === 0) continue;
         const ix = i % g.nx;
         const iy = Math.floor(i / g.nx) % g.ny;
         const iz = Math.floor(i / (g.nx * g.ny));
-        const acc = this.acc;
-        acc.fill(0);
         let wsum = 2;
-        for (let k = 0; k < L; k++) acc[k] = src[i * L + k]! * 2;
+        for (let k = 0; k < F; k++) acc[k] = src[i * F + k]! * 2;
         for (let d = 0; d < 6; d++) {
           if (!(bits & (1 << d))) continue;
           const edge = d === 0 ? ix === 0 : d === 1 ? ix === g.nx - 1 : d === 2 ? iy === 0 : d === 3 ? iy === g.ny - 1 : d === 4 ? iz === 0 : iz === g.nz - 1;
@@ -851,12 +919,16 @@ export class LightVolumeBaker {
           // The neighbour must see back along the same axis (the opposite direction's bit).
           if (!(open[j]! & (1 << (d ^ 1)))) continue;
           wsum++;
-          for (let k = 0; k < L; k++) acc[k] = acc[k]! + src[j * L + k]!;
+          for (let k = 0; k < F; k++) acc[k] = acc[k]! + src[j * F + k]!;
         }
-        for (let k = 0; k < L; k++) this.data[i * F + k] = acc[k]! / wsum;
+        for (let k = 0; k < F; k++) this.field[i * F + k] = acc[k]! / wsum;
       }
     }
   }
+}
+
+function finite(v: number): number {
+  return Number.isFinite(v) ? v : 0;
 }
 
 /** Blur passes over the baked light (see {@link LightVolumeBaker.denoise}). */
@@ -871,6 +943,149 @@ function clamp01(v: number): number {
 }
 
 const FREE_SCRATCH = new Float32Array(6);
+
+/**
+ * Trilinear read of a strided probe field (`stride` floats per probe, all of them read) at a world point, with the free
+ * distances in `codes` (two packed floats per probe), skipping probes flagged invalid and weighting each by whether it sees
+ * the point, as {@link sampleField} does.
+ */
+export function sampleStrided(g: VolumeGrid, field: Float32Array, stride: number, codes: Float32Array, valid: Uint8Array | null, x: number, y: number, z: number, out: Float32Array): void {
+  const fx = clampIdx((x - g.min[0]) / g.spacing, g.nx);
+  const fy = clampIdx((y - g.min[1]) / g.spacing, g.ny);
+  const fz = clampIdx((z - g.min[2]) / g.spacing, g.nz);
+  const x0 = Math.min(g.nx - 2, Math.floor(fx)), y0 = Math.min(g.ny - 2, Math.floor(fy)), z0 = Math.min(g.nz - 2, Math.floor(fz));
+  const tx = fx - x0, ty = fy - y0, tz = fz - z0;
+  out.fill(0, 0, stride);
+  let wsum = 0;
+  const free = FREE_SCRATCH;
+  for (let pass = 0; pass < 2 && wsum <= 1e-6; pass++) {
+    for (let c = 0; c < 8; c++) {
+      const cx = c & 1, cy = (c >> 1) & 1, cz = (c >> 2) & 1;
+      const j = x0 + cx + g.nx * (y0 + cy + g.ny * (z0 + cz));
+      if (valid && !valid[j]) continue;
+      let wgt = (cx ? tx : 1 - tx) * (cy ? ty : 1 - ty) * (cz ? tz : 1 - tz);
+      if (wgt <= 0) continue;
+      if (pass === 0) {
+        unpackFreeDistances(codes[j * 2]!, codes[j * 2 + 1]!, free);
+        wgt *= probeSees(tx - cx, ty - cy, tz - cz, free);
+        if (wgt <= 1e-6) continue;
+      }
+      wsum += wgt;
+      const o = j * stride;
+      for (let k = 0; k < stride; k++) out[k] = out[k]! + field[o + k]! * wgt;
+    }
+  }
+  if (wsum > 1e-6) for (let k = 0; k < stride; k++) out[k] = out[k]! / wsum;
+}
+
+/** Store one probe's parts (RGB L1 SH each, from `src` at `so`) in the stored form (`relight.ts` `volumeLightFloats`) at `dst[d]`. */
+export function storeVolumeParts(src: Float32Array, so: number, keys: number, dst: Float32Array, d: number): void {
+  for (let k = 0; k < 36; k++) dst[d + k] = finite(src[so + k]!);
+  // The keys' chroma: their summed constant terms per channel.
+  let r = 0, g = 0, b = 0;
+  for (let k = 0; k < keys; k++) {
+    const q = so + (PART_SUN0 + k) * PART_FLOATS;
+    r += src[q]!;
+    g += src[q + 4]!;
+    b += src[q + 8]!;
+  }
+  dst[d + VOLUME_CHROMA] = finite(Math.max(0, r));
+  dst[d + VOLUME_CHROMA + 1] = finite(Math.max(0, g));
+  dst[d + VOLUME_CHROMA + 2] = finite(Math.max(0, b));
+  dst[d + VOLUME_CHROMA + 3] = 0;
+  for (let k = 0; k < keys; k++) {
+    const q = so + (PART_SUN0 + k) * PART_FLOATS;
+    for (let j = 0; j < 4; j++) dst[d + VOLUME_SUN + k * 4 + j] = finite(LUM[0] * src[q + j]! + LUM[1] * src[q + 4 + j]! + LUM[2] * src[q + 8 + j]!);
+  }
+}
+
+/** The chroma of a probe's sun keys over its luminance (white where no sun reaches it). */
+function chromaOf(light: Float32Array, l: number, out: [number, number, number]): [number, number, number] {
+  const r = light[l + VOLUME_CHROMA]!, g = light[l + VOLUME_CHROMA + 1]!, b = light[l + VOLUME_CHROMA + 2]!;
+  const y = LUM[0] * r + LUM[1] * g + LUM[2] * b;
+  if (!(y > 1e-9)) {
+    out[0] = out[1] = out[2] = 1;
+    return out;
+  }
+  out[0] = r / y;
+  out[1] = g / y;
+  out[2] = b / y;
+  return out;
+}
+
+/**
+ * The volume for one light: the visibility and free distances of `data` with the light floats set to the stored parts of
+ * `light` weighted by `coeffs` (`relightCoefficients`, RGB per part). Writes into `out` (which may be `data` itself). A few
+ * milliseconds for the largest grid: all a change of the hour costs the volume.
+ */
+export function combineVolume(probes: number, data: Float32Array, light: Float32Array, parts: number, coeffs: Float32Array, out: Float32Array): Float32Array {
+  const F = FLOATS_PER_PROBE;
+  const keys = parts - PART_SUN0;
+  const LF = volumeLightFloats(keys);
+  if (out !== data) out.set(data.subarray(0, probes * F));
+  const ch: [number, number, number] = [1, 1, 1];
+  for (let i = 0; i < probes; i++) {
+    const o = i * F;
+    const l = i * LF;
+    chromaOf(light, l, ch);
+    for (let c = 0; c < 3; c++) {
+      let s0 = 0, s1 = 0, s2 = 0, s3 = 0;
+      for (let p = 0; p < PART_SUN0; p++) {
+        const w = coeffs[p * 3 + c]!;
+        if (w === 0) continue;
+        const q = l + p * PART_FLOATS + c * 4;
+        s0 += w * light[q]!;
+        s1 += w * light[q + 1]!;
+        s2 += w * light[q + 2]!;
+        s3 += w * light[q + 3]!;
+      }
+      let t0 = 0, t1 = 0, t2 = 0, t3 = 0;
+      for (let k = 0; k < keys; k++) {
+        const w = coeffs[(PART_SUN0 + k) * 3 + c]!;
+        if (w === 0) continue;
+        const q = l + VOLUME_SUN + k * 4;
+        t0 += w * light[q]!;
+        t1 += w * light[q + 1]!;
+        t2 += w * light[q + 2]!;
+        t3 += w * light[q + 3]!;
+      }
+      const cc = ch[c]!;
+      out[o + 4 + c * 4] = s0 + t0 * cc;
+      out[o + 5 + c * 4] = s1 + t1 * cc;
+      out[o + 6 + c * 4] = s2 + t2 * cc;
+      out[o + 7 + c * 4] = s3 + t3 * cc;
+    }
+  }
+  return out;
+}
+
+/**
+ * A finished bake as one strided field (visibility then every part as RGB L1 SH, per probe; the sun keys coloured by their
+ * chroma again) and its free-distance codes: what the lightmap bake reads.
+ */
+export function partsField(probes: number, data: Float32Array, light: Float32Array, parts: number): { field: Float32Array; stride: number; codes: Float32Array } {
+  const stride = 4 + parts * PART_FLOATS;
+  const keys = parts - PART_SUN0;
+  const LF = volumeLightFloats(keys);
+  const field = new Float32Array(probes * stride);
+  const codes = new Float32Array(probes * 2);
+  const ch: [number, number, number] = [1, 1, 1];
+  for (let i = 0; i < probes; i++) {
+    const d = i * FLOATS_PER_PROBE;
+    const o = i * stride;
+    const l = i * LF;
+    for (let k = 0; k < 4; k++) field[o + k] = data[d + k]!;
+    for (let k = 0; k < 36; k++) field[o + 4 + k] = light[l + k]!;
+    chromaOf(light, l, ch);
+    for (let k = 0; k < keys; k++) {
+      const q = o + 4 + (PART_SUN0 + k) * PART_FLOATS;
+      for (let c = 0; c < 3; c++) for (let j = 0; j < 4; j++) field[q + c * 4 + j] = light[l + VOLUME_SUN + k * 4 + j]! * ch[c]!;
+    }
+    codes[i * 2] = data[d + GEOMETRY_OFFSET]!;
+    codes[i * 2 + 1] = data[d + GEOMETRY_OFFSET + 1]!;
+  }
+  return { field, stride, codes };
+}
 
 /**
  * Trilinear read of a probe field's light at a world point (clamped to the grid), skipping probes flagged invalid
@@ -967,16 +1182,17 @@ export function atlasDepth(alloc: Pick<VolumeGrid, 'nz'> = VOLUME_ALLOC): number
  * `t·(alloc.nz+2)+1 … t·(alloc.nz+2)+nz`, with a copy of its edge slice on both sides so the hardware filter
  * never blends two sub-volumes. Writes into `out` when given (it must have the allocated size).
  */
-export function packVolumeAtlas(g: VolumeGrid, data: Float32Array, alloc: Readonly<{ nx: number; ny: number; nz: number }> = VOLUME_ALLOC, out?: Uint16Array): Uint16Array {
+export function packVolumeAtlas(g: VolumeGrid, data: Float32Array, alloc: Readonly<{ nx: number; ny: number; nz: number }> = VOLUME_ALLOC, out?: Uint16Array, only?: readonly [number, number]): Uint16Array {
   const depth = atlasDepth(alloc);
   const size = alloc.nx * alloc.ny * depth * 4;
   const dst = out && out.length === size ? out : new Uint16Array(size);
-  if (out === dst) dst.fill(0);
+  // Only some sub-volumes (`only`: [first, end)) rewrites them in place: the rest of the atlas is left as it is.
+  if (out === dst && !only) dst.fill(0);
   const slab = alloc.nz + 2;
   const nx = Math.min(g.nx, alloc.nx);
   const ny = Math.min(g.ny, alloc.ny);
   const nz = Math.min(g.nz, alloc.nz);
-  for (let t = 0; t < ATLAS_SUBVOLUMES; t++) {
+  for (let t = only ? only[0] : 0; t < (only ? only[1] : ATLAS_SUBVOLUMES); t++) {
     for (let s = 0; s < nz + 2; s++) {
       const iz = Math.max(0, Math.min(nz - 1, s - 1));
       const zOut = t * slab + s;

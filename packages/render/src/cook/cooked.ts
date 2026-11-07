@@ -14,6 +14,7 @@
 import type { RenderTier } from '../gpu/finishing';
 import type { ProgramStore } from '../gpu/program-cache';
 import { DDC_CODE_VERSION } from '../geometry/ddc';
+import { BAKED_LIGHT_VERSION } from '../environment/relight';
 import { MAX_MANIFEST_BYTES, MAX_PROGRAM_SET_BYTES, parseCookedProgramSet, parseCookManifest, readProgramSetFile, worldIrHash, type CookedProgramSet, type CookManifest, type LaneCookIndex } from './format';
 
 /** Longest wait for the manifest (ms): a slow host must not hold the live path back for long. */
@@ -148,7 +149,8 @@ export async function openCookedPackage(manifestUrl: string, world: object, opts
     manifest: m,
     base,
     laneIndex: { packs: m.packs.map((p) => new URL(p.file, base).href), entries: m.entries, ...(m.fingerprints ? { fingerprints: m.fingerprints } : {}) },
-    lightmapBase: m.lightmap ? new URL(m.lightmap.base.endsWith('/') ? m.lightmap.base : `${m.lightmap.base}/`, base).href : null,
+    // Baked light of another format (an older cook) is not read: the world loads without it until it is cooked again.
+    lightmapBase: m.lightmap && m.lightmap.version === BAKED_LIGHT_VERSION ? new URL(m.lightmap.base.endsWith('/') ? m.lightmap.base : `${m.lightmap.base}/`, base).href : null,
     stats,
     programs,
     programStore: (inner) => cookedProgramStore(inner, programs),

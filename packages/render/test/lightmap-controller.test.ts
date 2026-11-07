@@ -5,6 +5,12 @@ import { LightVolume } from '../src/environment/light-volume-light';
 import { LightmapBaker, meshTriangleCount, unwrapLightmap, type ProxyBox } from '../src/environment/lightmap';
 import type { LightmapCache } from '../src/environment/lightmap-cache';
 import { parseLightmapRequest, type LightmapReply } from '../src/environment/lightmap-protocol';
+import type { RelightLighting } from '../src/environment/relight';
+import type { V3 } from '../src/environment/light-volume';
+const unit = (v: V3): V3 => {
+  const l = Math.hypot(...v);
+  return [v[0] / l, v[1] / l, v[2] / l];
+};
 import { LightmapController, type LightmapScene, type LightmapWorkerLike } from '../src/view/lightmap-controller';
 import { collectTraceInput, type VolumePart } from '../src/view/light-volume-controller';
 import { Box3 } from 'three';
@@ -50,8 +56,8 @@ function inlineWorker(posted: unknown[], hold?: { release?: () => void }): Light
         const scene = new TraceScene({ positions: req.positions, albedo: req.albedo, twoSided: req.twoSided });
         const proxies: ProxyBox[] = [];
         for (let i = 0; i + 6 < req.proxies.length; i += 7) proxies.push({ lo: [req.proxies[i]!, req.proxies[i + 1]!, req.proxies[i + 2]!], hi: [req.proxies[i + 3]!, req.proxies[i + 4]!, req.proxies[i + 5]!], tri: req.proxies[i + 6]! });
-        const out = new LightmapBaker({ scene, proxies, meshes: req.meshes, layout, grid: req.grid, volume: req.volume, sun: req.sun, ambient: req.ambient, ground: req.ground, lamps: req.lamps, samples: req.samples }).run();
-        const reply: LightmapReply = { type: 'lightmap', id: req.id, ok: true, size: out.size, scale: out.scale, density: layout.density, charts: layout.charts, texels: out.texels, rays: out.rays, rgba: out.rgba, uv: layout.uv };
+        const out = new LightmapBaker({ scene, proxies, meshes: req.meshes, layout, grid: req.grid, field: req.field, stride: req.stride, codes: req.codes, sunKeys: req.sunKeys, ground: req.ground, lamps: req.lamps, samples: req.samples }).run();
+        const reply: LightmapReply = { type: 'lightmap', id: req.id, ok: true, size: out.size, layers: out.layers, scales: out.scales, density: layout.density, charts: layout.charts, texels: out.texels, rays: out.rays, rgba: out.rgba, uv: layout.uv };
         w.onmessage?.({ data: reply } as MessageEvent);
       };
       if (hold) hold.release = run;
@@ -69,6 +75,11 @@ function memoryCache(): LightmapCache & { store: Map<string, Uint8Array> } {
   return { store, get: async (k) => store.get(k) ?? null, put: async (k, b) => void store.set(k, b) };
 }
 
+/** A cache that notes every read. */
+function spy(cache: LightmapCache, counters: Counters): LightmapCache {
+  return { get: async (k) => (counters.lookups.push(`cache:${k}`), cache.get(k)), put: (k, b) => cache.put(k, b) };
+}
+
 const tick = (ms = 0): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 async function until(cond: () => boolean, ms = 8000): Promise<void> {
@@ -79,16 +90,23 @@ async function until(cond: () => boolean, ms = 8000): Promise<void> {
   }
 }
 
-function setup(over: { cache?: LightmapCache | null; auto?: boolean; posted?: unknown[]; worker?: boolean; hold?: { release?: () => void }; staticBytes?: Map<string, Uint8Array>; walls?: 'whole' | 'cut' } = {}) {
+type Counters = { lookups: string[] };
+
+function setup(over: { cache?: LightmapCache | null; autoLoad?: boolean; bakeAllowed?: boolean; posted?: unknown[]; worker?: boolean; hold?: { release?: () => void }; staticBytes?: Map<string, Uint8Array>; walls?: 'whole' | 'cut' } = {}) {
   const { meshes, parts } = room();
   const posted = over.posted ?? [];
   const light = new LightVolume();
   const scene = new TraceScene(collectTraceInput(parts, new Box3())!);
   const input = collectTraceInput(parts, new Box3())!;
   const grid = planVolumeGrid([-3.2, -0.2, -3.2], [3.2, 3.2, 3.2], 0.6)!;
-  const lighting = { sun: { direction: [0.6, 0.8, 0] as [number, number, number], irradiance: [3, 2.9, 2.7] as [number, number, number] }, ambient: { a: [0.5, 0.55, 0.6] as [number, number, number], b: [0.2, 0.25, 0.35] as [number, number, number] }, groundAlbedo: [0.2, 0.2, 0.2] as [number, number, number], lamps: [] };
-  const data = new LightVolumeBaker({ grid, scene: new TraceScene(input), sun: lighting.sun, ambient: lighting.ambient, ground: { y: -0.2, albedo: lighting.groundAlbedo }, lamps: [], rays: 16, passes: 2 }).run();
+  const live: RelightLighting = { sun: { direction: [0.6, 0.8, 0] as [number, number, number], irradiance: [3, 2.9, 2.7] as [number, number, number] }, ambient: { a: [0.5, 0.55, 0.6] as [number, number, number], b: [0.2, 0.25, 0.35] as [number, number, number] }, lampScale: 1 };
+  const lighting = { groundAlbedo: [0.2, 0.2, 0.2] as [number, number, number], lamps: [], live };
+  const keys: V3[] = [unit([0.6, 0.8, 0]), unit([-0.6, 0.8, 0]), [0, 1, 0]];
+  const baker = new LightVolumeBaker({ grid, scene: new TraceScene(input), sunKeys: keys, ground: { y: -0.2, albedo: lighting.groundAlbedo }, lamps: [], rays: 16, passes: 2 });
+  const data = baker.run();
+  const volLight = baker.light;
   void scene;
+  const counters: Counters = { lookups: [] };
   let changes = 0;
   let attached: unknown = 'none';
   const statuses: string[] = [];
@@ -100,60 +118,96 @@ function setup(over: { cache?: LightmapCache | null; auto?: boolean; posted?: un
   };
   const ctl = new LightmapController(light, {
     gather,
-    volume: () => ({ grid, data }),
+    volume: () => ({ grid, data, light: volLight, keys }),
     onChange: () => void changes++,
     attach: (s) => {
       attached = s;
     },
     onStatus: (s) => statuses.push(s.state),
-    autoBake: () => over.auto ?? false,
+    autoLoad: () => over.autoLoad ?? false,
+    ...(over.bakeAllowed === undefined ? {} : { bakeAllowed: over.bakeAllowed }),
     autoQuality: () => 'low',
     createWorker: over.worker === false ? null : () => inlineWorker(posted, over.hold),
-    cache: over.cache === undefined ? memoryCache() : over.cache,
+    cache: over.cache === undefined ? spy(memoryCache(), counters) : over.cache && spy(over.cache, counters),
     staticBase: over.staticBytes ? 'static/' : null,
     fetchBytes: async (url) => {
+      counters.lookups.push(url);
       if (url.endsWith('index.json')) return new TextEncoder().encode(JSON.stringify({ keys: [...(over.staticBytes?.keys() ?? [])] }));
       return over.staticBytes?.get(url.replace('static/', '').replace('.lmap', '')) ?? null;
     },
   });
-  return { ctl, light, meshes, posted, statuses, changes: () => changes, attached: () => attached };
+  return { ctl, light, meshes, posted, counters, statuses, changes: () => changes, attached: () => attached };
 }
 
 describe('lightmap controller', () => {
-  it('stays out of the way without a request when the host says a bake is not affordable', async () => {
-    const t = setup({ auto: false });
+  it('looks nothing up on its own unless the host loads stored light (autoLoad false: no cache read, no fetch, no bake)', async () => {
+    const t = setup({ autoLoad: false });
     t.ctl.setEnabled(true);
     t.ctl.volumeChanged();
     await tick(1500);
     expect(t.posted).toHaveLength(0);
+    expect(t.counters.lookups).toHaveLength(0);
+    expect(t.ctl.bakesStarted).toBe(0);
     expect(t.ctl.ready).toBe(false);
     expect(t.light.lightmapStrength).toBe(0);
     expect(t.ctl.status.state).toBe('idle');
     t.ctl.dispose();
   });
 
-  it('looks again when the host verdict changes (a world opened on the low tier, then switched to ultra)', async () => {
-    const verdict = { auto: false };
-    const t = setup({ auto: false });
-    // The verdict is read through the options object: swap it for one that follows `verdict`.
-    (t.ctl as unknown as { opts: { autoBake: () => boolean } }).opts.autoBake = () => verdict.auto;
+  it('with autoLoad it applies a stored lightmap and never bakes one nobody asked for', async () => {
+    const donor = setup();
+    donor.ctl.setEnabled(true);
+    donor.ctl.request('low', 8);
+    await until(() => donor.ctl.ready);
+    const key = donor.ctl.lastBake!.key;
+    const bytes = donor.ctl.asset!;
+    donor.ctl.dispose();
+
+    // Nothing stored: a viewer that loads stored light finds none and leaves the building to the light volume.
+    const empty = setup({ autoLoad: true, worker: true });
+    empty.ctl.setEnabled(true);
+    empty.ctl.volumeChanged();
+    await tick(1500);
+    expect(empty.ctl.status.state).toBe('idle');
+    expect(empty.posted).toHaveLength(0);
+    expect(empty.ctl.bakesStarted).toBe(0);
+    empty.ctl.dispose();
+
+    // The host's verdict changes (a world opened on the low tier, then switched to ultra): it looks again and finds the file.
+    const verdict = { load: false };
+    const t = setup({ cache: null, staticBytes: new Map([[key, bytes]]) });
+    (t.ctl as unknown as { opts: { autoLoad: () => boolean } }).opts.autoLoad = () => verdict.load;
     t.ctl.setEnabled(true);
     t.ctl.volumeChanged();
     await tick(1500);
     expect(t.ctl.status.state).toBe('idle');
-    expect(t.posted).toHaveLength(0);
-    // Before the fix nothing scheduled another look: the building stayed without baked light on ultra.
-    verdict.auto = true;
+    expect(t.counters.lookups).toHaveLength(0);
+    verdict.load = true;
     t.ctl.policyChanged();
     expect(t.ctl.deciding).toBe(true);
     await until(() => t.ctl.ready);
-    expect(t.posted).toHaveLength(1);
-    expect(t.ctl.status.state).toBe('applied');
-    expect(t.ctl.deciding).toBe(false);
-    // An applied lightmap is left alone by a later change of verdict.
+    expect(t.ctl.lastBake!.source).toBe('static');
+    expect(t.posted).toHaveLength(0);
+    expect(t.ctl.bakesStarted).toBe(0);
     t.ctl.policyChanged();
     expect(t.ctl.deciding).toBe(false);
     t.ctl.dispose();
+  });
+
+  it('a request bakes, unless baking is not allowed (then it only looks for stored light)', async () => {
+    const denied = setup({ bakeAllowed: false });
+    denied.ctl.setEnabled(true);
+    denied.ctl.request('low', 8);
+    await until(() => denied.ctl.status.message.includes('no baked light'));
+    expect(denied.posted).toHaveLength(0);
+    expect(denied.ctl.bakesStarted).toBe(0);
+    // The counters: it did look.
+    expect(denied.counters.lookups.length).toBeGreaterThan(0);
+    // The cook's own request forces a bake.
+    denied.ctl.request('low', 8, true);
+    await until(() => denied.ctl.ready);
+    expect(denied.ctl.bakesStarted).toBe(1);
+    denied.ctl.dispose();
   });
 
   it('bakes on request, gives the surfaces coordinates and the light its atlas, and puts everything back on invalidate', async () => {
@@ -191,16 +245,21 @@ describe('lightmap controller', () => {
     t.ctl.dispose();
   });
 
-  it('keeps the lightmap through a light-only change and replaces it when the new one is ready', async () => {
+  it('keeps the lightmap through a light-only change, and a change of the hour starts no bake', async () => {
     const t = setup();
     t.ctl.setEnabled(true);
     t.ctl.request('low', 8);
     await until(() => t.ctl.ready);
     const geoms = t.meshes.map((m) => m.geometry);
+    expect(t.ctl.bakesStarted).toBe(1);
     t.ctl.invalidate('light');
     expect(t.light.lightmapStrength).toBe(1);
     expect(t.ctl.ready).toBe(true);
     t.meshes.forEach((m, i) => expect(m.geometry).toBe(geoms[i]));
+    // The hour is not in the key: nothing bakes again for it.
+    await tick(1500);
+    expect(t.ctl.bakesStarted).toBe(1);
+    expect(t.ctl.ready).toBe(true);
     t.ctl.dispose();
   });
 
@@ -245,7 +304,7 @@ describe('lightmap controller', () => {
     expect(t.ctl.lastBake!.source).toBe('static');
     t.ctl.dispose();
     // The same bytes under another key (another building) are refused: the triangle counts do not match a smaller scene.
-    const wrong = setup({ cache: null, worker: false, staticBytes: new Map([['lm1-00000000000000000000000000000000', bytes]]) });
+    const wrong = setup({ cache: null, worker: false, staticBytes: new Map([['lm5-00000000000000000000000000000000', bytes]]) });
     wrong.ctl.setEnabled(true);
     wrong.ctl.request('low', 8);
     await until(() => wrong.ctl.status.state === 'failed');
@@ -273,6 +332,30 @@ describe('lightmap controller', () => {
     expect(t.meshes[2]!.geometry.getAttribute('aetherLM')).toBeUndefined();
     expect(t.meshes[3]!.geometry.getAttribute('aetherLM')).toBeDefined();
     t.ctl.dispose();
+  });
+
+  it('a stored bake with at least the rays asked for is taken, one with fewer is baked again', async () => {
+    const cache = memoryCache();
+    const first = setup({ cache });
+    first.ctl.setEnabled(true);
+    first.ctl.request('low', 16);
+    await until(() => first.ctl.ready);
+    cache.store.set(first.ctl.lastBake!.key, first.ctl.asset!);
+    first.ctl.dispose();
+    const enough = setup({ cache });
+    enough.ctl.setEnabled(true);
+    enough.ctl.request('low', 8);
+    await until(() => enough.ctl.ready);
+    expect(enough.ctl.lastBake!.source).toBe('cache');
+    expect(enough.ctl.bakesStarted).toBe(0);
+    enough.ctl.dispose();
+    const more = setup({ cache });
+    more.ctl.setEnabled(true);
+    more.ctl.request('low', 32);
+    await until(() => more.ctl.ready);
+    expect(more.ctl.lastBake!.source).toBe('bake');
+    expect(more.ctl.bakesStarted).toBe(1);
+    more.ctl.dispose();
   });
 
   it('cancels a bake in flight and reports it', async () => {

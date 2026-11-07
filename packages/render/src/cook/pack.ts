@@ -281,7 +281,7 @@ export function profileForStartMode(startMode: StartMode): CookProfile {
 }
 
 /** The manifest of a cook. */
-export async function cookManifest(rec: CookRecording, profile: CookProfile, geometry: Pick<PackedGeometry, 'partition' | 'cells' | 'packs' | 'entries'> & { fingerprints?: Record<string, string> }, programs: CookManifest['programs'], cookedAt: string = new Date().toISOString()): Promise<CookManifest> {
+export async function cookManifest(rec: CookRecording, profile: CookProfile, geometry: Pick<PackedGeometry, 'partition' | 'cells' | 'packs' | 'entries'> & { fingerprints?: Record<string, string> }, programs: CookManifest['programs'], cookedAt: string = new Date().toISOString(), lightmap: CookManifest['lightmap'] = null): Promise<CookManifest> {
   const id = await cookPackageId(rec.irHash, rec.genVersion);
   return {
     format: COOK_FORMAT,
@@ -300,6 +300,6 @@ export async function cookManifest(rec: CookRecording, profile: CookProfile, geo
     entries: geometry.entries,
     ...(geometry.fingerprints && Object.keys(geometry.fingerprints).length > 0 ? { fingerprints: geometry.fingerprints } : {}),
     programs,
-    lightmap: null,
+    lightmap,
   };
 }

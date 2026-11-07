@@ -91,7 +91,8 @@ import { ContactShadows, planContactShadows } from './view/contact-shadows';
 import { contentFraming, DEFAULT_FRAMING_AZIMUTH, framingPose, frontAzimuthDeg, pickClearView, viewCandidates, type Framing, type FramingPoseOptions } from './view/framing';
 import { isOpaqueVisible, sceneSightTest } from './view/sightline';
 import { ArchView, type ArchViewState } from './view/arch-view';
-import { daylightLampFactor, FORWARD_LIGHTS, LAMP_CUTOFF } from './sync/lights';
+import { daylightLampFactor, FORWARD_LIGHTS, LAMP_CUTOFF, lightIntensity } from './sync/lights';
+import type { RelightLighting } from './environment/relight';
 import { installFirstDrawPacer, type FirstDrawPacer } from './gpu/first-draw-pacer';
 import { collectFramingItems, FOCUS_TAG } from './view/content-items';
 import { drainSteps, nearestInView, nearZone, rankOpeningViews, rankOpeningViewsSteps, type OpeningPose, type OpeningStats } from './view/opening-view';
@@ -249,6 +250,11 @@ export interface RendererOptions {
    * the bake only). A bundled world ships the lightmap its own build produced.
    */
   lightmapBase?: string | null;
+  /**
+   * Who looks at the baked light (`environment/relight.ts`): `editor` (default) draws real-time light and bakes only when asked
+   * ({@link WorldRenderer.previewBakedLight}); `viewer` (the player) loads what the cooked package ships and never bakes a lightmap.
+   */
+  bakedLight?: 'editor' | 'viewer';
   /**
    * The world's cooked package (cook/cooked.ts `openCookedPackage`): its geometry is read instead of generated, its program
    * sets seed the boot pre-warm, and its bundled lightmap folder (if any) replaces `lightmapBase`. Absent: the live path.
@@ -704,6 +710,8 @@ const SHADER_WARMUP_MS = 15_000;
  * deferred work runs: the photographed sky of the new preset, the analytic sky's reflections, the bakes, the lamps.
  */
 export const LIVE_ENVIRONMENT_SETTLE_MS = 250;
+/** Most often (ms) a live drag re-weights the baked volume (a CPU combine and a 3D texture upload); the lightmap follows every frame. */
+export const RELIGHT_LIVE_MS = 100;
 /** The view must have been still this long before idle program priming links anything (ms). */
 const IDLE_PRIME_MS = 2_000;
 /** Period of the CPU-copy sweep between frames (ms, see gpu/cpu-release.ts). */
@@ -868,8 +876,6 @@ export class WorldRenderer {
   private readonly transition = new QualityTransition();
   /** How the ladder began (the reason of the automatic tier, see {@link autoTierReason}). */
   private ladderStart: 'gecko' | 'heavy' | null = null;
-  /** The last verdict on an automatic lightmap bake (a tier rising from low lets one start). */
-  private lightmapAuto = false;
   /** The plan changed again while a re-warm ran: warm once more when it ends. */
   private rewarmAgain = false;
   private readonly footRay = createRaycaster();
@@ -970,10 +976,17 @@ export class WorldRenderer {
    * it replaces for the surfaces it covers. Built after the volume, whose bake it needs.
    */
   private readonly lightmap: LightmapController;
-  /** What the world asked for (`environment.lightBake`): undefined is the automatic policy. */
+  /** What the world asks of its baked light (`environment.lightBake`: the publish bake's quality, or off). */
   private lightBake: { quality: 'off' | LightmapQuality; samples?: number } | undefined;
-  /** The environment as the baked light sees it (everything but the exterior), to tell a change of light from a change of scenery. */
-  private lightEnvKey = '';
+  /** {@link WorldRendererOptions.bakedLight}. */
+  private bakedLightRole: 'editor' | 'viewer' = 'editor';
+  /** The editor shows a baked preview ({@link previewBakedLight}). */
+  private previewing = false;
+  /** When the volume was last re-weighted during a live drag (ms). */
+  private relightAt = -1e9;
+  private relightTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Mean radiance of the sky map's halves, by map and version (reading the map is a pass over its pixels). */
+  private skyHalvesMemo: { map: unknown; version: number; v: ReturnType<typeof skyHalves> } | null = null;
   /** Soft footprints under the furniture of buildings (see `view/contact-shadows.ts`). */
   private readonly contact = new ContactShadows();
   /** Scene syncs still generating geometry (the light volume waits for them). */
@@ -1186,10 +1199,14 @@ export class WorldRenderer {
       onChange: () => this.onLightmap(),
       attach: (source) => this.sync.setLightmapSource(source),
       onStatus: (st) => opts.onLightmapStatus?.(st),
-      autoBake: () => this.lightmapAutoBake(),
+      autoLoad: () => this.bakedLightRole === 'viewer' && this.lightBake?.quality !== 'off',
+      bakeAllowed: opts.bakedLight !== 'viewer',
       autoQuality: () => this.lightmapAutoQuality(),
       staticBase: opts.cooked?.lightmapBase ?? opts.lightmapBase ?? null,
     });
+    this.bakedLightRole = opts.bakedLight ?? 'editor';
+    // The cooked package's volume sits beside its lightmap.
+    this.lightVolume.setStaticBase(opts.cooked?.lightmapBase ?? null);
     this.watchdogOn = opts.watchdog !== false;
     // `globalThis.__aetherWatchdog` (tests): shorter waits than a person would sit through.
     this.watchdog = new BlackScreenWatchdog(opts.watchdog === false ? {} : (opts.watchdog ?? (globalThis as { __aetherWatchdog?: Partial<WatchdogOptions> }).__aetherWatchdog));
@@ -1866,21 +1883,48 @@ export class WorldRenderer {
     this.needsDraw = true;
   }
 
-  /** What `environment.lightBake` asks for, applied when it changes. */
-  private applyLightBake(want: Environment['lightBake']): void {
+  /**
+   * What `environment.lightBake` asks for, applied when it changes: the quality of the publish bake (the cook bakes it, a viewer
+   * loads it) or `off` (no baked light). The editor keeps drawing real-time light; a change it makes while a preview is shown
+   * bakes the preview again at the new quality, and `asked` (an edit of this world, not its opening) starts a preview.
+   */
+  private applyLightBake(want: Environment['lightBake'], asked = false): void {
     const key = want ? JSON.stringify(want) : '';
     if (key === (this.lightBake ? JSON.stringify(this.lightBake) : '')) return;
     this.lightBake = want;
-    if (!want) this.lightmap.reset();
-    else if (want.quality === 'off') this.lightmap.clear();
-    else this.lightmap.request(want.quality, want.samples);
+    if (want?.quality === 'off') {
+      this.previewing = false;
+      this.lightmap.clear();
+      return;
+    }
+    if (this.bakedLightRole === 'viewer') {
+      this.lightmap.reset();
+      return;
+    }
+    if (this.previewing || (asked && want)) this.previewBakedLight(true);
   }
 
-  /** Whether a bake nobody asked for may start: a tier that draws the baked light, a machine with cores to spare. */
-  private lightmapAutoBake(): boolean {
-    if (this.lowMemory || this.lightBake?.quality === 'off') return false;
-    if (this.gpu.tier === 'software' || weakHardware(this.hardware)) return false;
-    return this.qualityPlan.tier !== 'low';
+  /**
+   * The editor's "Preview baked light": bake the buildings' re-lightable light in the background (a worker, through the page's
+   * worker scheduler) and show it, or go back to real-time light. The bake is the publish bake's (the world's quality, else
+   * medium); a stored one (the cache) shows at once. A time-of-day drag never bakes again: the parts are re-weighted.
+   */
+  previewBakedLight(on: boolean): void {
+    if (this.bakedLightRole === 'viewer') return;
+    this.previewing = on;
+    if (!on) {
+      this.lightmap.clear();
+      this.lightmap.reset();
+      return;
+    }
+    const want = this.lightBake;
+    if (want && want.quality !== 'off') this.lightmap.request(want.quality, want.samples);
+    else this.lightmap.request('medium');
+  }
+
+  /** The editor shows a baked preview. */
+  get previewingBakedLight(): boolean {
+    return this.previewing;
   }
 
   private lightmapAutoQuality(): LightmapQuality {
@@ -1909,9 +1953,28 @@ export class WorldRenderer {
     return { meshes, walls, parts: g.parts, lighting: g.lighting, groundY: g.groundY };
   }
 
-  /** Bake the buildings' light now at this quality (the assistant's `bake_light`, the editor's button). */
-  bakeLight(quality: LightmapQuality, samples?: number): void {
-    this.lightmap.request(quality, samples);
+  /**
+   * Bake the buildings' light now at this quality (the cook, tests). A viewer bakes nothing (`force`: the cook's recording page,
+   * which is a viewer that publishes).
+   */
+  bakeLight(quality: LightmapQuality, samples?: number, force = false): void {
+    if (this.bakedLightRole === 'viewer' && !force) return;
+    this.lightmap.request(quality, samples, force);
+  }
+
+  /** The worker request of a lightmap bake at `quality`, its file key and triangle counts, without baking (scripts/blender-bake.ts). */
+  lightBakeJob(quality: LightmapQuality, samples?: number): ReturnType<LightmapController['bakeJob']> {
+    return this.lightmap.bakeJob(quality, samples);
+  }
+
+  /** Apply a `.lmap` file baked elsewhere (scripts/blender-bake.ts through the cook); true when it matches this building. */
+  applyLightmapFile(bytes: Uint8Array): Promise<boolean> {
+    return this.lightmap.applyFile(bytes);
+  }
+
+  /** The `.lvol` file of the light volume on screen and its key (the cook ships it beside the lightmap), or null. */
+  async lightVolumeAsset(): Promise<{ key: string; bytes: Uint8Array } | null> {
+    return this.lightVolume.asset();
   }
 
   /** Stop a running or waiting lightmap bake. */
@@ -2091,10 +2154,13 @@ export class WorldRenderer {
         if (e.template || e.visible === false) return;
         const l = node.light?.light;
         const kind = l as (Light & { isPointLight?: boolean; isSpotLight?: boolean; distance?: number }) | undefined;
-        if (l && kind && (l.visible || l.userData['cut'] === true) && l.intensity > 0 && (kind.isPointLight || kind.isSpotLight)) {
+        // Lamps at full strength: an architectural lamp's daylight dimming (and the look's lamp strength) weight the lamps' baked
+        // part live, so a lamp switched off by the hour is still in the bake.
+        const full = node.entity.light && e.arch?.role === 'light' ? lightIntensity(node.entity.light, 1) : (l?.intensity ?? 0);
+        if (l && kind && (l.visible || l.userData['cut'] === true) && full > 0 && (kind.isPointLight || kind.isSpotLight)) {
           l.getWorldPosition(_pos);
           // A spot (downlight) lights about half of what the same point light would, all of it below.
-          const k = (kind.isSpotLight ? SPOT_SHARE * l.intensity : l.intensity) * (this.docLook?.lampStrength ?? 1);
+          const k = kind.isSpotLight ? SPOT_SHARE * full : full;
           const range = kind.distance;
           const c = isConfinedLight(l) && !l.clip.isEmpty() ? l.clip : null;
           lamps.push({ position: [_pos.x, _pos.y, _pos.z], color: [l.color.r * k, l.color.g * k, l.color.b * k], range: range && range > 0 ? range : 20, ...(c ? { room: [c.min.x, c.min.y, c.min.z, c.max.x, c.max.y, c.max.z] as const } : {}) });
@@ -2119,15 +2185,34 @@ export class WorldRenderer {
     });
     this.placeContactShadows(parts);
     if (parts.length === 0) return null;
+    return {
+      parts,
+      groundY: Number.isFinite(groundY) ? groundY : 0,
+      lighting: { groundAlbedo: [0.2, 0.23, 0.16], lamps, live: this.liveLighting() },
+    };
+  }
+
+  /**
+   * The light the baked parts are weighted with now (`environment/relight.ts`): the sun (or moon) as the shadow map has it, the
+   * ambient of the sky hemisphere and the image light as a two-tone hemisphere, and the architectural lamps' daylight scale.
+   * Also refreshes the outdoor reference of the eye's adaptation.
+   */
+  private liveLighting(): RelightLighting {
     const sun = this.env.sun;
-    _dir.copy(sun.position).sub(sun.target.position);
+    // The sky state's direction, not the light's position: the shadow fit moves the light only at the next frame, and a drag
+    // re-weights the bake before that frame.
+    const ld = this.env.skyState.lightDirection;
+    _dir.set(ld[0], ld[1], ld[2]);
     const sunOn = sun.visible && sun.intensity > 0 && _dir.lengthSq() > 1e-8 && _dir.normalize().y > 0.02;
     const hemi = this.env.hemi;
     const hs = hemi.color;
     const hg = hemi.groundColor;
     const hi = this.env.bakeHemiIntensity;
     // The image light as a two-tone hemisphere: mean radiance of the sky map's upper and lower halves.
-    const sky = skyHalves(this.env.environmentMap);
+    const map = this.env.environmentMap as (Parameters<typeof skyHalves>[0] & { version?: number }) | null;
+    const memo = this.skyHalvesMemo;
+    const sky = memo && memo.map === map && memo.version === (map?.version ?? 0) ? memo.v : skyHalves(map);
+    this.skyHalvesMemo = { map, version: map?.version ?? 0, v: sky };
     const envI = this.env.skyState.envIntensity * Math.PI;
     const a: [number, number, number] = [0, 0, 0];
     const b: [number, number, number] = [0, 0, 0];
@@ -2141,16 +2226,43 @@ export class WorldRenderer {
     }
     const sunIrr: [number, number, number] = [sun.color.r * sun.intensity, sun.color.g * sun.intensity, sun.color.b * sun.intensity];
     this.volumeOutdoor = { ambient: 0.2126 * a[0] + 0.7152 * a[1] + 0.0722 * a[2], sun: sunOn ? 0.2126 * sunIrr[0] + 0.7152 * sunIrr[1] + 0.0722 * sunIrr[2] : 0 };
+    const scale = this.sync.lampScale;
     return {
-      parts,
-      groundY: Number.isFinite(groundY) ? groundY : 0,
-      lighting: {
-        sun: sunOn ? { direction: [_dir.x, _dir.y, _dir.z], irradiance: sunIrr } : null,
-        ambient: { a, b },
-        groundAlbedo: [0.2, 0.23, 0.16],
-        lamps,
-      },
+      sun: sunOn ? { direction: [_dir.x, _dir.y, _dir.z], irradiance: sunIrr } : null,
+      ambient: { a, b },
+      lampScale: (scale >= LAMP_CUTOFF ? scale : 0) * (this.docLook?.lampStrength ?? 1),
     };
+  }
+
+  /**
+   * The light changed: the baked parts are weighted again (uniforms for the lightmap, a CPU combine and a re-upload of the bounce
+   * for the volume). Nothing bakes. During a live drag the volume follows at most every {@link RELIGHT_LIVE_MS}.
+   */
+  private relightBaked(live = false): void {
+    if (this.disposed) return;
+    const l = this.liveLighting();
+    this.lightVolume.light.relight(l);
+    const t = now();
+    if (this.relightTimer !== null) clearTimeout(this.relightTimer);
+    this.relightTimer = null;
+    if (!live || t - this.relightAt >= RELIGHT_LIVE_MS) {
+      this.relightAt = t;
+      this.lightVolume.relight(l);
+      // The rooms' light changed as a rebake would have changed it: the eye measures the rooms again and re-adapts.
+      if (this.lightVolume.ready) {
+        this.roomLights = null;
+        this.roomScanAt = -1e9;
+        this.roomRetries = 0;
+        this.eyeClock = 1;
+      }
+    } else {
+      // The last value of a drag still reaches the volume.
+      this.relightTimer = setTimeout(() => {
+        this.relightTimer = null;
+        this.relightBaked();
+        this.needsDraw = true;
+      }, RELIGHT_LIVE_MS);
+    }
   }
 
   /** Wrap the scene content in a clipping group (section cuts). Loaded lazily: it lives in the node renderer module. */
@@ -2246,7 +2358,7 @@ export class WorldRenderer {
     if (this.disposed) return;
     const prev = this.sync.world;
     this.watchdog.begin(now(), this.framesDrawn);
-    if (!prev || (prev.environment !== world.environment && !deepEqual(prev.environment, world.environment))) this.applyEnvironment(world);
+    if (!prev || (prev.environment !== world.environment && !deepEqual(prev.environment, world.environment))) this.applyEnvironment(world, prev !== null);
     this.avatar.setLook(world.player.character);
     // A first world, or a big replacement: nothing is drawn until its models are in and its programs linked
     // (see warmShaders), so the page never freezes on one program at a time while the world appears.
@@ -2972,7 +3084,7 @@ export class WorldRenderer {
     return this.proof.active;
   }
 
-  private applyEnvironment(world: WorldDoc): void {
+  private applyEnvironment(world: WorldDoc, asked = false): void {
     const env = world.environment;
     this.endLiveEnvironment();
     this.shaftsUnavailable = false;
@@ -2984,16 +3096,11 @@ export class WorldRenderer {
     setFoliageTint(env.look?.foliageTint ?? null);
     // Applies to materials created afterwards (the entities of this world are built after its environment).
     this.materials.shaderBudget = env.look?.shaderBudget === 'hero' ? 'hero' : 'normal';
-    // The exterior (`surroundings`) is drawn beyond the plot and is not in the light the building bakes: changing only it keeps the baked light.
-    const lightKey = JSON.stringify({ ...env, surroundings: undefined, look: env.look ? { ...env.look, intent: undefined, shaderBudget: undefined } : undefined });
-    if (lightKey !== this.lightEnvKey) {
-      this.lightEnvKey = lightKey;
-      this.lightVolume.invalidate();
-      this.lightmap.invalidate('light');
-    }
-    this.applyLightBake(env.lightBake);
+    this.applyLightBake(env.lightBake, asked);
     this.syncInteriorLight();
     this.applyLampScale();
+    // The baked light is re-lightable: a new hour, sky or sun re-weights it, never bakes it again.
+    this.relightBaked();
     this.applyLook();
     this.fx.setLighting(this.env.sun, this.env.hemi);
     this.rig.floorY = env.ground && this.env.skyState.showGround ? MIN_ORBIT_HEIGHT : Number.NEGATIVE_INFINITY;
@@ -3484,11 +3591,7 @@ export class WorldRenderer {
     if (this.disposed) return;
     const live = opts.live === true;
     if (live) {
-      // The first value of a drag stops the bakes under way (they would bake an hour already left behind); the rest wait.
-      if (this.liveEnvTimer === null) {
-        this.lightVolume.invalidate();
-        this.lightmap.invalidate('light');
-      } else clearTimeout(this.liveEnvTimer);
+      if (this.liveEnvTimer !== null) clearTimeout(this.liveEnvTimer);
       this.liveEnv = env;
       // Bakes and background workers wait for the drag to settle (@aether/core worker-scheduler).
       workerScheduler().holdPause('time-of-day-drag', LIVE_ENVIRONMENT_SETTLE_MS, MOTION_PAUSED);
@@ -3500,16 +3603,17 @@ export class WorldRenderer {
       }, LIVE_ENVIRONMENT_SETTLE_MS);
       this.env.apply(env, this.scene, true);
       this.applyLampScale();
+      // The baked light follows the drag by re-weighting its parts: no bake, no program change.
+      this.relightBaked(true);
       this.applyLook();
       this.needsDraw = true;
       return;
     }
     this.endLiveEnvironment();
     this.env.apply(env, this.scene);
-    this.lightVolume.invalidate();
-    this.lightmap.invalidate('light');
     this.syncInteriorLight();
     this.applyLampScale();
+    this.relightBaked();
     this.applyLook();
     this.needsDraw = true;
   }
@@ -6177,13 +6281,6 @@ export class WorldRenderer {
     // A new plan rebuilds every lit program. Link them off the frame (the compile walk yields to the browser) while
     // the last picture stays up, instead of building them one draw at a time on the main thread (seconds of freeze).
     if (rebuilt && programsChanged) void this.rewarm();
-    // The automatic lightmap bake runs above the low tier only: rising from low it gets another look (before, a world opened
-    // on low kept "no baked light yet" after a switch to ultra, since nothing scheduled one).
-    const auto = this.lightmap ? this.lightmapAutoBake() : false;
-    if (auto !== this.lightmapAuto) {
-      this.lightmapAuto = auto;
-      if (auto) this.lightmap.policyChanged();
-    }
     if (plan.quality !== before) this.onQualityChange?.(plan.quality);
     return plan.quality;
   }

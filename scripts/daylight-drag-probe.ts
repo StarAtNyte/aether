@@ -8,6 +8,7 @@
  * - frame times (requestAnimationFrame intervals: p50, p95, max);
  * - main-thread tasks over 50 ms (long tasks: count, sum, longest) and long animation frames with their scripts;
  * - program links (`linkProgram`) and programs held by three;
+ * - bakes started (light volume and lightmap) from before the drags until the page has settled after them;
  * - undo entries the drag left in the history;
  * - how long the page takes to settle after the drag (the renderer's processing stage clear, no long task for 1 s).
  * `--shots` writes settled pictures of a fixed three-quarter view (interface hidden) at 06:30 (dawn), 12:00, 18:30 (sunset) and
@@ -419,6 +420,13 @@ async function setAb(page: Page): Promise<{ inSet: number; outOfSet: number; rat
   return res;
 }
 
+/** Bakes started so far: the light volume's and the lightmap's (the bake re-weights for a new hour; it never starts one). */
+const bakeCount = (page: Page): Promise<{ volume: number; lightmap: number }> =>
+  page.evaluate(() => {
+    const r = (window as unknown as { __aether: { simulation: { renderer: { lightmapBakesStarted: number; lightVolume: { bakesStarted?: number } } } } }).__aether.simulation.renderer;
+    return { volume: r.lightVolume.bakesStarted ?? -1, lightmap: r.lightmapBakesStarted };
+  });
+
 const undoCount = (page: Page): Promise<number> => page.evaluate(() => (window as unknown as { __aether: { history: { entries(): unknown[] } } }).__aether.history.entries().length);
 
 async function main(): Promise<void> {
@@ -479,6 +487,7 @@ async function main(): Promise<void> {
         // Track: arch 5..23 h, inspector 0..24 h. Slow: 10 h to 16 h (day). Fast: across every preset and back, twice.
         const toF = (h: number): number => (which === 'arch' ? (h - 5) / 18 : h / 24);
         const before = await undoCount(page);
+        const bakesBefore = await bakeCount(page);
         await begin(page);
         await page.waitForTimeout(3000);
         const idle = await end(page, `${which} idle`, 0, 3000);
@@ -503,9 +512,11 @@ async function main(): Promise<void> {
         log(`${which} fast drag settled ${fastSettle.ms} ms after release; frames over 50 ms: ${fastSettle.stalls.join(', ') || 'none'}`);
         const afterFast = await undoCount(page);
         const settledLinks = await page.evaluate(() => { const S = (globalThis as unknown as { __drag: { links: number; links0: number } }).__drag; return S.links - S.links0; });
+        const bakesAfter = await bakeCount(page);
+        log(`${which}: bakes from before the drags to settled: light volume ${bakesAfter.volume - bakesBefore.volume}, lightmap ${bakesAfter.lightmap - bakesBefore.lightmap}`);
         const lamps = await lampState(page);
         log(`${which}: links from the fast drag's start to settled ${settledLinks}; lamps ${JSON.stringify(lamps)}`);
-        results[which] = { idle, slow, slowSettle, fast, fastSettle, settledLinks, lamps, undo: { slow: afterSlow - before, fast: afterFast - afterSlow } };
+        results[which] = { idle, slow, slowSettle, fast, fastSettle, settledLinks, bakes: { volume: bakesAfter.volume - bakesBefore.volume, lightmap: bakesAfter.lightmap - bakesBefore.lightmap }, lamps, undo: { slow: afterSlow - before, fast: afterFast - afterSlow } };
         const sources = await page.evaluate(() => (globalThis as unknown as { __drag: { sources: string[] } }).__drag.sources.splice(0));
         mkdirSync(join(out, `${which}-links`), { recursive: true });
         sources.forEach((src, i) => writeFileSync(join(out, `${which}-links`, `${String(i).padStart(3, '0')}.glsl`), src));

@@ -19,7 +19,8 @@ import { AnalyticLightNode, type NodeBuilder } from 'three/webgpu';
 import { T, type Nd } from '../materials/tsl-lite';
 import { LIGHTMAP_ATTRIBUTE, LightVolume } from '../environment/light-volume-light';
 import { ATLAS_SUBVOLUMES, FREE_SLACK, FREE_STEPS } from '../environment/light-volume';
-import { VIS_BASE, VIS_SPAN } from '../environment/lightmap';
+import { LOG_STOPS, VIS_BASE, VIS_SPAN } from '../environment/lightmap';
+import { LAYER_CHROMA, LAYER_LAMP, LAYER_SKY0, LAYER_SKY1, LUM } from '../environment/relight';
 
 interface LightingContext {
   irradiance: Nd;
@@ -44,8 +45,19 @@ export class LightVolumeNode extends AnalyticLightNode<LightVolume> {
   private readonly vAlloc = new Vector3(2, 2, 2);
   /** spacing, fade, visibility floor, strength. */
   private readonly vParams = new Vector4(1, 1, 0.05, 0);
-  /** Lightmap: atlas scale, irradiance scale, strength. */
-  private readonly vMap = new Vector4(1, 1, 0, 0);
+  /** Lightmap: strength. */
+  private readonly vMap = new Vector4(0, 0, 0, 0);
+  /** Lightmap part weights (rgb: live weight × stored scale; w of the sun keys: their layer), copied from the light. */
+  private readonly vSky0 = new Vector4();
+  private readonly vSky1 = new Vector4();
+  private readonly vLamp = new Vector4();
+  private readonly vSun = new Vector4();
+  private readonly vKeyA = new Vector4();
+  private readonly vKeyB = new Vector4();
+  private readonly vSelA = new Vector4();
+  private readonly vSelB = new Vector4();
+  /** The lightmap texture node: a new allocation (another atlas size or part count) is swapped in without a new program. */
+  private lmTex: Nd | null = null;
 
   constructor(light: LightVolume | null = null) {
     super(light);
@@ -59,7 +71,17 @@ export class LightVolumeNode extends AnalyticLightNode<LightVolume> {
     this.vRes.copy(l.gridResolution);
     this.vAlloc.copy(l.allocResolution);
     this.vParams.set(l.spacing, Math.max(0.01, l.fade), Math.max(0.005, l.visFloor), l.visible ? l.strength * l.intensity : 0);
-    this.vMap.set(l.lightmapScale, l.lightmapIrradiance, l.visible ? l.lightmapStrength * l.intensity : 0, 0);
+    this.vMap.set(l.visible ? l.lightmapStrength * l.intensity : 0, 0, 0, 0);
+    this.vSky0.copy(l.lmSky0);
+    this.vSky1.copy(l.lmSky1);
+    this.vLamp.copy(l.lmLamp);
+    this.vSun.copy(l.lmSun);
+    this.vKeyA.copy(l.lmKeyA);
+    this.vKeyB.copy(l.lmKeyB);
+    this.vSelA.copy(l.lmSelA);
+    this.vSelB.copy(l.lmSelB);
+    const tex = this.lmTex as unknown as { value: unknown } | null;
+    if (tex && l.lightmap && tex.value !== l.lightmap) tex.value = l.lightmap;
     return undefined;
   }
 
@@ -67,22 +89,59 @@ export class LightVolumeNode extends AnalyticLightNode<LightVolume> {
     const light = this.light;
     if (!light) return undefined;
     const ctx = builder.context as unknown as LightingContext;
-    // A mesh with baked lightmap coordinates reads its texel instead of the probes: one filtered read of a 2D atlas
-    // (two for the rest of the lighting) against twelve reads of the 3D volume, and the baked surface detail
-    // (corners, the floor under furniture) the probes cannot hold. Meshes without coordinates keep the volume.
+    // A mesh with baked lightmap coordinates reads its texels instead of the probes: the baked surface detail (corners, the floor
+    // under furniture) the probes cannot hold. The lightmap is re-lightable (`relight.ts`): its layers are weighted by uniforms,
+    // so a change of the hour, the sky or the lamps changes numbers, never the program. Four to five filtered reads of one array
+    // texture (the sky's two parts; by day the sun keys' chroma and the one or two keys around the sun; at night the lamps and
+    // the moon's key), against twelve reads of the 3D volume. Meshes without coordinates keep the volume.
     if (light.lightmap && (builder as unknown as { hasGeometryAttribute(name: string): boolean }).hasGeometryAttribute(LIGHTMAP_ATTRIBUTE)) {
       const uMap = T.uniform(this.vMap);
       const uParamsLm = T.uniform(this.vParams);
-      const s = T.texture(light.lightmap).sample(T.attribute(LIGHTMAP_ATTRIBUTE, 'vec2').mul(uMap.x));
+      const uSky0 = T.uniform(this.vSky0);
+      const uSky1 = T.uniform(this.vSky1);
+      const uLamp = T.uniform(this.vLamp);
+      const uSun = T.uniform(this.vSun);
+      const uKeyA = T.uniform(this.vKeyA);
+      const uKeyB = T.uniform(this.vKeyB);
+      const uSelA = T.uniform(this.vSelA);
+      const uSelB = T.uniform(this.vSelB);
+      const uv = T.attribute(LIGHTMAP_ATTRIBUTE, 'vec2').toVar();
+      // One texture node for every material this light serves (the reads derive from it), so a new allocation reaches them all.
+      const tex = (this.lmTex ??= T.texture(light.lightmap));
+      // Explicit level: the atlas has no mips, and the reads of the lamp and sun layers sit in (uniform) branches.
+      const layer = (k: Nd | number): Nd => tex.sample(uv).depth(T.int(k)).level(0);
+      const s0 = layer(LAYER_SKY0);
       // Alpha is the stored visibility, offset so that "no data" (0) survives a lossy image (see `encodeVis`).
-      const has = T.step(VIS_BASE / 2 / 255, s.a);
-      const wm = has.mul(uMap.z);
-      const vis = T.mix(T.float(1), T.clamp(s.a.sub(VIS_BASE / 255).mul(255 / VIS_SPAN), 0, 1), wm);
+      const has = T.step(VIS_BASE / 2 / 255, s0.a);
+      const wm = has.mul(uMap.x);
+      const vis = T.mix(T.float(1), T.clamp(s0.a.sub(VIS_BASE / 255).mul(255 / VIS_SPAN), 0, 1), wm);
       const visC = T.max(vis, uParamsLm.z);
-      const bounce = s.rgb.mul(s.rgb).mul(uMap.y).mul(wm);
+      // Sky: the constant part (sqrt-coded) and the signed gradient part (128 is zero, see `encodePart`).
+      const g = layer(LAYER_SKY1).rgb.mul(255 / 127).sub(128 / 127);
+      // Unsigned parts are logarithmic over LOG_STOPS stops of their scale, 0 for none (`encodePart`).
+      const dec = (c: Nd): Nd => T.exp2(c.sub(1).mul(LOG_STOPS)).mul(T.step(0.5 / 255, c));
+      const bounce = dec(s0.rgb).mul(uSky0.xyz).add(g.mul(T.abs(g)).mul(uSky1.xyz)).toVar();
+      T.If(T.dot(uLamp.xyz, T.vec3(1)).greaterThan(0), () => {
+        const c = layer(LAYER_LAMP).rgb;
+        bounce.addAssign(dec(c).mul(uLamp.xyz));
+      });
+      // Sun: the two keys around it (their luminance, sqrt-coded, one channel of a layer each) coloured by the keys' shared
+      // chroma and the sun's own irradiance.
+      T.If(T.dot(uSun.xyz, T.vec3(1)).greaterThan(0), () => {
+        const ch = layer(LAYER_CHROMA).rgb;
+        const chN = ch.div(T.max(T.dot(ch, T.vec3(LUM[0], LUM[1], LUM[2])), 1e-3));
+        const a = T.dot(layer(uKeyA.w).rgb, uSelA.xyz);
+        const lum = dec(a).mul(uKeyA.x).toVar();
+        T.If(uKeyB.x.greaterThan(0), () => {
+          const b = T.dot(layer(uKeyB.w).rgb, uSelB.xyz);
+          lum.addAssign(dec(b).mul(uKeyB.x));
+        });
+        bounce.addAssign(chN.mul(lum).mul(uSun.xyz));
+      });
+      const b = T.max(bounce, 0).mul(wm);
       ctx.ambientOcclusion.mulAssign(visC);
-      ctx.irradiance.addAssign(bounce.div(visC));
-      ctx.radiance.addAssign(bounce.div(visC).mul(1 / Math.PI));
+      ctx.irradiance.addAssign(b.div(visC));
+      ctx.radiance.addAssign(b.div(visC).mul(1 / Math.PI));
       return undefined;
     }
     const uMin = T.uniform(this.vMin);

@@ -10,9 +10,11 @@
  */
 import { WorkerSlot } from '@aether/core';
 import { Box3, Color, Matrix4, Vector3, type BufferGeometry, type Material, type Mesh, type Object3D } from 'three';
-import { FLOATS_PER_PROBE, LightVolumeBaker, MAX_TRACE_TRIANGLES, planVolumeGrid, sampleVolume, TraceScene, type TraceInput, type VolumeBakeInput, type VolumeGrid, type VolumeLamp, type V3 } from '../environment/light-volume';
-import { CACHE_MIN_BAKE_MS, createIdbVolumeCache, volumeKey, type VolumeCache } from '../environment/light-volume-cache';
+import { combineVolume, FLOATS_PER_PROBE, LightVolumeBaker, MAX_TRACE_TRIANGLES, planVolumeGrid, sampleVolume, TraceScene, type TraceInput, type VolumeGrid, type VolumeLamp, type V3 } from '../environment/light-volume';
+import { CACHE_MIN_BAKE_MS, createIdbVolumeCache, volumeFileKey, volumeKey, type VolumeCache } from '../environment/light-volume-cache';
+import { packVolumeAsset, unpackVolumeAsset, VOLUME_MAX_ASSET_BYTES } from '../environment/light-volume-asset';
 import { LightVolume } from '../environment/light-volume-light';
+import { partCount, relightCoefficients, sunKeyDirections, volumeLightFloats, type RelightLighting } from '../environment/relight';
 import { parseVolumeReply, type VolumeRequest } from '../environment/light-volume-protocol';
 import { log } from '../log';
 
@@ -60,12 +62,13 @@ export interface VolumePart {
   movable?: boolean;
 }
 
-/** Light and ground the bake uses, read from the environment rig. */
+/** The lamps and ground the bake uses, and the live light its parts are weighted with (`relight.ts`). */
 export interface VolumeLighting {
-  sun: VolumeBakeInput['sun'];
-  ambient: VolumeBakeInput['ambient'];
-  groundAlbedo: V3;
+  /** The lamps at full strength (their part is scaled by `live.lampScale`). */
   lamps: readonly VolumeLamp[];
+  groundAlbedo: V3;
+  /** The light now: the sun, the sky's ambient, the lamps' scale. */
+  live: RelightLighting;
 }
 
 const _m = new Matrix4();
@@ -274,6 +277,12 @@ export interface LightVolumeOptions {
   cache?: VolumeCache | null;
   /** Bakes quicker than this (ms) are not stored. Default {@link CACHE_MIN_BAKE_MS}. */
   cacheMinMs?: number;
+  /**
+   * Folder of bundled volume files (`<base><key>.lvol`, listed in `<base>index.json` as `{ "volumes": [...] }`: a cooked
+   * package's baked light), looked up before the cache and the bake. Null: none.
+   */
+  staticBase?: string | null;
+  fetchBytes?: (url: string, json?: boolean) => Promise<Uint8Array | null>;
 }
 
 /** Bake state and the light that shows it (see the module comment). */
@@ -288,8 +297,25 @@ export class LightVolumeController {
   /** Cache key of the bake in flight (stored when it finishes slowly enough to be worth it). */
   private bakeKey: string | null = null;
   private bakingGrid: VolumeGrid | null = null;
+  /** Sun keys of the bake in flight. */
+  private bakingKeys: V3[] = [];
   private grid: VolumeGrid | null = null;
+  /** The volume for the live light (what the GPU holds): {@link base} with the parts combined into its light floats. */
   private data: Float32Array | null = null;
+  /** The bake: visibility and free distances (light floats zero), the parts, and the sun keys they were baked for. */
+  private base: Float32Array | null = null;
+  private parts: Float32Array | null = null;
+  private keys: V3[] = [];
+  /** The live light (`relight`) and its weights per part. */
+  private live: RelightLighting | null = null;
+  private coeffs: Float32Array = new Float32Array(0);
+  /** Volumes handed to the worker or baked here since the controller was made (a bundled or cached one never counts). */
+  bakesStarted = 0;
+  /** Where the volume on screen came from. */
+  source: 'bake' | 'cache' | 'static' | null = null;
+  private staticIndex: Promise<Set<string>> | null = null;
+  private staticBase: string | null;
+  private readonly fetchBytes: (url: string, json?: boolean) => Promise<Uint8Array | null>;
   private pending = false;
   private enabled = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -311,12 +337,9 @@ export class LightVolumeController {
   private readonly onUpload: () => void;
   private nextId = 1;
   private disposed = false;
-  /** Lamps of the volume on screen (the eye's exposure counts their direct light). */
+  /** Lamps of the volume on screen at full strength (the eye's exposure counts their direct light, at the live scale). */
   private lamps: VolumeLamp[] = [];
   private pendingLamps: VolumeLamp[] = [];
-  /** Linear sky ambient (red, blue) of a surface facing up, of the volume on screen and of the one baking. */
-  private ambientRB: [number, number] = [1, 1];
-  private pendingAmbientRB: [number, number] = [1, 1];
   /** The last finished bake: probes, triangles, work time on the main thread (ms) and wall time (ms). */
   lastBake: { probes: number; triangles: number; workMs: number; wallMs: number; spacing: number; worker: boolean; cached?: boolean } | null = null;
 
@@ -329,6 +352,36 @@ export class LightVolumeController {
     this.onUpload = opts.onUpload ?? (() => undefined);
     this.cache = opts.cache === undefined ? createIdbVolumeCache() : opts.cache;
     this.cacheMinMs = opts.cacheMinMs ?? CACHE_MIN_BAKE_MS;
+    this.staticBase = opts.staticBase ?? null;
+    this.fetchBytes = opts.fetchBytes ?? defaultFetch;
+  }
+
+  /** Where bundled volume files are served (a cooked package's baked light), or null; the next bake looks there first. */
+  setStaticBase(base: string | null): void {
+    if (base === this.staticBase) return;
+    this.staticBase = base;
+    this.staticIndex = null;
+  }
+
+  /** The volume on screen as a `.lvol` file and its key (`light-volume-asset.ts`), or null. */
+  async asset(): Promise<{ key: string; bytes: Uint8Array } | null> {
+    const key = this.key;
+    const g = this.grid;
+    if (!key || !g || !this.base || !this.parts) return null;
+    return { key, bytes: await packVolumeAsset({ key, grid: g, keys: this.keys, data: this.base, light: this.parts }) };
+  }
+
+  /**
+   * The light changed (the hour, the sun, the sky, the lamps' daylight scale): the parts are weighted again and the bounce
+   * sub-volumes re-uploaded. Never a bake; a few milliseconds.
+   */
+  relight(l: RelightLighting): void {
+    this.live = l;
+    const g = this.grid, base = this.base, parts = this.parts, data = this.data;
+    if (!g || !base || !parts || !data || this.disposed) return;
+    this.coeffs = relightCoefficients(this.keys, l, this.coeffs);
+    combineVolume(g.nx * g.ny * g.nz, base, parts, partCount(this.keys.length), this.coeffs, data);
+    this.light.setBakeLight(g, data);
   }
 
   /** Turn the volume on (a world with buildings) or off. Off drops the bake. */
@@ -341,6 +394,8 @@ export class LightVolumeController {
       this.pending = false;
       this.grid = null;
       this.data = null;
+      this.base = null;
+      this.parts = null;
       this.light.clearBake();
       this.shellBounds.makeEmpty();
     } else {
@@ -390,7 +445,7 @@ export class LightVolumeController {
       return;
     }
     this.baker = null;
-    this.accept(this.bakingGrid, b.data, false);
+    this.accept(this.bakingGrid, b.data, b.light, this.bakingKeys, 'bake', false);
   }
 
   private cancel(): void {
@@ -413,9 +468,9 @@ export class LightVolumeController {
     return this.enabled && (this.pending || this.baker !== null || this.job !== null);
   }
 
-  /** The finished volume on screen (the lightmap bake reads it for the bounces it does not trace), or null. */
-  get bakedVolume(): { grid: VolumeGrid; data: Float32Array } | null {
-    return this.enabled && this.grid && this.data ? { grid: this.grid, data: this.data } : null;
+  /** The finished volume on screen, its parts and sun keys (the lightmap bake reads them for the bounces it does not trace), or null. */
+  get bakedVolume(): { grid: VolumeGrid; data: Float32Array; light: Float32Array; keys: readonly V3[] } | null {
+    return this.enabled && this.grid && this.base && this.parts ? { grid: this.grid, data: this.base, light: this.parts, keys: this.keys } : null;
   }
 
   /** A finished bake is on screen. */
@@ -449,23 +504,34 @@ export class LightVolumeController {
       this.baker = null;
       if (this.timer !== null) clearTimeout(this.timer);
       this.timer = null;
-      this.accept(this.bakingGrid, b.data, false);
+      this.accept(this.bakingGrid, b.data, b.light, this.bakingKeys, 'bake', false);
     }
     return this.ready;
   }
 
-  private accept(grid: VolumeGrid, data: Float32Array, worker: boolean, cached = false): void {
+  private accept(grid: VolumeGrid, data: Float32Array, light: Float32Array, keys: readonly V3[], source: 'bake' | 'cache' | 'static', worker: boolean): void {
     const wallMs = Math.round(performance.now() - this.bakeStarted);
-    this.lastBake = { probes: this.probes, triangles: this.triangles, workMs: Math.round(this.bakeWork), wallMs, spacing: grid.spacing, worker, ...(cached ? { cached: true } : {}) };
-    if (this.cache && this.bakeKey && !cached && wallMs >= this.cacheMinMs) void this.cache.put(this.bakeKey, data);
+    this.lastBake = { probes: this.probes, triangles: this.triangles, workMs: Math.round(this.bakeWork), wallMs, spacing: grid.spacing, worker, ...(source !== 'bake' ? { cached: true } : {}) };
+    if (this.cache && this.bakeKey && source === 'bake' && wallMs >= this.cacheMinMs) {
+      const both = new Float32Array(data.length + light.length);
+      both.set(data);
+      both.set(light, data.length);
+      void this.cache.put(this.bakeKey, both);
+    }
+    this.shownKey = this.bakeKey;
     this.bakeKey = null;
     this.grid = grid;
-    this.data = data;
+    this.base = data;
+    this.parts = light;
+    this.keys = keys.slice();
+    this.source = source;
+    this.data = new Float32Array(data.length);
+    this.coeffs = relightCoefficients(this.keys, this.live ?? NO_LIGHT, this.coeffs);
+    combineVolume(grid.nx * grid.ny * grid.nz, data, light, partCount(this.keys.length), this.coeffs, this.data);
     this.bakingGrid = null;
     this.shellBounds.copy(this.pendingBounds);
     this.lamps = this.pendingLamps;
-    this.ambientRB = this.pendingAmbientRB;
-    this.light.setBake(grid, data);
+    this.light.setBake(grid, this.data);
     this.onUpload();
   }
 
@@ -473,6 +539,7 @@ export class LightVolumeController {
     const t0 = performance.now();
     const g = this.gather();
     if (!g) return;
+    this.live = g.lighting.live;
     const input = collectTraceInput(g.parts, this.bounds);
     if (!input || this.bounds.isEmpty()) return;
     const min = this.bounds.min;
@@ -484,34 +551,76 @@ export class LightVolumeController {
     this.bakeStarted = t0;
     this.triangles = input.albedo.length / 3;
     this.probes = grid.nx * grid.ny * grid.nz;
+    const keys = sunKeyDirections();
+    this.bakingKeys = keys;
     const lamps = g.lighting.lamps.slice(0, MAX_LAMPS).map((l) => ({ position: [...l.position] as [number, number, number], color: [...l.color] as [number, number, number], range: l.range }));
     const ground = { y: g.groundY, albedo: g.lighting.groundAlbedo };
-    const amb = g.lighting.ambient;
-    this.pendingAmbientRB = [Math.max(0, amb.a[0] + amb.b[0] * 0.5), Math.max(0, amb.a[2] + amb.b[2] * 0.5)];
     this.pendingLamps = g.lighting.lamps.slice(0, MAX_LAMPS).map((l) => ({ position: [...l.position] as [number, number, number], color: [...l.color] as [number, number, number], range: l.range, ...(l.room ? { room: [...l.room] as [number, number, number, number, number, number] } : {}) }));
     this.bakeWork = performance.now() - t0;
-    if (this.cache && !inline) {
-      // A bake of exactly this building and light was done before (an earlier visit): take it, bake only on a miss.
-      this.bakeKey = volumeKey(grid, input, [g.lighting.sun, g.lighting.ambient, ground, lamps]);
+    // The key holds the geometry and what the bake reads, not the light it is shown in: the hour never changes it.
+    this.bakeKey = volumeFileKey(grid, input, [ground, lamps, keys]);
+    if ((this.cache || this.staticBase) && !inline) {
+      // The same building was baked before (a cooked package, an earlier visit): take it, bake only on a miss.
       const id = this.nextId++;
       const grid0 = grid;
+      const key = this.bakeKey;
       this.job = { id, grid, lookup: true };
-      void this.cache.get(this.bakeKey, this.probes * FLOATS_PER_PROBE).then((hit) => {
+      void this.lookup(key, grid0, keys).then((hit) => {
         if (this.disposed || !this.enabled || this.job?.id !== id) return;
         this.job = null;
-        if (hit && hit.length === this.probes * FLOATS_PER_PROBE) {
-          this.accept(grid0, hit, false, true);
+        if (hit) {
+          this.accept(grid0, hit.data, hit.light, keys, hit.source, false);
           return;
         }
-        this.dispatch(input, grid0, g.lighting, ground, lamps);
+        this.dispatch(input, grid0, keys, ground, lamps);
       });
       return;
     }
-    this.dispatch(input, grid, g.lighting, ground, lamps, inline);
+    this.dispatch(input, grid, keys, ground, lamps, inline);
+  }
+
+  /** The key of the volume on screen (a cooked package names its file after it), or null. */
+  get key(): string | null {
+    return this.data ? this.shownKey : null;
+  }
+  private shownKey: string | null = null;
+
+  /** A stored volume for `key`: the bundled file first, then the cache. */
+  private async lookup(key: string, grid: VolumeGrid, keys: readonly V3[]): Promise<{ data: Float32Array; light: Float32Array; source: 'static' | 'cache' } | null> {
+    const probes = grid.nx * grid.ny * grid.nz;
+    const PF = volumeLightFloats(keys.length);
+    if (this.staticBase) {
+      const have = await this.staticKeys();
+      if (have.has(key)) {
+        const bytes = await this.fetchBytes(`${this.staticBase}${key}.lvol`);
+        const a = bytes ? await unpackVolumeAsset(bytes) : null;
+        if (a && a.key === key && a.grid.nx === grid.nx && a.grid.ny === grid.ny && a.grid.nz === grid.nz && a.keys.length === keys.length) return { data: a.data, light: a.light, source: 'static' };
+        if (a) log.warn(`bundled light volume ${key} does not fit this building`);
+      }
+    }
+    if (this.cache) {
+      const hit = await this.cache.get(key, probes * (FLOATS_PER_PROBE + PF));
+      if (hit && hit.length === probes * (FLOATS_PER_PROBE + PF)) return { data: hit.slice(0, probes * FLOATS_PER_PROBE), light: hit.slice(probes * FLOATS_PER_PROBE), source: 'cache' };
+    }
+    return null;
+  }
+
+  /** The volume keys of the bundled folder (empty without an index). Fetched once. */
+  private staticKeys(): Promise<Set<string>> {
+    this.staticIndex ??= (async () => {
+      const bytes = await this.fetchBytes(`${this.staticBase}index.json`, true);
+      try {
+        const raw = bytes ? (JSON.parse(new TextDecoder().decode(bytes)) as { volumes?: unknown }) : null;
+        return new Set(Array.isArray(raw?.volumes) ? raw.volumes.filter((k): k is string => typeof k === 'string' && VOLUME_FILE_KEY.test(k)) : []);
+      } catch {
+        return new Set<string>();
+      }
+    })();
+    return this.staticIndex;
   }
 
   /** Bake `input` in the worker, or on this thread in slices when there is none (or `inline`). */
-  private dispatch(input: Required<TraceInput>, grid: VolumeGrid, lighting: VolumeLighting, ground: { y: number; albedo: V3 }, lamps: VolumeLamp[], inline = false): void {
+  private dispatch(input: Required<TraceInput>, grid: VolumeGrid, keys: V3[], ground: { y: number; albedo: V3 }, lamps: VolumeLamp[], inline = false): void {
     const w = inline ? null : this.ensureWorker();
     if (w && this.slot && !this.slot.held) {
       // The bake waits for a slot of the page's worker budget (more urgent work goes first); still "baking" meanwhile.
@@ -523,14 +632,16 @@ export class LightVolumeController {
           return;
         }
         this.job = null;
-        this.dispatch(input, grid, lighting, ground, lamps);
+        this.dispatch(input, grid, keys, ground, lamps);
       };
       if (!this.slot.claim(go)) return;
       this.job = null;
     }
+    this.bakingKeys = keys;
+    this.bakesStarted++;
     if (w) {
       const id = this.nextId++;
-      const req: VolumeRequest = { type: 'bake', id, grid, positions: input.positions, albedo: input.albedo, twoSided: input.twoSided, sun: lighting.sun, ambient: lighting.ambient, ground, lamps };
+      const req: VolumeRequest = { type: 'bake', id, grid, positions: input.positions, albedo: input.albedo, twoSided: input.twoSided, sunKeys: keys, ground, lamps };
       try {
         w.postMessage(req, [input.positions.buffer, input.albedo.buffer, input.twoSided.buffer]);
         this.job = { id, grid };
@@ -544,7 +655,7 @@ export class LightVolumeController {
       }
     }
     const scene = new TraceScene(input);
-    this.baker = new LightVolumeBaker({ grid, scene, sun: lighting.sun, ambient: lighting.ambient, ground, lamps });
+    this.baker = new LightVolumeBaker({ grid, scene, sunKeys: keys, ground, lamps });
     if (!inline) this.schedule(0);
   }
 
@@ -585,7 +696,7 @@ export class LightVolumeController {
     if (!job || this.disposed) return;
     // A late answer to a cancelled job is not this job's.
     if ((raw as { id?: unknown } | null)?.id !== job.id) return;
-    const reply = parseVolumeReply(raw, job.grid);
+    const reply = parseVolumeReply(raw, job.grid, this.bakingKeys.length);
     this.job = null;
     this.slot?.release();
     if (!reply) {
@@ -597,7 +708,7 @@ export class LightVolumeController {
       return;
     }
     if (!this.enabled) return;
-    this.accept(job.grid, reply.data, true);
+    this.accept(job.grid, reply.data, reply.light, this.bakingKeys, 'bake', true);
   }
 
   /**
@@ -618,12 +729,16 @@ export class LightVolumeController {
     let bounce = 0;
     let red = 0;
     let blue = 0;
+    const amb = this.live?.ambient;
+    const ambR = amb ? Math.max(0, amb.a[0] + amb.b[0] * 0.5) : 1;
+    const ambB = amb ? Math.max(0, amb.a[2] + amb.b[2] * 0.5) : 1;
+    const lampScale = this.live ? Math.max(0, this.live.lampScale) : 1;
     for (const n of SIX) {
       const s = sampleVolume(g, d, x, y, z, n, this.scratch);
       vis += s.vis;
       bounce += 0.2126 * s.bounce[0] + 0.7152 * s.bounce[1] + 0.0722 * s.bounce[2];
-      red += s.bounce[0] + s.vis * this.ambientRB[0];
-      blue += s.bounce[2] + s.vis * this.ambientRB[1];
+      red += s.bounce[0] + s.vis * ambR;
+      blue += s.bounce[2] + s.vis * ambB;
     }
     // Lamps within a few metres on this storey (no occlusion test: a coarse but cheap stand-in for the room's lamps).
     let lamps = 0;
@@ -642,7 +757,7 @@ export class LightVolumeController {
       // Mean over the six axis directions of the cosine term: (|lx| + |ly| + |lz|) / 6 of a unit light vector.
       const cos = (Math.abs(dx) + Math.abs(dy) + Math.abs(dz)) / (6 * d);
       const lum = 0.2126 * l.color[0] + 0.7152 * l.color[1] + 0.0722 * l.color[2];
-      lamps += (lum * f * f * cos) / Math.max(0.25, d2);
+      lamps += (lum * lampScale * f * f * cos) / Math.max(0.25, d2);
     }
     return { vis: vis / 6, bounce: bounce / 6, lamps, r: red / 6, b: blue / 6 };
   }
@@ -656,6 +771,26 @@ export class LightVolumeController {
     this.worker = null;
     this.data = null;
     this.light.dispose();
+  }
+}
+
+/** No light at all (a volume shown before the renderer said what the light is reads no bounce until it does). */
+const NO_LIGHT: RelightLighting = { sun: null, ambient: { a: [0, 0, 0], b: [0, 0, 0] }, lampScale: 0 };
+
+/** A bundled volume file's name (`light-volume-cache.ts` `volumeFileKey`). */
+const VOLUME_FILE_KEY = /^lv\d+-[0-9a-f]{32}$/;
+
+async function defaultFetch(url: string, json = false): Promise<Uint8Array | null> {
+  try {
+    const res = await fetch(url);
+    // A dev server answers a missing file with its index page: only a binary answer can be a volume, only JSON an index.
+    if (!res.ok) return null;
+    const type = res.headers.get('content-type') ?? '';
+    if (json ? !/json/i.test(type) : /html|json|text/i.test(type)) return null;
+    const buf = new Uint8Array(await res.arrayBuffer());
+    return buf.byteLength >= 16 && buf.byteLength <= VOLUME_MAX_ASSET_BYTES ? buf : null;
+  } catch {
+    return null;
   }
 }
 

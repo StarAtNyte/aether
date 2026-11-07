@@ -6,18 +6,28 @@
  * - every generated output, in the geometry cache's encoding, packed per grid cell nearest the opening first;
  * - the program set of each tier, as gpu/program-cache.ts records it (the exact vertex and fragment sources);
  * - the opening view and the start mode;
+ * - a building's baked light (re-lightable lightmap and light volume, `environment/relight.ts`), baked here at publish
+ *   quality so a viewer never bakes: `<id>/light/<key>.lmap`, `<key>.lvol` and their `index.json`, manifest `lightmap`;
  * - a manifest of cells, bounds, byte sizes and the files.
  *
- *   STATIC_DIR=<dist> GEN_GPU=intel npx tsx scripts/cook.ts [--out=cooked] [--tiers=low,medium,high,ultra] [--profile=game|walkthrough|showcase|vr] [--install=<dist>] <slug> [<slug> …]
+ *   STATIC_DIR=<dist> GEN_GPU=intel npx tsx scripts/cook.ts [--out=cooked] [--tiers=low,medium,high,ultra] [--profile=game|walkthrough|showcase|vr] [--install=<dist>] [--bake=high|medium|low|off] [--samples=256] [--blender=<path>|off] [--cpu-bake=<threads>|off] <slug> [<slug> …]
+ *
+ * `--bake` (default: the world's `environment.lightBake` quality, else high; `off` ships no baked light) and `--samples` (rays
+ * per texel, default 256) set the publish bake. Only worlds with buildings bake; the bake runs in the last recording session.
+ * The lightmap is baked outside the page when it can be (scripts/blender-bake.ts, the same file format): by Cycles on the GPU
+ * (`--blender=<path>`, default the local Blender when it exists, `--blender=off` skips it), else by the CPU baker on several
+ * threads (`--cpu-bake=<threads>`, `--cpu-bake=off` skips it), else (both off or failed) in the page's lightmap worker.
  *
  * The package is keyed by the IR hash and the build's geometry code version (`__AETHER_GEN_VERSION__`): cook with the
  * dist that will serve it. `--install` copies the package into a dist's `cooked/` folder (open it there with `play.html#t=<slug>&cook=local`;
  * scripts/cook-upload.ts pushes it to the hosted dataset). Output goes to `cooked/` at
  * the repository root (git-ignored). Run it in a capped scope (docs/PERFORMANCE.md, Measuring).
  */
-import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { spawn } from 'node:child_process';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { brotliCompressSync, constants as zc, gzipSync } from 'node:zlib';
 import { chromium, type BrowserContext, type Page } from 'playwright';
 import type { WorldDoc } from '@aether/core';
@@ -27,10 +37,12 @@ import { geometryFingerprint } from '../packages/render/src/geometry/fingerprint
 import { DDC_CACHE_NAME } from '../packages/render/src/geometry/ddc';
 import { COOK_FORMAT, COOK_PROFILES, cookPackageId, programSetLines, type CookManifest, type CookProfile, type StartMode } from '../packages/render/src/cook/format';
 import { cookManifest, packGeometry, profileForStartMode, programSetBody } from '../packages/render/src/cook/pack';
+import { BAKED_LIGHT_VERSION } from '../packages/render/src/environment/relight';
 import type { RenderTier } from '../packages/render/src/gpu/finishing';
 import { sourceHash } from '../packages/render/src/gpu/program-cache';
 import { TEMPLATE_PUBLISH } from '../apps/studio/src/showcase/publish';
 import * as env from '../tests/e2e/support/env';
+import { DEFAULT_BLENDER } from './blender-bake';
 
 const args = process.argv.slice(2);
 const flag = (k: string): string | undefined => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3);
@@ -38,6 +50,13 @@ const OUT = resolve(flag('out') ?? join(env.REPO_ROOT, 'cooked'));
 const TIERS = (flag('tiers') ?? 'low,medium,high,ultra').split(',').filter((t): t is RenderTier => ['low', 'medium', 'high', 'ultra'].includes(t));
 const PROFILE = flag('profile') as CookProfile | undefined;
 const INSTALL = flag('install');
+const BAKE = flag('bake') as 'high' | 'medium' | 'low' | 'off' | undefined;
+if (BAKE && !['high', 'medium', 'low', 'off'].includes(BAKE)) throw new Error('--bake must be high, medium, low or off');
+const SAMPLES = Math.max(8, Math.min(1024, Number(flag('samples') ?? 256) || 256));
+/** Cycles for the publish bake (scripts/blender-bake.ts): `--blender=<path>`, else the default Blender when it exists; `off` skips it. */
+const BLENDER = flag('blender') === 'off' ? null : flag('blender') ?? (existsSync(DEFAULT_BLENDER) ? DEFAULT_BLENDER : null);
+/** Threads of the CPU bake outside the page (`--cpu-bake=<threads>`, default scripts/blender-bake.ts `defaultThreads`; `off` skips it). */
+const CPU_BAKE = flag('cpu-bake') === 'off' ? null : flag('cpu-bake') ?? '';
 const slugs = args.filter((a) => !a.startsWith('--'));
 if (slugs.length === 0) throw new Error('usage: scripts/cook.ts [--out=…] [--tiers=…] [--install=<dist>] <slug> …');
 if (PROFILE && !COOK_PROFILES.includes(PROFILE)) throw new Error(`--profile must be one of ${COOK_PROFILES.join(', ')}`);
@@ -84,8 +103,180 @@ async function drainWrites(page: Page): Promise<number> {
   }
 }
 
-/** One recording session on `tier`: load, orbit, play (games), save the program set. */
-async function session(server: env.TestServer, profileDir: string, slug: string, tier: RenderTier | 'auto', last: boolean, sink: (key: string, body: Buffer) => void): Promise<{ rec: Recorded; tier: RenderTier; boot: Array<[string, string]>; bootSources: Record<string, string>; programs: { sets: Record<string, { entries: Array<{ v: string; f: string; uses: number; last: number }> } | null>; sources: Record<string, string> } | null }> {
+/** The baked light of a cook: the lightmap and light volume files by key, and what the bake cost. */
+interface BakedLight {
+  files: Map<string, Buffer>;
+  lightmap: string;
+  volume: string;
+  stats: Record<string, unknown>;
+}
+
+/**
+ * The lightmap baked outside the page (scripts/blender-bake.ts): the page's bake job goes out, Cycles bakes it on the GPU (when
+ * Blender is there and a GPU has room), else the CPU baker on several threads, and the `.lmap` comes back into the page as if
+ * the page had baked it. The key of the file applied and what baked it, or null (nothing applied: the page bakes it itself).
+ */
+async function bakeOutside(page: Page, slug: string, quality: string): Promise<{ key: string; baker: string } | null> {
+  if (!BLENDER && CPU_BAKE === null) return null;
+  let job: Buffer | null = null;
+  await page.route('**/__cook/bake-job', async (route) => {
+    job = route.request().postDataBuffer();
+    await route.fulfill({ status: 204, body: '' });
+  });
+  const dir = mkdtempSync(join(tmpdir(), 'aether-cook-bake-'));
+  try {
+    // The job in the page, serialised as scripts/blender-bake.ts `encodeJob` reads it (the page cannot import it).
+    const key = await page.evaluate(async ([q, s]) => {
+      const ren = (window as unknown as Win).__aetherPlayer!.simulation!.renderer as unknown as { lightBakeJob(q: string, s: number): Promise<{ key: string; request: unknown; triCounts: number[] } | null> };
+      const j = await ren.lightBakeJob(q as string, s as number);
+      if (!j) return null;
+      const blobs: Array<{ bytes: Uint8Array; o: number }> = [];
+      let size = 0;
+      const walk = (v: unknown): unknown => {
+        if (ArrayBuffer.isView(v)) {
+          const bytes = new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
+          blobs.push({ bytes, o: size });
+          const ref = { $ta: v.constructor.name, o: size, n: (v as unknown as { length: number }).length };
+          size += Math.ceil(bytes.length / 8) * 8;
+          return ref;
+        }
+        if (Array.isArray(v)) return v.map(walk);
+        if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x)]));
+        return v;
+      };
+      const head = new TextEncoder().encode(JSON.stringify(walk({ key: j.key, quality: q, triCounts: j.triCounts, request: j.request })));
+      const start = Math.ceil((8 + head.length) / 8) * 8;
+      const out = new Uint8Array(start + size);
+      const dv = new DataView(out.buffer);
+      dv.setUint32(0, 0x4a4c4541, true);
+      dv.setUint32(4, head.length, true);
+      out.set(head, 8);
+      for (const b of blobs) out.set(b.bytes, start + b.o);
+      await fetch('/__cook/bake-job', { method: 'POST', body: out.buffer });
+      return j.key;
+    }, [quality, SAMPLES] as const);
+    await page.unroute('**/__cook/bake-job');
+    if (!key || !job) {
+      log(`${slug}: no bake job from the page: it bakes the light itself`);
+      return null;
+    }
+    const jobPath = join(dir, 'job.lbjob');
+    writeFileSync(jobPath, job);
+    log(`${slug}: bake job ${key} (${MB((job as Buffer).length)})`);
+    let baker = '';
+    const run = (extra: string[]): Promise<boolean> =>
+      new Promise((ok) => {
+        const tsx = fileURLToPath(import.meta.resolve('tsx'));
+        const args = ['--user', '--scope', '--quiet', '-p', 'MemoryMax=12G', 'nice', '-n', '10', process.execPath, '--import', pathToFileURL(tsx).href, join(env.REPO_ROOT, 'scripts', 'blender-bake.ts'), `--job=${jobPath}`, `--out=${dir}`, ...extra];
+        const p = spawn('systemd-run', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+        p.stdout.on('data', (b: Buffer) =>
+          b.toString().split('\n').filter((l) => l.startsWith('RESULT ')).forEach((l) => {
+            log(`${slug}: ${l.slice(7, 400)}`);
+            baker = String((JSON.parse(l.slice(7)) as { device?: unknown }).device ?? '');
+          }));
+        p.stderr.on('data', (b: Buffer) => b.toString().split('\n').filter((l) => l.startsWith('[blender-bake]') || l.startsWith('[bake-light]')).forEach((l) => log(`${slug}: ${l.trim().slice(0, 300)}`)));
+        p.on('error', (e) => {
+          log(`${slug}: ${e.message}`);
+          ok(false);
+        });
+        p.on('close', (code) => ok(code === 0 && existsSync(join(dir, `${key}.lmap`))));
+      });
+    // Cycles on the GPU only: on this machine Cycles on the CPU is slower than the CPU baker's threads.
+    let done = BLENDER ? await run([`--blender=${BLENDER}`, '--device=GPU']) : false;
+    if (BLENDER && !done) log(`${slug}: the Cycles bake failed (or no GPU had room)${CPU_BAKE !== null ? ': the CPU bake on threads' : ''}`);
+    if (!done && CPU_BAKE !== null) {
+      done = await run([CPU_BAKE ? `--cpu=${CPU_BAKE}` : '--cpu']);
+      if (!done) log(`${slug}: the threaded CPU bake failed`);
+    }
+    if (!done) return null;
+    const lmap = readFileSync(join(dir, `${key}.lmap`));
+    await page.route('**/__cook/bake-file', (route) => route.fulfill({ status: 200, body: lmap, contentType: 'application/octet-stream' }));
+    const applied = await page.evaluate(async () => {
+      const ren = (window as unknown as Win).__aetherPlayer!.simulation!.renderer as unknown as { applyLightmapFile(b: Uint8Array): Promise<boolean> };
+      const bytes = new Uint8Array(await (await fetch('/__cook/bake-file')).arrayBuffer());
+      return ren.applyLightmapFile(bytes);
+    });
+    await page.unroute('**/__cook/bake-file');
+    if (!applied) {
+      log(`${slug}: the page did not take the baked file (another building or keys?): it bakes the light itself`);
+      return null;
+    }
+    return { key, baker };
+  } catch (e) {
+    log(`${slug}: bake outside the page failed (${e instanceof Error ? e.message : String(e)}): it bakes the light itself`);
+    return null;
+  } finally {
+    await page.unroute('**/__cook/bake-job').catch(() => undefined);
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Bake the building's re-lightable light (outside the page, {@link bakeOutside}, else in the page's lightmap worker; the volume
+ * is the page's own) and read the files back. Null when the world has no building or the bake does not finish.
+ */
+async function bakeLight(page: Page, slug: string, world: WorldDoc, sink: Map<string, Buffer>): Promise<BakedLight | null> {
+  const want = world.environment.lightBake?.quality;
+  const quality = BAKE ?? (want && want !== 'off' ? want : want === 'off' ? 'off' : 'high');
+  if (quality === 'off' || !Object.values(world.entities).some((e) => e.arch !== undefined)) return null;
+  // The volume first (the lightmap's later bounces come from it).
+  // A function, not a string: the page's script policy forbids evaluating strings.
+  const volOk = await page
+    .waitForFunction(() => {
+      const v = ((window as unknown as Win).__aetherPlayer?.simulation?.renderer as unknown as { lightVolume?: { ready: boolean; baking: boolean } } | undefined)?.lightVolume;
+      return v !== undefined && v.ready && !v.baking;
+    }, null, { timeout: 600_000, polling: 1000 })
+    .then(() => true, () => false);
+  if (!volOk) {
+    log(`${slug}: no light volume came up: no baked light`);
+    return null;
+  }
+  const t0 = Date.now();
+  const outside = await bakeOutside(page, slug, quality);
+  if (!outside) await page.evaluate(([q, s]) => ((window as unknown as Win).__aetherPlayer!.simulation!.renderer as unknown as { bakeLight(q: string, s: number, force: boolean): void }).bakeLight(q as string, s as number, true), [quality, SAMPLES] as const);
+  let lastLog = 0;
+  for (;;) {
+    const st = await page.evaluate(() => ((window as unknown as Win).__aetherPlayer!.simulation!.renderer as unknown as { lightmapStatus: { state: string; progress: number; message: string } }).lightmapStatus);
+    if (st.state === 'applied') break;
+    if (st.state === 'failed' || st.state === 'cancelled' || (st.state === 'idle' && Date.now() - t0 > 30_000)) {
+      log(`${slug}: light bake ${st.state} (${st.message}): no baked light`);
+      return null;
+    }
+    if (Date.now() - lastLog > 30_000) {
+      lastLog = Date.now();
+      log(`${slug}: baking light (${quality}, ${SAMPLES} rays) ${Math.round(st.progress * 100)} %`);
+    }
+    if (Date.now() - t0 > 3_600_000) {
+      log(`${slug}: light bake did not finish in an hour: no baked light`);
+      return null;
+    }
+    await page.waitForTimeout(2000);
+  }
+  const ms = Date.now() - t0;
+  // The files go out through the route below (they are megabytes; a page evaluation's result is not the place).
+  const info = await page.evaluate(async () => {
+    const ren = (window as unknown as Win).__aetherPlayer!.simulation!.renderer as unknown as { lightmapAsset: Uint8Array | null; lightmapStats: Record<string, unknown> | null; lightVolumeAsset(): Promise<{ key: string; bytes: Uint8Array } | null> };
+    const lm = ren.lightmapAsset;
+    const stats = ren.lightmapStats;
+    const vol = await ren.lightVolumeAsset();
+    if (!lm || !stats || !vol) return null;
+    const key = String(stats['key']);
+    await fetch(`/__cook/light/${key}.lmap`, { method: 'POST', body: lm.slice().buffer });
+    await fetch(`/__cook/light/${vol.key}.lvol`, { method: 'POST', body: vol.bytes.slice().buffer });
+    return { lightmap: key, volume: vol.key, stats };
+  });
+  if (!info || !sink.has(`${info.lightmap}.lmap`) || !sink.has(`${info.volume}.lvol`)) {
+    log(`${slug}: the baked light could not be read back: no baked light`);
+    return null;
+  }
+  const files = new Map([[`${info.lightmap}.lmap`, sink.get(`${info.lightmap}.lmap`)!], [`${info.volume}.lvol`, sink.get(`${info.volume}.lvol`)!]]);
+  log(`${slug}: baked light in ${(ms / 1000).toFixed(0)} s: lightmap ${MB(files.get(`${info.lightmap}.lmap`)!.length)}, volume ${MB(files.get(`${info.volume}.lvol`)!.length)} (${JSON.stringify(info.stats)})`);
+  if (outside && outside.key !== info.lightmap) log(`${slug}: the lightmap on screen is ${info.lightmap}, not the one baked outside (${outside.key})`);
+  return { files, lightmap: info.lightmap, volume: info.volume, stats: { ...info.stats, quality, samples: SAMPLES, bakeWallMs: ms, baker: outside?.baker ?? 'page' } };
+}
+
+/** One recording session on `tier`: load, orbit, play (games), save the program set; the last one also bakes the light. */
+async function session(server: env.TestServer, profileDir: string, slug: string, tier: RenderTier | 'auto', last: boolean, sink: (key: string, body: Buffer) => void): Promise<{ rec: Recorded; tier: RenderTier; boot: Array<[string, string]>; bootSources: Record<string, string>; programs: { sets: Record<string, { entries: Array<{ v: string; f: string; uses: number; last: number }> } | null>; sources: Record<string, string> } | null; light: BakedLight | null }> {
   const ctx = await launch(profileDir);
   try {
     const page = ctx.pages()[0] ?? (await ctx.newPage());
@@ -94,6 +285,13 @@ async function session(server: env.TestServer, profileDir: string, slug: string,
       const key = route.request().url().split('/').pop() ?? '';
       const body = route.request().postDataBuffer();
       if (/^[0-9a-f]{64}$/.test(key) && body) sink(key, body);
+      await route.fulfill({ status: 204, body: '' });
+    });
+    const lightFiles = new Map<string, Buffer>();
+    await page.route('**/__cook/light/*', async (route) => {
+      const name = route.request().url().split('/').pop() ?? '';
+      const body = route.request().postDataBuffer();
+      if (/^l[mv]\d+-[0-9a-f]{32}\.(lmap|lvol)$/.test(name) && body) lightFiles.set(name, body);
       await route.fulfill({ status: 204, body: '' });
     });
     await page.goto(`${server.url}/play.html#t=${slug}&cook=record${tier === 'auto' ? '' : `&tier=${tier}`}`, { waitUntil: 'domcontentloaded' });
@@ -152,6 +350,8 @@ async function session(server: env.TestServer, profileDir: string, slug: string,
       const pc = ((window as unknown as Win).__aetherPlayer!.simulation!.renderer as unknown as { programCache?: { save(): Promise<void> } }).programCache;
       await pc?.save();
     });
+    // The publish bake, once (the last session): what a viewer's lightmap and light volume are loaded from.
+    const light = last ? await bakeLight(page, slug, info.record.world, lightFiles) : null;
     const entries = await drainWrites(page);
     log(`${slug} ${tier}: ${entries} geometry entries cached`);
     let programs = null;
@@ -197,7 +397,7 @@ async function session(server: env.TestServer, profileDir: string, slug: string,
       }, DDC_CACHE_NAME);
       log(`${slug}: ${sent} geometry entries read`);
     }
-    return { rec: { irHash: info.record.irHash, genVersion: info.record.genVersion, world: info.record.world, startMode: (info.startMode ?? 'orbit') as StartMode, opening: info.opening, ...(info.views && info.views.length > 0 ? { views: info.views } : {}) }, tier: info.tier as RenderTier, boot, bootSources, programs };
+    return { rec: { irHash: info.record.irHash, genVersion: info.record.genVersion, world: info.record.world, startMode: (info.startMode ?? 'orbit') as StartMode, opening: info.opening, ...(info.views && info.views.length > 0 ? { views: info.views } : {}) }, tier: info.tier as RenderTier, boot, bootSources, programs, light };
   } finally {
     await ctx.close().catch(() => undefined);
   }
@@ -233,6 +433,7 @@ async function cook(server: env.TestServer, slug: string): Promise<void> {
   const blobs = new Map<string, number>();
   let rec: Recorded | null = null;
   let programs: Awaited<ReturnType<typeof session>>['programs'] = null;
+  let light: BakedLight | null = null;
   const boots = new Map<RenderTier, { pairs: Array<[string, string]>; sources: Record<string, string> }>();
   try {
     // First on the automatic tier, as a viewer of this machine's class starts: its boot set is then exact for that tier.
@@ -246,6 +447,7 @@ async function cook(server: env.TestServer, slug: string): Promise<void> {
       if (rec && (rec.irHash !== r.rec.irHash || rec.genVersion !== r.rec.genVersion)) throw new Error('the world or the build changed between sessions');
       rec ??= r.rec;
       programs = r.programs ?? programs;
+      light = r.light ?? light;
       if (!boots.has(r.tier)) boots.set(r.tier, { pairs: r.boot, sources: r.bootSources });
     }
   } finally {
@@ -253,13 +455,13 @@ async function cook(server: env.TestServer, slug: string): Promise<void> {
   }
   try {
     if (!rec || !programs) throw new Error('nothing recorded');
-    await pack(slug, rec, programs, boots, blobs, blobDir);
+    await pack(slug, rec, programs, boots, blobs, blobDir, light);
   } finally {
     rmSync(blobDir, { recursive: true, force: true });
   }
 }
 
-async function pack(slug: string, rec: Recorded, programs: NonNullable<Awaited<ReturnType<typeof session>>['programs']>, boots: ReadonlyMap<RenderTier, { pairs: Array<[string, string]>; sources: Record<string, string> }>, blobs: ReadonlyMap<string, number>, blobDir: string): Promise<void> {
+async function pack(slug: string, rec: Recorded, programs: NonNullable<Awaited<ReturnType<typeof session>>['programs']>, boots: ReadonlyMap<RenderTier, { pairs: Array<[string, string]>; sources: Record<string, string> }>, blobs: ReadonlyMap<string, number>, blobDir: string, light: BakedLight | null): Promise<void> {
   const id = await cookPackageId(rec.irHash, rec.genVersion);
   const root = join(OUT, slug);
   rmSync(root, { recursive: true, force: true });
@@ -300,8 +502,18 @@ async function pack(slug: string, rec: Recorded, programs: NonNullable<Awaited<R
     programJson += Buffer.byteLength(JSON.stringify({ format: COOK_FORMAT, ...body }));
   }
 
+  // Baked light: the files by key and their index (lightmap-controller and light-volume-controller `staticBase`).
+  let lightBytes = 0;
+  if (light) {
+    mkdirSync(join(dir, 'light'), { recursive: true });
+    for (const [name, body] of light.files) {
+      writeFileSync(join(dir, 'light', name), body);
+      lightBytes += body.length;
+    }
+    writeFileSync(join(dir, 'light', 'index.json'), JSON.stringify({ keys: [light.lightmap], volumes: [light.volume] }));
+  }
   // --profile, else the template's row in showcase/publish.ts, else from the start mode.
-  const manifest = await cookManifest(rec, PROFILE ?? TEMPLATE_PUBLISH[slug]?.profile ?? profileForStartMode(rec.startMode), geometry, programFiles);
+  const manifest = await cookManifest(rec, PROFILE ?? TEMPLATE_PUBLISH[slug]?.profile ?? profileForStartMode(rec.startMode), geometry, programFiles, undefined, light ? { base: 'light/', version: BAKED_LIGHT_VERSION } : null);
   writeFileSync(join(root, 'manifest.json'), JSON.stringify(manifest));
   const geometryBytes = packs.reduce((s, p) => s + p.bytes, 0);
   const sizes = dirBytes(root);
@@ -323,11 +535,13 @@ async function pack(slug: string, rec: Recorded, programs: NonNullable<Awaited<R
     programs: Object.fromEntries(Object.entries(programFiles).map(([t, f]) => [t, { programs: f!.programs, bytes: f!.bytes }])),
     /** The program sets as plain JSON (format 2), against the files written. */
     programJsonBytes: programJson,
+    /** The baked light (lightmap and volume files) and what its bake cost. */
+    light: light ? { bytes: lightBytes, files: Object.fromEntries([...light.files].map(([n, b]) => [n, b.length])), ...light.stats } : null,
     manifestBytes: statSync(join(root, 'manifest.json')).size,
     total: sizes,
   };
   writeFileSync(join(root, 'cook-report.json'), JSON.stringify(summary, null, 1));
-  log(`${slug}: ${summary.entries} entries (${summary.unplaced} unplaced) in ${cells.length} cells, ${packs.length} packs, geometry ${MB(geometryBytes)} (decoded ${MB(geometry.stats.decodedBytes)}, ${geometry.stats.shared} identical entries stored once, ${MB(geometry.stats.sharedBytes)}); ` + `programs ${Object.entries(programFiles).map(([t, f]) => `${t} ${f!.programs}`).join(', ')} (${MB(Object.values(programFiles).reduce((n, f) => n + f!.bytes, 0))}, as JSON ${MB(programJson)}); ` + `total ${sizes.files} files ${MB(sizes.bytes)} (gzip ${MB(sizes.gzip)}, brotli ${MB(sizes.brotli)}), largest file ${MB(sizes.largest)}`);
+  log(`${slug}: ${summary.entries} entries (${summary.unplaced} unplaced) in ${cells.length} cells, ${packs.length} packs, geometry ${MB(geometryBytes)} (decoded ${MB(geometry.stats.decodedBytes)}, ${geometry.stats.shared} identical entries stored once, ${MB(geometry.stats.sharedBytes)}); ` + `programs ${Object.entries(programFiles).map(([t, f]) => `${t} ${f!.programs}`).join(', ')} (${MB(Object.values(programFiles).reduce((n, f) => n + f!.bytes, 0))}, as JSON ${MB(programJson)}); ` + `${light ? `baked light ${MB(lightBytes)}; ` : ''}total ${sizes.files} files ${MB(sizes.bytes)} (gzip ${MB(sizes.gzip)}, brotli ${MB(sizes.brotli)}), largest file ${MB(sizes.largest)}`);
   if (INSTALL) {
     const dest = join(resolve(INSTALL), 'cooked', slug);
     rmSync(dest, { recursive: true, force: true });

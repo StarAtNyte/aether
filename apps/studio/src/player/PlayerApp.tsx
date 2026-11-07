@@ -574,6 +574,8 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
             saveBase: `game-${musicSeed(JSON.stringify(world.voxel ?? world.name)).toString(36)}`,
             ...(sandbox ? { sandbox } : {}),
             ...(cooked ? { cooked } : {}),
+            // A viewer never bakes: baked light comes from the cooked package (a re-lightable bake the hour only re-weights).
+            bakedLight: 'viewer',
             // The package's geometry differs from what this build makes (a spot check in the generation lanes): remember it
             // and load again, live, once the lanes have removed its entries from the geometry cache.
             ...(cooked

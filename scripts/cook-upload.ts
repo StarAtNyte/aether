@@ -27,6 +27,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DDC_CODE_VERSION } from '../packages/render/src/geometry/ddc';
 import { worldIrHash } from '../packages/render/src/cook/format';
+import { BAKED_LIGHT_VERSION } from '../packages/render/src/environment/relight';
 import { MAX_IMPORT_BYTES } from '../apps/studio/src/config';
 import { parseWorldImport } from '../apps/studio/src/lib/worldIO';
 import { SHOWCASE } from '../apps/studio/src/showcase/manifest';
@@ -71,13 +72,23 @@ async function templateIrHash(slug: string): Promise<string> {
   return worldIrHash(r.world);
 }
 
+/** Whether a template's world has a building (its cook bakes light), and whether it turned baked light off. */
+function templateBakes(slug: string): boolean {
+  const r = parseWorldImport(readFileSync(join(ROOT, 'apps/studio/public/templates/worlds', `${slug}.json`), 'utf8'), MAX_IMPORT_BYTES);
+  if (!r.ok) return false;
+  return r.world.environment.lightBake?.quality !== 'off' && Object.values(r.world.entities).some((e) => e.arch !== undefined);
+}
+
 /** Why the dataset's package of `slug` is stale for this tree (null: current). */
-async function staleReason(slug: string, gen: string, read: (slug: string) => Promise<{ genVersion?: unknown; irHash?: unknown } | null>): Promise<string | null> {
+async function staleReason(slug: string, gen: string, read: (slug: string) => Promise<{ genVersion?: unknown; irHash?: unknown; lightmap?: unknown } | null>): Promise<string | null> {
   const m = await read(slug);
   if (!m) return 'no package on the dataset';
   if (m.genVersion !== gen) return `generator code ${String(m.genVersion)}, this tree ${gen}`;
   const ir = await templateIrHash(slug);
   if (m.irHash !== ir) return `world changed (IR ${String(m.irHash).slice(0, 12)}…, now ${ir.slice(0, 12)}…)`;
+  // A building's package ships baked light of this tree's format (a viewer never bakes; another format is not read).
+  const light = (m.lightmap ?? null) as { version?: unknown } | null;
+  if (templateBakes(slug) && light?.version !== BAKED_LIGHT_VERSION) return `baked light ${light ? String(light.version ?? 'unversioned') : 'missing'}, this tree ${BAKED_LIGHT_VERSION}`;
   return null;
 }
 

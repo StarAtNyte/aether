@@ -109,6 +109,9 @@ const DisplayMenu = memo(function DisplayMenu(): ReactElement {
   const world = useWorld();
   const bake = world.environment.lightBake?.quality ?? null;
   const building = Object.values(world.entities).some((e) => e.arch !== undefined);
+  // The preview is on while its bake runs or its light is shown (the editor otherwise draws real-time light).
+  const lm = useUI((x) => x.lightmap);
+  const previewing = lm !== null && (lm.state === 'applied' || lm.state === 'baking' || lm.state === 'waiting');
   return (
     <Menu
       label="Display options"
@@ -118,6 +121,8 @@ const DisplayMenu = memo(function DisplayMenu(): ReactElement {
         ...(building
           ? ([
               { kind: 'heading', id: 'h-bake', label: 'Baked interior light' },
+              { id: 'bake-preview', label: 'Preview baked light', checked: previewing, disabled: bake === 'off', onSelect: () => studio.previewBakedLight(!previewing) },
+              { kind: 'heading', id: 'h-bake-publish', label: 'When published' },
               ...([['auto', 'Automatic', null], ['off', 'Off', 'off'], ['low', 'Low', 'low'], ['medium', 'Medium', 'medium'], ['high', 'High', 'high']] as const).map(([id, label, q]) => ({
                 id: `bake-${id}`,
                 label,

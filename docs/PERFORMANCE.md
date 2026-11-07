@@ -1009,3 +1009,18 @@ Gate: fewer long tasks and a better p99 during the load on both worlds and durin
 orbit is unchanged (no worker runs in it). First picture not slower, generation faster, hero shots within noise. Tests
 and typecheck pass. The studio bundle is 205,154 B gzip against 205,153 B for the base (`check-budget.ts`, limit 204 KiB;
 the scheduler goes into the chunks that use it).
+
+## Re-lightable baked light (7 November 2026)
+
+The lightmap and the light volume are baked once, at publish, as parts that the live light weights (docs/LIGHTING-BAKE.md).
+Casa del Patio, Intel UHD 770, player on the cooked package (`scripts/baked-light-probe.ts`):
+
+| Time-of-day drag | before (single-time bake) | after |
+| --- | --- | --- |
+| bakes during and after the drag | volume and lightmap rebaked, settled after 9.4–29 s | 0, settled after 3.0–4.6 s |
+| program links during / after release (medium) | 3–7 / 1–2 | 0 / 0 |
+| frame p95, slow drag, low / medium | 267–283 / 200–233 ms | 50–100 / 33–67 ms |
+| lightmap reads per pixel, cost (in-page A/B) | 1 | 5: +0.8 % at low, within noise at medium |
+
+Package: +8.8 MB of baked light on Casa del Patio (lightmap 5.5 MB, volume 3.3 MB). Bake at publish: 67 s on 12 threads
+outside the page (940 s in the page's single worker).

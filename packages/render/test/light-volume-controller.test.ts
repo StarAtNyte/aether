@@ -4,13 +4,18 @@ import { collectTraceInput, isDaylightPane, LightVolumeController, materialAlbed
 import type { VolumeCache } from '../src/environment/light-volume-cache';
 import { FLOATS_PER_PROBE, LightVolumeBaker, TraceScene } from '../src/environment/light-volume';
 import { parseVolumeReply, parseVolumeRequest } from '../src/environment/light-volume-protocol';
+import { partCount, sunKeyDirections, volumeLightFloats, type RelightLighting } from '../src/environment/relight';
 import { volumeExposure, VOLUME_MAX_EV, VOLUME_MIN_EV } from '../src/view/eye-adapt';
 
-const LIGHTING: VolumeLighting = {
+const LIVE: RelightLighting = {
   sun: { direction: [0.5, 0.7, 0.3].map((v, _i, a) => v / Math.hypot(...a)) as unknown as [number, number, number], irradiance: [2.5, 2.4, 2.2] },
   ambient: { a: [0.5, 0.55, 0.6], b: [0.25, 0.3, 0.35] },
+  lampScale: 1,
+};
+const LIGHTING: VolumeLighting = {
   groundAlbedo: [0.2, 0.23, 0.16],
   lamps: [],
+  live: LIVE,
 };
 
 function slab(x: number, y: number, z: number, sx: number, sy: number, sz: number, role: string, color = '#e8e4dc'): VolumePart {
@@ -195,14 +200,63 @@ describe('light volume controller: baking', () => {
     const req = parseVolumeRequest(posted[0])!;
     expect(req).not.toBeNull();
     // A reply to another job changes nothing; a malformed reply to this one is dropped.
-    fake.onmessage?.({ data: { type: 'volume', id: req.id + 7, ok: true, data: new Float32Array(3) } } as MessageEvent);
+    fake.onmessage?.({ data: { type: 'volume', id: req.id + 7, ok: true, data: new Float32Array(3), light: new Float32Array(3) } } as MessageEvent);
     expect(c.baking).toBe(true);
     expect(c.ready).toBe(false);
-    const data = new LightVolumeBaker({ grid: req.grid, scene: new TraceScene(req), sun: req.sun, ambient: req.ambient, ground: req.ground, lamps: req.lamps, rays: 16, passes: 1 }).run();
-    fake.onmessage?.({ data: { type: 'volume', id: req.id, ok: true, data } } as MessageEvent);
+    fake.onmessage?.({ data: { type: 'volume', id: req.id, ok: true, data: new Float32Array(3), light: new Float32Array(3) } } as MessageEvent);
+    expect(c.ready).toBe(false);
+    expect(c.baking).toBe(false);
+    c.invalidate();
+    await vi.advanceTimersByTimeAsync(700);
+    expect(posted.length).toBe(2);
+    const req2 = parseVolumeRequest(posted[1])!;
+    const baker = new LightVolumeBaker({ grid: req2.grid, scene: new TraceScene(req2), sunKeys: req2.sunKeys, ground: req2.ground, lamps: req2.lamps, rays: 16, passes: 1 });
+    const data = baker.run();
+    expect(req2.sunKeys.length).toBe(sunKeyDirections().length);
+    fake.onmessage?.({ data: { type: 'volume', id: req2.id, ok: true, data, light: baker.light } } as MessageEvent);
     expect(uploads).toBe(1);
     expect(c.ready).toBe(true);
     expect(c.lastBake?.worker).toBe(true);
+    c.dispose();
+  });
+});
+
+describe('light volume controller: relight', () => {
+  it('a change of the light weights the stored parts again and never starts a bake', async () => {
+    vi.useFakeTimers();
+    let uploads = 0;
+    const c = new LightVolumeController(() => ({ parts: roomParts(), lighting: LIGHTING, groundY: 0 }), { createWorker: null, onUpload: () => uploads++ });
+    c.setEnabled(true);
+    await vi.advanceTimersByTimeAsync(700);
+    expect(c.finishNow()).toBe(true);
+    expect(c.bakesStarted).toBe(1);
+    const baked = c.bakedVolume!;
+    expect(baked.keys.length).toBe(sunKeyDirections().length);
+    const probes = baked.grid.nx * baked.grid.ny * baked.grid.nz;
+    expect(baked.data.length).toBe(probes * FLOATS_PER_PROBE);
+    expect(baked.light.length).toBe(probes * volumeLightFloats(baked.keys.length));
+    const noon = c.eyeSample(1, 1.6, 1)!;
+    c.relight({ sun: null, ambient: { a: [0, 0, 0], b: [0, 0, 0] }, lampScale: 0 });
+    const night = c.eyeSample(1, 1.6, 1)!;
+    expect(night.bounce).toBeLessThan(noon.bounce * 0.01);
+    c.relight(LIVE);
+    expect(c.eyeSample(1, 1.6, 1)!.bounce).toBeCloseTo(noon.bounce, 6);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(c.bakesStarted).toBe(1);
+    expect(c.baking).toBe(false);
+    expect(uploads).toBe(1);
+    // The stored bake itself is untouched by the live light (its light floats are the parts, not a sum).
+    expect(c.bakedVolume!.data).toBe(baked.data);
+    c.dispose();
+  });
+
+  it('the first light of a bake is the live light given by the gather', async () => {
+    vi.useFakeTimers();
+    const dark: RelightLighting = { sun: null, ambient: { a: [0, 0, 0], b: [0, 0, 0] }, lampScale: 0 };
+    const c = new LightVolumeController(() => ({ parts: roomParts(), lighting: { ...LIGHTING, live: dark }, groundY: 0 }), { createWorker: null });
+    c.setEnabled(true);
+    expect(c.finishNow()).toBe(true);
+    expect(c.eyeSample(1, 1.6, 1)!.bounce).toBe(0);
     c.dispose();
   });
 });
@@ -233,6 +287,9 @@ describe('light volume controller: persistent cache', () => {
     await vi.advanceTimersByTimeAsync(700);
     expect(first.finishNow()).toBe(true);
     expect(cache.rows.size).toBe(1);
+    // The row holds the base data then the parts.
+    const b = first.bakedVolume!;
+    expect([...cache.rows.values()][0]!.length).toBe(b.data.length + b.light.length);
     expect(first.lastBake?.cached).toBeUndefined();
     first.dispose();
 
@@ -245,15 +302,16 @@ describe('light volume controller: persistent cache', () => {
     expect(second.lastBake?.cached).toBe(true);
     expect(workers).toBe(0);
     expect(second.baking).toBe(false);
+    expect(second.bakesStarted).toBe(0);
     expect(second.eyeSample(1, 1.6, 1)).not.toBeNull();
     second.dispose();
   });
 
-  it('misses when the light, the building or the lamps differ', async () => {
+  it('misses when the building or the lamps differ, hits when only the light does', async () => {
     vi.useFakeTimers();
     const cache = memory();
     const keys = new Set<string>();
-    for (const lighting of [LIGHTING, { ...LIGHTING, sun: null }, { ...LIGHTING, lamps: [{ position: [0, 2.6, 0] as [number, number, number], color: [20, 18, 15] as [number, number, number], range: 8 }] }]) {
+    for (const lighting of [LIGHTING, { ...LIGHTING, live: { ...LIVE, sun: null, lampScale: 0.3 } }, { ...LIGHTING, lamps: [{ position: [0, 2.6, 0] as [number, number, number], color: [20, 18, 15] as [number, number, number], range: 8 }] }]) {
       const c = new LightVolumeController(gather(lighting), { createWorker: null, cache, cacheMinMs: 0 });
       c.setEnabled(true);
       await vi.advanceTimersByTimeAsync(700);
@@ -261,8 +319,9 @@ describe('light volume controller: persistent cache', () => {
       c.dispose();
       keys.add(cache.gets.at(-1)!);
     }
-    expect(keys.size).toBe(3);
-    expect(cache.rows.size).toBe(3);
+    // The light (the hour, the sun) is not in the key; the lamps are.
+    expect(keys.size).toBe(2);
+    expect(cache.rows.size).toBe(2);
   });
 
   it('bakes quicker than the threshold are not stored, and an unreadable cache is a miss', async () => {
@@ -274,7 +333,8 @@ describe('light volume controller: persistent cache', () => {
     quick.finishNow();
     expect(cache.rows.size).toBe(0);
     quick.dispose();
-    const broken: VolumeCache = { get: async () => new Float32Array(3), put: async () => undefined };
+    // The cache contract: an unreadable or wrong-size row is null (the controller does not re-check the length of a hit).
+    const broken: VolumeCache = { get: async () => null, put: async () => undefined };
     const c = new LightVolumeController(gather(), { createWorker: null, cache: broken, cacheMinMs: 0 });
     c.setEnabled(true);
     await vi.advanceTimersByTimeAsync(700);
@@ -315,25 +375,35 @@ describe('light volume controller: lamps and the eye', () => {
 
 describe('light volume protocol', () => {
   const grid = { min: [0, 0, 0] as [number, number, number], spacing: 0.5, nx: 2, ny: 2, nz: 2 };
-  const ok = { type: 'bake', id: 1, grid, positions: new Float32Array(9), albedo: new Float32Array(3), twoSided: new Uint8Array(1), sun: null, ambient: { a: [1, 1, 1], b: [0, 0, 0] }, ground: { y: 0, albedo: [0.2, 0.2, 0.2] }, lamps: [] };
+  const ok = { type: 'bake', id: 1, grid, positions: new Float32Array(9), albedo: new Float32Array(3), twoSided: new Uint8Array(1), sunKeys: [[0, 1, 0], [0.6, 0.8, 0]], ground: { y: 0, albedo: [0.2, 0.2, 0.2] }, lamps: [] };
   it('accepts a well-formed request and rejects malformed ones', () => {
     expect(parseVolumeRequest(ok)).not.toBeNull();
     expect(parseVolumeRequest({ ...ok, grid: { ...grid, nx: 1000 } })).toBeNull();
     expect(parseVolumeRequest({ ...ok, albedo: new Float32Array(4) })).toBeNull();
     expect(parseVolumeRequest({ ...ok, positions: [0, 0, 0] })).toBeNull();
-    expect(parseVolumeRequest({ ...ok, sun: { direction: [0, 2, 0], irradiance: [1, 1, 1] } })).toBeNull();
-    expect(parseVolumeRequest({ ...ok, ambient: { a: [Number.NaN, 0, 0], b: [0, 0, 0] } })).toBeNull();
+    expect(parseVolumeRequest({ ...ok, sunKeys: [[0, 2, 0]] })).toBeNull();
+    expect(parseVolumeRequest({ ...ok, sunKeys: [[Number.NaN, 0, 0]] })).toBeNull();
+    expect(parseVolumeRequest({ ...ok, sunKeys: new Array(17).fill([0, 1, 0]) })).toBeNull();
+    expect(parseVolumeRequest({ ...ok, sunKeys: undefined })).toBeNull();
     expect(parseVolumeRequest({ ...ok, lamps: [{ position: [0, 0, 0], color: [1, 1, 1], range: -1 }] })).toBeNull();
     expect(parseVolumeRequest(null)).toBeNull();
   });
   it('accepts only finite replies of the right size', () => {
     const n = 8 * FLOATS_PER_PROBE;
-    expect(parseVolumeReply({ type: 'volume', id: 1, ok: true, data: new Float32Array(n) }, grid)?.ok).toBe(true);
-    expect(parseVolumeReply({ type: 'volume', id: 1, ok: true, data: new Float32Array(n - 1) }, grid)).toBeNull();
+    const m = 8 * volumeLightFloats(2);
+    const reply = (data: Float32Array, light: Float32Array): unknown => ({ type: 'volume', id: 1, ok: true, data, light });
+    expect(parseVolumeReply(reply(new Float32Array(n), new Float32Array(m)), grid, 2)?.ok).toBe(true);
+    expect(parseVolumeReply(reply(new Float32Array(n - 1), new Float32Array(m)), grid, 2)).toBeNull();
+    expect(parseVolumeReply(reply(new Float32Array(n), new Float32Array(m - 1)), grid, 2)).toBeNull();
+    // The parts must match the key count asked for.
+    expect(parseVolumeReply(reply(new Float32Array(n), new Float32Array(m)), grid, 3)).toBeNull();
     const bad = new Float32Array(n);
     bad[5] = Number.POSITIVE_INFINITY;
-    expect(parseVolumeReply({ type: 'volume', id: 1, ok: true, data: bad }, grid)).toBeNull();
-    expect(parseVolumeReply({ type: 'volume', id: 1, ok: false, error: 'x'.repeat(1000) }, grid)).toMatchObject({ ok: false });
+    expect(parseVolumeReply(reply(bad, new Float32Array(m)), grid, 2)).toBeNull();
+    const badLight = new Float32Array(m);
+    badLight[7] = Number.NaN;
+    expect(parseVolumeReply(reply(new Float32Array(n), badLight), grid, 2)).toBeNull();
+    expect(parseVolumeReply({ type: 'volume', id: 1, ok: false, error: 'x'.repeat(1000) }, grid, 2)).toMatchObject({ ok: false });
   });
 });
 

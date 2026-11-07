@@ -10,22 +10,28 @@
  *   ground outside, all reflected by the surfaces' own colours), without the direct light of the sun and the lamps,
  *   which the renderer keeps computing live (shadow maps, switched lamps, opening doors).
  *
+ * `B` is re-lightable (`relight.ts`, docs/LIGHTING-BAKE.md): it is baked as parts, one per unit source (the sky's constant
+ * and gradient terms, the lamps, a sun from each of 15 key directions), and the shader weights them with the live light. A
+ * new hour changes uniforms, never the bake.
+ *
  * The runtime formula is the volume's (`ambientOcclusion *= vis`, `irradiance += B / vis`), so a baked surface and a
  * volume-lit surface look alike side by side and a missing lightmap falls back to the volume without a visible jump.
  *
  * The bake is a small path tracer on the CPU (pure, deterministic, no three.js; it runs in a worker): every covered
  * texel of an atlas shoots cosine-weighted, stratified rays against the building's {@link TraceScene}; a ray that
- * leaves the building counts as sky, a ray that hits a surface collects that surface's outgoing radiance (direct sun and
- * lamps with shadow rays, plus the ambient and bounce the already-baked volume holds there: a final gather, so the
- * volume supplies the later bounces). The result is denoised with an edge-aware filter inside the atlas.
+ * leaves the building counts as sky, a ray that hits a surface collects that surface's outgoing radiance per part (direct
+ * sun keys and lamps with shadow rays, plus the ambient and bounce the already-baked volume holds there: a final gather,
+ * so the volume supplies the later bounces). The result is denoised with an edge-aware filter inside the atlas and encoded
+ * by {@link encodeLightmap}.
  *
  * Surfaces are unwrapped into axis-aligned charts (the six directions a wall, floor or tabletop faces; connected
  * triangles of the same direction share one chart) and shelf-packed into one square atlas of 256, 512 or 1024 texels.
  */
-import { sampleVolume, TraceScene, type V3, type VolumeGrid, type VolumeLamp } from './light-volume';
+import { PART_FLOATS, sampleStrided, TraceScene, type V3, type VolumeGrid, type VolumeLamp } from './light-volume';
+import { groundFactors, LAYER_CHROMA, LAYER_SUN0, lightmapLayers, LUM, partCount, PART_LAMP, PART_SKY0, PART_SKY1, PART_SUN0, scaleCount } from './relight';
 
 /** Bump when the unwrap, the bake or the encoding changes: stored lightmaps stop matching. */
-export const LIGHTMAP_VERSION = 3;
+export const LIGHTMAP_VERSION = 5;
 /** Most triangles baked in one lightmap (the rest keep the volume). */
 export const LIGHTMAP_MAX_TRIANGLES = 160_000;
 /** Empty texels around every chart (bilinear filtering never reaches another chart). */
@@ -61,7 +67,7 @@ const QUALITY: Readonly<Record<LightmapQuality, { size: number; samples: number;
 /** The plan for a quality, with an optional ray-count override (clamped to 8..512). */
 export function planLightmap(quality: LightmapQuality, samples?: number): LightmapPlan {
   const q = QUALITY[quality] ?? QUALITY.medium;
-  const s = samples === undefined || !Number.isFinite(samples) ? q.samples : Math.max(8, Math.min(512, Math.round(samples)));
+  const s = samples === undefined || !Number.isFinite(samples) ? q.samples : Math.max(8, Math.min(1024, Math.round(samples)));
   return { quality, size: q.size, samples: s, density: q.density };
 }
 
@@ -490,21 +496,40 @@ export interface LightmapBakeInput {
   meshes: readonly LightmapMesh[];
   layout: LightmapLayout;
   grid: VolumeGrid;
-  volume: Float32Array;
-  sun: { direction: V3; irradiance: V3 } | null;
-  ambient: { a: V3; b: V3 };
+  /** The finished re-lightable volume as one field (`light-volume.ts` `partsField`): visibility then the parts, per probe. */
+  field: Float32Array;
+  /** Floats per probe of {@link field}: 4 + parts · PART_FLOATS. */
+  stride: number;
+  /** Free-distance codes of the volume (two per probe). */
+  codes: Float32Array;
+  /** Directions toward the sun of the sun keys (the volume's, in its order). */
+  sunKeys: readonly V3[];
   ground: { y: number; albedo: V3 };
+  /** The lamps at full strength. */
   lamps: readonly VolumeLamp[];
   samples: number;
+  /**
+   * Gather only every `count`-th covered texel from `index` (a bake split over threads, scripts/blender-bake.ts): the baker
+   * stops after the gather ({@link LightmapBaker.gathered}); {@link LightmapBaker.finishFrom} denoises and encodes the merged
+   * texels of all the shares.
+   */
+  split?: { index: number; count: number };
 }
 
 /** The finished bake. */
 export interface LightmapResult {
   size: number;
-  /** Atlas texels, row by row from the top: sqrt-coded bounce in rgb, sky visibility in a (0: no data). */
+  /** Layers of {@link rgba} (`relight.ts` `lightmapLayers`). */
+  layers: number;
+  /** Sun keys stored. */
+  keys: number;
+  /**
+   * The atlas layers, `size × size` RGBA each, rows from the top, layer after layer (`relight.ts`: sky0, sky1, lamp, the sun
+   * keys' chroma, their luminance three to a layer; {@link encodePart}), the sky visibility in a of every layer (0: no data).
+   */
   rgba: Uint8Array;
-  /** Irradiance a code of 255 stands for: B = (code / 255)² · scale. */
-  scale: number;
+  /** The value a code of 255 stands for (`relight.ts` `scaleCount`: sky0, sky1, lamp, chroma (1), each key). */
+  scales: Float32Array;
   texels: number;
   rays: number;
 }
@@ -512,7 +537,8 @@ export interface LightmapResult {
 type Stage = 'raster' | 'gather' | 'denoise' | 'encode' | 'done';
 
 const CELL = 0.1;
-const TABLE_BITS = 19;
+/** Slots of the shading cache (2^18: 9 MB of floats per 9 parts). */
+const TABLE_BITS = 18;
 
 function hash01(n: number): number {
   let x = (n | 0) ^ 0x9e3779b9;
@@ -524,7 +550,8 @@ function hash01(n: number): number {
 
 /**
  * Bakes a {@link LightmapBakeInput} in time slices ({@link step}) or at once ({@link run}). The result does not depend
- * on how the work is sliced.
+ * on how the work is sliced. Every ray carries all the parts at once: one trace, one shadow test per sun key and lamp at a
+ * hit (cached per 10 cm cell), one read of the volume.
  */
 export class LightmapBaker {
   private stage: Stage = 'raster';
@@ -532,6 +559,7 @@ export class LightmapBaker {
   private order: Int32Array = new Int32Array(0);
   private cursor = 0;
   private vis = new Float32Array(0);
+  /** Per texel, per part, RGB. */
   private bounce = new Float32Array(0);
   /** Texels whose rays mostly left through back faces (on a chart edge, flush with a wall): filled from their neighbours. */
   private bad = new Uint8Array(0);
@@ -539,23 +567,35 @@ export class LightmapBaker {
   /** Texels no neighbour could fill (set while denoising). */
   leftover = 0;
   private rays = 0;
-  private readonly groundL: [number, number, number];
+  readonly parts: number;
+  /** Floats of light per texel: parts × 3. */
+  private readonly PL: number;
+  /**
+   * Per part and channel: what a ray that lands on the open ground adds, π times the ground's radiance under the part's unit
+   * source (a surface hit adds albedo × irradiance, which is the same π × radiance; the single-time bake added the radiance
+   * alone, a third of the ground's light).
+   */
+  private readonly groundL: Float32Array;
   private readonly samples: number;
   private readonly dirs: Float32Array;
-  // Shading cache: total irradiance (direct + ambient + volume) at a hit, by triangle and 10 cm cell.
-  private readonly keyA = new Int32Array(1 << TABLE_BITS);
-  private readonly keyB = new Int32Array(1 << TABLE_BITS);
-  private readonly vals = new Float32Array(3 << TABLE_BITS);
+  // Shading cache: per part, the irradiance at a hit (direct sun and lamps, the volume's ambient and bounce), by triangle and 10 cm cell.
+  private readonly tableBits: number;
+  private readonly keyA: Int32Array;
+  private readonly keyB: Int32Array;
+  private readonly vals: Float32Array;
   private readonly n3: [number, number, number] = [0, 0, 0];
-  private readonly volScratch = new Float32Array(20);
-  private readonly shade: [number, number, number] = [0, 0, 0];
+  private readonly volScratch: Float32Array;
+  private readonly shade: Float32Array;
+  private readonly sum: Float64Array;
 
   constructor(private readonly input: LightmapBakeInput) {
-    this.samples = Math.max(4, Math.min(512, Math.floor(input.samples)));
-    const sun = input.sun;
-    const sy = sun ? Math.max(0, sun.direction[1]) : 0;
-    const amb = input.ambient;
-    this.groundL = [0, 1, 2].map((c) => (Math.max(0, Math.min(1, input.ground.albedo[c as 0 | 1 | 2])) / Math.PI) * ((sun ? sun.irradiance[c as 0 | 1 | 2] * sy : 0) + Math.max(0, amb.a[c as 0 | 1 | 2] + amb.b[c as 0 | 1 | 2]))) as [number, number, number];
+    this.samples = Math.max(4, Math.min(1024, Math.floor(input.samples)));
+    this.parts = partCount(input.sunKeys.length);
+    if (input.stride !== 4 + this.parts * PART_FLOATS) throw new Error('lightmap bake: the volume has other parts than the keys');
+    this.PL = this.parts * 3;
+    const gf = groundFactors(input.sunKeys);
+    this.groundL = new Float32Array(this.PL);
+    for (let p = 0; p < this.parts; p++) for (let c = 0; c < 3; c++) this.groundL[p * 3 + c] = Math.max(0, Math.min(1, input.ground.albedo[c as 0 | 1 | 2])) * gf[p]!;
     // Cosine-weighted, stratified directions in the local frame (z up); each texel turns them by its own angle.
     const R = this.samples;
     this.dirs = new Float32Array(R * 3);
@@ -568,7 +608,15 @@ export class LightmapBaker {
       this.dirs[k * 3 + 1] = r * Math.sin(phi);
       this.dirs[k * 3 + 2] = Math.sqrt(1 - u1);
     }
-    this.keyA.fill(-1);
+    // The same table whatever the part count: which hit point fills a cell (the cell's value) then does not depend on the parts,
+    // so two bakes of the same building with other sun keys carry the same noise and differ only by their light.
+    this.tableBits = TABLE_BITS;
+    this.keyA = new Int32Array(1 << this.tableBits).fill(-1);
+    this.keyB = new Int32Array(1 << this.tableBits);
+    this.vals = new Float32Array(this.PL << this.tableBits);
+    this.volScratch = new Float32Array(input.stride);
+    this.shade = new Float32Array(this.PL);
+    this.sum = new Float64Array(this.PL);
   }
 
   get progress(): number {
@@ -587,21 +635,18 @@ export class LightmapBaker {
     const until = now() + Math.max(0.5, budgetMs);
     while (this.stage !== 'done') {
       if (this.stage === 'raster') {
-        this.texels = rasterizeTexels(this.input.meshes, this.input.layout);
-        const t = this.texels;
-        const list: number[] = [];
-        for (let o = 0; o < t.cov.length; o++) if (t.cov[o] === 1) list.push(o);
-        this.order = Int32Array.from(list);
-        this.vis = new Float32Array(t.size * t.size);
-        this.bounce = new Float32Array(t.size * t.size * 3);
-        this.bad = new Uint8Array(t.size * t.size);
-        this.stage = 'gather';
-        this.cursor = 0;
+        this.raster();
       } else if (this.stage === 'gather') {
         const n = this.order.length;
+        const sp = this.input.split;
         while (this.cursor < n) {
-          this.gatherTexel(this.order[this.cursor++] as number);
+          const i = this.cursor++;
+          if (!sp || i % sp.count === sp.index) this.gatherTexel(this.order[i] as number);
           if ((this.cursor & 15) === 0 && now() > until) return false;
+        }
+        if (sp) {
+          this.stage = 'done';
+          return true;
         }
         this.stage = 'denoise';
       } else if (this.stage === 'denoise') {
@@ -616,6 +661,19 @@ export class LightmapBaker {
     return true;
   }
 
+  private raster(): void {
+    this.texels = rasterizeTexels(this.input.meshes, this.input.layout);
+    const t = this.texels;
+    const list: number[] = [];
+    for (let o = 0; o < t.cov.length; o++) if (t.cov[o] === 1) list.push(o);
+    this.order = Int32Array.from(list);
+    this.vis = new Float32Array(t.size * t.size);
+    this.bounce = new Float32Array(t.size * t.size * this.PL);
+    this.bad = new Uint8Array(t.size * t.size);
+    this.stage = 'gather';
+    this.cursor = 0;
+  }
+
   run(): LightmapResult {
     while (!this.step(1e9)) {
       /* keep going */
@@ -627,21 +685,70 @@ export class LightmapBaker {
     return this.result;
   }
 
-  /** Total irradiance (direct sun and lamps, the ambient the volume lets in, the volume's bounce) at a hit point. */
-  private incident(tri: number, hx: number, hy: number, hz: number, n: [number, number, number], out: [number, number, number]): void {
+  /**
+   * A split bake's share after its gather: for each of its texels (every `count`-th of the covered texels in order, from
+   * `index`), the visibility, the parts' RGB and whether it lay inside a wall (filled from its neighbours later).
+   */
+  gathered(): { vis: Float32Array; bounce: Float32Array; bad: Uint8Array; rays: number } {
+    const sp = this.input.split ?? { index: 0, count: 1 };
+    const PL = this.PL;
+    const n = Math.max(0, Math.ceil((this.order.length - sp.index) / sp.count));
+    const vis = new Float32Array(n);
+    const bounce = new Float32Array(n * PL);
+    const bad = new Uint8Array(n);
+    for (let k = 0, i = sp.index; i < this.order.length; i += sp.count, k++) {
+      const o = this.order[i] as number;
+      vis[k] = this.vis[o] as number;
+      bounce.set(this.bounce.subarray(o * PL, (o + 1) * PL), k * PL);
+      bad[k] = this.bad[o] as number;
+    }
+    return { vis, bounce, bad, rays: this.rays };
+  }
+
+  /**
+   * Finish a split bake from the shares of every thread (`shares[i]` from the baker with `split.index` i, in order): denoise and
+   * encode as the single bake does. Call on a baker made with the same input and no split.
+   */
+  finishFrom(shares: ReadonlyArray<ReturnType<LightmapBaker['gathered']>>): LightmapResult {
+    if (this.stage === 'raster') this.raster();
+    const PL = this.PL;
+    const count = shares.length;
+    let rays = 0;
+    for (const [index, sh] of shares.entries()) {
+      rays += sh.rays;
+      for (let k = 0, i = index; i < this.order.length; i += count, k++) {
+        const o = this.order[i] as number;
+        this.vis[o] = sh.vis[k] as number;
+        this.bounce.set(sh.bounce.subarray(k * PL, (k + 1) * PL), o * PL);
+        this.bad[o] = sh.bad[k] as number;
+      }
+    }
+    this.rays = rays;
+    this.denoise();
+    this.encode();
+    this.stage = 'done';
+    return this.result as LightmapResult;
+  }
+
+  /** The bounce of the parts at a texel before encoding (tests: compare with the sum the shader makes). */
+  rawTexel(o: number): { vis: number; bounce: Float32Array } {
+    return { vis: this.vis[o] as number, bounce: this.bounce.slice(o * this.PL, (o + 1) * this.PL) };
+  }
+
+  /** Per part, the irradiance at a hit point: direct sun keys and lamps, the ambient the volume lets in, the volume's bounce. */
+  private incident(tri: number, hx: number, hy: number, hz: number, n: [number, number, number], out: Float32Array): void {
+    const PL = this.PL;
     const cx = Math.floor(hx / CELL), cy = Math.floor(hy / CELL), cz = Math.floor(hz / CELL);
     let h1 = (Math.imul(tri, 0x9e3779b1) ^ Math.imul(cx, 73856093) ^ Math.imul(cy, 19349663) ^ Math.imul(cz, 83492791)) | 0;
     if (h1 === -1) h1 = 0;
     const h2 = (Math.imul(tri + 7, 0x85ebca6b) ^ Math.imul(cx + 11, 0xc2b2ae35) ^ Math.imul(cy + 13, 0x27d4eb2f) ^ Math.imul(cz + 17, 0x165667b1)) | 0;
-    const mask = (1 << TABLE_BITS) - 1;
+    const mask = (1 << this.tableBits) - 1;
     const slot = (h1 >>> 0) & mask;
     let free = -1;
     for (let probe = 0; probe < 4; probe++) {
       const s = (slot + probe) & mask;
       if (this.keyA[s] === h1 && this.keyB[s] === h2) {
-        out[0] = this.vals[s * 3] as number;
-        out[1] = this.vals[s * 3 + 1] as number;
-        out[2] = this.vals[s * 3 + 2] as number;
+        for (let k = 0; k < PL; k++) out[k] = this.vals[s * PL + k] as number;
         return;
       }
       if (this.keyA[s] === -1) {
@@ -649,18 +756,31 @@ export class LightmapBaker {
         break;
       }
     }
-    const { scene, sun, lamps, ambient, grid, volume } = this.input;
+    const { scene, sunKeys, lamps, grid, field, stride, codes } = this.input;
     scene.skipLo = scene.skipHi = 0;
     const maxT = 60;
-    let er = 0, eg = 0, eb = 0;
     const ox = hx + n[0] * 2e-3, oy = hy + n[1] * 2e-3, oz = hz + n[2] * 2e-3;
-    if (sun) {
-      const s = sun.direction;
+    // What the volume holds half a probe out along the normal: the sky the hit sees and each part's bounce that reaches it.
+    const half = grid.spacing * 0.5;
+    const v = this.volScratch;
+    sampleStrided(grid, field, stride, codes, null, hx + n[0] * half, hy + n[1] * half, hz + n[2] * half, v);
+    const vis = Math.max(0, Math.min(1, v[0]! + v[1]! * n[0] + v[2]! * n[1] + v[3]! * n[2]));
+    for (let p = 0; p < this.parts; p++) {
+      for (let c = 0; c < 3; c++) {
+        const so = 4 + p * PART_FLOATS + c * 4;
+        let b = v[so]! + v[so + 1]! * n[0] + v[so + 2]! * n[1] + v[so + 3]! * n[2];
+        if (p !== PART_SKY1 && b < 0) b = 0;
+        out[p * 3 + c] = b + (p === PART_SKY0 ? vis : p === PART_SKY1 ? vis * n[1] : 0);
+      }
+    }
+    for (let k = 0; k < sunKeys.length; k++) {
+      const s = sunKeys[k] as V3;
       const cos = n[0] * s[0] + n[1] * s[1] + n[2] * s[2];
       if (cos > 0 && !scene.occluded(ox, oy, oz, s[0], s[1], s[2], maxT)) {
-        er += sun.irradiance[0] * cos;
-        eg += sun.irradiance[1] * cos;
-        eb += sun.irradiance[2] * cos;
+        const q = (PART_SUN0 + k) * 3;
+        out[q] = out[q]! + cos;
+        out[q + 1] = out[q + 1]! + cos;
+        out[q + 2] = out[q + 2]! + cos;
       }
     }
     for (const lamp of lamps) {
@@ -673,30 +793,22 @@ export class LightmapBaker {
       const f = 1 - (d / lamp.range) ** 4;
       const att = (f * f) / Math.max(0.01, d2);
       if (scene.occluded(ox, oy, oz, lx / d, ly / d, lz / d, d - 0.05)) continue;
-      er += lamp.color[0] * att * cos;
-      eg += lamp.color[1] * att * cos;
-      eb += lamp.color[2] * att * cos;
-    }
-    // What the volume holds half a probe out along the normal: the sky the hit sees and the bounce that reaches it.
-    const half = grid.spacing * 0.5;
-    const v = sampleVolume(grid, volume, hx + n[0] * half, hy + n[1] * half, hz + n[2] * half, n, this.volScratch);
-    const e: [number, number, number] = [er, eg, eb];
-    for (let c = 0; c < 3; c++) {
-      const amb = Math.max(0, ambient.a[c as 0 | 1 | 2] + ambient.b[c as 0 | 1 | 2] * n[1]);
-      out[c] = (e[c] as number) + v.vis * amb + v.bounce[c]!;
+      const q = PART_LAMP * 3;
+      out[q] = out[q]! + lamp.color[0] * att * cos;
+      out[q + 1] = out[q + 1]! + lamp.color[1] * att * cos;
+      out[q + 2] = out[q + 2]! + lamp.color[2] * att * cos;
     }
     // A free slot of the probe run, else the first one is replaced.
     const put = free >= 0 ? free : slot;
     this.keyA[put] = h1;
     this.keyB[put] = h2;
-    this.vals[put * 3] = out[0];
-    this.vals[put * 3 + 1] = out[1];
-    this.vals[put * 3 + 2] = out[2];
+    for (let k = 0; k < PL; k++) this.vals[put * PL + k] = out[k] as number;
   }
 
   private gatherTexel(o: number): void {
     const t = this.texels as Texels;
     const { scene, proxies, ground } = this.input;
+    const PL = this.PL;
     const px = t.pos[o * 3] as number, py = t.pos[o * 3 + 1] as number, pz = t.pos[o * 3 + 2] as number;
     const nx = t.nrm[o * 3] as number, ny = t.nrm[o * 3 + 1] as number, nz = t.nrm[o * 3 + 2] as number;
     // Tangent frame.
@@ -733,7 +845,8 @@ export class LightmapBaker {
     const R = this.samples;
     const maxT = Math.max(30, 2 * (this.input.grid.spacing * Math.max(this.input.grid.nx, this.input.grid.ny, this.input.grid.nz)));
     let escaped = 0;
-    let r = 0, g = 0, b = 0;
+    const sum = this.sum;
+    sum.fill(0);
     let back = 0;
     const n3 = this.n3;
     const sh = this.shade;
@@ -750,11 +863,7 @@ export class LightmapBaker {
       this.rays++;
       if (tri < 0) {
         if (dy > 0 || oy <= ground.y) escaped++;
-        else {
-          r += this.groundL[0];
-          g += this.groundL[1];
-          b += this.groundL[2];
-        }
+        else for (let q = 0; q < PL; q++) sum[q] = sum[q]! + this.groundL[q]!;
         continue;
       }
       const dist = scene.hitT;
@@ -766,9 +875,12 @@ export class LightmapBaker {
         n3[2] = -n3[2];
       }
       this.incident(tri, ox + dx * dist, oy + dy * dist, oz + dz * dist, n3, sh);
-      r += (scene.albedo[tri * 3] as number) * sh[0];
-      g += (scene.albedo[tri * 3 + 1] as number) * sh[1];
-      b += (scene.albedo[tri * 3 + 2] as number) * sh[2];
+      const ar = scene.albedo[tri * 3] as number, ag = scene.albedo[tri * 3 + 1] as number, ab = scene.albedo[tri * 3 + 2] as number;
+      for (let q = 0; q < PL; q += 3) {
+        sum[q] = sum[q]! + ar * sh[q]!;
+        sum[q + 1] = sum[q + 1]! + ag * sh[q + 1]!;
+        sum[q + 2] = sum[q + 2]! + ab * sh[q + 2]!;
+      }
     }
     scene.skipLo = scene.skipHi = 0;
     // A texel inside a wall (most rays leave through its back faces) has no light of its own: it takes its neighbours'.
@@ -777,9 +889,20 @@ export class LightmapBaker {
       return;
     }
     this.vis[o] = escaped / R;
-    this.bounce[o * 3] = r / R;
-    this.bounce[o * 3 + 1] = g / R;
-    this.bounce[o * 3 + 2] = b / R;
+    for (let q = 0; q < PL; q++) this.bounce[o * PL + q] = sum[q]! / R;
+  }
+
+  /** Luminance of a texel's parts under unit weights (the sky gradient left out: it is signed): what the denoiser compares. */
+  private lum(b: Float32Array, o: number): number {
+    const PL = this.PL;
+    let r = 0, g = 0, bl = 0;
+    for (let p = 0; p < this.parts; p++) {
+      if (p === PART_SKY1) continue;
+      r += b[o * PL + p * 3] as number;
+      g += b[o * PL + p * 3 + 1] as number;
+      bl += b[o * PL + p * 3 + 2] as number;
+    }
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
   }
 
   /** Two passes (steps 1 and 2) of an edge-aware 3 × 3 filter: only texels on the same surface (normal, distance) count. */
@@ -787,21 +910,26 @@ export class LightmapBaker {
     const t = this.texels as Texels;
     const S = t.size;
     const cov = t.cov;
+    const PL = this.PL;
     this.fillBad();
     const sigmaP = 3 / this.input.layout.density;
     // Noise of a visibility estimate from R stratified rays.
     const sigmaVis = Math.max(0.03, 2.2 * Math.sqrt(0.25 / this.samples));
     let vis = this.vis;
     let bounce = this.bounce;
+    const acc = new Float64Array(PL);
+    const lumOf = new Float32Array(S * S);
     for (const step of [1, 2]) {
       const vo = new Float32Array(vis.length);
       const bo = new Float32Array(bounce.length);
+      for (let o = 0; o < S * S; o++) if (cov[o] === 1) lumOf[o] = this.lum(bounce, o);
       for (let j = 0; j < S; j++) {
         for (let i = 0; i < S; i++) {
           const o = j * S + i;
           if (cov[o] !== 1) continue;
-          const lumI = 0.2126 * (bounce[o * 3] as number) + 0.7152 * (bounce[o * 3 + 1] as number) + 0.0722 * (bounce[o * 3 + 2] as number);
-          let ws = 0, sv = 0, sr = 0, sg = 0, sb = 0;
+          const lumI = lumOf[o] as number;
+          let ws = 0, sv = 0;
+          acc.fill(0);
           for (let dj = -1; dj <= 1; dj++) {
             for (let di = -1; di <= 1; di++) {
               const x = i + di * step, y = j + dj * step;
@@ -816,20 +944,15 @@ export class LightmapBaker {
               const d2 = ddx * ddx + ddy * ddy + ddz * ddz;
               if (d2 > 4 * sigmaP * sigmaP) continue;
               const dv = (vis[o] as number) - (vis[q] as number);
-              const lumQ = 0.2126 * (bounce[q * 3] as number) + 0.7152 * (bounce[q * 3 + 1] as number) + 0.0722 * (bounce[q * 3 + 2] as number);
-              const dl = lumI - lumQ;
-              const w = Math.exp(-d2 / (2 * sigmaP * sigmaP) - (dv * dv) / (2 * sigmaVis * sigmaVis) - (dl * dl) / (2 * (0.3 * (lumI + lumQ) + 0.02) ** 2)) * (di === 0 && dj === 0 ? 1.5 : 1);
+              const dl = lumI - (lumOf[q] as number);
+              const w = Math.exp(-d2 / (2 * sigmaP * sigmaP) - (dv * dv) / (2 * sigmaVis * sigmaVis) - (dl * dl) / (2 * (0.3 * (lumI + (lumOf[q] as number)) + 0.02) ** 2)) * (di === 0 && dj === 0 ? 1.5 : 1);
               ws += w;
               sv += w * (vis[q] as number);
-              sr += w * (bounce[q * 3] as number);
-              sg += w * (bounce[q * 3 + 1] as number);
-              sb += w * (bounce[q * 3 + 2] as number);
+              for (let k = 0; k < PL; k++) acc[k] = acc[k]! + w * (bounce[q * PL + k] as number);
             }
           }
           vo[o] = ws > 0 ? sv / ws : (vis[o] as number);
-          bo[o * 3] = ws > 0 ? sr / ws : (bounce[o * 3] as number);
-          bo[o * 3 + 1] = ws > 0 ? sg / ws : (bounce[o * 3 + 1] as number);
-          bo[o * 3 + 2] = ws > 0 ? sb / ws : (bounce[o * 3 + 2] as number);
+          for (let k = 0; k < PL; k++) bo[o * PL + k] = ws > 0 ? acc[k]! / ws : (bounce[o * PL + k] as number);
         }
       }
       vis = vo;
@@ -839,16 +962,19 @@ export class LightmapBaker {
     this.bounce = bounce;
   }
 
-  /** Bad texels take the mean of their good 8-neighbours on the same surface, a ring at a time (three rings at most). */
+  /** Bad texels take the mean of their good 8-neighbours on the same surface, a ring at a time (six rings at most). */
   private fillBad(): void {
     const t = this.texels as Texels;
     const S = t.size;
+    const PL = this.PL;
+    const acc = new Float64Array(PL);
     for (let ring = 0; ring < 6; ring++) {
       const fixed: number[] = [];
       for (let o = 0; o < S * S; o++) {
         if (!this.bad[o]) continue;
         const i = o % S, j = (o - i) / S;
-        let n = 0, v = 0, r = 0, g = 0, b = 0;
+        let n = 0, v = 0;
+        acc.fill(0);
         for (const [dx, dy] of NEIGHBOURS) {
           const x = i + dx, y = j + dy;
           if (x < 0 || y < 0 || x >= S || y >= S) continue;
@@ -858,15 +984,11 @@ export class LightmapBaker {
           if (dn < 0.9) continue;
           n++;
           v += this.vis[q] as number;
-          r += this.bounce[q * 3] as number;
-          g += this.bounce[q * 3 + 1] as number;
-          b += this.bounce[q * 3 + 2] as number;
+          for (let k = 0; k < PL; k++) acc[k] = acc[k]! + (this.bounce[q * PL + k] as number);
         }
         if (n === 0) continue;
         this.vis[o] = v / n;
-        this.bounce[o * 3] = r / n;
-        this.bounce[o * 3 + 1] = g / n;
-        this.bounce[o * 3 + 2] = b / n;
+        for (let k = 0; k < PL; k++) this.bounce[o * PL + k] = acc[k]! / n;
         fixed.push(o);
       }
       if (fixed.length === 0) break;
@@ -874,42 +996,116 @@ export class LightmapBaker {
     }
     // Whatever is left (a chart that lies inside a solid: a thin curtain, a canopy, a wall behind a box) takes what the light volume
     // holds at its own spot: a building-wide mean (or open sky) read as a pale patch against the walls around it.
-    const { grid, volume } = this.input;
+    const { grid, field, stride, codes } = this.input;
     const half = grid.spacing * 0.5;
+    const v = this.volScratch;
     let left = 0;
     for (let o = 0; o < S * S; o++) {
       if (!this.bad[o]) continue;
       left++;
       const nx = t.nrm[o * 3] as number, ny = t.nrm[o * 3 + 1] as number, nz = t.nrm[o * 3 + 2] as number;
-      const v = sampleVolume(grid, volume, (t.pos[o * 3] as number) + nx * half, (t.pos[o * 3 + 1] as number) + ny * half, (t.pos[o * 3 + 2] as number) + nz * half, [nx, ny, nz], this.volScratch);
-      this.vis[o] = v.vis;
-      this.bounce[o * 3] = v.bounce[0];
-      this.bounce[o * 3 + 1] = v.bounce[1];
-      this.bounce[o * 3 + 2] = v.bounce[2];
+      sampleStrided(grid, field, stride, codes, null, (t.pos[o * 3] as number) + nx * half, (t.pos[o * 3 + 1] as number) + ny * half, (t.pos[o * 3 + 2] as number) + nz * half, v);
+      this.vis[o] = Math.max(0, Math.min(1, v[0]! + v[1]! * nx + v[2]! * ny + v[3]! * nz));
+      for (let p = 0; p < this.parts; p++) {
+        for (let c = 0; c < 3; c++) {
+          const so = 4 + p * PART_FLOATS + c * 4;
+          const b = v[so]! + v[so + 1]! * nx + v[so + 2]! * ny + v[so + 3]! * nz;
+          this.bounce[o * PL + p * 3 + c] = p === PART_SKY1 ? b : Math.max(0, b);
+        }
+      }
     }
     this.leftover = left;
   }
 
   private encode(): void {
-    const t = this.texels as Texels;
-    const S = t.size;
-    // The scale: the 99.7th percentile of the brightest channel, so one hot texel does not flatten the rest.
-    const peaks: number[] = [];
-    for (let o = 0; o < S * S; o++) if (t.cov[o] === 1) peaks.push(Math.max(this.bounce[o * 3] as number, this.bounce[o * 3 + 1] as number, this.bounce[o * 3 + 2] as number));
-    peaks.sort((a, b) => a - b);
-    const scale = Math.max(0.05, peaks.length > 0 ? (peaks[Math.min(peaks.length - 1, Math.floor(peaks.length * 0.997))] as number) : 0.05);
-    const rgba = new Uint8Array(S * S * 4);
-    for (let o = 0; o < S * S; o++) {
-      const src = t.cov[o] === 1 ? o : t.cov[o] === 2 ? (t.source[o] as number) : -1;
-      if (src < 0) continue;
-      for (let c = 0; c < 3; c++) {
-        const v = Math.max(0, (this.bounce[src * 3 + c] as number) / scale);
-        rgba[o * 4 + c] = Math.max(0, Math.min(255, Math.round(255 * Math.sqrt(Math.min(1, v)))));
-      }
-      rgba[o * 4 + 3] = encodeVis(this.vis[src] as number);
-    }
-    this.result = { size: S, rgba, scale, texels: t.covered, rays: this.rays };
+    this.result = encodeLightmap(this.texels as Texels, this.vis, this.bounce, this.parts, this.rays);
   }
+}
+
+/**
+ * Encode a bake's texels (`vis` per texel, `bounce`: every part's RGB per texel, parts in order) into the stored layers
+ * (`relight.ts`): the CPU bake's last step, and that of a bake made elsewhere (Cycles, scripts/blender-bake.ts) on the same
+ * texels.
+ */
+export function encodeLightmap(t: Pick<Texels, 'size' | 'cov' | 'source' | 'covered'>, vis: Float32Array, bounce: Float32Array, parts: number, rays: number): LightmapResult {
+  const S = t.size;
+  const P = parts;
+  const PL = parts * 3;
+  const K = P - PART_SUN0;
+  const layers = lightmapLayers(K);
+  const scales = new Float32Array(scaleCount(K)).fill(1);
+  // Per texel: the sun keys' luminance and their chroma (`relight.ts`: the keys share it).
+  const N = S * S;
+  const lum = new Float32Array(N * K);
+  const chroma = new Float32Array(N * 3);
+  for (let o = 0; o < N; o++) {
+    if (t.cov[o] !== 1) continue;
+    for (let k = 0; k < K; k++) {
+      const q = o * PL + (PART_SUN0 + k) * 3;
+      const r = Math.max(0, bounce[q] as number), g = Math.max(0, bounce[q + 1] as number), b = Math.max(0, bounce[q + 2] as number);
+      lum[o * K + k] = LUM[0] * r + LUM[1] * g + LUM[2] * b;
+      chroma[o * 3] = (chroma[o * 3] as number) + r;
+      chroma[o * 3 + 1] = (chroma[o * 3 + 1] as number) + g;
+      chroma[o * 3 + 2] = (chroma[o * 3 + 2] as number) + b;
+    }
+  }
+  // The scale of each stored value: the 99.9th percentile of its texels (the logarithmic code keeps the dark ones, see
+  // `encodePart`). Not the brightest: a lamp's own shade, a centimetre from the light, takes thousands of times what the walls
+  // take, and the walls' lamp light then sank to the code's floor and flickered between it and nothing, texel by texel.
+  const scaleOf = (value: (o: number) => number): number => {
+    const v: number[] = [];
+    for (let o = 0; o < N; o++) if (t.cov[o] === 1) v.push(value(o));
+    v.sort((x, y) => x - y);
+    return Math.max(1e-6, v.length > 0 ? (v[Math.min(v.length - 1, Math.floor(v.length * 0.999))] as number) : 1e-6);
+  };
+  for (const p of [PART_SKY0, PART_SKY1, PART_LAMP]) scales[p] = scaleOf((o) => Math.max(Math.abs(bounce[o * PL + p * 3] as number), Math.abs(bounce[o * PL + p * 3 + 1] as number), Math.abs(bounce[o * PL + p * 3 + 2] as number)));
+  for (let k = 0; k < K; k++) scales[LAYER_SUN0 + k] = scaleOf((o) => lum[o * K + k] as number);
+  const rgba = new Uint8Array(N * 4 * layers);
+  const layer = N * 4;
+  for (let o = 0; o < N; o++) {
+    const src = t.cov[o] === 1 ? o : t.cov[o] === 2 ? (t.source[o] as number) : -1;
+    if (src < 0) continue;
+    const a = encodeVis(vis[src] as number);
+    for (const p of [PART_SKY0, PART_SKY1, PART_LAMP]) {
+      const d = p * layer + o * 4;
+      for (let c = 0; c < 3; c++) rgba[d + c] = encodePart((bounce[src * PL + p * 3 + c] as number) / (scales[p] as number), p === PART_SKY1);
+    }
+    // Chroma over its largest channel (white where no sun reaches).
+    const cr = chroma[src * 3] as number, cg = chroma[src * 3 + 1] as number, cb = chroma[src * 3 + 2] as number;
+    const m = Math.max(cr, cg, cb);
+    const dc = LAYER_CHROMA * layer + o * 4;
+    rgba[dc] = m > 1e-9 ? Math.round((255 * cr) / m) : 255;
+    rgba[dc + 1] = m > 1e-9 ? Math.round((255 * cg) / m) : 255;
+    rgba[dc + 2] = m > 1e-9 ? Math.round((255 * cb) / m) : 255;
+    for (let k = 0; k < K; k++) rgba[(LAYER_SUN0 + Math.floor(k / 3)) * layer + o * 4 + (k % 3)] = encodePart((lum[src * K + k] as number) / (scales[LAYER_SUN0 + k] as number), false);
+    for (let l = 0; l < layers; l++) rgba[l * layer + o * 4 + 3] = a;
+  }
+  return { size: S, layers, keys: K, rgba, scales, texels: t.covered, rays };
+}
+
+/**
+ * Stops of light a byte of an unsigned part spans: values from the scale down to 2^-16 of it, in steps of 4.3 % (a light
+ * that is only a few percent of the brightest texel, in a dark corner, keeps the same relative precision as a sun patch).
+ */
+export const LOG_STOPS = 16;
+
+/**
+ * A part's value over its scale as a byte: logarithmic over {@link LOG_STOPS} stops, 0 for none. A signed part (the sky gradient)
+ * codes −1..1 around 128, sqrt-coded. Measured on Casa del Patio against other codings (docs/LIGHTING-BAKE.md): sqrt at the
+ * 99.7th percentile clipped the lamps' halos (the worst texel off by 90 %).
+ */
+export function encodePart(v: number, signed: boolean): number {
+  const x = Number.isFinite(v) ? v : 0;
+  if (!signed) return x <= 2 ** -LOG_STOPS ? 0 : Math.max(1, Math.min(255, Math.round(255 * (1 + Math.log2(Math.min(1, x)) / LOG_STOPS))));
+  const m = Math.sqrt(Math.min(1, Math.abs(x)));
+  return Math.max(1, Math.min(255, Math.round(128 + (x < 0 ? -m : m) * 127)));
+}
+
+/** The inverse of {@link encodePart} (the shader's decode). */
+export function decodePart(code: number, signed: boolean): number {
+  if (!signed) return code === 0 ? 0 : 2 ** (LOG_STOPS * (code / 255 - 1));
+  const m = (code - 128) / 127;
+  return m * Math.abs(m);
 }
 
 function radicalInverse2(k: number): number {
@@ -936,11 +1132,22 @@ export function decodeVis(alpha: number): number {
   return Math.max(0, Math.min(1, (alpha - VIS_BASE) / VIS_SPAN));
 }
 
-/** Decode one atlas texel the way the shader does (tests, diagnostics). */
-export function decodeTexel(rgba: Uint8Array, scale: number, x: number, y: number, size: number): { vis: number; bounce: [number, number, number] } | null {
-  const o = (y * size + x) * 4;
-  const a = rgba[o + 3] as number;
+/**
+ * Decode one atlas texel the way the shader does (tests, diagnostics): the visibility and every part's RGB bounce for unit
+ * weights (the sun keys coloured by the shared chroma); null where the atlas has no data.
+ */
+export function decodeTexel(r: Pick<LightmapResult, 'rgba' | 'scales' | 'size' | 'keys'>, x: number, y: number): { vis: number; parts: Array<[number, number, number]> } | null {
+  const N = r.size * r.size;
+  const at = (l: number, c: number): number => r.rgba[l * N * 4 + (y * r.size + x) * 4 + c] as number;
+  const a = at(0, 3);
   if (a === 0) return null;
-  const d = (c: number): number => ((rgba[o + c] as number) / 255) ** 2 * scale;
-  return { vis: decodeVis(a), bounce: [d(0), d(1), d(2)] };
+  const parts: Array<[number, number, number]> = [];
+  for (const p of [PART_SKY0, PART_SKY1, PART_LAMP]) parts.push([0, 1, 2].map((c) => decodePart(at(p, c), p === PART_SKY1) * (r.scales[p] as number)) as [number, number, number]);
+  const ch = [at(LAYER_CHROMA, 0) / 255, at(LAYER_CHROMA, 1) / 255, at(LAYER_CHROMA, 2) / 255];
+  const cl = LUM[0] * ch[0]! + LUM[1] * ch[1]! + LUM[2] * ch[2]!;
+  for (let k = 0; k < r.keys; k++) {
+    const l = decodePart(at(LAYER_SUN0 + Math.floor(k / 3), k % 3), false) * (r.scales[LAYER_SUN0 + k] as number);
+    parts.push(ch.map((c) => (cl > 0 ? (l * c) / cl : l)) as [number, number, number]);
+  }
+  return { vis: decodeVis(a), parts };
 }

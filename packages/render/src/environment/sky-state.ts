@@ -151,7 +151,7 @@ const SUNSET_BEARING = -108;
 /** Bearing of the moon at night (from the right, behind the content: silver rim light). */
 export const MOON_BEARING = 105;
 /** Moon elevation in degrees. */
-const MOON_ELEVATION = 38;
+export const MOON_ELEVATION = 38;
 /** Exponent of the dome's horizon → zenith gradient (lower = the zenith color reaches further down). */
 export const SKY_GRADIENT_POWER = 0.42;
 /** Share of the image light (sky reflections and ambient) taken away under a clear low sun (deeper, cooler shade). */

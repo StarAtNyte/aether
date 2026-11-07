@@ -16,8 +16,12 @@ import {
   FREE_STEPS,
   GEOMETRY_OFFSET,
   type VolumeBakeInput,
+  combineVolume,
+  PART_FLOATS,
+  storeVolumeParts,
   type VolumeGrid,
 } from '../src/environment/light-volume';
+import { PART_LAMP, PART_SKY1, PART_SUN0, partCount, relightCoefficients, volumeLightFloats, type RelightLighting } from '../src/environment/relight';
 
 /** Triangles of an axis-aligned box (outward winding) appended to `out`. */
 function box(out: number[], lo: [number, number, number], hi: [number, number, number]): void {
@@ -58,12 +62,27 @@ function room(window: boolean): TraceScene {
   return new TraceScene({ positions, albedo });
 }
 
+const SUN_KEY: [number, number, number] = [0.6 / Math.hypot(0.6, 0.5), 0.5 / Math.hypot(0.6, 0.5), 0];
+
+/** The light the old single-time bake was made for: the sun on the key, a sky, lamps at full strength. */
+const LIGHT: RelightLighting = {
+  sun: { direction: SUN_KEY, irradiance: [3, 2.9, 2.7] },
+  ambient: { a: [0.5, 0.55, 0.6], b: [0.2, 0.25, 0.35] },
+  lampScale: 1,
+};
+
+/** Bake and weight the parts for `light`: the classic 20-float volume. */
+function bakeVolume(inp: VolumeBakeInput, light: RelightLighting = LIGHT): Float32Array {
+  const baker = new LightVolumeBaker(inp);
+  baker.run();
+  return combineVolume(baker.probes, baker.data, baker.light, baker.parts, relightCoefficients(inp.sunKeys, light), new Float32Array(baker.probes * FLOATS_PER_PROBE));
+}
+
 function input(scene: TraceScene, grid: VolumeGrid, extra: Partial<VolumeBakeInput> = {}): VolumeBakeInput {
   return {
     grid,
     scene,
-    sun: { direction: [0.6, 0.5, 0].map((v, _i, a) => v / Math.hypot(...a)) as unknown as [number, number, number], irradiance: [3, 2.9, 2.7] },
-    ambient: { a: [0.5, 0.55, 0.6], b: [0.2, 0.25, 0.35] },
+    sunKeys: [SUN_KEY],
     ground: { y: -0.2, albedo: [0.25, 0.3, 0.2] },
     lamps: [],
     rays: 32,
@@ -127,7 +146,7 @@ describe('light volume: bake', () => {
   it('sees the whole sky outdoors (vis 1 upward, 0 downward) when nothing is around', () => {
     const scene = new TraceScene({ positions: new Float32Array(0), albedo: new Float32Array(0) });
     const g = planVolumeGrid([0, 0, 0], [2, 2, 2], 1)!;
-    const data = new LightVolumeBaker(input(scene, g, { rays: 64 })).run();
+    const data = bakeVolume(input(scene, g, { rays: 64 }));
     const up = sampleVolume(g, data, 1, 1, 1, [0, 1, 0]);
     const down = sampleVolume(g, data, 1, 1, 1, [0, -1, 0]);
     const side = sampleVolume(g, data, 1, 1, 1, [1, 0, 0]);
@@ -141,7 +160,7 @@ describe('light volume: bake', () => {
 
   it('a room with a window: dark at the back, brighter by the window, ceilings lit by the bounce', () => {
     const scene = room(true);
-    const data = new LightVolumeBaker(input(scene, ROOM_GRID)).run();
+    const data = bakeVolume(input(scene, ROOM_GRID));
     const byWindow = sampleVolume(ROOM_GRID, data, 2.4, 1.5, 0, [1, 0, 0]);
     const back = sampleVolume(ROOM_GRID, data, -2.5, 1.5, 0, [1, 0, 0]);
     expect(byWindow.vis).toBeGreaterThan(back.vis);
@@ -150,7 +169,7 @@ describe('light volume: bake', () => {
     expect(ceiling.vis).toBeLessThan(0.05);
     expect(ceiling.bounce[0]).toBeGreaterThan(0.02);
     // A closed room sees no sky at all.
-    const closed = new LightVolumeBaker(input(room(false), ROOM_GRID)).run();
+    const closed = bakeVolume(input(room(false), ROOM_GRID));
     const inside = sampleVolume(ROOM_GRID, closed, 0, 1.5, 0, [0, 1, 0]);
     expect(inside.vis).toBeLessThan(0.02);
     expect(inside.bounce[0]).toBeLessThan(ceiling.bounce[0]);
@@ -158,8 +177,10 @@ describe('light volume: bake', () => {
 
   it('lamps light a closed room through the bounce', () => {
     const scene = room(false);
-    const dark = new LightVolumeBaker(input(scene, ROOM_GRID, { sun: null })).run();
-    const lit = new LightVolumeBaker(input(scene, ROOM_GRID, { sun: null, lamps: [{ position: [0, 2.2, 0], color: [20, 16, 12], range: 8 }] })).run();
+    const noSun = { ...LIGHT, sun: null };
+    const dark = bakeVolume(input(scene, ROOM_GRID), noSun);
+    const lampInput = input(scene, ROOM_GRID, { lamps: [{ position: [0, 2.2, 0], color: [20, 16, 12], range: 8 }] });
+    const lit = bakeVolume(lampInput, noSun);
     const a = sampleVolume(ROOM_GRID, dark, -1, 1, 1, [0, 1, 0]);
     const b = sampleVolume(ROOM_GRID, lit, -1, 1, 1, [0, 1, 0]);
     expect(b.bounce[0]).toBeGreaterThan(a.bounce[0] + 0.1);
@@ -178,6 +199,11 @@ describe('light volume: bake', () => {
     expect(sliced.progress).toBe(1);
     expect(Array.from(sliced.data)).toEqual(Array.from(whole));
     expect(whole.every((v) => Number.isFinite(v))).toBe(true);
+    expect(sliced.light.every((v) => Number.isFinite(v))).toBe(true);
+    // The base data carries no light: it all lives in the parts.
+    for (let i = 0; i < sliced.probes; i++) for (let k = 4; k < GEOMETRY_OFFSET; k++) expect(whole[i * FLOATS_PER_PROBE + k]).toBe(0);
+    expect(sliced.parts).toBe(partCount(1));
+    expect(sliced.light.length).toBe(sliced.probes * volumeLightFloats(1));
   });
 
   it('flags probes buried in walls and fills them from free neighbours', () => {
@@ -211,6 +237,137 @@ function twoRooms(): TraceScene {
   const positions = Float32Array.from(t);
   return new TraceScene({ positions, albedo: new Float32Array((positions.length / 9) * 3).fill(0.7) });
 }
+
+describe('light volume: re-lightable parts', () => {
+  const baker = new LightVolumeBaker(input(room(true), ROOM_GRID, { lamps: [{ position: [0, 2.2, 0], color: [20, 16, 12], range: 8 }] }));
+  baker.run();
+  const F = FLOATS_PER_PROBE;
+  const combine = (l: RelightLighting): Float32Array =>
+    combineVolume(baker.probes, baker.data, baker.light, baker.parts, relightCoefficients([SUN_KEY], l), new Float32Array(baker.probes * F));
+  const dark: RelightLighting = { sun: null, ambient: { a: [0, 0, 0], b: [0, 0, 0] }, lampScale: 0 };
+  /** The light floats of a combined volume (everything but visibility and free distances). */
+  const lightOf = (v: Float32Array): number[] => {
+    const o: number[] = [];
+    for (let i = 0; i < baker.probes; i++) for (let k = 4; k < GEOMETRY_OFFSET; k++) o.push(v[i * F + k]!);
+    return o;
+  };
+  const probe = (v: Float32Array): number => lightOf(v).reduce((a, b) => a + Math.abs(b), 0);
+
+  it('a sun of irradiance X is twice the light of X/2, and no light is no bounce', () => {
+    const withSun = (x: number): Float32Array => combine({ ...dark, sun: { direction: SUN_KEY, irradiance: [x, x, x] } });
+    const a = lightOf(withSun(1)), b = lightOf(withSun(2));
+    expect(probe(withSun(1))).toBeGreaterThan(0.1);
+    for (let i = 0; i < a.length; i++) expect(b[i]!).toBeCloseTo(a[i]! * 2, 4);
+    expect(probe(combine(dark))).toBe(0);
+  });
+
+  it('the lamp part scales linearly with the lamps scale', () => {
+    const a = lightOf(combine({ ...dark, lampScale: 0.25 })), b = lightOf(combine({ ...dark, lampScale: 1 }));
+    expect(probe(combine({ ...dark, lampScale: 1 }))).toBeGreaterThan(0.1);
+    for (let i = 0; i < a.length; i++) expect(b[i]!).toBeCloseTo(a[i]! * 4, 4);
+    const coeffs = relightCoefficients([SUN_KEY], { ...dark, lampScale: 1 });
+    expect(coeffs[PART_LAMP * 3]).toBe(1);
+  });
+
+  it('weights add: the sun plus the lamps is the sum of each alone', () => {
+    const sun = lightOf(combine({ ...dark, sun: { direction: SUN_KEY, irradiance: [2, 2, 2] } }));
+    const lamp = lightOf(combine({ ...dark, lampScale: 0.5 }));
+    const both = lightOf(combine({ ...dark, sun: { direction: SUN_KEY, irradiance: [2, 2, 2] }, lampScale: 0.5 }));
+    for (let i = 0; i < both.length; i++) expect(both[i]!).toBeCloseTo(sun[i]! + lamp[i]!, 4);
+  });
+
+  it('the sky gradient part is signed (negative light floats appear)', () => {
+    const grad = combine({ ...dark, ambient: { a: [0, 0, 0], b: [1, 1, 1] } });
+    let neg = 0;
+    for (let i = 0; i < baker.probes; i++) for (let k = 4; k < GEOMETRY_OFFSET; k++) {
+      if (grad[i * F + k]! < -1e-6) neg++;
+    }
+    expect(neg).toBeGreaterThan(0);
+    expect(PART_SKY1).toBe(1);
+  });
+});
+
+describe('light volume: stored parts', () => {
+  const probes = 3;
+  const keys = 3;
+  const parts = partCount(keys);
+  const rng = ((): (() => number) => {
+    let x = 12345;
+    return () => ((x = (Math.imul(x, 1664525) + 1013904223) >>> 0) / 4294967296);
+  })();
+
+  /** RGB parts per probe (the form the bake works in): sky and lamp arbitrary, the keys sharing one colour per probe. */
+  function rgbParts(): Float32Array {
+    const src = new Float32Array(probes * parts * PART_FLOATS);
+    for (let i = 0; i < probes; i++) {
+      const o = i * parts * PART_FLOATS;
+      for (let k = 0; k < PART_SUN0 * PART_FLOATS; k++) src[o + k] = rng() * 2 - 0.5;
+      const colour = [0.5 + rng(), 0.4 + rng(), 0.3 + rng()];
+      for (let k = 0; k < keys; k++) {
+        const sh = [0.2 + rng(), rng() - 0.5, rng() - 0.5, rng() - 0.5];
+        for (let c = 0; c < 3; c++) for (let j = 0; j < 4; j++) src[o + (PART_SUN0 + k) * PART_FLOATS + c * 4 + j] = colour[c]! * sh[j]!;
+      }
+    }
+    return src;
+  }
+
+  function store(src: Float32Array): Float32Array {
+    const LF = volumeLightFloats(keys);
+    const light = new Float32Array(probes * LF);
+    for (let i = 0; i < probes; i++) storeVolumeParts(src, i * parts * PART_FLOATS, keys, light, i * LF);
+    return light;
+  }
+
+  it('is 40 + 4 floats per key per probe', () => {
+    expect(volumeLightFloats(0)).toBe(40);
+    expect(volumeLightFloats(keys)).toBe(40 + 4 * keys);
+    expect(store(rgbParts()).length).toBe(probes * volumeLightFloats(keys));
+  });
+
+  it('combining the compressed parts equals combining the RGB parts when the keys at a probe share a colour', () => {
+    const src = rgbParts();
+    const light = store(src);
+    const data = new Float32Array(probes * FLOATS_PER_PROBE);
+    const coeffs = new Float32Array(parts * 3);
+    for (let k = 0; k < coeffs.length; k++) coeffs[k] = rng() * 2 - 0.5;
+    const out = combineVolume(probes, data, light, parts, coeffs, new Float32Array(probes * FLOATS_PER_PROBE));
+    for (let i = 0; i < probes; i++) {
+      for (let c = 0; c < 3; c++) {
+        for (let j = 0; j < 4; j++) {
+          let want = 0;
+          for (let p = 0; p < parts; p++) want += coeffs[p * 3 + c]! * src[(i * parts + p) * PART_FLOATS + c * 4 + j]!;
+          expect(out[i * FLOATS_PER_PROBE + 4 + c * 4 + j]!).toBeCloseTo(want, 4);
+        }
+      }
+    }
+  });
+
+  it('keys of differing colour are approximated by their shared chroma, the luminance stays right', () => {
+    const src = rgbParts();
+    const o = (PART_SUN0 + 1) * PART_FLOATS;
+    // Make key 1 of probe 0 red while the others are grey: the stored form cannot keep both colours.
+    for (let j = 0; j < 4; j++) {
+      src[o + j] = src[o + j]! * 3;
+      src[o + 8 + j] = src[o + 8 + j]! * 0.2;
+    }
+    const light = store(src);
+    const coeffs = new Float32Array(parts * 3);
+    coeffs[(PART_SUN0 + 1) * 3 + 0] = coeffs[(PART_SUN0 + 1) * 3 + 1] = coeffs[(PART_SUN0 + 1) * 3 + 2] = 1;
+    const out = combineVolume(probes, new Float32Array(probes * FLOATS_PER_PROBE), light, parts, coeffs, new Float32Array(probes * FLOATS_PER_PROBE));
+    const lum = (c0: number, c1: number, c2: number): number => 0.2126 * c0 + 0.7152 * c1 + 0.0722 * c2;
+    // Luminance of the constant term (red, green, blue weighted) is the key's own.
+    expect(lum(out[4]!, out[8]!, out[12]!)).toBeCloseTo(lum(src[o]!, src[o + 4]!, src[o + 8]!), 4);
+    expect(out.every((v) => Number.isFinite(v))).toBe(true);
+  });
+
+  it('a probe no sun reaches reads the sun keys as zero without NaN', () => {
+    const src = new Float32Array(probes * parts * PART_FLOATS);
+    const light = store(src);
+    const coeffs = new Float32Array(parts * 3).fill(2);
+    const out = combineVolume(probes, new Float32Array(probes * FLOATS_PER_PROBE), light, parts, coeffs, new Float32Array(probes * FLOATS_PER_PROBE));
+    expect(out.every((v) => v === 0)).toBe(true);
+  });
+});
 
 describe('light volume: leaks', () => {
   it('packs and unpacks free distances exactly in half precision', () => {
@@ -247,8 +404,7 @@ describe('light volume: leaks', () => {
 
   it('a thin wall keeps the sunlit room out of the dark room beside it', () => {
     const g = planVolumeGrid([-3.2, -0.2, -1.7], [3.2, 3.2, 1.7], 0.45)!;
-    const baker = new LightVolumeBaker(input(twoRooms(), g, { rays: 48, passes: 3 }));
-    const data = baker.run();
+    const data = bakeVolume(input(twoRooms(), g, { rays: 48, passes: 3 }));
     // Probes carry their free distances: one just west of the party wall sees no further east than the wall.
     const sp = g.spacing;
     const ix = Math.round((-0.2 - g.min[0]) / sp);

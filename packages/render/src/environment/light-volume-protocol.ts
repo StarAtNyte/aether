@@ -3,9 +3,10 @@
  * replies are validated on arrival (sizes, finiteness, grid bounds): the worker only runs our own bake code
  * on numbers, and the main thread never uploads a malformed reply.
  */
-import { FLOATS_PER_PROBE, MAX_TRACE_TRIANGLES, VOLUME_ALLOC, type VolumeBakeInput, type VolumeGrid, type VolumeLamp } from './light-volume';
+import { FLOATS_PER_PROBE, MAX_SUN_KEYS, MAX_TRACE_TRIANGLES, VOLUME_ALLOC, type V3, type VolumeBakeInput, type VolumeGrid, type VolumeLamp } from './light-volume';
+import { volumeLightFloats } from './relight';
 
-/** A bake job: the trace scene as raw arrays plus the light. */
+/** A bake job: the trace scene as raw arrays plus the sun keys, the ground and the lamps at full strength. */
 export interface VolumeRequest {
   type: 'bake';
   id: number;
@@ -13,14 +14,13 @@ export interface VolumeRequest {
   positions: Float32Array;
   albedo: Float32Array;
   twoSided: Uint8Array;
-  sun: VolumeBakeInput['sun'];
-  ambient: VolumeBakeInput['ambient'];
+  sunKeys: V3[];
   ground: VolumeBakeInput['ground'];
   lamps: VolumeLamp[];
 }
 
 /** The worker's answer. */
-export type VolumeReply = { type: 'volume'; id: number; ok: true; data: Float32Array } | { type: 'volume'; id: number; ok: false; error: string };
+export type VolumeReply = { type: 'volume'; id: number; ok: true; data: Float32Array; light: Float32Array } | { type: 'volume'; id: number; ok: false; error: string };
 
 const MAX_LAMPS = 64;
 
@@ -57,21 +57,18 @@ export function parseVolumeRequest(raw: unknown): VolumeRequest | null {
   if (!grid || !(positions instanceof Float32Array) || !(albedo instanceof Float32Array) || !(twoSided instanceof Uint8Array)) return null;
   const tris = positions.length / 9;
   if (!Number.isInteger(tris) || tris < 1 || tris > MAX_TRACE_TRIANGLES || albedo.length !== tris * 3 || twoSided.length !== tris) return null;
-  let sun: VolumeRequest['sun'] = null;
-  if (r['sun'] !== null) {
-    const s = r['sun'] as Record<string, unknown> | undefined;
-    const direction = v3(s?.['direction'], -1.01, 1.01);
-    const irradiance = v3(s?.['irradiance'], 0, 1e4);
-    if (!direction || !irradiance) return null;
-    sun = { direction, irradiance };
+  const keysRaw = r['sunKeys'];
+  if (!Array.isArray(keysRaw) || keysRaw.length > MAX_SUN_KEYS) return null;
+  const sunKeys: V3[] = [];
+  for (const k of keysRaw as unknown[]) {
+    const d = v3(k, -1.01, 1.01);
+    if (!d || Math.abs(Math.hypot(d[0], d[1], d[2]) - 1) > 0.01) return null;
+    sunKeys.push(d);
   }
-  const amb = r['ambient'] as Record<string, unknown> | undefined;
-  const a = v3(amb?.['a'], -1e4, 1e4);
-  const b = v3(amb?.['b'], -1e4, 1e4);
   const gr = r['ground'] as Record<string, unknown> | undefined;
   const gy = gr?.['y'];
   const galb = v3(gr?.['albedo'], 0, 1);
-  if (!a || !b || !isNum(gy) || !galb) return null;
+  if (!isNum(gy) || !galb) return null;
   const lampsRaw = r['lamps'];
   if (!Array.isArray(lampsRaw) || lampsRaw.length > MAX_LAMPS) return null;
   const lamps: VolumeLamp[] = [];
@@ -83,17 +80,20 @@ export function parseVolumeRequest(raw: unknown): VolumeRequest | null {
     if (!position || !color || !isNum(range) || range <= 0 || range > 1e4) return null;
     lamps.push({ position, color, range });
   }
-  return { type: 'bake', id: r['id'] as number, grid, positions, albedo, twoSided, sun, ambient: { a, b }, ground: { y: gy, albedo: galb }, lamps };
+  return { type: 'bake', id: r['id'] as number, grid, positions, albedo, twoSided, sunKeys, ground: { y: gy, albedo: galb }, lamps };
 }
 
-/** Validate a reply against the grid it was asked for (main-thread side): the data must fit and be finite. */
-export function parseVolumeReply(raw: unknown, grid: VolumeGrid): VolumeReply | null {
+/** Validate a reply against the grid and sun-key count it was asked for (main-thread side): the data must fit and be finite. */
+export function parseVolumeReply(raw: unknown, grid: VolumeGrid, keys: number): VolumeReply | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
   if (r['type'] !== 'volume' || !isNum(r['id'])) return null;
   if (r['ok'] !== true) return { type: 'volume', id: r['id'] as number, ok: false, error: typeof r['error'] === 'string' ? (r['error'] as string).slice(0, 300) : 'bake failed' };
   const data = r['data'];
   if (!(data instanceof Float32Array) || data.length !== grid.nx * grid.ny * grid.nz * FLOATS_PER_PROBE) return null;
+  const light = r['light'];
+  if (!(light instanceof Float32Array) || light.length !== grid.nx * grid.ny * grid.nz * volumeLightFloats(keys)) return null;
   for (let i = 0; i < data.length; i++) if (!Number.isFinite(data[i]!)) return null;
-  return { type: 'volume', id: r['id'] as number, ok: true, data };
+  for (let i = 0; i < light.length; i++) if (!Number.isFinite(light[i]!)) return null;
+  return { type: 'volume', id: r['id'] as number, ok: true, data, light };
 }

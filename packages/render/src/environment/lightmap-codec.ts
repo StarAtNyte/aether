@@ -23,13 +23,13 @@ function makeCanvas(w: number, h: number): Canvas2D | null {
 
 export type ImageKind = 'webp' | 'png';
 
-/** Encode stacked RGBA (`size` × `2·size`, opaque) as `kind` at `quality` (0..1, WebP only); null when the browser cannot. */
-export async function encodeImage(stacked: Uint8Array, size: number, kind: ImageKind, quality: number): Promise<Uint8Array | null> {
-  const canvas = makeCanvas(size, size * 2);
+/** Encode stacked RGBA (`size` × `rows·size`, opaque) as `kind` at `quality` (0..1, WebP only; 1 is lossless); null when the browser cannot. */
+export async function encodeImage(stacked: Uint8Array, size: number, rows: number, kind: ImageKind, quality: number): Promise<Uint8Array | null> {
+  const canvas = makeCanvas(size, size * rows);
   const ctx = canvas?.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null | undefined;
   if (!canvas || !ctx) return null;
   try {
-    ctx.putImageData(new ImageData(Uint8ClampedArray.from(stacked), size, size * 2), 0, 0);
+    ctx.putImageData(new ImageData(Uint8ClampedArray.from(stacked), size, size * rows), 0, 0);
     const blob: Blob | null =
       'convertToBlob' in canvas ? await (canvas as OffscreenCanvas).convertToBlob({ type: `image/${kind}`, quality }) : await new Promise<Blob | null>((resolve) => (canvas as HTMLCanvasElement).toBlob(resolve, `image/${kind}`, quality));
     if (!blob || blob.type !== `image/${kind}`) return null;
@@ -39,17 +39,17 @@ export async function encodeImage(stacked: Uint8Array, size: number, kind: Image
   }
 }
 
-/** Decode image bytes to stacked RGBA of `size` × `2·size`; null when decoding fails or the image has another size. */
-export async function decodeImage(bytes: Uint8Array, size: number, kind: ImageKind): Promise<Uint8Array | null> {
+/** Decode image bytes to stacked RGBA of `size` × `rows·size`; null when decoding fails or the image has another size. */
+export async function decodeImage(bytes: Uint8Array, size: number, rows: number, kind: ImageKind): Promise<Uint8Array | null> {
   try {
     const bmp = await createImageBitmap(new Blob([bytes.slice().buffer], { type: `image/${kind}` }), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
     try {
-      if (bmp.width !== size || bmp.height !== size * 2) return null;
-      const canvas = makeCanvas(size, size * 2);
+      if (bmp.width !== size || bmp.height !== size * rows) return null;
+      const canvas = makeCanvas(size, size * rows);
       const ctx = canvas?.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null | undefined;
       if (!canvas || !ctx) return null;
       ctx.drawImage(bmp, 0, 0);
-      const data = ctx.getImageData(0, 0, size, size * 2).data;
+      const data = ctx.getImageData(0, 0, size, size * rows).data;
       return new Uint8Array(data.buffer, data.byteOffset, data.byteLength).slice();
     } finally {
       bmp.close();

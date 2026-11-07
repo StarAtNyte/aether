@@ -11,8 +11,11 @@
  *   no bake), and an unapplied or failed lightmap just leaves the light volume lighting the building.
  * - Any change to the building or its light drops the lightmap at once (geometry put back) and starts over once the volume has.
  * - Baking is visible ({@link status}) and can be cancelled; a cancelled bake is not started again for the same building.
- * - The assistant asks for a bake with {@link request} (quality, samples); the automatic bake only runs when the host says it is
- *   affordable ({@link LightmapOptions.autoBake}).
+ * - Baked light is re-lightable (`environment/relight.ts`): the key holds the building, never the hour, so a change of the
+ *   time of day, the sky or the lamps' daylight scale keeps the lightmap and only re-weights its parts (uniforms of the light).
+ * - Nothing bakes on its own. A viewer (the player) only loads what the cooked package ships ({@link LightmapOptions.autoLoad});
+ *   the editor draws real-time light and bakes only when asked ({@link request}: the "Preview baked light" action, the
+ *   assistant's `bake_light`), and only where baking is allowed ({@link LightmapOptions.bakeAllowed}).
  * - The bake takes a `bake` slot of the page's worker budget (@aether/core worker-scheduler) before it starts, and parks the
  *   worker between slices (giving the slot back) while the scheduler asks it to yield: the first picture, a drag, the view
  *   moving, or more urgent work waiting for a core.
@@ -21,7 +24,8 @@ import { Box3, type BufferGeometry, type Mesh } from 'three';
 import { WorkerSlot } from '@aether/core';
 import { log } from '../log';
 import { LIGHTMAP_ATTRIBUTE, LightVolume } from '../environment/light-volume-light';
-import { MAX_TRACE_TRIANGLES, type TraceInput, type V3, type VolumeGrid } from '../environment/light-volume';
+import { MAX_TRACE_TRIANGLES, partsField, type TraceInput, type V3, type VolumeGrid } from '../environment/light-volume';
+import { partCount, RELIGHT_VERSION } from '../environment/relight';
 import {
   LIGHTMAP_VERSION,
   LIGHTMAP_MAX_TRIANGLES,
@@ -83,8 +87,8 @@ export interface LightmapWorkerLike {
 export interface LightmapOptions {
   /** Called when a bake starts: the scene (null: nothing to bake). */
   gather: () => LightmapScene | null;
-  /** The finished light volume on screen, or null. */
-  volume: () => { grid: VolumeGrid; data: Float32Array } | null;
+  /** The finished light volume on screen with its re-lightable parts, or null. */
+  volume: () => { grid: VolumeGrid; data: Float32Array; light: Float32Array; keys: readonly V3[] } | null;
   /** The world has stopped changing (geometry built, no grow-in). */
   settled?: () => boolean;
   /** A lightmap was applied or taken away: redraw, re-adapt. */
@@ -93,8 +97,13 @@ export interface LightmapOptions {
   attach?: (source: LightmapSource | null) => void;
   /** The status changed. */
   onStatus?: (s: LightmapStatus) => void;
-  /** The host's verdict on starting a bake nobody asked for (tier, hardware, memory). */
-  autoBake?: () => boolean;
+  /**
+   * Whether a lightmap nobody asked for is looked up and applied (a bundled file, the cache): the player's cooked worlds. Never a
+   * bake. Default false (the editor draws real-time light until "Preview baked light").
+   */
+  autoLoad?: () => boolean;
+  /** Whether {@link LightmapController.request} may bake (false: a request only looks up stored files). Default true. */
+  bakeAllowed?: boolean;
   /** Quality of an automatic bake. */
   autoQuality?: () => LightmapQuality;
   createWorker?: (() => LightmapWorkerLike) | null;
@@ -150,7 +159,10 @@ interface Prepared {
   input: Required<TraceInput>;
   proxies: TraceProxy[];
   grid: VolumeGrid;
+  /** The volume's visibility and free distances, its parts and sun keys. */
   volume: Float32Array;
+  volumeLight: Float32Array;
+  keys: readonly V3[];
   lighting: VolumeLighting;
   groundY: number;
   /** Hash of the arrays (filled on first use). */
@@ -166,6 +178,8 @@ export class LightmapController implements LightmapSource {
   private plan: LightmapPlan = planLightmap('medium');
   /** Whether the plan was chosen by a request (the assistant, the user) rather than by the automatic policy. */
   private requested = false;
+  /** The request may bake where baking is otherwise not allowed (the cook). */
+  private forced = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private worker: LightmapWorkerLike | null = null;
   private workerFailed = false;
@@ -313,11 +327,15 @@ export class LightmapController implements LightmapSource {
     return this.enabled && !this.disposed && (this.looking || this.applying);
   }
 
-  /** Bake now at this quality (the assistant's `bake_light`, the studio's button). Replaces a running or applied bake. */
-  request(quality: LightmapQuality, samples?: number): void {
+  /**
+   * Bake now at this quality (the editor's "Preview baked light", the cook). Replaces a running or applied bake. Where baking is
+   * not allowed a request only looks for a stored lightmap, unless `force` (the cook's own page).
+   */
+  request(quality: LightmapQuality, samples?: number, force = false): void {
     if (!this.enabled || this.disposed) return;
     this.drop();
     this.requested = true;
+    this.forced = force;
     this.off = false;
     this.suppressed = null;
     this.plan = planLightmap(quality, samples);
@@ -487,6 +505,11 @@ export class LightmapController implements LightmapSource {
       }
       return;
     }
+    // Nothing is looked up for a world nobody asked baked light of, unless the host loads stored light on its own (the player).
+    if (auto && !(this.opts.autoLoad?.() ?? false)) {
+      this.setState('idle', '');
+      return;
+    }
     if (auto) this.plan = planLightmap(this.opts.autoQuality?.() ?? 'medium');
     const scene = this.opts.gather();
     if (!scene) {
@@ -510,7 +533,7 @@ export class LightmapController implements LightmapSource {
     if (hit) {
       if (await this.applyAsset(hit.bytes, prepared, hit.source, gen)) return;
     }
-    if (auto && !(this.opts.autoBake?.() ?? false)) {
+    if (auto || (this.opts.bakeAllowed === false && !this.forced)) {
       this.setState('idle', 'no baked light for this building yet');
       return;
     }
@@ -518,7 +541,7 @@ export class LightmapController implements LightmapSource {
   }
 
   /** Gather the surfaces in world space and the trace scene, a few milliseconds at a time. */
-  private async prepare(scene: LightmapScene, vol: { grid: VolumeGrid; data: Float32Array }, gen: number): Promise<Prepared | null> {
+  private async prepare(scene: LightmapScene, vol: { grid: VolumeGrid; data: Float32Array; light: Float32Array; keys: readonly V3[] }, gen: number): Promise<Prepared | null> {
     const slots: Slot[] = [];
     const data: LightmapMesh[] = [];
     let triangles = 0;
@@ -572,7 +595,7 @@ export class LightmapController implements LightmapSource {
       this.setState('idle', 'no building to trace');
       return null;
     }
-    return { slots, data, input, proxies, grid: vol.grid, volume: vol.data, lighting: scene.lighting, groundY: scene.groundY };
+    return { slots, data, input, proxies, grid: vol.grid, volume: vol.data, volumeLight: vol.light, keys: vol.keys, lighting: scene.lighting, groundY: scene.groundY };
   }
 
   /** The key of this building and light for `plan` (the geometry is hashed once per bake attempt). */
@@ -591,7 +614,10 @@ export class LightmapController implements LightmapSource {
       if ((globalThis as { __AETHER_KEYDEBUG?: boolean }).__AETHER_KEYDEBUG) this.keyParts = arrays.map((a, i) => `${i < 3 ? ['trace', 'albedo', 'twoSided'][i] : `mesh${i - 3}`}:${contentHash([a]).slice(0, 8)}:${(a as { length?: number }).length}`);
     }
     const lamps = p.lighting.lamps.map((l) => [l.position, l.color, l.range, l.room ?? null]);
-    const scalars = [VOLUME_BAKE_VERSION, plan.size, plan.samples, plan.density, p.data.map((d, i) => (p.slots[i]?.wall ? -1 : meshTriangleCount(d))), p.grid, p.lighting.sun, p.lighting.ambient, p.groundY, lamps];
+    // The building and what the bake reads, never the light it is shown in (re-lightable: the hour does not change the key). The
+    // rays per texel are not in it either: a stored bake with at least the rays asked for will do (see `applyAsset`), so a
+    // cooked package's bake (more rays than any plan's default) is found by the plan alone.
+    const scalars = [VOLUME_BAKE_VERSION, RELIGHT_VERSION, plan.size, plan.density, p.data.map((d, i) => (p.slots[i]?.wall ? -1 : meshTriangleCount(d))), p.grid, p.keys, p.lighting.groundAlbedo, p.groundY, lamps];
     this.keyInputs = { content: p.content, scalars: JSON.stringify(scalars) };
     return lightmapKey(p.content, scalars);
   }
@@ -679,28 +705,8 @@ export class LightmapController implements LightmapSource {
     }
     const id = ++this.jobId;
     const triCounts = p.data.map((d) => meshTriangleCount(d));
-    const proxyArr = new Float32Array(p.proxies.length * 7);
-    p.proxies.forEach((b, i) => proxyArr.set([...b.lo, ...b.hi, b.tri], i * 7));
-    const l = p.lighting;
-    const req: LightmapRequest = {
-      type: 'bake',
-      id,
-      maxSize: this.plan.size,
-      density: this.plan.density,
-      samples: this.plan.samples,
-      meshes: p.data.map((d) => ({ positions: d.positions.slice(), normals: d.normals.slice(), index: d.index ? d.index.slice() : null })),
-      positions: p.input.positions.slice(),
-      albedo: p.input.albedo.slice(),
-      twoSided: p.input.twoSided.slice(),
-      proxies: proxyArr,
-      grid: p.grid,
-      volume: p.volume.slice(),
-      sun: l.sun,
-      ambient: l.ambient,
-      ground: { y: p.groundY, albedo: l.groundAlbedo },
-      lamps: l.lamps.slice(0, 64).map((x) => ({ position: [...x.position] as V3, color: [...x.color] as V3, range: x.range })),
-    };
-    const transfer: Transferable[] = [req.positions.buffer, req.albedo.buffer, req.twoSided.buffer, req.proxies.buffer, req.volume.buffer];
+    const req = this.request0(p, id, this.plan);
+    const transfer: Transferable[] = [req.positions.buffer, req.albedo.buffer, req.twoSided.buffer, req.proxies.buffer, req.field.buffer, req.codes.buffer];
     for (const m of req.meshes) {
       transfer.push(m.positions.buffer, m.normals.buffer);
       if (m.index) transfer.push(m.index.buffer);
@@ -721,11 +727,68 @@ export class LightmapController implements LightmapSource {
     this.watchYield(id);
   }
 
+  /** The worker's request for prepared surfaces and a plan (copies of every array: the request is transferred). */
+  private request0(p: Prepared, id: number, plan: LightmapPlan): LightmapRequest {
+    const proxyArr = new Float32Array(p.proxies.length * 7);
+    p.proxies.forEach((b, i) => proxyArr.set([...b.lo, ...b.hi, b.tri], i * 7));
+    const l = p.lighting;
+    return {
+      type: 'bake',
+      id,
+      maxSize: plan.size,
+      density: plan.density,
+      samples: plan.samples,
+      meshes: p.data.map((d) => ({ positions: d.positions.slice(), normals: d.normals.slice(), index: d.index ? d.index.slice() : null })),
+      positions: p.input.positions.slice(),
+      albedo: p.input.albedo.slice(),
+      twoSided: p.input.twoSided.slice(),
+      proxies: proxyArr,
+      grid: p.grid,
+      ...partsField(p.grid.nx * p.grid.ny * p.grid.nz, p.volume, p.volumeLight, partCount(p.keys.length)),
+      sunKeys: p.keys.map((k) => [k[0], k[1], k[2]] as V3),
+      ground: { y: p.groundY, albedo: l.groundAlbedo },
+      lamps: l.lamps.slice(0, 64).map((x) => ({ position: [...x.position] as V3, color: [...x.color] as V3, range: x.range })),
+    };
+  }
+
+  /**
+   * What a bake of this building at `quality` would be given, without baking (a bake made elsewhere: scripts/blender-bake.ts
+   * through the cook): the worker's request, the key its file must carry and the triangle count of every offered mesh (the
+   * file's `tris`). Null while there is no finished volume or no building.
+   */
+  async bakeJob(quality: LightmapQuality, samples?: number): Promise<{ key: string; request: LightmapRequest; triCounts: number[] } | null> {
+    if (!this.enabled || this.disposed) return null;
+    const vol = this.opts.volume();
+    const scene = vol ? this.opts.gather() : null;
+    if (!vol || !scene) return null;
+    const plan = planLightmap(quality, samples);
+    const p = await this.prepare(scene, vol, this.gen);
+    if (!p) return null;
+    return { key: this.keyOf(p, plan), request: this.request0(p, 0, plan), triCounts: p.data.map((d) => meshTriangleCount(d)) };
+  }
+
+  /**
+   * Apply a finished `.lmap` made elsewhere (scripts/blender-bake.ts) as if this controller had baked it: it must match the
+   * building (key, triangle counts, sun keys). True when applied.
+   */
+  async applyFile(bytes: Uint8Array): Promise<boolean> {
+    if (!this.enabled || this.disposed) return false;
+    const vol = this.opts.volume();
+    const scene = vol ? this.opts.gather() : null;
+    if (!vol || !scene) return false;
+    const gen = this.gen;
+    const p = await this.prepare(scene, vol, gen);
+    if (!p) return false;
+    this.requested = true;
+    this.forced = true;
+    return this.applyAsset(bytes, p, 'static', gen);
+  }
+
   private onReply(raw: unknown): void {
     const job = this.job;
     if (!job || this.disposed || job.gen !== this.gen) return;
     if ((raw as { id?: unknown } | null)?.id !== job.id) return;
-    const reply = parseLightmapReply(raw, job.triCounts);
+    const reply = parseLightmapReply(raw, job.triCounts, job.prepared.keys.length);
     if (!reply) {
       log.warn('malformed lightmap reply ignored');
       this.endJob();
@@ -753,7 +816,9 @@ export class LightmapController implements LightmapSource {
       version: LIGHTMAP_VERSION,
       key: job.key,
       size: r.size,
-      scale: r.scale,
+      layers: r.layers,
+      scales: Array.from(r.scales),
+      keys: job.prepared.keys.map((k) => [k[0], k[1], k[2]] as [number, number, number]),
       quality: this.plan.quality,
       samples: this.plan.samples,
       density: r.density,
@@ -764,18 +829,19 @@ export class LightmapController implements LightmapSource {
       tris: r.uv.map((u, i) => (u ? (job.triCounts[i] as number) : -1)),
       image: 'raw',
     };
-    const stacked = stackAtlas(r.rgba, r.size);
-    // WebP when the browser can encode it (a fraction of the raw size), else PNG, else the raw atlas.
+    const rows = r.layers + 1;
+    const stacked = stackAtlas(r.rgba, r.size, r.layers);
+    // WebP when the browser can encode it (lossless first, a fraction of the raw size), else PNG, else the raw atlas.
     let image: Uint8Array = stacked;
-    for (const q of [0.92, 0.8, 0.65]) {
-      const webp = await encodeImage(stacked, r.size, 'webp', q);
+    for (const q of [1, 0.95, 0.9, 0.8]) {
+      const webp = await encodeImage(stacked, r.size, rows, 'webp', q);
       if (!webp) break;
       image = webp;
       meta.image = 'webp';
       if (webp.byteLength < LIGHTMAP_MAX_ASSET_BYTES * 0.75) break;
     }
     if (meta.image === 'raw') {
-      const png = await encodeImage(stacked, r.size, 'png', 1);
+      const png = await encodeImage(stacked, r.size, rows, 'png', 1);
       if (png) {
         image = png;
         meta.image = 'png';
@@ -801,10 +867,16 @@ export class LightmapController implements LightmapSource {
     // A sectioned wall is not baked here, so its triangle count is not compared (nor is its slot applied).
     if (asset.meta.tris.length !== triCounts.length || asset.meta.tris.some((t, i) => t !== -1 && t !== triCounts[i] && !p.slots[i]?.cut)) return false;
     let rgba: Uint8Array | null;
-    if (asset.meta.image === 'raw') rgba = unstackAtlas(asset.image, asset.meta.size);
+    const parts = asset.meta.layers;
+    // The parts must be the ones of the volume on screen (same sun keys): its bounce is what the lightmap's surfaces sit beside.
+    if (asset.meta.keys.length !== p.keys.length) return false;
+    // A request for more rays than the stored bake has bakes again.
+    if (this.requested && !this.forced && asset.meta.samples < this.plan.samples) return false;
+    if (this.forced && source === 'cache') return false;
+    if (asset.meta.image === 'raw') rgba = unstackAtlas(asset.image, asset.meta.size, parts);
     else {
-      const stacked = await decodeImage(asset.image, asset.meta.size, asset.meta.image);
-      rgba = stacked ? unstackAtlas(stacked, asset.meta.size) : null;
+      const stacked = await decodeImage(asset.image, asset.meta.size, parts + 1, asset.meta.image);
+      rgba = stacked ? unstackAtlas(stacked, asset.meta.size, parts) : null;
     }
     if (!rgba || gen !== this.gen || !this.enabled) return false;
     const uv = asset.uv.map((u) => (u ? Float32Array.from(u, (v) => v / 65535) : null));
@@ -818,7 +890,7 @@ export class LightmapController implements LightmapSource {
     // A file from the bundle or the cache is not a bake: the pill (state 'baking' / 'waiting') stays away, the status keeps its state.
     if (source === 'bake') this.setState('baking', 'applying baked light', 1);
     else this.applying = true;
-    this.light.setLightmap(rgba, meta.size, meta.scale);
+    this.light.setLightmap(rgba, meta.size, meta.scales, meta.keys);
     // The same surfaces re-baked (another hour) have the same coordinates: nothing is rebuilt, only the atlas changed.
     let same = this.uvs.size > 0;
     const next = new Map<Mesh, Float32Array>();

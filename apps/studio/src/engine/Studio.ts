@@ -1769,7 +1769,15 @@ export class Studio {
     this.sim?.renderer.cancelLightmapBake();
   }
 
-  /** Set the world's baked light (`environment.lightBake`): one undo step; null puts it back to automatic. */
+  /**
+   * "Preview baked light": bake the light the published world will ship (re-lightable: the time of day only re-weights it) in
+   * the background and show it, or go back to the editor's real-time light. Not an edit.
+   */
+  previewBakedLight(on: boolean): void {
+    this.sim?.renderer.previewBakedLight(on);
+  }
+
+  /** Set the world's baked light (`environment.lightBake`: the publish bake's quality): one undo step; null puts it back to automatic. */
   setLightBake(quality: 'off' | 'low' | 'medium' | 'high' | null): void {
     const label = quality === null ? 'Baked light: automatic' : quality === 'off' ? 'Baked light: off' : `Baked light: ${quality}`;
     this.commitUser([{ op: 'setEnvironment', set: { lightBake: quality === null ? null : { quality, samples: null } } }], label);

@@ -3,11 +3,12 @@
  * on arrival (sizes, finiteness, caps): the worker only runs our own bake code on numbers, and the main thread never
  * uploads a malformed reply.
  */
-import { MAX_TRACE_TRIANGLES, VOLUME_ALLOC, FLOATS_PER_PROBE, type V3, type VolumeGrid, type VolumeLamp } from './light-volume';
+import { MAX_SUN_KEYS, MAX_TRACE_TRIANGLES, PART_FLOATS, VOLUME_ALLOC, type V3, type VolumeGrid, type VolumeLamp } from './light-volume';
+import { lightmapLayers, partCount, scaleCount } from './relight';
 import { parseGrid } from './light-volume-protocol';
 import { LIGHTMAP_MAX_TRIANGLES, meshTriangleCount, type LightmapMesh } from './lightmap';
 
-/** A bake job: the trace scene, the meshes to unwrap, the finished volume and the light. */
+/** A bake job: the trace scene, the meshes to unwrap, the finished re-lightable volume, the sun keys and the lamps. */
 export interface LightmapRequest {
   type: 'bake';
   id: number;
@@ -22,9 +23,11 @@ export interface LightmapRequest {
   /** Furniture boxes of the trace scene: lo (3), hi (3), first triangle, seven floats each. */
   proxies: Float32Array;
   grid: VolumeGrid;
-  volume: Float32Array;
-  sun: { direction: V3; irradiance: V3 } | null;
-  ambient: { a: V3; b: V3 };
+  /** The volume as one field (`light-volume.ts` `partsField`) and its free-distance codes. */
+  field: Float32Array;
+  stride: number;
+  codes: Float32Array;
+  sunKeys: V3[];
   ground: { y: number; albedo: V3 };
   lamps: VolumeLamp[];
 }
@@ -34,11 +37,15 @@ export interface LightmapDone {
   id: number;
   ok: true;
   size: number;
-  scale: number;
+  /** Layers of {@link rgba} (`relight.ts` `lightmapLayers`). */
+  layers: number;
+  /** The value a code of 255 stands for, per stored value (`relight.ts` `scaleCount`). */
+  scales: Float32Array;
   density: number;
   charts: number;
   texels: number;
   rays: number;
+  /** `layers` layers of `size × size` RGBA. */
   rgba: Uint8Array;
   /** Per mesh: six floats per triangle, or null when the mesh was left out. */
   uv: Array<Float32Array | null>;
@@ -67,15 +74,26 @@ export function parseLightmapRequest(raw: unknown): LightmapRequest | null {
   const r = raw as Record<string, unknown>;
   if (r['type'] !== 'bake' || !isNum(r['id']) || !Number.isSafeInteger(r['id'])) return null;
   const { maxSize, density, samples } = r;
-  if (!isNum(maxSize) || ![256, 512, 1024].includes(maxSize) || !isNum(density) || density < 1 || density > 64 || !isNum(samples) || samples < 4 || samples > 512) return null;
+  if (!isNum(maxSize) || ![256, 512, 1024].includes(maxSize) || !isNum(density) || density < 1 || density > 64 || !isNum(samples) || samples < 4 || samples > 1024) return null;
   const grid = parseGrid(r['grid']);
-  const volume = r['volume'];
+  const field = r['field'];
+  const codes = r['codes'];
+  const stride = r['stride'];
   const positions = r['positions'];
   const albedo = r['albedo'];
   const twoSided = r['twoSided'];
   const proxies = r['proxies'];
-  if (!grid || !(volume instanceof Float32Array) || !(positions instanceof Float32Array) || !(albedo instanceof Float32Array) || !(twoSided instanceof Uint8Array) || !(proxies instanceof Float32Array)) return null;
-  if (volume.length !== grid.nx * grid.ny * grid.nz * FLOATS_PER_PROBE) return null;
+  if (!grid || !(field instanceof Float32Array) || !(codes instanceof Float32Array) || !isNum(stride) || !(positions instanceof Float32Array) || !(albedo instanceof Float32Array) || !(twoSided instanceof Uint8Array) || !(proxies instanceof Float32Array)) return null;
+  const probes = grid.nx * grid.ny * grid.nz;
+  const keysRaw = r['sunKeys'];
+  if (!Array.isArray(keysRaw) || keysRaw.length > MAX_SUN_KEYS) return null;
+  const sunKeys: V3[] = [];
+  for (const k of keysRaw as unknown[]) {
+    const d = v3(k, -1.01, 1.01);
+    if (!d || Math.abs(Math.hypot(d[0], d[1], d[2]) - 1) > 0.01) return null;
+    sunKeys.push(d);
+  }
+  if (stride !== 4 + partCount(sunKeys.length) * PART_FLOATS || field.length !== probes * stride || codes.length !== probes * 2) return null;
   const tris = positions.length / 9;
   if (!Number.isInteger(tris) || tris < 1 || tris > MAX_TRACE_TRIANGLES || albedo.length !== tris * 3 || twoSided.length !== tris) return null;
   if (proxies.length % 7 !== 0 || proxies.length > 7 * 4096) return null;
@@ -101,21 +119,10 @@ export function parseLightmapRequest(raw: unknown): LightmapRequest | null {
     if (total > LIGHTMAP_MAX_TRIANGLES * 4) return null;
     meshes.push(mesh);
   }
-  let sun: LightmapRequest['sun'] = null;
-  if (r['sun'] !== null) {
-    const s = r['sun'] as Record<string, unknown> | undefined;
-    const direction = v3(s?.['direction'], -1.01, 1.01);
-    const irradiance = v3(s?.['irradiance'], 0, 1e4);
-    if (!direction || !irradiance) return null;
-    sun = { direction, irradiance };
-  }
-  const amb = r['ambient'] as Record<string, unknown> | undefined;
-  const a = v3(amb?.['a'], -1e4, 1e4);
-  const b = v3(amb?.['b'], -1e4, 1e4);
   const gr = r['ground'] as Record<string, unknown> | undefined;
   const gy = gr?.['y'];
   const galb = v3(gr?.['albedo'], 0, 1);
-  if (!a || !b || !isNum(gy) || !galb) return null;
+  if (!isNum(gy) || !galb) return null;
   const lampsRaw = r['lamps'];
   if (!Array.isArray(lampsRaw) || lampsRaw.length > MAX_LAMPS) return null;
   const lamps: VolumeLamp[] = [];
@@ -127,25 +134,28 @@ export function parseLightmapRequest(raw: unknown): LightmapRequest | null {
     if (!position || !color || !isNum(range) || range <= 0 || range > 1e4) return null;
     lamps.push({ position, color, range });
   }
-  return { type: 'bake', id: r['id'] as number, maxSize, density, samples, meshes, positions, albedo, twoSided, proxies, grid, volume, sun, ambient: { a, b }, ground: { y: gy, albedo: galb }, lamps };
+  return { type: 'bake', id: r['id'] as number, maxSize, density, samples, meshes, positions, albedo, twoSided, proxies, grid, field, stride, codes, sunKeys, ground: { y: gy, albedo: galb }, lamps };
 }
 
 /**
  * Validate a reply against the triangle counts of the meshes it was asked for (main-thread side): the atlas must be a
  * square of an allowed size and the coordinates finite and inside it.
  */
-export function parseLightmapReply(raw: unknown, triCounts: readonly number[]): LightmapReply | null {
+export function parseLightmapReply(raw: unknown, triCounts: readonly number[], keys: number): LightmapReply | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
   if (!isNum(r['id'])) return null;
   if (r['type'] === 'progress') return isNum(r['value']) ? { type: 'progress', id: r['id'], value: Math.max(0, Math.min(1, r['value'])) } : null;
   if (r['type'] !== 'lightmap') return null;
   if (r['ok'] !== true) return { type: 'lightmap', id: r['id'], ok: false, error: typeof r['error'] === 'string' ? (r['error'] as string).slice(0, 300) : 'bake failed' };
-  const { size, scale, density, charts, texels, rays } = r;
+  const { size, density, charts, texels, rays } = r;
   const rgba = r['rgba'];
   const uv = r['uv'];
-  if (!isNum(size) || ![256, 512, 1024].includes(size) || !isNum(scale) || scale <= 0 || !isNum(density) || !isNum(charts) || !isNum(texels) || !isNum(rays)) return null;
-  if (!(rgba instanceof Uint8Array) || rgba.length !== size * size * 4) return null;
+  const scales = r['scales'];
+  const layers = lightmapLayers(keys);
+  if (!isNum(size) || ![256, 512, 1024].includes(size) || r['layers'] !== layers || !isNum(density) || !isNum(charts) || !isNum(texels) || !isNum(rays)) return null;
+  if (!(scales instanceof Float32Array) || scales.length !== scaleCount(keys) || !scales.every((x) => Number.isFinite(x) && x > 0)) return null;
+  if (!(rgba instanceof Uint8Array) || rgba.length !== size * size * 4 * layers) return null;
   if (!Array.isArray(uv) || uv.length !== triCounts.length) return null;
   const outUv: Array<Float32Array | null> = [];
   for (let i = 0; i < uv.length; i++) {
@@ -158,7 +168,7 @@ export function parseLightmapReply(raw: unknown, triCounts: readonly number[]): 
     for (let k = 0; k < u.length; k++) if (!(u[k]! >= 0 && u[k]! <= 1)) return null;
     outUv.push(u);
   }
-  return { type: 'lightmap', id: r['id'], ok: true, size, scale, density, charts, texels, rays, rgba, uv: outUv };
+  return { type: 'lightmap', id: r['id'], ok: true, size, layers, scales, density, charts, texels, rays, rgba, uv: outUv };
 }
 
 /** Whether the volume allocation can hold `grid` (a lightmap needs a finished volume of the same building). */

@@ -228,6 +228,8 @@ export interface CombatHud {
 export interface SimulationOptions {
   /** Where bundled baked-lightmap files are served (see the render package's `lightmapBase`). */
   lightmapBase?: string | null;
+  /** Who looks at the baked light (see the render package's `bakedLight`): the editor (default) or a viewer, which never bakes. */
+  bakedLight?: 'editor' | 'viewer';
   /** The world's cooked package (see the render package's `cooked`): geometry and programs from the package, not made here. */
   cooked?: CookedPackage | null;
   /** A spot check of the cooked package failed (see the render package's `onCookMismatch`). */
@@ -448,6 +450,7 @@ export class Simulation {
       ...(opts.scaleGeometry === false ? { fields: false, virtualGeometry: false } : {}),
       ...(opts.compressedTextures === false ? { transcoderPath: null } : {}),
       ...(opts.lightmapBase !== undefined ? { lightmapBase: opts.lightmapBase } : {}),
+      ...(opts.bakedLight ? { bakedLight: opts.bakedLight } : {}),
       ...(opts.cooked ? { cooked: opts.cooked } : {}),
       ...(opts.onCookMismatch ? { onCookMismatch: opts.onCookMismatch } : {}),
       onLightmapStatus: (status) => listener.onLightmap?.(status),

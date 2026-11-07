@@ -1,29 +1,36 @@
 /**
  * The lightmap as a project asset: one self-describing binary file (`.lmap`) that holds the atlas image (WebP when the
- * browser can encode it, else PNG, else raw RGBA), the 16-bit chart coordinates of every baked mesh and the numbers that made it.
+ * browser can encode it, else PNG, else raw RGBA), the 16-bit chart coordinates of every baked mesh and the numbers that made it:
+ * the scale of each re-lightable part and the sun keys (`relight.ts`).
  * The same bytes live in the browser cache (IndexedDB, keyed by {@link lightmapKey}) and, for bundled worlds, as a static
  * file named after that key, so a world opened again (or on another machine) shows its baked light without a bake.
  *
- * Image layout: the atlas is `size` × `size`. The file stacks it into `size` × `2·size` RGB: the top half is the bounce
- * (sqrt-coded), the bottom half the sky visibility as grey. Nothing needs an alpha channel, so a lossy image codec and the
- * 2D canvas (which premultiplies alpha) cannot damage the colours.
+ * Image layout: the atlas is `size` × `size` per layer. The file stacks it into `size` × `(layers + 1)·size` RGB: first the sky
+ * visibility as grey, then each layer's RGB in order (`relight.ts`: sky0, sky1, lamp, the sun keys' chroma, their luminance).
+ * Nothing needs an alpha channel, so a lossy image codec and the 2D canvas (which premultiplies alpha) cannot damage the
+ * colours. Version 3 files (one bake for one hour) no longer load: the building keeps its light volume until it is baked again.
  *
  * Caps: {@link LIGHTMAP_MAX_ASSET_BYTES} per file; a larger one is re-encoded at lower quality, and dropped if it still
  * does not fit.
  */
 import { hashWords } from './light-volume-cache';
 import { LIGHTMAP_VERSION } from './lightmap';
+import { lightmapLayers, scaleCount } from './relight';
 
 /** Most bytes of one lightmap file. */
-export const LIGHTMAP_MAX_ASSET_BYTES = 2 * 1024 * 1024;
+export const LIGHTMAP_MAX_ASSET_BYTES = 16 * 1024 * 1024;
 const MAGIC = 0x4d4c4541; // 'AELM' little-endian
 
 export interface LightmapAssetMeta {
   version: number;
   key: string;
   size: number;
-  /** Irradiance a code of 255 stands for. */
-  scale: number;
+  /** Layers stored (`relight.ts` `lightmapLayers(keys.length)`). */
+  layers: number;
+  /** The value a code of 255 stands for, per stored value (`relight.ts` `scaleCount`). */
+  scales: number[];
+  /** Directions toward the sun of the sun keys. */
+  keys: Array<[number, number, number]>;
   quality: string;
   samples: number;
   density: number;
@@ -41,37 +48,47 @@ export interface UnpackedAsset {
   meta: LightmapAssetMeta;
   /** Per mesh: six 16-bit coordinates per triangle, or null. */
   uv: Array<Uint16Array | null>;
-  /** The stacked image bytes (WebP, PNG or raw RGBA of `size` × `2·size`). */
+  /** The stacked image bytes (WebP, PNG or raw RGBA of `size` × `(layers + 1)·size`). */
   image: Uint8Array;
 }
 
-/** Stack an atlas (RGBA, sqrt bounce in rgb, visibility in alpha) into `size` × `2·size` RGBA with opaque alpha. */
-export function stackAtlas(rgba: Uint8Array, size: number): Uint8Array {
-  const out = new Uint8Array(size * size * 2 * 4);
-  const half = size * size * 4;
-  for (let o = 0; o < size * size; o++) {
-    out[o * 4] = rgba[o * 4] as number;
-    out[o * 4 + 1] = rgba[o * 4 + 1] as number;
-    out[o * 4 + 2] = rgba[o * 4 + 2] as number;
+/** Stack the atlas layers (`parts` layers of RGBA, visibility in alpha) into `size` × `(parts + 1)·size` RGBA with opaque alpha. */
+export function stackAtlas(layers: Uint8Array, size: number, parts: number): Uint8Array {
+  const L = size * size;
+  const out = new Uint8Array(L * (parts + 1) * 4);
+  for (let o = 0; o < L; o++) {
+    const v = layers[o * 4 + 3] as number;
+    out[o * 4] = v;
+    out[o * 4 + 1] = v;
+    out[o * 4 + 2] = v;
     out[o * 4 + 3] = 255;
-    const v = rgba[o * 4 + 3] as number;
-    out[half + o * 4] = v;
-    out[half + o * 4 + 1] = v;
-    out[half + o * 4 + 2] = v;
-    out[half + o * 4 + 3] = 255;
+  }
+  for (let p = 0; p < parts; p++) {
+    const src = p * L * 4;
+    const dst = (p + 1) * L * 4;
+    for (let o = 0; o < L; o++) {
+      out[dst + o * 4] = layers[src + o * 4] as number;
+      out[dst + o * 4 + 1] = layers[src + o * 4 + 1] as number;
+      out[dst + o * 4 + 2] = layers[src + o * 4 + 2] as number;
+      out[dst + o * 4 + 3] = 255;
+    }
   }
   return out;
 }
 
-/** The atlas RGBA back out of a stacked image (the inverse of {@link stackAtlas}). */
-export function unstackAtlas(stacked: Uint8Array, size: number): Uint8Array {
-  const out = new Uint8Array(size * size * 4);
-  const half = size * size * 4;
-  for (let o = 0; o < size * size; o++) {
-    out[o * 4] = stacked[o * 4] as number;
-    out[o * 4 + 1] = stacked[o * 4 + 1] as number;
-    out[o * 4 + 2] = stacked[o * 4 + 2] as number;
-    out[o * 4 + 3] = stacked[half + o * 4] as number;
+/** The atlas layers back out of a stacked image (the inverse of {@link stackAtlas}: every layer's alpha is the visibility). */
+export function unstackAtlas(stacked: Uint8Array, size: number, parts: number): Uint8Array {
+  const L = size * size;
+  const out = new Uint8Array(L * parts * 4);
+  for (let p = 0; p < parts; p++) {
+    const src = (p + 1) * L * 4;
+    const dst = p * L * 4;
+    for (let o = 0; o < L; o++) {
+      out[dst + o * 4] = stacked[src + o * 4] as number;
+      out[dst + o * 4 + 1] = stacked[src + o * 4 + 1] as number;
+      out[dst + o * 4 + 2] = stacked[src + o * 4 + 2] as number;
+      out[dst + o * 4 + 3] = stacked[o * 4] as number;
+    }
   }
   return out;
 }
@@ -107,10 +124,12 @@ export function unpackAsset(bytes: Uint8Array): UnpackedAsset | null {
     const imageLen = dv.getUint32(8, true);
     if (headLen > 1 << 20 || 12 + headLen + imageLen > bytes.length) return null;
     const meta = JSON.parse(new TextDecoder().decode(bytes.subarray(12, 12 + headLen))) as LightmapAssetMeta;
-    if (meta.version !== LIGHTMAP_VERSION || ![256, 512, 1024].includes(meta.size) || !(meta.scale > 0) || !Array.isArray(meta.tris) || meta.tris.length > 4096) return null;
+    if (meta.version !== LIGHTMAP_VERSION || ![256, 512, 1024].includes(meta.size) || !Array.isArray(meta.tris) || meta.tris.length > 4096) return null;
+    if (!Array.isArray(meta.keys) || meta.keys.length > 16 || !meta.keys.every((k) => Array.isArray(k) && k.length === 3 && k.every((x) => Number.isFinite(x)))) return null;
+    if (meta.layers !== lightmapLayers(meta.keys.length) || !Array.isArray(meta.scales) || meta.scales.length !== scaleCount(meta.keys.length) || !meta.scales.every((x) => Number.isFinite(x) && x > 0)) return null;
     if (meta.image !== 'webp' && meta.image !== 'png' && meta.image !== 'raw') return null;
     const image = bytes.subarray(12 + headLen, 12 + headLen + imageLen);
-    if (meta.image === 'raw' && image.length !== meta.size * meta.size * 2 * 4) return null;
+    if (meta.image === 'raw' && image.length !== meta.size * meta.size * (meta.layers + 1) * 4) return null;
     const pad = (4 - ((12 + headLen + imageLen) % 4)) % 4;
     let o = bytes.byteOffset + 12 + headLen + imageLen + pad;
     const uv: Array<Uint16Array | null> = [];

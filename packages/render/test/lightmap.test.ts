@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { LightVolumeBaker, TraceScene, planVolumeGrid, type V3 } from '../src/environment/light-volume';
+import { LightVolumeBaker, TraceScene, partsField, planVolumeGrid, type V3 } from '../src/environment/light-volume';
+import { LAYER_CHROMA, LAYER_LAMP, LAYER_SUN0, LUM, lightmapLayers, partCount, relightCoefficients, scaleCount, type RelightLighting } from '../src/environment/relight';
 import {
   CHART_PAD,
   LightmapBaker,
+  LOG_STOPS,
+  decodePart,
   decodeTexel,
+  encodePart,
   decodeVis,
   encodeVis,
   dequantizeUv,
@@ -14,6 +18,7 @@ import {
   unwrapLightmap,
   type LightmapBakeInput,
   type LightmapMesh,
+  type LightmapResult,
 } from '../src/environment/lightmap';
 
 type Q = [V3, V3, V3, V3];
@@ -65,18 +70,37 @@ function room(window: boolean): { scene: TraceScene; meshes: LightmapMesh[] } {
 }
 
 const SUN = { direction: (() => { const l = Math.hypot(0.6, 0.5); return [0.6 / l, 0.5 / l, 0] as V3; })(), irradiance: [3, 2.9, 2.7] as V3 };
+const unit = (v: V3): V3 => { const l = Math.hypot(...v); return [v[0] / l, v[1] / l, v[2] / l]; };
+/** A few keys (the default 15 would make every bake slow): the test sun, a mirrored one, one overhead, one from the side. */
+const KEYS: V3[] = [SUN.direction, unit([-0.6, 0.5, 0]), [0, 1, 0], unit([0.3, 0.3, 0.9])];
+const LIGHT: RelightLighting = { sun: SUN, ambient: { a: [0.5, 0.55, 0.6], b: [0.2, 0.25, 0.35] }, lampScale: 1 };
+const GROUND = { y: -0.2, albedo: [0.25, 0.3, 0.2] as V3 };
 
 function volumeFor(scene: TraceScene) {
   const grid = planVolumeGrid([-3.2, -0.2, -3.2], [3.2, 3.2, 3.2], 0.6)!;
-  const base = { grid, scene, sun: SUN, ambient: { a: [0.5, 0.55, 0.6] as V3, b: [0.2, 0.25, 0.35] as V3 }, ground: { y: -0.2, albedo: [0.25, 0.3, 0.2] as V3 }, lamps: [], rays: 32, passes: 2 };
-  return { grid, data: new LightVolumeBaker(base).run(), base };
+  const baker = new LightVolumeBaker({ grid, scene, sunKeys: KEYS, ground: GROUND, lamps: [], rays: 32, passes: 2 });
+  baker.run();
+  return { grid, ...partsField(baker.probes, baker.data, baker.light, baker.parts) };
 }
 
 function bakeInput(window: boolean, samples = 24, maxSize = 256): { input: LightmapBakeInput; meshes: LightmapMesh[] } {
   const { scene, meshes } = room(window);
   const layout = unwrapLightmap(meshes, maxSize)!;
   const v = volumeFor(scene);
-  return { meshes, input: { scene, proxies: [], meshes, layout, grid: v.grid, volume: v.data, sun: SUN, ambient: v.base.ambient, ground: v.base.ground, lamps: [], samples } };
+  return { meshes, input: { scene, proxies: [], meshes, layout, grid: v.grid, field: v.field, stride: v.stride, codes: v.codes, sunKeys: KEYS, ground: GROUND, lamps: [], samples } };
+}
+
+/** Mean decoded bounce (red) of the covered texels, parts weighted by the coefficients of `light`. */
+function meanBounce(r: LightmapResult, light: RelightLighting): number {
+  const coeffs = relightCoefficients(KEYS, light);
+  let s = 0, n = 0;
+  for (let y = 0; y < r.size; y++) for (let x = 0; x < r.size; x++) {
+    const t = decodeTexel(r, x, y);
+    if (!t) continue;
+    n++;
+    t.parts.forEach((v, p) => (s += coeffs[p * 3]! * v[0]));
+  }
+  return s / n;
 }
 
 describe('lightmap visibility byte', () => {
@@ -92,7 +116,7 @@ describe('lightmap: plan', () => {
   it('maps a quality to an atlas edge and a ray count, with a clamped override', () => {
     expect(planLightmap('low')).toMatchObject({ size: 256, samples: 24, density: 10 });
     expect(planLightmap('high')).toMatchObject({ size: 1024, samples: 96, density: 32 });
-    expect(planLightmap('medium', 5000).samples).toBe(512);
+    expect(planLightmap('medium', 5000).samples).toBe(1024);
     expect(planLightmap('medium', 1).samples).toBe(8);
     expect(planLightmap('medium', Number.NaN).samples).toBe(48);
   });
@@ -161,6 +185,12 @@ describe('lightmap: unwrap', () => {
   });
 });
 
+let memo: LightmapResult | null = null;
+/** One shared bake of the windowed room for the tests that only read the result. */
+function litWindow(): LightmapResult {
+  return (memo ??= new LightmapBaker(bakeInput(true, 12).input).run());
+}
+
 describe('lightmap: bake', () => {
   it('is deterministic and does not depend on how the work is sliced', () => {
     const { input } = bakeInput(true, 12);
@@ -171,7 +201,7 @@ describe('lightmap: bake', () => {
       /* slices */
     }
     expect(Array.from(b.output!.rgba)).toEqual(Array.from(whole.rgba));
-    expect(b.output!.scale).toBe(whole.scale);
+    expect(Array.from(b.output!.scales)).toEqual(Array.from(whole.scales));
     expect(whole.rays).toBeGreaterThan(0);
     expect(b.progress).toBe(1);
   });
@@ -193,7 +223,7 @@ describe('lightmap: bake', () => {
           best = o;
         }
       }
-      return decodeTexel(out.rgba, out.scale, best % S, Math.floor(best / S), S)!;
+      return decodeTexel(out, best % S, Math.floor(best / S))!;
     };
     const nearWindow = at(2.4, 0, 0, 1).vis;
     const farCorner = at(-2.9, 0, -2.9, 1).vis;
@@ -206,22 +236,106 @@ describe('lightmap: bake', () => {
     }
   });
 
-  it('sees no sky in a sealed room and finds sun bounce on the ceiling only when the sun comes in', () => {
+  it('sees no sky in a sealed room and finds sun bounce only when the sun comes in', () => {
     const sealed = new LightmapBaker(bakeInput(false, 16).input).run();
     const lit = new LightmapBaker(bakeInput(true, 16).input).run();
-    const mean = (r: { rgba: Uint8Array; scale: number }, ch: 'vis' | 'b'): number => {
-      let s = 0;
-      let n = 0;
-      for (let o = 0; o < r.rgba.length / 4; o++) {
-        if (!r.rgba[o * 4 + 3]) continue;
+    const meanVis = (r: LightmapResult): number => {
+      let s = 0, n = 0;
+      for (let o = 0; o < r.size * r.size; o++) {
+        const a = r.rgba[o * 4 + 3]!;
+        if (!a) continue;
         n++;
-        s += ch === 'vis' ? decodeVis(r.rgba[o * 4 + 3]!) : ((r.rgba[o * 4]! / 255) ** 2 * r.scale);
+        s += decodeVis(a);
       }
       return s / n;
     };
-    expect(mean(sealed, 'vis')).toBeLessThan(0.05);
-    expect(mean(lit, 'vis')).toBeGreaterThan(mean(sealed, 'vis') + 0.005);
-    expect(mean(lit, 'b')).toBeGreaterThan(mean(sealed, 'b'));
+    expect(meanVis(sealed)).toBeLessThan(0.05);
+    expect(meanVis(lit)).toBeGreaterThan(meanVis(sealed) + 0.005);
+    expect(meanBounce(lit, LIGHT)).toBeGreaterThan(meanBounce(sealed, LIGHT));
+  });
+
+  it('stores the layers, the same visibility in every layer, and decodes within the quantisation', () => {
+    const out = litWindow();
+    const S = out.size;
+    const L = lightmapLayers(KEYS.length);
+    expect(out.keys).toBe(KEYS.length);
+    expect(out.layers).toBe(L);
+    expect(out.rgba.length).toBe(L * S * S * 4);
+    expect(out.scales.length).toBe(scaleCount(KEYS.length));
+    expect(out.scales[LAYER_CHROMA]).toBe(1);
+    const layer = S * S * 4;
+    let covered = 0;
+    for (let o = 0; o < S * S; o++) {
+      const a = out.rgba[o * 4 + 3]!;
+      for (let p = 1; p < L; p++) expect(out.rgba[p * layer + o * 4 + 3]).toBe(a);
+      if (a) covered++;
+    }
+    // Padding around the charts carries data too, so the covered texels are at least the charts'.
+    expect(covered).toBeGreaterThanOrEqual(out.texels);
+    // An empty texel decodes to null; a covered one to every part.
+    const empty = out.rgba.findIndex((_v, i) => i % 4 === 3 && i < layer && out.rgba[i] === 0);
+    expect(empty).toBeGreaterThanOrEqual(0);
+    expect(decodeTexel(out, (empty >> 2) % S, Math.floor(empty / 4 / S))).toBeNull();
+    const full = out.rgba.findIndex((_v, i) => i % 4 === 3 && i < layer && out.rgba[i] !== 0);
+    expect(decodeTexel(out, (full >> 2) % S, Math.floor(full / 4 / S))!.parts).toHaveLength(partCount(KEYS.length));
+    // Scales are the maxima: some key is lit, the lamp layer is empty (no lamps).
+    expect(Math.max(...Array.from(out.scales).slice(LAYER_CHROMA + 1))).toBeGreaterThan(0);
+    for (let o = 0; o < S * S; o++) for (let c = 0; c < 3; c++) expect(out.rgba[LAYER_LAMP * layer + o * 4 + c]).toBe(0);
+  });
+
+  it('log-codes unsigned values with under 2.5 % error over 1..2^-15, and signed ones with a sqrt code', () => {
+    expect(LOG_STOPS).toBe(16);
+    expect(encodePart(0, false)).toBe(0);
+    expect(encodePart(1, false)).toBe(255);
+    expect(decodePart(0, false)).toBe(0);
+    for (let e = 0; e >= -15; e -= 0.25) {
+      const v = 2 ** e;
+      const back = decodePart(encodePart(v, false), false);
+      expect(Math.abs(back - v) / v).toBeLessThan(0.025);
+    }
+    // Below the range it is black, above it clips.
+    expect(encodePart(2 ** -17, false)).toBe(0);
+    expect(encodePart(5, false)).toBe(255);
+    for (const v of [0.01, 0.1, 0.5, 1]) for (const sv of [v, -v]) expect(Math.abs(decodePart(encodePart(sv, true), true) - sv)).toBeLessThan(0.02);
+    expect(encodePart(0, true)).toBe(128);
+  });
+
+  it('luminance plus chroma reconstruct each key as the stored luminance in the stored colour', () => {
+    const out = litWindow();
+    const S = out.size;
+    const N = S * S;
+    let checked = 0;
+    for (let o = 0; o < N && checked < 400; o++) {
+      if (!out.rgba[o * 4 + 3]) continue;
+      const t = decodeTexel(out, o % S, Math.floor(o / S))!;
+      const ch = [0, 1, 2].map((c) => out.rgba[LAYER_CHROMA * N * 4 + o * 4 + c]! / 255);
+      const cl = LUM[0] * ch[0]! + LUM[1] * ch[1]! + LUM[2] * ch[2]!;
+      for (let k = 0; k < KEYS.length; k++) {
+        const l = decodePart(out.rgba[(LAYER_SUN0 + Math.floor(k / 3)) * N * 4 + o * 4 + (k % 3)]!, false) * out.scales[LAYER_SUN0 + k]!;
+        const rgb = t.parts[3 + k]!;
+        if (cl > 0) {
+          expect(LUM[0] * rgb[0] + LUM[1] * rgb[1] + LUM[2] * rgb[2]).toBeCloseTo(l, 4);
+          for (let c = 0; c < 3; c++) expect(rgb[c]).toBeCloseTo((l * ch[c]!) / cl, 4);
+        }
+      }
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(100);
+  });
+
+  it('the summed parts follow the coefficients: twice the sun irradiance is more bounce, no light is none', () => {
+    const out = litWindow();
+    const dark: RelightLighting = { sun: null, ambient: { a: [0, 0, 0], b: [0, 0, 0] }, lampScale: 0 };
+    const one = meanBounce(out, { ...dark, sun: { direction: SUN.direction, irradiance: [1, 1, 1] } });
+    const two = meanBounce(out, { ...dark, sun: { direction: SUN.direction, irradiance: [2, 2, 2] } });
+    expect(one).toBeGreaterThan(0);
+    expect(two).toBeCloseTo(one * 2, 6);
+    expect(meanBounce(out, dark)).toBe(0);
+    // Sun plus lamps equals the sum of each alone.
+    const sunOnly = meanBounce(out, { ...dark, sun: { direction: SUN.direction, irradiance: [1, 1, 1] } });
+    const skyOnly = meanBounce(out, { ...dark, ambient: { a: [1, 1, 1], b: [0, 0, 0] } });
+    const both = meanBounce(out, { ...dark, sun: { direction: SUN.direction, irradiance: [1, 1, 1] }, ambient: { a: [1, 1, 1], b: [0, 0, 0] } });
+    expect(both).toBeCloseTo(sunOnly + skyOnly, 6);
   });
 
   it('smooths noise: neighbouring sky-visibility texels of a lit ceiling differ by little', () => {

@@ -93,8 +93,12 @@ export interface CookManifest {
   fingerprints?: Record<string, string>;
   /** Program set per tier ({@link CookedProgramSet}). */
   programs: Partial<Record<RenderTier, CookFile & { programs: number }>>;
-  /** A bundled baked lightmap folder (lightmap-controller `staticBase`, relative to the cook folder), when there is one. */
-  lightmap: { base: string } | null;
+  /**
+   * The baked light (lightmap and light volume files, lightmap-controller `staticBase`), relative to the package folder `dir`, when
+   * there is one, and the version of its format (`environment/relight.ts` `BAKED_LIGHT_VERSION`; absent before re-lightable
+   * bakes). A viewer reads it only when the version is its own.
+   */
+  lightmap: { base: string; version?: string } | null;
   /**
    * The world itself, for a world published from the editor (short share links carry no world): {@link WORLD_FILE} in the
    * cook folder, the share payload as gzipped JSON, with its byte size and SHA-256. Absent (null) in a template's cook.
@@ -205,7 +209,9 @@ export function parseCookManifest(v: unknown): ManifestResult {
   let lightmap: CookManifest['lightmap'] = null;
   if (v.lightmap !== null && v.lightmap !== undefined) {
     if (!isObj(v.lightmap) || typeof v.lightmap.base !== 'string' || !REL.test(v.lightmap.base)) return bad('bad lightmap');
-    lightmap = { base: v.lightmap.base };
+    const ver = v.lightmap.version;
+    if (ver !== undefined && (typeof ver !== 'string' || !/^[A-Za-z0-9._-]{1,64}$/.test(ver))) return bad('bad lightmap version');
+    lightmap = { base: v.lightmap.base, ...(typeof ver === 'string' ? { version: ver } : {}) };
   }
   let ir: CookManifest['ir'] = null;
   if (v.ir !== null && v.ir !== undefined) {

@@ -2,9 +2,9 @@
  * Baked interior light as an edit: the `bake_light` tool. The assistant looks at renders of a room or house and decides
  * whether its light needs a bake: corners and the floor under furniture that read flat, the same smooth value on every wall,
  * no sense of light reaching the back of the room. The tool stores the decision in the World IR (`environment.lightBake`) by
- * an ordinary patch, so it is one undo step, shows in a diff and survives saving and sharing. The renderer does the work: it
- * path-traces a lightmap in a worker, shows a "baking" status the user can cancel, caches the result by content and keeps the
- * probe volume (then nothing) underneath if the bake cannot run.
+ * an ordinary patch, so it is one undo step, shows in a diff and survives saving and sharing. It is the quality of the publish
+ * bake (the cook bakes it, viewers load it; `off` ships none). The editor draws real-time light, and a change of this setting
+ * starts its "Preview baked light": a background bake the user can cancel, re-lightable, so the hour never bakes it again.
  *
  * Nothing here judges the result: the assistant looks at the next renders and decides whether to bake again at another
  * quality, or turn it off.
