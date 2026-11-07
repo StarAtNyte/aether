@@ -284,7 +284,7 @@ def build_hair(spec, J, head, form, chin, atlas, bones, body_bvh):
             tz = lerp(tip_front, tip_front - 0.012 * u, back)
             w = 0.062 * u
             phi_leave = math.radians(lerp(92, 108, back))
-            H.lock(theta, math.radians(10), phi_leave, tz, w, 0.016 * u, vol * (1.0 + 0.25 * back), tip='curl', curl=0.016 * u, flare=0.013 * u,
+            H.lock(theta, math.radians(10), phi_leave, tz, w, 0.018 * u, vol * (1.3 + 0.25 * back), tip='curl', curl=0.03 * u, flare=0.018 * u,
                    theta_root=math.radians(180) + (theta - math.radians(180)) * 0.2)
         side_locks(H, vol, chin_z + 0.0 * u, 'curl')
         # the back mass swings a little
@@ -337,7 +337,7 @@ def bangs(H, part_theta, vol, st):
     """Bangs from the parting over the front, laid on the forehead; tips at the brows, side-swept from a side parting."""
     u = H.u
     brow_z = H.chin.z + 0.128 * u
-    n = 7
+    n = 5 if st == 'bob' else 7
     sweep = -0.35 if part_theta > 0 else 0.35 if part_theta < 0 else 0.0
     for i in range(n):
         f = i / (n - 1)
@@ -362,7 +362,8 @@ def bangs(H, part_theta, vol, st):
             q2.z = tz
             q2 = H.push_out(q2, 0.003 * u) if H.bvh else q2
             pts.append(Vector((q2.x, q2.y - 0.0015 * u, tz)))
-        H.clump(pts, (0.034 if abs(f - 0.5) < 0.3 else 0.03) * u, 0.008 * u, tip='point')
+        bw = (0.052 if abs(f - 0.5) < 0.3 else 0.046) if n == 5 else (0.034 if abs(f - 0.5) < 0.3 else 0.03)
+        H.clump(pts, bw * u, 0.01 * u, tip='point')
 
 
 def side_locks(H, vol, tip_z, tip):

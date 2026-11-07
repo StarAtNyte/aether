@@ -169,6 +169,18 @@ def build(spec, P, out):
     for ob in [body, head] + ears:
         CLOTHES.set_uv(ob, skin_uv)
     parts = [Part(body, 'skin', toon=(0.85, 0.0, 1.0, 0.0), bones='groups', role='skin'), Part(head, 'head', toon=(0.7, 0.1, 1.0, 0.0), bones={'Bip01_Head': 1.0}, role='skin')]
+    hb = FACE.HEAD_BIAS.get(head.name)
+    if hb is not None:
+        n = len(hb)
+        parts[1].toon_v = np.stack([np.full(n, 0.7), hb, np.ones(n), np.zeros(n)], 1)
+    if spec['style'] == 'anime':
+        # the chin's shadow on the neck: the front of the neck just under the jaw falls into shadow first
+        bco = np.array([v.co[:] for v in body.data.vertices])
+        dz = bco[:, 2] - chin.z
+        under = np.clip((dz + 0.045 * form.u) / (0.025 * form.u), 0, 1) * (bco[:, 2] < chin.z + 0.03 * form.u)
+        under = under * under * (3 - 2 * under)
+        nb = len(bco)
+        parts[0].toon_v = np.stack([np.full(nb, 0.85), -0.45 * under, np.ones(nb), np.zeros(nb)], 1)
     parts += [Part(e, 'head', toon=(0.6, 0.05, 1.0, 0.0), bones={'Bip01_Head': 1.0}, role='skin') for e in ears]
     parts += decals
     parts += H.parts
@@ -180,9 +192,14 @@ def build(spec, P, out):
     role_id = {r: id_colour(i) for i, r in enumerate(roles)}
     for k, p in enumerate(parts):
         n = len(p.ob.data.vertices)
-        tv = list(p.toon)
-        tv[0] = min(1.0, tv[0])
-        SHADING.set_toon_attribute(p.ob, np.tile(tv, (n, 1)))
+        if p.toon_v is not None and len(p.toon_v) == n:
+            tv = np.array(p.toon_v, np.float32)
+            tv[:, 0] = np.minimum(1.0, tv[:, 0])
+            SHADING.set_toon_attribute(p.ob, tv)
+        else:
+            tv = list(p.toon)
+            tv[0] = min(1.0, tv[0])
+            SHADING.set_toon_attribute(p.ob, np.tile(tv, (n, 1)))
         a = p.ob.data.color_attributes.new('qa_id', 'FLOAT_COLOR', 'POINT')
         a.data.foreach_set('color', np.tile([*role_id[p.role], 1.0], (n, 1)).astype(np.float32).ravel())
         ia = p.ob.data.attributes.new('qa_part', 'INT', 'POINT')
@@ -278,6 +295,8 @@ def skirt_push(gp, springs, colliders, bones):
         if not sp['name'].startswith('skirt'):
             continue
         b = sp['bones'][0]
+        W0 = gp.world()
+        d0 = (W0[b] @ Vector(sp['tip']) - W0[b].translation).normalized()
         for _ in range(4):
             W = gp.world()
             h = W[b].translation
@@ -304,6 +323,12 @@ def skirt_push(gp, springs, colliders, bones):
                     break
             if not moved:
                 break
+        # the runtime's swing limit
+        W = gp.world()
+        d1 = (W[b] @ Vector(sp['tip']) - W[b].translation).normalized()
+        ang = d0.angle(d1, 0.0)
+        if ang > sp['limit'] and d0.cross(d1).length > 1e-6:
+            gp.rotate_world(b, d1.cross(d0), ang - sp['limit'])
     return gp
 
 

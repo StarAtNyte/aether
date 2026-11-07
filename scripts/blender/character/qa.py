@@ -63,6 +63,19 @@ def sheet_views(sheet):
     bg = np.median(border, 0)
     diff = np.abs(rgb - bg).max(2)
     bgm = diff <= 0.09
+    # guide lines and the floor line first (an opening of the non-background, 3 px): left in, they would close the gap
+    # between the legs into a hole the flood cannot reach
+    def _erode(m, k):
+        out = m.copy()
+        for d in range(1, k + 1):
+            out[d:] &= m[:-d]; out[:-d] &= m[d:]; out[:, d:] &= m[:, :-d]; out[:, :-d] &= m[:, d:]
+        return out
+    def _dilate(m, k):
+        out = m.copy()
+        for d in range(1, k + 1):
+            out[d:] |= m[:-d]; out[:-d] |= m[d:]; out[:, d:] |= m[:, :-d]; out[:, :-d] |= m[:, d:]
+        return out
+    bgm = ~_dilate(_erode(~bgm, 3), 3)
     # the background is what floods in from the border; the rest (holes included) is figure
     reach = np.zeros_like(bgm)
     reach[0, :] = reach[-1, :] = reach[:, 0] = reach[:, -1] = True
@@ -358,6 +371,7 @@ class QA:
     def interpenetration(self, frames, pose_apply, pairs):
         """frames: list of (label, callable that poses the armature). pairs: list of (name, skin vertex ids, garment vertex ids, tol)."""
         dg = bpy.context.evaluated_depsgraph_get()
+        self.rest_x = np.array([v.co.x for v in self.body.data.vertices])
         mod = self.body.modifiers.get('outline')
         if mod:
             mod.show_viewport = False
@@ -381,7 +395,26 @@ class QA:
                 bvh = BVHTree.FromPolygons(verts, gfaces, all_triangles=False)
                 n_in = 0
                 depth = 0.0
-                for i in skin:
+                if name == 'skirt':
+                    # a thigh vertex is through when the skirt lies between it and the thigh bone (the leg crossed the
+                    # cloth); a thigh that leaves through the hem, under the skirt's opening, is not
+                    pb = self.arm.pose.bones
+                    mw = self.arm.matrix_world
+                    axis = {sd: (mw @ pb[f'Bip01_{sd}_Thigh'].head, mw @ pb[f'Bip01_{sd}_Calf'].head) for sd in ('L', 'R')}
+                    for i in skin:
+                        p = verts[i]
+                        a, b = axis['L' if self.rest_x[i] > 0 else 'R']
+                        ab = b - a
+                        t = max(0.0, min(1.0, (p - a).dot(ab) / max(1e-9, ab.length_squared)))
+                        q = a + ab * t
+                        d = p - q
+                        if d.length < 1e-5:
+                            continue
+                        hit = bvh.ray_cast(q, d.normalized(), d.length)
+                        if hit[0] is not None:
+                            n_in += 1
+                            depth = max(depth, d.length - hit[3])
+                for i in (skin if name != 'skirt' else ()):
                     p = verts[i]
                     n = Vector(nr[i])
                     # through if the garment is no longer above the skin within its rest distance and some slack
@@ -394,6 +427,8 @@ class QA:
                 frac = n_in / max(1, len(skin))
                 r = result.setdefault(name, {'checked_vertices': len(skin), 'frames': 0, 'worst_share': 0.0, 'worst_depth_mm': 0.0, 'worst_frame': ''})
                 r['frames'] += 1
+                if frac > 0.005:
+                    r.setdefault('through', {})[label] = round(frac, 3)
                 if frac > r['worst_share']:
                     r['worst_share'] = round(frac, 4)
                     r['worst_frame'] = label

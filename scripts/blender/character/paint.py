@@ -12,6 +12,7 @@ from common import linear_to_srgb
 
 SIZE = 1024
 CELL = 32          # swatch cell (px)
+PAD = 6            # gutter round a painted cell (px)
 
 
 def srgb(lin):
@@ -34,11 +35,13 @@ class Atlas:
 
     # --- allocation --------------------------------------------------------------------------------------------------
     def cell(self, name, w, h):
+        """A painted cell with a gutter of PAD px all round (filled from the cell's edges by `put`), so filtering and
+        the smaller mip levels never pull a neighbour's colour into a decal's margin."""
         x, y, rh = self.cursor
-        if x + w > self.size:
+        if x + w + 2 * PAD > self.size:
             x, y, rh = 0, y + rh, 0
-        self.cells[name] = (x, y, w, h)
-        self.cursor = [x + w, y, max(rh, h)]
+        self.cells[name] = (x + PAD, y + PAD, w, h)
+        self.cursor = [x + w + 2 * PAD, y, max(rh, h + 2 * PAD)]
         return self.cells[name]
 
     def uv(self, name, u, v, inset=2.0):
@@ -81,6 +84,12 @@ class Atlas:
         a = alpha.reshape(h, ss, w, ss).mean((1, 3))
         self.img[y:y + h, x:x + w, :3] = rgb
         self.img[y:y + h, x:x + w, 3] = a
+        # the gutter: the cell's edge pixels carried outward (rows, then columns with the corners)
+        p = PAD
+        self.img[y - p:y, x:x + w] = self.img[y:y + 1, x:x + w]
+        self.img[y + h:y + h + p, x:x + w] = self.img[y + h - 1:y + h, x:x + w]
+        self.img[y - p:y + h + p, x - p:x] = self.img[y - p:y + h + p, x:x + 1]
+        self.img[y - p:y + h + p, x + w:x + w + p] = self.img[y - p:y + h + p, x + w - 1:x + w]
 
     def rgba(self):
         return self.img
@@ -338,13 +347,15 @@ def paint_stripes(at, name, base_lin, line_lin, lines=2):
 
 
 def paint_pleats(at, name, lin):
-    """u across one pleat (0 fold .. 1 next fold): flat, a thin darker crease at the fold and a soft inner shadow."""
+    """u across one pleat's face (0 where it comes out from under the last pleat .. 1 its folded edge): the tucked end
+    in shade, a thin light line along the folded edge; u 0 itself (a few texels) is the fold's dark underside."""
     base = srgb(lin)
     at.cell(name, 64, 64)
     U, V = at.grid(name, 2)
     col = np.ones(U.shape + (3,)) * base
-    col *= (1 - 0.18 * smooth01((U - 0.7) / 0.3))[..., None]
-    layer(col, base * 0.55, cover(U - 0.03, 1.5 / 64))
+    col *= (1 - 0.2 * (1 - smooth01(U / 0.35)))[..., None]
+    layer(col, np.clip(base * 1.25 + 0.03, 0, 1), cover(np.abs(U - 0.95) - 0.02, 1.5 / 64))
+    layer(col, base * 0.5, cover(U - 0.06, 1.5 / 64))
     at.put(name, col, np.ones(U.shape), 2)
 
 

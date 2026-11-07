@@ -39,7 +39,7 @@ def spec_of(brief):
         # hip joint height over the height: long anime legs, a little shorter with age
         'leg': (0.535 if anime else 0.515) - 0.01 * old,
         # shoulder joint half-width and hip joint half-width in head heights
-        'shoulder': (0.6 if male else 0.52) + 0.04 * build,
+        'shoulder': (0.6 if male else (0.47 if style == 'anime' else 0.52)) + 0.04 * build,
         'hip_w': (0.36 if male else 0.37) + 0.02 * build,
         'arm': 1.0,
         # body girth multiplier

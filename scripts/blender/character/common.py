@@ -214,6 +214,7 @@ class Part:
         self.cloth = cloth        # checked against the body for interpenetration
         self.layer = layer        # clothing layer (0 inner)
         self.role = role or kind  # colour role (palette check)
+        self.toon_v = None        # per-vertex toon values (n, 4), overriding `toon`
 
 
 def mean(vs):

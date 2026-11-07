@@ -19,6 +19,8 @@ from mathutils.bvhtree import BVHTree
 
 from common import Part, activate, apply_modifiers, new_object, shade_smooth, smoothstep
 
+HEAD_BIAS = {}   # head object name -> per-vertex shade bias (face_bias)
+
 EXPRESSIONS = ['smile', 'sad', 'surprised', 'teary', 'blink', 'mouth_open', 'determined']
 
 
@@ -152,8 +154,41 @@ def build_head(J, spec):
     shade_smooth(ob)
     if spec['style'] == 'anime':
         face_normals(ob, chin, u, keep=True)
+    HEAD_BIAS[ob.name] = face_bias(ob, chin, u, spec)
     ears = build_ears(form, chin, u, spec)
     return ob, ears, form, chin
+
+
+def nss(e0, e1, x):
+    t = np.clip((x - e0) / (e1 - e0), 0, 1)
+    return t * t * (3 - 2 * t)
+
+
+def face_bias(ob, chin, u, spec):
+    """Per-vertex shade bias of the head (the toon shader adds it to N.L).
+
+    Anime faces are lit as one shape: the face sits in the lit band unless the light comes from well behind its side
+    (bias +0.55 over the face, fading to the head's 0.1 at the jaw, temples and hairline); a soft band under the bangs
+    and the underside of the jaw take a negative bias, so they fall into shadow first (the bangs' and the chin's cast
+    shadows). Realistic heads keep a flat bias."""
+    co = np.array([v.co[:] for v in ob.data.vertices])
+    nrm = np.array([v.normal[:] for v in ob.data.vertices])
+    p = co - np.array(chin)
+    if spec['style'] != 'anime':
+        return np.full(len(co), 0.05)
+    front = nss(-0.15, 0.5, -nrm[:, 1])
+    zone = front * nss(0.004 * u, 0.03 * u, p[:, 2]) * (1 - nss(0.16 * u, 0.2 * u, p[:, 2]))
+    zone *= 1 - nss(0.062 * u, 0.08 * u, np.abs(p[:, 0]))
+    bias = 0.1 + 0.45 * zone
+    # under the bangs: the forehead above the brows, its lower edge in points like the bangs' tips
+    ez = 0.098 if not spec['old'] > 0.3 else 0.104
+    lo = (ez + 0.024) * u + 0.004 * u * np.abs(np.sin(p[:, 0] / (0.018 * u) * math.pi))
+    bang = nss(lo, lo + 0.008 * u, p[:, 2]) * front
+    bias = bias - 0.72 * bang
+    # under the jaw
+    jaw = nss(0.15, 0.6, -nrm[:, 2]) * (1 - nss(0.02 * u, 0.05 * u, p[:, 2]))
+    bias = bias * (1 - jaw) - 0.35 * jaw
+    return bias
 
 
 def face_normals(ob, chin, u, keep=False):
@@ -287,10 +322,9 @@ def build_decals(head, chin, u, atlas, spec):
         for poly in ob.data.polygons:
             for li in poly.loop_indices:
                 uvl.data[li].uv = uvs[ob.data.loops[li].vertex_index]
-        # normals from the head under each decal, so their skin margins shade exactly like the face
+        # the head's own (final) normals under each decal, so a decal's skin margin shades exactly like the skin
         m = ob.modifiers.new('n', 'DATA_TRANSFER')
-        # the face's own normal source (the ellipsoid proxy), so a decal's skin margin shades exactly like the skin
-        m.object = bpy.data.objects.get('face-proxy') or head
+        m.object = head
         m.use_loop_data = True
         m.data_types_loops = {'CUSTOM_NORMAL'}
         m.loop_mapping = 'POLYINTERP_NEAREST'
@@ -310,11 +344,33 @@ def build_decals(head, chin, u, atlas, spec):
                 target = rest
             for i, c in enumerate(target):
                 k.data[i].co = c
-        parts.append(Part(ob, 'decal', toon=(0.0, 0.1, 0.0, 0.0), bones={'Bip01_Head': 1.0}))
+        part = Part(ob, 'decal', toon=(0.0, 0.1, 0.0, 0.0), bones={'Bip01_Head': 1.0})
+        # and the head's shade bias at the same place (rim off, no outline: the decal sits flush in the face)
+        bias = head_bias_at(head, layout)
+        part.toon_v = np.stack([np.zeros(len(layout)), bias, np.zeros(len(layout)), np.zeros(len(layout))], 1)
+        parts.append(part)
     proxy = bpy.data.objects.get('face-proxy')
     if proxy:
         bpy.data.objects.remove(proxy)
     return parts
+
+
+def head_bias_at(head, pts):
+    """The head's per-vertex shade bias interpolated at points near its surface (inverse distance, 4 nearest)."""
+    from mathutils import kdtree
+    bias = HEAD_BIAS.get(head.name)
+    if bias is None:
+        return np.full(len(pts), 0.1)
+    kd = kdtree.KDTree(len(head.data.vertices))
+    for v in head.data.vertices:
+        kd.insert(v.co, v.index)
+    kd.balance()
+    out = []
+    for p in pts:
+        hits = kd.find_n(p, 4)
+        w = np.array([1.0 / (1e-5 + d) for _, _, d in hits])
+        out.append(float((w * np.array([bias[i] for _, i, _ in hits])).sum() / w.sum()))
+    return np.array(out)
 
 
 def expression_keys(name, layout, grid, w, h, sx, u):

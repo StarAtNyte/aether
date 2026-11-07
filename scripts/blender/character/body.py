@@ -49,11 +49,11 @@ def build_body(J, spec):
     crotch = G.add(P + Vector((0, 0.0, -0.075 * s)), 0.1 * g, 0.075 * g)
     pelvis = G.add(P + Vector((0, 0.005, -0.01 * s)), hipw, 0.088 * g, crotch)
     waist_lo = G.add(lerp(P, sp1, 0.5) + Vector((0, 0.004, 0)), lerp(hipw, (0.1 + 0.02 * (1 - fem)) * g, 0.55), 0.074 * g, pelvis)
-    waist = G.add(sp1 + Vector((0, 0.0, -0.01 * s)), (0.094 + 0.03 * (1 - fem)) * g, 0.068 * g, waist_lo)
+    waist = G.add(sp1 + Vector((0, 0.0, -0.01 * s)), (0.094 + 0.03 * (1 - fem) - 0.008 * fem) * g, (0.068 - 0.004 * fem) * g, waist_lo)
     chest = G.add(lerp(sp1, sp2, 0.75) + Vector((0, -0.006, 0)), (0.108 + 0.03 * (1 - fem)) * g, 0.078 * g, waist)
     upper = G.add(lerp(sp2, nk, 0.7) + Vector((0, 0.008, 0)), (0.098 + 0.035 * (1 - fem)) * g, 0.068 * g, chest)
-    neck0 = G.add(nk + Vector((0, 0.006, 0.012 * s)), 0.04 * g, 0.039 * g, upper)
-    neck1 = G.add(lerp(nk, hd, 0.75), (0.03 + 0.005 * (1 - fem)) * s, (0.033 + 0.005 * (1 - fem)) * s, neck0)
+    neck0 = G.add(nk + Vector((0, 0.006, 0.012 * s)), (0.04 - 0.006 * fem * anime) * g, (0.039 - 0.005 * fem * anime) * g, upper)
+    neck1 = G.add(lerp(nk, hd, 0.75), (0.03 + 0.005 * (1 - fem) - 0.004 * fem * anime) * s, (0.033 + 0.005 * (1 - fem) - 0.004 * fem * anime) * s, neck0)
     G.add(hd + Vector((0, 0.01, 0.03 * s)), 0.032 * s, 0.032 * s, neck1)
     # Legs.
     for side in ('L', 'R'):

@@ -22,6 +22,7 @@ from common import Part, apply_modifiers, b2g_point, catmull, lerp, new_object, 
 from skeleton import add_secondary
 import paint as P
 
+THIGH_SHARE = 0.97   # how much of the skirt's front and back below the hips follows the thighs
 EASE = 1.0   # the QA loop raises it when the body shows through a garment
 
 
@@ -433,7 +434,7 @@ class Kit:
         self.palette['skirt'] = col
         N = int(it.get('pleats', 12))
         length = str(it.get('length', 'knee'))
-        hem = {'knee': z['knee'] + 0.045 * s, 'mid-calf': lerp(z['knee'], z['ankle'], 0.5), 'long': z['ankle'] + 0.1 * s, 'mini': z['knee'] + 0.15 * s}.get(length, z['knee'] + 0.045 * s)
+        hem = {'knee': z['knee'] + 0.06 * s, 'mid-calf': lerp(z['knee'], z['ankle'], 0.5), 'long': z['ankle'] + 0.1 * s, 'mini': z['knee'] + 0.15 * s}.get(length, z['knee'] + 0.045 * s)
         top = z['waist'] - 0.012 * s
         hipz = z['hip'] - 0.01 * s
         m = 6 if N <= 16 else 4
@@ -459,19 +460,20 @@ class Kit:
         for _ in range(4):
             env = (np.roll(env, 1, 1) + 2 * env + np.roll(env, -1, 1)) / 4
         ease = 0.009 * s * EASE
-        flare_k = 0.17 if length in ('knee', 'mini') else 0.1
+        flare_k = 0.09 if length in ('knee', 'mini') else 0.07
         verts, uvs, wts = [], [], []
         for r, zz in enumerate(zs):
             below = max(0.0, hipz - zz)
-            depth = 0.011 * s * smoothstep(hipz + 0.02 * s, hipz - 0.08 * s, zz)
+            # knife pleats: each pleat's face steps out across its width and folds back under the next one at its edge
+            depth = 0.017 * s * smoothstep(hipz + 0.03 * s, hipz - 0.1 * s, zz)
             for k in range(na):
                 j = k % m
                 base = env[r, k] + ease + below * flare_k + 0.012 * s * smoothstep(hipz, hipz - 0.1 * s, zz)
-                saw = (j / (m - 1) - 0.5) * depth
+                saw = (j / (m - 1)) * depth   # out from the envelope: the tucked end of a pleat still clears the body
                 rr = base + saw
                 th = thetas[k]
                 verts.append(Vector((math.sin(th) * rr, cy - math.cos(th) * rr, zz)))
-                uvs.append(self.atlas.uv('pleats', j / (m - 1), 0.5))
+                uvs.append(self.atlas.uv('pleats', 0.1 + 0.9 * j / (m - 1), 0.5))
         faces = []
         for r in range(rows):
             for k in range(na):
@@ -480,8 +482,8 @@ class Kit:
                 faces.append((a, b, b + na, a + na))
         ob = new_object('skirt', verts, faces)
         shade_smooth(ob)
-        # panel springs: 8 bones on the hip ring, each swinging the hem below it
-        panels = 8
+        # panel springs: 12 bones on the hip ring, each swinging the hem below it
+        panels = 12
         attach = hipz + 0.02 * s
         names = []
         for k in range(panels):
@@ -492,10 +494,16 @@ class Kit:
             add_secondary(self.bones, nm, 'Bip01_Pelvis', b2g_point(at))
             ri = env[-1, kk] + ease + (hipz - hem) * flare_k
             tip = Vector((math.sin(th) * ri, cy - math.cos(th) * ri, hem))
-            self.springs.append({'name': f'skirt{k}', 'bones': [nm], 'tip': b2g_point(tip - at), 'stiffness': 0.34, 'drag': 0.24, 'gravity': 0.2, 'radius': 0.022, 'limit': 0.6})
+            # front and back panels swing far enough to ride over a striding thigh; the sides less
+            fb = abs(math.cos(th))
+            self.springs.append({'name': f'skirt{k}', 'bones': [nm], 'tip': b2g_point(tip - at), 'stiffness': 0.34, 'drag': 0.24, 'gravity': 0.2, 'radius': 0.024, 'limit': round(0.75 + 0.6 * fb, 3)})
             names.append(nm)
+        th_x = abs(self.J['Bip01_L_Thigh'].x)
         for r, zz in enumerate(zs):
-            wv = smoothstep(attach + 0.01 * s, attach - 0.12 * s, zz)
+            wv = smoothstep(attach + 0.01 * s, attach - 0.07 * s, zz)
+            # over each thigh the cloth follows the thigh in part (a striding leg carries the front and back of the
+            # skirt with it; the panels' springs do the rest)
+            deep = smoothstep(attach + 0.035 * s, attach - 0.07 * s, zz)
             for k in range(na):
                 th = thetas[k]
                 f = th / (2 * math.pi) * panels
@@ -508,19 +516,30 @@ class Kit:
                 tsum = sum(top_w.values())
                 top_w = {bb: x / tsum for bb, x in top_w.items()}
                 w = {bb: x * (1 - wv) for bb, x in top_w.items()}
-                w[names[a]] = w.get(names[a], 0) + wv * (1 - t)
-                w[names[b]] = w.get(names[b], 0) + wv * t
+                vx = verts[r * na + k].x
+                psi = THIGH_SHARE * deep * (0.6 + 0.4 * abs(math.cos(th)))
+                w[names[a]] = w.get(names[a], 0) + wv * (1 - t) * (1 - psi)
+                w[names[b]] = w.get(names[b], 0) + wv * t * (1 - psi)
+                if psi > 0.01:
+                    # crossfaded between the thighs: the middle of the front and back hangs between the legs
+                    lt = smoothstep(-0.35 * th_x, 0.35 * th_x, vx)
+                    for tb, x in (('Bip01_L_Thigh', lt), ('Bip01_R_Thigh', 1 - lt)):
+                        if x > 0.01:
+                            w[tb] = w.get(tb, 0) + wv * psi * x
                 wts.append(w)
         groups(ob, wts)
         uvl = ob.data.uv_layers.new(name='UVMap')
-        for poly in ob.data.polygons:
+        fold_uv = self.atlas.uv('pleats', 0.0, 0.5, inset=3.0)
+        for fi, poly in enumerate(ob.data.polygons):
+            # the fold (the step from one pleat's edge back under the next) is the shadow side: its own dark texels
+            fold = fi % na % m == m - 1
             for li in poly.loop_indices:
-                uvl.data[li].uv = uvs[ob.data.loops[li].vertex_index]
+                uvl.data[li].uv = fold_uv if fold else uvs[ob.data.loops[li].vertex_index]
         msol = ob.modifiers.new('solid', 'SOLIDIFY')
         msol.thickness = 0.0022 * s
         msol.offset = -1
         apply_modifiers(ob)
-        self.parts.append(Part(ob, 'cloth', toon=(1.0, 0.0, 1.0, 0.0), bones='groups', cloth=True, layer=1, role='skirt'))
+        self.parts.append(Part(ob, 'cloth', toon=(1.0, 0.0, 0.3, 0.0), bones='groups', cloth=True, layer=1, role='skirt'))
         self.skirt_ob = ob
         # waistband
         band = []
@@ -549,7 +568,7 @@ class Kit:
         s = self.s
         z = self.z
         h = str(it.get('height', 'mid-calf'))
-        top = {'ankle': z['ankle'] + 0.05 * s, 'mid-calf': lerp(z['knee'], z['ankle'], 0.55), 'knee': z['knee'] - 0.03 * s}.get(h, lerp(z['knee'], z['ankle'], 0.55))
+        top = {'ankle': z['ankle'] + 0.05 * s, 'mid-calf': lerp(z['knee'], z['ankle'], 0.64), 'knee': z['knee'] - 0.03 * s}.get(h, lerp(z['knee'], z['ankle'], 0.64))
         self.extract('socks', lambda i: self.region(i, 'calf', 'foot') and self.co[i][2] < top,
                      lambda i: 0.0018 * s + 0.0015 * s * smoothstep(top - 0.02 * s, top, self.co[i][2]), ('socks', it['rgb']), layer=0, solid=0.0012, toon=(0.8, 0.0, 1.0, 0.0), hide_margin=0.02 * s)
 
@@ -623,8 +642,9 @@ class Kit:
                     x, y = math.cos(a), math.sin(a)
                     px = math.copysign(abs(x) ** 0.5, x) * (w + 0.0025 * s)
                     pz = sole_h * (0.5 + 0.55 * y)
-                    if kind == 'loafers' and t < 0.25 and y < 0:
-                        pz = sole_h * 0.5 + y * 0.012 * s
+                    if kind == 'loafers' and t < 0.24 and y < 0:
+                        # the heel block
+                        pz = sole_h * 0.5 + y * 0.02 * s
                     sring.append(c + right * px + Vector((0, 0, max(0.0, pz))))
                 sole_v.append(sring)
             from common import loft

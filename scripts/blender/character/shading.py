@@ -12,6 +12,7 @@ import bpy
 import numpy as np
 
 SHADOW = (0.62, 0.55, 0.8)
+SUN_DIR = (-0.45, -0.75, 0.55)   # toward the preview sun (Blender axes)
 LIT = (1.0, 0.97, 0.92)
 
 
@@ -55,11 +56,13 @@ def toon_preview_material(img, name='toon-preview', realistic=False):
         nt.links.new(tex.outputs['Color'], bsdf.inputs['Base Color'])
         nt.links.new(bsdf.outputs[0], out.inputs[0])
         return m
-    diff = nt.nodes.new('ShaderNodeBsdfDiffuse')
-    s2r = nt.nodes.new('ShaderNodeShaderToRGB')
-    nt.links.new(diff.outputs[0], s2r.inputs[0])
-    bw = nt.nodes.new('ShaderNodeRGBToBW')
-    nt.links.new(s2r.outputs[0], bw.inputs[0])
+    # N.L against the preview sun plus the per-vertex shade bias, banded like toon.ts: smoothstep(-0.02, 0.04)
+    geo = nt.nodes.new('ShaderNodeNewGeometry')
+    dot = nt.nodes.new('ShaderNodeVectorMath')
+    dot.operation = 'DOT_PRODUCT'
+    nt.links.new(geo.outputs['Normal'], dot.inputs[0])
+    import mathutils
+    dot.inputs[1].default_value = mathutils.Vector(SUN_DIR).normalized()
     # shade bias from the toon attribute's green channel
     attr = nt.nodes.new('ShaderNodeAttribute')
     attr.attribute_name = '_TOON'
@@ -67,11 +70,12 @@ def toon_preview_material(img, name='toon-preview', realistic=False):
     nt.links.new(attr.outputs['Color'], sep.inputs[0])
     add = nt.nodes.new('ShaderNodeMath')
     add.operation = 'ADD'
-    nt.links.new(bw.outputs[0], add.inputs[0])
+    nt.links.new(dot.outputs['Value'], add.inputs[0])
     nt.links.new(sep.outputs[1], add.inputs[1])
     ramp = nt.nodes.new('ShaderNodeMapRange')
-    ramp.inputs['From Min'].default_value = 0.02
-    ramp.inputs['From Max'].default_value = 0.035
+    ramp.interpolation_type = 'SMOOTHSTEP'
+    ramp.inputs['From Min'].default_value = -0.02
+    ramp.inputs['From Max'].default_value = 0.04
     nt.links.new(add.outputs[0], ramp.inputs['Value'])
     lit = ramp.outputs['Result']
     # codes from the alpha
@@ -171,7 +175,7 @@ def set_toon_attribute(ob, values):
     return attr
 
 
-def sun(direction=(-0.45, -0.75, 0.55), strength=3.0):
+def sun(direction=SUN_DIR, strength=3.0):
     import mathutils
     ob = bpy.data.objects.get('qa-sun')
     if ob is None:
