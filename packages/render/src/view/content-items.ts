@@ -7,7 +7,7 @@
  * small weight so they do not drag the camera away from the set-pieces. A
  * world made only of scenery ("a mountain range") frames that scenery.
  */
-import { Box3, type Object3D } from 'three';
+import { Box3, Mesh, Vector3, type Object3D } from 'three';
 import type { EntityId, Vec3 } from '@aether/core';
 import type { SceneSync } from '../sync/scene-sync';
 import type { FramingItem } from './framing';
@@ -89,14 +89,41 @@ export function collectFramingItems(sync: SceneSync, focus: ReadonlySet<EntityId
  */
 export function groundSheet(sync: SceneSync): GroundSheet | null {
   const sheet = new Box3();
+  let color: string | undefined;
   sync.root.updateMatrixWorld(true);
   sync.forEachNode((node) => {
     if (node.transient || node.entity.template || !node.object.visible) return;
     const shape = node.entity.shape;
     if (!(node.entity.tags.includes('terrain') || (shape.kind === 'procedural' && shape.generator === 'terrain'))) return;
     _box.setFromObject(node.content);
-    if (!_box.isEmpty()) sheet.union(_box);
+    if (_box.isEmpty()) return;
+    sheet.union(_box);
+    const c = shape.kind === 'procedural' ? (shape.params as Record<string, unknown> | undefined)?.['color'] : undefined;
+    if (color === undefined && typeof c === 'string') color = c;
   });
   if (sheet.isEmpty() || ![...sheet.min.toArray(), ...sheet.max.toArray()].every(Number.isFinite)) return null;
-  return { minX: sheet.min.x, maxX: sheet.max.x, minZ: sheet.min.z, maxZ: sheet.max.z, minY: sheet.min.y, maxY: sheet.max.y };
+  return { minX: sheet.min.x, maxX: sheet.max.x, minZ: sheet.min.z, maxZ: sheet.max.z, minY: sheet.min.y, maxY: sheet.max.y, ...(color ? { color } : {}) };
+}
+
+/** World-space vertices of the terrain entities within 1.5 % of the sheet's rim (what the skirt reads its rim heights from). */
+export function terrainRimVertices(sync: SceneSync, sheet: GroundSheet): Array<[number, number, number]> {
+  const out: Array<[number, number, number]> = [];
+  const tx = (sheet.maxX - sheet.minX) * 0.015;
+  const tz = (sheet.maxZ - sheet.minZ) * 0.015;
+  const v = new Vector3();
+  sync.forEachNode((node) => {
+    if (node.transient || node.entity.template || !node.object.visible) return;
+    const shape = node.entity.shape;
+    if (!(node.entity.tags.includes('terrain') || (shape.kind === 'procedural' && shape.generator === 'terrain'))) return;
+    node.content.traverse((o) => {
+      const m = o as Mesh;
+      const a = m.isMesh ? m.geometry.getAttribute('position') : undefined;
+      if (!a) return;
+      for (let i = 0; i < a.count; i++) {
+        v.fromBufferAttribute(a, i).applyMatrix4(m.matrixWorld);
+        if (v.x <= sheet.minX + tx || v.x >= sheet.maxX - tx || v.z <= sheet.minZ + tz || v.z >= sheet.maxZ - tz) out.push([v.x, v.y, v.z]);
+      }
+    });
+  });
+  return out;
 }

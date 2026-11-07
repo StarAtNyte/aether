@@ -71,7 +71,7 @@ import { captureMime, captureNeedsResize, pixelsAreBlank, captureSize, MAX_VIEWS
 import { FrameStats } from './view/frame-stats';
 import { gradeFor, gradeWithPreset, NEUTRAL_GRADE } from './gpu/grade';
 import { animeEffects, autoTier, degrade, effectsKey, effectsOf, evScale, GRADE_PRESETS, isGradePresetId, presetFor, RENDER_TIERS, resolveEffects, type EffectOverrides, type GradePreset, type GradePresetId, type PostEffects, type RenderTier } from './gpu/finishing';
-import { CameraTour, type TourKey, DRONE_TOUR_RADIUS, TOUR_SECONDS, droneTourKeys, tourKeys, tourSections } from './view/tour';
+import { CameraTour, composeKey, TITLE_PITCH_DOWN, TITLE_PITCH_UP, type TourKey, DRONE_TOUR_RADIUS, TOUR_SECONDS, droneTourKeys, tourKeys, tourSections } from './view/tour';
 import { AdaptiveResolution, MOTION_PROFILES, motionOptions, passFloorOf, type MotionProfile } from './view/adaptive-resolution';
 import { MeshBasicNodeMaterial } from 'three/webgpu';
 import { textureWork } from './gpu/task-queue';
@@ -95,8 +95,9 @@ import { ArchView, type ArchViewState } from './view/arch-view';
 import { daylightLampFactor, FORWARD_LIGHTS, LAMP_CUTOFF, lightIntensity } from './sync/lights';
 import type { RelightLighting } from './environment/relight';
 import { installFirstDrawPacer, type FirstDrawPacer } from './gpu/first-draw-pacer';
-import { collectFramingItems, FOCUS_TAG, groundSheet } from './view/content-items';
-import { edgeShy } from './view/edge-shy';
+import { collectFramingItems, FOCUS_TAG, groundSheet, terrainRimVertices } from './view/content-items';
+import { edgeNudge, type GroundSheet } from './view/edge-shy';
+import { buildTerrainSkirt, disposeSkirt, rimHeights } from './environment/terrain-skirt';
 import { drainSteps, nearestInView, nearZone, rankOpeningViews, rankOpeningViewsSteps, type OpeningPose, type OpeningStats, type OpeningSun } from './view/opening-view';
 import type { ArchBuilding, ArchOpening } from './view/arch-hero';
 import { archStopsSteps, MAX_STOPS, quickSceneStopsSteps, sceneStopsSteps, VEGETATION_NAME, viewpointName, type QuickStopProbe, type RoomArea, type ViewStopPose } from './view/view-stops';
@@ -2341,22 +2342,62 @@ export class WorldRenderer {
     return true;
   }
 
-  /** The aerial view `pos` to `target` kept off the rim of the terrain (see `edge-shy.ts`); null when it needs no change. */
-  private keepOffRim(pos: Vec3, target: Vec3): { pos: Vec3; target: Vec3 } | null {
+  /** The far-hills skirt round the terrain's rim (see `environment/terrain-skirt.ts`) and the sheet it was built for. */
+  private terrainSkirt: { mesh: Mesh; key: string } | null = null;
+
+  /** Build (or rebuild, when the terrain changed) the skirt that hides the terrain's rim from high views; returns the sheet. */
+  private ensureSkirt(): GroundSheet | null {
     const sheet = groundSheet(this.sync);
+    const key = sheet ? [sheet.minX, sheet.maxX, sheet.minZ, sheet.maxZ, sheet.minY, sheet.maxY, sheet.color ?? ''].map((v) => (typeof v === 'number' ? v.toFixed(1) : v)).join('|') : '';
+    if (this.terrainSkirt && this.terrainSkirt.key !== key) {
+      this.scene.remove(this.terrainSkirt.mesh);
+      disposeSkirt(this.terrainSkirt.mesh);
+      this.terrainSkirt = null;
+    }
+    if (sheet && !this.terrainSkirt) {
+      const rim = rimHeights(sheet, terrainRimVertices(this.sync, sheet));
+      const mesh = buildTerrainSkirt(sheet, rim, sheet.color ?? '#6f9a4a');
+      this.scene.add(mesh);
+      this.terrainSkirt = { mesh, key };
+      this.needsDraw = true;
+    }
+    return sheet;
+  }
+
+  /** The framed view with the skirt in place and a camera that hangs far past the rim nudged back; null when unchanged. */
+  private keepOffRim(pos: Vec3, target: Vec3): { pos: Vec3; target: Vec3 } | null {
+    const sheet = this.ensureSkirt();
     if (!sheet) return null;
-    const out = edgeShy(pos, target, sheet, this.perspective.fov, this.perspective.aspect);
+    const out = edgeNudge(pos, target, sheet);
     return out.pos === pos ? null : out;
   }
 
-  /** A tour's keys with every aerial one kept off the terrain's rim; the first and last key (the camera as it is) stay. */
+  /**
+   * A tour's keys as game-title shots: the terrain's skirt in place, the camera inside the rim's margin, the look between
+   * 30 degrees down and 6 up (the horizon or sky stays in frame), and no key looking into a near prop (a ray that ends within
+   * a few metres, or well short of the subject, backs the camera off and up). The first and last key (the camera as it is) stay.
+   */
   private keysOffRim(keys: TourKey[]): TourKey[] {
-    const sheet = groundSheet(this.sync);
-    if (!sheet) return keys;
+    const sheet = this.ensureSkirt();
+    // The horizon stays in the top of the frame: the look is at most half the field of view down, less a few degrees.
+    const down = Math.min(TITLE_PITCH_DOWN, Math.max((10 * Math.PI) / 180, (this.perspective.fov / 2 - 3) * (Math.PI / 180)));
     return keys.map((k, i) => {
       if (i === 0 || i === keys.length - 1) return k;
-      const out = edgeShy(k.pos, k.target, sheet, this.perspective.fov, this.perspective.aspect);
-      return out.pos === k.pos ? k : { pos: out.pos, target: out.target };
+      let key = sheet ? ((o) => ({ pos: o.pos, target: o.target }))(edgeNudge(k.pos, k.target, sheet)) : k;
+      key = composeKey(key, down, TITLE_PITCH_UP);
+      for (let tries = 0; tries < 3; tries++) {
+        const d: Vec3 = [key.target[0] - key.pos[0], key.target[1] - key.pos[1], key.target[2] - key.pos[2]];
+        const len = Math.hypot(d[0], d[1], d[2]);
+        if (len < 1) break;
+        const hit = this.raycastWorld(key.pos, d, len);
+        if (!hit) break;
+        const reach = Math.hypot(hit.point[0] - key.pos[0], hit.point[1] - key.pos[1], hit.point[2] - key.pos[2]);
+        if (reach > Math.max(30, len * 0.45)) break;
+        // Too close to something in front of the lens: back off along the view and rise, keeping the same subject.
+        const back = Math.max(18, len * 0.45);
+        key = composeKey({ pos: [key.pos[0] - (d[0] / len) * back, key.pos[1] - (d[1] / len) * back + back * 0.25, key.pos[2] - (d[2] / len) * back], target: key.target }, down, TITLE_PITCH_UP);
+      }
+      return key;
     });
   }
 
@@ -7683,6 +7724,11 @@ export class WorldRenderer {
   /** Dispose every GPU resource, control and listener. The renderer is unusable afterwards. */
   dispose(): void {
     if (this.disposed) return;
+    if (this.terrainSkirt) {
+      this.scene.remove(this.terrainSkirt.mesh);
+      disposeSkirt(this.terrainSkirt.mesh);
+      this.terrainSkirt = null;
+    }
     if (this.loadingScreen) workerScheduler().setPaused('first-picture', false);
     this.endLiveEnvironment();
     clearInterval(this.cpuReleaseTimer);

@@ -259,3 +259,22 @@ export function droneTourKeys(from: TourKey, sections: readonly TourSection[], c
   push([...from.pos], [...from.target], cruise, 4);
   return { keys, times };
 }
+
+/** A title or tour shot looks at most this far (radians) below the horizon, and this far above it. */
+export const TITLE_PITCH_DOWN = (30 * Math.PI) / 180;
+export const TITLE_PITCH_UP = (6 * Math.PI) / 180;
+
+/** The key with its look kept between `maxDown` below and `maxUp` above the horizon (same camera, same distance to the subject). */
+export function composeKey(key: TourKey, maxDown: number, maxUp: number): TourKey {
+  const dx = key.target[0] - key.pos[0];
+  const dy = key.target[1] - key.pos[1];
+  const dz = key.target[2] - key.pos[2];
+  const horiz = Math.hypot(dx, dz);
+  const dist = Math.hypot(dx, dy, dz);
+  if (dist < 1e-6 || horiz < 1e-6 || !Number.isFinite(dist)) return key;
+  const pitch = Math.atan2(dy, horiz);
+  const p = Math.min(maxUp, Math.max(-maxDown, pitch));
+  if (p === pitch) return key;
+  const ch = Math.cos(p) * dist;
+  return { pos: key.pos, target: [key.pos[0] + (dx / horiz) * ch, key.pos[1] + Math.sin(p) * dist, key.pos[2] + (dz / horiz) * ch] };
+}
