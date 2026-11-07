@@ -272,6 +272,14 @@ export class Draft {
     else this.doc.feel = value;
   }
 
+  /** Set (or with `undefined`, remove) one of the presentation fields (start mode, profile, story, tour stops). */
+  setPresentation<K extends 'startMode' | 'profile' | 'story' | 'views'>(key: K, value: WorldDoc[K]): void {
+    if (value === this.doc[key]) return;
+    this.dirty = true;
+    if (value === undefined) delete this.doc[key];
+    else this.doc[key] = value;
+  }
+
   /** Set (or with `undefined`, remove) the texture set records. */
   setTextures(value: WorldDoc['textures']): void {
     if (value === this.doc.textures) return;

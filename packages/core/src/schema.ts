@@ -1067,11 +1067,15 @@ export const MAX_VIEW_STOPS = 12;
 /**
  * Publish profile of a world: how the player presents it. `game`: title card, then play; `walkthrough`: an
  * architectural tour at eye level (click the floor to glide, dollhouse view); `showcase`: a cinematic fly-in, then an orbit
- * camera with viewpoints; `city`: a street-level hero view, then a drone tour. Every profile can still be played as the
- * character (P) and explored with an orbit camera (Tab).
+ * camera with viewpoints; `city`: a street-level hero view, then a drone tour; `vr`: a game built for a headset (played like
+ * `game`); `story`: a short film or anime short (`world.story`) that plays first, then P plays and Tab explores. Every profile can still be played as the character (P) and explored with an orbit camera (Tab).
  */
-export const WorldProfile = z.enum(['game', 'walkthrough', 'showcase', 'city']);
+export const WorldProfile = z.enum(['game', 'walkthrough', 'showcase', 'city', 'vr', 'story']);
 export type WorldProfile = z.infer<typeof WorldProfile>;
+
+/** How a published world starts (see `WorldDoc.startMode`). */
+export const WorldStartMode = z.enum(['play', 'walkthrough', 'orbit', 'story']);
+export type WorldStartMode = z.infer<typeof WorldStartMode>;
 
 // ---------------------------------------------------------------------------
 // World document
@@ -1149,7 +1153,7 @@ export const WorldDoc = z.object({
    * film, {@link Story}, then explore or play). Absent: the player decides
    * from the world. The editor ignores it.
    */
-  startMode: z.enum(['play', 'walkthrough', 'orbit', 'story']).optional(),
+  startMode: WorldStartMode.optional(),
   /** Additive: the publish profile (see {@link WorldProfile}). Absent: the player derives it from `startMode`. The editor ignores it. */
   profile: WorldProfile.optional(),
   /** Additive: authored tour stops (see {@link ViewStop}). Absent: computed by the player or the cook. The editor ignores them. */
@@ -1206,6 +1210,14 @@ export const Patch = z.discriminatedUnion('op', [
     feel: FeelSpec.nullable().optional(),
     /** Additive: add or replace texture sets of the project by id, or with `null` remove one (`WorldDoc.textures`). */
     textures: z.record(TextureId, TextureSetDef.nullable()).optional(),
+    /** Additive: how the published world starts (`world.startMode`), or with `null` let the player decide. */
+    startMode: WorldStartMode.nullable().optional(),
+    /** Additive: the publish profile (`world.profile`), or with `null` derive it from the start mode. */
+    profile: WorldProfile.nullable().optional(),
+    /** Additive: the short film (`world.story`), or with `null` remove it. */
+    story: Story.nullable().optional(),
+    /** Additive: the tour stops (`world.views`), or with `null` let the player compute them. */
+    views: z.array(ViewStop).max(MAX_VIEW_STOPS).nullable().optional(),
   }),
   z.object({ op: z.literal('clear'), /** keep environment/player */ keepEnvironment: z.boolean().default(true) }),
   /** Additive: delete a custom generator (rejected while entities still use it). Needed so `defineGenerator` is invertible. */

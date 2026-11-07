@@ -143,7 +143,7 @@ describe('story start mode', () => {
   it('opens a story world on its film, and falls back to a showcase without one', () => {
     expect(experienceFor('story', 'showcase', false, true)).toMatchObject({ kind: 'story', entry: 'story', explore: 'orbit' });
     expect(experienceFor('story', 'showcase', false, false)).toMatchObject({ kind: 'showcase' });
-    expect(templatePublish('cloudwatch-harbour')).toEqual({ startMode: 'story', profile: 'showcase' });
+    expect(templatePublish('cloudwatch-harbour')).toEqual({ startMode: 'story', profile: 'story' });
   });
 
   it('skips, plays and explores from the story', () => {

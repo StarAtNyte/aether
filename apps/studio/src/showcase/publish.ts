@@ -6,7 +6,8 @@
  * - `play` / `game`: a world with a player, goals or a title card (games, stories with chapters, physics with a goal);
  * - `walkthrough` / `walkthrough`: houses, venues and interiors, walked at eye level;
  * - `orbit` / `showcase`: scenes, landscapes and machines to look at (the sanctuaries, the domino runs);
- * - `story` / `showcase`: a world with a short film (Cloudwatch Harbour): the film plays first, then explore or play;
+ * - `story` / `story`: a short film or anime short (Cloudwatch Harbour): the film plays first, then P plays as the character,
+ *   Tab or O explores, and the end card offers Replay;
  * - `orbit` / `city`: cities and districts (Lisbon): a street-level hero view, then a drone tour. A city with a game goal
  *   (Neon Rain City: find the five neon cats) starts as a game (`play` / `city`): title card, then play, and its explore
  *   mode is the city's drone camera.
@@ -18,7 +19,7 @@
 /** Start mode of a published world (as render `cook/format.ts` `StartMode`). */
 export type TemplateStartMode = 'play' | 'walkthrough' | 'orbit' | 'story';
 /** Publish profile (as render `cook/format.ts` `CookProfile`). */
-export type TemplateProfile = 'game' | 'walkthrough' | 'showcase' | 'city' | 'vr';
+export type TemplateProfile = 'game' | 'walkthrough' | 'showcase' | 'city' | 'vr' | 'story';
 
 /** One template's publish settings. */
 export interface TemplatePublish {
@@ -31,7 +32,7 @@ const WALK: TemplatePublish = Object.freeze({ startMode: 'walkthrough', profile:
 const SHOW: TemplatePublish = Object.freeze({ startMode: 'orbit', profile: 'showcase' });
 const CITY: TemplatePublish = Object.freeze({ startMode: 'orbit', profile: 'city' });
 /** A world with a short film (`world.story`): the film first, then explore (orbit) or play. */
-const STORY: TemplatePublish = Object.freeze({ startMode: 'story', profile: 'showcase' });
+const STORY: TemplatePublish = Object.freeze({ startMode: 'story', profile: 'story' });
 /** A city with a game goal: played from its title card, explored as a city. */
 const CITY_GAME: TemplatePublish = Object.freeze({ startMode: 'play', profile: 'city' });
 
@@ -97,7 +98,7 @@ export const TEMPLATE_PUBLISH: Readonly<Record<string, TemplatePublish>> = Objec
 
 /** Publish settings of a template kind (a slug without a row). */
 export function publishForKind(kind: string | undefined): TemplatePublish {
-  return kind === 'game' ? GAME : kind === 'architecture' ? WALK : SHOW;
+  return kind === 'game' ? GAME : kind === 'architecture' ? WALK : kind === 'story' ? STORY : SHOW;
 }
 
 /** Publish settings of `slug` (its row, else by its kind). */

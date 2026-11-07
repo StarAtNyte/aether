@@ -34,7 +34,7 @@ export interface Experience {
 }
 
 export type StartModeLike = 'play' | 'walkthrough' | 'orbit' | 'story' | null | undefined;
-export type ProfileLike = 'game' | 'walkthrough' | 'showcase' | 'city' | 'vr' | null | undefined;
+export type ProfileLike = 'game' | 'walkthrough' | 'showcase' | 'city' | 'vr' | 'story' | null | undefined;
 
 /**
  * The presentation of a world from its start mode and profile. A world that starts in play is a game (its explore camera
@@ -42,7 +42,8 @@ export type ProfileLike = 'game' | 'walkthrough' | 'showcase' | 'city' | 'vr' | 
  * showcase. No start mode at all (an old game build) is a game.
  */
 export function experienceFor(startMode: StartModeLike, profile: ProfileLike, hasBuilding = false, hasStory = false): Experience {
-  if (startMode === 'story' && hasStory) return { kind: 'story', entry: 'story', explore: profile === 'walkthrough' ? 'walk' : profile === 'city' ? 'drone' : 'orbit', dollhouse: profile === 'walkthrough' && hasBuilding, photo: true, stopsLabel: 'Viewpoints' };
+  // A story world (profile `story`, or any world started on its film): the film first, then P plays, Tab/O explores.
+  if ((startMode === 'story' || (!startMode && profile === 'story')) && hasStory) return { kind: 'story', entry: 'story', explore: profile === 'walkthrough' ? 'walk' : profile === 'city' ? 'drone' : 'orbit', dollhouse: profile === 'walkthrough' && hasBuilding, photo: true, stopsLabel: 'Viewpoints' };
   if (startMode === 'play' || (!startMode && (!profile || profile === 'game' || profile === 'vr'))) {
     const explore: ExploreStyle = profile === 'city' ? 'drone' : profile === 'walkthrough' ? 'walk' : 'orbit';
     return { kind: 'game', entry: 'title', explore, dollhouse: explore === 'walk' && hasBuilding, photo: true, stopsLabel: profile === 'city' ? 'Districts' : 'Viewpoints' };

@@ -17,6 +17,8 @@ import { SCULPT_FALLOFFS, SCULPT_LIMITS, SCULPT_MODES, SculptInput } from './scu
 import { LOOK_RESET_KEYS, TuneLookInput } from './look-edit';
 import type { ToolDef } from './types';
 import { MakeTextureInput } from './textures';
+import { AUTHOR_STORY_TOOL } from './presentation/director';
+import { PRESENT_KINDS, PRESENT_STARTS } from './presentation/kind';
 
 /** Upper bounds on tool arguments. */
 export const TOOL_LIMITS = Object.freeze({
@@ -49,7 +51,7 @@ const paramSpecSchema = {
 } as const;
 
 /** Tool names. */
-export type AgentToolName = 'apply_patches' | 'build_architecture' | 'design_plan' | 'place_items' | 'edit_items' | 'query_scene' | 'write_generator' | 'write_script' | 'request_asset' | 'search_assets' | 'find_model' | 'simready_search' | 'import_asset' | 'inspect' | 'run_verification' | 'shape_land' | 'tune_feel' | 'tune_look' | 'bake_light' | 'sculpt' | 'make_texture' | 'finish';
+export type AgentToolName = 'apply_patches' | 'build_architecture' | 'design_plan' | 'place_items' | 'edit_items' | 'query_scene' | 'write_generator' | 'write_script' | 'request_asset' | 'search_assets' | 'find_model' | 'simready_search' | 'import_asset' | 'inspect' | 'run_verification' | 'shape_land' | 'tune_feel' | 'tune_look' | 'bake_light' | 'sculpt' | 'make_texture' | 'author_story' | 'set_presentation' | 'finish';
 
 /** Asset categories accepted by search_assets (mirrors @aether/assets `AssetCategory`). */
 export const ASSET_CATEGORIES = [
@@ -464,6 +466,17 @@ export const AGENT_TOOLS: ToolDef[] = [
       additionalProperties: false,
     },
   },
+  AUTHOR_STORY_TOOL,
+  {
+    name: 'set_presentation',
+    description: 'Set how the published world is presented: its kind (profile: game, walkthrough, showcase, city, vr, story) and start mode (play, walkthrough, orbit, story). A game goal or a player with a purpose: game/play; a building or interior: walkthrough/walkthrough; a city: city/orbit; a world with a short film or a narrative brief: story/story (write the film with author_story); a landscape or scene: showcase/story or showcase/orbit.',
+    inputSchema: {
+      type: 'object',
+      properties: { profile: { type: 'string', enum: [...PRESENT_KINDS] }, startMode: { type: 'string', enum: [...PRESENT_STARTS] }, reason: { type: 'string' } },
+      required: ['profile', 'startMode'],
+      additionalProperties: false,
+    },
+  },
   {
     name: 'finish',
     description: 'Call when the world fulfils the request. `message` is shown to the user: one or two sentences on what was built and how to play it. Claim only what you measured or saw (at which view, against which limit), and name what you did not check ("Not checked: ..."). Verification runs automatically afterwards.',
@@ -596,6 +609,8 @@ export const ToolInputs = {
   bake_light: BakeLightInput,
   sculpt: SculptInput,
   make_texture: MakeTextureInput,
+  author_story: z.object({ op: z.enum(['points', 'write', 'auto']), start: z.boolean().optional(), message: z.string().max(TOOL_LIMITS.MAX_MESSAGE).optional() }).passthrough(),
+  set_presentation: z.object({ profile: z.string().max(20), startMode: z.string().max(20), reason: z.string().max(400).optional() }),
   finish: z.object({ message: z.string().max(TOOL_LIMITS.MAX_MESSAGE).default('') }),
 } as const;
 

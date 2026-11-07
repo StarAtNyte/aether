@@ -511,6 +511,14 @@ function opSetMeta(d: Draft, p: PatchOf<'setMeta'>): Outcome {
     if (Object.keys(next).length > 48) return fail('a world holds at most 48 texture sets');
     if (!deepEqual(next, d.world.textures ?? {})) d.setTextures(Object.keys(next).length > 0 ? next : undefined);
   }
+  if (p.startMode === null) d.setPresentation('startMode', undefined);
+  else if (p.startMode !== undefined && p.startMode !== d.world.startMode) d.setPresentation('startMode', p.startMode);
+  if (p.profile === null) d.setPresentation('profile', undefined);
+  else if (p.profile !== undefined && p.profile !== d.world.profile) d.setPresentation('profile', p.profile);
+  if (p.story === null) d.setPresentation('story', undefined);
+  else if (p.story !== undefined && !deepEqual(p.story, d.world.story)) d.setPresentation('story', p.story);
+  if (p.views === null) d.setPresentation('views', undefined);
+  else if (p.views !== undefined && !deepEqual(p.views, d.world.views)) d.setPresentation('views', p.views);
   return OK;
 }
 
@@ -525,6 +533,9 @@ function opClear(d: Draft, p: PatchOf<'clear'>): Outcome {
   d.setIntro(undefined);
   // So does the opening view: it looked at what was there.
   d.setOpening(undefined);
+  // And the film and the tour stops: their shots framed it.
+  d.setPresentation('story', undefined);
+  d.setPresentation('views', undefined);
   if (d.world.textures !== undefined) d.setTextures(undefined);
   if (!p.keepEnvironment) {
     const env = EnvironmentSchema.parse({});

@@ -4,6 +4,11 @@
  * All model arguments are untrusted: they are size-checked and zod-validated
  * here, and patches are validated again by the host's `applyPatches`.
  */
+import { storyDuration } from '@aether/core';
+import { stripOp, storyPatches } from './presentation/director';
+import { parseChoice, presentationPatch, presentationSignals } from './presentation/kind';
+import { pointsOfInterest, poiText, type PoseLike } from './presentation/poi';
+import { fallbackPlan, issuesText as storyIssuesText, planToStory, repairStory, StoryPlan } from './presentation/story';
 import { aboCatalog, describeAboModel, describeModel, describeSimreadyHit, findAboModels, findModels, headNoun, lacksNoun, loadCatalog, searchAssets, searchSimready, HUB_FIRST, HUB_SKIP_TEXT, isStructuralQuery, pickHubFirst, withHubTimeout } from '@aether/assets';
 import { applyArchOps, describePartLine, emptiesWorld, emptyWorldRefusal, findCrafted, partInfo, runDesignTool, type DesignToolName } from '@aether/arch';
 import { GeneratorDef, ScriptDef, applyPatches, carryPatches, characterPatches, hasOwn, isPlainObject, type CarriedDependent, type Patch, type PatchError, type WorldDoc } from '@aether/core';
@@ -678,6 +683,43 @@ async function sculptTool(ctx: ExecutorContext, input: SculptInput): Promise<Too
   return { content: res.summary, isError: false, events, edited: true };
 }
 
+/** author_story: list the points of interest, or write the film (the model's shot list, or by film grammar), checked and repaired. */
+async function authorStoryTool(ctx: ExecutorContext, input: { op: 'points' | 'write' | 'auto'; start?: boolean; message?: string } & Record<string, unknown>): Promise<ToolOutcome> {
+  const host = ctx.host;
+  const views = host.presentationViews ? await raceAbort(host.presentationViews(ctx.signal ? { signal: ctx.signal } : {}), ctx.signal).catch(() => null) : null;
+  const world = host.getWorld();
+  const pois = pointsOfInterest(world, views);
+  if (input.op === 'points') return { content: clip(`Points of interest (ids for author_story shots):\n${poiText(pois)}`), isError: false, events: [], edited: false };
+  let plan: StoryPlan;
+  if (input.op === 'auto') {
+    const sig = presentationSignals(world);
+    plan = fallbackPlan(world, pois, { indoor: (sig.buildings > 0 || sig.rooms > 0) && !sig.terrain && !sig.water });
+  } else {
+    const p = StoryPlan.safeParse(stripOp(input));
+    if (!p.success) return fail(`Invalid author_story shot list: ${issuesText(p.error)}`);
+    plan = p.data;
+  }
+  const draft = planToStory(world, plan, pois);
+  const probeView = host.probeView?.bind(host);
+  const probe = probeView ? (pose: PoseLike) => probeView({ position: pose.position, target: pose.target, up: [0, 1, 0], fov: pose.fov ?? 50 }) : null;
+  const repaired = await raceAbort(repairStory(draft, probe, pois), ctx.signal);
+  const message = (input.message ?? 'Short film').slice(0, 200);
+  const result = host.applyPatches(storyPatches(repaired.story, input.start !== false), message);
+  const events: AgentEvent[] = [{ type: 'patches', patches: result.applied, message, result: { applied: result.applied.length, errors: result.errors } }];
+  if (result.applied.length === 0) return { content: `author_story could not store the film: ${result.errors.slice(0, 3).map((e) => e.message.slice(0, 160)).join('; ')}`, isError: true, events, edited: false };
+  const left = [...draft.notes, ...repaired.remaining.map((r) => storyIssuesText([r]))];
+  return { content: clip(`Stored a ${repaired.story.shots.length}-shot film of ${storyDuration(repaired.story).toFixed(0)} s.${repaired.fixed.length ? ` Repaired: ${repaired.fixed.join('; ')}.` : ''}${left.length ? `\nStill wrong (revise with op "write"):\n${left.join('\n')}` : ' Every shot passed the checks.'}`), isError: false, events, edited: true };
+}
+
+/** set_presentation: the publish kind and start mode, stored in the IR. */
+function setPresentationTool(ctx: ExecutorContext, input: { profile: string; startMode: string; reason?: string }): ToolOutcome {
+  const choice = parseChoice(input);
+  if (!choice) return fail('set_presentation: unknown profile or start mode');
+  const result = ctx.host.applyPatches([presentationPatch(choice)], 'Presentation');
+  const events: AgentEvent[] = [{ type: 'patches', patches: result.applied, message: 'Presentation', result: { applied: result.applied.length, errors: result.errors } }];
+  return { content: `Published as ${choice.profile}, starting in ${choice.startMode}.`, isError: false, events, edited: result.applied.length > 0 };
+}
+
 /** Execute one tool call. Never throws except when aborted. */
 export async function executeTool(ctx: ExecutorContext, name: string, rawInput: unknown): Promise<ToolOutcome> {
   const hostTools = ctx.blender;
@@ -702,7 +744,7 @@ export async function executeTool(ctx: ExecutorContext, name: string, rawInput: 
       return fail(`Tool "${name}" failed: ${errorMessage(e).slice(0, 500)}`);
     }
   }
-  if (!isAgentTool(name)) return fail(`Unknown tool "${name.slice(0, 64)}". Available: apply_patches, shape_land, tune_feel, tune_look, bake_light, sculpt, build_architecture, design_plan, place_items, edit_items, query_scene, query_level, place_level_items, write_generator, write_script, request_asset, search_assets, find_model, simready_search, import_asset, inspect, run_verification, finish.`);
+  if (!isAgentTool(name)) return fail(`Unknown tool "${name.slice(0, 64)}". Available: apply_patches, shape_land, tune_feel, tune_look, bake_light, sculpt, author_story, set_presentation, build_architecture, design_plan, place_items, edit_items, query_scene, query_level, place_level_items, write_generator, write_script, request_asset, search_assets, find_model, simready_search, import_asset, inspect, run_verification, finish.`);
   if (typeof rawInput === 'string') return fail('The tool arguments were not valid JSON. Resend the call with a valid JSON object.');
   if (inputSize(rawInput) > TOOL_LIMITS.MAX_INPUT_CHARS) return fail(`Tool input too large (max ${TOOL_LIMITS.MAX_INPUT_CHARS} characters). Split it into several calls.`);
   try {
@@ -729,6 +771,14 @@ export async function executeTool(ctx: ExecutorContext, name: string, rawInput: 
       }
       case 'make_texture':
         return makeTextureTool(ctx, rawInput);
+      case 'author_story': {
+        const p = ToolInputs.author_story.safeParse(rawInput ?? {});
+        return p.success ? await authorStoryTool(ctx, p.data as Parameters<typeof authorStoryTool>[1]) : fail(`Invalid author_story input: ${issuesText(p.error)}`);
+      }
+      case 'set_presentation': {
+        const p = ToolInputs.set_presentation.safeParse(rawInput ?? {});
+        return p.success ? setPresentationTool(ctx, p.data) : fail(`Invalid set_presentation input: ${issuesText(p.error)}`);
+      }
       case 'apply_patches': {
         const p = ToolInputs.apply_patches.safeParse(rawInput);
         return p.success ? await applyPatchesTool(ctx, p.data) : fail(`Invalid apply_patches input: ${issuesText(p.error)}`);

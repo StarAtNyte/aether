@@ -107,3 +107,4 @@ export { artifactFindings, findArtifacts, findBuildingsInRock, findLandEnds, fin
 export { OPENING_NEAR_ZONE, openingCandidates, openingPatch, openingPictureScore, openingProbeOk, wantsOpening } from './opening';
 export { HARDCORE_PASSES, HARDCORE_SHADER_BUDGET_PATCH, bibleText, heroShots, judgeCloser, lookCandidates, lookDistance, pictureColour, type PictureColour, lumaPercentiles, meanTargets, passPrompt, referencePrompt as heroReferencePrompt, targetEvidenceText, type HardcoreRun, type HeroShotOptions, type LumaTargets } from './hardcore';
 export { GAME_CODES, GameReviewCache, gameSignature, gameStaticFindings, isReviewedGame, withGame, type GameReviewResult, type GameReviewRunner } from './game-review';
+export * from './presentation';

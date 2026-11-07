@@ -4287,6 +4287,13 @@ export class WorldRenderer {
    * How a candidate opening view sits in the scene: the nearest content in its frame's centre and bottom band (m, up
    * to 3; see `nearestInView`) and whether the eye is below a water surface. Null before there is content.
    */
+  /** The sun now: the direction toward it and its elevation (degrees); null under the moon. */
+  sunState(): { direction: Vec3; elevation: number } | null {
+    if (this.disposed) return null;
+    const sky = this.env.skyState;
+    return sky.moon ? null : { direction: [...sky.lightDirection], elevation: sky.elevation };
+  }
+
   checkOpeningView(pose: { position: Vec3; target: Vec3; fov?: number }): { near: number; underWater: boolean } | null {
     if (this.disposed || !pose.position.every(Number.isFinite) || !pose.target.every(Number.isFinite)) return null;
     const items = this.grow.withFullScale(() => collectFramingItems(this.sync));

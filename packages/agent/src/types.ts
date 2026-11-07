@@ -294,6 +294,12 @@ export interface AgentHost {
    */
   probeView?(pose: ReviewViewRequest['pose']): Promise<{ near: number; underWater: boolean } | null>;
   /**
+   * The renderer's established views of the scene: the opening view, the best ranked hero views and the tour stops
+   * (see `presentation/poi.ts`). Used to author the short film and to review the published frames. Null when there is
+   * no renderer.
+   */
+  presentationViews?(opts?: { signal?: AbortSignal }): Promise<import('./presentation/poi').PresentationViews | null>;
+  /**
    * Lay image tiles side by side in one picture (each tile cropped to `box` = [x0,y0,x1,y1] in 0..1 when given, scaled to a
    * common height; the longer side at most `maxSide`). Null when it cannot be drawn. Used by the photo compare turn's
    * `look_closer` (photo and render crops, whole-picture side by side).
@@ -400,6 +406,11 @@ export interface AgentOptions {
    * can run physics (`runLevelTool` of @aether/playtest). Absent: the two tools are not offered.
    */
   levelTools?: LevelToolRunner;
+  /**
+   * Suggest and store the publish kind and start mode of a newly built world (`world.profile`, `world.startMode`) after the
+   * run: one small model call, the content rule without one (see `presentation/kind.ts`). Off by default.
+   */
+  presentation?: boolean;
   /**
    * Plays game worlds headless in every review round (flow: start, lose, win, restart; balance: novice and average
    * players): `reviewGame` of @aether/playtest, for hosts that can run physics. Its findings join the review like the

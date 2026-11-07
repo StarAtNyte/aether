@@ -10,7 +10,7 @@
  *   quality so a viewer never bakes: `<id>/light/<key>.lmap`, `<key>.lvol` and their `index.json`, manifest `lightmap`;
  * - a manifest of cells, bounds, byte sizes and the files.
  *
- *   STATIC_DIR=<dist> GEN_GPU=intel npx tsx scripts/cook.ts [--out=cooked] [--tiers=low,medium,high,ultra] [--profile=game|walkthrough|showcase|vr] [--install=<dist>] [--bake=high|medium|low|off] [--samples=256] [--blender=<path>|off] [--cpu-bake=<threads>|off] <slug> [<slug> …]
+ *   STATIC_DIR=<dist> GEN_GPU=intel npx tsx scripts/cook.ts [--out=cooked] [--tiers=low,medium,high,ultra] [--profile=game|walkthrough|showcase|city|vr|story] [--install=<dist>] [--bake=high|medium|low|off] [--samples=256] [--blender=<path>|off] [--cpu-bake=<threads>|off] <slug> [<slug> …]
  *
  * `--bake` (default: the world's `environment.lightBake` quality, else high; `off` ships no baked light) and `--samples` (rays
  * per texel, default 256) set the publish bake. Only worlds with buildings bake; the bake runs in the last recording session.

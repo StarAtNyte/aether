@@ -25,8 +25,8 @@ export const START_MODES: readonly StartMode[] = ['play', 'walkthrough', 'orbit'
  * Publish kinds: profiles on one cook. The player presents each its own way: `game` (title card, then play),
  * `walkthrough` (eye-level tour of rooms), `showcase` (fly-in, orbit, viewpoints), `city` (street hero view, drone tour).
  */
-export type CookProfile = 'game' | 'walkthrough' | 'showcase' | 'city' | 'vr';
-export const COOK_PROFILES: readonly CookProfile[] = ['game', 'walkthrough', 'showcase', 'city', 'vr'];
+export type CookProfile = 'game' | 'walkthrough' | 'showcase' | 'city' | 'vr' | 'story';
+export const COOK_PROFILES: readonly CookProfile[] = ['game', 'walkthrough', 'showcase', 'city', 'vr', 'story'];
 /** Most tour stops a manifest carries (as the IR's `MAX_VIEW_STOPS`). */
 export const MAX_COOK_VIEWS = 12;
 /** One tour stop the cook computed (the IR's `ViewStop`). */

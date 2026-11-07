@@ -43,7 +43,7 @@ export const TEMPLATE_GROUPS: readonly { id: TemplateGroup; label: string; title
   { id: 'game', label: 'Games', title: 'Games', lead: 'Playable worlds with goals, rules and a verified win: open one, play it, then ask the agent to change it.' },
   { id: 'scene', label: 'Scenes', title: 'Scenes', lead: 'Landscapes and settings to explore and restyle.' },
   { id: 'physics', label: 'Physics', title: 'Physics', lead: 'Machines and contraptions run by the physics engine, every bounce verified.' },
-  { id: 'story', label: 'Stories', title: 'Stories', lead: 'Short interactive stories told in a world.' },
+  { id: 'story', label: 'Stories', title: 'Stories', lead: 'Short films and anime shorts: the film plays first, then P plays as the character and Tab explores.' },
   { id: 'photo', label: 'Photo to 3D', title: 'Photo to 3D', lead: 'Example rooms the agent reconstructed from a photograph (credited on each card). To rebuild your own, attach a photo in the chat.' },
 ]);
 

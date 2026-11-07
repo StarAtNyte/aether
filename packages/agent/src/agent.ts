@@ -30,6 +30,7 @@ import { findingKey, findingsText } from '@aether/arch';
 import { autoRepairBuildings } from './auto-repair';
 import { lumaPercentiles, targetEvidenceText, type HardcoreRun, type LumaTargets } from './hardcore';
 import { isBlankFrame, lightEvidenceText, pictureStats, type PictureStats } from './picture-stats';
+import { presentationPatch, suggestPresentation, wantsPresentation } from './presentation/kind';
 import { openingCandidates, openingPatch, openingPictureScore, openingProbeOk, wantsOpening } from './opening';
 import { MAX_REVIEW_VIEWS, RepeatLedger, reviewTurnText, snapshotForReview, StallTracker, stallAskText, type ReviewSnapshot } from './review';
 import { guardVerificationClaim } from './honesty';
@@ -683,6 +684,9 @@ export class WorldAgent {
     // A new world opens close in: the best eye-level picture becomes its opening view (before the last verification, so the
     // sealed world is the one that was checked).
     if (wantsOpening(startWorld, host.getWorld())) yield* this.chooseOpening(host, signal);
+    // A new world gets its publish kind and start mode from its content (the model's suggestion, else the rule); the
+    // publish dialog shows it and the user can change it.
+    if (this.opts.presentation && wantsPresentation(startWorld, host.getWorld())) yield* this.choosePresentation(host, signal);
     // The review fixed things after the physics run: the world that is sealed and shown as verified must be the one
     // that was checked, so verify again when the review changed anything.
     if (host.getWorld() !== entered) {
@@ -690,6 +694,14 @@ export class WorldAgent {
       const v = await runVerification(ctx);
       yield v.event;
     }
+  }
+
+  /** Suggest the publish kind and start mode of a new world and store them (one small model call; the rule without one). */
+  private async *choosePresentation(host: AgentHost, signal: AbortSignal | undefined): AsyncGenerator<AgentEvent> {
+    const choice = await suggestPresentation(this.opts.provider, host.getWorld(), signal);
+    if (signal?.aborted) return;
+    const res = host.applyPatches([presentationPatch(choice)], 'Presentation');
+    if (res.applied.length > 0) yield { type: 'status', text: `Publishes as ${choice.profile}, starting in ${choice.startMode}: ${choice.reason}` };
   }
 
   /**

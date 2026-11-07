@@ -1,0 +1,74 @@
+/* The publish dialog's Presentation section (editor/publish/PresentSection.tsx). */
+.present-frames {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s-2);
+  margin: var(--s-2) 0;
+}
+
+.present-frame {
+  margin: 0;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+
+.present-frame.is-bad {
+  border-color: var(--danger);
+}
+
+.present-frame img,
+.present-frame__none {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+}
+
+.present-frame__none {
+  display: grid;
+  place-items: center;
+  color: var(--text-3);
+  font-size: var(--fs-12);
+}
+
+.present-frame figcaption {
+  padding: 4px 6px;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: var(--lh-12);
+  overflow-wrap: anywhere;
+}
+
+.present-frame__fixed,
+.present-fixed {
+  color: var(--success-text);
+}
+
+.present-fixed {
+  margin: 0 0 var(--s-2);
+  font-size: var(--fs-12);
+}
+
+.present-left ul {
+  margin: 4px 0 0;
+  padding-left: 1.2em;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.present-quality {
+  margin-top: var(--s-2);
+}
+
+.present-quality .present-left {
+  margin: 4px 0 var(--s-2);
+  padding-left: 1.2em;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+
+.present-finding.is-error strong {
+  color: var(--danger-text);
+}

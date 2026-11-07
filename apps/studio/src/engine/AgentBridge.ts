@@ -11,7 +11,7 @@ import { catalogSummary, getCatalog } from '@aether/assets';
 import { userEditMarks, type EntityId, type GeneratorDef, type History, type PatchResult, type ProceduralShape, type ScriptDef, type TextureSetDef, type TextureTier, type WorldDoc } from '@aether/core';
 import { webpEncoder, type TextureController } from './textures';
 import { overwrittenEdits, screenLocked, type EditMarks } from './editGuard';
-import { createHttpProvider, createMockProvider, type AgentCatalogs, type AgentHost, type Provider, type ReviewViewRequest } from '@aether/agent';
+import { createHttpProvider, createMockProvider, type AgentCatalogs, type AgentHost, type PresentationViews, type Provider, type ReviewViewRequest } from '@aether/agent';
 import { drawMarks } from '../ai/marks';
 import { composeTiles, decodeImageData } from '../ai/decode';
 import { BEHAVIOR_CATALOG, RULE_DOCS, SCRIPT_API_DTS, createScriptRunner, initScripting, isScriptingReady } from '@aether/logic';
@@ -243,7 +243,47 @@ export class AgentBridge implements AgentHost {
     return Promise.resolve(sim ? sim.renderer.checkOpeningView({ position: pose.position, target: pose.target, fov: pose.fov }) : null);
   }
 
-  composeImages(tiles: ReadonlyArray<{ dataUrl: string; box?: readonly [number, number, number, number] }>, opts: { maxSide?: number } = {}): Promise<string | null> {
+  /** The sun now (the quality pass's sunlit-side and backlight checks). */
+  sunState(): { direction: [number, number, number]; elevation: number } | null {
+    return this.simulation?.renderer.sunState() ?? null;
+  }
+
+  /** Triangles drawn by the last frame, the render tier and programs linked (the quality pass's budget check). */
+  renderStats(): { triangles: number; tier: string; programs: number | null } | null {
+    const r = this.simulation?.renderer;
+    if (!r) return null;
+    const st = r.stats();
+    const programs = (r as unknown as { renderer?: { info?: { programs?: unknown[] } } }).renderer?.info?.programs;
+    return { triangles: st.virtualDrawnTriangles !== undefined ? st.triangles + st.virtualDrawnTriangles : st.triangles, tier: String((r as unknown as { renderTier?: string }).renderTier ?? 'high'), programs: Array.isArray(programs) ? programs.length : null };
+  }
+
+  /** The renderer's opening view, best ranked hero views and tour stops (see `AgentHost.presentationViews`). */
+  async presentationViews(): Promise<PresentationViews | null> {
+    const r = this.simulation?.renderer;
+    if (!r) return null;
+    // The ranked search takes up to a minute on a large live world: done once per scene (a change of the story, the
+    // opening or the tour stops keeps the entities and the environment, and with them the answer).
+    const w = this.history.current;
+    const c = this.viewsCache;
+    if (c && c.entities === w.entities && c.environment === w.environment && c.sim === this.simulation) {
+      const opening = r.openingPose();
+      return { ...c.views, opening: opening ? { position: opening.position, target: opening.target, ...(opening.fov !== undefined ? { fov: opening.fov } : {}) } : c.views.opening };
+    }
+    try {
+      const opening = r.openingPose();
+      const ranked = r.rankOpening(6).map((v) => ({ position: v.position, target: v.target, score: v.score }));
+      const stops = (await r.viewStopsAsync()).map((v) => ({ position: v.position, target: v.target, ...(v.fov !== undefined ? { fov: v.fov } : {}), ...(v.name !== undefined ? { name: v.name } : {}) }));
+      const views: PresentationViews = { opening: opening ? { position: opening.position, target: opening.target, ...(opening.fov !== undefined ? { fov: opening.fov } : {}) } : null, ranked, stops };
+      this.viewsCache = { entities: w.entities, environment: w.environment, sim: this.simulation, views };
+      return views;
+    } catch {
+      return null;
+    }
+  }
+
+  private viewsCache: { entities: WorldDoc['entities']; environment: WorldDoc['environment']; sim: Simulation | null; views: PresentationViews } | null = null;
+
+  composeImages(tiles:ReadonlyArray<{ dataUrl: string; box?: readonly [number, number, number, number] }>, opts: { maxSide?: number } = {}): Promise<string | null> {
     return composeTiles(tiles, opts.maxSide);
   }
 

@@ -4,12 +4,16 @@
  * once the viewport canvas exists. React components call into this object
  * and subscribe to History / the store; they never own engine state.
  */
+import { PresentationController } from './presentation';
+
+/** History messages of the quality pass and the presentation (undone with the turn before them). */
+const QUALITY_STEP = /^(Quality: |Shot review: |Presentation$|Short film$)/;
 import { recordScore } from '../lib/bestScore';
 import type { Proof } from '@aether/playtest/proof';
 import { isUserAssetId, worldAssetIds } from '@aether/assets';
 import { History, diffWorlds, getEntity, lanesWithinBudget, patchesBetween, type EntityId, type GeneratorDef, type Patch, type WorldDoc } from '@aether/core';
 import { hasBuilding } from '@aether/arch';
-import { EMPTY_MEMORY, OFFLINE_EXAMPLES, WorldAgent, createFallbackProvider, improvementPatches, isAbortError, needsRefinement, refineInstruction, type AgentEvent, type FallbackNotice, type PhotoResumeState, type Provenance, type PromptProfile, type Provider, type QualityFix, type RefineMemory, HARDCORE_PASSES, HARDCORE_SHADER_BUDGET_PATCH, bibleText, heroShots, heroReferencePrompt, judgeCloser, lumaPercentiles, meanTargets, passPrompt, type HardcoreRun, type LumaTargets } from '@aether/agent';
+import { EMPTY_MEMORY, OFFLINE_EXAMPLES, WorldAgent, createFallbackProvider, improvementPatches, isAbortError, needsRefinement, refineInstruction, wantsPresentation, type AgentEvent, type LevelToolRunner, type FallbackNotice, type PhotoResumeState, type Provenance, type PromptProfile, type Provider, type QualityFix, type RefineMemory, HARDCORE_PASSES, HARDCORE_SHADER_BUDGET_PATCH, bibleText, heroShots, heroReferencePrompt, judgeCloser, lumaPercentiles, meanTargets, passPrompt, type HardcoreRun, type LumaTargets } from '@aether/agent';
 import { createWorkerSandbox, generationLanes, type SandboxRunner } from '@aether/procgen';
 import type { StoreApi } from 'zustand/vanilla';
 import { API, MAX_PROMPT_CHARS, PERSIST_DEBOUNCE_MS } from '../config';
@@ -213,6 +217,8 @@ export class Studio {
   readonly npcChat: NpcChatController;
   /** Publishing: games, videos, renders, models, floor plans, share links, history, versions. */
   readonly publish: PublishController;
+  /** The publish dialog's presentation: kind and start mode, the short film, the pre-publish shot review. */
+  readonly presentation: PresentationController;
   /** The Verified-playable flow: an autonomous bot plays or walks the world, repairs it, replays its run. */
   readonly playtest: PlaytestController;
   private readonly storage: StorageLike | null;
@@ -328,6 +334,7 @@ export class Studio {
     this.forge = new ForgeController(this);
     this.npcChat = new NpcChatController(this);
     this.publish = new PublishController(this);
+    this.presentation = new PresentationController(this);
     this.playtest = new PlaytestController(this);
     if (restored?.playtest) this.playtest.restore(restored.playtest);
     if (restored?.verify) this.store.getState().setVerify({ ...restored.verify, head: this.history.head, live: null });
@@ -1278,7 +1285,7 @@ export class Studio {
       const aiState = this.ai.store.getState();
       const blender = promptProfile === 'full' && primary && aiState.server.local && aiState.local.blender === 'ready' ? await import('../blender/available').then((m) => m.blenderToolsFor(aiState, this.assets)).catch(() => null) : null;
       // The level tools serve the offline planner too: an "onto" move is set down on the surface measured under it.
-      const agent = new WorldAgent({ provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: Number.isFinite(repairs) ? repairs : MAX_REPAIRS, promptProfile, photo, ...(buildAsset ? { buildAsset } : {}), ...(promptProfile === 'full' && primary ? { importAsset: this.assetImporter(entryId), hubSearch: this.hubSearcher() } : {}), ...(promptProfile === 'full' ? { levelTools: levelToolsFor(() => this.simulation, () => this.sandbox), textures: { images: primary ? this.ai.imageGenerator() : null } } : {}), ...(promptProfile === 'full' && primary ? { brief: {} } : {}), ...(blender ? { blender } : {}), ...(review ? { review, maxTurns: REVIEW_MAX_TURNS, maxToolCalls: REVIEW_MAX_TOOL_CALLS } : {}) });
+      const agent = new WorldAgent({ provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: Number.isFinite(repairs) ? repairs : MAX_REPAIRS, promptProfile, photo, presentation: promptProfile === 'full', ...(buildAsset ? { buildAsset } : {}), ...(promptProfile === 'full' && primary ? { importAsset: this.assetImporter(entryId), hubSearch: this.hubSearcher() } : {}), ...(promptProfile === 'full' ? { levelTools: levelToolsFor(() => this.simulation, () => this.sandbox), textures: { images: primary ? this.ai.imageGenerator() : null } } : {}), ...(promptProfile === 'full' && primary ? { brief: {} } : {}), ...(blender ? { blender } : {}), ...(review ? { review, maxTurns: REVIEW_MAX_TURNS, maxToolCalls: REVIEW_MAX_TOOL_CALLS } : {}) });
       session = primary && (resolved.kind === 'local' || resolved.kind === 'bridge') ? (projectSessionKey(this.projectId) ?? undefined) : undefined;
       // The untouched default glade is a placeholder, not something the user made: the first prompt builds a new world.
       const intent = opts.intent ?? (before === this.history.current && st.chat.length === 0 && !this.history.canUndo() && isPristineStarter(before) ? 'new' : 'auto');
@@ -1301,6 +1308,12 @@ export class Studio {
       // Stopped part-way: whatever was already applied stays, and the turn says so (Undo removes it).
       if (status === 'aborted' && this.history.current !== before) {
         push({ type: 'notice', tone: 'warning', text: 'Stopped before finishing. The world below is only the part built so far and was not checked. Undo removes it.' });
+      }
+      // The world-quality pass's data checks and fixes (and a new world's presentation) are part of the turn, so the turn's
+      // world is the checked one.
+      if (status === 'done' && this.history.current !== before && !(this.localEdit as { cosmetic?: boolean } | null)?.cosmetic) {
+        if (wantsPresentation(before, this.history.current)) await this.presentation.suggest();
+        await this.presentation.quality({ visual: false });
       }
       const after = this.history.current;
       if (isNewWorld(before, after)) void this.sim?.openWorld();
@@ -1336,6 +1349,10 @@ export class Studio {
       if (!(local && local.cosmetic)) void this.presentProof();
       // Then the bot plays or walks what was just built (quiet when there is nothing to play).
       void this.playtest.run({ auto: true });
+      // A new world the run did not give a presentation to gets one now (the AI's suggestion, else the content rule).
+      // Then the world-quality pass (docs/WORLD-QUALITY.md): a new world gets the AI's review of the frames a visitor meets
+      // (in the background; the data checks ran with the turn).
+      if (isNewWorld(before, this.history.current) && !this.disposed) void this.presentation.quality({ visual: true });
     }
     if (opts.resumePlay && this.lastReply) this.store.getState().toast(this.lastReply.slice(0, 140), status === 'done' ? 'info' : 'error', 4);
     if (opts.resumePlay && this.store.getState().mode === 'edit' && this.sim && !this.disposed) void this.togglePlay();
@@ -1442,7 +1459,11 @@ export class Studio {
       if (event.type === 'history') {
         this.store.getState().pushEvent(entryId, { type: 'message', text: event.action === 'undo' ? 'Undone. Your world is back to how it was.' : 'Redone.' });
         // The agent's own "undo" request: the turn is deciding this, so it is not blocked by the busy guard.
-        if (event.action === 'undo') this.history.undo();
+        if (event.action === 'undo') {
+          // The quality pass's own steps after a turn are not what "undo that" means: they go with the turn they checked.
+          while (this.history.canUndo() && QUALITY_STEP.test(this.history.recentCommits(1)[0]?.message ?? '')) this.history.undo();
+          this.history.undo();
+        }
         else this.history.redo();
         continue;
       }
@@ -1797,7 +1818,12 @@ export class Studio {
   }
 
   /** A language model for the camera director (null when only the offline planner is available). */
-  directorProvider(): Provider | null {
+  /** The level tools for the world-quality pass (ground under the spawn, what floats or sinks). */
+  qualityLevelTools(): LevelToolRunner {
+    return levelToolsFor(() => this.simulation, () => this.sandbox);
+  }
+
+    directorProvider(): Provider | null {
     const prefs = this.store.getState().aiPrefs;
     const resolved = this.ai.resolve(prefs);
     if (resolved.kind === 'offline' || !resolved.ready) return null;

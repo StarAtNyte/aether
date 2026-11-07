@@ -277,7 +277,7 @@ export function programSetBody(tier: RenderTier, boot: RecordedPairs | null, res
 
 /** The profile of a start mode, when nothing names one. */
 export function profileForStartMode(startMode: StartMode): CookProfile {
-  return startMode === 'play' ? 'game' : startMode === 'walkthrough' ? 'walkthrough' : 'showcase';
+  return startMode === 'play' ? 'game' : startMode === 'walkthrough' ? 'walkthrough' : startMode === 'story' ? 'story' : 'showcase';
 }
 
 /** The manifest of a cook. */

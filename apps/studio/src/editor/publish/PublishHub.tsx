@@ -12,6 +12,7 @@ import { useStore } from 'zustand';
 import { useStudio } from '../../app/context';
 import { Icon, type IconName } from '../../components/Icon';
 import type { PublishTarget } from '../../engine/publish';
+import { PresentSection } from './PresentSection';
 import { GameTarget, HistoryTarget, ModelTarget, PlanTarget, RenderTarget, ShareTarget, VideoTarget } from './targets';
 import '../../styles/publish.css';
 
@@ -148,6 +149,7 @@ export const PublishHub = memo(function PublishHub(): ReactElement {
         ))}
       </nav>
       <div className="pub__body">
+        {(target === 'game' || target === 'share') && <PresentSection />}
         {target === 'game' && <GameTarget />}
         {target === 'video' && <VideoTarget />}
         {target === 'render' && <RenderTarget />}
