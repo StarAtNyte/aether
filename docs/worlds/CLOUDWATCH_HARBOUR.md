@@ -36,7 +36,7 @@ Blender units are metres, Z up (Aether: Y up after glTF export). Sea level is z 
 | Lookout | 16 x 10 m paved platform at z = 44, a railing 1.05 m with a gap where the stair arrives, a bench, a street lamp 4.5 m, a lone big tree |
 | Telegraph poles | 8 m concrete/wood poles every 25-30 m along the road, the track and up the stair; 3-4 wires each with catenary sag |
 | People | seven static figures (`people.py`), adults 6.8-7 heads tall, a child 5.2, built from joints with bent elbows and knees, shaped torsos, hair (long, bob, ponytail, spiky, grey) and colour-blocked summer clothes: a schoolgirl in a sailor uniform leaning on the lookout rail, an old man on a bench there, a man in a straw hat climbing the stair, a mother holding a pointing child's hand at the crossing, a boy with his bicycle at the shop, a woman in a sundress walking along the harbour road |
-| Cloudscape | a cumulonimbus with a flattened anvil and an overshooting top in the left third of the opening view (az 170, scaled down to 2.4 km out, 0.8 km tall), six satellite cumulus at 1.3-2.4 km, a broken bank on the horizon, cumulus over the hills to the north, cirrus on the sky dome |
+| Cloudscape | a cumulonimbus with a flattened anvil and an overshooting top in the left third of the opening view (az 170, scaled down to 2.4 km out, 0.78 km tall, its base on the horizon), six satellite cumulus at 1.3-2.4 km, a broken bank on the horizon, cumulus over the hills to the north, cirrus on the sky dome |
 
 ## Palette (sRGB)
 
@@ -109,6 +109,14 @@ the finished stills are 3840 x 2160.
   crossing is about 5 cm; houses (4096 px), the shrine on its own small atlas (in the town's atlas the gate's round posts
   were thinner than a texel and baked black), infra, props, people (1024 px), garden trees and the forest shell (vertex
   colours), sky dome (4096 x 2048), sun, sea, glitter.
+- Atlas packing: islands are packed as boxes with a two-texel margin. The default packer (concave shapes, a scaled margin)
+  left the town's ~30k smart-project islands as placed: 0.8 % of the 4096 px atlas covered and nearly every island,
+  walls and roofs included, under a texel wide. Boxes cover about 12 %, so walls and roofs get real texels.
+- Thin geometry: an island still under 1.25 texels across (a pole, a barrier arm, a fascia, a gutter, a trim) holds no
+  texel centre, so the bake never writes it and it drew the cleared black or a neighbour's margin. Such islands are shaded
+  per vertex instead (the same light and albedo bakes into colour attributes, the same ramp, the upper part of the corner
+  light since corners against other geometry are occluded) and their UVs collapsed onto a 2 x 2 texel block in a palette
+  band kept free at the top of the atlas (`PALETTE_ROWS`).
 - Clouds are impostor cards: EEVEE renders the clouds alone from the lookout in eight 45-degree sectors (transparent film,
   the sea held out, the near plane at 400 m), each cropped to its clouds and laid on a flat card filling that sector's
   frustum 1250 m out. From the lookout the cards are the Blender render pixel for pixel; elsewhere in the town the clouds
@@ -149,6 +157,18 @@ and a 0.1 m near plane, the creases where billows intersect 2 km away came out a
     and a flattened anvil. It is shaded with crisp bands from a normal that blends each billow's own normal with the
     normal of a smooth Gaussian field over all of them, so light falls across the whole mass and the terminator wobbles
     over the lumps. The clouds are lit by a painter's light swung toward the lookout; the true sun draws the gold rim.
+  - Second pass on the cloud (it read as fish scales: hundreds of similar billows each drawing its own lit cap and dark
+    crescent, see `before-after/6-cloud-scales.webp`):
+    - The light comes in four scales: the whole mass and the heads (two wide Gaussian fields) set the light and the
+      terminator; a tight field and each billow add only detail, which brightens the tops of billows far more than it
+      darkens their creases, and only on the lit side. Shadow sides stay broad lavender shapes.
+    - The tower is built of cauliflower heads whose sizes step down by about half per level (a big dome, crowns, a few
+      fine billows on the crowns that face up), rises from the horizon haze on a wide flat base, and flares into a
+      flat-topped anvil that spreads downwind; the upwind flare that read as a hat brim is gone.
+    - The painter's light swung 110 degrees toward the lookout (from 80), so three quarters of the tower is lit.
+  - Thin geometry baked dark (the crossing barrier, lamp posts, fascias and eaves drew as thick black bars). The atlases
+    are now packed as boxes, and what is still under a texel is shaded per vertex through a palette band (see Bringing it
+    into Aether; `before-after/7-thin-geometry.webp`).
   - The sun moved from azimuth 252 to 214 and elevation 10 to 6.5, into the opening view, so shot A holds the sun, its
     glitter path and the tower.
   - Sea: the far water reflects the horizon glow, a warm column on the sun's path, painted crests and troughs, and the
@@ -165,13 +185,13 @@ and a 0.1 m near plane, the creases where billows intersect 2 km away came out a
     the railing for the stair.
 - **Gate**: 73 props checked, 0 failed (0 floating, 0 buried). One pair touches within tolerance: the mother's and
   child's joined hands, 1.4 cm.
-- **Budget**: 14 glb pieces, 485 k triangles, 19.0 MB (from 376 k / 11.9 MB):
+- **Budget**: 14 glb pieces, 485 k triangles, 20.5 MB (from 376 k / 11.9 MB before the look pass):
 
   | Piece | Triangles | Size |
   |---|---|---|
-  | town | 125 k | 6.6 MB |
-  | props | 96 k | 4.6 MB |
-  | infra | 53 k | 2.5 MB |
+  | town | 125 k | 8.6 MB |
+  | props | 96 k | 5.0 MB |
+  | infra | 53 k | 2.6 MB |
   | forest | 99 k | 1.8 MB |
   | people | 57 k | 1.5 MB |
   | trees | 34 k | 0.6 MB |
@@ -197,7 +217,6 @@ and a 0.1 m near plane, the creases where billows intersect 2 km away came out a
   - before/after pairs for each change of the look pass (`before-after/`).
 - **Known weak spots**:
   - The figures are neat mannequins up close: mitten hands, a simple knee bend.
-  - Some thin geometry in the dense atlases bakes dark, for example the crossing barrier's far side.
   - The house signs are too small to read from the lookout.
   - In a headless capture the clock is frozen, so the glitter's twinkle shows only in the browser. Its clip was checked
     by stepping the animator in Node.

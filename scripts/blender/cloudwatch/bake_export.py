@@ -265,7 +265,15 @@ def joined_copy(obs, name, keep_outline=False):
     return j
 
 
-def unwrap(ob, uv_name="bake"):
+# Thin geometry (a pole, a barrier arm, a railing bar, a gutter) maps to UV islands under a texel wide in a dense atlas: no
+# texel centre falls inside them, so the bake never writes them and they sample the cleared black or a neighbour's margin
+# (they drew dark). Those islands are shaded per vertex instead (the same light and albedo bakes, to colour attributes)
+# and their UVs collapsed onto one texel block of a palette band kept free at the top of the atlas. Few islands are that
+# thin once the pack's margins are two texels.
+PALETTE_ROWS = 32  # texels at the top of each atlas: 2 x 2 blocks, 16 rows of size/2 entries
+
+
+def unwrap(ob, uv_name="bake", size=None):
     me = ob.data
     while me.uv_layers:
         me.uv_layers.remove(me.uv_layers[0])
@@ -273,9 +281,56 @@ def unwrap(ob, uv_name="bake"):
     select_only([ob])
     bpy.ops.object.mode_set(mode="EDIT")
     bpy.ops.mesh.select_all(action="SELECT")
-    bpy.ops.uv.smart_project(angle_limit=math.radians(60), island_margin=0.003, area_weight=0.0, scale_to_bounds=False)
-    bpy.ops.uv.pack_islands(margin=0.002, rotate=True)
+    bpy.ops.uv.smart_project(angle_limit=math.radians(60), island_margin=0.0005 if size else 0.003, area_weight=0.0, scale_to_bounds=False)
+    if size:
+        # Box packing with a two-texel margin. The default (concave shapes, a scaled margin) left the town's ~30k islands
+        # as smart-project placed them: 0.8 % of the atlas covered, nearly every island under a texel wide (the walls and
+        # roofs too, which then drew whatever the margin fill gave them). Boxes cover about 12 %, so walls and roofs get
+        # real texels and only trims, poles and rails stay thin.
+        bpy.ops.uv.pack_islands(shape_method="AABB", margin_method="FRACTION", margin=2.0 / size, rotate=True)
+    else:
+        bpy.ops.uv.pack_islands(margin=0.002, rotate=True)
     bpy.ops.object.mode_set(mode="OBJECT")
+    if size:
+        # Keep the palette band free: squeeze the packed atlas below it.
+        keep = 1.0 - PALETTE_ROWS / size
+        uv = np.empty(len(me.loops) * 2, np.float32)
+        me.uv_layers[uv_name].data.foreach_get("uv", uv)
+        uv[1::2] *= keep
+        me.uv_layers[uv_name].data.foreach_set("uv", uv)
+
+
+def thin_islands(ob, size, min_px=1.25, uv_name="bake"):
+    """Islands whose narrow extent is under `min_px` texels: lists of loop indices."""
+    from bpy_extras.bmesh_utils import bmesh_linked_uv_islands
+    bm = bmesh.new()
+    bm.from_mesh(ob.data)
+    bm.faces.index_update()
+    uvl = bm.loops.layers.uv[uv_name]
+    polys = ob.data.polygons
+    out = []
+    for faces in bmesh_linked_uv_islands(bm, uvl):
+        loops = [lp for f in faces for lp in f.loops]
+        uv = np.array([tuple(lp[uvl].uv) for lp in loops], np.float64)
+        d = uv - uv.mean(axis=0)
+        minor = np.linalg.eigh(d.T @ d)[1][:, 0]
+        if float(np.ptp(d @ minor)) * size < min_px:
+            # (A BMLoop's own index is not the mesh's loop index: take the loops from the mesh polygons.)
+            out.append([li for f in faces for li in polys[f.index].loop_indices])
+    bm.free()
+    return out
+
+
+def bake_vertex(ob, pass_filter, name):
+    """Bake DIFFUSE with `pass_filter` into a float corner colour attribute; (n_loops, 3) linear RGB."""
+    me = ob.data
+    at = me.color_attributes.new(name, "FLOAT_COLOR", "CORNER")
+    me.color_attributes.active_color = at
+    run_bake(ob, "DIFFUSE", pass_filter, target="VERTEX_COLORS")
+    a = np.empty(len(me.loops) * 4, np.float32)
+    me.color_attributes[name].data.foreach_get("color", a)
+    me.color_attributes.remove(me.color_attributes[name])
+    return a.reshape(-1, 4)[:, :3]
 
 
 def bake_image(name, size, float_buffer=True):
@@ -345,7 +400,9 @@ def atlas_piece(key, spec):
         bpy.ops.mesh.quads_convert_to_tris(quad_method="BEAUTY", ngon_method="BEAUTY")
         bpy.ops.object.mode_set(mode="OBJECT")
     size = int(spec["tex"] * A.tex_scale)
-    unwrap(j)
+    unwrap(j, size=size)
+    thin = thin_islands(j, size)
+    print(f"AETHER_UV {key} thin islands={len(thin)}", flush=True)
     light = bake_image(f"{key}_light", size)
     albedo = bake_image(f"{key}_albedo", size)
     srcs = list(j.data.materials)
@@ -358,9 +415,32 @@ def atlas_piece(key, spec):
     run_bake(j, "DIFFUSE", {"COLOR"})
     L = image_np(light)[..., :3]
     Al = image_np(albedo)[..., :3]
+    if thin:
+        for i, m in enumerate(srcs):
+            j.data.materials[i] = bake_variant(m)
+        Lv = bake_vertex(j, {"DIRECT", "INDIRECT"}, "cw_light_v")
+        Av = bake_vertex(j, {"COLOR"}, "cw_albedo_v")
     print(f"AETHER_STATS {key} light mean={float(np.nanmean(L)):.4f} max={float(np.nanmax(L)):.4f} albedo mean={float(np.nanmean(Al)):.4f} nan={int(np.isnan(L).sum())}", flush=True)
     Lb = blur(lum(L), 1)
     final = Al * ramp_np(Lb)
+    if thin:
+        # One colour per thin island (vertex light through the same ramp, times vertex albedo) in a 2 x 2 texel block of
+        # the palette band, and the island's UVs on the block's centre.
+        per = size // 2
+        if len(thin) > per * (PALETTE_ROWS // 2):
+            raise RuntimeError(f"{key}: {len(thin)} thin islands do not fit the palette")
+        lv = lum(Lv)
+        uv = np.empty(len(j.data.loops) * 2, np.float32)
+        j.data.uv_layers["bake"].data.foreach_get("uv", uv)
+        uv = uv.reshape(-1, 2)
+        for n, loops in enumerate(thin):
+            row = size - PALETTE_ROWS + 2 * (n // per)  # image rows are bottom-up, as are UVs
+            col = 2 * (n % per)
+            # The upper part of the island's corner light: corners where it meets other geometry are occluded.
+            li = np.percentile(lv[loops], 70)
+            final[row:row + 2, col:col + 2] = Av[loops].mean(axis=0) * ramp_np(np.array([li]))[0]
+            uv[loops] = ((col + 1) / size, (row + 1) / size)
+        j.data.uv_layers["bake"].data.foreach_set("uv", uv.reshape(-1))
     # Linear -> sRGB for an 8-bit texture.
     srgb_px = np.where(final <= 0.0031308, final * 12.92, 1.055 * np.power(np.clip(final, 0, None), 1 / 2.4) - 0.055)
     out = write_png(os.path.join(A.out, f"{key}.png"), np.clip(srgb_px, 0, 1))

@@ -21,9 +21,9 @@ def sun_dir():
 
 
 def cloud_light_dir():
-    """The light the clouds are painted with: from the sun's side, but swung 80 degrees toward the lookout and raised, so
+    """The light the clouds are painted with: from the sun's side, but swung 110 degrees toward the lookout and raised, so
     the towers read three-quarter lit (a painter's cheat; the true sun still draws the silver rims)."""
-    az, el = math.radians(SUN_AZ + 80.0), math.radians(30.0)
+    az, el = math.radians(SUN_AZ + 110.0), math.radians(34.0)
     return Vector((math.sin(az) * math.cos(el), math.cos(az) * math.cos(el), math.sin(el)))
 
 
@@ -298,73 +298,70 @@ class Billows:
         return out
 
 
-def cumulonimbus(seed, W, H, lean=-0.08, anvil_shift=-0.45):
-    """A towering cumulonimbus: a flat dark base shelf, a broad lower body of congestus towers, a billowing column narrowing
-    upward with side turrets, a smooth flattened anvil spreading downwind with an overshooting dome. Sizes in metres."""
+def _head(B, u, v, w, R, crowns=5, fine=2, up=0.85, squash=1.0):
+    """One cauliflower head: a big dome, a ring of crowns on its upper face (half to two-thirds its size) and, on the
+    crowns that face up, a few fine billows. The sizes step down by about half at each level, so the eye reads a few big
+    masses carrying smaller lumps (a uniform field of similar billows reads as scales)."""
+    r = B.r
+    p = B.add(u, v, w, R, squash)
+    for c in B.sprout(p, crowns, 0.5, 0.68, reach=0.8, up=up):
+        if fine and (c[2] - w) > 0.25 * R:
+            B.sprout(c, fine, 0.42, 0.55, reach=0.82, up=0.95)
+    return p
+
+
+def cumulonimbus(seed, W, H, lean=-0.10, anvil_shift=-0.55):
+    """A towering cumulonimbus rising from the horizon haze: a broad base of congestus heads, a massive column of stacked
+    cauliflower heads narrowing upward, flaring into a flat-topped anvil that spreads downwind (the lookout's left) with an
+    overshooting dome above it. Sizes in metres; w = 0 is the cloud base."""
     B = Billows(seed)
     r = B.r
-    # Base shelf: wide flattened lobes.
-    for k in range(6):
-        t = k / 5 - 0.5
-        B.add(t * W * 0.75 + r.uniform(-15, 15), r.uniform(-0.1, 0.1) * W, 0.06 * H, W * r.uniform(0.17, 0.21), 0.45)
-    # Lower body: four congestus towers side by side, the middle ones tallest.
-    for i, (ou, top) in enumerate(((-0.32, 0.24), (-0.10, 0.38), (0.14, 0.34), (0.34, 0.20))):
-        steps = 3
-        for s in range(steps):
-            f = s / (steps - 1)
-            rad = W * (0.23 - 0.06 * f) * r.uniform(0.9, 1.1)
-            p = B.add(ou * W, -0.02 * W + r.uniform(-0.04, 0.04) * W, H * (0.16 + (top - 0.12) * f), rad)
-            for c in B.sprout(p, 3, 0.45, 0.62, up=0.75):
-                B.sprout(c, 1, 0.45, 0.6, up=0.85)
-    # Column: stacked domes, alternating a little left and right, narrowing upward.
-    levels = 8
+    # Base: a wide flat shelf just above the horizon, its lobes long and squashed.
+    for k in range(9):
+        t = k / 8 - 0.5
+        B.add(t * W * 1.35 + r.uniform(-20, 20), r.uniform(-0.15, 0.1) * W, 0.04 * H, W * r.uniform(0.16, 0.21), 0.4)
+    # Lower body: congestus heads of different heights side by side, the middle ones tallest, a few stepping toward the
+    # lookout so the mass has depth.
+    for (ou, ov, top, rr) in ((-0.62, 0.12, 0.13, 0.17), (-0.40, 0.02, 0.22, 0.21), (-0.16, 0.04, 0.30, 0.25),
+                              (0.12, -0.16, 0.27, 0.24), (0.36, 0.0, 0.20, 0.21), (0.58, -0.08, 0.12, 0.16)):
+        _head(B, ou * W, ov * W, top * H, rr * W * r.uniform(0.92, 1.08), crowns=5, fine=1)
+    # Column: stacked heads, each a little off the axis, narrowing upward and leaning downwind.
+    levels = 7
     for k in range(levels):
         t = k / (levels - 1)
-        w = H * (0.34 + 0.46 * t)
-        uc = lean * H * t + (0.06 if k % 2 else -0.06) * W
-        rad = W * (0.27 - 0.07 * t)
-        B.add(lean * H * t, 0.05 * W, w, rad * 1.05)
-        for side in (-1, 1):
-            p = B.add(uc + side * rad * 0.62, -rad * 0.25 + r.uniform(-0.05, 0.05) * W, w + r.uniform(-0.02, 0.02) * H, rad * r.uniform(0.62, 0.78))
-            for c in B.sprout(p, 3, 0.45, 0.6, up=0.7, side=(0 if side > 0 else math.pi) - 0.6 * side):
-                if t > 0.2:
-                    B.sprout(c, 1, 0.45, 0.6, up=0.8)
-        p = B.add(uc, -rad * 0.55, w, rad * 0.6)
-        for c in B.sprout(p, 2, 0.45, 0.6, up=0.7, side=-math.pi / 2):
-            B.sprout(c, 1, 0.45, 0.6, up=0.8)
-    # Turrets: towers growing out of the shoulders (two on the sun side, one left).
-    for (side_u, t0, t1, frac) in ((1.0, 0.36, 0.66, 0.42), (0.85, 0.55, 0.80, 0.34), (-1.0, 0.42, 0.62, 0.36)):
-        R0 = W * (0.27 - 0.07 * t0)
-        base_u = lean * H * t0 + side_u * R0 * 1.05
-        steps = 3
-        for s in range(steps):
-            f = s / (steps - 1)
-            w = H * (0.34 + 0.46 * (t0 + (t1 - t0) * f))
-            rr = R0 * frac * 1.3 * (1.0 - 0.3 * f)
-            p = B.add(base_u, -0.1 * W, w, rr)
-            for c in B.sprout(p, 3, 0.45, 0.6, up=0.8):
-                B.sprout(c, 2, 0.42, 0.55, up=0.9)
-    # The overshooting top above the column.
+        w = H * (0.36 + 0.42 * t)
+        rad = W * (0.30 - 0.09 * t)
+        uc = lean * H * t
+        B.add(uc, 0.08 * W, w - 0.04 * H, rad * 1.05)  # the core, behind the heads
+        side = 1 if k % 2 else -1
+        _head(B, uc + side * rad * 0.42, -rad * 0.3, w, rad * r.uniform(0.74, 0.84), crowns=5, fine=2)
+        if k % 2 == 0:
+            _head(B, uc - side * rad * 0.55, rad * 0.05, w - 0.03 * H, rad * 0.62, crowns=4, fine=1)
+    # Turrets: towers growing out of the sunlit shoulder (right) and one on the left.
+    for (side_u, t0, t1, frac) in ((1.0, 0.30, 0.60, 0.44), (-1.0, 0.40, 0.58, 0.38)):
+        R0 = W * (0.30 - 0.09 * t0)
+        base_u = lean * H * t0 + side_u * R0 * 0.95
+        for s in range(3):
+            f = s / 2
+            w = H * (0.36 + 0.42 * (t0 + (t1 - t0) * f))
+            _head(B, base_u + side_u * 0.02 * W * f, -0.12 * W, w, R0 * frac * (1.0 - 0.25 * f), crowns=4, fine=2 if s == 2 else 1)
+    # The flare under the anvil: the column widens where it meets the shelf above.
     top_u = lean * H
-    p = B.add(top_u + 0.04 * W, 0, H * 0.84, W * 0.2)
-    for c in B.sprout(p, 4, 0.45, 0.6, up=0.95):
-        B.sprout(c, 2, 0.42, 0.55, up=0.95)
-    # Anvil: a broad, smooth, flattened shelf at the top, its long side spreading downwind (to the lookout's left).
+    for k in range(5):
+        f = k / 4 * 0.75 - 0.6  # toward the downwind side only: an upwind flare reads as a hat brim
+        B.add(top_u + f * W * 0.7, r.uniform(-0.1, 0.1) * W, H * 0.80, W * 0.2, 0.6)
+    # Anvil: a flat top (all lobes share one ceiling), thick and soft over the column, thinning to a long downwind tip and a
+    # short upwind edge.
+    ceil = H * 0.93
     cx = top_u + anvil_shift * W
-    for k in range(9):
-        f = k / 8 - 0.5  # -0.5 = the downwind tip (left), +0.5 = the upwind edge
-        thick = 0.24 - 0.10 * abs(f + 0.15)  # thickest just upwind of the centre, thinning to the tips
-        rad = W * (0.40 - 0.16 * abs(f))
-        top = H * 0.905
-        B.add(cx + f * W * 2.0, r.uniform(-0.06, 0.06) * W, top - rad * thick, rad, thick)
-    for k in range(12):
-        a = 2 * math.pi * k / 12 + r.uniform(-0.15, 0.15)
-        rad = W * r.uniform(0.17, 0.23)
-        B.add(cx + math.cos(a) * W * 1.05, math.sin(a) * W * 0.38, H * 0.885 - rad * 0.12, rad, 0.2)
-    # The anvil's root, joining it to the column.
-    for k in range(4):
-        f = k / 3
-        B.add(top_u + anvil_shift * W * f * 0.5, 0.05 * W, H * (0.78 + 0.07 * f), W * (0.25 - 0.02 * f), 0.55)
+    for k in range(13):
+        f = k / 12  # 0 = the upwind edge (right), 1 = the downwind tip (left)
+        uu = top_u + 0.08 * W - f * (0.08 * W - (cx - 1.0 * W))
+        rad = W * (0.34 - 0.17 * f) * r.uniform(0.92, 1.08)
+        sq = 0.30 - 0.17 * f
+        B.add(uu + r.uniform(-0.04, 0.04) * W, r.uniform(0.0, 0.08) * W, ceil - rad * sq, rad, sq)
+    # The overshooting top: a dome punching through the anvil over the column.
+    _head(B, top_u + 0.06 * W, 0.0, H * 0.92, W * 0.16, crowns=5, fine=2)
     return B
 
 
@@ -382,8 +379,9 @@ def cumulus(seed, W, H, domes=5, flat=True, turret=0.0):
         hump = 1.0 - (2 * abs(t)) ** 1.6
         rad = H * (0.26 + 0.2 * hump) * r.uniform(0.85, 1.15)
         p = B.add(t * W * 0.85 + r.uniform(-0.05, 0.05) * W, r.uniform(-0.12, 0.12) * W, H * (0.22 + 0.32 * hump), rad)
-        for c in B.sprout(p, 3, 0.4, 0.62, up=0.8):
-            B.sprout(c, 2, 0.4, 0.55, up=0.9)
+        for c in B.sprout(p, 3, 0.5, 0.66, up=0.85):
+            if c[2] > p[2]:
+                B.sprout(c, 1, 0.45, 0.55, up=0.95)
     if turret > 0:
         u0 = r.uniform(-0.2, 0.2) * W
         for s in range(4):
@@ -463,17 +461,39 @@ def realize(name, billows, az_deg, dist, base_alt, haze=0.0, form=0.62):
         sqs.append(sq)
     V = np.asarray(verts, np.float32)
     Ns = np.asarray(nrm, np.float32)
-    Nf = _field_normals(V, centres, radii, sqs)
-    Nb = Nf * form + Ns * (1 - form)
-    Nb /= np.maximum(np.linalg.norm(Nb, axis=1, keepdims=True), 1e-9)
+    # Light in four scales: the whole mass (a wide field), the heads (a narrower one), the billows softened where they meet
+    # (a tight field) and each billow's own sphere. The big two give the light and the terminator; the small two add only
+    # detail, and that detail brightens far more than it darkens and only on the lit side: with every sphere drawing its
+    # own lit cap and dark crescent everywhere, the column was tiled like fish scales. Shadow sides stay broad lavender
+    # shapes, the lit side reads as cauliflower crowns in the two light bands, as painted.
+    def unit(n):
+        return n / np.maximum(np.linalg.norm(n, axis=1, keepdims=True), 1e-9)
+    lf = cloud_light_dir()
+    L = np.array([lf.x, lf.y, lf.z], np.float32)
+
+    def shade(n):
+        return (n @ L) * 0.78 + n[:, 2] * 0.14 + 0.12
+    Nl = _field_normals(V, centres, radii, sqs, widen=3.2)
+    Nm = _field_normals(V, centres, radii, sqs, widen=1.7)
+    Nt = _field_normals(V, centres, radii, sqs, widen=1.0)
+    base = shade(Nl) * 0.5 + shade(Nm) * 0.5
+    up = (shade(Nt) - base) * 0.8 + (shade(Ns) - base) * 0.2
+    down = np.minimum(shade(Nt) - base, 0.0)  # creases between heads only, never between the small billows
+    lit = np.clip((base - 0.3) / 0.35, 0.0, 1.0)
+    lit = lit * lit * (3 - 2 * lit)
+    k = 1 - form
+    crown = np.clip((Nt[:, 2] + 0.15) / 0.55, 0.0, 1.0)  # highlights gather on the tops of the billows
+    lv = base + np.maximum(up, 0.0) * k * (0.4 + 1.4 * lit) * crown + down * k * (0.3 + 1.3 * lit)
+    # The flat base stays in shadow, whatever the field says about its lobes.
+    low = np.clip(((V[:, 2] - cz) / hmax - 0.1) / 0.1, 0.0, 1.0)
+    lv = np.minimum(lv, 0.36 + low * 2.0)
+    Nb = unit(unit(Nl + Nm) * 0.75 + Nt * 0.25)
     me = bpy.data.meshes.new(name)
     me.from_pydata(verts, [], faces)
     me.update()
     for p in me.polygons:
         p.use_smooth = True
     me.normals_split_custom_set_from_vertices([tuple(x) for x in Nb.tolist()])
-    lf = cloud_light_dir()
-    lv = (Nb @ np.array([lf.x, lf.y, lf.z], np.float32)) * 0.78 + Nb[:, 2] * 0.14 + 0.12
     at = me.attributes.new("cw_light", "FLOAT", "POINT")
     at.data.foreach_set("value", lv.astype(np.float32))
     ob = bpy.data.objects.new(name, me)
@@ -491,7 +511,7 @@ def realize(name, billows, az_deg, dist, base_alt, haze=0.0, form=0.62):
 def build_clouds():
     obs = []
     # The hero: a towering cumulonimbus over the sea, left third of the opening view, lit from the right.
-    obs.append(realize("cloud_tower", cumulonimbus(7, 600, 790), 170, 2400, 60, haze=0.0))
+    obs.append(realize("cloud_tower", cumulonimbus(7, 620, 780), 170, 2400, 48, haze=0.0))
     # Satellites at several depths around it: nearer small cumulus, farther hazier ones.
     sats = [  # az, dist, alt, W, H, domes, haze, turret
         (190, 1300, 150, 150, 60, 4, 0.0, 0.0),
