@@ -113,13 +113,21 @@ page's bake job (`LightmapController.bakeJob`, high: 1024², 256 rays, or the wo
 - on this computer when the studio is served by the local server: `POST /api/local/bake/lightmap` (apps/server
   `local-bake.ts`) runs scripts/blender-bake.ts as the Node cook does (Cycles on the GPU, else the threaded CPU baker), the job
   sent as `.lbjob` (render `encodeBakeJob`);
-- else on the page's workers (`view/publish-bake.ts`): one lane per worker of the page's budget, `max(1, cores − 2)`, each
+- else on the page's workers (`view/publish-bake.ts`): one lane per worker of the page's budget, `max(1, cores − 2)`, and no
+  more than fit in a quarter of `navigator.deviceMemory` (4 GB assumed when unknown) at the job's estimated size per worker
+  (`laneBytes`, about 100–150 MB for a house) plus the finishing worker's whole atlas (`finishBytes`); each
   taking a `bake` token of the worker scheduler before its worker gets work (so at most the budget less one bake at once, and
   none while the view moves or a drag runs); the job cut into three shares per lane (`LightmapBaker` `split`, every `count`-th
   covered texel, a share keeping only its own texels); one worker finishes from all the shares (denoise, encode, the lossless
   image, `packAsset`), so the main thread only posts messages and sums progress.
 
-The publish dialog shows the bake's progress and an estimate of the time left, and Cancel stops every worker. Only worlds
+The first worker gets the job itself (transferred) and copies it to the others over channels; walls the editor's view has
+sectioned are baked as built (their trace copies, lit and with normals), so the editor bakes the meshes a viewer draws. The
+publish dialog shows the bake's progress, its worker count and an estimate of the time left, and Cancel stops every worker.
+
+A viewer whose package has baked light keeps the light volume's parts even when the performance ladder cuts the volume (they
+are loaded from the package and never drawn, `LightVolumeController.setShown(false)`): the lightmap is applied against them,
+so a weak GPU still gets the baked lightmap. This is the player's own behaviour; no package needs cooking again. Only worlds
 that bake publish light (a building, `lightBake` not `off`). The files go to `light/` in the package with the manifest's
 `lightmap` naming them (`files`: the upload function only accepts a package whose files are all listed); the upload sends the
 `.lmap` (about 5.5 MB for Casa del Patio, over one request) in 4 MB chunks it joins again.

@@ -206,7 +206,7 @@ async function main(): Promise<void> {
       await ed.addInitScript({ content: env.SKIP_FIRST_RUN });
       if (BUDGET) await ed.addInitScript({ content: `globalThis.__AETHER_WORKER_BUDGET = ${Number(BUDGET)};` });
       // Long tasks of the editor's main thread, with the publish's labels over time (to find the bake's window).
-      await ed.addInitScript({ content: "window.__long = []; window.__labels = []; try { new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__long.push([e.startTime, e.duration]); }).observe({ type: 'longtask', buffered: true }); } catch {}" });
+      await ed.addInitScript({ content: "window.__long = []; window.__labels = []; try { new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__long.push([e.startTime, e.duration]); }).observe({ type: 'longtask', buffered: true }); } catch {} window.__loaf = []; try { new PerformanceObserver((l) => { for (const e of l.getEntries()) if (e.duration > 100) window.__loaf.push([e.startTime, Math.round(e.duration), (e.scripts || []).filter((x) => x.duration > 20).map((x) => (x.invoker || '') + ' ' + (x.sourceFunctionName || '') + ' ' + Math.round(x.duration)).join(' | ').slice(0, 300)]); }).observe({ type: 'long-animation-frame', buffered: true }); } catch {}" });
       const page = ed.pages()[0] ?? (await ed.newPage());
       page.on('pageerror', (e) => log(`editor pageerror ${e.message.slice(0, 160)}`));
       await page.goto(`${site.url}/?debug=1#/new/${TEMPLATE}`, { waitUntil: 'domcontentloaded' });
@@ -282,7 +282,11 @@ async function main(): Promise<void> {
         return { from, to, all: all.length, worstAll: Math.max(0, ...all.map(([, d]) => d)), during: during.length, worst: Math.max(0, ...during.map(([, d]) => d)), over100: during.filter(([, d]) => d > 100).map(([t, d]) => [Math.round(t), Math.round(d)]) };
       });
       if (main.from !== null) log(`editor: light bake ${main.to !== null ? ((main.to - main.from) / 1000).toFixed(1) : '?'} s on the page; long tasks during it ${main.during} (worst ${main.worst.toFixed(0)} ms, over 100 ms: ${JSON.stringify(main.over100)}); whole publish ${main.all} (worst ${main.worstAll.toFixed(0)} ms)`);
-      if (main.over100.length > 0) log('editor: FAIL: a main-thread task over 100 ms during the bake');
+      if (main.over100.length > 0) {
+        log('editor: FAIL: a main-thread task over 100 ms during the bake');
+        const loaf = await page.evaluate(([from, to]) => (window as unknown as { __loaf: Array<[number, number, string]> }).__loaf.filter(([t]) => from !== null && t >= from && t <= (to ?? Infinity)), [main.from, main.to] as const);
+        for (const [t, d, w] of loaf) log(`editor: long frame at ${Math.round(t)} ms, ${d} ms: ${w || '(no script over 20 ms: rendering or style)'}`);
+      }
       log(`editor: light volume ${JSON.stringify(await page.evaluate(() => { const r = (window as unknown as { __aether: { simulation: { renderer: { lightVolumeReady: boolean; lightVolumeBaking: boolean; lightVolumeStats: unknown; hasBuildings: boolean } } } }).__aether.simulation.renderer; return { buildings: r.hasBuildings, ready: r.lightVolumeReady, baking: r.lightVolumeBaking, stats: r.lightVolumeStats }; })).slice(0, 300)}`);
       if (c.status !== 'done' || !c.ref) {
         if (STRIP && /Not published: this world opens in play/.test(last)) {

@@ -12,7 +12,7 @@
  *   workers'. The result is the same file format the Node cook writes (same unwrap, texels, parts and coding; a lossless image).
  */
 import { workerBudget, workerScheduler, type WorkerScheduler, type WorkToken } from '@aether/core';
-import { partCount } from '../environment/relight';
+import { lightmapLayers, partCount } from '../environment/relight';
 import { parseFileReply, parseShareReply, type LightmapRequest, type ShareReply } from '../environment/lightmap-protocol';
 import type { LightmapWorkerLike } from './lightmap-controller';
 
@@ -34,8 +34,59 @@ export interface PublishBakeProgress {
   lanes: number;
 }
 
+/** Share of the device's memory the bake's workers may hold together. */
+export const BAKE_MEMORY_SHARE = 0.25;
+/** Most bytes the bake's workers hold together, whatever the device's memory. */
+export const BAKE_MAX_BYTES = 3 * 2 ** 30;
+/** Device memory assumed when the browser does not say (GB): a conservative laptop. */
+export const BAKE_DEFAULT_MEMORY_GB = 4;
+
+/**
+ * Bytes one lane's worker holds for `job` (an estimate): its copy of the job, the trace scene's acceleration, the shading
+ * cache of its baker (2^18 slots of every part), the atlas raster, and its share of the gather. The finishing worker holds
+ * the whole atlas of every part twice over (denoise) on top: {@link finishBytes}.
+ */
+export function laneBytes(r: LightmapRequest, shares: number): number {
+  let job = 0;
+  const walk = (v: unknown): void => {
+    if (ArrayBuffer.isView(v)) job += v.byteLength;
+    else if (Array.isArray(v)) v.forEach(walk);
+    else if (v && typeof v === 'object') Object.values(v).forEach(walk);
+  };
+  walk(r);
+  const PL = partCount(r.sunKeys.length) * 3;
+  const texels = r.maxSize * r.maxSize;
+  const scene = (r.positions.length / 9) * 64;
+  const cache = (1 << 18) * (PL * 4 + 8);
+  const raster = texels * 26;
+  const share = (texels / Math.max(1, shares)) * (PL * 4 + 5);
+  return job + scene + cache + raster + share + 24 * 2 ** 20;
+}
+
+/** Bytes the finishing worker holds on top of its lane: every part of the whole atlas, twice (denoise), and the image. */
+export function finishBytes(r: LightmapRequest): number {
+  const PL = partCount(r.sunKeys.length) * 3;
+  const texels = r.maxSize * r.maxSize;
+  return texels * (PL * 4 * 2 + 5) + texels * 4 * (lightmapLayers(r.sunKeys.length) + 1) * 2;
+}
+
+/**
+ * Lanes a bake of `job` may run: the page's worker budget (`max(1, cores − 2)`), and no more than fit in
+ * {@link BAKE_MEMORY_SHARE} of the device's memory (`navigator.deviceMemory`, else {@link BAKE_DEFAULT_MEMORY_GB}; at most
+ * {@link BAKE_MAX_BYTES}) with the
+ * finishing worker's atlas: fewer lanes are slower, never a crashed tab.
+ */
+export function bakeLanes(r: LightmapRequest, nav: { hardwareConcurrency?: number; deviceMemory?: number } | undefined = (globalThis as { navigator?: { hardwareConcurrency?: number; deviceMemory?: number } }).navigator): number {
+  const byCores = workerBudget(nav as Parameters<typeof workerBudget>[0]);
+  const gb = Number(nav?.deviceMemory) > 0 ? Number(nav?.deviceMemory) : BAKE_DEFAULT_MEMORY_GB;
+  // A tab's workers share one renderer process: past a few gigabytes it is killed whatever the machine has.
+  const allowed = Math.min(gb * 2 ** 30 * BAKE_MEMORY_SHARE, BAKE_MAX_BYTES) - finishBytes(r);
+  const per = laneBytes(r, byCores * 3);
+  return Math.max(1, Math.min(byCores, Math.floor(allowed / per)));
+}
+
 export interface PublishBakeOptions {
-  /** Lanes (workers): default the page's worker budget, `max(1, cores − 2)`. */
+  /** Lanes (workers): default {@link bakeLanes} (the page's worker budget, bounded by memory). */
   lanes?: number;
   /** Shares the job is cut into: default three per lane. */
   shares?: number;
@@ -79,7 +130,7 @@ export async function bakeLightmapSplit(job: PublishBakeJob, opts: PublishBakeOp
   if (signal?.aborted) throw abortError(signal);
   const now = opts.now ?? (() => performance.now());
   const scheduler = opts.scheduler ?? workerScheduler();
-  const lanes = Math.max(1, Math.min(64, Math.floor(opts.lanes ?? workerBudget())));
+  const lanes = Math.max(1, Math.min(64, Math.floor(opts.lanes ?? bakeLanes(job.request))));
   const count = Math.max(1, Math.min(512, Math.floor(opts.shares ?? lanes * 3)));
   const make = opts.createWorker ?? defaultWorker;
   const parts = partCount(job.request.sunKeys.length);
@@ -184,6 +235,8 @@ export async function bakeLightmapSplit(job: PublishBakeJob, opts: PublishBakeOp
         if (firstWork < 0) firstWork = now();
         running++;
         const got = reply(w, (d) => parseShareReply(d, parts));
+        // A pause asked just as the last share ended may still hold the worker: every share starts it running.
+        w.postMessage({ type: 'pause', on: false });
         w.postMessage({ type: 'share', id, index, count });
         // Park the worker while the scheduler asks the bake to yield (the view moves, a drag, more urgent work).
         const ww = w;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { WorkerScheduler } from '@aether/core';
-import { bakeLightmapSplit } from '../src/view/publish-bake';
+import { bakeLanes, bakeLightmapSplit, finishBytes, laneBytes } from '../src/view/publish-bake';
 import type { LightmapWorkerLike } from '../src/view/lightmap-controller';
 import { MAX_SUN_KEYS } from '../src/environment/light-volume';
 
@@ -115,5 +115,29 @@ describe('the publish bake split over workers', () => {
     await expect(p).rejects.toThrow();
     expect(log.terminated).toBe(log.made);
     expect(scheduler.snapshot().running).toBe(0);
+  });
+});
+
+describe('the publish bake sized by memory', () => {
+  // A house's job: 25 k trace triangles, a 19 k-probe volume of 18 parts, 50 k receiver triangles, 15 sun keys, a 1024² atlas.
+  const keys = Array.from({ length: 15 }, () => [0, 1, 0] as [number, number, number]);
+  const r = { maxSize: 1024, sunKeys: keys, positions: new Float32Array(25_000 * 9), albedo: new Float32Array(75_000), field: new Float32Array(19_008 * 220), codes: new Float32Array(38_016), meshes: [{ positions: new Float32Array(150_000 * 3), normals: new Float32Array(150_000 * 3), index: null }] } as never;
+
+  it('takes the cores but two when memory allows, fewer when it does not, and one at the least', () => {
+    const per = laneBytes(r, 90);
+    expect(per).toBeGreaterThan(80e6);
+    expect(per).toBeLessThan(250e6);
+    expect(finishBytes(r)).toBeGreaterThan(300e6);
+    const big = bakeLanes(r, { hardwareConcurrency: 32, deviceMemory: 8 });
+    expect(big).toBeGreaterThan(2);
+    expect(big).toBeLessThanOrEqual(30);
+    // At most a quarter of the device's memory, the finishing worker's atlas included.
+    expect(big * per + finishBytes(r)).toBeLessThanOrEqual(8 * 2 ** 30 * 0.25);
+    expect(bakeLanes(r, { hardwareConcurrency: 4, deviceMemory: 8 })).toBe(2);
+    expect(bakeLanes(r, { hardwareConcurrency: 32 })).toBeLessThan(big);
+    expect(bakeLanes(r, { hardwareConcurrency: 32, deviceMemory: 2 })).toBe(1);
+    // A large machine: the tab's cap, not the cores.
+    const huge = bakeLanes(r, { hardwareConcurrency: 64, deviceMemory: 64 });
+    expect(huge * per + finishBytes(r)).toBeLessThanOrEqual(3 * 2 ** 30);
   });
 });

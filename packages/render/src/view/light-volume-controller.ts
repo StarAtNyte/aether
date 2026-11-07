@@ -381,8 +381,20 @@ export class LightVolumeController {
     if (!g || !base || !parts || !data || this.disposed) return;
     this.coeffs = relightCoefficients(this.keys, l, this.coeffs);
     combineVolume(g.nx * g.ny * g.nz, base, parts, partCount(this.keys.length), this.coeffs, data);
-    this.light.setBakeLight(g, data);
+    if (this.shown) this.light.setBakeLight(g, data);
   }
+
+  /**
+   * Whether the volume lights the view (default on). Off (the performance ladder cut it, but a publish bake or a viewer's baked
+   * lightmap still needs its parts): it still bakes or loads, and keeps its data, but nothing of it is uploaded or drawn.
+   */
+  setShown(on: boolean): void {
+    if (on === this.shown || this.disposed) return;
+    this.shown = on;
+    if (!on) this.light.clearBake();
+    else if (this.grid && this.data) this.light.setBake(this.grid, this.data);
+  }
+  private shown = true;
 
   /** Turn the volume on (a world with buildings) or off. Off drops the bake. */
   setEnabled(on: boolean): void {
@@ -531,7 +543,7 @@ export class LightVolumeController {
     this.bakingGrid = null;
     this.shellBounds.copy(this.pendingBounds);
     this.lamps = this.pendingLamps;
-    this.light.setBake(grid, this.data);
+    if (this.shown) this.light.setBake(grid, this.data);
     this.onUpload();
   }
 

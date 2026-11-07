@@ -22,7 +22,7 @@ import type { CookedPackage } from './cook/cooked';
 import { gpuFrameCost } from './gpu/frame-cost';
 import { preparePresentation } from './gpu/presentation';
 import { warmProceduralFields } from './gpu/procedural-fields-client';
-import { ACESFilmicToneMapping, AgXToneMapping, LinearToneMapping, NeutralToneMapping, Box3, BufferAttribute, BufferGeometry, Color, FogExp2, Mesh as ThreeMesh, MeshBasicMaterial, Frustum, Group, Matrix4, PerspectiveCamera, Plane, Quaternion, Raycaster, RenderTarget, Scene, Vector2, Vector3, Vector4, type Intersection, type Light, type Material, type Mesh, type Object3D, type Texture } from 'three';
+import { ACESFilmicToneMapping, AgXToneMapping, LinearToneMapping, NeutralToneMapping, Box3, BufferAttribute, BufferGeometry, Color, FogExp2, Mesh as ThreeMesh, MeshStandardMaterial, Frustum, Group, Matrix4, PerspectiveCamera, Plane, Quaternion, Raycaster, RenderTarget, Scene, Vector2, Vector3, Vector4, type Intersection, type Light, type Material, type Mesh, type Object3D, type Texture } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
 import type { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { buildStructure } from '@aether/arch';
@@ -932,6 +932,8 @@ export class WorldRenderer {
   private cuts: PerformanceCuts = cutsAt(0);
   /** A publish bake runs ({@link publishLightBake}): the light volume stays on whatever the ladder cut. */
   private publishBaking = false;
+  /** The cooked package this renderer opened has baked light (a viewer loads it whatever the ladder cuts). */
+  private cookedLight = false;
   /** Told when the governor gave something up: the step and what it was. */
   onPerformanceStep: ((level: number, step: string, up?: boolean) => void) | null = null;
   /** Told when the black-screen watchdog stepped down or a shader failed to build (see {@link WatchdogEvent}). */
@@ -1216,6 +1218,7 @@ export class WorldRenderer {
     this.bakedLightRole = opts.bakedLight ?? 'editor';
     // The cooked package's volume sits beside its lightmap.
     this.lightVolume.setStaticBase(opts.cooked?.lightmapBase ?? null);
+    this.cookedLight = !!opts.cooked?.lightmapBase;
     this.watchdogOn = opts.watchdog !== false;
     // `globalThis.__aetherWatchdog` (tests): shorter waits than a person would sit through.
     this.watchdog = new BlackScreenWatchdog(opts.watchdog === false ? {} : (opts.watchdog ?? (globalThis as { __aetherWatchdog?: Partial<WatchdogOptions> }).__aetherWatchdog));
@@ -1878,7 +1881,11 @@ export class WorldRenderer {
     this.env.setInteriorBounce(this.archView.active);
     // A publish bake needs the volume even where the performance ladder cut it (the lightmap's later bounces come from it): it
     // bakes then without being shown, so no material changes (and no program is linked) while the publish runs.
-    this.lightVolume.setEnabled(on || (this.publishBaking && this.archView.active && !this.lowMemory));
+    // A viewer whose package has a baked lightmap keeps the volume's parts too (loaded from the package, never drawn when cut):
+    // the lightmap is applied against them, so a weak GPU that drops the volume still gets the baked light.
+    const keep = this.archView.active && !this.lowMemory && (this.publishBaking || (this.bakedLightRole === 'viewer' && this.cookedLight));
+    this.lightVolume.setShown(on);
+    this.lightVolume.setEnabled(on || keep);
     // The baked lightmap outlives the volume cut by the performance ladder (it is the cheaper of the two): only a building
     // without a view, or the low-memory mode, takes it away.
     this.lightmap.setEnabled(this.archView.active && !this.lowMemory);
@@ -2049,6 +2056,7 @@ export class WorldRenderer {
       opts.onProgress?.({ stage: 'volume', fraction: 0, etaSeconds: null, label: 'Waiting for the building to settle' });
       await new Promise((r) => setTimeout(r, 250));
     }
+    // Walls the editor's view has sectioned are baked as built (their trace copies, `asBuiltWall`): the viewer draws them whole.
     const job = await this.lightmap.bakeJob(opts.quality, opts.samples);
     if (!job) return null;
     let bytes: Uint8Array | null = null;
@@ -2226,10 +2234,12 @@ export class WorldRenderer {
         if (part.indices.length < 3) continue;
         const g = new BufferGeometry();
         g.setAttribute('position', new BufferAttribute(part.positions, 3));
+        // Normals and a lit material too: a publish bakes the lightmap of the wall as built from these (the viewer draws it whole).
+        if (part.normals.length === part.positions.length) g.setAttribute('normal', new BufferAttribute(part.normals, 3));
         g.setIndex(new BufferAttribute(part.indices, 1));
         const spec = part.material as { color?: string };
         const c = spec.color ? new Color(spec.color) : mean;
-        const mesh = new ThreeMesh(g, new MeshBasicMaterial({ color: c }));
+        const mesh = new ThreeMesh(g, new MeshStandardMaterial({ color: c }));
         (mesh.material as Material).userData['aetherAlbedo'] = [c.r, c.g, c.b];
         mesh.matrixWorld.copy(node.object.matrixWorld);
         meshes.push({ mesh, seeThrough: false, doubleSided: two });

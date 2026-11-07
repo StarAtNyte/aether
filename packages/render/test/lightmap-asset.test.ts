@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LIGHTMAP_VERSION } from '../src/environment/lightmap';
-import { contentHash, lightmapKey, packAsset, stackAtlas, unpackAsset, unstackAtlas, type LightmapAssetMeta } from '../src/environment/lightmap-asset';
+import { contentHash, contentHashSliced, lightmapKey, packAsset, stackAtlas, unpackAsset, unstackAtlas, type LightmapAssetMeta } from '../src/environment/lightmap-asset';
 import { lightmapLayers, scaleCount } from '../src/environment/relight';
 import { parseLightmapReply, parseLightmapRequest } from '../src/environment/lightmap-protocol';
 
@@ -86,5 +86,12 @@ describe('lightmap protocol', () => {
   it('refuses a request with a bad quality, sizes or indices', () => {
     expect(parseLightmapRequest(null)).toBeNull();
     expect(parseLightmapRequest({ type: 'bake', id: 1, maxSize: 300 })).toBeNull();
+  });
+});
+
+describe('lightmap content hash in slices', () => {
+  it('is the hash of the same arrays at once', async () => {
+    const arrays = [new Int32Array([1, 2, 3]), new Uint8Array([4, 5]), new Int32Array(10_000).fill(7)];
+    expect(await contentHashSliced((i) => arrays[i] ?? null, 0)).toBe(contentHash(arrays));
   });
 });

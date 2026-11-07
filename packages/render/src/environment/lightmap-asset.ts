@@ -157,6 +157,25 @@ export function contentHash(arrays: ReadonlyArray<ArrayBufferView>): string {
   return a;
 }
 
+/**
+ * {@link contentHash} of arrays made one at a time (`make(i)`, null past the last), with the event loop between them once a
+ * slice of `sliceMs` is spent: the same hash, without holding the page for a house's geometry.
+ */
+export async function contentHashSliced(make: (i: number) => ArrayBufferView | null, sliceMs = 8): Promise<string> {
+  let a = hashWords(new TextEncoder().encode(`lightmap-content-${LIGHTMAP_VERSION}`));
+  let until = performance.now() + sliceMs;
+  for (let i = 0; ; i++) {
+    const v = make(i);
+    if (!v) break;
+    a = hashWords(v, parseInt(a.slice(0, 7), 16) + i);
+    if (performance.now() > until) {
+      await new Promise((r) => setTimeout(r, 0));
+      until = performance.now() + sliceMs;
+    }
+  }
+  return a;
+}
+
 /** The content key of a bake: the content hash plus everything small it reads (the plan, the light), file-safe (`lm<version>-<32 hex digits>`). */
 export function lightmapKey(content: string, scalars: unknown): string {
   const small = hashWords(new TextEncoder().encode(JSON.stringify([LIGHTMAP_VERSION, content, scalars])));

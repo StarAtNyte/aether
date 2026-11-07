@@ -35,7 +35,7 @@ import {
   type LightmapPlan,
   type LightmapQuality,
 } from '../environment/lightmap';
-import { LIGHTMAP_MAX_ASSET_BYTES, contentHash, lightmapKey, packAsset, stackAtlas, unpackAsset, unstackAtlas, type LightmapAssetMeta } from '../environment/lightmap-asset';
+import { LIGHTMAP_MAX_ASSET_BYTES, contentHash, contentHashSliced, lightmapKey, packAsset, stackAtlas, unpackAsset, unstackAtlas, type LightmapAssetMeta } from '../environment/lightmap-asset';
 import { LIGHTMAP_CACHE_MIN_BAKE_MS, createIdbLightmapCache, type LightmapCache } from '../environment/lightmap-cache';
 import { VOLUME_BAKE_VERSION } from '../environment/light-volume-cache';
 import { decodeImage, encodeImage } from '../environment/lightmap-codec';
@@ -773,6 +773,12 @@ export class LightmapController implements LightmapSource {
     const plan = planLightmap(quality, samples);
     const p = await this.prepare(scene, vol, this.gen);
     if (!p) return null;
+    // The geometry's hash in slices (the same arrays and order as keyOf's).
+    if (!p.content) {
+      const own = p.data.map((d, i) => (p.slots[i]?.wall ? null : d)).filter((d): d is LightmapMesh => d !== null);
+      const fixed = [() => quantize(p.input.positions, 50), () => quantize(p.input.albedo, 100), () => p.input.twoSided];
+      p.content = await contentHashSliced((i) => (i < 3 ? fixed[i]!() : i - 3 < own.length * 2 ? quantize((i - 3) % 2 === 0 ? own[(i - 3) >> 1]!.positions : own[(i - 3) >> 1]!.normals, 50) : null));
+    }
     const key = this.keyOf(p, plan);
     // Built in slices (the volume's field is tens of megabytes): the page stays responsive while a publish takes the job.
     await new Promise((r) => setTimeout(r, 0));
