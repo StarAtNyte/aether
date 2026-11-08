@@ -314,7 +314,7 @@ def joined_copy(obs, name, keep_outline=False):
 # (they drew dark). Those islands are shaded per vertex instead (the same light and albedo bakes, to colour attributes)
 # and their UVs collapsed onto one texel block of a palette band kept free at the top of the atlas. Few islands are that
 # thin once the pack's margins are two texels.
-PALETTE_ROWS = 32  # texels at the top of each atlas: 2 x 2 blocks, 16 rows of size/2 entries
+PALETTE_ROWS = 64  # texels at the top of each atlas: 2 x 2 blocks, 32 rows of size/2 entries (the kit houses brought the town to ~59k thin islands)
 
 
 def unwrap(ob, uv_name="bake", size=None):

@@ -949,8 +949,7 @@ def _hits_window(bm, f, u, zc):
 # share of each house in any shot) are built by the building kit (scripts/blender/building/), the hero ones with its full
 # detail, the next ones at its mid level; the rest of the town keeps `house` above (seen from 40 m and more).
 KIT_HERO = {"house_0_5", "house_0_6", "house_0_7", "house_0_9", "house_0_12", "house_0_13", "house_0_14", "house_2_46", "shop"}
-KIT_MID = {"house_0_8", "house_1_27", "house_1_28", "house_2_45", "house_3_61", "house_3_62", "house_3_63", "house_3_64", "house_3_65",
-           "house_3_66", "house_3_67", "house_3_68", "house_3_69"}
+KIT_MID = {"house_1_27", "house_1_28", "house_3_61", "house_3_63", "house_3_64", "house_3_65", "house_3_66", "house_3_67"}
 # Texel density in the town atlas relative to the rest (bake_export reads the face attribute `cw_texel`).
 KIT_TEXEL = {"hero": 2.0, "mid": 1.4}
 TRIMS = ["#5a3a2c", "#ece6da", "#ece6da", "#b4b6bd", "#3d3a44"]

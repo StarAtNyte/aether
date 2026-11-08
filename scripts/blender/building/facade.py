@@ -145,26 +145,27 @@ def window(K, face, o, style, lit, plan, r, wall_mi):
     sash = K.lib("sash")
     trim = K.lib("trim")
     glass = K.lib("glass_lit") if lit else K.lib("glass")
-    reveal(K, face, o, wall_mi)
-    fw = 0.045
-    fo = -d + 0.03
-    frame_ring(K, face, u0, u1, z0, z1, fw, 0.06, fo, sash)
-    if K.tier == "far":
-        pane(K, face, u0 + fw, u1 - fw, z0 + fw, z1 - fw, -d + 0.01, glass, r, plan, lit)
-        K.fbox(face, uc, (z0 + z1) / 2, 0.04, 0.05, wh - 2 * fw, fo, sash, bottom=False, top=False, skip=("back",))
-    elif ww < 0.75:
-        # A small window: one fixed or hopper pane.
-        pane(K, face, u0 + fw, u1 - fw, z0 + fw, z1 - fw, -d + 0.012, glass, r, plan, lit, curtain=False)
-    else:
-        # Two sashes on two tracks: the inner one 3 cm deeper, overlapping at the middle by the meeting stiles.
-        sw = 0.035
-        for k, (a, b, off) in enumerate(((u0 + fw, uc + 0.02, -d + 0.012), (uc - 0.02, u1 - fw, -d + 0.042))):
-            pane(K, face, a, b, z0 + fw, z1 - fw, off, glass, r, plan, lit)
-            with K.no_outline(K.tier != "hero"):
-                K.fbox(face, uc + (0.02 - sw / 2 if k == 0 else -0.02 + sw / 2), (z0 + z1) / 2, sw, 0.03, wh - 2 * fw, off + 0.016, sash, bottom=False, top=False, skip=("back",))
-                if K.tier == "hero":
-                    K.fbox(face, (a + b) / 2, z0 + fw + 0.015, b - a, 0.03, 0.03, off + 0.016, sash, skip=("back",))
-                    K.fbox(face, (a + b) / 2, z1 - fw - 0.015, b - a, 0.03, 0.03, off + 0.016, sash, skip=("back",))
+    with K.no_outline():  # inside the opening: no outline shell (seen only through the hole)
+        reveal(K, face, o, wall_mi)
+        fw = 0.045
+        fo = -d + 0.03
+        frame_ring(K, face, u0, u1, z0, z1, fw, 0.06, fo, sash)
+        if K.tier == "far":
+            pane(K, face, u0 + fw, u1 - fw, z0 + fw, z1 - fw, -d + 0.01, glass, r, plan, lit)
+            K.fbox(face, uc, (z0 + z1) / 2, 0.04, 0.05, wh - 2 * fw, fo, sash, bottom=False, top=False, skip=("back",))
+        elif ww < 0.75:
+            # A small window: one fixed or hopper pane.
+            pane(K, face, u0 + fw, u1 - fw, z0 + fw, z1 - fw, -d + 0.012, glass, r, plan, lit, curtain=False)
+        else:
+            # Two sashes on two tracks: the inner one 3 cm deeper, overlapping at the middle by the meeting stiles.
+            sw = 0.035
+            for k, (a, b, off) in enumerate(((u0 + fw, uc + 0.02, -d + 0.012), (uc - 0.02, u1 - fw, -d + 0.042))):
+                pane(K, face, a, b, z0 + fw, z1 - fw, off, glass, r, plan, lit)
+                with K.no_outline(K.tier != "hero"):
+                    K.fbox(face, uc + (0.02 - sw / 2 if k == 0 else -0.02 + sw / 2), (z0 + z1) / 2, sw, 0.03, wh - 2 * fw, off + 0.016, sash, bottom=False, top=False, skip=("back",))
+                    if K.tier == "hero":
+                        K.fbox(face, (a + b) / 2, z0 + fw + 0.015, b - a, 0.03, 0.03, off + 0.016, sash, skip=("back",))
+                        K.fbox(face, (a + b) / 2, z1 - fw - 0.015, b - a, 0.03, 0.03, off + 0.016, sash, skip=("back",))
     with K.no_outline(K.tier == "far"):
         if style != "shutter" and wh > 0.6:
             # Sill with a drip, standing 8 cm out of the wall.
@@ -235,31 +236,32 @@ def genkan(K, face, o, plan, r, wall_mi, ground):
     w = u1 - u0
     n = nrm(face)
     frame = K.lib("door") if plan["door_wood"] else K.lib("sash")
-    reveal(K, face, o, wall_mi, floor_mi=K.lib("stone"))
-    zt = z1 - 0.32
-    back = -d
-    # Door frame, the transom bar and glass.
-    frame_ring(K, face, u0, u1, z0, z1, 0.06, 0.08, back + 0.04, frame)
-    K.fbox(face, uc, zt, w - 0.12, 0.08, 0.05, back + 0.04, frame, skip=("back",))
-    pane(K, face, u0 + 0.06, u1 - 0.06, zt + 0.025, z1 - 0.06, back + 0.01, K.lib("glass_lit") if r.random() < plan["lit"] else K.lib("glass"), r, plan, curtain=False)
-    # Two door leaves on two tracks.
-    lw = (w - 0.12) / 2 + 0.03
-    for k in range(2):
-        a = u0 + 0.06 + k * (lw - 0.06)
-        b = a + lw
-        off = back + 0.012 + (0.035 if k else 0.0)
-        oq(K, [face.pt(a, z0 + 0.03, off), face.pt(b, z0 + 0.03, off), face.pt(b, zt - 0.025, off), face.pt(a, zt - 0.025, off)], n, K.lib("frost"), grime=0.0)
-        with K.no_outline(K.tier != "hero"):
-            frame_ring(K, face, a, b, z0 + 0.03, zt - 0.025, 0.05, 0.035, off + 0.018, frame)
-            bars = {"hero": 7, "mid": 3}.get(K.tier, 0)
-            for i in range(1, bars + 1):
-                zz = z0 + 0.03 + (zt - z0 - 0.055) * i / (bars + 1)
-                K.fbox(face, (a + b) / 2, zz, b - a - 0.1, 0.02, 0.022, off + 0.012, frame, skip=("back", "sides"))
-            if K.tier == "hero":
-                for i in (1, 2):
-                    K.fbox(face, a + (b - a) * i / 3, (z0 + zt) / 2, 0.022, 0.02, zt - z0 - 0.15, off + 0.012, frame, bottom=False, top=False, skip=("back",))
-            # The pull.
-            K.fbox(face, b - 0.09 if k == 0 else a + 0.09, z0 + 1.0, 0.025, 0.03, 0.22, off + 0.03, K.lib("metal"))
+    with K.no_outline():  # inside the opening: no outline shell (seen only through the hole)
+        reveal(K, face, o, wall_mi, floor_mi=K.lib("stone"))
+        zt = z1 - 0.32
+        back = -d
+        # Door frame, the transom bar and glass.
+        frame_ring(K, face, u0, u1, z0, z1, 0.06, 0.08, back + 0.04, frame)
+        K.fbox(face, uc, zt, w - 0.12, 0.08, 0.05, back + 0.04, frame, skip=("back",))
+        pane(K, face, u0 + 0.06, u1 - 0.06, zt + 0.025, z1 - 0.06, back + 0.01, K.lib("glass_lit") if r.random() < plan["lit"] else K.lib("glass"), r, plan, curtain=False)
+        # Two door leaves on two tracks.
+        lw = (w - 0.12) / 2 + 0.03
+        for k in range(2):
+            a = u0 + 0.06 + k * (lw - 0.06)
+            b = a + lw
+            off = back + 0.012 + (0.035 if k else 0.0)
+            oq(K, [face.pt(a, z0 + 0.03, off), face.pt(b, z0 + 0.03, off), face.pt(b, zt - 0.025, off), face.pt(a, zt - 0.025, off)], n, K.lib("frost"), grime=0.0)
+            with K.no_outline(K.tier != "hero"):
+                frame_ring(K, face, a, b, z0 + 0.03, zt - 0.025, 0.05, 0.035, off + 0.018, frame)
+                bars = {"hero": 7, "mid": 3}.get(K.tier, 0)
+                for i in range(1, bars + 1):
+                    zz = z0 + 0.03 + (zt - z0 - 0.055) * i / (bars + 1)
+                    K.fbox(face, (a + b) / 2, zz, b - a - 0.1, 0.02, 0.022, off + 0.012, frame, skip=("back", "sides"))
+                if K.tier == "hero":
+                    for i in (1, 2):
+                        K.fbox(face, a + (b - a) * i / 3, (z0 + zt) / 2, 0.022, 0.02, zt - z0 - 0.15, off + 0.012, frame, bottom=False, top=False, skip=("back",))
+                # The pull.
+                K.fbox(face, b - 0.09 if k == 0 else a + 0.09, z0 + 1.0, 0.025, 0.03, 0.22, off + 0.03, K.lib("metal"))
     # The step (a concrete block on the ground in front of the porch).
     sx, sy, _ = face.pt(uc, 0, 0.3)
     zg = ground(sx, sy)
@@ -287,10 +289,11 @@ def genkan(K, face, o, plan, r, wall_mi, ground):
 def steel_door(K, face, o, plan, wall_mi):
     d = o["depth"]
     u0, u1, z0, z1 = o["u0"], o["u1"], o["z0"], o["z1"]
-    reveal(K, face, o, wall_mi)
-    frame_ring(K, face, u0, u1, z0, z1, 0.05, 0.06, -d + 0.03, K.lib("sash"))
-    oq(K, [face.pt(u0 + 0.05, z0, -d + 0.01), face.pt(u1 - 0.05, z0, -d + 0.01), face.pt(u1 - 0.05, z1 - 0.05, -d + 0.01), face.pt(u0 + 0.05, z1 - 0.05, -d + 0.01)], nrm(face), K.lib("shutter_box"), grime=0.0)
-    K.fbox(face, u1 - 0.15, z0 + 1.0, 0.12, 0.05, 0.03, -d + 0.035, K.lib("metal"))
+    with K.no_outline():  # inside the opening: no outline shell (seen only through the hole)
+        reveal(K, face, o, wall_mi)
+        frame_ring(K, face, u0, u1, z0, z1, 0.05, 0.06, -d + 0.03, K.lib("sash"))
+        oq(K, [face.pt(u0 + 0.05, z0, -d + 0.01), face.pt(u1 - 0.05, z0, -d + 0.01), face.pt(u1 - 0.05, z1 - 0.05, -d + 0.01), face.pt(u0 + 0.05, z1 - 0.05, -d + 0.01)], nrm(face), K.lib("shutter_box"), grime=0.0)
+        K.fbox(face, u1 - 0.15, z0 + 1.0, 0.12, 0.05, 0.03, -d + 0.035, K.lib("metal"))
 
 
 def shop_front(K, face, bays, z0, plan, r, wall_mi):
@@ -400,14 +403,15 @@ def sliding_door(K, face, o, plan, r, wall_mi, lit):
     d = o["depth"]
     u0, u1, z0, z1 = o["u0"], o["u1"], o["z0"], o["z1"]
     uc = (u0 + u1) / 2
-    reveal(K, face, o, wall_mi)
-    fw = 0.05
-    frame_ring(K, face, u0, u1, z0, z1, fw, 0.06, -d + 0.03, K.lib("sash"))
-    glass = K.lib("glass_lit") if lit else K.lib("glass")
-    for k, (a, b, off) in enumerate(((u0 + fw, uc + 0.02, -d + 0.012), (uc - 0.02, u1 - fw, -d + 0.042))):
-        pane(K, face, a, b, z0 + fw, z1 - fw, off, glass, r, plan, lit)
-        with K.no_outline(K.tier != "hero"):
-            K.fbox(face, uc + (0.0025 if k == 0 else -0.0025), (z0 + z1) / 2, 0.035, 0.03, z1 - z0 - 2 * fw, off + 0.016, K.lib("sash"), bottom=False, top=False, skip=("back",))
+    with K.no_outline():  # inside the opening: no outline shell (seen only through the hole)
+        reveal(K, face, o, wall_mi)
+        fw = 0.05
+        frame_ring(K, face, u0, u1, z0, z1, fw, 0.06, -d + 0.03, K.lib("sash"))
+        glass = K.lib("glass_lit") if lit else K.lib("glass")
+        for k, (a, b, off) in enumerate(((u0 + fw, uc + 0.02, -d + 0.012), (uc - 0.02, u1 - fw, -d + 0.042))):
+            pane(K, face, a, b, z0 + fw, z1 - fw, off, glass, r, plan, lit)
+            with K.no_outline(K.tier != "hero"):
+                K.fbox(face, uc + (0.0025 if k == 0 else -0.0025), (z0 + z1) / 2, 0.035, 0.03, z1 - z0 - 2 * fw, off + 0.016, K.lib("sash"), bottom=False, top=False, skip=("back",))
 
 
 # ---------------------------------------------------------------------------------------------------------------- stairs

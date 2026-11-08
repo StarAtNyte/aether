@@ -378,10 +378,30 @@ pass.
 `town.py` builds the houses the film's shots come close to with the kit: `building/hero_shots.py` casts a grid of rays
 from every story camera (`camera`, `cameraTo` and `via` poses of `story.ts`) into the built world and lists each house's
 largest screen share. Nine at the hero level (`KIT_HERO`: the five walls behind Mio's train window, the crossing's
-houses, the shrine's neighbour, the corner shop) and thirteen at the mid level (`KIT_MID`: shares of 2-12 %, the views
-over the town from the stair) come from the kit with the town's palettes, lots, gaps and stair sides; the other 46
-keep `town.house` (40 m and more away in every shot). Kit houses carry `kit: True` in `HOUSES`, so the prop pass
+houses, the shrine's neighbour, the corner shop) and eight at the mid level (`KIT_MID`: shares of 3.5-12 %, the views
+over the town from the stair) come from the kit with the town's palettes, lots, gaps and stair sides; the other 51
+keep `town.house` (40 m and more away in every shot). Nothing inside an opening (reveals, sashes, glass, door leaves)
+gets an outline shell: it is seen only through the hole, and the shells were a third of the kit's triangles. Kit houses carry `kit: True` in `HOUSES`, so the prop pass
 (`detail.py`) leaves their outdoor units and pots to the kit and still hangs laundry on their balconies; the shop records
 its bays, and the banners stand in front of the glazed one. The bake gives the kit houses more texels: the face
 attribute `cw_texel` (2 on hero, 1.4 on mid) scales their UV islands before the pack (`bake_export.texel_density`).
 Story stills from the .blend or the baked pieces: `cloudwatch/story_stills.py --cams <cams.json>`.
+
+Result (8 November 2026; before/after: `docs/screenshots/cloudwatch/before-after/20-buildings-blender.webp`, the film's
+cameras in Blender, and `21-buildings-aether.webp`, the same shots in Aether on the Intel GPU):
+
+| | Before | After |
+|---|---|---|
+| houses from the kit | 0 | 17 (9 hero, 8 mid), 71 k triangles, every fitting within 3 cm (3 fixes by the loop) |
+| `town.glb` | 10.5 MB, 169 k triangles | 13.2 MB, 237 k triangles (+2.7 MB: the geometry of real openings, tiles and fittings; the atlas stays 4096 px) |
+| `props.glb`, `laundry.glb`, `trees.glb` (re-baked: the prop pass places by the houses) | 4.94 MB, 234 KB, 666 KB | 4.58 MB, 205 KB, 665 KB |
+| Intel GPU over the whole film | p50 16.8 ms, p95 25.7 ms | p50 16.7 ms, p95 17.5 ms, no frame over 50 ms, no program linked during the film |
+| prop gate (`check_props.py`) | 78 props, 0 failed | 77 props, 0 failed |
+
+Known limits: the far houses (51) are still `town.house`; a kit house is one object per house in one shared atlas, so
+its painted wear is bounded by the town's texel density (twice the rest on hero); the standalone GLB's LOD1 is a plain
+collapse decimation (no seam protection); a service wire is drawn only when a pole point is given (the town's poles are
+placed after the houses, so its kit houses have the conduit and bracket but no drop); the town's EEVEE stills still
+shadow their own outlines (the kit's stills draw the outline as a separate object); thin letters of baked signs (an I,
+a T) fall below a texel and take the palette band's single colour, so they can vanish. The town atlas now keeps 64
+palette rows (59 k thin islands; it was 32).

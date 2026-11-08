@@ -239,7 +239,7 @@ def build(spec, lib, ground=None, service_to=None, gear=True):
         if b2 - (dx + 1.0) > 1.3:
             shop_bays.append(ffp.open({"u0": dx + 1.0, "u1": b2, "z0": zb, "z1": zb + 2.3, "depth": 0.12, "kind": "shutter" if r.random() < 0.7 else "glass"}))
         door_x = dx
-        ffp.take(fb["x0"], fb["x1"], zb, zb + 2.7)
+        ffp.take(fb["x0"], fb["x1"], zb, zb + 3.42)  # the shop front and the band above it (where its signboard goes)
     else:
         door_x = (fb["x0"] + fb["x1"]) / 2 + r.uniform(-fw / 4, fw / 4)
         door_x = max(fb["x0"] + 1.4, min(fb["x1"] - 1.4, door_x))
@@ -263,7 +263,7 @@ def build(spec, lib, ground=None, service_to=None, gear=True):
         for side in ("n", "s"):
             if len(balconies) >= nbal:
                 break
-            if r.random() > (0.75 if side == "n" else 0.45):
+            if r.random() > (0.75 if side == "n" else 0.45) or (side == "s" and shop_bays and b is fb):  # (a shop keeps its front for its sign)
                 continue
             fp = fps[(bi, side)]
             f = fp.face
