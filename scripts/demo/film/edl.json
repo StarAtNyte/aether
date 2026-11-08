@@ -9,70 +9,188 @@
    0.0
   ]
  ],
- "cards": "~/.local/share/aether/demo/film/cards",
+ "cards": "~/.local/share/aether/demo/film2/cards",
  "segments": [
   {
    "name": "cold-cw",
-   "src": "~/.local/share/aether/demo/film/shots/cw-open.mp4",
+   "src": "~/.local/share/aether/demo/film2/shots/cw-open.mp4",
    "in": 0,
-   "dur": 10.5
+   "dur": 9.5,
+   "xfade": 0.6
   },
   {
    "name": "cold-terraces",
    "src": "~/.local/share/aether/demo/intro/shots/m-terraces-falls.mp4",
    "in": 1.8,
-   "dur": 6.5,
+   "dur": 5.5,
    "xfade": 1.2
   },
   {
    "name": "gen-type",
-   "src": "~/.local/share/aether/demo/raw-live/generate.webm",
-   "mode": "window",
-   "in": 2.4,
-   "dur": 7.5,
-   "speed": 1.5,
-   "push": [
-    1.0,
-    1.32
+   "src": "~/.local/share/aether/demo/film2/ui/describe.mp4",
+   "mode": "ui",
+   "parts": [
+    [
+     3.9,
+     8.4,
+     1.1
+    ]
    ],
-   "pan": [
-    0,
-    0,
-    -190,
-    -105
+   "cam": [
+    [
+     0,
+     0.33,
+     0.2,
+     2.2
+    ],
+    [
+     4.1,
+     0.36,
+     0.2,
+     2.5
+    ]
    ],
+   "dur": 4.1,
    "xfade": 1.0,
+   "frame": 0.88,
    "text": [
     [
      "ch-describe",
      0.6,
-     4.2
+     3.8
     ]
    ]
   },
   {
    "name": "gen-build",
+   "src": "~/.local/share/aether/demo/film2/ui/describe.mp4",
+   "mode": "ui",
+   "parts": [
+    [
+     9.0,
+     13.6,
+     3.0
+    ],
+    [
+     13.6,
+     16.6,
+     1.0
+    ],
+    [
+     16.6,
+     36.0,
+     8.0
+    ],
+    [
+     36.0,
+     42.0,
+     1.5
+    ]
+   ],
+   "cam": [
+    [
+     0,
+     0.12,
+     0.42,
+     2.2
+    ],
+    [
+     6.9,
+     0.12,
+     0.42,
+     2.2
+    ],
+    [
+     8.2,
+     0.45,
+     0.45,
+     1.5
+    ],
+    [
+     10.9,
+     0.45,
+     0.45,
+     1.5
+    ]
+   ],
+   "dur": 10.9,
+   "xfade": 0.6,
+   "frame": 0.88,
+   "text": [
+    [
+     "note-offline",
+     0.4,
+     10.5
+    ]
+   ]
+  },
+  {
+   "name": "gen-live",
    "src": "~/.local/share/aether/demo/raw-live/generate.webm",
-   "mode": "window",
-   "in": 14,
-   "dur": 10.8,
-   "speed": 14.5,
-   "push": [
-    1.12,
-    1.2
+   "mode": "ui",
+   "parts": [
+    [
+     5.0,
+     9.0,
+     1.5
+    ],
+    [
+     14.0,
+     60.0,
+     16.0
+    ],
+    [
+     60.0,
+     190.0,
+     40.0
+    ]
    ],
-   "pan": [
-    -60,
-    0,
-    -40,
-    20
+   "cam": [
+    [
+     0,
+     0.39,
+     0.35,
+     2.4
+    ],
+    [
+     2.4,
+     0.39,
+     0.35,
+     2.4
+    ],
+    [
+     3.4,
+     0.12,
+     0.45,
+     2.3
+    ],
+    [
+     5.6,
+     0.12,
+     0.45,
+     2.3
+    ],
+    [
+     6.8,
+     0.5,
+     0.5,
+     1.4
+    ],
+    [
+     8.8,
+     0.5,
+     0.5,
+     1.4
+    ]
    ],
-   "xfade": 0.5,
+   "dur": 8.8,
+   "xfade": 0.6,
+   "frame": 0.88,
    "text": [
     [
      "note-live",
      0.4,
-     10.4
+     8.5
     ]
    ]
   },
@@ -80,18 +198,18 @@
    "name": "m-lisbon",
    "src": "~/.local/share/aether/demo/film/shots/lisbon-quay.mp4",
    "in": 0.5,
-   "dur": 5,
+   "dur": 4.6,
    "xfade": 0.9,
    "text": [
     [
      "ch-worlds",
      0.6,
-     3.0
+     2.8
     ],
     [
      "lt-lisbon",
-     3.2,
-     4.6
+     3.0,
+     4.3
     ]
    ]
   },
@@ -99,20 +217,20 @@
    "name": "m-lisbon2",
    "src": "~/.local/share/aether/demo/film/shots/lisbon-drone.mp4",
    "in": 1,
-   "dur": 4.2,
+   "dur": 3.6,
    "xfade": 0.5
   },
   {
    "name": "m-kepler",
    "src": "~/.local/share/aether/demo/film/shots/kepler-domes.mp4",
    "in": 0.5,
-   "dur": 5.5,
+   "dur": 4.6,
    "xfade": 0.6,
    "text": [
     [
      "lt-kepler",
      0.6,
-     4.9
+     4.0
     ]
    ]
   },
@@ -120,13 +238,13 @@
    "name": "m-falls",
    "src": "~/.local/share/aether/demo/intro/shots/m-falls.mp4",
    "in": 1,
-   "dur": 5,
+   "dur": 4.4,
    "xfade": 0.6,
    "text": [
     [
      "lt-sanctuary",
      0.6,
-     4.4
+     3.8
     ]
    ]
   },
@@ -134,217 +252,411 @@
    "name": "m-highland",
    "src": "~/.local/share/aether/demo/film/shots/highland-dawn.mp4",
    "in": 1,
-   "dur": 5,
+   "dur": 4.4,
    "xfade": 0.6,
    "text": [
     [
      "lt-highland",
      0.6,
-     4.4
+     3.8
     ]
    ]
   },
   {
    "name": "e-select",
-   "src": "~/.local/share/aether/demo/film/ui-frozen/edit.mp4",
-   "mode": "window",
-   "in": 4.5,
-   "dur": 7.5,
-   "push": [
-    1.05,
-    1.3
+   "src": "~/.local/share/aether/demo/film2/ui/edit.mp4",
+   "mode": "ui",
+   "parts": [
+    [
+     1.6,
+     13.6,
+     1.5
+    ]
    ],
-   "pan": [
-    0,
-    0,
-    0,
-    20
+   "cam": [
+    [
+     0,
+     0.42,
+     0.5,
+     1.5
+    ],
+    [
+     3.0,
+     0.45,
+     0.48,
+     1.7
+    ],
+    [
+     8.0,
+     0.5,
+     0.5,
+     1.7
+    ]
    ],
+   "dur": 8.0,
    "xfade": 0.8,
+   "frame": 0.88,
    "text": [
     [
      "ch-edit",
-     0.6,
-     3.8
+     0.5,
+     3.6
     ]
    ]
   },
   {
    "name": "e-material",
-   "src": "~/.local/share/aether/demo/film/ui-frozen/edit.mp4",
-   "mode": "window",
-   "in": 14.5,
-   "dur": 6.5,
-   "push": [
-    1.25,
-    1.45
+   "src": "~/.local/share/aether/demo/film2/ui/edit.mp4",
+   "mode": "ui",
+   "parts": [
+    [
+     13.2,
+     24.6,
+     1.6
+    ]
    ],
-   "pan": [
-    300,
-    20,
-    420,
-    40
+   "cam": [
+    [
+     0,
+     0.73,
+     0.64,
+     1.9
+    ],
+    [
+     7.1,
+     0.73,
+     0.66,
+     1.9
+    ]
    ],
-   "xfade": 0.5
+   "dur": 7.1,
+   "xfade": 0.5,
+   "frame": 0.88
   },
   {
    "name": "e-chat",
-   "src": "~/.local/share/aether/demo/film/ui-frozen/edit.mp4",
-   "mode": "window",
-   "in": 44,
-   "dur": 6.5,
-   "push": [
-    1.3,
-    1.5
+   "src": "~/.local/share/aether/demo/film2/ui/edit.mp4",
+   "mode": "ui",
+   "parts": [
+    [
+     40.0,
+     44.0,
+     1.0
+    ],
+    [
+     44.0,
+     49.4,
+     1.0
+    ]
    ],
-   "pan": [
-    -330,
-    -30,
-    -380,
-    -20
+   "cam": [
+    [
+     0,
+     0.2,
+     0.84,
+     2.1
+    ],
+    [
+     3.6,
+     0.2,
+     0.84,
+     2.1
+    ],
+    [
+     4.6,
+     0.25,
+     0.4,
+     2.0
+    ],
+    [
+     8.0,
+     0.25,
+     0.4,
+     2.0
+    ],
+    [
+     9.4,
+     0.5,
+     0.5,
+     1.0
+    ]
    ],
+   "dur": 9.4,
    "xfade": 0.5,
+   "frame": 0.88,
    "text": [
     [
      "note-offline",
-     0.5,
-     6.0
+     0.4,
+     9.0
     ]
    ]
   },
   {
    "name": "e-time",
-   "src": "~/.local/share/aether/demo/film/ui-frozen/edit.mp4",
-   "mode": "window",
-   "in": 23,
-   "dur": 7,
-   "speed": 2.4,
-   "push": [
-    1.1,
-    1.18
+   "src": "~/.local/share/aether/demo/film2/ui/edit.mp4",
+   "mode": "ui",
+   "parts": [
+    [
+     26.4,
+     39.6,
+     1.9
+    ]
    ],
-   "pan": [
-    60,
-    -20,
-    100,
-    -30
+   "cam": [
+    [
+     0,
+     0.78,
+     0.3,
+     2.0
+    ],
+    [
+     4.4,
+     0.78,
+     0.3,
+     2.0
+    ],
+    [
+     5.8,
+     0.5,
+     0.5,
+     1.0
+    ]
    ],
-   "xfade": 0.5
+   "dur": 6.9,
+   "xfade": 0.5,
+   "frame": 0.88
   },
   {
    "name": "sw-1",
-   "src": "~/.local/share/aether/demo/film/shots/sweep-lisbon.mp4",
-   "in": 0.3,
-   "dur": 4.4,
+   "src": "~/.local/share/aether/demo/film2/shots/sweep-penthouse.mp4",
+   "in": 0.4,
+   "dur": 4.2,
    "xfade": 0.8,
    "text": [
     [
      "lt-relight",
      0.6,
-     8.5
+     11.0
     ]
    ]
   },
   {
    "name": "sw-2",
-   "src": "~/.local/share/aether/demo/film/shots/sweep-lisbon.mp4",
-   "in": 10.3,
-   "dur": 4.4,
-   "xfade": 1.8
+   "src": "~/.local/share/aether/demo/film2/shots/sweep-penthouse.mp4",
+   "in": 10.4,
+   "dur": 3.8,
+   "xfade": 1.6
   },
   {
    "name": "sw-3",
-   "src": "~/.local/share/aether/demo/film/shots/sweep-lisbon.mp4",
-   "in": 15.3,
-   "dur": 4.4,
-   "xfade": 1.8
+   "src": "~/.local/share/aether/demo/film2/shots/sweep-penthouse.mp4",
+   "in": 15.5,
+   "dur": 4.2,
+   "xfade": 1.6
   },
   {
    "name": "p-hub",
-   "src": "~/.local/share/aether/demo/film/ui-frozen/publish.mp4",
-   "mode": "window",
-   "in": 4,
-   "dur": 8,
-   "speed": 1.2,
-   "push": [
-    1.15,
-    1.35
+   "src": "~/.local/share/aether/demo/film2/ui/publish.mp4",
+   "mode": "ui",
+   "parts": [
+    [
+     6.0,
+     22.0,
+     1.45
+    ]
    ],
-   "pan": [
-    250,
-    0,
-    380,
-    -40
+   "cam": [
+    [
+     0,
+     0.5,
+     0.5,
+     0.9
+    ],
+    [
+     1.3,
+     0.5,
+     0.5,
+     0.9
+    ],
+    [
+     2.5,
+     0.8,
+     0.3,
+     2.1
+    ],
+    [
+     4.8,
+     0.8,
+     0.3,
+     2.1
+    ],
+    [
+     5.8,
+     0.8,
+     0.68,
+     2.1
+    ],
+    [
+     10.8,
+     0.8,
+     0.68,
+     2.1
+    ]
    ],
+   "dur": 11.0,
    "xfade": 0.8,
+   "frame": 0.88,
    "text": [
     [
      "ch-publish",
-     0.6,
-     3.8
+     0.5,
+     3.6
+    ],
+    [
+     "lt-pub-note",
+     5.5,
+     10.4
     ]
    ]
   },
   {
    "name": "p-player",
-   "src": "~/.local/share/aether/demo/film/ui-frozen/publish.mp4",
-   "mode": "full",
-   "grade": false,
-   "in": 66.2,
+   "src": "~/.local/share/aether/demo/film2/ui/publish.mp4",
+   "mode": "ui",
+   "parts": [
+    [
+     70.2,
+     73.8,
+     1.0
+    ]
+   ],
+   "cam": [
+    [
+     0,
+     0.5,
+     0.5,
+     1.0
+    ]
+   ],
    "dur": 3.6,
-   "xfade": 0.8
+   "xfade": 0.8,
+   "frame": 1.0
   },
   {
    "name": "p-time",
-   "src": "~/.local/share/aether/demo/film/ui-frozen/publish.mp4",
-   "mode": "full",
-   "grade": false,
-   "in": 74,
-   "dur": 5,
-   "speed": 2.4,
-   "xfade": 0.5
+   "src": "~/.local/share/aether/demo/film2/ui/publish.mp4",
+   "mode": "ui",
+   "parts": [
+    [
+     86.2,
+     97.0,
+     2.4
+    ]
+   ],
+   "cam": [
+    [
+     0,
+     0.5,
+     0.5,
+     1.0
+    ],
+    [
+     0.8,
+     0.5,
+     0.8,
+     2.3
+    ],
+    [
+     3.4,
+     0.5,
+     0.8,
+     2.3
+    ],
+    [
+     4.2,
+     0.5,
+     0.5,
+     1.0
+    ]
+   ],
+   "dur": 4.5,
+   "xfade": 0.5,
+   "frame": 1.0
   },
   {
    "name": "p-doll",
-   "src": "~/.local/share/aether/demo/film/ui-frozen/publish.mp4",
-   "mode": "full",
-   "grade": false,
-   "in": 88.2,
-   "dur": 4,
-   "xfade": 0.5
-  },
-  {
-   "name": "p-walk",
-   "src": "~/.local/share/aether/demo/film/ui-frozen/publish.mp4",
-   "mode": "full",
-   "grade": false,
-   "in": 96.5,
-   "dur": 4,
-   "xfade": 0.5
+   "src": "~/.local/share/aether/demo/film2/ui/publish.mp4",
+   "mode": "ui",
+   "parts": [
+    [
+     104.6,
+     108.6,
+     1.0
+    ]
+   ],
+   "cam": [
+    [
+     0,
+     0.5,
+     0.5,
+     1.0
+    ]
+   ],
+   "dur": 4.0,
+   "xfade": 0.5,
+   "frame": 1.0
   },
   {
    "name": "p-city",
-   "src": "~/.local/share/aether/demo/film/ui-frozen/modes.mp4",
-   "mode": "full",
-   "grade": false,
-   "in": 53,
-   "dur": 4,
-   "speed": 1.4,
-   "xfade": 0.6
+   "src": "~/.local/share/aether/demo/film2/ui/modes.mp4",
+   "mode": "ui",
+   "parts": [
+    [
+     68.0,
+     75.6,
+     1.7
+    ]
+   ],
+   "cam": [
+    [
+     0,
+     0.5,
+     0.5,
+     1.0
+    ]
+   ],
+   "dur": 4.5,
+   "xfade": 0.6,
+   "frame": 1.0
   },
   {
    "name": "play-hike",
-   "src": "~/.local/share/aether/demo/film/ui-frozen/play.mp4",
-   "mode": "full",
-   "grade": false,
-   "in": 0.4,
+   "src": "~/.local/share/aether/demo/film2/ui/play.mp4",
+   "mode": "ui",
+   "parts": [
+    [
+     0.4,
+     4.6,
+     1.0
+    ]
+   ],
+   "cam": [
+    [
+     0,
+     0.5,
+     0.5,
+     1.0
+    ]
+   ],
    "dur": 4.2,
    "xfade": 0.7,
+   "frame": 1.0,
    "text": [
     [
      "ch-play",
      0.6,
-     3.8
+     3.6
     ]
    ]
   },
@@ -352,33 +664,32 @@
    "name": "play-outpost",
    "src": "~/.local/share/aether/demo/intro/shots/outpost.mp4",
    "in": 3,
-   "dur": 5,
-   "xfade": 0.5,
-   "text": []
+   "dur": 4.6,
+   "xfade": 0.5
   },
   {
    "name": "bl-sheet",
-   "src": "~/.local/share/aether/demo/film/tt-mio2/f%04d.png",
+   "src": "~/.local/share/aether/demo/film2/tt-mio/f%04d.png",
    "mode": "turntable",
-   "beside": "~/.local/share/aether/demo/film/mio/sheet.png",
-   "dur": 9,
+   "beside": "~/.local/share/aether/demo/film2/mio/sheet.png",
+   "dur": 8.2,
    "speed": 1.1,
    "xfade": 0.9,
    "text": [
     [
      "ch-blender",
      0.6,
-     4.0
+     3.6
     ],
     [
      "note-local",
      0.6,
-     14.3
+     7.6
     ],
     [
      "lt-sheet",
-     4.4,
-     8.6
+     4.0,
+     7.6
     ]
    ]
   },
@@ -386,7 +697,7 @@
    "name": "bl-kit",
    "src": "~/.local/share/aether/demo/film/orbit-shop/f%04d.png",
    "mode": "frames",
-   "dur": 6.5,
+   "dur": 6.0,
    "push": [
     1.0,
     1.03
@@ -396,54 +707,53 @@
     [
      "lt-kit",
      0.5,
-     6.0
+     5.5
     ]
    ]
   },
   {
    "name": "bl-walk",
-   "src": "~/.local/share/aether/demo/film/shots/mio-walk.mp4",
+   "src": "~/.local/share/aether/demo/film2/shots/mio-walk.mp4",
    "in": 0.5,
-   "dur": 5.5,
+   "dur": 5.2,
    "xfade": 0.8,
    "text": [
     [
      "lt-inworld",
      0.5,
-     4.8
+     4.5
     ]
    ]
   },
   {
    "name": "bl-shop",
-   "src": "~/.local/share/aether/demo/film/shots/cw-shop.mp4",
+   "src": "~/.local/share/aether/demo/film2/shots/cw-shop.mp4",
    "in": 0,
-   "dur": 5.5,
-   "xfade": 1.0,
-   "text": []
+   "dur": 5.0,
+   "xfade": 1.0
   },
   {
    "name": "film-a",
-   "src": "~/.local/share/aether/demo/film/shots/two-whistles.mp4",
+   "src": "~/.local/share/aether/demo/film2/shots/two-whistles.mp4",
    "in": 0.2,
    "dur": 6,
-   "audio": 1.0,
    "xfade": 1.2,
+   "audio": 1.0,
    "text": [
     [
      "ch-film",
      0.8,
-     4.6
+     4.4
     ]
    ]
   },
   {
    "name": "film-b",
-   "src": "~/.local/share/aether/demo/film/shots/two-whistles.mp4",
+   "src": "~/.local/share/aether/demo/film2/shots/two-whistles.mp4",
    "in": 36.4,
    "dur": 16.2,
-   "audio": 1.0,
    "xfade": 0.8,
+   "audio": 1.0,
    "text": [
     [
      "lt-film",
@@ -454,15 +764,15 @@
   },
   {
    "name": "close",
-   "src": "~/.local/share/aether/demo/film/shots/cw-close.mp4",
+   "src": "~/.local/share/aether/demo/film2/shots/cw-close.mp4",
    "in": 0,
-   "dur": 11,
+   "dur": 10.5,
    "xfade": 1.4,
    "text": [
     [
      "title",
-     5.2,
-     11
+     4.8,
+     10.5
     ]
    ]
   }

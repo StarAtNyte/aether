@@ -38,7 +38,7 @@ import sys
 A = sys.argv[1:]
 EDL = json.load(open(A[0]))
 opt = {A[i][2:]: A[i + 1] for i in range(1, len(A) - 1) if A[i].startswith('--')}
-OUT = opt.get('out', os.path.expanduser('~/.local/share/aether/demo/aether-film-v2.mp4'))
+OUT = opt.get('out', os.path.expanduser('~/.local/share/aether/demo/aether-film-v3.mp4'))
 WORK = opt.get('work', os.path.expanduser('~/.local/share/aether/demo/film/work'))
 FPS = EDL.get('fps', 30)
 W, H = 1920, 1080
@@ -195,11 +195,16 @@ def segment(s):
         # the centre in canvas fractions: the window is centred on the canvas
         cx = pw([(c[0], c[1]) for c in cams], fr, 0.5 * (1 - fr)).replace('T', T)
         cy = pw([(c[0], c[2]) for c in cams], fr, 0.5 * (1 - fr)).replace('T', T)
-        sel = ''.join(f"[0:v]trim=start={a}:end={b},setpts=(PTS-STARTPTS)/{sp},fps={FPS}[p{i}];" for i, (a, b, sp) in enumerate(parts))
-        cat = ''.join(f'[p{i}]' for i in range(len(parts))) + f'concat=n={len(parts)}:v=1:a=0[src];'
-        inputs = ['-i', src, '-loop', '1', '-framerate', str(FPS), '-i', bg, '-loop', '1', '-framerate', str(FPS), '-i', mk]
-        vf = (sel + cat + f"[src]scale={uw}:{uh}:flags=lanczos,format=rgba[ui];[2:v]format=gray,scale={uw}:{uh}[m];[ui][m]alphamerge[uim];"
-              f"[1:v][uim]overlay=x=(W-w)/2:y=(H-h)/2:shortest=1:format=auto,format=yuv420p,"
+        # each part is its own seeked input: with one shared input the concat would buffer the other parts' 4K frames
+        n = len(parts)
+        sel = ''.join(f"[{i}:v]setpts=(PTS-STARTPTS)/{sp},fps={FPS}[p{i}];" for i, (a, b, sp) in enumerate(parts))
+        cat = ''.join(f'[p{i}]' for i in range(n)) + f'concat=n={n}:v=1:a=0[src];'
+        inputs = []
+        for (a, b, sp) in parts:
+            inputs += ['-ss', str(a), '-t', str(b - a), '-i', src]
+        inputs += ['-loop', '1', '-framerate', str(FPS), '-i', bg, '-loop', '1', '-framerate', str(FPS), '-i', mk]
+        vf = (sel + cat + f"[src]scale={uw}:{uh}:flags=lanczos,format=rgba[ui];[{n + 1}:v]format=gray,scale={uw}:{uh}[m];[ui][m]alphamerge[uim];"
+              f"[{n}:v][uim]overlay=x=(W-w)/2:y=(H-h)/2:shortest=1:format=auto,format=yuv420p,"
               f"zoompan=z='{zc}':x='({cx})*iw-iw/zoom/2':y='({cy})*ih-ih/zoom/2':d=1:s={W}x{H}:fps={FPS},unsharp=5:5:0.45:5:5:0,trim=duration={dur}[v]")
     elif mode == 'window':
         backdrop()

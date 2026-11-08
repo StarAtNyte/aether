@@ -44,11 +44,20 @@ def render(layers, blur=12, alpha=120):
     return Image.alpha_composite(sh.filter(ImageFilter.GaussianBlur(blur)), base)
 
 
+def pill(img, x0, y0, x1, y1):
+    """A dark translucent rounded plate under quiet type, so it reads over the pale studio as over a film."""
+    plate = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+    ImageDraw.Draw(plate).rounded_rectangle([x0, y0, x1, y1], (y1 - y0) // 2, fill=(9, 12, 19, 150))
+    return Image.alpha_composite(plate, img)
+
+
 for name, c in cards.items():
     k, text, sub = c['kind'], c['text'], c.get('sub')
     if k == 'chapter':
         # a single quiet word, low left, widely tracked capitals
         img = render([((112, 968), text.upper(), font(500, 30), (255, 255, 255, 235), 9, 'l')], blur=16, alpha=150)
+        wd = ImageDraw.Draw(Image.new('RGBA', (1, 1))).textlength(text.upper(), font=font(500, 30)) + 9 * len(text)
+        img = pill(img, 112 - 34, 968 - 54, 112 + wd + 26, 968 + 26)
     elif k == 'lower':
         layers = [((112, 958 if sub else 978), text, font(500, 40), (255, 255, 255, 245), 1, 'l')]
         if sub:
@@ -58,7 +67,8 @@ for name, c in cards.items():
         # right-aligned top right: measure, then place
         d = ImageDraw.Draw(Image.new('RGBA', (1, 1)))
         wdt = sum(d.textlength(ch, font=font(400, 28)) for ch in text) + (len(text) - 1)
-        img = render([((W - 112 - wdt, 92), text, font(400, 28), (255, 255, 255, 200), 1, 'l')], blur=10, alpha=140)
+        img = render([((W - 112 - wdt, 92), text, font(400, 28), (255, 255, 255, 230), 1, 'l')], blur=10, alpha=140)
+        img = pill(img, W - 112 - wdt - 30, 92 - 44, W - 112 + 30, 92 + 22)
     elif k == 'title':
         layers = [((W // 2, 566), text, font(600, 132), (255, 255, 255, 255), 6, 'm')]
         if sub:

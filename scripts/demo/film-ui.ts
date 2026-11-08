@@ -489,6 +489,49 @@ async function edit(browser: Awaited<ReturnType<typeof chromium.launch>>, url: s
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// describe: the prompt typed on the home page, the planner building the world
+// ---------------------------------------------------------------------------------------------------------------
+
+/** The offline planner only understands its fixed themes; the live AI's own recording is a separate, labelled take. */
+const DESCRIBE_PROMPT = arg('prompt') ?? 'a two-storey villa with a pool';
+
+async function describe(browser: Awaited<ReturnType<typeof chromium.launch>>, url: string): Promise<void> {
+  const t = await newTake(browser, 'describe', 'home prompt and build by the offline planner (no model call)');
+  const { page, rec } = t;
+  await page.goto(`${url}/?debug=1#/`, { waitUntil: 'domcontentloaded' });
+  const box = page.locator('#hero-prompt').first();
+  await box.waitFor({ timeout: 90_000 });
+  await sleep(2500);
+  await glide(page, 900 * K, 520 * K, 10);
+  await t.cap.start();
+  const boot = rec.now();
+  await sleep(1200);
+  rec.cut(boot);
+  await dwell(page, 1200);
+  await click(page, box, 900);
+  mark(t, 'typing');
+  await type(page, DESCRIBE_PROMPT, 85);
+  await dwell(page, 1100);
+  mark(t, 'build pressed');
+  const opened = /#\/p\/[a-z0-9]+/;
+  for (let i = 0; i < 8 && !opened.test(page.url()); i++) {
+    await page.keyboard.press('Enter');
+    await page.waitForURL(opened, { timeout: 4_000 }).catch(() => undefined);
+  }
+  await page.waitForURL(opened, { timeout: 30_000 });
+  mark(t, 'editor open');
+  const started = rec.now();
+  await editorReady(page);
+  await idle(page, 600_000);
+  mark(t, 'built');
+  await settle(page, 90_000);
+  rec.ramp(started, 1500);
+  mark(t, 'settled');
+  await dwell(page, 3000);
+  await finish(t);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 // player helpers
 // ---------------------------------------------------------------------------------------------------------------
 
@@ -760,6 +803,7 @@ async function main(): Promise<void> {
   try {
     if (SCENE === 'scout') await scout(browser, server.url);
     else if (SCENE === 'edit') await edit(browser, server.url);
+    else if (SCENE === 'describe') await describe(browser, server.url);
     else if (SCENE === 'publish') await publish(browser, server.url);
     else if (SCENE === 'modes') await modes(browser, server.url);
     else if (SCENE === 'play') await play(browser, server.url);

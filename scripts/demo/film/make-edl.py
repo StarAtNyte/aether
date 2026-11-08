@@ -1,4 +1,4 @@
-"""The v2 edit decision lists (edl.json, edl-60.json) written from one table of shots, so the two cuts share their cameras.
+"""The v3 edit decision lists (edl.json, edl-60.json) written from one table of shots, so the two cuts share their cameras.
 
   python3 scripts/demo/film/make-edl.py [<out dir>]
 
@@ -17,7 +17,7 @@ INTRO = f'{D}/intro/shots'
 
 
 def ui(name, src, parts, cam, dur, xfade=0.5, frame=0.88, text=None):
-    s = {'name': name, 'src': f'{UI}/{src}.mp4', 'mode': 'ui', 'parts': parts, 'cam': cam, 'dur': dur, 'xfade': xfade, 'frame': frame}
+    s = {'name': name, 'src': (f'{D}/raw-live/generate.webm' if src == 'live' else f'{UI}/{src}.mp4'), 'mode': 'ui', 'parts': parts, 'cam': cam, 'dur': dur, 'xfade': xfade, 'frame': frame}
     if text:
         s['text'] = text
     return s
@@ -34,15 +34,18 @@ def full():
     return [
         clip('cold-cw', f'{F2}/cw-open.mp4', 0, 9.5, xfade=0.6),
         clip('cold-terraces', f'{INTRO}/m-terraces-falls.mp4', 1.8, 5.5, xfade=1.2),
-        {'name': 'gen-type', 'src': f'{D}/raw-live/generate.webm', 'mode': 'window', 'win': [1776, 999], 'in': 2.4, 'dur': 7.5, 'speed': 1.5, 'push': [1.0, 1.22], 'pan': [0, 0, -190, -105], 'xfade': 1.0, 'text': [['ch-describe', 0.6, 4.2]]},
-        {'name': 'gen-build', 'src': f'{D}/raw-live/generate.webm', 'mode': 'window', 'win': [1776, 999], 'in': 14, 'dur': 9.9, 'speed': 14.5, 'push': [1.05, 1.14], 'pan': [-60, 0, -40, 20], 'xfade': 0.5, 'text': [['note-live', 0.4, 9.5]]},
+        # Describe: a fresh 4K take of the prompt typed and built by the offline planner (labelled), then the recorded live AI
+        # session (1280x720: never faked, shown cropped in on the prompt, the build log and the result)
+        ui('gen-type', 'describe', [[3.9, 8.4, 1.1]], [[0, 0.33, 0.2, 2.2], [4.1, 0.36, 0.2, 2.5]], 4.1, 1.0, text=[['ch-describe', 0.6, 3.8]]),
+        ui('gen-build', 'describe', [[9.0, 13.6, 3.0], [13.6, 16.6, 1.0], [16.6, 36.0, 8.0], [36.0, 42.0, 1.5]], [[0, 0.12, 0.42, 2.2], [6.9, 0.12, 0.42, 2.2], [8.2, 0.45, 0.45, 1.5], [10.9, 0.45, 0.45, 1.5]], 10.9, 0.6, text=[['note-offline', 0.4, 10.5]]),
+        ui('gen-live', 'live', [[5.0, 9.0, 1.5], [14.0, 60.0, 16.0], [60.0, 190.0, 40.0]], [[0, 0.39, 0.35, 2.4], [2.4, 0.39, 0.35, 2.4], [3.4, 0.12, 0.45, 2.3], [5.6, 0.12, 0.45, 2.3], [6.8, 0.5, 0.5, 1.4], [8.8, 0.5, 0.5, 1.4]], 8.8, 0.6, text=[['note-live', 0.4, 8.5]]),
         clip('m-lisbon', f'{F1}/lisbon-quay.mp4', 0.5, 4.6, 0.9, [['ch-worlds', 0.6, 2.8], ['lt-lisbon', 3.0, 4.3]]),
         clip('m-lisbon2', f'{F1}/lisbon-drone.mp4', 1, 3.6, 0.5),
         clip('m-kepler', f'{F1}/kepler-domes.mp4', 0.5, 4.6, 0.6, [['lt-kepler', 0.6, 4.0]]),
         clip('m-falls', f'{INTRO}/m-falls.mp4', 1, 4.4, 0.6, [['lt-sanctuary', 0.6, 3.8]]),
         clip('m-highland', f'{F1}/highland-dawn.mp4', 1, 4.4, 0.6, [['lt-highland', 0.6, 3.8]]),
         # Edit: the sofa and its gizmo, a material swatch, the chat and its answer, the time-of-day slider
-        ui('e-select', 'edit', [[1.6, 13.6, 1.5]], [[0, 0.5, 0.5, 0.9], [1.3, 0.5, 0.5, 0.9], [2.9, 0.5, 0.5, 2.0], [8.0, 0.49, 0.5, 2.0]], 8.0, 0.8, text=[['ch-edit', 0.5, 3.6]]),
+        ui('e-select', 'edit', [[1.6, 13.6, 1.5]], [[0, 0.42, 0.5, 1.5], [3.0, 0.45, 0.48, 1.7], [8.0, 0.5, 0.5, 1.7]], 8.0, 0.8, text=[['ch-edit', 0.5, 3.6]]),
         ui('e-material', 'edit', [[13.2, 24.6, 1.6]], [[0, 0.73, 0.64, 1.9], [7.1, 0.73, 0.66, 1.9]], 7.1, 0.5),
         ui('e-chat', 'edit', [[40.0, 44.0, 1.0], [44.0, 49.4, 1.0]], [[0, 0.2, 0.84, 2.1], [3.6, 0.2, 0.84, 2.1], [4.6, 0.25, 0.4, 2.0], [8.0, 0.25, 0.4, 2.0], [9.4, 0.5, 0.5, 1.0]], 9.4, 0.5, text=[['note-offline', 0.4, 9.0]]),
         ui('e-time', 'edit', [[26.4, 39.6, 1.9]], [[0, 0.78, 0.3, 2.0], [4.4, 0.78, 0.3, 2.0], [5.8, 0.5, 0.5, 1.0]], 6.9, 0.5),
@@ -70,11 +73,11 @@ def full():
 def short():
     return [
         clip('cold-cw-60', f'{F2}/cw-open.mp4', 0, 5.2, xfade=0.6),
-        {'name': 'gen-type-60', 'src': f'{D}/raw-live/generate.webm', 'mode': 'window', 'win': [1776, 999], 'in': 2.4, 'dur': 4.0, 'speed': 1.5, 'push': [1.0, 1.22], 'pan': [0, 0, -190, -105], 'xfade': 0.7, 'text': [['ch-describe', 0.5, 3.8]]},
-        {'name': 'gen-build-60', 'src': f'{D}/raw-live/generate.webm', 'mode': 'window', 'win': [1776, 999], 'in': 14, 'dur': 5.0, 'speed': 14.5, 'push': [1.05, 1.14], 'pan': [-60, 0, -40, 20], 'xfade': 0.5, 'text': [['note-live', 0.4, 5.0]]},
+        ui('gen-type-60', 'live', [[4.0, 9.0, 1.6]], [[0, 0.39, 0.35, 2.4]], 3.1, 0.7, text=[['ch-describe', 0.4, 2.9]]),
+        ui('gen-build-60', 'live', [[14.0, 60.0, 20.0], [60.0, 190.0, 40.0]], [[0, 0.12, 0.45, 2.3], [2.2, 0.12, 0.45, 2.3], [3.3, 0.5, 0.5, 1.4], [5.5, 0.5, 0.5, 1.4]], 5.5, 0.5, text=[['note-live', 0.3, 5.2]]),
         clip('m-lisbon-60', f'{F1}/lisbon-quay.mp4', 0.5, 3.0, 0.6, [['lt-lisbon', 0.5, 2.8]]),
         clip('m-kepler-60', f'{F1}/kepler-domes.mp4', 0.5, 2.8, 0.5, [['lt-kepler', 0.5, 2.6]]),
-        ui('e-select-60', 'edit', [[3.0, 9.0, 1.6]], [[0, 0.5, 0.5, 0.9], [0.6, 0.5, 0.5, 2.0], [3.5, 0.49, 0.5, 2.0]], 3.5, 0.5, text=[['ch-edit', 0.4, 3.2]]),
+        ui('e-select-60', 'edit', [[3.0, 9.0, 1.6]], [[0, 0.45, 0.5, 1.6], [3.5, 0.48, 0.5, 1.8]], 3.5, 0.5, text=[['ch-edit', 0.4, 3.2]]),
         ui('e-material-60', 'edit', [[14.0, 21.2, 2.0]], [[0, 0.73, 0.64, 1.9], [3.6, 0.73, 0.66, 1.9]], 3.6, 0.4),
         ui('e-chat-60', 'edit', [[44.0, 48.2, 1.0]], [[0, 0.25, 0.4, 2.0], [2.8, 0.25, 0.4, 2.0], [4.2, 0.5, 0.5, 1.0]], 4.2, 0.4, text=[['note-offline', 0.3, 4.0]]),
         clip('sw-1-60', f'{F2}/sweep-penthouse.mp4', 0.4, 2.8, 0.6, [['lt-relight', 0.4, 6.2]]),
