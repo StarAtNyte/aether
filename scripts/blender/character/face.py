@@ -113,7 +113,7 @@ def build_head(J, spec):
     chin = Vector((0, hd.y - 0.004 * hh / 0.237, hd.z - 0.16 * hh))
     form = HeadForm(spec, chin)
     u = form.u
-    ob = quad_sphere('head', 9)
+    ob = quad_sphere('head', 12)
     centre = np.array(chin) + np.array([0, 0.0, 0.11]) * u
     co = np.array([v.co[:] for v in ob.data.vertices])
     # ray-march each direction from the centre to the surface
@@ -135,6 +135,7 @@ def build_head(J, spec):
     apply_modifiers(ob)
     co = np.array([v.co[:] for v in ob.data.vertices])
     co = project(form, co)
+    co = face_template(co, chin, u, spec.get('face_fit') or {})
     # nose: a soft bridge and a small tip, pushed out along the surface normal
     nose_z = chin.z + 0.07 * u
     for v, c in zip(ob.data.vertices, co):
@@ -159,6 +160,33 @@ def build_head(J, spec):
     HEAD_BIAS[ob.name] = face_bias(ob, chin, u, spec)
     ears = build_ears(form, chin, u, spec)
     return ob, ears, form, chin
+
+
+FACE_KEYS = {
+    # the face template's shape keys: each widens (value > 1) or narrows the face across x in a band of heights over
+    # the chin (in head units), fading out toward the back of the head; the build fits their values to the sheet
+    'jaw': (0.01, 0.085, 0.045),     # from just over the chin to the jaw's corner (broad and soft)
+    'chin': (-0.01, 0.03, 0.025),    # the chin's point
+    'cheek': (0.055, 0.1, 0.03),     # the cheeks under the eyes
+}
+
+
+def face_template(co, chin, u, fit):
+    """The head with its template keys mixed in (fit: {key: width factor})."""
+    if not fit:
+        return co
+    p = co - np.array(chin)
+    front = np.clip((-p[:, 1] + 0.02 * u) / (0.05 * u), 0, 1)
+    out = co.copy()
+    for k, (z0, z1, soft) in FACE_KEYS.items():
+        f = float(fit.get(k, 1.0))
+        if abs(f - 1) < 1e-4:
+            continue
+        zz = p[:, 2] / u
+        w = np.clip((zz - (z0 - soft)) / soft, 0, 1) * np.clip(((z1 + soft) - zz) / soft, 0, 1)
+        w = w * w * (3 - 2 * w) * front
+        out[:, 0] += p[:, 0] * (f - 1) * w
+    return out
 
 
 def nss(e0, e1, x):

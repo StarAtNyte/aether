@@ -44,6 +44,9 @@ import skeleton as SKEL  # noqa: E402
 from common import Part, activate, apply_modifiers, colour, linear_to_srgb, srgb_to_linear  # noqa: E402
 
 T0 = time.time()
+# the triangle budget of a character (anime; the QA flags over it and the loop drops a body subdivision): the hair's
+# strands, the head's finer jaw line and the knit and pleat detail fit in it at the near level of detail
+BUDGET = 75000
 
 
 def log(s):
@@ -145,12 +148,13 @@ def build(spec, P, out):
     log('face')
     head, ears, form, chin = FACE.build_head(J, spec)
     decals = FACE.build_decals(head, chin, form.u, atlas, spec)
-    log('hair')
-    H = HAIR.build_hair(spec, J, head, form, chin, atlas, bones, bvh_of([body, head]))
     log('clothes')
     if P.get('ease', 1.0) != 1.0:
         CLOTHES.EASE = P['ease']
     kit = CLOTHES.build_kit(spec, J, body, lab, tp, W, atlas, bones)
+    log('hair')
+    # after the clothes: long hair falls over the collar, the cardigan's back and the bag strap, not through them
+    H = HAIR.build_hair(spec, J, head, form, chin, atlas, bones, bvh_of([body, head] + [p.ob for p in kit.parts if p.layer <= 1 or 'strap' in p.ob.name]))
     # the body under tight garments goes
     hide = kit.hide
     import bmesh
@@ -227,6 +231,7 @@ def build(spec, P, out):
     trs = SKEL.local_trs(bones)
     springs = H.springs + kit.springs
     colliders = make_colliders(bones, J, spec)
+    rest_clear_skirt(springs, kit.skirt_panels, J, spec)
     palette_roles = {'skin': spec['skin'], 'hair': spec['hair']['colour']}
     palette_roles.update(kit.palette)
     return {
@@ -234,6 +239,34 @@ def build(spec, P, out):
         'trs': trs, 'springs': springs, 'colliders': colliders, 'info': info, 'role_id': role_id, 'palette_roles': palette_roles,
         'head_top': skull_top, 'chin': chin, 'form': form, 'base_quads': base_quads, 'unweighted_heat': unweighted,
     }
+
+
+def leg_capsules(J, spec):
+    """The thigh and calf capsules of make_colliders, in Blender space at rest: (a, b, radius)."""
+    s = spec['height'] / 1.54
+    g = spec['girth']
+    out = []
+    for side in ('L', 'R'):
+        th, cf, ft = J[f'Bip01_{side}_Thigh'], J[f'Bip01_{side}_Calf'], J[f'Bip01_{side}_Foot']
+        out.append((th + Vector((0, 0, -0.03 * s)), th.lerp(cf, 0.8), 0.062 * s * g))
+        out.append((cf, cf.lerp(ft, 0.6), 0.045 * s))
+    return out
+
+
+def rest_clear_skirt(springs, panels, J, spec):
+    """A skirt fitted close to the legs (a sheet's slim pleated skirt) must hang still at rest: each panel spring's
+    collision radius is cut to what clears the leg capsules at rest (its tip and middle), so the springs push a panel
+    only when a leg moves into it, not while she stands."""
+    caps = leg_capsules(J, spec)
+    for idx, at, tip in panels:
+        clear = 1.0
+        for p in (at + (tip - at) * 0.5, at + (tip - at) * 0.75, tip):
+            for a, b, r in caps:
+                ab = b - a
+                t = max(0.0, min(1.0, (p - a).dot(ab) / ab.length_squared))
+                clear = min(clear, (p - (a + ab * t)).length - r)
+        sp = springs[idx]
+        sp['radius'] = round(max(0.008, min(sp['radius'], clear - 0.004)), 4)
 
 
 def make_colliders(bones, J, spec):
@@ -353,6 +386,8 @@ def run_qa(B, out, sheet, poses):
     ids = q.ids()
     log('qa checks')
     q.silhouette(sheet)
+    q.colour_regions()
+    q.features(B['head_top'], B['chin'].z)
     q.proportions(B['head_top'], B['chin'].z, B['J']['Bip01_Pelvis'].z)
     q.palette(B['palette_roles'], ids, B['role_id'])
     q.topology(B['base_quads'])
@@ -426,10 +461,84 @@ def score(rep):
     for name, r in rep.get('interpenetration', {}).items():
         s += r['worst_share'] * 100 + r['worst_depth_mm'] * 0.2
     t = rep.get('triangles', 0)
-    s += max(0, t - 60000) / 1000
+    s += max(0, t - BUDGET) / 1000
     s += 10 * (1 - rep.get('silhouette_iou', {}).get('mean', 1))
     s += sum(e.get('delta_e', 0) for e in rep.get('palette', {}).values()) * 0.05
+    s += 0.1 * (rep.get('colour_regions') or {}).get('mean', 0)
+    s += 5 * sum(abs(v) for k, v in ((rep.get('features') or {}).get('delta_head_heights') or {}).items() if k != 'eye_size')
     return s
+
+
+def sheet_corrections(rep, P, spec):
+    """What the loop corrects from the feature check against the sheet: the face template's jaw and chin widths, the
+    fringe's length (the hairline), the hair's volume (its outer width at the cheeks). Each correction moves the
+    parameter by the measured ratio, so a second iteration lands close."""
+    f = rep.get('features') or {}
+    d = f.get('delta_head_heights') or {}
+    w = f.get('widths_head_heights') or {}
+    changed = False
+    fit = P.setdefault('face_fit', {})
+    for key, k in (('jaw_width', 'jaw'),):
+        if key in w and abs(d.get(key, 0)) > 0.015 and w[key]['ours'] > 0.02:
+            ratio = max(0.9, min(1.12, w[key]['sheet'] / w[key]['ours']))
+            fit[k] = round(max(0.85, min(1.2, fit.get(k, 1.0) * ratio)), 3)
+            changed = True
+    if abs(d.get('hairline', 0)) > 0.035 and spec['hair']['style'] in ('bob', 'long', 'ponytail'):
+        P['fringe_drop'] = round(max(-0.02, min(0.04, P.get('fringe_drop', 0.0) + d['hairline'] * spec['head_h'] * 0.9)), 4)
+        changed = True
+    if 'hair_width' in w and abs(d.get('hair_width', 0)) > 0.02 and w['hair_width']['ours'] > 0:
+        # the volume is the shell's push past the head; the width beyond the face's own half-width scales with it
+        face = 0.33
+        ratio = (w['hair_width']['sheet'] - face) / max(0.02, w['hair_width']['ours'] - face)
+        P['hair_volume'] = round(max(0.7, min(1.35, P.get('hair_volume', 1.0) * max(0.8, min(1.2, ratio)))), 3)
+        changed = True
+    return changed
+
+
+def apply_params(spec, P):
+    """The loop's parameters into the spec for one build."""
+    spec['face_fit'] = dict(P.get('face_fit', {}))
+    spec['fringe_drop'] = P.get('fringe_drop', 0.0)
+    if 'hair_volume_base' not in spec:
+        spec['hair_volume_base'] = spec['hair']['volume']
+    spec['hair']['volume'] = spec['hair_volume_base'] * P.get('hair_volume', 1.0)
+
+
+def sheet_fit(sheet, spec):
+    """What the build takes from the sheet before modelling (sheet.py): the skirt's extent by height in each view and
+    its hem, the face's features and the eyes' colours. Stored in spec['sheet_fit']; the stages use what they find."""
+    if not sheet:
+        return None
+    import sheet as SH
+    from common import linear_to_srgb as l2s
+    img = RENDER.load_image(sheet)[..., :3]
+    H = spec['height']
+    fit = {}
+    sk = next((o for o in spec['outfit'] if 'skirt' in o['item']), None)
+    if sk:
+        others = [[l2s(c) for c in o['rgb']] for o in spec['outfit'] if o is not sk and 'rgb' in o and 'sock' not in o['item']]
+        others.append([l2s(c) for c in spec['skin']])
+        prof = SH.skirt_profile(img, H, [l2s(c) for c in sk['rgb']], (0.12 * H, 0.66 * H), others)
+        if prof:
+            fit['skirt'] = prof
+    hems = {}
+    for o in spec['outfit']:
+        if any(k in o['item'] for k in ('cardigan', 'jacket', 'coat')):
+            others = [[l2s(c) for c in x['rgb']] for x in spec['outfit'] if x is not o and 'rgb' in x]
+            hm = SH.garment_hem(img, H, [l2s(c) for c in o['rgb']], (0.3 * H, 0.7 * H), others)
+            if hm:
+                hems[o['item']] = hm
+    if hems:
+        fit['hems'] = hems
+    vs, _ = SH.views(img)
+    vs = SH.pick_figures(vs)
+    if vs:
+        hh = spec['head_h']
+        hf = SH.head_features(SH.Figure(vs[0], H), H - hh, H, [l2s(c) for c in spec['skin']])
+        if hf:
+            fit['head'] = hf
+    log(f'sheet fit: skirt hem {fit.get("skirt", {}).get("hem")}, eyes {len(fit.get("head", {}).get("eyes", []))}')
+    return fit
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -445,6 +554,7 @@ def main():
     if sheet and not os.path.exists(sheet):
         sheet = None
     poses = motion_poses(spec['gender'], out)
+    spec['sheet_fit'] = sheet_fit(sheet, spec) or {}
     P = {'ease': 1.0, 'body_sub': 2}
     history = []
     if a.get('revise') and os.path.exists(a['revise']):
@@ -464,10 +574,11 @@ def main():
         return
     best = None
     iters = 0
-    for it in range(3):
+    for it in range(int(os.environ.get('AETHER_CHARACTER_ITERATIONS', '4'))):
         iters += 1
         log(f'iteration {iters}: {P}')
         CLOTHES.EASE = P['ease']
+        apply_params(spec, P)
         B = build(spec, P, out)
         rep = run_qa(B, out, sheet, poses)
         sc = score(rep)
@@ -482,8 +593,10 @@ def main():
         if any('interpenetration' in i and 'through skirt' not in i for i in rep['issues']) and P['ease'] < 2.0:
             P['ease'] = round(P['ease'] * 1.35, 3)
             fix = True
-        if rep.get('triangles', 0) > 60000 and P['body_sub'] > 1:
+        if rep.get('triangles', 0) > BUDGET and P['body_sub'] > 1:
             P['body_sub'] = 1
+            fix = True
+        if sheet_corrections(rep, P, spec):
             fix = True
         if not fix:
             break

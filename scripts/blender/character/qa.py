@@ -21,6 +21,7 @@ from mathutils import Vector
 from mathutils.bvhtree import BVHTree
 
 import render as R
+import sheet as SHEET
 import shading
 from common import delta_e, linear_to_srgb
 
@@ -55,77 +56,18 @@ def normalize_mask(m, h=256, w=192):
 
 
 def sheet_views(sheet):
-    """Split a turnaround sheet into figure masks (left to right) on its flat background."""
-    rgb = sheet[..., :3]
-    h, w = rgb.shape[:2]
-    # background: the most common colour of the border
-    border = np.concatenate([rgb[:8].reshape(-1, 3), rgb[-40:-30].reshape(-1, 3), rgb[:, :6].reshape(-1, 3), rgb[:, -6:].reshape(-1, 3)])
-    bg = np.median(border, 0)
-    diff = np.abs(rgb - bg).max(2)
-    bgm = diff <= 0.09
-    # guide lines and the floor line first (an opening of the non-background, 3 px): left in, they would close the gap
-    # between the legs into a hole the flood cannot reach
-    def _erode(m, k):
-        out = m.copy()
-        for d in range(1, k + 1):
-            out[d:] &= m[:-d]; out[:-d] &= m[d:]; out[:, d:] &= m[:, :-d]; out[:, :-d] &= m[:, d:]
-        return out
-    def _dilate(m, k):
-        out = m.copy()
-        for d in range(1, k + 1):
-            out[d:] |= m[:-d]; out[:-d] |= m[d:]; out[:, d:] |= m[:, :-d]; out[:, :-d] |= m[:, d:]
-        return out
-    bgm = ~_dilate(_erode(~bgm, 3), 3)
-    # the background is what floods in from the border; the rest (holes included) is figure
-    reach = np.zeros_like(bgm)
-    reach[0, :] = reach[-1, :] = reach[:, 0] = reach[:, -1] = True
-    reach &= bgm
-    for _ in range(4000):
-        grown = reach.copy()
-        grown[1:] |= reach[:-1]
-        grown[:-1] |= reach[1:]
-        grown[:, 1:] |= reach[:, :-1]
-        grown[:, :-1] |= reach[:, 1:]
-        grown &= bgm
-        if (grown == reach).all():
-            break
-        reach = grown
-    fg = ~reach
-    # thin guide lines and text out: an opening (3 px)
-    def erode(m, k):
-        out = m.copy()
-        for d in range(1, k + 1):
-            out[d:] &= m[:-d]; out[:-d] &= m[d:]; out[:, d:] &= m[:, :-d]; out[:, :-d] &= m[:, d:]
-        return out
-    def dilate(m, k):
-        out = m.copy()
-        for d in range(1, k + 1):
-            out[d:] |= m[:-d]; out[:-d] |= m[d:]; out[:, d:] |= m[:, :-d]; out[:, :-d] |= m[:, d:]
-        return out
-    fg = dilate(erode(fg, 3), 3)
-    # rows of the figures: below the top margin, above the label row
-    cols = fg.sum(0)
-    runs = []
-    on = False
-    for x, c in enumerate(cols):
-        if c > h * 0.08 and not on:
-            on, start = True, x
-        elif c <= h * 0.08 and on:
-            on = False
-            if x - start > w * 0.04:
-                runs.append((start, x))
-    if on and w - start > w * 0.04:
-        runs.append((start, w))
-    views = []
-    for x0, x1 in runs:
-        m = fg[:, max(0, x0 - 20):min(w, x1 + 20)].astype(float)
-        # keep the tallest connected vertical band (the figure), not the labels below it
-        rows = m.sum(1)
-        ys = np.where(rows > 2)[0]
-        if len(ys) == 0:
-            continue
-        views.append((m, (x0, x1), sheet[:, max(0, x0 - 20):min(w, x1 + 20), :3]))
-    return views, bg
+    """The sheet's three figures (front, her left side, back), edge-based (sheet.py): [(mask, (x0, x1), rgb, view)]."""
+    vs, bg = SHEET.views(sheet[..., :3])
+    vs = SHEET.pick_figures(vs)
+    return [(v['mask'], (v['x0'], v['x1']), v['rgb'], v) for v in vs], bg
+
+
+def render_figure(img):
+    """One of our renders as a sheet view (alpha is the mask)."""
+    m = img[..., 3] > 0.5
+    ys, xs = np.where(m)
+    return {'mask': m.astype(float), 'x0': 0, 'x1': img.shape[1], 'rgb': img[..., :3], 'top': int(ys.min()), 'floor': int(ys.max()),
+            'cx': float((m.sum(0) * np.arange(m.shape[1])).sum() / max(1, m.sum())), 'area': int(m.sum())}
 
 
 def iou(a, b):
@@ -230,12 +172,6 @@ class QA:
         self.sheet_views = views
         if len(views) < 3:
             self.issue(f'sheet: found {len(views)} figure views, expected 3 (front, side, back)')
-        if len(views) > 3:
-            # guides or extra figures: keep the three neighbouring views that match ours best
-            ours = [normalize_mask(self.views[n][..., 3]) for n in ('front', 'side', 'back')]
-            best = max(range(len(views) - 2), key=lambda i: sum(iou(ours[k], normalize_mask(views[i + k][0])) for k in range(3)))
-            views = views[best:best + 3]
-            self.sheet_views = views
         out = {}
         tiles = []
         for k, name in enumerate(('front', 'side', 'back')):
@@ -260,6 +196,113 @@ class QA:
                 self.issue(f'silhouette IoU against the sheet {out["mean"]:.2f} (< 0.80)')
         self.report['silhouette_iou'] = out
         return out
+
+    def colour_regions(self):
+        """Each view cut into a 12 x 4 grid of the figure's bounds; per cell our lit colour against the sheet's
+        (median, CIE delta E). A wrong colour role, a missing shadow or a part in the wrong place shows as a cell far
+        off."""
+        if not getattr(self, 'sheet_views', None):
+            return None
+        out = {}
+        # a model sheet is lit flat from the viewer: each view again with the preview sun turned with the camera, so a
+        # back in shadow is not counted as a wrong colour
+        lit = self.flat_views()
+        for k, name in enumerate(('front', 'side', 'back')):
+            if k >= len(self.sheet_views):
+                break
+            im = lit.get(name, self.views[name])
+            sm, _, srgb, _ = self.sheet_views[k]
+            cells, mean, worst = SHEET.colour_regions(im[..., :3], im[..., 3] > 0.5, srgb[..., :3], sm > 0.5)
+            if mean is None:
+                continue
+            out[name] = {'mean_delta_e': mean, 'worst': worst, 'over_15': sum(1 for c in cells if c['delta_e'] > 15), 'cells': len(cells)}
+        if out:
+            out['mean'] = round(float(np.mean([v['mean_delta_e'] for v in out.values()])), 1)
+            if out['mean'] > 12:
+                self.issue(f'colour regions against the sheet: mean delta E {out["mean"]} (> 12)')
+        self.report['colour_regions'] = out
+        return out
+
+    def flat_views(self):
+        import mathutils
+        mat = self.body.data.materials[0] if self.body.data.materials else None
+        dots = [n for n in mat.node_tree.nodes if n.type == 'VECT_MATH' and n.operation == 'DOT_PRODUCT'] if mat and mat.node_tree else []
+        if not dots:
+            return {}
+        d0 = mathutils.Vector(shading.SUN_DIR).normalized()
+        H = self.spec['height']
+        out = {}
+        for name, az in (('front', 0), ('side', 90), ('back', 180)):
+            d = mathutils.Matrix.Rotation(math.radians(az), 3, 'Z') @ d0
+            for n in dots:
+                n.inputs[1].default_value = d
+            out[name] = R.render_view(f'{self.out}/qa-flat.png', az, H, H / 2 + 0.01, ortho=H * 1.08, res=(640, 1280))
+        for n in dots:
+            n.inputs[1].default_value = d0
+        return out
+
+    def features(self, head_top, chin_z):
+        """The eyes, mouth and hairline found the same way on the sheet's front view and on ours (sheet.head_features);
+        their heights, the eyes' spacing and size and the jaw's width compared in head heights."""
+        if not getattr(self, 'sheet_views', None):
+            return None
+        H = self.spec['height']
+        skin = [linear_to_srgb(c) for c in self.spec['skin']]
+        hh = head_top - chin_z
+        theirs = SHEET.head_features(SHEET.Figure(self.sheet_views[0][3], H), chin_z, head_top, skin)
+        ours = SHEET.head_features(SHEET.Figure(render_figure(self.views['front']), H), chin_z, head_top, skin)
+        if not theirs or not ours:
+            return None
+        rep = {'sheet': {k: v for k, v in theirs.items() if k != 'profile'}, 'ours': {k: v for k, v in ours.items() if k != 'profile'}}
+        d = {}
+
+        def rel(z):
+            return (z - chin_z) / hh
+
+        if theirs['hairline_z'] and ours['hairline_z']:
+            d['hairline'] = round(float(rel(ours['hairline_z']) - rel(theirs['hairline_z'])), 3)
+        if theirs['mouth_z'] and ours['mouth_z']:
+            d['mouth'] = round(float(rel(ours['mouth_z']) - rel(theirs['mouth_z'])), 3)
+        if len(theirs['eyes']) == 2 and len(ours['eyes']) == 2:
+            d['eye_height'] = round(float(np.mean([rel(e['z']) for e in ours['eyes']]) - np.mean([rel(e['z']) for e in theirs['eyes']])), 3)
+            sp = lambda es: abs(es[0]['x'] - es[1]['x']) / hh
+            d['eye_spacing'] = round(float(sp(ours['eyes']) - sp(theirs['eyes'])), 3)
+            size = lambda f: np.sqrt(np.mean([e['px'] for e in f['eyes']])) / max(1, f['head_px'])
+            d['eye_size'] = round(float(size(ours) - size(theirs)), 3)
+        elif len(theirs['eyes']) == 2:
+            self.issue(f'features: found {len(ours["eyes"])} eyes on our front view')
+
+        def band(p, z0, z1):
+            rows = [min(l, r) for z, l, r in p['profile'] if chin_z + hh * z0 < z < chin_z + hh * z1]
+            return float(np.median(rows)) / hh if rows else None
+
+        widths = {}
+        for key, (z0, z1) in (('jaw_width', (0.1, 0.3)), ('chin_width', (0.02, 0.1))):
+            ja, jb = band(ours, z0, z1), band(theirs, z0, z1)
+            if ja and jb:
+                d[key] = round(ja - jb, 3)
+                widths[key] = {'ours': round(ja, 3), 'sheet': round(jb, 3)}
+        rep['widths_head_heights'] = widths
+        # the hair's outer half-width at the cheeks (front view), against the sheet's (the volume)
+        def outer(f, zz):
+            y = f.row(zz)
+            a, b = SHEET.row_run(f.m[y], f.cx)
+            return max(f.cx - a, b - f.cx) * f.k / hh if b > a else None
+        fo = SHEET.Figure(render_figure(self.views['front']), H)
+        fs = SHEET.Figure(self.sheet_views[0][3], H)
+        ho = [outer(fo, chin_z + hh * t) for t in (0.45, 0.6, 0.75)]
+        hs = [outer(fs, chin_z + hh * t) for t in (0.45, 0.6, 0.75)]
+        if all(ho) and all(hs):
+            d['hair_width'] = round(float(np.mean(ho) - np.mean(hs)), 3)
+            widths['hair_width'] = {'ours': round(float(np.mean(ho)), 3), 'sheet': round(float(np.mean(hs)), 3)}
+        rep['delta_head_heights'] = d
+        for k2, v in d.items():
+            if k2 == 'eye_size':
+                continue   # the blob's size depends on the painting's darks: reported, not judged
+            if abs(v) > 0.06:
+                self.issue(f'features: {k2} off the sheet by {v:+.2f} head heights')
+        self.report['features'] = rep
+        return rep
 
     def proportions(self, head_top, chin_z, hip_z):
         H = self.spec['height']
@@ -308,7 +351,7 @@ class QA:
                 # the same place on the sheet's front view
                 ys, xs = np.where(m)
                 bb = mask_bbox(front[..., 3])
-                sm, (sx0, sx1), srgb = self.sheet_views[0]
+                sm, (sx0, sx1), srgb, _ = self.sheet_views[0]
                 sbb = mask_bbox(sm)
                 if bb and sbb:
                     k = (sbb[3] - sbb[1]) / max(1, bb[3] - bb[1])
@@ -339,7 +382,7 @@ class QA:
              'shape_keys': [k.name for k in me.shape_keys.key_blocks[1:]] if me.shape_keys else []}
         self.report['topology'] = t
         self.report['triangles'] = tris
-        lo, hi = (30000, 60000) if self.spec['style'] == 'anime' else (30000, 80000)
+        lo, hi = (30000, 75000) if self.spec['style'] == 'anime' else (30000, 80000)
         if tris > hi:
             self.issue(f'budget: {tris} triangles (over {hi})')
         if loose:

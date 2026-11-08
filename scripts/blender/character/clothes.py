@@ -59,6 +59,7 @@ class Kit:
             'hip': J['Bip01_Pelvis'].z, 'knee': J['Bip01_L_Calf'].z, 'ankle': J['Bip01_L_Foot'].z,
         }
         self.outer_bvh = None
+        self.skirt_panels = []   # (spring index, attach point, hem point) in Blender space at rest
 
     # --- helpers ---------------------------------------------------------------------------------------------------
     def weights_at(self, p, trunk=False):
@@ -101,21 +102,27 @@ class Kit:
             lay = bm.verts.layers.int.new('reg')
             for v, src in zip(bm.verts, used):
                 v[lay] = code[str(self.lab[src])]
-            for co, no, regions in cuts:
+            for cut in cuts:
+                co, no, regions = cut[:3]
+                pred = cut[3] if len(cut) > 3 else None
                 ok = {code[n] for n in names if n.startswith(regions)}
-                faces_r = [f for f in bm.faces if any(v[lay] in ok for v in f.verts)]
+                faces_r = [f for f in bm.faces if any(v[lay] in ok for v in f.verts) and (pred is None or pred(f.calc_center_median()))]
                 if not faces_r:
                     continue
                 geom = list({e for f in faces_r for e in f.edges}) + faces_r + list({v for f in faces_r for v in f.verts})
-                _bm.ops.bisect_plane(bm, geom=geom, plane_co=co, plane_no=no, clear_outer=True)
+                split_only = len(cut) > 4 and cut[4] == 'split'
+                _bm.ops.bisect_plane(bm, geom=geom, plane_co=co, plane_no=no, clear_outer=not split_only)
                 _bm.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
+            # the cuts leave slivers where two planes meet near a face corner: gone, or the solidify's even offset
+            # throws a vertex a metre out of them
+            _bm.ops.dissolve_degenerate(bm, dist=0.0008, edges=bm.edges[:])
             bm.to_mesh(ob.data)
             bm.free()
         if solid > 0:
             m = ob.modifiers.new('solid', 'SOLIDIFY')
             m.thickness = solid
             m.offset = -1
-            m.use_even_offset = True
+            m.use_even_offset = not cuts or len(cuts) <= 3
             apply_modifiers(ob)
         uv = self.atlas.swatch(swatch[0], swatch[1])
         self.palette[swatch[0]] = swatch[1]
@@ -176,10 +183,25 @@ class Kit:
         long_sleeves = 'long' in sleeves
         collar = self.has('collar')
         neck_v = z['chest'] - 0.005 * s if collar else z['neck'] - 0.03 * s
-        open_front = outer and it.get('open', True)
+        under = self.has('blouse', 't-shirt', 'shirt', 'sweater')
+        inner_short = bool(under) and 'long' not in str(under.get('sleeves', 'short'))
+        over = self.has('cardigan', 'jacket', 'coat')
+        v_under = bool(over) and ('button' in str(over.get('front', '')) or 'closed' in str(over.get('front', '')))
+        front_kind = str(it.get('front', ''))
+        buttoned = outer and ('button' in front_kind or 'closed' in front_kind or it.get('open') is False)
+        open_front = outer and not buttoned and it.get('open', True)
+        # a buttoned cardigan's V: from its first button under the chest up to the neck at the collarbones
+        v_bottom = z['chest'] - 0.012 * s
+        v_slope = (z['neck'] - v_bottom) / (0.058 * s)
+        skirt_bvh = getattr(self, 'skirt_bvh', None) if outer else None
         hem = z['waist'] - 0.05 * s if not outer else z['hip'] + 0.01 * s
+        if outer and ('jacket' in it['item'] or 'coat' in it['item']):
+            hem = z['hip'] - 0.06 * s   # a work jacket covers the seat
         if self.has('trousers') and not outer:
             hem = z['hip'] - 0.03 * s
+        fh = ((self.spec.get('sheet_fit') or {}).get('hems') or {}).get(it['item'])
+        if fh is not None and abs(fh - hem) < 0.2 * s:
+            hem = fh
         if outer and not long_sleeves:
             sl = 0.55
         else:
@@ -199,10 +221,18 @@ class Kit:
                     # neckline: a V to the collar's knot, a scoop for a T-shirt
                     # a sailor blouse closes high under its collar (the collar's lapels make the V)
                     lim = z['neck'] - 0.012 * s + 0.5 * abs(p[0]) if collar else z['neck'] - 0.022 * s + 0.6 * abs(p[0])
+                    if not outer and not collar and v_under:
+                        # a crew neck under a V-necked cardigan: high, so the V shows the shirt up to the collarbones
+                        lim = z['neck'] - 0.006 * s + 0.9 * abs(p[0])
+                    if buttoned:
+                        # kept up to a T-shirt's neckline: the V's two plane cuts trim it (the body's faces are too
+                        # coarse at the front for a vertex test to draw a clean V)
+                        lim = z['neck'] - 0.01 * s + 0.6 * abs(p[0])
                     if p[2] > lim:
                         return False
-                    # an open cardigan: the fronts stand apart down to the hem, the V widening to the neck
-                    if open_front and abs(p[0]) < 0.034 * s + max(0, (p[2] - z['chest'] + 0.04 * s) * 0.55):
+                    # an open front: the fronts stand apart down to the hem, the V widening to the neck (kept a
+                    # little wide here; two plane cuts a side trim the edge clean)
+                    if open_front and abs(p[0]) < 0.012 * s + max(0, (p[2] - z['chest'] + 0.04 * s) * 0.4):
                         return False
                 else:
                     if p[2] > z['neck'] - 0.004 * s and abs(p[0]) < 0.05 * s:
@@ -225,9 +255,30 @@ class Kit:
                 o += 0.019 * s * min(1.0, self.tp[i] / sl) ** 1.3
             if lab.startswith(('upperarm', 'forearm')) and long_sleeves:
                 o += 0.006 * s
+            if outer and lab.startswith('upperarm') and inner_short:
+                # over a T-shirt's short sleeve: clear its flared end
+                o += 0.022 * s * smoothstep(0.1, 0.45, self.tp[i])
             if lab == 'torso' or lab.startswith('thigh'):
                 # looser below the chest, the blouse hanging over the waist
                 o += 0.011 * s * smoothstep(z['chest'], z['waist'] - 0.03 * s, p[2])
+            if skirt_bvh is not None and p[2] < z['waist'] + 0.06 * s:
+                # a cardigan worn over the skirt: its lower part clears the skirt's waist and hips
+                n = Vector(self.nrm[i])
+                start = Vector(p) + n * 0.0005
+                far = None
+                for _ in range(4):
+                    hit = skirt_bvh.ray_cast(start, n, 0.1)
+                    if hit[0] is None:
+                        break
+                    far = (hit[0] - Vector(p)).length
+                    start = hit[0] + n * 0.0005
+                if far is not None:
+                    # the pleats' outer faces vary around the hips: their outermost, plus the knit's own thickness
+                    o = max(o, (far + 0.006 * s) / EASE)
+                # where the waist curves in, a ray along the normal can miss the waistband: the nearest point too
+                loc, _, _, dn = skirt_bvh.find_nearest(Vector(p), 0.08)
+                if loc is not None:
+                    o = max(o, (dn + 0.007 * s) / EASE)
             return o
 
         name = 'outer' if outer else 'top'
@@ -242,8 +293,107 @@ class Kit:
                 reg = f'upperarm_{side}'
             d = (b - a).normalized()
             cuts.append((tuple(a.lerp(b, sl)), tuple(d), (reg,)))
+        if open_front:
+            cuts.append(((0, 0, 0), (1, 0, 0), ('torso', 'thigh'), (lambda c: c.y < -0.02 * s), 'split'))
+            zc = z['chest'] - 0.04 * s
+            for sx in (1, -1):
+                # below the chest: nearly straight, 3 cm off the middle at the hem, 4.5 cm at the chest
+                a0 = Vector((sx * 0.03 * s, 0, hem))
+                a1 = Vector((sx * 0.045 * s, 0, zc))
+                d = (a1 - a0).normalized()
+                n = Vector((-d.z, 0, d.x)) * sx * -1 if sx > 0 else Vector((d.z, 0, -d.x)) * -1
+                if n.x * sx > 0:
+                    n = -n
+                cuts.append((tuple(a0), tuple(n), ('torso', 'thigh'), (lambda c, sx=sx: c.y < -0.02 * s and c.x * sx > 0 and c.z < zc + 0.01 * s)))
+                # above: the lapel's V to the neck
+                b1 = Vector((sx * 0.075 * s, 0, z['neck'] - 0.01 * s))
+                d = (b1 - a1).normalized()
+                n = Vector((-d.z, 0, d.x))
+                if n.x * sx > 0:
+                    n = -n
+                cuts.append((tuple(a1), tuple(n), ('torso',), (lambda c, sx=sx: c.y < -0.02 * s and c.x * sx > 0 and c.z > zc - 0.01 * s)))
+        if buttoned:
+            # the V's two edges as clean plane cuts on the front, each limited to its own side of a first split down the
+            # middle (a cut's cleared vertices would otherwise take the faces across the middle with them)
+            cuts.append(((0, 0, 0), (1, 0, 0), ('torso',), (lambda c: c.y < -0.02 * s and c.z > v_bottom - 0.03 * s), 'split'))
+            for sx in (1, -1):
+                dv = Vector((sx * 0.058 * s, 0, z['neck'] - v_bottom)).normalized()
+                nv = Vector((-dv.z * sx, 0, dv.x * sx)) if sx > 0 else Vector((dv.z, 0, -dv.x))
+                if nv.z < 0:
+                    nv = -nv
+                cuts.append(((0, 0, v_bottom), tuple(nv), ('torso',), (lambda c, sx=sx: c.y < -0.02 * s and c.x * sx > 0 and c.z > v_bottom - 0.03 * s)))
         ob = self.extract(name, select, offset, (it['item'].split()[0], colour), layer=layer, hide_margin=None if outer else 0.035 * s, cuts=cuts)
+        if outer and ('rib' in str(it.get('cuffs', '')) or 'cardigan' in it['item'] or it.get('hem_band')):
+            # knit: a ribbed band at the hem and the cuffs (each face of the band shows three ribs)
+            P.paint_rib(self.atlas, f'{name}_rib', colour)
+            arms = []
+            for side in ('L', 'R'):
+                a, b = (self.J[f'Bip01_{side}_Forearm'], self.J[f'Bip01_{side}_Hand']) if long_sleeves else (self.J[f'Bip01_{side}_UpperArm'], self.J[f'Bip01_{side}_Forearm'])
+                arms.append((a.lerp(b, sl), (b - a).normalized()))
+            rib_band(ob, self.atlas, f'{name}_rib', hem, 0.03 * s, arms, 0.022 * s)
+        if buttoned:
+            self.buttons(ob, it, v_bottom, hem)
+        if outer and it.get('pockets'):
+            self.pockets(ob, it, hem)
         return ob
+
+    def buttons(self, ob, it, top_z, hem):
+        """Buttons down a closed front: small domed discs on the garment's surface, from the V's bottom to the hem."""
+        s = self.s
+        bvh = BVHTree.FromObject(ob, bpy.context.evaluated_depsgraph_get())
+        col = P.parse_colour(it.get('button_colour', '#efe8da'))
+        n = int(it.get('buttons', 5))
+        for k in range(n):
+            zz = lerp(top_z - 0.004 * s, hem + 0.022 * s, k / max(1, n - 1))
+            hit = bvh.ray_cast(Vector((0, -0.5, zz)), Vector((0, 1, 0)), 1.0)
+            if hit[0] is None:
+                continue
+            c = hit[0]
+            nrm = hit[1] if hit[1].y < 0 else -hit[1]
+            bm = bmesh.new()
+            bmesh.ops.create_uvsphere(bm, u_segments=8, v_segments=4, radius=1)
+            q = nrm.to_track_quat('Z', 'Y')
+            for v in bm.verts:
+                x, y, zv = v.co
+                v.co = c + q @ Vector((x * 0.0052 * s, y * 0.0052 * s, (zv * 0.0016 + 0.0016) * s))
+            me = bpy.data.meshes.new(f'button{k}')
+            bm.to_mesh(me)
+            bm.free()
+            b = bpy.data.objects.new(f'button{k}', me)
+            bpy.context.scene.collection.objects.link(b)
+            shade_smooth(b)
+            self.flat_part(b, ('button', col), toon=(0.5, 0.1, 1.0, 0.0), bones='nearest', layer=3)
+
+    def pockets(self, ob, it, hem):
+        """Patch pockets on the lower front: plates cast onto the garment and stood off it, the garment's colour."""
+        s = self.s
+        bvh = BVHTree.FromObject(ob, bpy.context.evaluated_depsgraph_get())
+        col = it['rgb']
+        for sx in (1, -1):
+            cx = sx * 0.058 * s
+            w, h = 0.05 * s, 0.05 * s
+            z0 = hem + 0.03 * s
+            nu, nv = 6, 5
+            verts, faces = [], []
+            for j in range(nv + 1):
+                for i in range(nu + 1):
+                    x = cx + (i / nu - 0.5) * w
+                    zz = z0 + j / nv * h
+                    hit = bvh.ray_cast(Vector((x, -0.5, zz)), Vector((0, 1, 0)), 1.0)
+                    p = hit[0] + (hit[1] if hit[1].y < 0 else -hit[1]) * 0.0022 * s if hit[0] is not None else Vector((x, -0.1, zz))
+                    verts.append(p)
+            for j in range(nv):
+                for i in range(nu):
+                    a = j * (nu + 1) + i
+                    faces.append((a, a + 1, a + nu + 2, a + nu + 1))
+            pk = new_object(f'pocket{sx}', verts, faces)
+            shade_smooth(pk)
+            m = pk.modifiers.new('solid', 'SOLIDIFY')
+            m.thickness = 0.0016 * s
+            m.offset = -1
+            apply_modifiers(pk)
+            self.flat_part(pk, ('pocket', tuple(min(1.0, c * 1.04) for c in col)), toon=(0.8, 0.0, 1.0, 0.0), bones='nearest', layer=3)
+            self.palette.pop('pocket', None)
 
     def has(self, *names):
         for o in self.spec['outfit']:
@@ -376,7 +526,7 @@ class Kit:
         bmesh.ops.create_uvsphere(bm, u_segments=12, v_segments=8, radius=1)
         for v in bm.verts:
             x, y, zz = v.co
-            v.co = c + Vector((x * 0.022 * s, y * 0.006 * s - 0.003 * s, zz * 0.016 * s))
+            v.co = c + Vector((x * 0.028 * s, y * 0.009 * s - 0.004 * s, zz * 0.02 * s))
         me = bpy.data.meshes.new('knot')
         bm.to_mesh(me)
         bm.free()
@@ -387,7 +537,7 @@ class Kit:
         # two tails, splayed, pointed, on springs
         for side, sx in (('L', 1), ('R', -1)):
             root = c + Vector((sx * 0.006 * s, -0.004 * s, -0.008 * s))
-            pts = [root, root + Vector((sx * 0.014, -0.006, -0.04)) * s, root + Vector((sx * 0.026, -0.006, -0.085)) * s, root + Vector((sx * 0.034, -0.004, -0.12)) * s]
+            pts = [root, root + Vector((sx * 0.016, -0.007, -0.045)) * s, root + Vector((sx * 0.028, -0.007, -0.095)) * s, root + Vector((sx * 0.036, -0.005, -0.135)) * s]
             pts = [self.clear(p, 0.008 * s) for p in pts]
             add_secondary(self.bones, f'Tie_{side}', 'Bip01_Spine2', b2g_point(root + Vector((0, -0.002, -0.01)) * 1.0))
             tipd = b2g_point(pts[-1] - (root + Vector((0, -0.002, -0.01))))
@@ -397,23 +547,26 @@ class Kit:
             for i in range(nl + 1):
                 t = i / nl
                 p = catmull(pts, t)
-                w = (0.024 * s) * (0.5 + 0.7 * math.sin(min(1, t * 1.4) * math.pi * 0.5)) * (1 - smoothstep(0.75, 1.0, t) * 0.95)
+                # wide tails that open from the knot, with a soft fold down the middle (the ring's front edge pulled in)
+                w = (0.034 * s) * (0.45 + 0.75 * math.sin(min(1, t * 1.4) * math.pi * 0.5)) * (1 - smoothstep(0.78, 1.0, t) * 0.95)
                 across = Vector((1, 0, 0.35 * sx)).normalized()
                 th = 0.0025 * s
-                ring = [p + across * w / 2, p - Vector((0, th, 0)), p - across * w / 2, p + Vector((0, th, 0))]
+                fold = 0.004 * s * math.sin(min(1.0, t * 1.2) * math.pi)
+                ring = [p + across * w / 2, p - Vector((0, th - fold * 0.5, 0)) + across * w * 0.12, p - Vector((0, th, 0)) - across * w * 0.15, p - across * w / 2,
+                        p + Vector((0, th + fold, 0)) - across * w * 0.1, p + Vector((0, th, 0)) + across * w * 0.18]
                 verts += ring
             for i in range(nl):
-                for k in range(4):
-                    a = i * 4 + k
-                    b = i * 4 + (k + 1) % 4
-                    faces.append((a, b, b + 4, a + 4))
-            faces.append((3, 2, 1, 0))
+                for k in range(6):
+                    a = i * 6 + k
+                    b = i * 6 + (k + 1) % 6
+                    faces.append((a, b, b + 6, a + 6))
+            faces.append((5, 4, 3, 2, 1, 0))
             ob = new_object(f'tie-{side}', verts, faces)
             shade_smooth(ob)
             wts = []
             for i in range(nl + 1):
                 t = i / nl
-                wts += [{'Bip01_Spine2': 1 - smoothstep(0.0, 0.3, t), f'Tie_{side}': smoothstep(0.0, 0.3, t)}] * 4
+                wts += [{'Bip01_Spine2': 1 - smoothstep(0.0, 0.3, t), f'Tie_{side}': smoothstep(0.0, 0.3, t)}] * 6
             groups(ob, wts)
             p = self.flat_part(ob, ('tie', col), toon=(0.9, 0.05, 1.0, 0.0), bones='groups', layer=3)
 
@@ -428,6 +581,37 @@ class Kit:
         return p
 
     # --- skirt -------------------------------------------------------------------------------------------------------
+    def skirt_fit(self):
+        """The sheet's skirt (build.sheet_fit): its hem and, by height, the half-width of the front and back views and
+        the half-depth of the side view, smoothed (a median over 5 cm, then a running mean) and robust to what hangs
+        over it (a bag or a hand on one side: the wider side counts)."""
+        f = (self.spec.get('sheet_fit') or {}).get('skirt')
+        if not f or len(f.get('front', [])) < 8 or len(f.get('side', [])) < 8:
+            return None
+
+        def series(rows, fn):
+            zs = np.array([r[0] for r in rows])
+            vs = np.array([fn(r) for r in rows])
+            order = np.argsort(zs)
+            zs, vs = zs[order], vs[order]
+            med = np.array([np.median(vs[max(0, i - 2):i + 3]) for i in range(len(vs))])
+            sm = np.convolve(np.pad(med, 2, mode='edge'), np.ones(5) / 5, 'valid')
+            return zs, sm
+
+        fz, fw = series(f['front'], lambda r: max(-r[1], r[2]))
+        if f.get('back'):
+            bz, bw = series(f['back'], lambda r: max(-r[1], r[2]))
+            # front and back views see the same width: the larger where both show it (a bag or arm hides one side)
+            fw = np.maximum(fw, np.interp(fz, bz, bw, left=0, right=0))
+        sz, sd = series(f['side'], lambda r: (r[2] - r[1]) / 2)
+
+        def interp(zz_, zs_, vs_):
+            if zz_ < zs_[0] - 0.01 or zz_ > zs_[-1] + 0.01:
+                return None
+            return float(np.interp(zz_, zs_, vs_))
+
+        return {'hem': float(f['hem']), 'half_width': lambda zz: interp(zz, fz, fw), 'half_depth': lambda zz: interp(zz, sz, sd)}
+
     def skirt(self, it):
         s = self.s
         z = self.z
@@ -437,6 +621,10 @@ class Kit:
         N = int(it.get('pleats', 12))
         length = str(it.get('length', 'knee'))
         hem = {'knee': z['knee'] + 0.08 * s, 'mid-calf': lerp(z['knee'], z['ankle'], 0.5), 'long': z['ankle'] + 0.1 * s, 'mini': z['knee'] + 0.15 * s}.get(length, z['knee'] + 0.045 * s)
+        fit = self.skirt_fit()
+        if fit and abs(fit['hem'] - hem) < 0.16 * s:
+            # the sheet's hem (its pleat points are the lowest row it shows; the faces' mean line is a little higher)
+            hem = fit['hem'] + 0.008 * s
         top = z['waist'] - 0.012 * s
         hipz = z['hip'] - 0.01 * s
         m = 6 if N <= 16 else 4
@@ -461,6 +649,7 @@ class Kit:
         # smooth around
         for _ in range(4):
             env = (np.roll(env, 1, 1) + 2 * env + np.roll(env, -1, 1)) / 4
+        env_clear = env.copy()
         # an A-line: per azimuth the straight line from the waist that clears the envelope everywhere below (the
         # pleats fall straight from the hips instead of belling out over them)
         tz = np.array([(top - zz) / max(1e-6, top - hem) for zz in zs])
@@ -474,14 +663,39 @@ class Kit:
         env = np.maximum(env, env[0][None, :] + tt[:, None] * slope[None, :])
         ease = 0.009 * s * EASE
         flare_k = 0.02 if length in ('knee', 'mini') else 0.03
+        pleat_depth = 0.017 * s * float(it.get('pleat_depth', 1.0))
+        target = None
+        if fit:
+            # fitted to the sheet: per height the ellipse through its front half-width and side half-depth; the outer
+            # faces of the pleats lie on it (the body's clearance still wins where the sheet is narrower)
+            target = np.zeros((rows + 1, na))
+            have = np.zeros(rows + 1, bool)
+            for r, zz in enumerate(zs):
+                a_, b_ = fit['half_width'](zz), fit['half_depth'](zz)
+                if a_ is None or b_ is None:
+                    continue
+                have[r] = True
+                for k, th in enumerate(thetas):
+                    target[r, k] = 1.0 / math.sqrt((math.sin(th) / a_) ** 2 + (math.cos(th) / b_) ** 2)
+            # rows the sheet does not show (under a cardigan's hem) blend from the body's envelope
+            if have.any():
+                first = int(np.argmax(have))
+                for r in range(first):
+                    target[r] = env_clear[r] + ease + pleat_depth
+                    have[r] = True
+            else:
+                target = None
+            flare_k = 0.0
         verts, uvs, wts = [], [], []
         for r, zz in enumerate(zs):
             below = max(0.0, hipz - zz)
             # knife pleats: each pleat's face steps out across its width and folds back under the next one at its edge
-            depth = 0.017 * s * smoothstep(hipz + 0.03 * s, hipz - 0.1 * s, zz)
+            depth = pleat_depth * smoothstep(hipz + 0.03 * s, hipz - 0.1 * s, zz)
             for k in range(na):
                 j = k % m
                 base = env[r, k] + ease + below * flare_k + 0.006 * s * smoothstep(hipz, hipz - 0.1 * s, zz)
+                if target is not None and target[r, k] > 0:
+                    base = max(env_clear[r, k] + ease, target[r, k] - depth)
                 saw = (j / (m - 1)) * depth   # out from the envelope: the tucked end of a pleat still clears the body
                 rr = base + saw
                 th = thetas[k]
@@ -506,10 +720,13 @@ class Kit:
             nm = f'Skirt_{k}'
             add_secondary(self.bones, nm, 'Bip01_Pelvis', b2g_point(at))
             ri = env[-1, kk] + ease + (hipz - hem) * flare_k
+            if target is not None and target[-1, kk] > 0:
+                ri = max(env_clear[-1, kk] + ease, target[-1, kk] - pleat_depth / 2)
             tip = Vector((math.sin(th) * ri, cy - math.cos(th) * ri, hem))
             # front and back panels swing far enough to ride over a striding thigh; the sides less
             fb = abs(math.cos(th))
             self.springs.append({'name': f'skirt{k}', 'bones': [nm], 'tip': b2g_point(tip - at), 'stiffness': 0.34, 'drag': 0.24, 'gravity': 0.2, 'radius': 0.024, 'limit': round(0.75 + 0.6 * fb, 3)})
+            self.skirt_panels.append((len(self.springs) - 1, at.copy(), tip.copy()))
             names.append(nm)
         th_x = abs(self.J['Bip01_L_Thigh'].x)
         # the crossfade between the thighs: narrow for a knee-length skirt, wide for a long one (whose middle hangs)
@@ -580,6 +797,7 @@ class Kit:
         msol.offset = -1
         apply_modifiers(bob)
         self.flat_part(bob, ('skirt_band', tuple(c * 0.85 for c in col)), toon=(0.9, 0.0, 1.0, 0.0), bones='torso', layer=2)
+        self.skirt_band = bob
         self.palette.pop('skirt_band', None)
         # the body under the skirt's waist is covered
         self.cover(np.array([self.lab[i] == 'torso' and top - 0.02 * s < self.co[i][2] < top + 0.03 * s for i in range(len(self.co))]), 0.0)
@@ -591,8 +809,9 @@ class Kit:
         z = self.z
         h = str(it.get('height', 'mid-calf'))
         top = {'ankle': z['ankle'] + 0.05 * s, 'mid-calf': lerp(z['knee'], z['ankle'], 0.7), 'knee': z['knee'] - 0.03 * s}.get(h, lerp(z['knee'], z['ankle'], 0.7))
+        # (no thickness: a sock lies on the skin and its top is the only edge seen; it halves its triangles)
         self.extract('socks', lambda i: self.region(i, 'calf', 'foot') and self.co[i][2] < top,
-                     lambda i: 0.0018 * s + 0.0015 * s * smoothstep(top - 0.02 * s, top, self.co[i][2]), ('socks', it['rgb']), layer=0, solid=0.0012, toon=(0.8, 0.0, 1.0, 0.0), hide_margin=0.02 * s)
+                     lambda i: 0.0018 * s + 0.0015 * s * smoothstep(top - 0.02 * s, top, self.co[i][2]), ('socks', it['rgb']), layer=0, solid=0.0, toon=(0.8, 0.0, 1.0, 0.0), hide_margin=0.02 * s)
 
     def trousers(self, it):
         s = self.s
@@ -609,11 +828,19 @@ class Kit:
                 return p[2] > bottom
             return self.lab[i] == 'torso' and p[2] < top
 
+        loose = 'tight' not in str(it.get('fit', ''))
+
         def off(i):
             p = self.co[i]
             o = 0.009 * s
             if self.region(i, 'calf'):
                 o += 0.012 * s * smoothstep(z['knee'], bottom, p[2])
+            if loose:
+                # work trousers hang straight from the seat: more ease down the thigh, most at the knee and shin
+                if self.region(i, 'thigh'):
+                    o += 0.012 * s * smoothstep(z['hip'], z['knee'], p[2])
+                elif self.region(i, 'calf'):
+                    o += 0.012 * s + 0.01 * s * smoothstep(z['knee'], bottom, p[2])
             return o
         self.extract('trousers', sel, off, ('trousers', it['rgb']), layer=1, toon=(1.0, 0.0, 1.0, 0.0), hide_margin=0.03 * s)
 
@@ -675,11 +902,47 @@ class Kit:
             subdivide(ob, 1)
             shade_smooth(ob)
             self.flat_part(ob, (kind, col), toon=(1.0, 0.0, 1.0, 0.0), bones='nearest', layer=2)
+            # painted upper: u along the shoe (heel 0 .. toe 1), v around it from the sole; a glossy leather's highlight
+            # along the top of the vamp, canvas' fine weave and its seams
+            P.paint_shoe(self.atlas, f'shoe_{kind}', col, kind)
+            self.palette[kind] = col
+            map_along(ob, self.atlas, f'shoe_{kind}', heel, fwd, L, sole_h, max(hh for hh in [0.09 * s]))
             v, f = loft(sole_v, cap_start=True, cap_end=True)
             ob = new_object(f'sole-{side}', v, f)
             shade_smooth(ob)
             self.flat_part(ob, (kind + '_sole', sole), toon=(1.0, 0.0, 1.0, 0.0), bones='nearest', layer=2)
             self.palette.pop(kind + '_sole', None)
+            if kind == 'sneakers':
+                # the sole's foxing stripe (painted), a rubber toe cap, the laces over the vamp and the tongue
+                P.paint_stripes(self.atlas, 'sole_stripe', sole, tuple(c * 0.35 for c in sole), lines=1)
+                map_height(ob, self.atlas, 'sole_stripe', 0.0, sole_h * 1.05)
+                cap_rings = []
+                for i in range(int(0.8 * ns), ns + 1):
+                    ring = upper[i]
+                    c0 = sum(ring, Vector()) / len(ring)
+                    cap_rings.append([c0 + (q - c0) * 1.06 for k, q in enumerate(ring) if math.sin(2 * math.pi * k / nr) < 0.15])
+                vv, ff = loft(cap_rings, closed=False)
+                cap = new_object(f'toecap-{side}', vv, ff)
+                cap.modifiers.new('s', 'SOLIDIFY').thickness = 0.0015 * s
+                apply_modifiers(cap)
+                shade_smooth(cap)
+                self.flat_part(cap, (kind + '_sole', sole), toon=(0.9, 0.0, 1.0, 0.0), bones='nearest', layer=3)
+                self.palette.pop(kind + '_sole', None)
+                lace = P.parse_colour(it.get('lace_colour', '#f4f2ee'))
+                top_of = lambda i: max(upper[i], key=lambda q: q.z)
+                for j in range(5):
+                    t = 0.44 + 0.07 * j
+                    i = int(t * ns)
+                    ring = upper[i]
+                    tp = top_of(i)
+                    w = (max(q.dot(right) for q in ring) - min(q.dot(right) for q in ring)) * 0.32
+                    for sgn in (1, -1):
+                        a_ = tp - right * w * sgn + Vector((0, 0, -0.004 * s))
+                        b_ = tp + right * w * sgn + fwd * 0.018 * s + Vector((0, 0, -0.002 * s))
+                        self.bar(f'lace-{side}{j}{sgn}', a_, b_, 0.0022 * s, ('lace', lace), 3)
+                self.palette.pop('lace', None)
+                tg = top_of(int(0.4 * ns))
+                tongue = self.bar(f'tongue-{side}', tg + Vector((0, 0, -0.006 * s)), tg - fwd * 0.012 * s + Vector((0, 0, 0.012 * s)), 0.009 * s, (kind, col), 3, flat=0.35)
             if kind == 'loafers':
                 # the penny strap across the vamp
                 band = []
@@ -702,6 +965,26 @@ class Kit:
             topb = lerp(self.z['knee'], self.z['ankle'], 0.45)
             self.extract('boot-shaft', lambda i: self.region(i, 'calf', 'foot') and self.co[i][2] < topb and self.co[i][2] > 0.03 * s,
                          lambda i: 0.022 * s + 0.006 * s * smoothstep(topb - 0.05, topb, self.co[i][2]), ('boots', col), layer=2, solid=0.002, hide_margin=0.02 * s)
+
+    def bar(self, name, a, b, r, swatch, layer, flat=1.0):
+        """A small rounded bar from a to b (laces, a tongue, straps)."""
+        d = b - a
+        L = d.length
+        bm = bmesh.new()
+        bmesh.ops.create_cone(bm, cap_ends=True, segments=6, radius1=r, radius2=r, depth=L)
+        q = d.normalized().to_track_quat('Z', 'Y')
+        for v in bm.verts:
+            v.co.x *= 1.0
+            v.co.y *= flat
+            v.co = (a + b) / 2 + q @ v.co
+        me = bpy.data.meshes.new(name)
+        bm.to_mesh(me)
+        bm.free()
+        ob = bpy.data.objects.new(name, me)
+        bpy.context.scene.collection.objects.link(ob)
+        shade_smooth(ob)
+        self.flat_part(ob, swatch, toon=(0.6, 0.0, 1.0, 0.0), bones='nearest', layer=layer)
+        return ob
 
     # --- accessories -------------------------------------------------------------------------------------------------
     def watch(self, it):
@@ -775,7 +1058,7 @@ class Kit:
         sx = -1 if right else 1
         bvh = self.outer_bvh or self.bvh
         top = Vector((sx * 0.08 * s, 0.0, z['neck'] - 0.01 * s))
-        hip = Vector((-sx * 0.15 * s, 0.0, z['hip'] + 0.03 * s))
+        hip = Vector((-sx * 0.15 * s, 0.0, z['hip'] + 0.045 * s))
         guide = []
         n = 36
         for k in range(n + 1):
@@ -814,24 +1097,97 @@ class Kit:
         shade_smooth(ob)
         # the body's own weights under the strap (over the shoulder the clavicle and arm carry it, like the cardigan)
         self.flat_part(ob, ('bag', col), toon=(0.7, 0.0, 1.0, 0.0), bones='nearest', layer=3)
-        # the bag at the hip, outside the skirt
+        # the bag at the front of the far hip, outside the skirt: a small rounded flap bag with a buckle
         skirt_bvh = BVHTree.FromObject(self.skirt_ob, bpy.context.evaluated_depsgraph_get()) if getattr(self, 'skirt_ob', None) else bvh
-        hp = self.on(skirt_bvh, hip + Vector((-sx * 0.05 * s, 0, -0.05 * s)), 0.02 * s)
-        bm = bmesh.new()
-        bmesh.ops.create_cube(bm, size=1)
-        outward = Vector((hp.x, hp.y - 0.0, 0)).normalized()
-        along = Vector((0, 0, 1)).cross(outward).normalized()
-        M = Matrix((along * 0.15 * s, outward * 0.045 * s, Vector((0, 0, 1)) * 0.11 * s)).transposed()
-        for v in bm.verts:
-            v.co = hp + M @ v.co
-        bmesh.ops.bevel(bm, geom=bm.edges[:], offset=0.008 * s, segments=2, affect='EDGES')
-        me = bpy.data.meshes.new('bag')
-        bm.to_mesh(me)
-        bm.free()
-        ob = bpy.data.objects.new('bag', me)
-        bpy.context.scene.collection.objects.link(ob)
-        shade_smooth(ob)
-        self.flat_part(ob, ('bag', col), toon=(0.9, 0.0, 1.0, 0.0), bones={'Bip01_Pelvis': 1.0}, layer=3)
+        size = str(it.get('bag', 'small'))
+        bw, bd, bh = (0.12, 0.04, 0.095) if 'small' in size else (0.2, 0.06, 0.16)
+        az = math.radians(float(it.get('bag_azimuth', 62)))
+        out_d = Vector((-sx * math.sin(az), -math.cos(az), 0))
+        bz = z['hip'] - 0.015 * s
+        hit = skirt_bvh.ray_cast(Vector((0, 0, bz)) + out_d * 0.6, -out_d, 0.8)
+        hp = (hit[0] if hit[0] is not None else Vector((0, 0, bz)) + out_d * 0.16 * s) + out_d * (bd / 2 + 0.004) * s
+        along = Vector((0, 0, 1)).cross(out_d).normalized()
+        up = Vector((0, 0, 1))
+
+        def box(c, w, d, h, bev, name):
+            bm = bmesh.new()
+            bmesh.ops.create_cube(bm, size=1)
+            M = Matrix((along * w * s, out_d * d * s, up * h * s)).transposed()
+            for v in bm.verts:
+                v.co = c + M @ v.co
+            bmesh.ops.bevel(bm, geom=bm.edges[:], offset=min(bev, 0.45 * min(w, d, h)) * s, segments=3, affect='EDGES', clamp_overlap=True)
+            me = bpy.data.meshes.new(name)
+            bm.to_mesh(me)
+            bm.free()
+            ob = bpy.data.objects.new(name, me)
+            bpy.context.scene.collection.objects.link(ob)
+            shade_smooth(ob)
+            return ob
+
+        body_b = box(hp, bw, bd, bh, 0.008, 'bag')
+        self.flat_part(body_b, ('bag', col), toon=(0.9, 0.0, 1.0, 0.0), bones={'Bip01_Pelvis': 1.0}, layer=3)
+        # the flap over the upper two thirds, standing a little proud, rounded at its lower corners
+        flap = box(hp + out_d * (bd / 2 + 0.002) * s + up * bh * 0.18 * s, bw * 1.02, 0.006, bh * 0.68, 0.0028, 'bag-flap')
+        self.flat_part(flap, ('bag_flap', tuple(c * 0.82 for c in col)), toon=(0.9, 0.0, 1.0, 0.0), bones={'Bip01_Pelvis': 1.0}, layer=3)
+        self.palette.pop('bag_flap', None)
+        # the buckle's tab and its metal
+        tab = box(hp + out_d * (bd / 2 + 0.006) * s - up * bh * 0.12 * s, 0.018, 0.004, 0.026, 0.0015, 'bag-tab')
+        self.flat_part(tab, ('bag_flap', tuple(c * 0.82 for c in col)), toon=(0.9, 0.0, 1.0, 0.0), bones={'Bip01_Pelvis': 1.0}, layer=3)
+        buckle = box(hp + out_d * (bd / 2 + 0.009) * s - up * bh * 0.08 * s, 0.012, 0.003, 0.009, 0.0012, 'bag-buckle')
+        self.flat_part(buckle, ('brass', P.parse_colour('#b89a5a')), toon=(0.5, 0.0, 1.0, 0.0), bones={'Bip01_Pelvis': 1.0}, layer=3)
+        self.palette.pop('brass', None)
+
+
+def map_along(ob, atlas, cell, heel, fwd, L, z0, h):
+    """UVs of a shoe's upper on its painted cell: u along the shoe from the heel, v by height over the sole."""
+    me = ob.data
+    uvl = me.uv_layers.active or me.uv_layers.new(name='UVMap')
+    for poly in me.polygons:
+        for li in poly.loop_indices:
+            c = me.vertices[me.loops[li].vertex_index].co
+            u = (Vector((c.x, c.y, 0)) - heel).dot(fwd) / L
+            v = (c.z - z0) / max(1e-6, h)
+            uvl.data[li].uv = atlas.uv(cell, min(1, max(0, u)), min(1, max(0, v)))
+
+
+def map_height(ob, atlas, cell, z0, h):
+    """UVs by height (u across the band from its bottom, the stripes cell's convention)."""
+    me = ob.data
+    uvl = me.uv_layers.active or me.uv_layers.new(name='UVMap')
+    for poly in me.polygons:
+        for li in poly.loop_indices:
+            c = me.vertices[me.loops[li].vertex_index].co
+            uvl.data[li].uv = atlas.uv(cell, min(1, max(0, (c.z - z0) / max(1e-6, h))), 0.5)
+
+
+def rib_band(ob, atlas, cell, hem, band_h, arms, cuff_h):
+    """Re-map the faces of a knit garment's hem band (within band_h above the hem) and its cuffs (within cuff_h of
+    each sleeve's end: (point, arm direction)) onto a rib cell: per face, u across the band's tangent, v along it."""
+    me = ob.data
+    uvl = me.uv_layers.active
+    co = [v.co for v in me.vertices]
+    for poly in me.polygons:
+        c = poly.center
+        axis = None
+        if c.z < hem + band_h:
+            axis = Vector((0, 0, 1))
+        else:
+            for p, d in arms:
+                if 0 <= (p - c).dot(d) < cuff_h and (c - p - d * (c - p).dot(d)).length < 0.08:
+                    axis = d
+                    break
+        if axis is None:
+            continue
+        t = poly.normal.cross(axis)
+        if t.length < 1e-6:
+            continue
+        t.normalize()
+        us = [co[me.loops[li].vertex_index].dot(t) for li in poly.loop_indices]
+        vs = [co[me.loops[li].vertex_index].dot(axis) for li in poly.loop_indices]
+        u0, u1 = min(us), max(us)
+        v0, v1 = min(vs), max(vs)
+        for li, u, v in zip(poly.loop_indices, us, vs):
+            uvl.data[li].uv = atlas.uv(cell, (u - u0) / max(1e-6, u1 - u0), (v - v0) / max(1e-6, v1 - v0))
 
 
 def resample(pts, n):
@@ -880,14 +1236,19 @@ def build_kit(spec, J, body, lab, tp, W, atlas, bones):
     if top:
         K.top(top, layer=0)
     outer = K.has('cardigan', 'jacket', 'coat')
-    if outer:
-        ob = K.top(outer, layer=1, outer=True)
+    sk = K.has('skirt')
+    over_skirt = bool(outer and sk)
+    if outer and not over_skirt:
+        K.top(outer, layer=1, outer=True)
     covers = [p.ob for p in K.parts]
     if covers:
         K.outer_bvh = bvh_of(covers)
-    sk = K.has('skirt')
     if sk:
         K.skirt(sk)
+    if over_skirt:
+        K.skirt_bvh = bvh_of([K.skirt_ob] + ([K.skirt_band] if getattr(K, 'skirt_band', None) else []))
+        K.top(outer, layer=1, outer=True)
+        K.outer_bvh = bvh_of([p.ob for p in K.parts if p.ob is not K.skirt_ob])
     tr = K.has('trousers', 'pants', 'jeans')
     if tr:
         K.trousers(tr)

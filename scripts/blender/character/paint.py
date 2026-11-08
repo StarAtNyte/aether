@@ -166,33 +166,67 @@ def paint_face(at, spec):
     sc = cover(inside, aa)
     white = np.array([0.97, 0.96, 0.97])
     layer(col, white, sc)
-    # iris: a tall ellipse with a darker top, a warm lower glow and a dark ring, clipped by the lids
-    cx, cy = 0.04, -0.06
-    rx, ry = (0.5, 0.74) if kind != 'narrow' else (0.36, 0.42)
+    # the sheet's own iris colours when it has them (build.sheet_fit: the eye's mid tone and its darkest tenth)
+    sf = ((spec.get('sheet_fit') or {}).get('head') or {}).get('eyes') or []
+    if sf:
+        mid = np.mean([e['iris'] for e in sf], 0)
+        deep = np.mean([e['dark'] for e in sf], 0)
+        # keep the brief's hue, take the sheet's value and depth (a painted iris reads darker than its swatch)
+        iris = mix(iris, mid, 0.6)
+        iris_deep = mix(iris * 0.3, deep, 0.6)
+    else:
+        iris_deep = iris * 0.3
+    # sclera: cool white, shaded under the upper lid and toward the corners
+    shade = np.clip(1 - (yu - Y) / 0.5, 0, 1) ** 2
+    corner = smooth01((np.abs(X) - 0.6) / 0.4)
+    scl = white[None, None, :] * (1 - 0.16 * shade[..., None] - 0.08 * corner[..., None]) + np.array([-0.03, -0.01, 0.02]) * shade[..., None]
+    col[:] = col * (1 - sc[..., None]) + scl * sc[..., None]
+    # the iris: large (its top always under the lid), in layers like a painted anime eye
+    cx, cy = 0.04, -0.08
+    rx, ry = (0.56, 0.84) if kind != 'narrow' else (0.4, 0.5)
     r = np.hypot((X - cx) / rx, (Y - cy) / ry)
     ic = cover((r - 1) * rx, aa) * sc
-    t = np.clip((Y - (cy - ry)) / (2 * ry), 0, 1)[..., None]
-    iris_col = mix(np.clip(iris * 1.55 + 0.05, 0, 1), iris * 0.55, t ** 0.8)
-    col[:] = col * (1 - ic[..., None]) + iris_col * ic[..., None]
-    ring = cover(np.abs(r - 0.95) * rx - 0.035, aa) * sc
-    layer(col, iris * 0.4, ring)
-    pupil = cover((np.hypot((X - cx) / (rx * 0.42), (Y - cy + 0.04) / (ry * 0.45)) - 1) * rx * 0.42, aa) * sc
-    layer(col, iris * 0.22, pupil)
-    # lid shadow on the white and the iris top
-    lid = cover(-(Y - (yu - 0.22)), 0.12) * sc
-    layer(col, np.array([0.55, 0.5, 0.58]), lid * 0.5)
-    # catchlights
-    for (hx, hy, hr) in ((cx + 0.2, cy + 0.26, 0.15), (cx - 0.17, cy - 0.32, 0.065)):
-        layer(col, np.array([1, 1, 1]), cover(np.hypot(X - hx, Y - hy) - hr, aa) * sc)
-    # upper lash line with the outer flick, the crease above, a short lower lash
-    up = curve(lambda x: upper(x) + 0.02, -1.0, 1.02)
-    w = [0.03 + 0.07 * smooth01((x + 1) / 2) for x, _ in up]
-    d = stroke(X, Y, up + [(1.12, upper(1.0) - 0.08)], w + [0.012])
+    t = np.clip((Y - (cy - ry)) / (2 * ry), 0, 1)
+    # 1. the base: light at the bottom, deep at the top
+    base_c = mix(np.clip(iris * 1.45 + 0.06, 0, 1), iris_deep, (t ** 0.9)[..., None])
+    col[:] = col * (1 - ic[..., None]) + base_c * ic[..., None]
+    # 2. fibres: fine radial strokes, a little darker
+    ang = np.arctan2(Y - cy, X - cx)
+    fib = (0.5 + 0.5 * np.sin(ang * 23 + np.sin(ang * 7) * 1.5)) * smooth01((r - 0.35) / 0.3) * (1 - smooth01((r - 0.92) / 0.08))
+    layer(col, iris_deep, ic * fib * 0.18)
+    # 3. the lid's shadow over the iris' top third (a hard band, the way it is painted)
+    band = cover((yu - 0.36) - Y, 0.05) * ic
+    layer(col, iris_deep * 0.8, band * 0.85)
+    # 4. the lower crescent of light (the iris lit through from below)
+    cres = cover(np.hypot((X - cx) / (rx * 0.78), (Y - cy + ry * 0.38) / (ry * 0.42)) - 1, 0.18) * ic * (Y < cy)
+    layer(col, np.clip(iris * 1.8 + 0.12, 0, 1), cres * 0.75)
+    # 5. the limbal ring
+    ring = cover(np.abs(r - 0.96) * rx - 0.03, aa) * sc
+    layer(col, iris_deep * 0.7, ring)
+    # 6. the pupil, a soft tall oval
+    pr = np.hypot((X - cx) / (rx * 0.36), (Y - cy + 0.02) / (ry * 0.42))
+    layer(col, iris_deep * 0.55, cover((pr - 1) * rx * 0.36, aa) * sc)
+    # 7. catchlights: the key (upper outer), a small second one (lower inner), a soft reflected arc
+    for (hx, hy, hrx, hry) in ((cx + 0.2, cy + 0.3, 0.15, 0.17), (cx - 0.2, cy - 0.34, 0.07, 0.06)):
+        layer(col, np.array([1, 1, 1]), cover((np.hypot((X - hx) / hrx, (Y - hy) / hry) - 1) * hrx, aa) * sc)
+    arc = cover(np.abs(np.hypot((X - cx) / (rx * 0.7), (Y - cy) / (ry * 0.7)) - 1) * rx - 0.018, aa) * ic * (Y < cy - 0.25) * (X > cx - 0.1)
+    layer(col, np.clip(iris * 2.0 + 0.25, 0, 1), arc * 0.55)
+    # upper lash line: heavy, tapered at the inner corner, thickest past the middle, three lash points at the outer end
+    up = curve(lambda x: upper(x) + 0.025, -1.0, 1.02)
+    w = [0.035 + 0.1 * smooth01((x + 0.9) / 1.4) for x, _ in up]
+    d = stroke(X, Y, up + [(1.14, upper(1.0) - 0.06)], w + [0.014])
+    for (lx, ly, ex, ey) in ((0.62, 0.05, 0.86, 0.3), (0.82, 0.0, 1.08, 0.18), (0.95, -0.06, 1.2, 0.02)):
+        y0 = upper(lx) + ly
+        d = np.minimum(d, stroke(X, Y, [(lx, y0), (ex, upper(min(1, ex)) + ey)], [0.05, 0.008]))
     layer(col, lash, cover(d, aa))
-    crease = curve(lambda x: upper(x) + 0.2 + 0.02 * x, -0.45, 0.85, 12)
-    layer(col, mix(skin, line, 0.55), cover(stroke(X, Y, crease, [0.012] * len(crease)), aa))
-    lo = curve(lambda x: lower(x) - 0.02, 0.25, 0.92, 10)
-    layer(col, mix(lash, skin, 0.25), cover(stroke(X, Y, lo, [0.012 + 0.018 * (x - 0.25) for x, _ in lo]), aa))
+    crease = curve(lambda x: upper(x) + 0.22 + 0.02 * x, -0.45, 0.85, 12)
+    layer(col, mix(skin, line, 0.5), cover(stroke(X, Y, crease, [0.014] * len(crease)), aa))
+    # lower lash: thin, the outer half, with two short ticks
+    lo = curve(lambda x: lower(x) - 0.02, 0.15, 0.95, 10)
+    layer(col, mix(lash, skin, 0.25), cover(stroke(X, Y, lo, [0.01 + 0.02 * (x - 0.15) for x, _ in lo]), aa))
+    for tx in (0.55, 0.78):
+        ty = lower(tx) - 0.02
+        layer(col, mix(lash, skin, 0.35), cover(stroke(X, Y, [(tx, ty), (tx + 0.06, ty - 0.1)], [0.014, 0.004]), aa))
     eye_px = np.maximum(sc, cover(d, aa))
     alpha = 1 - 0.8 * eye_px
     at.put('eye', col, alpha, ss)
@@ -330,6 +364,21 @@ def paint_hair(at, name, lin, grey=0.0):
     if dark:
         # black hair: darkening the edges does not show; lift each clump's middle with a cool sheen instead
         col += (0.11 * (1 - edge) * np.sin(np.clip(U, 0, 1) * math.pi))[..., None] * np.array([0.85, 0.9, 1.1])
+    # strands inside the clump: a few fine darker lines along it (root to tip, gently converging to the tip) and two
+    # lighter ones, so a clump reads as a bundle of hair, not a ribbon
+    rng = np.random.default_rng(7)
+    for k in range(7):
+        u0 = 0.14 + 0.72 * (k + rng.uniform(-0.3, 0.3)) / 6
+        conv = 0.5 + (u0 - 0.5) * (0.55 + 0.45 * V)
+        wv = 0.006 + 0.004 * rng.uniform()
+        v_end = rng.uniform(0.05, 0.4)
+        sl = cover(np.abs(U - conv) - wv, 1.2 / 128) * smooth01((V - v_end) / 0.1) * (1 - smooth01((V - 0.93) / 0.05))
+        col = col * (1 - (0.16 if not dark else 0.1) * sl)[..., None] + (0 if not dark else 0) * sl[..., None]
+    for k in range(2):
+        u0 = 0.3 + 0.4 * k + rng.uniform(-0.05, 0.05)
+        conv = 0.5 + (u0 - 0.5) * (0.6 + 0.4 * V)
+        sl = cover(np.abs(U - conv) - 0.005, 1.2 / 128) * smooth01((V - 0.35) / 0.15) * (1 - smooth01((V - 0.7) / 0.08))
+        layer(col, np.clip(base * 1.15 + 0.04, 0, 1), sl * 0.6)
     # the band: a clean arc across the clump with pointed ends (the classic angel ring cut into strands), not noise
     zig = 0.01 * np.sin(U * math.pi * 2 + 0.6)
     mid = np.sin(np.clip(U, 0, 1) * math.pi)
@@ -361,8 +410,51 @@ def paint_pleats(at, name, lin):
     col = np.ones(U.shape + (3,)) * base
     col *= (1 - 0.2 * (1 - smooth01(U / 0.35)))[..., None]
     layer(col, np.clip(base * 1.25 + 0.03, 0, 1), cover(np.abs(U - 0.95) - 0.02, 1.5 / 64))
-    layer(col, base * 0.5, cover(U - 0.06, 1.5 / 64))
+    # the fold's underside: dark on dark cloth, a softer grey-brown line on pale cloth (as a painter draws it)
+    lum = float(np.dot(base, [0.3, 0.59, 0.11]))
+    layer(col, base * (0.5 + 0.2 * lum), cover(U - 0.06, 1.5 / 64))
     at.put(name, col, np.ones(U.shape), 2)
+
+
+def paint_rib(at, name, lin, ribs=3):
+    """Knit rib across u (three ribs a face): each rib lit in its middle, a dark groove between."""
+    base = srgb(lin)
+    at.cell(name, 48, 32)
+    U, V = at.grid(name, 2)
+    ph = (U * ribs) % 1.0
+    k = 0.84 + 0.22 * np.sin(ph * math.pi) ** 0.7
+    col = np.clip(np.ones(U.shape + (3,)) * base * k[..., None], 0, 1)
+    at.put(name, col, np.ones(U.shape), 2)
+
+
+def paint_shoe(at, name, lin, kind):
+    """A shoe's upper: u heel (0) to toe (1), v from the sole (0) up. Leather (loafers, boots): a long soft highlight
+    along the top of the vamp and the toe, a darker welt line over the sole and, on a loafer, the apron's stitched seam
+    round the toe. Canvas (sneakers): a fine weave, the heel's seam, a darker line over the sole."""
+    base = srgb(lin)
+    at.cell(name, 128, 64)
+    U, V = at.grid(name, 2)
+    col = np.ones(U.shape + (3,)) * base
+    welt = cover(V - 0.1, 2.0 / 64)
+    if kind == 'sneakers':
+        weave = 0.97 + 0.03 * np.sign(np.sin(U * 128 * math.pi) * np.sin(V * 64 * math.pi))
+        col *= weave[..., None]
+        layer(col, base * 0.82, cover(np.abs(U - 0.06) - 0.006, 1.5 / 128) * (V > 0.15))
+        layer(col, base * 0.8, welt)
+    else:
+        hl = np.exp(-((V - 0.78) / 0.12) ** 2) * smooth01((U - 0.45) / 0.25)
+        hl += 0.8 * np.exp(-((U - 0.9) / 0.06) ** 2) * np.exp(-((V - 0.55) / 0.2) ** 2)
+        layer(col, np.clip(base * 1.6 + 0.1, 0, 1), np.clip(hl, 0, 1) * 0.7)
+        layer(col, base * 0.6, welt)
+        if kind == 'loafers':
+            apron = cover(np.abs(np.hypot((U - 1.0) / 0.42, (V - 0.35) / 0.48) - 1) - 0.012, 1.5 / 64) * (U > 0.55)
+            layer(col, base * 0.55, apron)
+    at.put(name, col, np.ones(U.shape), 2)
+
+
+def parse_colour(text):
+    from common import colour
+    return colour(text)
 
 
 def paint_watch(at, name, lin):

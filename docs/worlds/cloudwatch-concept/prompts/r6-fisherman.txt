@@ -1,0 +1,7 @@
+Use your built-in image generation tool to create exactly 1 image, then save it as a PNG in the current directory with the file name below. If copying fails, just list where the tool saved it. Do not write code or any other files.
+
+The attached image is the model sheet of Kaho, an ORIGINAL character. Draw Old Genzo, a second ORIGINAL character of the same small fishing town, in exactly the same model-sheet style, line weight, flat cel colour, flat light-grey background and layout (front, left side profile and back on one baseline, faint guide lines). He must not resemble any existing character, franchise, studio or artist's style; no logos, only small plain labels.
+
+Old Genzo: a 68-year-old harbour fisherman who mends nets on the quay every evening; kind narrow dark-brown eyes in a weathered, tanned face with a few wrinkles; short grey hair under a rust-red knit cap; a short neat grey beard and moustache; sturdy but not fat, a little stooped, about 1.66 m and 7 heads tall, believable anatomy, broad five-finger hands; an open navy work jacket with long sleeves over a cream T-shirt; khaki work trousers; black rubber boots to mid-calf. Arms relaxed slightly away from the body.
+
+1) fisherman-turnaround.png: front, left side profile and back views, same scale on one baseline, faint guide lines at the top of the head, chin, shoulders, waist and knees.

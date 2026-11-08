@@ -81,6 +81,9 @@ class Hair:
     def v_of(self, z):
         return float(np.clip(0.79 + (z - self.ring_z) / (0.07 * self.u) * 0.21, 0.03, 0.98))
 
+    strands = False
+    strand_k = 0
+
     def clump(self, path, width, thick, tip='point', weights=None, around=10, along=20, centre_hint=None, flat=1.0):
         """Loft a lens-section clump along the Catmull-Rom `path` (Vectors)."""
         base = len(self.verts)
@@ -162,7 +165,8 @@ class Hair:
         radial = radial.normalized() if radial.length > 1e-6 else Vector((0, 1, 0))
         drop = leave.z - tip_z
         if drop > 0.004:
-            n_h = max(2, int(drop / (0.035 * self.u)) + 2)
+            # (finely sampled, so pushing the path out of the clothes under it holds between its points)
+            n_h = max(2, int(drop / (0.018 * self.u)) + 2)
             for i in range(1, n_h + 1):
                 f = i / n_h
                 z = leave.z - drop * f
@@ -177,6 +181,18 @@ class Hair:
             last = pts[-1]
             pts.append(last + Vector((0, 0, -0.002 * self.u)) - radial * curl * 0.3)
         self.clump(pts, width, thick, tip=tip, weights=weights, around=around, along=along)
+        if self.strands and drop > 0.04 and width > 0.045 * self.u:
+            # strands: two thin pointed locks along the clump's edges (wide axis tangent to the shell), one shorter and
+            # one longer, so the ends separate into points the way a painted lock's ends do
+            k = self.strand_k
+            self.strand_k += 1
+            for sgn, dl in ((1, -0.012 - 0.01 * (0.5 + 0.5 * math.sin(k * 2.1))), (-1, -0.03 - 0.015 * (0.5 + 0.5 * math.cos(k * 1.7)))):
+                side = radial.cross(Vector((0, 0, 1))).normalized() * sgn * width * 0.34
+                sp = [q + side * smoothstep(0.0, 0.5, i / max(1, len(pts) - 1)) for i, q in enumerate(pts)]
+                end = sp[-1] + Vector((0, 0, -dl * self.u)) + radial * 0.002 * self.u
+                sp = sp[:-1] + [end]
+                sp = [sp[0]] + [self.push_out(q, thick * 0.4 + 0.003 * self.u) for q in sp[1:]]
+                self.clump(sp, width * 0.3, thick * 0.55, tip='point', weights=weights, around=6, along=max(8, along // 2))
         return pts
 
     def cap(self, head, hairline):
@@ -275,6 +291,8 @@ def build_hair(spec, J, head, form, chin, atlas, bones, body_bvh):
         c = math.cos(theta)
         return math.radians(lerp(112, 68, (c + 1) / 2)) if st != 'short' else math.radians(lerp(108, 66, (c + 1) / 2))
     H.cap(head, hairline)
+    # thin strands at the locks' edges for the styles that hang (spec['hair_strands'] false turns them off)
+    H.strands = st in ('bob', 'long') and spec.get('hair_strands', True)
     chin_z = H.chin.z
     top = H.top
     if st in ('bob', 'long', 'ponytail'):
@@ -301,7 +319,7 @@ def build_hair(spec, J, head, form, chin, atlas, bones, body_bvh):
         n = 15
         for layer_k, (nn, off, wk, outk) in enumerate(((n, 0.0, 1.0, 1.0), (n - 1, 0.5, 0.8, 0.55))):
             for i in range(nn):
-                theta = math.radians(lerp(68, 292, (i + off) / (n - 1)))
+                theta = math.radians(lerp(58, 302, (i + off) / (n - 1)))
                 back = (1 - math.cos(theta)) / 2
                 tz = tip + 0.03 * (1 - back) * u + 0.035 * u * (0.5 + 0.5 * math.sin(i * 2.3 + layer_k)) + 0.02 * u * layer_k
                 phi_leave = math.radians(lerp(102, 118, back))
@@ -325,7 +343,7 @@ def build_hair(spec, J, head, form, chin, atlas, bones, body_bvh):
         n = 12
         for i in range(n):
             theta = math.radians(lerp(0, 360, i / n))
-            phi_leave = math.radians(lerp(95, 62, (math.cos(theta) + 1) / 2))
+            phi_leave = math.radians(lerp(114, 64, (math.cos(theta) + 1) / 2))
             H.lock(theta, math.radians(8), phi_leave, H.shell.point(phi_leave, theta).z - 0.004 * u, 0.06 * u, 0.008 * u, 0.006 * u, tip='point', theta_root=theta)
     H.finish()
     for acc in H.h['accessories']:
@@ -345,7 +363,7 @@ def bangs(H, part_theta, vol, st):
     """Bangs from the parting over the front, laid on the forehead; tips at the brows, side-swept from a side parting."""
     u = H.u
     brow_z = H.chin.z + 0.128 * u
-    n = 5 if st == 'bob' else 9 if st == 'long' else 7
+    n = 7 if st == 'bob' else 9 if st == 'long' else 7
     sweep = -0.35 if part_theta > 0 else 0.35 if part_theta < 0 else 0.0
     for i in range(n):
         f = i / (n - 1)
@@ -353,7 +371,7 @@ def bangs(H, part_theta, vol, st):
         root_theta = part_theta + (theta - part_theta) * 0.25
         tip_theta = theta + sweep * 0.35 * (1 - abs(f - 0.5) * 2)
         length_k = 1 - 0.25 * abs(f - 0.5) * 2
-        tz = brow_z - 0.004 * u * length_k + 0.012 * u * abs(f - 0.5) * 2
+        tz = brow_z - 0.004 * u * length_k + 0.012 * u * abs(f - 0.5) * 2 - H.spec.get('fringe_drop', 0.0) * length_k
         pts = []
         for k in range(7):
             g = k / 6
@@ -370,9 +388,15 @@ def bangs(H, part_theta, vol, st):
             q2.z = tz
             q2 = H.push_out(q2, 0.003 * u) if H.bvh else q2
             pts.append(Vector((q2.x, q2.y - 0.0015 * u, tz)))
-        bw = (0.052 if abs(f - 0.5) < 0.3 else 0.046) if n == 5 else 0.03 if n == 9 else (0.034 if abs(f - 0.5) < 0.3 else 0.03)
+        bw = 0.03 if n == 9 else (0.048 if abs(f - 0.5) < 0.3 else 0.042) if st == 'bob' else (0.034 if abs(f - 0.5) < 0.3 else 0.03)
         # a long style's fringe is soft: rounded, overlapping ends (a bob's bangs are a few large points)
         H.clump(pts, (bw * 1.15 if n == 9 else bw) * u, 0.01 * u, tip='curl' if n == 9 else 'point')
+        if st == 'bob' and 0 < i < n - 1:
+            # a thin point between two bangs, a little shorter: the fringe's edge breaks into strands
+            mid_t = theta + math.radians(58 * 2 / (n - 1)) * 0.5
+            q = [H.shell.point(lerp(math.radians(30), math.radians(80), g), lerp(root_theta, mid_t, g), (vol * (1 - 0.5 * g) + 0.0035 * u)) for g in (0.0, 0.35, 0.7, 1.0)]
+            q.append(Vector((q[-1].x, q[-1].y - 0.002 * u, tz + 0.012 * u)))
+            H.clump(q, 0.018 * u, 0.006 * u, tip='point')
 
 
 def side_locks(H, vol, tip_z, tip):
@@ -427,12 +451,33 @@ def braid(H, acc):
     """A thin braid behind an ear: alternating lobes down a short chain, ending in a charm."""
     u = H.u
     sx = 1 if acc.get('side', 'left') == 'left' else -1
-    root = H.shell.point(math.radians(78), math.radians(sx * 98), 0.006 * u)
-    p1 = root + Vector((sx * 0.004, 0.006, -0.03)) * u
-    p2 = root + Vector((sx * 0.008, 0.006, -0.08)) * u
-    p3 = root + Vector((sx * 0.009, 0.002, -0.125)) * u
+    az = float(acc.get('azimuth', 84))
+    root = H.shell.point(math.radians(80), math.radians(sx * az), 0.006 * u)
+    p1 = root + Vector((sx * 0.006, -0.002, -0.03)) * u
+    p2 = root + Vector((sx * 0.01, -0.003, -0.08)) * u
+    p3 = root + Vector((sx * 0.011, -0.004, -0.125)) * u
     path = [root + Vector((0, -0.004, 0.02)) * u, root, p1, p2, p3]
     path = [H.push_out(p, 0.012 * u) for p in path]
+    # over the hair already made (the bob's side locks), not under it
+    hair_obs = [p.ob for p in H.parts if p.kind == 'hair']
+    if hair_obs:
+        vs, ps = [], []
+        for o in hair_obs:
+            b0 = len(vs)
+            vs += [v.co.copy() for v in o.data.vertices]
+            ps += [[b0 + i for i in pl.vertices] for pl in o.data.polygons]
+        hb = BVHTree.FromPolygons(vs, ps)
+        out_dir = Vector((sx, -0.25, 0)).normalized()
+        moved = []
+        for k, p in enumerate(path):
+            if k < 2:
+                moved.append(p)
+                continue
+            hit = hb.ray_cast(p + out_dir * 0.2, -out_dir, 0.25)
+            if hit[0] is not None and (hit[0] - p).dot(out_dir) > -0.004 * u:
+                p = hit[0] + out_dir * 0.007 * u
+            moved.append(p)
+        path = moved
     names, ts = H.chain('Hair_Braid', path, [0.45, 0.74], stiffness=0.22, drag=0.18, gravity=0.6, radius=0.012, limit=0.9)
     wfun = chain_weights(names, ts, start=0.3)
     lobes = 9
@@ -506,22 +551,40 @@ def set_uv(ob, uv):
 
 
 def hairband(H, acc):
-    """A thin band over the head from ear to ear, just behind the fringe."""
+    """A thin band over the head from ear to ear, just behind the fringe, lying on the hair (cast onto the clumps),
+    its ends tucked under the hair behind the ears."""
     from common import colour
     u = H.u
     col = colour(acc.get('colour'), '#f4f1f2')
     uv = H.atlas.swatch('hairband', col)
+    hair_obs = [p.ob for p in H.parts if p.kind == 'hair']
+    vs, ps = [], []
+    for o in hair_obs:
+        base = len(vs)
+        vs += [v.co.copy() for v in o.data.vertices]
+        ps += [[base + i for i in pl.vertices] for pl in o.data.polygons]
+    bvh = BVHTree.FromPolygons(vs, ps) if vs else None
     rings = []
     n = 24
     for i in range(n + 1):
-        th = math.radians(lerp(-95, 95, i / n))
-        # a coronal arc a little in front of the crown
+        f = i / n
+        th = math.radians(lerp(-84, 84, f))
         ph = abs(th)
         az = 90 if th > 0 else -90
         p = H.shell.point(ph * 0.98, math.radians(az) * 1.0, 0.0)
-        p = p + Vector((0, -0.036 * u, 0)) * math.cos(th)
+        p = p + Vector((0, -0.03 * u, 0)) * math.cos(th)
         d = (p - H.centre).normalized()
         q = H.centre + d * ((p - H.centre).length + 0.019 * u * H.h['volume'])
+        tuck = smoothstep(0.8, 1.0, abs(2 * f - 1))
+        r_shell = (p - H.centre).length
+        if bvh is not None:
+            hit = bvh.ray_cast(H.centre + d * 0.5, -d, 0.6)
+            r_hit = (hit[0] - H.centre).length if hit[0] is not None else None
+            # on the hair, 1.5 mm proud, but only where the hair is the head's own cover (not a lock hanging out to
+            # the side); the last fifth at each end sinks under it
+            lo, hi = r_shell + 0.004 * u, r_shell + 0.03 * u * max(1.0, H.h['volume'])
+            r = min(hi, max(lo, r_hit)) if r_hit is not None else r_shell + 0.019 * u * H.h['volume']
+            q = H.centre + d * (r + 0.0015 * u - 0.012 * u * tuck)
         rings.append(q)
     verts, faces = [], []
     for i, q in enumerate(rings):
@@ -530,7 +593,7 @@ def hairband(H, acc):
         side = t.cross(d).normalized()
         for a in range(6):
             ang = 2 * math.pi * a / 6
-            verts.append(q + side * math.cos(ang) * 0.0085 * u + d * math.sin(ang) * 0.003 * u)
+            verts.append(q + side * math.cos(ang) * 0.0085 * u + d * math.sin(ang) * 0.0025 * u)
     for i in range(n):
         for a in range(6):
             k = i * 6 + a
@@ -555,19 +618,18 @@ def knit_cap(H, acc):
         ph = math.radians(lerp(2, 84, j / nr))
         for i in range(na):
             th = 2 * math.pi * i / na
-            out = 0.022 * u + 0.004 * u * (j >= nr - 2) + 0.0012 * u * math.cos(i * 2 * math.pi / 4) * (j < nr - 2)
+            cuff = j >= nr - 3
+            out = 0.024 * u + 0.008 * u * cuff - 0.006 * u * (j == nr) + 0.0008 * u * math.cos(i * 2 * math.pi / 3) * (not cuff)
             p = H.shell.point(ph, th, out)
-            if j == 0:
-                p.z += 0.01 * u
             verts.append(p)
-            uvs.append(uv2 if j >= nr - 2 else uv)
+            uvs.append(uv2 if j >= nr - 3 else uv)
     for j in range(nr):
         for i in range(na):
             k = j * na + i
             k2 = j * na + (i + 1) % na
             faces.append((k, k2, k2 + na, k + na))
     c = len(verts)
-    verts.append(H.shell.point(0, 0, 0.034 * u))
+    verts.append(H.shell.point(0, 0, 0.025 * u))
     uvs.append(uv)
     for i in range(na):
         faces.append((c, (i + 1) % na, i))
@@ -593,16 +655,17 @@ def beard(H, b):
     L = float(b.get('length', 0.04))
     c = H.chin
     n = 9
+    L = min(L, 0.03)
     for i in range(n):
         f = i / (n - 1)
-        a = math.radians(lerp(-80, 80, f))
-        # along the jaw line, from the ear side to the chin
-        jaw = H.form
-        start = c + Vector((math.sin(a) * 0.05 * u, -0.012 * u - math.cos(a) * 0.035 * u, 0.06 * u - 0.035 * u * math.cos(a)))
-        start = H.push_out(start, 0.004 * u) if H.bvh else start
-        mid = start + Vector((0, -0.006 * u * math.cos(a), -L * 0.55))
-        end = mid + Vector((0, 0.002 * u, -L * 0.45)) + Vector((-math.sin(a) * 0.004 * u, 0, 0))
-        H.clump([start, mid, end], 0.03 * u, 0.012 * u, tip='point', around=8, along=8)
+        a = math.radians(lerp(-72, 72, f))
+        # along the jaw line, from below the ear to the chin, lying on it
+        start = c + Vector((math.sin(a) * 0.046 * u, -0.012 * u - math.cos(a) * 0.033 * u, 0.055 * u - 0.035 * u * math.cos(a)))
+        start = H.push_out(start, 0.003 * u) if H.bvh else start
+        mid = start + Vector((-math.sin(a) * 0.004 * u, -0.004 * u * math.cos(a), -L * 0.55))
+        mid = H.push_out(mid, 0.003 * u) if H.bvh else mid
+        end = mid + Vector((-math.sin(a) * 0.004 * u, 0.002 * u, -L * 0.45))
+        H.clump([start, mid, end], 0.026 * u, 0.008 * u, tip='point', around=8, along=8)
     # moustache
     for sx in (1, -1):
         p0 = c + Vector((sx * 0.002 * u, -0.072 * u, 0.055 * u))
