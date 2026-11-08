@@ -37,15 +37,15 @@ class HeadForm:
         old = spec['old']
         self.cran_c = np.array([0, 0.02, 0.128]) * u
         self.cran_r = np.array([0.078 + 0.004 * male, 0.097, 0.095]) * u
-        jaw_w = 0.06 + 0.008 * male + 0.004 * old
+        jaw_w = 0.06 + 0.008 * male + 0.004 * old - (0.004 if anime and not male else 0)
         self.jaw_a = np.array([0, -0.012, 0.086]) * u
-        self.jaw_b = np.array([0, -0.05 - 0.004 * male, 0.019 + 0.004 * male + (0.008 if anime and not male else 0)]) * u
+        self.jaw_b = np.array([0, -(0.044 if anime and not male else 0.05) - 0.004 * male, 0.019 + 0.004 * male + (0.016 if anime and not male else 0)]) * u
         self.jaw_ra = jaw_w * u
         # the chin: soft and round for an anime girl, squarer for men
         # (an anime girl's chin is a short, round curve under the mouth, not a point: a wider end of the jaw's cone)
-        self.jaw_rb = (0.018 + 0.012 * male + (0.011 if anime and not male else 0)) * u
-        self.cheek_c = np.array([0.037 + 0.004 * male, -0.036, 0.07]) * u
-        self.cheek_r = 0.026 * u
+        self.jaw_rb = (0.018 + 0.012 * male + (0.014 if anime and not male else 0)) * u
+        self.cheek_c = np.array([(0.034 if anime and not male else 0.037) + 0.004 * male, -0.036, 0.07]) * u
+        self.cheek_r = (0.023 if anime and not male else 0.026) * u
         self.k = 0.03 * u
         self.chin_c = np.array([0, -0.04, 0.03]) * u
         self.brow_c = np.array([0, -0.018, 0.148]) * u
@@ -149,7 +149,7 @@ def build_head(J, spec):
     bridge = np.exp(-(p[:, 0] / (0.0055 * u)) ** 2) * np.clip((p[:, 2] - 0.072 * u) / (0.03 * u), 0, 1) * np.clip((0.112 * u - p[:, 2]) / (0.012 * u), 0, 1)
     lip = np.exp(-((p[:, 0] / (0.012 * u)) ** 2 + ((p[:, 2] - 0.05 * u) / (0.004 * u)) ** 2))
     old = spec['old']
-    push = (0.0035 + 0.004 * (spec['gender'] == 'male') + (0.004 if spec['style'] != 'anime' else 0)) * u * tip + 0.0012 * u * bridge + 0.0006 * u * lip
+    push = (0.0062 + 0.004 * (spec['gender'] == 'male') + (0.004 if spec['style'] != 'anime' else 0)) * u * tip + 0.0022 * u * bridge + 0.0008 * u * lip
     push = push * np.clip(front * 2, 0, 1)
     co = co + nrm * push[:, None]
     for v, c in zip(ob.data.vertices, co):
@@ -209,8 +209,8 @@ def face_bias(ob, chin, u, spec):
         return np.full(len(co), 0.05)
     front = nss(-0.15, 0.5, -nrm[:, 1])
     zone = front * nss(0.004 * u, 0.03 * u, p[:, 2]) * (1 - nss(0.16 * u, 0.2 * u, p[:, 2]))
-    zone *= 1 - nss(0.062 * u, 0.08 * u, np.abs(p[:, 0]))
-    bias = 0.1 + 0.45 * zone
+    zone *= 1 - nss(0.05 * u, 0.082 * u, np.abs(p[:, 0]))
+    bias = 0.1 + 0.6 * zone
     # under the bangs: the forehead above the brows, its lower edge in points like the bangs' tips
     ez = eye_z(spec)
     lo = (ez + 0.024) * u + 0.004 * u * np.abs(np.sin(p[:, 0] / (0.018 * u) * math.pi))
@@ -291,7 +291,7 @@ def eye_z(spec):
     """Height of the eyes' centre above the chin (head units): anime girls' eyes sit a little lower, under a taller forehead."""
     if spec['old'] > 0.3:
         return 0.104
-    return 0.094 if spec['style'] == 'anime' and spec['gender'] != 'male' else 0.098
+    return 0.084 if spec['style'] == 'anime' and spec['gender'] != 'male' else 0.098
 
 
 def decal_layout(spec):
@@ -300,7 +300,7 @@ def decal_layout(spec):
     male = spec['gender'] == 'male'
     ex = 0.035 + 0.002 * male
     ez = eye_z(spec)
-    ew = (0.048 if not male else 0.035) if spec['style'] == 'anime' else 0.026
+    ew = (0.044 if not male else 0.035) if spec['style'] == 'anime' else 0.026
     if old > 0.3:
         ew *= 0.9
     ew *= spec.get('eye_scale', 1.0)
@@ -314,8 +314,8 @@ def decal_layout(spec):
             (f'tear_{side}', 'tear', (sx * ex, ez - 0.013), (ew * 0.9, ew * 0.42), 0.0011, False, sx),
         ]
     out += [
-        ('nose', 'nose', (0, 0.069), (0.011, 0.011), 0.0004, True, 1),
-        ('mouth', 'mouth', (0, 0.041), (0.034, 0.0255), 0.0005, True, 1),
+        ('nose', 'nose', (0, 0.067), (0.02, 0.02), 0.0004, True, 1),
+        ('mouth', 'mouth', (0, 0.041), (0.036, 0.027), 0.0005, True, 1),
         ('mouth_smile', 'mouth_smile', (0, 0.039), (0.04, 0.03), 0.0007, False, 1),
         ('mouth_sad', 'mouth_sad', (0, 0.04), (0.034, 0.0255), 0.0007, False, 1),
         ('mouth_o', 'mouth_o', (0, 0.039), (0.034, 0.0255), 0.0007, False, 1),

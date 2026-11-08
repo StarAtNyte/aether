@@ -438,6 +438,10 @@ def run_qa(B, out, sheet, poses):
     log('qa renders')
     q.turnaround(pose_idle)
     q.expressions([k for k in FACE.EXPRESSIONS])
+    q.face_views()
+    if os.environ.get('AETHER_FACE_ONLY'):
+        log('face only: stills written, nothing exported')
+        sys.exit(0)
     # the hands up close: her left in the sheet stance (its back, its thumb side), then her own clips' right hand
     own_keys = CLIPS.poses(base, spec)
 
@@ -564,7 +568,9 @@ def sheet_corrections(rep, P, spec):
             fit[k] = round(max(0.85, min(1.2, fit.get(k, 1.0) * ratio)), 3)
             changed = True
     if abs(d.get('hairline', 0)) > 0.035 and spec['hair']['style'] in ('bob', 'long', 'ponytail'):
-        P['fringe_drop'] = round(max(-0.02, min(0.04, P.get('fringe_drop', 0.0) + d['hairline'] * spec['head_h'] * 0.9)), 4)
+        # (never past a centimetre and a bit: a sheet's long side-swept fringe reads as a low hairline, and the correction
+        # chased it down to the eyes)
+        P['fringe_drop'] = round(max(-0.02, min(0.012, P.get('fringe_drop', 0.0) + d['hairline'] * spec['head_h'] * 0.9)), 4)
         changed = True
     if 'hair_width' in w and abs(d.get('hair_width', 0)) > 0.02 and w['hair_width']['ours'] > 0:
         # the volume is the shell's push past the head; the width beyond the face's own half-width scales with it

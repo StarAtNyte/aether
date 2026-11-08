@@ -299,19 +299,59 @@ shadow; installed):
 
 | | Triangles | GLB | LOD1 | IoU vs sheet (front / side / back) | Interpenetration (worst frame, Blender QA) |
 |---|---|---|---|---|---|
-| kaho | 65,704 | 1,046 KB | 26,280, 551 KB | 0.85 / 0.87 / 0.84 | blouse 0 %; skirt: stair poses 1-2 %, walk 7-11 %, run_stop lunge 20 % |
-| mio | 73,916 | 1,182 KB | 29,565, 615 KB | 0.82 / 0.87 / 0.81 | T-shirt, cardigan 0 %; skirt: walk 2-6 %, jump 13 % |
-| harbour-fisherman | 61,296 | 975 KB | 24,518, 514 KB | 0.85 / 0.77 / 0.85 | T-shirt 10 % at 4.8 mm (run); jacket 4.9 % |
+| kaho | 59,468 | 981 KB | 23,787, 523 KB | 0.85 / 0.87 / 0.84 | blouse 0 %; skirt: stair poses 1-2 %, walk 7-11 %, run_stop lunge 21 % |
+| mio | 73,980 | 1,191 KB | 29,592, 622 KB | 0.82 / 0.87 / 0.81 | T-shirt, cardigan 0 %; skirt: walk 2-6 %, jump 17 % |
+| harbour-fisherman | 61,312 | 978 KB | 24,523, 515 KB | 0.85 / 0.77 / 0.85 | T-shirt 10 % at 4.8 mm (run); jacket 4.8 % |
 
 The skirt's remaining Blender count is mostly cloth bridging. Where a capsule is deeper than the cloth has room for, as
 in the lunge of `run_stop`, the push sends neighbouring vertices to opposite sides of the leg, and the faces between
 them cross it. The in-player measure (`scripts/characters/skirt-probe.ts`, below) and the frames are what the skirt is
 judged by.
 
-The face (all anime characters): the chin is a shorter, rounder end of the jaw's cone (`HeadForm.jaw_rb` and `jaw_b`).
-The neck's front is a shadow down to the collar (shade bias -0.75, from the chin to 9.5 cm under it), so the jaw reads
-against it and the face no longer runs on into the neck. The hair's warm rim is down to 0.35, because it drew a light
-halo along every clump in close-ups.
+The face pass (November 2026, against Kaho's concept sheet; all anime characters). Method: a face test in the pipeline
+and in the player, the same views in both. `QA.face_views` writes `face.png` (close-up from the front, three-quarter
+and profile, then the bust from the front and three-quarter) and `AETHER_FACE_ONLY=1` stops the build after it (a
+13 s loop for the face alone). `scripts/characters/kaho-shots.ts --only=face3 [--body=<id>]` takes the player's views:
+close-up front, three-quarter and profile, mid distance front and three-quarter, and 9 m (the far level), in the proof
+world's light. The film's own shots come from `story-shots.ts`. The side-by-side with the sheet is
+`docs/screenshots/cloudwatch/character/kaho-face-sheet-blender-player.webp` (the close-up and the film distance).
+What differed from the sheet, and what changed:
+
+- **The head.** A wide cheek and a long, sharp jaw and chin. Now a rounder, shorter jaw (the jaw cone's end higher,
+  3.2 cm wide at its end instead of 2.9, its upper half 4 mm narrower, the cheeks 3 mm in and 3 mm smaller), the
+  eyes 1 cm lower on the face (the sheet's are, against its mouth) and a shorter, thicker neck (the neck is 0.125
+  of a head instead of 0.16; its radius up 1.5-3 mm), so the face reads as a round, soft one with a short chin.
+- **The nose.** Barely there. Now pushed out 6 mm at the tip and 2 mm on the bridge (it shows in the profile), and
+  its decal is twice the size: a soft shadow under the tip, the bridge's shaded side and a nostril curve.
+- **The mouth.** A dash. Now a shaped line (the middle heavier, the ends fading, the corners barely lifted) over a soft
+  lower-lip tone, 5 % wider. The `smile` morph is a closed smile with lifted corners (the open mouth stays for
+  `mouth_open`), as in the sheet.
+- **The eyes.** Heavy black lashes and flat wedges. Now an almond (the lids 14 % lower), a brown lash at half the
+  weight with finer points, a lighter lid shadow over the iris (55 % instead of 85 %), and eyes 8 % smaller.
+- **The brows.** Thick dark bars. Now thin and softly curved, in the hair's brown mixed with the skin's.
+- **The shading.** The face's lit zone is wider with a softer edge to the head's sides (bias 0.7, over 3.2 cm instead
+  of 1.8), the neck's shadow is the bias -0.75 under the jaw down the whole front of the neck, and the hair's warm
+  rim is 0.35.
+- **The hair.** Strand outlines on every clump. A bob is now 11 broad clumps instead of 13 (about 6 k triangles
+  fewer: Kaho 65.7 k to 59.5 k), without the thin edge strands and the thin points between the bangs; the strand lines
+  in the clump texture are 3 faint ones instead of 7, the clump edges 13 % dark instead of 22, and the hair's outline
+  0.75 of what it was. The loop's fringe correction is capped at 1.2 cm: it had chased the sheet's low hairline (a long
+  side-swept fringe) down to the eyes, 4 cm.
+
+The runtime path, checked (`scripts/characters/normal-check.ts <finished> <blender export>`). The face's lit-as-one-shape
+normals (an ellipsoid proxy, transferred in Blender) are in the glTF as exported. The finished body's normals are
+octahedral at 8 bits (EXT_meshopt_compression's FILTER method: gltf-transform fixes it): across the head's vertices the
+angle from the exported normal is 0.34 degrees at the median and 1.0 at the worst, against a terminator 3.4 degrees
+wide, so the quantization shows as nothing. The per-vertex `_TOON` (outline width, shade bias, rim, cloth) is not
+filtered: floats. The outline shader pushes along the skinned normal by a width that grows with the square root of the
+distance (0.75 of the body's width on the face, thinner at the eyes' decals, which have none); at 9 m it is the 0.45 floor,
+which is what keeps the far level's face from looking scratched. The eye and face textures are the 1024 px atlas with
+guttered cells (6 px), so a mip never pulls a neighbour in.
+
+Still unlike the sheet: the fringe is a row of pointed wedges where the sheet's is soft strands swept to one side; the
+hair is a darker brown in the player than on the sheet (the toon shadow tone over the key light); the brows sit lower
+and are fainter; the eyes' whites are wider than the sheet's and its eyes' lids are heavier; the ears are covered by
+the hair and the braid is the only thing the sheet's side locks do.
 
 ### Cloth against the legs at runtime
 
@@ -340,8 +380,7 @@ front show no leg through the cloth. The probe still counts 10-14 % of Kaho's co
 (13-17) and up to 26 % on a play-mode run, 2-6 cm deep. That is about what it counted on the old skirt (2-11 %), but
 the vertices are now in other places: just above the 3 cm hem band, where a lifting hem's rim lies between bone and
 skin, and at the front of the hip, under the waist that hangs from the pelvis. Replaying the vertex stage's push changes
-the count little (it is the springs that carry the cloth). The face before/after in the player:
-`docs/screenshots/cloudwatch/character/kaho-face-player-before-after.webp`.
+the count little (it is the springs that carry the cloth).
 
 Known limits: the skirt measure (`skirt-probe.ts` and the Blender QA) does not yet tell a leg through the cloth from the
 leg under a lifting hem's rim or a chord near the waist, so it still flags 10-26 % in the player where the frames show
@@ -531,7 +570,7 @@ Second pass (8 November 2026: painted signs, service drops, and the cast rebuilt
 | service drops | none | 15 of the 17 kit houses, spans 4-29 m, every wire 12 cm or more clear of everything |
 | `infra.glb` | 3.26 MB, 72 k triangles | 3.93 MB, 79 k triangles (the drops and their brackets) |
 | `town.glb` | 13.2 MB | unchanged (not re-baked: no kit house has a sign of its own) |
-| characters (kaho, mio, harbour-fisherman; far levels) | 1,060 + 1,204 + 952 KB (555 + 622 + 501 KB) | 1,046 + 1,182 + 975 KB (551 + 615 + 514 KB): -11 KB in all |
+| characters (kaho, mio, harbour-fisherman; far levels) | 1,060 + 1,204 + 952 KB (555 + 622 + 501 KB) | 981 + 1,191 + 978 KB (523 + 622 + 515 KB): -78 KB in all |
 | Intel GPU over the whole film (live world) | p50 16.7 ms, p95 17.5 ms | p50 16.7 ms, p95 17.7 ms, no frame over 50 ms, no program linked during the film (39 before it) |
 
 So the world's pieces are 0.54 MB lighter in all (props -1.16 MB, laundry -48 KB, infra +0.67 MB).

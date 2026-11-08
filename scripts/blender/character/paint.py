@@ -138,8 +138,8 @@ def eye_shape(kind):
         upper = lambda x: 0.22 - 0.22 * x * x + 0.04 * x
         lower = lambda x: -0.34 + 0.16 * x * x
     else:
-        upper = lambda x: 0.72 - 0.42 * x * x + 0.06 * x
-        lower = lambda x: -0.68 + 0.26 * x * x
+        upper = lambda x: 0.62 - 0.4 * x * x + 0.06 * x
+        lower = lambda x: -0.58 + 0.24 * x * x
     return upper, lower
 
 
@@ -148,7 +148,7 @@ def paint_face(at, spec):
     line = srgb(spec['line']) * 0.9
     iris = srgb(spec['eyes'])
     hair = srgb(spec['hair']['colour'])
-    lash = mix(line, hair * 0.6, 0.35) * 0.85
+    lash = mix(line, hair * 0.55, 0.55) * 0.9
     kind = 'narrow' if spec['old'] > 0.3 else spec['eye_shape']
     upper, lower = eye_shape(kind)
     ss = 2
@@ -183,7 +183,7 @@ def paint_face(at, spec):
     col[:] = col * (1 - sc[..., None]) + scl * sc[..., None]
     # the iris: large (its top always under the lid), in layers like a painted anime eye
     cx, cy = 0.04, -0.08
-    rx, ry = (0.56, 0.84) if kind != 'narrow' else (0.4, 0.5)
+    rx, ry = (0.54, 0.78) if kind != 'narrow' else (0.4, 0.5)
     r = np.hypot((X - cx) / rx, (Y - cy) / ry)
     ic = cover((r - 1) * rx, aa) * sc
     t = np.clip((Y - (cy - ry)) / (2 * ry), 0, 1)
@@ -196,7 +196,7 @@ def paint_face(at, spec):
     layer(col, iris_deep, ic * fib * 0.18)
     # 3. the lid's shadow over the iris' top third (a hard band, the way it is painted)
     band = cover((yu - 0.36) - Y, 0.05) * ic
-    layer(col, iris_deep * 0.8, band * 0.85)
+    layer(col, iris_deep * 0.9, band * 0.55)
     # 4. the lower crescent of light (the iris lit through from below)
     cres = cover(np.hypot((X - cx) / (rx * 0.78), (Y - cy + ry * 0.38) / (ry * 0.42)) - 1, 0.18) * ic * (Y < cy)
     layer(col, np.clip(iris * 1.8 + 0.12, 0, 1), cres * 0.75)
@@ -213,12 +213,12 @@ def paint_face(at, spec):
     layer(col, np.clip(iris * 2.0 + 0.25, 0, 1), arc * 0.55)
     # upper lash line: heavy, tapered at the inner corner, thickest past the middle, three lash points at the outer end
     up = curve(lambda x: upper(x) + 0.025, -1.0, 1.02)
-    w = [0.035 + 0.1 * smooth01((x + 0.9) / 1.4) for x, _ in up]
-    d = stroke(X, Y, up + [(1.14, upper(1.0) - 0.06)], w + [0.014])
+    w = [0.03 + 0.07 * smooth01((x + 0.9) / 1.4) for x, _ in up]
+    d = stroke(X, Y, up + [(1.14, upper(1.0) - 0.06)], w + [0.01])
     for (lx, ly, ex, ey) in ((0.62, 0.05, 0.86, 0.3), (0.82, 0.0, 1.08, 0.18), (0.95, -0.06, 1.2, 0.02)):
         y0 = upper(lx) + ly
-        d = np.minimum(d, stroke(X, Y, [(lx, y0), (ex, upper(min(1, ex)) + ey)], [0.05, 0.008]))
-    layer(col, lash, cover(d, aa))
+        d = np.minimum(d, stroke(X, Y, [(lx, y0), (ex, upper(min(1, ex)) + ey)], [0.03, 0.006]))
+    layer(col, lash, cover(d, aa) * 0.92)
     crease = curve(lambda x: upper(x) + 0.22 + 0.02 * x, -0.45, 0.85, 12)
     layer(col, mix(skin, line, 0.5), cover(stroke(X, Y, crease, [0.014] * len(crease)), aa))
     # lower lash: thin, the outer half, with two short ticks
@@ -249,9 +249,9 @@ def paint_face(at, spec):
     col = np.ones(X.shape + (3,)) * skin
     thick = 1.6 if spec['old'] > 0.3 else 1.0
     pts = curve(lambda x: -0.1 + 0.35 * (1 - x * x) - 0.15 * x, -0.95, 0.95, 16)
-    d = stroke(X, Y, pts, [(0.16 + 0.16 * (1 - (x + 1) / 2)) * thick for x, _ in pts])
-    bc = mix(hair, line, 0.45) * 0.9
-    layer(col, bc, cover(d, 6.0 / 64))
+    d = stroke(X, Y, pts, [(0.1 + 0.09 * (1 - (x + 1) / 2) ** 1.5) * thick for x, _ in pts])
+    bc = mix(hair * 0.8, skin * 0.6, 0.25)
+    layer(col, bc, cover(d, 9.0 / 64) * 0.92)
     at.put('brow', col, np.ones(X.shape), ss)
 
     # Mouths, one cell each (128 x 96): x, y in -1..1.
@@ -259,8 +259,8 @@ def paint_face(at, spec):
     tongue = np.array([0.86, 0.45, 0.45])
     lip = mix(skin, np.array([0.85, 0.45, 0.42]), 0.45)
     mouths = {
-        'mouth': lambda X, Y: (None, curve(lambda x: -0.08 * x * x + 0.02, -0.4, 0.4, 10), 0.045),
-        'mouth_smile': lambda X, Y: ('open', lambda x: 0.12 + 0.12 * x * x, lambda x: 0.12 - 0.6 * (1 - x * x) ** 0.8, 0.62),
+        'mouth': lambda X, Y: ('lips',),
+        'mouth_smile': lambda X, Y: ('smile',),
         'mouth_sad': lambda X, Y: (None, curve(lambda x: -0.1 + 0.16 * x * x, -0.32, 0.32, 10), 0.04),
         'mouth_o': lambda X, Y: ('o', 0.18, 0.28),
         'mouth_open': lambda X, Y: ('open', lambda x: 0.22 - 0.06 * x * x, lambda x: 0.2 - 0.62 * (1 - x * x) ** 0.7, 0.42),
@@ -273,7 +273,24 @@ def paint_face(at, spec):
         col = np.ones(X.shape + (3,)) * skin
         aa = 5.0 / 128
         kind = f(X, Y)
-        if kind[0] is None:
+        if kind[0] == 'lips':
+            lipc = mix(skin * 0.5, line, 0.3) * np.array([1.0, 0.8, 0.78])
+            # the lower lip's tone, soft, under the line
+            layer(col, lip, cover(np.hypot(X / 0.3, (Y + 0.26) / 0.12) - 1, 0.6) * 0.45)
+            # a calm line: its middle a touch heavier, its ends fading out, the corners barely lifted
+            pts = curve(lambda x: 0.04 + 0.1 * x * x, -0.46, 0.46, 18)
+            wd = [0.055 * (1 - 0.7 * (abs(x) / 0.46) ** 2) + 0.012 for x, _ in pts]
+            layer(col, lipc, cover(stroke(X, Y, pts, wd), aa))
+        elif kind[0] == 'smile':
+            # a gentle closed smile: a shallow U, its corners lifted into small cheeks, the lower lip's tone under it
+            lipc = mix(skin * 0.5, line, 0.3) * np.array([1.0, 0.8, 0.78])
+            layer(col, lip, cover(np.hypot(X / 0.34, (Y + 0.24) / 0.15) - 1, 0.6) * 0.5)
+            pts = curve(lambda x: 0.14 - 0.34 * (1 - x * x) ** 0.9 + 0.0, -0.56, 0.56, 22)
+            wd = [0.05 * (1 - 0.6 * (abs(x) / 0.56) ** 2) + 0.012 for x, _ in pts]
+            layer(col, lipc, cover(stroke(X, Y, pts, wd), aa))
+            for sg in (-1, 1):
+                layer(col, lipc, cover(stroke(X, Y, [(sg * 0.6, 0.16), (sg * 0.64, 0.26)], [0.025, 0.01]), aa))
+        elif kind[0] is None:
             layer(col, line * 0.8 + lip * 0.2, cover(stroke(X, Y, kind[1], [kind[2]] * len(kind[1])), aa))
         elif kind[0] == 'o':
             r = np.hypot(X / kind[1], (Y + 0.05) / kind[2])
@@ -296,9 +313,13 @@ def paint_face(at, spec):
     U, V = at.grid('nose', ss)
     X, Y = U * 2 - 1, V * 2 - 1
     col = np.ones(X.shape + (3,)) * skin
-    sh = cover(np.hypot(X / 0.35, (Y + 0.1) / 0.18) - 1, 0.5)
-    layer(col, skin * np.array([0.86, 0.78, 0.8]), sh * 0.7)
-    layer(col, mix(skin, line, 0.5), cover(stroke(X, Y, [(-0.18, -0.15), (0.2, -0.22)], [0.05, 0.04]), 8.0 / 64))
+    sh = cover(np.hypot((X - 0.04) / 0.5, (Y + 0.22) / 0.22) - 1, 0.55)
+    layer(col, skin * np.array([0.84, 0.74, 0.76]), sh * 0.75)
+    # the bridge's shaded side and the tip's own small shape
+    layer(col, skin * np.array([0.9, 0.84, 0.85]), cover(stroke(X, Y, [(-0.12, 0.7), (-0.2, 0.05)], [0.1, 0.16]), 0.6) * 0.55)
+    nl = mix(skin * 0.55, line, 0.3)
+    layer(col, nl, cover(stroke(X, Y, curve(lambda x: -0.18 - 0.1 * np.cos(x * 3.0), -0.34, 0.3, 8), [0.045] * 8), 8.0 / 64) * 0.9)
+    layer(col, nl, cover(stroke(X, Y, [(-0.3, -0.2), (-0.34, -0.12)], [0.04, 0.02]), 8.0 / 64) * 0.8)
     at.put('nose', col, np.ones(X.shape), ss)
 
     # Blush: a soft pink ellipse with three short hatches.
@@ -359,7 +380,7 @@ def paint_hair(at, name, lin, grey=0.0):
     # highlight band: a zigzag around v 0.8 (near the crown), wider in the clump's middle
     # clump edges darker (the separation between painted clumps)
     edge = smooth01((np.abs(U - 0.5) - 0.3) / 0.2)
-    col *= (1 - 0.22 * edge)[..., None]
+    col *= (1 - 0.13 * edge)[..., None]
     dark = float(np.dot(base, [0.3, 0.59, 0.11])) < 0.25
     if dark:
         # black hair: darkening the edges does not show; lift each clump's middle with a cool sheen instead
@@ -367,13 +388,13 @@ def paint_hair(at, name, lin, grey=0.0):
     # strands inside the clump: a few fine darker lines along it (root to tip, gently converging to the tip) and two
     # lighter ones, so a clump reads as a bundle of hair, not a ribbon
     rng = np.random.default_rng(7)
-    for k in range(7):
-        u0 = 0.14 + 0.72 * (k + rng.uniform(-0.3, 0.3)) / 6
+    for k in range(3):
+        u0 = 0.14 + 0.72 * (k + rng.uniform(-0.3, 0.3)) / 2
         conv = 0.5 + (u0 - 0.5) * (0.55 + 0.45 * V)
         wv = 0.006 + 0.004 * rng.uniform()
         v_end = rng.uniform(0.05, 0.4)
         sl = cover(np.abs(U - conv) - wv, 1.2 / 128) * smooth01((V - v_end) / 0.1) * (1 - smooth01((V - 0.93) / 0.05))
-        col = col * (1 - (0.16 if not dark else 0.1) * sl)[..., None] + (0 if not dark else 0) * sl[..., None]
+        col = col * (1 - (0.08 if not dark else 0.05) * sl)[..., None] + (0 if not dark else 0) * sl[..., None]
     for k in range(2):
         u0 = 0.3 + 0.4 * k + rng.uniform(-0.05, 0.05)
         conv = 0.5 + (u0 - 0.5) * (0.6 + 0.4 * V)

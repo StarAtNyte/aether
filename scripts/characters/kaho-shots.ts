@@ -114,6 +114,24 @@ try {
     await page.waitForTimeout(800);
     await canvasShot(page, 'bust');
   }
+  if (only.has('face3')) {
+    // The face test: close-up (front, three-quarter, profile) and mid distance (front, three-quarter), the camera at the
+    // film's close-up lens, lit as the world is; the far level at 9 m. The same views as the Blender QA's face.png.
+    const head = floor + 1.42;
+    const shot = async (name: string, yaw: number, cx: number, cy: number, cz: number, fov: number, tx = 0, ty = 0, tz = 0): Promise<void> => {
+      await place(x0, z0, yaw);
+      await cam([x0 + cx, floor + cy, z0 + cz], [x0 + tx, floor + 1.4 + ty, z0 + tz], fov);
+      await page.waitForTimeout(1300);
+      await canvasShot(page, name);
+    };
+    await shot('f-close-front', 180, 0, 1.42, 0.62, 26);
+    await shot('f-close-34', 180 - 35, 0, 1.42, 0.62, 26);
+    await shot('f-close-profile', 180 - 90, 0, 1.42, 0.62, 26);
+    await shot('f-mid-front', 180, 0, 1.3, 2.2, 26, 0, -0.08);
+    await shot('f-mid-34', 180 - 35, 0, 1.3, 2.2, 26, 0, -0.08);
+    await shot('f-far', 180, 0, 1.3, 9, 14, 0, -0.1);
+    void head;
+  }
   for (const [mode, speed] of [['walk', 1.3], ['run', 4.0]] as const) {
     if (!only.has(mode)) continue;
     // Move along +x every frame; the camera follows from the side.

@@ -202,6 +202,21 @@ class QA:
         row2 = R.side_by_side(tiles[4:] + [np.zeros_like(tiles[0])] * (8 - len(tiles)))
         R.save_png(f'{self.out}/expressions.png', np.concatenate([row1, row2], 0))
 
+    def face_views(self, path=None):
+        """face.png: the face close up (ortho, the head's own frame) from the front, the three-quarter and the profile
+        (her left), in the preview light, then the bust from the front and the three-quarter at the distance of a film's
+        mid shot: the same views the in-player face test (kaho-shots.ts --only=face) takes."""
+        hd = self.J['Bip01_Head']
+        u = self.spec['head_h'] / 0.237
+        kb = self.body.data.shape_keys.key_blocks if self.body.data.shape_keys else None
+        if kb:
+            for k in kb[1:]:
+                k.value = 0.0
+        tgt = hd + Vector((0, 0, 0.02 * u))
+        close = [R.render_view(f'{self.out}/qa-fv.png', az, 0.3, 0, ortho=0.26 * u, res=(420, 420), target=tgt, elev=0.04) for az in (0, 35, 90)]
+        bust = [R.render_view(f'{self.out}/qa-fv.png', az, 0.3, 0, ortho=0.8 * u, res=(420, 420), target=hd - Vector((0, 0, 0.1 * u)), elev=0.04) for az in (0, 35)]
+        R.save_png(path or f'{self.out}/face.png', np.concatenate([R.side_by_side(close), R.side_by_side(bust + [np.zeros_like(bust[0])])], 0))
+
     # --- checks ------------------------------------------------------------------------------------------------------
     def silhouette(self, sheet_path):
         if not sheet_path:

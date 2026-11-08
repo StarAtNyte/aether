@@ -76,7 +76,7 @@ def landmarks(spec):
     male = spec['gender'] == 'male'
     leg = spec['leg']  # hip joint height as a share of the height
     chin = H - hh
-    neck_len = hh * (0.16 if anime else 0.3)
+    neck_len = hh * (0.125 if anime else 0.3)
     neck_base = chin - neck_len
     return {
         'H': H, 'hh': hh, 'chin': chin,

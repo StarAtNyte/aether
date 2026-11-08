@@ -223,7 +223,7 @@ class Hair:
             l.uv = uv
         self.parts.append(Part(ob, 'hair', toon=(0.4, 0.0, 0.6, 0.0), bones={'Bip01_Head': 1.0}))
 
-    def finish(self, name='hair', toon=(1.15, 0.0, 0.35, 0.0)):
+    def finish(self, name='hair', toon=(0.75, 0.0, 0.35, 0.0)):
         if not self.verts:
             return
         ob = new_object(name, self.verts, self.faces)
@@ -292,20 +292,21 @@ def build_hair(spec, J, head, form, chin, atlas, bones, body_bvh):
         return math.radians(lerp(112, 68, (c + 1) / 2)) if st != 'short' else math.radians(lerp(108, 66, (c + 1) / 2))
     H.cap(head, hairline)
     # thin strands at the locks' edges for the styles that hang (spec['hair_strands'] false turns them off)
-    H.strands = st in ('bob', 'long') and spec.get('hair_strands', True)
+    # (a bob's few large clumps carry no strands of their own: thin edge strands read as scratches)
+    H.strands = st == 'long' and spec.get('hair_strands', True)
     chin_z = H.chin.z
     top = H.top
     if st in ('bob', 'long', 'ponytail'):
         bangs(H, part_theta, vol, st)
     if st == 'bob':
         tip_front = chin_z + 0.004 * u - (H.h['length'] - 0.25) * 0.5
-        n = 13
+        n = 11
         for i in range(n):
             # azimuth around the sides and back, skipping the face
             theta = math.radians(lerp(62, 298, i / (n - 1)))
             back = (1 - math.cos(theta)) / 2
             tz = lerp(tip_front, tip_front - 0.012 * u, back)
-            w = 0.066 * u
+            w = 0.08 * u
             phi_leave = math.radians(lerp(92, 108, back))
             H.lock(theta, math.radians(10), phi_leave, tz, w, 0.018 * u, vol * (1.3 - 0.25 * back), tip='curl', curl=0.022 * u, flare=0.018 * u,
                    theta_root=math.radians(180) + (theta - math.radians(180)) * 0.2)
@@ -391,8 +392,7 @@ def bangs(H, part_theta, vol, st):
         bw = 0.03 if n == 9 else (0.048 if abs(f - 0.5) < 0.3 else 0.042) if st == 'bob' else (0.034 if abs(f - 0.5) < 0.3 else 0.03)
         # a long style's fringe is soft: rounded, overlapping ends (a bob's bangs are a few large points)
         H.clump(pts, (bw * 1.15 if n == 9 else bw) * u, 0.01 * u, tip='curl' if n == 9 else 'point')
-        if st == 'bob' and 0 < i < n - 1:
-            # a thin point between two bangs, a little shorter: the fringe's edge breaks into strands
+        if False and st == 'bob' and 0 < i < n - 1:
             mid_t = theta + math.radians(58 * 2 / (n - 1)) * 0.5
             q = [H.shell.point(lerp(math.radians(30), math.radians(80), g), lerp(root_theta, mid_t, g), (vol * (1 - 0.5 * g) + 0.0035 * u)) for g in (0.0, 0.35, 0.7, 1.0)]
             q.append(Vector((q[-1].x, q[-1].y - 0.002 * u, tz + 0.012 * u)))
