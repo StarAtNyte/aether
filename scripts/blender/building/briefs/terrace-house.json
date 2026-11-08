@@ -1,0 +1,16 @@
+{
+  "id": "terrace-house",
+  "name": "Two-storey house on the terrace",
+  "style": "anime",
+  "kind": "L",
+  "footprint": { "w": 8.4, "d": 8.6 },
+  "storeys": 2,
+  "roof": { "type": "irimoya", "pitch_deg": 27, "eaves_m": 0.65 },
+  "palette": "harbour-teal",
+  "wear": 0.45,
+  "seed": 1007,
+  "detail": "hero",
+  "features": { "balconies": 1, "stair": "e", "ac_wall": 2, "ac_ground": 1, "plants_door": 2, "plants_balcony": 3, "window_style": "shutter", "two_tone": true, "pent_roofs": 0.5 },
+  "gaps": { "e": 3.0, "w": 1.2 },
+  "notes": "Lived in for thirty years: shutters, an outdoor stair to the upstairs flat, plants everywhere."
+}

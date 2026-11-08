@@ -19,6 +19,9 @@ const ACTION_TEXT: Record<GateRequest['action'], string> = {
   character_create: 'Build a character with the Blender character pipeline (a separate headless Blender run on this computer), then import it into this project.',
   character_revise: 'Rebuild a character with the Blender character pipeline from these notes, then import it into this project.',
   character_review: 'Re-check a character built by the Blender character pipeline (its QA report and turnaround).',
+  building_create: 'Build a building with the Blender building kit (a separate headless Blender run on this computer), then import it into this project.',
+  building_revise: 'Rebuild a building with the Blender building kit from these notes, then import it into this project.',
+  building_review: 'Re-check a building made by the Blender building kit (its QA report and stills).',
 };
 
 /** The dialog body. */

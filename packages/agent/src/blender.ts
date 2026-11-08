@@ -153,9 +153,14 @@ export async function runBlenderAction(deps: BlenderHostDeps, request: BlenderPl
     }
     const out = await deps.api.run(plan.planId, confirmed, signal);
     if (out.glb) {
-      // A built character: into the project as a user asset, like an export.
+      // A built character or building: into the project as a user asset, like an export.
       const bytes = Uint8Array.from(atob(out.glb.slice(out.glb.indexOf(',') + 1)), (ch) => ch.charCodeAt(0));
-      const name = request.action === 'character_create' ? request.input.brief.name : request.action === 'character_revise' ? request.input.id : 'Character';
+      const name =
+        request.action === 'character_create' || request.action === 'building_create'
+          ? request.input.brief.name
+          : request.action === 'character_revise' || request.action === 'building_revise'
+            ? request.input.id
+            : 'Blender build';
       const r = await deps.importGlb(bytes, name);
       if (!r.ok) return { ok: false, text: `${out.text}\nThe built model was refused: ${r.error}` };
       return { ok: true, text: `${out.text}\nImported as user asset "${r.id}" (${r.summary}). Place it with apply_patches: an entity with shape {"kind":"asset","id":"${r.id}"}.`, ...(out.image ? { image: out.image } : {}), asset: { id: r.id, summary: r.summary } };
@@ -180,6 +185,9 @@ export const BLENDER_TOOL_ACTIONS: Readonly<Record<string, BlenderAction>> = {
   character_create: 'character_create',
   character_revise: 'character_revise',
   character_review: 'character_review',
+  building_create: 'building_create',
+  building_revise: 'building_revise',
+  building_review: 'building_review',
 };
 
 const briefSchema = {
@@ -258,10 +266,50 @@ BLENDER_CHARACTER_TOOLS.push(
   },
 );
 
+const buildingBriefSchema = {
+  type: 'object',
+  required: ['id', 'name', 'style'],
+  properties: {
+    id: { type: 'string', pattern: '^[a-z][a-z0-9-]{1,39}$', description: 'Slug, e.g. "harbour-shop"' },
+    name: { type: 'string', maxLength: 60 },
+    style: { type: 'string', enum: ['anime', 'realistic'], description: 'anime: painted toon (Cloudwatch); realistic: PBR' },
+    kind: { type: 'string', enum: ['simple', 'L', 'stepped', 'flat', 'narrow', 'shop'] },
+    footprint: { type: 'object', properties: { w: { type: 'number', minimum: 3.5, maximum: 24 }, d: { type: 'number', minimum: 3.5, maximum: 24 } }, description: 'Metres' },
+    storeys: { type: 'integer', minimum: 1, maximum: 4 },
+    roof: { type: 'object', description: '{ type: gable | hip | irimoya | shed | flat, pitch_deg, eaves_m, verge_m, axis: x | y }' },
+    palette: { description: 'A preset name (harbour-cream, harbour-teal, harbour-brick, concrete, realistic-plaster) or { wall, wall2, trim, roof, accent } as #rrggbb' },
+    wear: { type: 'number', minimum: 0, maximum: 1, description: '0 new, 1 old: grime at the wall foot and eaves, streaks under sills, moss on the roof' },
+    seed: { type: 'integer', minimum: 0 },
+    detail: { type: 'string', enum: ['hero', 'mid', 'far'], description: 'How much is modelled (and the triangle budget: 16k / 7k / 3.5k)' },
+    features: { type: 'object', description: '{ balconies, stair: "e"|"w", shop_front, ac_wall, ac_ground, meters, plants_door, plants_balcony, signage: "TEXT", window_style: plain|shutter|grille|hood|blind|mixed, lit, two_tone, pent_roofs }' },
+    notes: { type: 'string', maxLength: 2000 },
+  },
+} as const;
+
+/** The building pipeline's tools (a headless Blender run each; see docs/BLENDER-HARNESS.md, "Buildings"). */
+export const BLENDER_BUILDING_TOOLS: ToolDef[] = [
+  {
+    name: 'building_create',
+    description:
+      'Build a house or shop (anime toon or realistic PBR) from a brief with the Blender building kit on this computer: massing and roof (real tile courses, ridge caps, gutters, downpipes), walls with real openings (recessed windows with sashes, sills, shutters or grilles; sliding entrance doors; shop shutters), balconies with railings, external stairs, outdoor units with pipes, meters, plants, signs, procedural wear; a QA loop (fittings touch what carries them, nothing sinks over 3 cm, the triangle budget) and LODs. Imports the result as a user asset and returns the QA report and stills (front, three-quarter, street). The user must allow it; it takes a minute or two.',
+    inputSchema: { type: 'object', additionalProperties: false, required: ['brief'], properties: { brief: buildingBriefSchema } },
+  },
+  {
+    name: 'building_revise',
+    description: 'Rebuild a building made with building_create, applying notes (e.g. "more wear, steeper roof, more plants, shutters") and brief changes; QA runs again. Imports the new model. The user must allow it.',
+    inputSchema: { type: 'object', additionalProperties: false, required: ['id', 'notes'], properties: { id: { type: 'string', pattern: '^[a-z][a-z0-9-]{1,39}$' }, notes: { type: 'string', maxLength: 2000 }, brief: { type: 'object' } } },
+  },
+  {
+    name: 'building_review',
+    description: 'Render the stills of a building made with building_create again and see its QA report (contact, interpenetration, budget). Use it to judge a building before placing it.',
+    inputSchema: { type: 'object', additionalProperties: false, required: ['id'], properties: { id: { type: 'string', pattern: '^[a-z][a-z0-9-]{1,39}$' } } },
+  },
+];
+
 /** The agent's Blender tools over a host (see `AgentOptions.blender`). */
 export function createBlenderToolRunner(deps: BlenderHostDeps): HostToolRunner {
   return {
-    tools: [...BLENDER_TOOLS, ...BLENDER_CHARACTER_TOOLS],
+    tools: [...BLENDER_TOOLS, ...BLENDER_CHARACTER_TOOLS, ...BLENDER_BUILDING_TOOLS],
     async run(name, input, signal) {
       const action = BLENDER_TOOL_ACTIONS[name];
       if (!action) return { text: `Unknown Blender tool "${name.slice(0, 40)}".`, isError: true };

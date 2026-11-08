@@ -1,0 +1,14 @@
+{
+  "id": "flat-block",
+  "name": "Three-storey flat-roofed block",
+  "style": "anime",
+  "kind": "flat",
+  "footprint": { "w": 9.0, "d": 8.0 },
+  "storeys": 3,
+  "palette": "concrete",
+  "wear": 0.7,
+  "seed": 1031,
+  "detail": "mid",
+  "features": { "balconies": 2, "stair": "w", "ac_wall": 2, "ac_ground": 1, "window_style": "grille", "signage": "HAMAYA FISH" },
+  "gaps": { "w": 3.0 }
+}

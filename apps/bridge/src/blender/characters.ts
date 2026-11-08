@@ -94,6 +94,11 @@ export async function writeDataUrl(path: string, dataUrl: string): Promise<void>
 
 /** Run a job's Blender process to its end (killed on abort or timeout). */
 export function runCharacterProcess(job: CharacterJob, signal?: AbortSignal, timeoutMs = CHARACTER_TIMEOUT_MS): Promise<{ code: number | null; log: string }> {
+  return runPipelineProcess(job, signal, timeoutMs);
+}
+
+/** Run a pipeline's headless Blender (a character's or a building's) in its folder to its end (killed on abort or timeout). */
+export function runPipelineProcess(job: { argv: string[]; dir: string }, signal?: AbortSignal, timeoutMs = CHARACTER_TIMEOUT_MS): Promise<{ code: number | null; log: string }> {
   return new Promise((done, fail) => {
     const [cmd, ...args] = job.argv as [string, ...string[]];
     const child = spawn(cmd, args, { cwd: job.dir, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' } });

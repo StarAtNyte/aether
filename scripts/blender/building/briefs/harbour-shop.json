@@ -1,0 +1,15 @@
+{
+  "id": "harbour-shop",
+  "name": "Corner shop by the crossing",
+  "style": "anime",
+  "kind": "shop",
+  "footprint": { "w": 8.0, "d": 7.0 },
+  "storeys": 2,
+  "roof": { "type": "gable", "pitch_deg": 26, "eaves_m": 0.6, "verge_m": 0.45, "axis": "x" },
+  "palette": { "wall": "#efe2c8", "wall2": "#8a6448", "trim": "#ece6da", "roof": "#4a4d5c", "accent": "#2f5d8a" },
+  "wear": 0.55,
+  "seed": 77,
+  "detail": "hero",
+  "features": { "shop_front": true, "balconies": 1, "ac_wall": 1, "ac_ground": 1, "plants_door": 3, "signage": "SHIOKAZE STORE", "lit": 0.4, "window_style": "mixed" },
+  "notes": "A small family shop: the lit glazed bay and a roll-up shutter on the ground floor, the family lives upstairs."
+}

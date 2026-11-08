@@ -24,13 +24,28 @@ export type BlenderState = (typeof BLENDER_STATES)[number];
 /** The MCP server's tools the server may call (everything else it offers is dropped). */
 export const BLENDER_MCP_TOOLS = ['get_scene_info', 'look', 'execute_blender_code'] as const;
 /** Actions of `/api/local/blender/plan`. */
-export const BLENDER_ACTIONS = ['get_scene_info', 'look', 'execute_blender_code', 'export_glb', 'render', 'bake', 'character_create', 'character_revise', 'character_review'] as const;
+export const BLENDER_ACTIONS = [
+  'get_scene_info',
+  'look',
+  'execute_blender_code',
+  'export_glb',
+  'render',
+  'bake',
+  'character_create',
+  'character_revise',
+  'character_review',
+  'building_create',
+  'building_revise',
+  'building_review',
+] as const;
 /** One Blender action. */
 export type BlenderAction = (typeof BLENDER_ACTIONS)[number];
 /** Actions that run Python in Blender: confirmation required on every run. */
-export const BLENDER_PYTHON_ACTIONS: readonly BlenderAction[] = ['execute_blender_code', 'export_glb', 'render', 'bake', 'character_create', 'character_revise', 'character_review'];
+export const BLENDER_PYTHON_ACTIONS: readonly BlenderAction[] = ['execute_blender_code', 'export_glb', 'render', 'bake', 'character_create', 'character_revise', 'character_review', 'building_create', 'building_revise', 'building_review'];
 /** Actions of the character pipeline (a headless Blender run of `scripts/blender/character/build.py`, no MCP session). */
 export const BLENDER_CHARACTER_ACTIONS: readonly BlenderAction[] = ['character_create', 'character_revise', 'character_review'];
+/** Actions of the building pipeline (a headless Blender run of `scripts/blender/building/build.py`, no MCP session). */
+export const BLENDER_BUILDING_ACTIONS: readonly BlenderAction[] = ['building_create', 'building_revise', 'building_review'];
 
 /** Does `action` run Python in Blender? */
 export function blenderActionRunsPython(action: BlenderAction): boolean {
@@ -78,6 +93,43 @@ export const CharacterBriefSchema = z
   .passthrough()
   .refine((b) => JSON.stringify(b).length <= CHARACTER_BRIEF_MAX, 'the brief is too long');
 export type CharacterBrief = z.infer<typeof CharacterBriefSchema>;
+const hexColour = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'colours are #rrggbb');
+/** Largest building brief (JSON characters). */
+export const BUILDING_BRIEF_MAX = 8_000;
+
+/**
+ * A building brief (the building pipeline's input, `docs/BLENDER-HARNESS.md`, "Buildings"): the massing, the roof, the
+ * style and palette, how worn it is and what lives on it; the pipeline reads the fields it knows and keeps the rest.
+ */
+export const BuildingBriefSchema = z
+  .object({
+    id: characterId,
+    name: z.string().min(1).max(60),
+    style: z.enum(['anime', 'realistic']),
+    kind: z.enum(['simple', 'L', 'stepped', 'flat', 'narrow', 'shop']).optional(),
+    footprint: z.object({ w: z.number().min(3.5).max(24), d: z.number().min(3.5).max(24) }).strict().optional(),
+    storeys: z.number().int().min(1).max(4).optional(),
+    roof: z
+      .object({
+        type: z.enum(['gable', 'hip', 'irimoya', 'shed', 'flat']),
+        pitch_deg: z.number().min(8).max(45).optional(),
+        eaves_m: z.number().min(0.15).max(1.2).optional(),
+        verge_m: z.number().min(0.1).max(1).optional(),
+        axis: z.enum(['x', 'y']).optional(),
+      })
+      .strict()
+      .optional(),
+    palette: z.union([z.string().max(40), z.object({ wall: hexColour.optional(), wall2: hexColour.optional(), trim: hexColour.optional(), roof: hexColour.optional(), accent: hexColour.optional() }).strict()]).optional(),
+    wear: z.number().min(0).max(1).optional(),
+    seed: z.number().int().min(0).max(1_000_000).optional(),
+    detail: z.enum(['hero', 'mid', 'far']).optional(),
+    budget_tris: z.number().int().min(1000).max(200_000).optional(),
+    features: z.record(z.string(), z.unknown()).optional(),
+    notes: z.string().max(2000).optional(),
+  })
+  .passthrough()
+  .refine((b) => JSON.stringify(b).length <= BUILDING_BRIEF_MAX, 'the brief is too long');
+export type BuildingBrief = z.infer<typeof BuildingBriefSchema>;
 const sheetImage = z
   .string()
   .max(12 * 1024 * 1024)
@@ -125,6 +177,12 @@ export const BlenderInputs = {
   character_revise: z.object({ id: characterId, notes: z.string().min(1).max(2000), brief: z.record(z.string(), z.unknown()).optional() }).strict(),
   /** The QA report and turnaround of a character made before (re-checked). */
   character_review: z.object({ id: characterId }).strict(),
+  /** Build a house or shop from a brief (the building kit: massing, roofs, real openings, lived-in detail, wear, QA). */
+  building_create: z.object({ brief: BuildingBriefSchema }).strict(),
+  /** Rebuild a building made before, with notes (what to change) and brief changes. */
+  building_revise: z.object({ id: characterId, notes: z.string().min(1).max(2000), brief: z.record(z.string(), z.unknown()).optional() }).strict(),
+  /** The QA report and stills of a building made before (rendered again). */
+  building_review: z.object({ id: characterId }).strict(),
 } as const satisfies Record<BlenderAction, z.ZodType>;
 
 /** `POST …/blender/plan` body. */
@@ -138,6 +196,9 @@ export const BlenderPlanRequestSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('character_create'), input: BlenderInputs.character_create }).strict(),
   z.object({ action: z.literal('character_revise'), input: BlenderInputs.character_revise }).strict(),
   z.object({ action: z.literal('character_review'), input: BlenderInputs.character_review }).strict(),
+  z.object({ action: z.literal('building_create'), input: BlenderInputs.building_create }).strict(),
+  z.object({ action: z.literal('building_revise'), input: BlenderInputs.building_revise }).strict(),
+  z.object({ action: z.literal('building_review'), input: BlenderInputs.building_review }).strict(),
 ]);
 /** A plan request. */
 export type BlenderPlanRequest = z.infer<typeof BlenderPlanRequestSchema>;
@@ -168,7 +229,7 @@ export const BlenderRunResultSchema = z.object({
     .max(24 * 1024 * 1024)
     .regex(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/)
     .optional(),
-  /** A GLB data URL (character_create and character_revise: the built character). */
+  /** A GLB data URL (character_create / character_revise: the built character; building_create / building_revise: the building). */
   glb: z
     .string()
     .max(48 * 1024 * 1024)

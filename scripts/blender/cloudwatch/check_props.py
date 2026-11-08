@@ -20,6 +20,9 @@ import bpy
 from mathutils import Vector
 from mathutils.bvhtree import BVHTree
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from contact import base_contact, bvh_of_objects as bvh_of, inside, world_mesh  # noqa: E402  (shared with building/qa.py)
+
 argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 ap = argparse.ArgumentParser()
 ap.add_argument("--tol", type=float, default=0.03)
@@ -27,48 +30,6 @@ ap.add_argument("--json", default="")
 A = ap.parse_args(argv)
 
 GROUND = ("terrain", "roads", "stair", "lookout", "harbour", "railway")
-
-
-def world_mesh(ob, outline=False):
-    """Evaluated world-space vertices and polygons, with the outline shell left out."""
-    for md in ob.modifiers:
-        if md.name == "outline":
-            md.show_viewport = outline
-    dg = bpy.context.evaluated_depsgraph_get()
-    ev = ob.evaluated_get(dg)
-    me = ev.to_mesh()
-    mw = ob.matrix_world
-    verts = [mw @ v.co for v in me.vertices]
-    polys = [tuple(p.vertices) for p in me.polygons]
-    ev.to_mesh_clear()
-    return verts, polys
-
-
-def bvh_of(names):
-    verts, polys = [], []
-    for n in names:
-        ob = bpy.data.objects.get(n)
-        if ob is None:
-            continue
-        v, p = world_mesh(ob)
-        base = len(verts)
-        verts += v
-        polys += [tuple(base + i for i in q) for q in p]
-    return BVHTree.FromPolygons(verts, polys)
-
-
-def inside(bvh, p):
-    """Point-in-mesh by ray parity along +Z (closed meshes)."""
-    hits = 0
-    o = p.copy()
-    d = Vector((0.0, 0.0, 1.0))
-    for _ in range(64):
-        loc, nrm, idx, dist = bvh.ray_cast(o, d)
-        if loc is None:
-            break
-        hits += 1
-        o = loc + d * 1e-4
-    return hits % 2 == 1
 
 
 def main():
@@ -92,25 +53,18 @@ def main():
             ok_contact = gap <= 0.0  # a hull must reach into the water
             ok_burial = True
         else:
-            downs = []
-            for v in base:
+            def down(v):
                 loc, nrm, idx, dist = ground.ray_cast(v + Vector((0, 0, 0.5)), Vector((0, 0, -1)))
-                if loc is not None:
-                    downs.append((v.z - loc.z, nrm))
-            if not downs:
+                return None if loc is None else (v.z - loc.z, nrm)
+            c = base_contact(verts, down, tol)
+            if c is None:
                 rows.append({"prop": ob.name, "error": "no ground under it"})
                 failed += 1
                 continue
-            gap = min(d for d, _ in downs)
-            # Slope allowance: a footprint on a slope buries its uphill edge by width x tan(slope).
-            xs = [v.x for v in base]
-            ys = [v.y for v in base]
-            width = max(max(xs) - min(xs), max(ys) - min(ys))
-            nz = min(max(0.2, n.z) for _, n in downs)
-            allow = width * math.tan(math.acos(min(1.0, nz)))
-            burial = max(0.0, -min(d for d, _ in downs))
+            # (base_contact: the slope allowance, a footprint on a slope burying its uphill edge by width x tan(slope))
+            gap, burial = c["gap"], c["burial"]
             ok_contact = gap <= tol
-            ok_burial = burial <= tol + allow
+            ok_burial = burial <= tol + c["allow"]
         ok = ok_contact and ok_burial
         if not ok:
             failed += 1

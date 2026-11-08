@@ -101,6 +101,6 @@ describe('Blender on a hosted page', () => {
     expect(await blenderToolsFor({ ...base, local: { ...base.local, blender: 'off' } }, assets)).toBeNull();
     expect(await blenderToolsFor({ ...base, local: { ...base.local, blender: 'not_installed' } }, assets)).toBeNull();
     const tools = await blenderToolsFor({ ...base, local: { ...base.local, blender: 'ready' } }, assets);
-    expect(tools?.tools.map((t) => t.name)).toEqual(['blender_scene_info', 'blender_look', 'blender_python', 'blender_export_asset', 'blender_render', 'blender_bake', 'character_create', 'character_revise', 'character_review']);
+    expect(tools?.tools.map((t) => t.name)).toEqual(['blender_scene_info', 'blender_look', 'blender_python', 'blender_export_asset', 'blender_render', 'blender_bake', 'character_create', 'character_revise', 'character_review', 'building_create', 'building_revise', 'building_review']);
   });
 });

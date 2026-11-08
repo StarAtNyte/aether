@@ -29,7 +29,8 @@ import { BridgeError } from '../errors';
 import { detectBlender, missingDetail, type BlenderInstall } from './detect';
 import { BLENDER_HOST, BLENDER_PORT, connectBlenderMcp, type BlenderMcpSession } from './mcp';
 import { bakeCode, exportGlbCode, parseResult, renderCode } from './templates';
-import { characterJob, characterPlanText, conceptPrompt, defaultCharacterScript, ensureJobDir, readCharacterOutputs, runCharacterProcess, summarizeReport, writeDataUrl, type CharacterJob } from './characters';
+import { characterJob, characterPlanText, conceptPrompt, defaultCharacterScript, ensureJobDir, readCharacterOutputs, runCharacterProcess, runPipelineProcess, summarizeReport, writeDataUrl, type CharacterJob } from './characters';
+import { BUILDING_TIMEOUT_MS, buildingJob, buildingPlanText, defaultBuildingScript, readBuildingOutputs, summarizeBuildingReport, type BuildingJob } from './buildings';
 import { existsSync } from 'node:fs';
 import type { CharacterBrief } from '@aether/agent/blender';
 
@@ -49,6 +50,10 @@ export interface BlenderServiceOptions {
   characterScript?: string;
   /** Runs a character build's Blender process (tests replace it). */
   runCharacter?: typeof runCharacterProcess;
+  /** The building pipeline's entry script (default: `scripts/blender/building/build.py` of this checkout). */
+  buildingScript?: string;
+  /** Runs a building build's Blender process (tests replace it). */
+  runBuilding?: (job: BuildingJob, signal?: AbortSignal) => Promise<{ code: number | null; log: string }>;
   /** Makes a concept sheet from a prompt when a brief comes without one (the local image backend). */
   concept?: (prompt: string, signal?: AbortSignal) => Promise<{ bytes: Uint8Array; mime: string }>;
   /** Is something listening on 127.0.0.1:port? */
@@ -71,6 +76,8 @@ interface StoredPlan {
   out?: string;
   /** A character pipeline run (no MCP session: a headless Blender process). */
   character?: { job: CharacterJob; brief: Record<string, unknown> | null; sheet?: string; notes?: string; glb: boolean };
+  /** A building pipeline run (a headless Blender process, like a character's). */
+  building?: { job: BuildingJob; brief: Record<string, unknown> | null; glb: boolean };
   expiresAt: number;
 }
 
@@ -108,11 +115,15 @@ export class BlenderService {
   private readonly characterScript: string;
   private readonly runCharacter: typeof runCharacterProcess;
   private readonly concept: BlenderServiceOptions['concept'];
+  private readonly buildingScript: string;
+  private readonly runBuilding: NonNullable<BlenderServiceOptions['runBuilding']>;
 
   constructor(opts: BlenderServiceOptions) {
     this.characterScript = opts.characterScript ?? defaultCharacterScript();
     this.runCharacter = opts.runCharacter ?? runCharacterProcess;
     this.concept = opts.concept;
+    this.buildingScript = opts.buildingScript ?? defaultBuildingScript();
+    this.runBuilding = opts.runBuilding ?? ((job, signal) => runPipelineProcess(job, signal, BUILDING_TIMEOUT_MS));
     this.dir = resolve(opts.dataDir);
     this.port = opts.port ?? BLENDER_PORT;
     this.detect = opts.detect ?? (() => detectBlender());
@@ -282,6 +293,30 @@ export class BlenderService {
         }
         break;
       }
+      case 'building_create':
+      case 'building_revise':
+      case 'building_review': {
+        const blender = this.detect().blender;
+        if (!blender) throw new BridgeError('blender_unavailable', 'Blender was not found on this computer.');
+        if (!existsSync(this.buildingScript)) throw new BridgeError('blender_unavailable', 'The building pipeline (scripts/blender/building/build.py) is not in this installation: run the Aether server from a checkout of the repository.');
+        const id = request.action === 'building_create' ? request.input.brief.id : request.input.id;
+        const base = buildingJob(this.dir, blender, this.buildingScript, id);
+        if (request.action === 'building_create') {
+          const brief = request.input.brief as Record<string, unknown>;
+          stored = { action: request.action, python, code: buildingPlanText(base, brief), building: { job: base, brief, glb: true }, expiresAt };
+        } else if (request.action === 'building_revise') {
+          if (!existsSync(base.brief)) throw new BridgeError('not_found', `No building "${id}" was built here yet: create it first.`);
+          const job = buildingJob(this.dir, blender, this.buildingScript, id, { revise: true });
+          const prev = JSON.parse(await readFile(base.brief, 'utf8')) as Record<string, unknown>;
+          const brief = { ...prev, ...(request.input.brief ?? {}), id, revision_notes: request.input.notes };
+          stored = { action: request.action, python, code: buildingPlanText(job, brief, request.input.notes), building: { job, brief, glb: true }, expiresAt };
+        } else {
+          if (!existsSync(base.brief)) throw new BridgeError('not_found', `No building "${id}" was built here yet: create it first.`);
+          const job = buildingJob(this.dir, blender, this.buildingScript, id, { review: true });
+          stored = { action: request.action, python, code: buildingPlanText(job, JSON.parse(await readFile(base.brief, 'utf8'))), building: { job, brief: null, glb: false }, expiresAt };
+        }
+        break;
+      }
     }
     this.plans.set(planId, stored);
     return { planId, action: stored.action, python, ...(stored.code !== undefined ? { code: stored.code } : {}), expiresAt };
@@ -299,6 +334,12 @@ export class BlenderService {
     }
     if (plan.python && !confirm) throw new BridgeError('confirmation_required', 'This Blender action runs Python: it needs your confirmation in the studio.');
     this.plans.delete(planId);
+    if (plan.building) {
+      if (!(await this.isEnabled())) throw new BridgeError('blender_unavailable', 'Blender is switched off in Settings → AI connection.');
+      const job = this.chain.then(() => this.executeBuilding(plan, signal));
+      this.chain = job.catch(() => undefined);
+      return job;
+    }
     if (plan.character) {
       // A headless Blender process of its own: the switch must be on, but no MCP session is needed.
       if (!(await this.isEnabled())) throw new BridgeError('blender_unavailable', 'Blender is switched off in Settings → AI connection.');
@@ -371,6 +412,27 @@ export class BlenderService {
     if (!existsSync(job.report)) throw new BridgeError('backend_error', `The character pipeline failed (exit ${run.code}): ${run.log.slice(-600)}`);
     const out = await readCharacterOutputs(job, c.glb, BLENDER_MAX_GLB_BYTES);
     const text = `${plan.action === 'character_review' ? 'Review' : 'Built'} character "${job.id}".\n${summarizeReport(out.report)}\nFiles: ${job.dir}`;
+    return {
+      kind: 'json',
+      result: {
+        text: text.slice(0, 20_000),
+        ...(out.image ? { image: out.image } : {}),
+        ...(out.glb ? { glb: `data:model/gltf-binary;base64,${Buffer.from(out.glb).toString('base64')}` } : {}),
+      },
+    };
+  }
+
+  /** Run a building build (or review) and gather its report, stills and model. */
+  private async executeBuilding(plan: StoredPlan, signal?: AbortSignal): Promise<{ kind: 'json'; result: BlenderRunResult }> {
+    const b = plan.building!;
+    const job = b.job;
+    await mkdir(job.dir, { recursive: true, mode: 0o700 });
+    if (b.brief) await writeFile(job.brief, `${JSON.stringify(b.brief, null, 2)}\n`, { mode: 0o600 });
+    const run = await this.runBuilding(job, signal);
+    if (signal?.aborted) throw new BridgeError('backend_error', 'The building build was stopped.');
+    if (!existsSync(job.report)) throw new BridgeError('backend_error', `The building pipeline failed (exit ${run.code}): ${run.log.slice(-600)}`);
+    const out = await readBuildingOutputs(job, b.glb, BLENDER_MAX_GLB_BYTES);
+    const text = `${plan.action === 'building_review' ? 'Review' : 'Built'} building "${job.id}".\n${summarizeBuildingReport(out.report)}\nFiles: ${job.dir}`;
     return {
       kind: 'json',
       result: {

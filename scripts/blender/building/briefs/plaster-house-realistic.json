@@ -1,0 +1,14 @@
+{
+  "id": "plaster-house",
+  "name": "Plaster house (realistic)",
+  "style": "realistic",
+  "kind": "simple",
+  "footprint": { "w": 7.6, "d": 7.2 },
+  "storeys": 2,
+  "roof": { "type": "hip", "pitch_deg": 25, "eaves_m": 0.55 },
+  "palette": "realistic-plaster",
+  "wear": 0.35,
+  "seed": 5,
+  "detail": "hero",
+  "features": { "balconies": 1, "ac_wall": 1, "plants_door": 2, "window_style": "mixed", "lit": 0.1 }
+}
