@@ -128,6 +128,7 @@ import { QualityTransition, type TransitionState } from './view/quality-transiti
 import { primeTarget } from './gpu/prime-target';
 import { shadowNoiseValue } from './gpu/sun-shadow-nodes';
 import { setFoliageTint } from './materials/foliage-shading';
+import { setFixedClock as setFilmClock } from './view/fixed-clock';
 import { captureStill, openCaptureSession, type CameraPose, type CaptureHost, type CaptureSession, type StillImage, type StillOptions } from './view/capture-session';
 import { normalizePixels } from './view/still';
 import type { PathTraceOptions } from './view/pathtrace';
@@ -5970,6 +5971,37 @@ export class WorldRenderer {
     }
   }
 
+  /** The tier chosen (`auto`: the GPU budget and the governor decide). */
+  get renderTierChoice(): RenderTier | 'auto' {
+    return this.tierChoice;
+  }
+
+  /**
+   * A fixed film clock for an offline render (see `view/fixed-clock.ts`): the compositing layer's clock and the node
+   * frame's `time` (foliage sway, animated materials) read `seconds` instead of the wall clock, and the node frame's
+   * delta is `dt`. Null gives the wall clock back (the node frame's time carries on from the film's).
+   */
+  setFixedClock(seconds: number | null, dt = 0): void {
+    setFilmClock(seconds);
+    type Frame = { update: () => void; time: number; deltaTime: number; frameId: number; lastTime?: number };
+    const frame = (this.renderer as unknown as { _nodes?: { nodeFrame?: Frame } })._nodes?.nodeFrame;
+    if (!frame || typeof frame.update !== 'function') return;
+    const own = Object.hasOwn(frame, 'update');
+    if (seconds === null) {
+      if (own) delete (frame as Partial<Frame>).update;
+      frame.lastTime = undefined;
+      return;
+    }
+    const t = seconds;
+    frame.update = function (this: Frame): void {
+      this.frameId++;
+      this.deltaTime = dt;
+      this.time = t;
+    };
+    frame.time = t;
+    frame.deltaTime = dt;
+  }
+
   /** The tier in effect (stills report `ultra`). */
   get renderTier(): RenderTier {
     return this.qualityPlan.tier;
@@ -7196,6 +7228,8 @@ export class WorldRenderer {
         this.archView.update(this.perspective, dt);
         this.env.update(dt, this.perspective);
         if (this.materials.surfaces.active) this.materials.surfaces.advance(dt);
+        // The eye adapts as the live view's does, by the frame's time (a film's exposure follows its shots).
+        this.adaptEye(dt);
       },
       drawToTarget: (w, h) => {
         const rt = this.captureTarget(w, h);

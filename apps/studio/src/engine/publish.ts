@@ -866,6 +866,41 @@ export class PublishController {
     }
   }
 
+  /**
+   * Render the world's short film (`world.story`) as a video: offline, frame by frame on the film clock, at 1080p on the
+   * top tier with the film's own sound (`player/film-export.ts`). The frame rate is the video settings' (30 or 60).
+   */
+  async exportFilm(): Promise<void> {
+    if (!this.ensureEditMode()) return;
+    const world = this.host.history.current;
+    if (!world.story) {
+      this.toast('This world has no film.', 'info', 3);
+      return;
+    }
+    const signal = this.begin('video', 'Preparing the film…');
+    if (!signal) return;
+    const sim = this.sim as Simulation;
+    const st = this.state.getState();
+    const fps = st.video.fps === 60 ? 60 : 30;
+    try {
+      const [{ exportStoryFilm }, { filmFileName }] = await Promise.all([import('../player/film-export'), import('../player/film-schedule')]);
+      const r = await exportStoryFilm(sim.renderer, world, {
+        fps,
+        format: st.video.format,
+        signal,
+        onCanvas: (canvas) => this.set({ previewCanvas: canvas }),
+        onProgress: (p) => this.progress(p.phase === 'rendering' ? `Rendering frame ${p.frame} of ${p.frames}` : p.phase === 'sound' ? 'Rendering the sound…' : p.phase === 'preparing' ? 'Preparing…' : p.phase === 'encoding' ? 'Finishing the encode…' : 'Writing the file…', p.frames > 0 ? (p.phase === 'rendering' ? (p.frame / p.frames) * 0.95 : p.phase === 'preparing' || p.phase === 'sound' ? 0 : 0.97) : null),
+      });
+      const name = filmFileName(world.story.title ?? world.name, r.fps, r.ext);
+      const detail = `${r.width}×${r.height} · ${r.fps} fps · ${r.seconds.toFixed(1)} s · ${r.ext.toUpperCase()}${r.audio ? ' + sound' : ''} · ${sizeLabel(r.blob.size)}`;
+      this.finish(this.resultFor('video', r.blob, name, detail));
+      void this.record('video', r.blob, { fileName: name, mime: r.mime, detail, ...(await this.thumbOpt()) });
+      this.toast(`Film ready: ${detail}`, 'success', 5);
+    } catch (e) {
+      this.finish(null, isAbort(e) ? 'Cancelled.' : `The film could not be rendered: ${errorMessage(e)}`);
+    }
+  }
+
   private async thumbOpt(): Promise<{ thumb?: string }> {
     const t = await this.thumb();
     return t ? { thumb: t } : {};

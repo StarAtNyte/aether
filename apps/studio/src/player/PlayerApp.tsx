@@ -41,6 +41,8 @@ import { TIME_PRESETS } from '../state/archUi';
 import type { StoryOverlay, StoryRunner } from './story-runner';
 import type { StoryAudio } from './story-audio';
 import { playStartAfterStory, storyCast } from './story';
+import { FilmPanel, type FilmPanelState } from './FilmPanel';
+import { filmFileName, type FilmFps } from './film-schedule';
 
 /** Hour of each time-of-day key (Digit1 … Digit4). */
 const TIME_PRESETS_BY_DIGIT: Readonly<Record<string, number>> = Object.freeze(Object.fromEntries(TIME_PRESETS.map((p) => [`Digit${p.key}`, p.hour])));
@@ -88,6 +90,12 @@ interface PlayerHandle {
   readonly storyGate: boolean;
   /** Play the story from `at` seconds (story worlds). */
   playStory(at?: number): void;
+  /** Hold the running film at its current time (true) or let it run on (false). */
+  pauseStory(on: boolean): void;
+  /** The film export module (probes: its offline sound render). */
+  filmModule(): Promise<typeof import('./film-export')>;
+  /** The Render video panel (story worlds): its frame rate, the render's progress, the finished file; null when closed. */
+  readonly film: FilmPanelState | null;
   start(): void;
   /** Tab: explore mode. */
   enterExplore(): void;
@@ -276,7 +284,7 @@ const StoryGate = memo(function StoryGate({ story, title, onWatch, onExplore, on
   );
 });
 
-const StoryView = memo(function StoryView({ story, overlay, title, onSkip, onReplay, onExplore, onPlay, canPlay, muted, onMute }: { story: NonNullable<WorldDoc['story']>; overlay: StoryOverlay | null; title: string; onSkip: () => void; onReplay: () => void; onExplore: () => void; onPlay: () => void; canPlay: boolean; muted: boolean; onMute: () => void }): ReactElement {
+const StoryView = memo(function StoryView({ story, overlay, title, onSkip, onReplay, onExplore, onPlay, canPlay, muted, onMute, onRender }: { story: NonNullable<WorldDoc['story']>; overlay: StoryOverlay | null; title: string; onSkip: () => void; onReplay: () => void; onExplore: () => void; onPlay: () => void; canPlay: boolean; muted: boolean; onMute: () => void; onRender: () => void }): ReactElement {
   const done = overlay?.done ?? false;
   const end = story.endCard;
   return (
@@ -315,6 +323,9 @@ const StoryView = memo(function StoryView({ story, overlay, title, onSkip, onRep
             <Button onClick={onMute} testId="pl-story-sound-end">
               {muted ? 'Sound off' : 'Sound on'}
             </Button>
+            <Button onClick={onRender} testId="pl-story-render-end">
+              Render video
+            </Button>
           </div>
         </div>
       )}
@@ -330,6 +341,9 @@ const StoryView = memo(function StoryView({ story, overlay, title, onSkip, onRep
           </button>
           <button type="button" className="pl-story__chip" onClick={onMute} aria-pressed={!muted} data-testid="pl-story-sound">
             {muted ? 'Sound off' : 'Sound on'} <kbd>M</kbd>
+          </button>
+          <button type="button" className="pl-story__chip" onClick={onRender} data-testid="pl-story-render">
+            Render video
           </button>
           <button type="button" className="pl-story__chip" onClick={onSkip} data-testid="pl-story-skip">
             Skip <kbd>Space</kbd>
@@ -550,6 +564,76 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
     },
     [playStory],
   );
+
+  /** Render video (the film offline, `film-export.ts`): the panel, the film's time when it opened, the running render. */
+  const [film, setFilm] = useState<FilmPanelState | null>(null);
+  const filmRef = useRef<FilmPanelState | null>(null);
+  filmRef.current = film;
+  const filmAbort = useRef<AbortController | null>(null);
+  const filmAt = useRef(0);
+  const openFilm = useCallback(() => {
+    if (filmRef.current) return;
+    // The live film holds (picture and sound) while the panel is up.
+    storyRef.current?.pause(true);
+    storyAudioRef.current?.set({ muted: true });
+    filmAt.current = storyRef.current?.time ?? 0;
+    setFilm({ fps: 30, progress: null, done: null, error: null });
+  }, []);
+  const closeFilm = useCallback(() => {
+    filmAbort.current?.abort();
+    const f = filmRef.current;
+    if (f?.done) URL.revokeObjectURL(f.done.url);
+    setFilm(null);
+    const r = storyRef.current;
+    if (r) {
+      r.pause(false);
+      storyAudioRef.current?.set({ muted: storyMutedRef.current });
+    } else void playStory(filmAt.current);
+  }, [playStory]);
+  const renderFilm = useCallback(async () => {
+    const sim = simRef.current;
+    const f = filmRef.current;
+    if (!sim || !f || f.progress || !world.story) return;
+    if (f.done) URL.revokeObjectURL(f.done.url);
+    const ac = new AbortController();
+    filmAbort.current = ac;
+    setFilm({ ...f, progress: { phase: 'preparing', frame: 0, frames: 0 }, done: null, error: null });
+    // The live film stops: the export runs its own runner on the film clock and owns the renderer until it ends.
+    leaveStory();
+    let last = 0;
+    try {
+      const { exportStoryFilm } = await import('./film-export');
+      const r = await exportStoryFilm(sim.renderer, world, {
+        fps: f.fps,
+        volume: settingsRef.current.volume,
+        music: settingsRef.current.music,
+        signal: ac.signal,
+        onProgress: (p) => {
+          const now = performance.now();
+          if (p.phase === 'rendering' && p.frame < p.frames && now - last < 250) return;
+          last = now;
+          setFilm((s) => (s ? { ...s, progress: p } : s));
+        },
+      });
+      const url = URL.createObjectURL(r.blob);
+      const name = filmFileName(world.story.title ?? game.title, r.fps, r.ext);
+      const mb = r.blob.size / (1024 * 1024);
+      const detail = `${r.width}×${r.height}, ${r.fps} fps, ${r.seconds.toFixed(1)} s, ${r.ext.toUpperCase()}${r.audio ? ' with sound' : ''}, ${mb.toFixed(1)} MB`;
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      document.body.append(a);
+      a.click();
+      a.remove();
+      (window as { __aetherFilm?: unknown }).__aetherFilm = { ...r, blob: undefined, size: r.blob.size, name };
+      setFilm((s) => (s ? { ...s, progress: null, done: { url, name, detail } } : s));
+    } catch (e) {
+      const cancelled = e instanceof DOMException && e.name === 'AbortError';
+      setFilm((s) => (s ? { ...s, progress: null, error: cancelled ? 'Cancelled.' : `The video could not be made: ${e instanceof Error ? e.message.slice(0, 200) : 'error'}` } : s));
+    } finally {
+      if (filmAbort.current === ac) filmAbort.current = null;
+    }
+  }, [game.title, leaveStory, world]);
 
   /**
    * Explore mode: the kind's camera and the tour bar. `entry`: the kind's opening (hero view and tour, fly-in, street
@@ -920,6 +1004,11 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
     const onKey = (e: KeyboardEvent): void => {
       const p = phaseRef.current;
       const typing = typingTarget(e.target);
+      // The Render video panel is up: its buttons only (Escape closes it when no render runs).
+      if (filmRef.current) {
+        if (e.key === 'Escape' && !filmRef.current.progress) closeFilm();
+        return;
+      }
       if (e.key === 'Enter' && p === 'title' && document.activeElement === document.body) {
         void start();
         return;
@@ -989,7 +1078,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
       window.removeEventListener('keydown', onKey);
       document.removeEventListener('pointerlockchange', onLock);
     };
-  }, [exp, pause, start, toExplore, toggleStoryMute, watchStory, world]);
+  }, [closeFilm, exp, pause, start, toExplore, toggleStoryMute, watchStory, world]);
 
   // Test / debug handle.
   useEffect(() => {
@@ -1021,6 +1110,11 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
         return r ? { time: r.time, duration: r.duration, overlay: storyOverlayRef.current, clearance: () => r.clearance(), audio: storyAudioRef.current?.state ?? 'none', audioLevel: storyAudioRef.current?.level() ?? 0 } : null;
       },
       playStory: (at?: number) => void playStory(at),
+      pauseStory: (on: boolean) => storyRef.current?.pause(on),
+      filmModule: () => import('./film-export'),
+      get film() {
+        return filmRef.current;
+      },
       start: () => void start(),
       enterExplore: () => void toExplore(),
     };
@@ -1153,8 +1247,9 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
         <StoryGate story={world.story} title={game.title} onWatch={watchStory} onExplore={() => void toExplore()} onPlay={() => void start()} canPlay={!world.voxel} />
       )}
       {phase === 'story' && world.story && !storyGate && (
-        <StoryView story={world.story} overlay={storyOverlay} title={game.title} onSkip={() => storyRef.current?.skip()} onReplay={() => void playStory(0)} onExplore={() => void toExplore()} onPlay={() => void start()} canPlay={!world.voxel} muted={storyMuted} onMute={toggleStoryMute} />
+        <StoryView story={world.story} overlay={storyOverlay} title={game.title} onSkip={() => storyRef.current?.skip()} onReplay={() => void playStory(0)} onExplore={() => void toExplore()} onPlay={() => void start()} canPlay={!world.voxel} muted={storyMuted} onMute={toggleStoryMute} onRender={openFilm} />
       )}
+      {film && <FilmPanel state={film} onFps={(fps) => setFilm((f) => (f ? { ...f, fps } : f))} onStart={() => void renderFilm()} onCancel={() => filmAbort.current?.abort()} onClose={closeFilm} />}
       <div className="pl-story__fade" ref={storyFadeRef} aria-hidden="true" />
       <div className={`pl-fade${explore?.fading && phase === 'exploring' ? ' is-on' : ''}`} aria-hidden="true" />
       {hint && (phase === 'exploring' || phase === 'playing' || phase === 'title') && (

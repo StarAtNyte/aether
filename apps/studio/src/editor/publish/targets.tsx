@@ -283,6 +283,7 @@ export const VideoTarget = memo(function VideoTarget(): ReactElement {
   const directing = useStore(studio.publish.state, (s) => s.directing);
   const note = useStore(studio.publish.state, (s) => s.directNote);
   const showPath = useStore(studio.publish.state, (s) => s.showPath);
+  const world = useWorld();
   const [prompt, setPrompt] = useState('');
   return (
     <>
@@ -364,6 +365,11 @@ export const VideoTarget = memo(function VideoTarget(): ReactElement {
       <Primary icon="film" onClick={() => void studio.publish.exportVideo()} disabled={busy || path.keys.length < 2} testId="publish-video-export" hint={path.keys.length < 2 ? 'Add a second keyframe, pick a preset or direct a shot first.' : 'Every frame is rendered offline at full quality — the result never drops frames.'}>
         Render video
       </Primary>
+      {world.story && (
+        <Primary icon="film" onClick={() => void studio.publish.exportFilm()} disabled={busy} testId="publish-film-export" hint={`The world's film${world.story.title ? `, "${world.story.title}"` : ''}, rendered offline frame by frame at 1080p on the top quality, with its own score and sound (30 or 60 fps from the frame rate above).`}>
+          Render the film
+        </Primary>
+      )}
     </>
   );
 });

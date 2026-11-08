@@ -14,6 +14,7 @@
  * The AO, reflections, shafts, DOF and TAA read a half-resolution-capable normal / velocity / material
  * pre-pass of the opaque scene, so the effects only cost what they are switched on for.
  */
+import { fixedClock } from '../view/fixed-clock';
 import type { Camera, DirectionalLight, PerspectiveCamera, RenderTarget, Scene, ToneMapping } from 'three';
 import type { Node as TslNode, WebGPURenderer } from 'three/webgpu';
 import { errorMessage, log } from '../log';
@@ -637,7 +638,7 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
     const satsueiFrame = (): void => {
       const light = opts.sun;
       const dir = opts.satsueiSun?.() ?? (light ? [light.position.x - light.target.position.x, light.position.y - light.target.position.y, light.position.z - light.target.position.z] : null);
-      uTime.value = (performance.now() - t0) / 1000;
+      uTime.value = fixedClock() ?? (performance.now() - t0) / 1000;
       let rays = 0;
       let flare = 0;
       if (dir) {

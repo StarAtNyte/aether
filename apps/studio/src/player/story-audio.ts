@@ -114,7 +114,9 @@ export interface StoryAudioOptions {
 }
 
 export class StoryAudio implements StorySoundSink {
-  private ctx: AudioContext | null = null;
+  private ctx: BaseAudioContext | null = null;
+  /** Built on an OfflineAudioContext (a film export): no timer, no gesture, the caller drives {@link tick}. */
+  private offline = false;
   private master: GainNode | null = null;
   private meter: AnalyserNode | null = null;
   private readonly meterBuf = new Float32Array(2048);
@@ -141,13 +143,48 @@ export class StoryAudio implements StorySoundSink {
     this.opts = { ...opts };
   }
 
+  /**
+   * The same graph on an offline context (a film export renders the score and the ambience through an
+   * `OfflineAudioContext`, so the sound is the live film's and deterministic). Nothing runs by itself: the caller suspends
+   * the context at each step of the film, drives the story's cues and sounds at that time, and calls {@link tick}.
+   */
+  static offline(ctx: BaseAudioContext, opts: StoryAudioOptions): StoryAudio {
+    const a = new StoryAudio({ ...opts, muted: false });
+    a.offline = true;
+    a.build(ctx);
+    return a;
+  }
+
+  /** Schedule the score and the ambience's gulls ahead of the context's clock (the live timer's work; offline: per step). */
+  tick(): void {
+    this.schedule();
+  }
+
   /** Create the context and the graph (call from a gesture when possible). Returns false where WebAudio is missing. */
   private ensure(): boolean {
     if (this.ctx) return true;
+    if (this.offline) return false;
     const Ctor = (globalThis as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext }).AudioContext
       ?? (globalThis as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!Ctor || this.disposed) return false;
     const ctx = new Ctor({ latencyHint: 'playback' });
+    this.build(ctx);
+    this.timer = setInterval(() => this.schedule(), 120);
+    if (this.opts.muted) void ctx.suspend();
+    else if (ctx.state === 'suspended') {
+      const resume = (): void => {
+        void ctx.resume();
+        removeEventListener('pointerdown', resume, true);
+        removeEventListener('keydown', resume, true);
+      };
+      addEventListener('pointerdown', resume, true);
+      addEventListener('keydown', resume, true);
+    }
+    return true;
+  }
+
+  /** The graph on `ctx`: master, limiter, meter, reverb, the buses, the score's layers and the ambience beds. */
+  private build(ctx: BaseAudioContext): void {
     this.ctx = ctx;
     const master = ctx.createGain();
     master.gain.value = this.masterLevel();
@@ -188,18 +225,6 @@ export class StoryAudio implements StorySoundSink {
     this.brown = this.noiseBuffer(6, true);
     this.startBeds();
     this.nextBeat = ctx.currentTime + 0.15;
-    this.timer = setInterval(() => this.schedule(), 120);
-    if (this.opts.muted) void ctx.suspend();
-    else if (ctx.state === 'suspended') {
-      const resume = (): void => {
-        void ctx.resume();
-        removeEventListener('pointerdown', resume, true);
-        removeEventListener('keydown', resume, true);
-      };
-      addEventListener('pointerdown', resume, true);
-      addEventListener('keydown', resume, true);
-    }
-    return true;
   }
 
   /** The audio context's state (`running`, `suspended`, `closed`), or `none` before it exists. */
@@ -224,12 +249,17 @@ export class StoryAudio implements StorySoundSink {
   /** Start (or resume) the sound; call on a user gesture. */
   resume(): void {
     if (!this.ensure()) return;
-    void this.ctx?.resume();
+    void this.live()?.resume();
+  }
+
+  /** The live context (null offline: an offline render is never suspended, resumed or closed from here). */
+  private live(): AudioContext | null {
+    return this.offline ? null : (this.ctx as AudioContext | null);
   }
 
   set(opts: Partial<StoryAudioOptions>): void {
     this.opts = { ...this.opts, ...opts };
-    const ctx = this.ctx;
+    const ctx = this.live();
     if (!ctx || !this.master || !this.scoreBus) return;
     this.master.gain.setTargetAtTime(this.masterLevel(), ctx.currentTime, 0.08);
     this.scoreBus.gain.setTargetAtTime(this.scoreLevel(), ctx.currentTime, 0.08);
@@ -323,7 +353,7 @@ export class StoryAudio implements StorySoundSink {
     this.disposed = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
-    const ctx = this.ctx;
+    const ctx = this.live();
     this.ctx = null;
     if (ctx) {
       this.master?.gain.setTargetAtTime(0, ctx.currentTime, 0.15);
@@ -387,7 +417,7 @@ export class StoryAudio implements StorySoundSink {
   }
 
   private voice(type: OscillatorType, freq: number, t: number, dur: number, peak: number, attack: number, release: number, out: AudioNode, detune = 0): void {
-    const ctx = this.ctx as AudioContext;
+    const ctx = this.ctx as BaseAudioContext;
     const o = ctx.createOscillator();
     o.type = type;
     o.frequency.value = freq;
@@ -403,7 +433,7 @@ export class StoryAudio implements StorySoundSink {
   }
 
   private pad(chord: readonly number[], t: number, dur: number): void {
-    const ctx = this.ctx as AudioContext;
+    const ctx = this.ctx as BaseAudioContext;
     const out = this.layerGain.get('pad') as GainNode;
     const f = ctx.createBiquadFilter();
     f.type = 'lowpass';
@@ -418,7 +448,7 @@ export class StoryAudio implements StorySoundSink {
   }
 
   private strings(chord: readonly number[], t: number, dur: number): void {
-    const ctx = this.ctx as AudioContext;
+    const ctx = this.ctx as BaseAudioContext;
     const out = this.layerGain.get('strings') as GainNode;
     const f = ctx.createBiquadFilter();
     f.type = 'lowpass';
@@ -451,7 +481,7 @@ export class StoryAudio implements StorySoundSink {
   }
 
   private piano(note: number, t: number, vel: number): void {
-    const ctx = this.ctx as AudioContext;
+    const ctx = this.ctx as BaseAudioContext;
     const out = this.layerGain.get('piano') as GainNode;
     const f = hz(note);
     // A struck string: a few partials, the higher ones decaying faster; a soft hammer click.
@@ -472,7 +502,7 @@ export class StoryAudio implements StorySoundSink {
 
   /** A soft, breathy lead: a sine and a quiet octave triangle, a slow attack, vibrato after the onset. */
   private lead(note: number, t: number, dur: number): void {
-    const ctx = this.ctx as AudioContext;
+    const ctx = this.ctx as BaseAudioContext;
     const out = this.layerGain.get('lead') as GainNode;
     const f = ctx.createBiquadFilter();
     f.type = 'lowpass';
@@ -518,7 +548,7 @@ export class StoryAudio implements StorySoundSink {
   }
 
   private bellTone(note: number, t: number, vel: number): void {
-    const ctx = this.ctx as AudioContext;
+    const ctx = this.ctx as BaseAudioContext;
     const out = this.layerGain.get('bells') as GainNode;
     const f = hz(note);
     for (const [m, a, d] of [[1, 1, 3], [2.76, 0.4, 1.6], [5.4, 0.2, 0.8]] as Array<[number, number, number]>) {
@@ -540,7 +570,7 @@ export class StoryAudio implements StorySoundSink {
   }
 
   private shaker(t: number): void {
-    const ctx = this.ctx as AudioContext;
+    const ctx = this.ctx as BaseAudioContext;
     const src = ctx.createBufferSource();
     src.buffer = this.noise;
     const f = ctx.createBiquadFilter();
@@ -555,7 +585,7 @@ export class StoryAudio implements StorySoundSink {
   }
 
   private thump(t: number): void {
-    const ctx = this.ctx as AudioContext;
+    const ctx = this.ctx as BaseAudioContext;
     const o = ctx.createOscillator();
     o.frequency.setValueAtTime(110, t);
     o.frequency.exponentialRampToValueAtTime(45, t + 0.18);
@@ -570,7 +600,7 @@ export class StoryAudio implements StorySoundSink {
   // ---- the ambience bed ------------------------------------------------------------------------------------------
 
   private startBeds(): void {
-    const ctx = this.ctx as AudioContext;
+    const ctx = this.ctx as BaseAudioContext;
     const amb = this.ambBus as GainNode;
     const loop = (buf: AudioBuffer): AudioBufferSourceNode => {
       const s = ctx.createBufferSource();
@@ -658,7 +688,7 @@ export class StoryAudio implements StorySoundSink {
 
   /** The level crossing's bell: a struck bell twice a second (alternating pitch), for `dur` seconds. */
   private bell(t: number, dur: number, gain: number): void {
-    const ctx = this.ctx as AudioContext;
+    const ctx = this.ctx as BaseAudioContext;
     const out = ctx.createGain();
     out.gain.value = gain;
     out.connect(this.sfxBus as GainNode);
@@ -682,7 +712,7 @@ export class StoryAudio implements StorySoundSink {
 
   /** A train passing: a rumble that swells and fades, the rail joints' double click (ta-tan) at speed, a motor whine. */
   private trainPass(t: number, dur: number, gain: number): void {
-    const ctx = this.ctx as AudioContext;
+    const ctx = this.ctx as BaseAudioContext;
     const out = ctx.createGain();
     out.gain.setValueAtTime(0, t);
     out.gain.linearRampToValueAtTime(gain, t + dur * 0.4);
@@ -733,7 +763,7 @@ export class StoryAudio implements StorySoundSink {
 
   /** Two long whistle blasts, far off (a reed horn: two detuned tones through a band, with the valley's echo). */
   private whistle(t: number, gain: number): void {
-    const ctx = this.ctx as AudioContext;
+    const ctx = this.ctx as BaseAudioContext;
     const out = ctx.createGain();
     out.gain.value = gain;
     const lp = ctx.createBiquadFilter();
@@ -768,7 +798,7 @@ export class StoryAudio implements StorySoundSink {
   }
 
   private gull(t: number, gain: number, bus: AudioNode | null = this.sfxBus): void {
-    const ctx = this.ctx as AudioContext;
+    const ctx = this.ctx as BaseAudioContext;
     const out = ctx.createGain();
     out.gain.value = gain * (0.4 + this.rand() * 0.6);
     const pan = ctx.createStereoPanner();
@@ -798,7 +828,7 @@ export class StoryAudio implements StorySoundSink {
   }
 
   private steps(t: number, dur: number, gain: number): void {
-    const ctx = this.ctx as AudioContext;
+    const ctx = this.ctx as BaseAudioContext;
     for (let s = t; s < t + dur; s += 0.29 + this.rand() * 0.03) {
       const c = ctx.createBufferSource();
       c.buffer = this.noise;
@@ -815,7 +845,7 @@ export class StoryAudio implements StorySoundSink {
   }
 
   private gust(t: number, dur: number, gain: number): void {
-    const ctx = this.ctx as AudioContext;
+    const ctx = this.ctx as BaseAudioContext;
     const src = ctx.createBufferSource();
     src.buffer = this.noise;
     const bp = ctx.createBiquadFilter();
@@ -833,7 +863,7 @@ export class StoryAudio implements StorySoundSink {
   }
 
   private chime(t: number, gain: number): void {
-    const ctx = this.ctx as AudioContext;
+    const ctx = this.ctx as BaseAudioContext;
     for (const [k, n] of [86, 90, 93].entries()) {
       const s = t + k * 0.12;
       const o = ctx.createOscillator();
@@ -849,7 +879,7 @@ export class StoryAudio implements StorySoundSink {
   }
 
   private heartbeat(t: number, dur: number, gain: number): void {
-    const ctx = this.ctx as AudioContext;
+    const ctx = this.ctx as BaseAudioContext;
     for (let s = t; s < t + dur; s += 0.78) {
       for (const [dt, a] of [[0, 1], [0.18, 0.7]] as Array<[number, number]>) {
         const o = ctx.createOscillator();
@@ -868,7 +898,7 @@ export class StoryAudio implements StorySoundSink {
   // ---- buffers ---------------------------------------------------------------------------------------------------
 
   private noiseBuffer(seconds: number, brown: boolean): AudioBuffer {
-    const ctx = this.ctx as AudioContext;
+    const ctx = this.ctx as BaseAudioContext;
     const n = Math.floor(ctx.sampleRate * seconds);
     const buf = ctx.createBuffer(1, n, ctx.sampleRate);
     const d = buf.getChannelData(0);
@@ -891,7 +921,7 @@ export class StoryAudio implements StorySoundSink {
 
   /** A synthetic room: decaying stereo noise. */
   private impulse(seconds: number, decay: number): AudioBuffer {
-    const ctx = this.ctx as AudioContext;
+    const ctx = this.ctx as BaseAudioContext;
     const n = Math.floor(ctx.sampleRate * seconds);
     const buf = ctx.createBuffer(2, n, ctx.sampleRate);
     for (let c = 0; c < 2; c++) {

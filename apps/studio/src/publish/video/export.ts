@@ -105,7 +105,7 @@ export const WEBM_CANDIDATES: ReadonlyArray<{ codec: string; id: WebmVideoCodec 
   { codec: 'vp8', id: 'V_VP8' },
 ];
 
-type Choice = { container: 'mp4'; codec: string } | { container: 'webm'; codec: string; id: WebmVideoCodec };
+export type Choice = { container: 'mp4'; codec: string } | { container: 'webm'; codec: string; id: WebmVideoCodec };
 
 /** True when this browser can play `type` (a `video/…; codecs=…` string) back. */
 export function canPlayHere(type: string): boolean {
@@ -153,7 +153,7 @@ export async function chooseVideoCodec(width: number, height: number, fps: numbe
   return (await webm()) ?? m;
 }
 
-function abortError(): DOMException {
+export function abortError(): DOMException {
   return new DOMException('cancelled', 'AbortError');
 }
 
@@ -165,10 +165,18 @@ function preSkipOf(description: AllowSharedBufferSource | undefined): number {
   return 312;
 }
 
-/** Encode `buffer` as Opus packets (null when AudioEncoder/Opus is unavailable). */
-async function encodeOpus(buffer: AudioBuffer, signal?: AbortSignal): Promise<{ chunks: Array<{ timestampUs: number; durationUs: number; data: Uint8Array }>; preSkip: number } | null> {
+/** Opus packets of an encoded soundtrack. */
+export interface EncodedAudio {
+  chunks: Array<{ timestampUs: number; durationUs: number; data: Uint8Array }>;
+  preSkip: number;
+  sampleRate: number;
+}
+
+/** Encode `buffer` (stereo, at its own sample rate) as Opus packets (null when AudioEncoder/Opus is unavailable). */
+export async function encodeOpus(buffer: AudioBuffer, signal?: AbortSignal, bitrate = 128_000): Promise<EncodedAudio | null> {
   if (typeof AudioEncoder === 'undefined' || typeof AudioData === 'undefined') return null;
-  const config: AudioEncoderConfig = { codec: 'opus', sampleRate: MUSIC_SAMPLE_RATE, numberOfChannels: 2, bitrate: 128_000 };
+  const sampleRate = buffer.sampleRate;
+  const config: AudioEncoderConfig = { codec: 'opus', sampleRate, numberOfChannels: 2, bitrate };
   try {
     if (!(await AudioEncoder.isConfigSupported(config)).supported) return null;
   } catch {
@@ -203,18 +211,18 @@ async function encodeOpus(buffer: AudioBuffer, signal?: AbortSignal): Promise<{ 
     const data = n === block ? planar : new Float32Array(n * 2);
     data.set(left.subarray(at, at + n), 0);
     data.set(right.subarray(at, at + n), n);
-    const ad = new AudioData({ format: 'f32-planar', sampleRate: MUSIC_SAMPLE_RATE, numberOfFrames: n, numberOfChannels: 2, timestamp: Math.round((at * 1e6) / MUSIC_SAMPLE_RATE), data });
+    const ad = new AudioData({ format: 'f32-planar', sampleRate, numberOfFrames: n, numberOfChannels: 2, timestamp: Math.round((at * 1e6) / sampleRate), data });
     enc.encode(ad);
     ad.close();
   }
   await enc.flush();
   enc.close();
   if (failure) return null;
-  return { chunks, preSkip };
+  return { chunks, preSkip, sampleRate };
 }
 
 /** Wait until the encoder's queue drains below `max` (back-pressure). */
-async function drain(enc: VideoEncoder, max: number, signal?: AbortSignal): Promise<void> {
+export async function drain(enc: VideoEncoder, max: number, signal?: AbortSignal): Promise<void> {
   while (enc.encodeQueueSize > max) {
     if (signal?.aborted) throw abortError();
     await new Promise<void>((resolve) => {
@@ -363,7 +371,7 @@ export async function exportVideo(source: VideoSource, opts: VideoExportOptions)
 }
 
 /** MediaRecorder mime types to try, best first. */
-const RECORDER_TYPES = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'];
+export const RECORDER_TYPES = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'];
 
 /** Real-time fallback (see module docs). */
 async function recordRealtime(source: VideoSource, opts: VideoExportOptions & { width: number; height: number; fps: number }, seconds: number): Promise<VideoResult> {

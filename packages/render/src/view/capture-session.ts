@@ -21,6 +21,8 @@ export interface CameraPose {
   target: Vec3;
   /** Vertical field of view in degrees (default: unchanged). */
   fov?: number;
+  /** Roll about the view axis in degrees (+ clockwise: a Dutch tilt, as `WorldRenderer.lookAt`); default 0. */
+  roll?: number;
 }
 
 /** Options of one captured frame. */
@@ -148,6 +150,8 @@ export function openCaptureSession(host: CaptureHost, width: number, height: num
           const dz = _target.z - cam.position.z;
           if (dx * dx + dz * dz < 1e-8) _target.z += 1e-3;
           cam.lookAt(_target);
+          // Up turned toward the right vector by the roll (the same tilt `WorldRenderer.lookAt` gives the viewport).
+          if (pose.roll !== undefined && Number.isFinite(pose.roll) && Math.abs(pose.roll) > 1e-3) cam.rotateZ((-pose.roll * Math.PI) / 180);
         }
         if (pose.fov !== undefined && Number.isFinite(pose.fov)) cam.fov = Math.min(120, Math.max(5, pose.fov));
         cam.zoom = 1;

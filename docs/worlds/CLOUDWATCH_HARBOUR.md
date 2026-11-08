@@ -287,6 +287,27 @@ cannot quite see, with the whistles carrying across both.
   clip's swing height.
 - Story format: all additions are optional fields (`camera.roll`, `via`, `trackLag`, `music`, `sounds`, `ambience`,
   `actions`); a story without them plays as before.
+- Render video (any world with `world.story`; the player's Render video chip and end-card button, the editor's Publish >
+  Video "Render the film"): the film is rendered offline, frame by frame at a fixed timestep, at 1920x1080, 30 or 60 fps,
+  on the top tier with the live film's post layer (`apps/studio/src/player/film-export.ts`). A second story runner on a
+  fixed film clock poses the camera (roll included), the people, the grade and the hour; each frame goes through the
+  renderer's capture session, which steps characters, water, weather, environment and eye adaptation by the frame's dt.
+  `WorldRenderer.setFixedClock` replaces the wall clock of the compositing layer (dust, sparkles) and of the node frame's
+  `time` (foliage sway); adaptive resolution and the governor do not run in a capture and the tier is chosen, not
+  automatic. The overlay (bars, titles, captions, end card, fades) is painted onto each frame (`film-overlay.ts`). The
+  sound is the same graph (`StoryAudio.offline`) on an `OfflineAudioContext`, stopped at every frame time where a
+  sound-only runner sends the cues and fires the sounds: deterministic and on the picture's frame grid. WebCodecs encodes
+  (H.264 into MP4 or VP9 into WebM, Opus audio) and the studio's own MP4 / WebM writers mux (`publish/video/mp4.ts`,
+  `webm.ts`, no dependency); without WebCodecs MediaRecorder records the canvas in real time with the offline sound.
+  Progress shows with Cancel; the file downloads at the end. `scripts/story-video.ts` renders it headless through the
+  player's button and checks the file. "Two Whistles" at 30 fps on the Intel GPU (WebGL2, cooked build): 3213 frames
+  rendered in 5.4 min, H.264 + Opus in MP4, 94.8 MB; ffprobe 107.10 s of video at 30/1 fps and 107.12 s of 48 kHz
+  stereo audio, both starting at 0; the decoded sound against the offline render lags 0 ms (sample cross-correlation
+  0.986), and two offline renders agree to 4e-5. Frames against the renderer's own capture of the live film held at the
+  same story time (9, 24, 41, 63, 88 s; inside the picture): mean error 3.0 to 11.9 of 255, PSNR 18.9 to 30.6 dB
+  (controls 3 s later: 16 to 75, 8 to 18 dB); what is left is the clip phase of walking and waving people. Known: the
+  live viewport itself differs from that capture at 4 of the 5 times (at 63 s they agree, 46 dB); the export follows the
+  capture path. 60 fps is a choice in the panel (not measured here).
 
 ## Play
 
@@ -501,11 +522,11 @@ and a 0.1 m near plane, the creases where billows intersect 2 km away came out a
   - The brush texture lives in the 4096 px town atlas: up close (a metre from a wall) it is soft rather than crisp.
   - The laundry, futons and banners do not sway; the train is a simple box design.
   - (Fixed in the film pass below: Kaho's head turning on its own in a held close-up, and the film's missing sound.)
-  - No in-browser video export of the film yet.
+  - (Fixed: the film renders to a video in the browser, see Render video above.)
   - The futons and the laundry lines away from the stair do not sway (draw budget); the foam is a flipbook, not a
     simulation.
   - Kaho's head turns on its own in a held close-up (the rig's look-at), so the film shows her from behind or at a
     distance rather than face-on.
-  - The film has no music or sound of its own yet, and no in-browser video export.
+  - (Fixed: the film has its own sound and renders to a video in the browser.)
   - In a headless capture the clock is frozen, so the glitter's twinkle shows only in the browser. Its clip was checked
     by stepping the animator in Node.
