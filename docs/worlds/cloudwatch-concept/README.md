@@ -35,9 +35,18 @@ against the sheet are in `docs/screenshots/cloudwatch/character/`.
 | `mio-expressions.webp` | Her expressions (with two fingers, waving through a window) and palette |
 
 Her model was rebuilt against this sheet by the character pipeline (`scripts/blender/character/briefs/mio.json`):
-`docs/screenshots/cloudwatch/character/mio-vs-sheet.webp`. Still off the sheet: the skirt flares wider, the cardigan
-does not show its buttons and pockets, and the sheet's mint and beige are too close to its grey background for the
-silhouette check to segment them (its IoU, 0.6, is not meaningful for this sheet).
+`docs/screenshots/cloudwatch/character/mio-vs-sheet.webp`. The skirt is fitted to the sheet's width and depth per
+height, the cardigan is buttoned with its pockets and ribbed hem, and the silhouette check segments this pale sheet by
+its line art (IoU 0.87).
+
+## Old Genzo (the harbour fisherman)
+
+| File | What |
+|---|---|
+| `harbour-fisherman-turnaround.webp` | Front, left profile, back of the fisherman on the quay (brief: `prompts/r6-fisherman.txt`) |
+
+Built against it by the pipeline (`briefs/harbour-fisherman.json`) and placed on the quay as `cw-genzo`:
+`docs/screenshots/cloudwatch/character/harbour-fisherman-vs-sheet.webp`.
 
 ## Storyboard
 

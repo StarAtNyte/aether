@@ -113,6 +113,23 @@ if (cast.cast.some((c) => c.id === 'mio')) {
   };
 }
 
+// Old Genzo, the harbour fisherman (made by the character pipeline from his brief and sheet), on the quay by the
+// harbour road, where he mends nets in the evening: half turned to the sea, so Kaho runs past him in the film's
+// harbour shots and a visitor meets him at the foot of the stair.
+if (cast.cast.some((c) => c.id === 'harbour-fisherman')) {
+  entities['cw-genzo'] = {
+    id: 'cw-genzo',
+    name: 'Old Genzo',
+    tags: ['person', 'npc'],
+    transform: { position: [7.5, 1.6, 28.6], rotation: [0, 35, 0], scale: [1, 1, 1] },
+    shape: { kind: 'none' },
+    character: { body: 'harbour-fisherman', gender: 'male', age: 'old' },
+    castShadow: false,
+    receiveShadow: false,
+    state: {},
+  };
+}
+
 // Shot A of the design doc (the lookout), Blender (x, y, z) -> glTF/Aether (x, z, -y).
 const eye: [number, number, number] = [2.0, 45.65, -130.9];
 const target: [number, number, number] = [-50.1, 24.6, 163.2];

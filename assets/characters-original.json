@@ -4,39 +4,57 @@
  "author": "this project",
  "cast": [
   {
+   "id": "harbour-fisherman",
+   "gender": "male",
+   "look": "old harbour fisherman, rust knit cap, short grey beard, open navy work jacket over a cream T-shirt, khaki trousers, black rubber boots",
+   "file": "c/harbour-fisherman.5cb05ffb.glb",
+   "height": 1.674,
+   "hip": 0.881,
+   "triangles": 59904,
+   "faces": 1,
+   "bytes": 952076,
+   "style": "toon",
+   "sha256": "5cb05ffb84ab8f4a86e67d30833922830b6ab42634b1f7b35b296469f0cb1881",
+   "lod1": {
+    "file": "c/harbour-fisherman.lod1.e55d7521.glb",
+    "triangles": 23960,
+    "bytes": 500980
+   }
+  },
+  {
    "id": "kaho",
    "gender": "female",
    "look": "anime girl, summer sailor uniform with a sky-blue collar and a teal neckerchief, chin-length chestnut bob with a thin braid and a seashell charm",
-   "file": "c/kaho.2f283bcd.glb",
-   "height": 1.54,
+   "file": "c/kaho.1f015d82.glb",
+   "height": 1.541,
    "hip": 0.824,
-   "triangles": 57392,
+   "triangles": 65736,
    "faces": 1,
-   "bytes": 945152,
+   "bytes": 1060484,
    "style": "toon",
-   "sha256": "2f283bcd2ccdbc87c7569d7b7b7d56666dcb48e9f247a04eda9129eb91e91f9a",
+   "sha256": "1f015d8246e6437c61929c1f2d49fd67c3f1e294930a69b33c6761cfb435bb43",
    "lod1": {
-    "file": "c/kaho.lod1.ae47ca86.glb",
-    "triangles": 22956,
-    "bytes": 480580
+    "file": "c/kaho.lod1.fd11159d.glb",
+    "triangles": 26294,
+    "bytes": 555008
    }
   },
   {
    "id": "mio",
    "gender": "female",
    "look": "anime girl, pale mint short-sleeve cardigan over a white T-shirt, long light-beige pleated skirt, long straight black hair with a fringe and a white hairband",
-   "file": "c/mio.90164c34.glb",
-   "height": 1.549,
+   "file": "c/mio.ef085087.glb",
+   "height": 1.543,
    "hip": 0.824,
-   "triangles": 42624,
+   "triangles": 73948,
    "faces": 1,
-   "bytes": 789200,
+   "bytes": 1204444,
    "style": "toon",
-   "sha256": "90164c340e3b32d6f8f0073f78ea432f80110597dfdf597a0e9b8e7bf498a328",
+   "sha256": "ef0850870feaf4772c53e1ccc32b9b7ecbbeed2ed8d2a51c4405f033d3f894bc",
    "lod1": {
-    "file": "c/mio.lod1.d02f4981.glb",
-    "triangles": 17049,
-    "bytes": 398508
+    "file": "c/mio.lod1.5e7f5fff.glb",
+    "triangles": 29579,
+    "bytes": 621656
    }
   }
  ]

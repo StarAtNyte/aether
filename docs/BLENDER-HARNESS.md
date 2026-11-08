@@ -100,7 +100,7 @@ a reviewer writes: "bigger eyes", "more hair volume", "longer skirt", "shorter h
 bridge's `character_revise` sends brief changes too).
 
 The briefs of the first three characters are in `scripts/blender/character/briefs/`. Proof images:
-`docs/screenshots/cloudwatch/character/kaho-vs-sheet.webp` (sheet, Blender and Aether from the same angles, close-ups of
+`docs/screenshots/cloudwatch/character/kaho-vs-sheet.webp`, `mio-vs-sheet.webp`, `harbour-fisherman-vs-sheet.webp` (sheet, Blender from the same angles, silhouettes; first round also Aether close-ups of
 every expression, her own clips and a run), `mio-turnaround.webp`, `harbour-fisherman-turnaround.webp`. The Aether shots
 come from `STATIC_DIR=<dist> GEN_GPU=intel npx tsx scripts/characters/kaho-shots.ts --body=<id> --out=<dir>
 --only=turn,face,clips,run` and, in a run of its own, `--only=expressions` (see the limits below).
@@ -181,16 +181,41 @@ line). Colours are words or hex, the hex winning. Missing fields default from st
 9. **Export** (`export.py`). The glTF from Blender, then the patch (exact rest transforms, inverse bind matrices, the
    painted atlas with its alpha), the clips, `meta.json`, finish-character, the LOD.
 
+### Reading the sheet (sheet.py)
+
+`sheet.py` (pure numpy, so it runs in Blender and in plain Python) reads a turnaround twice: before modelling, for what
+the build fits to it (`spec['sheet_fit']`), and after, for the QA.
+
+- **Segmentation is edge-based.** A pale figure on a pale ground (Mio's mint cardigan, beige skirt and white sneakers
+  on light grey) has interiors of the ground's colour, but its line art closes them: the figure is what the ground
+  cannot flood from the border without crossing an edge (Sobel on luminance, red and blue) or an off-ground pixel. The
+  sheet's guides go first (long thin runs with ground on both sides, dashed rows by their coverage), pockets of plain
+  ground enclosed by an arm stay background, and each figure is a connected component (the head-unit ruler and the
+  labels are told apart by height, colour and area). Mio's IoU went from an unreadable 0.60 to 0.87.
+- **Fitted before modelling:** the skirt's extent by height in each view, by its colour (nearer it than any other
+  garment's or the skin's; an arm or a bag over it does not cut the run short, the wider side counts, the hem's pleat
+  points trimmed), so the skirt's outer pleat faces lie on the ellipse through the sheet's front half-width and side
+  half-depth at every height, and its hem is the sheet's; each outer garment's hem (`garment_hem`: the lowest height its
+  colour shows beside the middle); the eyes' iris and dark colours, which the eye painting takes.
+- **Corrected in the loop** (`sheet_corrections`), each by the measured ratio: the face template's jaw key (the face's
+  half-width between mouth and chin), the fringe's length (the hairline), the hair's volume (its outer width at the
+  cheeks).
+
 ### QA (report.json)
 
 Each build is checked, and the loop rebuilds when it can correct something by itself (the body showing through a
-garment: more ease; over the budget: one subdivision less), keeping the best-scoring build. The pictures still need an
-art director's eye every pass; the checks support that.
+garment: more ease; over the budget: one subdivision less; the sheet corrections above), up to four iterations
+(`AETHER_CHARACTER_ITERATIONS`), keeping the best-scoring build. The pictures still need an art director's eye every
+pass; the checks support that.
 
-- `silhouette_iou`: with a sheet, each view's mask against the sheet's figure (guide and floor lines removed by an
-  opening first, then the background flooded from the border, so the gap between the legs stays background; the three
-  neighbouring views that match best), height-normalized and centred, our model in the sheet's stance (arms down, the
-  feet a little apart).
+- `silhouette_iou`: with a sheet, each view's mask against the sheet's figure (sheet.py's edge-based segmentation),
+  height-normalized and centred, our model in the sheet's stance (arms down, the feet a little apart).
+- `colour_regions`: each view in a 12 x 4 grid of the figure's bounds, per cell our median colour against the sheet's
+  (CIE delta E), rendered with the preview sun turned with each camera, as a model sheet is lit; a cell far off is a
+  wrong colour role, a missing part or a part in the wrong place. Flagged over a mean of 12.
+- `features`: the eyes, the mouth and the hairline found by the same detector on the sheet's front view and on ours, and
+  the jaw's, chin's and hair's widths; differences in head heights, flagged over 0.06 (the eye blob's size is reported,
+  not judged: it follows the painting's darks).
 - `proportions`: heads tall against the brief, hip over height, leg length and shoulder width in heads.
 - `palette`: each colour role's median rendered lit tone against the brief (CIE delta E), and with a sheet against the
   sheet's colour at the same place.
@@ -201,22 +226,38 @@ art director's eye every pass; the checks support that.
   first pushed out of the thigh capsules as the runtime springs do, within their swing limit, and the skirt is checked
   through locomotion only. `through` lists the frames over 0.5 %. The loop adds ease only when a tight garment fails.
 - `weights` (unweighted, over four influences, not normalized), `topology` (triangles, open edges, loose vertices,
-  morphs), `triangles` (anime 30-60 k), `bytes`, `lods`, `clips`, `skeleton`.
+  morphs), `triangles` (anime 30-75 k: the hair's strands, the finer jaw line, knit and pleat detail; the far level
+  carries 40 %), `bytes`, `lods`, `clips`, `skeleton`.
 
 The builds (November 2026; the first ones in brackets):
 
 | | Triangles | GLB | LOD1 | IoU vs sheet (front / side / back) | Palette dE | Interpenetration (worst frame) |
 |---|---|---|---|---|---|---|
-| kaho | 57,392 (58,160) | 945 KB | 22,956, 481 KB | 0.82 / 0.77 / 0.85 (0.66 / 0.76 / 0.66) | ≤ 0.4 vs brief | blouse 0 %; skirt 0.5 %, 1.9 mm (sprint) (first: 63 % by the old test) |
-| mio | 59,644 (57,516) | 1,000 KB | 23,857, 513 KB | no sheet | ≤ 0.5; hair 9.2 (the sheen on black) | T-shirt, cardigan 0 %; skirt 6.6 % (walk) |
-| harbour-fisherman | 54,032 (54,100) | 856 KB | 21,612, 439 KB | no sheet | ≤ 0.6 (hair 5.8) | T-shirt 10 % at 4.8 mm (run); jacket 3.8 % |
+| kaho | 65,736 (58,160) | 1,060 KB | 26,294, 555 KB | 0.86 / 0.88 / 0.85 (0.66 / 0.76 / 0.66) | regions 10.2 | blouse 0 %; skirt 16 % in a jump (17.7 mm), locomotion clean |
+| mio | 73,948 (57,516) | 1,204 KB | 29,579, 622 KB | 0.87 / 0.89 / 0.86 (0.60 unreadable) | regions 12.2 | T-shirt, cardigan 0 %; skirt 19 % in a jump |
+| harbour-fisherman | 59,904 (54,100) | 952 KB | 23,960, 501 KB | 0.85 / 0.70 / 0.85 (no sheet) | regions 10.6 | T-shirt 10 % at 4.8 mm (run); jacket 4.9 % |
+
+What changed in the pipeline with these builds (November 2026, second round): the sheet reading above; the skirt fitted
+per view (Mio's no longer flares; its springs' radii cut to what clears the legs at rest, so a slim skirt hangs still);
+a buttoned cardigan (a V by plane cuts, buttons, patch pockets, a ribbed hem and cuffs) worn over the skirt, which is
+built first; an open front by plane cuts (the jacket); work trousers that hang straight; sneakers with laces, a rubber
+toe cap and a striped sole, painted uppers (a loafer's gloss and apron seam); a flap bag with a buckle at the front of
+the hip; the hair built after the clothes (long hair falls over the cardigan and the strap), strands at each lock's
+edges ending above it, strand lines in the clump texture, a hairband that lies on the hair, seven bangs and thin points
+between them for a bob, the braid out over the side hair; the eyes in layers (a deep top band, fibres, a lit lower
+crescent, the limbal ring, two catchlights and a reflected arc, a heavy upper lash with three points); a finer head
+mesh and the face template's keys; a bigger neckerchief with a fold; a rounded knit cap with a rolled cuff and a short
+beard. The proof images (`*-vs-sheet.webp`: sheet, Blender cel preview, silhouettes, expressions) are Blender's; the
+Aether frames of the first round were not retaken.
 
 About a third of the IoU gain is the mask fix (the sheet's gap between the legs), the rest the model: the A-line skirt,
 narrower shoulders, the fuller bob, the stance.
 
-Known limits: Mio's long skirt still lets a striding shin touch its front in some walk frames (6.6 % of the checked
-thigh vertices), and a sprinting hand dips into Kaho's skirt at the hip; the skirt following the thighs reads a little
-like culottes in a sprint; hands are simple (no nails; the thumb is a plain chain); the clumps have no inner strands;
+Known limits: a slim skirt fitted to its sheet lets a jumping thigh through its front (16-19 % of the checked thigh
+vertices in `jump_air`; locomotion is clean); the skirt following the thighs reads a little like culottes in a sprint;
+hands are simple (no nails; the thumb is a plain chain) and spread in the sheet stance; the fisherman's side view is
+narrower than his sheet's stooped, boxy jacket (IoU 0.70) and his jacket has no collar; a sheet's hairline is read
+where its fringe stops, so a long fringe over the eyes (Kaho's) reads as a lower hairline than ours;
 expressions set right after a one-shot clip did not take in the proof run (the rig eases them only at the near level of
 detail), so take the expression shots on their own.
 

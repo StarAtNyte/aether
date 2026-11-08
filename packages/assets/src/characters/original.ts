@@ -3,41 +3,58 @@ import type { CastFile } from './library';
 
 export const ORIGINAL_CAST: CastFile[] = [
  {
+  "id": "harbour-fisherman",
+  "gender": "male",
+  "look": "old harbour fisherman, rust knit cap, short grey beard, open navy work jacket over a cream T-shirt, khaki trousers, black rubber boots",
+  "file": "c/harbour-fisherman.5cb05ffb.glb",
+  "height": 1.674,
+  "hip": 0.881,
+  "triangles": 59904,
+  "faces": 1,
+  "bytes": 952076,
+  "style": "toon"
+ },
+ {
   "id": "kaho",
   "gender": "female",
   "look": "anime girl, summer sailor uniform with a sky-blue collar and a teal neckerchief, chin-length chestnut bob with a thin braid and a seashell charm",
-  "file": "c/kaho.2f283bcd.glb",
-  "height": 1.54,
+  "file": "c/kaho.1f015d82.glb",
+  "height": 1.541,
   "hip": 0.824,
-  "triangles": 57392,
+  "triangles": 65736,
   "faces": 1,
-  "bytes": 945152,
+  "bytes": 1060484,
   "style": "toon"
  },
  {
   "id": "mio",
   "gender": "female",
   "look": "anime girl, pale mint short-sleeve cardigan over a white T-shirt, long light-beige pleated skirt, long straight black hair with a fringe and a white hairband",
-  "file": "c/mio.90164c34.glb",
-  "height": 1.549,
+  "file": "c/mio.ef085087.glb",
+  "height": 1.543,
   "hip": 0.824,
-  "triangles": 42624,
+  "triangles": 73948,
   "faces": 1,
-  "bytes": 789200,
+  "bytes": 1204444,
   "style": "toon"
  }
 ] as CastFile[];
 
 /** Far levels of detail by body id (the same skeleton, clips and toon extras; no morphs), under the library base. */
 export const ORIGINAL_LODS: Record<string, { file: string; triangles: number; bytes: number }> = {
+ "harbour-fisherman": {
+  "file": "c/harbour-fisherman.lod1.e55d7521.glb",
+  "triangles": 23960,
+  "bytes": 500980
+ },
  "kaho": {
-  "file": "c/kaho.lod1.ae47ca86.glb",
-  "triangles": 22956,
-  "bytes": 480580
+  "file": "c/kaho.lod1.fd11159d.glb",
+  "triangles": 26294,
+  "bytes": 555008
  },
  "mio": {
-  "file": "c/mio.lod1.d02f4981.glb",
-  "triangles": 17049,
-  "bytes": 398508
+  "file": "c/mio.lod1.5e7f5fff.glb",
+  "triangles": 29579,
+  "bytes": 621656
  }
 };
