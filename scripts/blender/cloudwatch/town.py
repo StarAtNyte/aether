@@ -943,6 +943,88 @@ def _hits_window(bm, f, u, zc):
     return False
 
 
+# ---------------------------------------------------------------------------------------------------------------- kit houses
+
+# Houses the film's shots show large (scripts/blender/building/hero_shots.py over the story cameras: the largest screen
+# share of each house in any shot) are built by the building kit (scripts/blender/building/), the hero ones with its full
+# detail, the next ones at its mid level; the rest of the town keeps `house` above (seen from 40 m and more).
+KIT_HERO = {"house_0_5", "house_0_6", "house_0_7", "house_0_9", "house_0_12", "house_0_13", "house_0_14", "house_2_46", "shop"}
+KIT_MID = {"house_0_8", "house_1_27", "house_1_28", "house_2_45", "house_3_61", "house_3_62", "house_3_63", "house_3_64", "house_3_65",
+           "house_3_66", "house_3_67", "house_3_68", "house_3_69"}
+# Texel density in the town atlas relative to the rest (bake_export reads the face attribute `cw_texel`).
+KIT_TEXEL = {"hero": 2.0, "mid": 1.4}
+TRIMS = ["#5a3a2c", "#ece6da", "#ece6da", "#b4b6bd", "#3d3a44"]
+CLADS = ["#5e4434", "#8a6448", "#9db3c2", "#e2d6b4"]
+KIT_REPORT = []
+
+
+def kit_house(name, lot, z, seed, tier, reserved_side=None, gaps=None, shop=False):
+    """One house from the building kit, into the town's shared material list. Returns (object, HOUSES record)."""
+    import os
+    import sys
+    here = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "building")
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    import house as KH
+    import materials as KM
+    import qa as KQ
+    from common import ground_z
+    _init_mats()
+    r = rng(seed)
+    X0, X1, Y0, Y1 = lot
+    W = X1 - X0
+    kind = "shop" if shop else r.choices(["simple", "L", "stepped", "flat", "narrow"], weights=[2.2, 2.0, 2.4, 1.3, 1.2])[0]
+    if kind == "narrow" and W > 6.8:
+        kind = "simple"
+    st = 2 if shop else r.choices([1, 2, 3], weights=[0.15, 0.7, 0.15])[0]
+    if kind == "narrow":
+        st = 3 if r.random() < 0.6 else 2
+    roof = "flat" if kind == "flat" else r.choice(["gable", "gable", "hip", "irimoya"])
+    tile = r.choice(["slate", "ibushi", "ibushi", "brick", "brick", "teal", "teal", "grey", "navy"])
+    palette = {"wall": r.choice(PLASTER), "wall2": r.choice(CLADS), "trim": r.choice(TRIMS), "roof": TILES[tile][0], "accent": "#2f5d8a"}
+    feats = {"balconies": 1 if st >= 2 else 0, "stair": reserved_side if (kind == "flat" or r.random() < 0.35) else None,
+             "shop_front": shop, "ac_wall": 1 if st >= 2 else 0, "ac_ground": 1, "meters": True, "plants_door": 0 if shop else 2 if tier == "hero" else 1,
+             "plants_balcony": 2 if tier == "hero" else 1, "signage": None, "window_style": "mixed", "lit": 0.6 if shop else 0.25,
+             "two_tone": r.random() < 0.4, "corner_boards": r.random() < 0.35, "door_wood": r.random() < 0.5, "pent_roofs": 0.3, "gear": False}
+    spec = {"id": name, "name": name, "style": "anime", "kind": kind, "storeys": st, "lot": [X0, X1, Y0, Y1, z],
+            "roof": {"type": roof, "pitch": r.uniform(24, 30), "eaves": 0.6, "verge": 0.45, "axis": "x"}, "palette": palette,
+            "palette_concrete": kind == "flat" and r.random() < 0.6, "wear": r.uniform(0.35, 0.65), "seed": seed, "tier": tier,
+            "budget": KH.TIER_BUDGET[tier], "features": feats, "gaps": dict(gaps or {}), "notes": ""}
+    lib = KM.Library("anime", palette, spec["wear"], prefix="tk", register=_reg)
+
+    def ground(x, y):
+        g = ground_z(x, y)
+        return g if abs(g - z) < 0.4 else z
+    K, rec = KH.build(spec, lib, ground=ground, gear=False)
+    q = KQ.check(K, ground)
+    KIT_REPORT.append({"house": name, "tier": tier, "triangles": K.triangles(), "parts": q["parts"], "failed": q["failed"], "fixes": q["fixes"],
+                       "worst_gap": q["worst_gap"], "worst_sink": q["worst_sink"]})
+    for row in q["rows"]:
+        if not row.get("ok") and not row.get("removed"):
+            print("AETHER_KIT_FAIL", name, row, flush=True)
+    # Texel density for the bake, per face.
+    tl = K.bm.faces.layers.float.new("cw_texel")
+    for f in K.bm.faces:
+        f[tl] = KIT_TEXEL.get(tier, 1.0)
+    ob = bm_object(name, K.bm, "town", mats=MATS, outline=True, recalc=False)
+    rec["name"] = name
+    # Roof gear on the kit's ridges, as on the other houses.
+    for info in rec.get("roofs", []):
+        if r.random() < 0.5:
+            t = r.uniform(0.15, 0.4)
+            e0, e1 = (info["r0"], info["r1"]) if info.get("hip") else (info["e0"] + 0.6, info["e1"] - 0.6)
+            al = e0 + (e1 - e0) * (t if r.random() < 0.5 else 1 - t)
+            pos = (al, info["c"]) if info["axis"] == "x" else (info["c"], al)
+            antenna(pos[0], pos[1], info["ridge_z"], r)
+        if not info.get("hip") and r.random() < 0.28 and info["e1"] - info["e0"] > 4.0 and info["half"] > 2.3:
+            solar_heater(info, 1 if r.random() < 0.55 else -1, (info["e0"] + info["e1"]) / 2 + r.uniform(-0.8, 0.8), r)
+    if rec.get("deck_free"):
+        x, y, zd = rec["deck_free"]
+        water_tank(x, y + 0.6, zd, r)
+    HOUSES.append(rec)
+    return ob, rec
+
+
 def build():
     _init_mats()
     r = rng(42)
@@ -1003,13 +1085,37 @@ def build():
             side = "e"
         elif gw > 2.3 and not prev_east:
             side = "w"
-        ob, rec = house(f"house_{ti}_{n}", (x0, x1, y0, y1), z, seed=1000 + n, reserved_side=side)
+        name = f"house_{ti}_{n}"
+        tier = "hero" if name in KIT_HERO else "mid" if name in KIT_MID else None
+        if tier:
+            ob, rec = kit_house(name, (x0, x1, y0, y1), z, 1000 + n, tier, reserved_side=side, gaps={"w": gw, "e": ge})
+        else:
+            ob, rec = house(name, (x0, x1, y0, y1), z, seed=1000 + n, reserved_side=side)
         prev_east = rec.get("stair_side") == "e"
         rec["gap_w"], rec["gap_e"] = gw, ge
         n += 1
-    _shop()
+    if "shop" in KIT_HERO:
+        _kit_shop()
+    else:
+        _shop()
     finish_gear()
+    if KIT_REPORT:
+        import json
+        print("AETHER_KIT", json.dumps({"houses": len(KIT_REPORT), "triangles": sum(k["triangles"] for k in KIT_REPORT),
+                                        "failed": sum(k["failed"] for k in KIT_REPORT), "fixes": sum(len(k["fixes"]) for k in KIT_REPORT)}), flush=True)
     return n
+
+
+def _kit_shop():
+    """The corner shop by the crossing from the building kit (a lit glazed bay, the door, a roll-up shutter, the awning)."""
+    tr = terrace_ranges()
+    y_from, y_to, z = tr[1]
+    x, w, d = -11.0, 8.0, 7.0
+    y0 = y_from + 6.5 + 0.6
+    ob, rec = kit_house("shop", (x - w / 2, x + w / 2, y0, y0 + d), z, 77, "hero", gaps={"w": 1.0, "e": 1.0}, shop=True)
+    rec["shop"] = True
+    rec["gap_w"], rec["gap_e"] = 1.0, 1.0
+    return ob
 
 
 def _shop():

@@ -52,13 +52,18 @@ Role passes. The same work is looked at in three roles, in this order, every pas
 | `character_create` | `character_create` | yes | the character pipeline from a brief (below) |
 | `character_revise` | `character_revise` | yes | rebuild a character with notes |
 | `character_review` | `character_review` | yes | the QA report and turnaround of a character |
+| `building_create` | `building_create` | yes | the building kit from a brief (below) |
+| `building_revise` | `building_revise` | yes | rebuild a building with notes |
+| `building_review` | `building_review` | yes | the QA report and stills of a building |
 
-The first six drive the user's own Blender through the MCP for Blender server. The character actions run a separate
+The first six drive the user's own Blender through the MCP for Blender server. The character and building actions run a separate
 headless Blender (`blender -b --factory-startup -P scripts/blender/character/build.py -- …`) in a folder per character
 under the bridge's data folder (`<data>/blender/characters/<id>/`: `brief.json`, `sheet.png`, the GLB, `turnaround.png`,
 `report.json`), so a revision and a review find the last build; they need Blender on the machine and the switch on, not
-a running MCP session. Contracts: `packages/agent/src/bridge/blender-protocol.ts` (inputs, `CharacterBriefSchema`, the
-run result's `glb`), `apps/bridge/src/blender/service.ts` and `characters.ts`, tools in `packages/agent/src/blender.ts`.
+a running MCP session (buildings likewise in `<data>/blender/buildings/<id>/`: `brief.json`, `report.json`, `stills.png`,
+the GLBs). Contracts: `packages/agent/src/bridge/blender-protocol.ts` (inputs, `CharacterBriefSchema`,
+`BuildingBriefSchema`, the run result's `glb`), `apps/bridge/src/blender/service.ts`, `characters.ts` and `buildings.ts`,
+tools in `packages/agent/src/blender.ts`.
 
 How the assistant should use them: write the brief and design first; build; look (`blender_look`, the turnaround a
 character action returns); critique against the brief in the three roles; revise with specific notes; place the result
@@ -281,3 +286,102 @@ world; a loaded machine, so read the GPU times as a trend): off / on, the people
 124,057 a frame on average, in the sun's map 67,914 / 58,469; GPU time mean 16.4 / 15.4 ms, p95 20.8 / 17.7 ms; at least
 one body at its far level in 94 % of the frames; no program linked in either pass. Kestrel Outpost (cooked): its one
 person is a Rocketbox body, no far level, nothing changes.
+
+## Buildings
+
+The building kit turns a brief into a detailed, worn, checked house or shop: `scripts/blender/building/`, Python modules
+run by a headless Blender, the same method as the characters (brief, light and colour, materials, form, lived-in detail,
+finishing; design, modelling and visual QA passes). Everything is generated: no external models, textures or HDRIs (the
+signs use Blender's built-in font as mesh). Its first use is Cloudwatch Harbour: the houses the film's shots come close
+to are kit buildings (below).
+
+### How to run
+
+```
+blender -b --factory-startup -P scripts/blender/building/build.py -- --brief <dir>/brief.json --out <dir> \
+        [--revise <dir>/report.json] [--review] [--no-export] [--size 900x700]
+```
+
+A build takes 10-30 s on the RTX 4090 (the geometry under a second, the stills, the albedo bake on the GPU, on the CPU
+when the GPU is busy). It writes in `<dir>`:
+
+| File | What |
+|---|---|
+| `report.json` | the QA (below): `passed`, `issues[]`, `triangles` against the tier's budget, the contact rows, the fixes, history |
+| `stills.png` | front, three-quarter from above, street eye level (1.5 m, close, looking up the facade); also each alone |
+| `<id>.glb` | LOD0: one atlas with the painted albedo and its wear baked in, emissive windows and lamps kept emissive |
+| `<id>.lod1.glb` | LOD1: collapse-decimated to 40 % on the same atlas |
+| `<id>.blend` | the build, for `--review` (stills again) and `--revise` |
+
+`--revise` reads the brief's `revision_notes`: "more wear" / "newer", "taller" / "lower", "steeper roof" / "flatter
+roof", "deeper eaves", "more balconies" / "no balconies", "more plants", "more lit windows", "fewer triangles" (a tier
+down) / "more detail", "shutters", "grilles", "plain windows", "add a stair" / "no stair", "another seed". The example
+briefs are in `scripts/blender/building/briefs/` (a corner shop, an L-shaped terrace house with a stair, a three-storey
+flat-roofed block, a realistic plaster house).
+
+### Brief
+
+`BuildingBriefSchema` (`packages/agent/src/bridge/blender-protocol.ts`): `id`, `name`, `style` (`anime`: Cloudwatch's
+painted toon materials, so a kit building sits in that world and its bake; `realistic`: PBR), `kind` (`simple`, `L`,
+`stepped`: a set-back upper storey over lean-to roofs, `flat`: concrete with a parapet and a stair house, `narrow`,
+`shop`), `footprint` {w, d} in metres (the town passes its lots instead), `storeys`, `roof` {type: gable, hip, irimoya,
+shed, flat; `pitch_deg`, `eaves_m`, `verge_m`, `axis`}, `palette` (a preset or {wall, wall2, trim, roof, accent}),
+`wear` (0-1), `seed`, `detail` (`hero`, `mid`, `far`: what is modelled and the triangle budget, 16 k / 7 k / 3.5 k),
+`budget_tris`, `features` {balconies, stair, shop_front, ac_wall, ac_ground, meters, plants_door, plants_balcony,
+signage, window_style, lit, two_tone, corner_boards, door_wood, pent_roofs, gear}, `notes`.
+
+### Stages
+
+1. **Light and colour** (`render.py`). For `anime` Cloudwatch's own sun lamp and physical sky (`sky.build_light`), for
+   `realistic` a higher sun on the same sky. The outline is a separate linked object that casts no shadow: a shell on
+   the building itself shadowed every wall in EEVEE.
+2. **Materials** (`materials.py`). One material per role (wall, cladding, trim, tile, ridge, glass, lit glass, sash,
+   frosted panel, shutter, metal, rail, outdoor unit, pot, leaf, ...): toon (`common.toon_material`: the shared ramp,
+   brush strokes, haze; tile rows and joints as stripes) or Principled. Wear goes into every albedo before its `ALBEDO`
+   reroute (what the bakes read): the vertex attribute `bk_grime` times a streaky noise darkens toward a cool grey, and
+   `bk_moss` with a patch noise greens the roof.
+3. **Form** (`house.py`, `roofs.py`, `facade.py`). Massing from the kind; roofs: a sheathing slab with fascia and barge
+   boards, real tile courses (wedges standing 3.8 cm off the course below, clipped by the hips), round-nosed eave tiles
+   on hero, a layered ridge with end tiles, hip caps, half-round gutters; then the facade plan: every opening and
+   fitting is placed on its wall as a rectangle before anything is built (door, shop bays, balconies, the stair's
+   landing door, downpipes at the gutter ends, wall units, meters, pent roofs, then windows storey by storey in what is
+   left, a smaller window where a big one will not fit). Walls are grids of quads cut around the openings, so each
+   opening is a hole with a reveal (12 cm for windows, 30 cm for the porch): two sliding sashes on two tracks with
+   their meeting stiles, sills with a drip, head flashings, storm-shutter boxes on rails, lattice grilles of real bars,
+   hoods on brackets, bamboo blinds, curtains and a sky sheen on the glass; the genkan's sliding doors (frosted glass in
+   a lattice, a transom) with a step, a lamp, a name plate and intercom, a mailbox, under a hood or a tiled pent roof;
+   shop fronts (a lit glazed bay with mullions, a roll-up shutter in guides under its box, an awning, a noren);
+   balconies (slab, drip line, posts, rails and balusters or a solid parapet; the sliding door onto it); external
+   steel stairs (channel stringers, treads with nosings, a landing on a post, railings).
+4. **Lived-in detail** (`lived.py`). Outdoor units on wall brackets, on balcony floors and on ground pads, each with its
+   pipe cover to a wall cap; downpipes with an offset bend to the wall, brackets every 1.6 m and a shoe; gas and
+   electricity meters with the gas riser and the conduit to the eaves; potted plants (shrub, tall, flowering) by the
+   door and on balconies; signboards; roof antennas (on their own; the town places its own roof gear). Wear on the
+   mesh: grime at the wall foot (splash) and under the eaves (soot), streak quads under the sills in the wall's own
+   material, darkened at the top and fading out, moss on the low courses of the slopes turned from the sun.
+5. **Finishing** (`qa.py`, `export.py`). The QA, the stills, the albedo bake and the LODs.
+
+### QA (report.json)
+
+The interpenetration check is the prop gate's rule, shared (`scripts/blender/contact.py`, also used by
+`cloudwatch/check_props.py`): every fitting is a part (`kit.K.part`) with a support. A standing part's base (within 2
+cm of its lowest point) must touch the body (walls, roofs, slabs) or the ground within 3 cm, with the prop gate's slope
+allowance; a hanging part's back must touch its wall within 3 cm; no vertex of a part may lie more than 3 cm behind the
+body's surface or another part's. The loop fixes what it can: a part off its support by under 30 cm is moved onto it, a
+part sunk into another is removed, and dressing that still fails (a pipe cover, a pot, a conduit) is removed; each fix
+is listed. Over the triangle budget the build is redone a tier lower. `triangles`, `materials` (draws before the
+export merges them), `windows`, `balconies`, `height_m` complete it. The stills still need an art director's eye every
+pass.
+
+### Cloudwatch Harbour
+
+`town.py` builds the houses the film's shots come close to with the kit: `building/hero_shots.py` casts a grid of rays
+from every story camera (`camera`, `cameraTo` and `via` poses of `story.ts`) into the built world and lists each house's
+largest screen share. Nine at the hero level (`KIT_HERO`: the five walls behind Mio's train window, the crossing's
+houses, the shrine's neighbour, the corner shop) and thirteen at the mid level (`KIT_MID`: shares of 2-12 %, the views
+over the town from the stair) come from the kit with the town's palettes, lots, gaps and stair sides; the other 46
+keep `town.house` (40 m and more away in every shot). Kit houses carry `kit: True` in `HOUSES`, so the prop pass
+(`detail.py`) leaves their outdoor units and pots to the kit and still hangs laundry on their balconies; the shop records
+its bays, and the banners stand in front of the glazed one. The bake gives the kit houses more texels: the face
+attribute `cw_texel` (2 on hero, 1.4 on mid) scales their UV islands before the pack (`bake_export.texel_density`).
+Story stills from the .blend or the baked pieces: `cloudwatch/story_stills.py --cams <cams.json>`.

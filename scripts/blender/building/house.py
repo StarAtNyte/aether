@@ -511,6 +511,7 @@ def build(spec, lib, ground=None, service_to=None, gear=True):
         F.steel_door(K, ffp.face, door, plan, mat_for(fb)(zb + 0.5))
         F.canopy(K, ffp.face, door_x, zb + 2.3, 1.5, 0.7, plan)
     if shop_bays:
+        rec["shop_bays"] = [{"u0": o["u0"], "u1": o["u1"], "kind": o["kind"]} for o in shop_bays]
         F.shop_front(K, ffp.face, shop_bays, zb, plan, r, mat_for(fb)(zb + 0.5))
         F.awning(K, ffp.face, fb["x0"] + 0.1, fb["x1"] - 0.1, zb + 2.75, zb + 2.35, 1.15, plan)
         F.noren(K, ffp.face, door_x, zb + 1.95, 1.2, plan)
@@ -529,8 +530,8 @@ def build(spec, lib, ground=None, service_to=None, gear=True):
                 t = r.uniform(-ln / 2 + 0.35, ln / 2 - 0.35)
                 if "ac_at" in brec and abs(t - brec["ac_at"]) < 0.8:
                     continue
-                px, py, _ = fp.face.pt(u + t, zf, dep - 0.22)
-                L.plant(K, (px, py, zf), r.choice(["shrub", "flowers", "tall"]), r, scale=r.uniform(0.75, 1.0))
+                px, py, _ = fp.face.pt(u + t, zf, dep - 0.36)  # clear of the railing's balusters
+                L.plant(K, (px, py, zf), r.choice(["shrub", "flowers", "tall"]), r, scale=r.uniform(0.7, 0.9))
         rec["balconies"].append(brec)
     if stair:
         res, yl = F.steel_stair(K, main, stair, plan, ground, main["zb"] + STOREY - 0.05)

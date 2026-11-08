@@ -282,6 +282,8 @@ def build_small_props():
     bm = bmesh.new()
     acm = [toon_material("ac_body", "#e8e5dc"), toon_material("ac_fan", "#56545c"), toon_material("ac_duct", "#d8d0bc")]
     for h in HOUSES:
+        if h.get("kit"):
+            continue  # the building kit placed this house's own outdoor units (with their pipes and brackets)
         X0, X1, Y0, Y1 = h["x"] - h["w"] / 2, h["x"] + h["w"] / 2, h["y"] - h["d"] / 2, h["y"] + h["d"] / 2
         blocks = h.get("blocks") or [(X0, X1, Y0, Y1, h["z"] + h["h"])]
         # Ground units on a pad against a wall that is really there (L-shaped houses have a notch), clear of the stair
@@ -340,14 +342,14 @@ def build_small_props():
             z = drop_min(x, y, 1.5, 0.2)
             laundry(f"laundry_{n}", x, y, z, min(3.2, h["w"] - 1.5), 0.0, seed=n)
             n += 1
-        for k in range(r.randint(0, 2)):
+        for k in range(r.randint(0, 2) if not h.get("kit") else 0):  # (kit houses have their own pots)
             x = h["door_x"] + r.choice((-1, 1)) * r.uniform(0.8, 1.6)
             y = h["y"] - h["d"] / 2 - 0.35
             z = drop_min(x, y, 0.2, 0.2)
             add_cylinder(bmp, (x, y, z - 0.02), 0.17, 0.34, segments=7, mat_index=0, radius_top=0.21, cap=False)
             add_sphere(bmp, (x, y, z + 0.5), 0.26, mat_index=1, subdiv=1, scale=(1, 1, 1.1))
         # Plants on balconies (along the railing, clear of the outdoor unit) and on a few window sills.
-        for bal in h.get("balconies", []):
+        for bal in h.get("balconies", []) if not h.get("kit") else []:
             ux, uy = -bal["ny"], bal["nx"]
             for k in range(r.randint(1, 2)):
                 t = r.uniform(-bal["len"] / 2 + 0.45, bal["len"] / 2 - 0.45)
@@ -393,10 +395,13 @@ def build_small_props():
         _sign("sign_shop_v", "TABAKO", shop["x"] + shop["w"] / 2 - 0.35, y0 - 0.5, shop["z"] + 4.75, -math.pi / 2, 0.24,
               "#c8332b", "#fff4dc", vertical=True, bracket=0.15)
         import town_dress
-        zg = drop_min(shop["x"] - 0.3, y0 - 0.3, 0.12, 0.12)
-        town_dress.nobori("sign_nobori_0", shop["x"] - 0.3, y0 - 0.3, 0.0, "KOORI", "#f4f1ea", "#2f5d8a", zg)
-        zg = drop_min(shop["x"] + 1.0, y0 - 0.3, 0.12, 0.12)
-        town_dress.nobori("sign_nobori_1", shop["x"] + 1.0, y0 - 0.3, 0.0, "RAMUNE", "#e94b3c", "#fff4dc", zg)
+        # In front of the glazed bay (the kit's shop records its bays; the old one had it west of the door).
+        glass = [b for b in shop.get("shop_bays", []) if b["kind"] == "glass"]
+        nx0, nx1 = ((glass[0]["u0"] + 0.5, glass[0]["u1"] - 0.5) if glass else (shop["x"] - 0.3, shop["x"] + 1.0))
+        zg = drop_min(nx0, y0 - 0.3, 0.12, 0.12)
+        town_dress.nobori("sign_nobori_0", nx0, y0 - 0.3, 0.0, "KOORI", "#f4f1ea", "#2f5d8a", zg)
+        zg = drop_min(nx1, y0 - 0.3, 0.12, 0.12)
+        town_dress.nobori("sign_nobori_1", nx1, y0 - 0.3, 0.0, "RAMUNE", "#e94b3c", "#fff4dc", zg)
     # Name boards on a few houses: on the front by the door, on the back toward the lookout, and a billboard on one
     # flat roof facing the lookout. All names are invented.
     boards = [("TAKANO  CYCLE", "#2f5d5a", "#f4f1ea"), ("MINSHUKU  SAZANAMI", "#f4ecd8", "#7a3f36"), ("HAMAYA  FISH", "#2f3d66", "#f4f1ea"),

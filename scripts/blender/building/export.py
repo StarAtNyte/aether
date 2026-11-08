@@ -67,7 +67,12 @@ def bake_albedo(ob, size=2048, gpu=True):
         me.materials[i] = v
         variants.append(v)
     select_only([ob])
-    bpy.ops.object.bake(type="DIFFUSE", pass_filter={"COLOR"}, target="IMAGE_TEXTURES", margin=4, use_clear=True)
+    try:
+        bpy.ops.object.bake(type="DIFFUSE", pass_filter={"COLOR"}, target="IMAGE_TEXTURES", margin=4, use_clear=True)
+    except RuntimeError as e:  # a busy GPU (out of memory): the CPU bakes it (a minute or two at 2048 px)
+        print(f"[building] GPU bake failed ({e}); baking on the CPU", flush=True)
+        sc.cycles.device = "CPU"
+        bpy.ops.object.bake(type="DIFFUSE", pass_filter={"COLOR"}, target="IMAGE_TEXTURES", margin=4, use_clear=True)
     img.filepath_raw = os.path.join(bpy.app.tempdir, f"{ob.name}_albedo.png")
     img.file_format = "PNG"
     img.save()

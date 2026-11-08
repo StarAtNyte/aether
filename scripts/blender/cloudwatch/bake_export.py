@@ -326,6 +326,9 @@ def unwrap(ob, uv_name="bake", size=None):
     bpy.ops.object.mode_set(mode="EDIT")
     bpy.ops.mesh.select_all(action="SELECT")
     bpy.ops.uv.smart_project(angle_limit=math.radians(60), island_margin=0.0005 if size else 0.003, area_weight=0.0, scale_to_bounds=False)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    texel_density(ob, uv_name)
+    bpy.ops.object.mode_set(mode="EDIT")
     if size:
         # Box packing with a two-texel margin. The default (concave shapes, a scaled margin) left the town's ~30k islands
         # as smart-project placed them: 0.8 % of the atlas covered, nearly every island under a texel wide (the walls and
@@ -376,6 +379,28 @@ def unwrap(ob, uv_name="bake", size=None):
                 uv2[lps] = park  # in the palette band (the finish writes each island's own block)
         me.uv_layers[uv_name].data.foreach_set("uv", uv)
     return thin
+
+
+def texel_density(ob, uv_name="bake"):
+    """Faces with a `cw_texel` value (the building kit's hero and mid houses, the ones the film's shots come close to) get
+    that many times the texels of the rest: their UVs are scaled before the pack, which keeps relative island sizes."""
+    me = ob.data
+    at = me.attributes.get("cw_texel")
+    if at is None or at.domain != "FACE":
+        return
+    k = np.zeros(len(me.polygons), np.float32)
+    at.data.foreach_get("value", k)
+    k[k <= 0] = 1.0
+    if np.allclose(k, 1.0):
+        return
+    lp = np.empty(len(me.loops), np.int32)
+    for poly in me.polygons:
+        lp[poly.loop_start:poly.loop_start + poly.loop_total] = poly.index
+    uv = np.empty(len(me.loops) * 2, np.float32)
+    me.uv_layers[uv_name].data.foreach_get("uv", uv)
+    uv = uv.reshape(-1, 2) * k[lp][:, None]
+    me.uv_layers[uv_name].data.foreach_set("uv", uv.reshape(-1))
+    print(f"AETHER_UV {ob.name} texel density raised on {int((k > 1).sum())} faces", flush=True)
 
 
 def thin_islands(ob, size, min_px=1.25, uv_name="bake"):

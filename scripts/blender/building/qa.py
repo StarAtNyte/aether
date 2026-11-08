@@ -36,6 +36,9 @@ def _geom(faces):
     return verts, polys
 
 
+REMOVABLE = ("ac_duct", "plant", "conduit", "wire", "downpipe", "name_plate", "mailbox", "door_lamp", "noren", "blind")
+
+
 def check(K, ground, tol=TOL, fix=True):
     """Run the contact and sinking checks on the kit's parts (moving or removing what it can). Returns the report."""
     bm = K.bm
@@ -135,6 +138,14 @@ def check(K, ground, tol=TOL, fix=True):
                     rb["ok"] = True
                     rb["removed"] = True
                 overlaps.append({"a": ra["part"], "b": rb["part"], "depth": round(d, 4), "fixed": fix})
+    # What still sinks or floats after the moves, and is only dressing (a pipe cover, a pot, a conduit, a wire), goes:
+    # the building reads the same without it, and a fitting through a wall does not.
+    if fix:
+        for row in rows:
+            if not row.get("ok") and not row.get("removed") and row["part"].startswith(REMOVABLE):
+                bmesh.ops.delete(K.bm, geom=[f for f in row["_faces"] if f.is_valid], context="FACES")
+                row["removed"] = True
+                fixes.append(f"removed {row['part']}: it still sank {row.get('sink', 0) * 100:.1f} cm (gap {row.get('gap')})")
     for row in rows:
         row.pop("_verts", None)
         row.pop("_faces", None)
