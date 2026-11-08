@@ -22,6 +22,9 @@ import { lodDitherMask } from './lod';
 import { clothClearNode } from './cloth-clear';
 import { attribute, cameraPosition, clamp, dot, float, length, max, mix, modelViewMatrix, normalize, normalLocal, normalWorld, positionLocal, positionWorld, pow, smoothstep, sqrt, texture, uniform, uv, vec3, vec4 } from 'three/tsl';
 
+/** Atlas alpha at or below this is a hole (painted hair cards); the codes in use are 0.2 (unshaded), 0.6 (highlight), 1. */
+export const CUT_CODE = 0.08;
+
 /** Look constants of the toon style (linear colours). */
 export const TOON_STYLE = {
   /** Shadow tone: a warm violet multiplier of the base colour (warm enough that chestnut hair stays chestnut in it). */
@@ -113,6 +116,8 @@ export class ToonShading {
   private pairFor(map: Texture): { body: MeshBasicNodeMaterial; outline: MeshBasicNodeMaterial } {
     let pair = this.pairs.get(map);
     if (!pair) {
+      // Oblique faces (a three-quarter view of the eyes) keep their lines through the mips.
+      map.anisotropy = Math.max(map.anisotropy, 8);
       pair = { body: this.bodyMaterial(map), outline: this.outlineMaterial(map) };
       this.pairs.set(map, pair);
     }
@@ -127,6 +132,8 @@ export class ToonShading {
     const tex = texture(map, uv());
     const base = tex.rgb;
     const code = tex.a;
+    // Painted hair cards and strands are alpha-cut: code 0 is a hole (the shapes of the tips are in the texture).
+    const keep = code.greaterThan(CUT_CODE);
     const info = attribute('_toon', 'vec4') as unknown as Node<'vec4'>;
     // Cloth (`_toon.w`) clears the legs of the pose being drawn (cloth-clear.ts).
     m.positionNode = clothClearNode(positionLocal as unknown as Node, info.w as unknown as Node) as unknown as Node;
@@ -157,7 +164,9 @@ export class ToonShading {
     col = mix(col, litCol.mul(1.12).add((u.rim as unknown as Node<'color'>).mul(0.22)), rim.mul(0.8));
     m.colorNode = vec4(col.mul(u.exposure as unknown as Node<"float">), 1) as unknown as Node<"vec4">;
     // Cross-fade between a body's levels of detail (a per-object dither; 0 keeps every pixel).
-    m.maskNode = lodDitherMask() as unknown as Node<'bool'>;
+    m.maskNode = (lodDitherMask() as unknown as Node<'bool'>).and(keep) as unknown as Node<'bool'>;
+    // (the sun's map cuts the same holes: a hair card's tips are shapes, not a rectangle)
+    m.maskShadowNode = keep as unknown as Node<'bool'>;
     return m;
   }
 
@@ -173,11 +182,13 @@ export class ToonShading {
     // World width ∝ √distance: lines thin out on screen as she walks away, and stay fine in a close-up.
     const width = (u.width as unknown as Node<'float'>).mul(info.x).mul(clamp(sqrt(dist.div(2.5)), 0.45, 2.2));
     m.positionNode = pl.add(normalize(normalLocal).mul(width)) as unknown as Node;
-    const base = texture(map, uv()).rgb;
+    const tx = texture(map, uv());
+    const base = tx.rgb;
     const line = vec3(TOON_STYLE.line.r, TOON_STYLE.line.g, TOON_STYLE.line.b);
     const col = pow(base, vec3(1.35, 1.35, 1.35)).mul(line).mul(u.litTint as unknown as Node<'color'>);
     m.colorNode = vec4(col.mul(u.exposure as unknown as Node<"float">), 1) as unknown as Node<"vec4">;
-    m.maskNode = lodDitherMask() as unknown as Node<'bool'>;
+    // (a hair card's hull is cut like the card: no outline in its holes; the card's edge line is painted in its texture)
+    m.maskNode = (lodDitherMask() as unknown as Node<'bool'>).and(tx.a.greaterThan(CUT_CODE)) as unknown as Node<'bool'>;
     return m;
   }
 

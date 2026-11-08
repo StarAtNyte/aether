@@ -6,36 +6,36 @@ export const ORIGINAL_CAST: CastFile[] = [
   "id": "harbour-fisherman",
   "gender": "male",
   "look": "old harbour fisherman, rust knit cap, short grey beard, open navy work jacket over a cream T-shirt, khaki trousers, black rubber boots",
-  "file": "c/harbour-fisherman.f0f55578.glb",
+  "file": "c/harbour-fisherman.38bccd97.glb",
   "height": 1.674,
   "hip": 0.881,
-  "triangles": 61312,
+  "triangles": 66672,
   "faces": 1,
-  "bytes": 977700,
+  "bytes": 1533308,
   "style": "toon"
  },
  {
   "id": "kaho",
   "gender": "female",
   "look": "anime girl, summer sailor uniform with a sky-blue collar and a teal neckerchief, chin-length chestnut bob with a thin braid and a seashell charm",
-  "file": "c/kaho.04b8d73c.glb",
-  "height": 1.544,
+  "file": "c/kaho.49bef055.glb",
+  "height": 1.547,
   "hip": 0.824,
-  "triangles": 59964,
+  "triangles": 61500,
   "faces": 1,
-  "bytes": 985992,
+  "bytes": 1446908,
   "style": "toon"
  },
  {
   "id": "mio",
   "gender": "female",
   "look": "anime girl, pale mint short-sleeve cardigan over a white T-shirt, long light-beige pleated skirt, long straight black hair with a fringe and a white hairband",
-  "file": "c/mio.557811fa.glb",
-  "height": 1.543,
+  "file": "c/mio.49b4a0ff.glb",
+  "height": 1.55,
   "hip": 0.824,
-  "triangles": 55632,
+  "triangles": 66864,
   "faces": 1,
-  "bytes": 955872,
+  "bytes": 1588108,
   "style": "toon"
  }
 ] as CastFile[];
@@ -43,18 +43,18 @@ export const ORIGINAL_CAST: CastFile[] = [
 /** Far levels of detail by body id (the same skeleton, clips and toon extras; no morphs), under the library base. */
 export const ORIGINAL_LODS: Record<string, { file: string; triangles: number; bytes: number }> = {
  "harbour-fisherman": {
-  "file": "c/harbour-fisherman.lod1.2ca1dcf5.glb",
-  "triangles": 24523,
-  "bytes": 514940
+  "file": "c/harbour-fisherman.lod1.5b9fecde.glb",
+  "triangles": 26667,
+  "bytes": 1053296
  },
  "kaho": {
-  "file": "c/kaho.lod1.9b7476b3.glb",
-  "triangles": 23985,
-  "bytes": 525440
+  "file": "c/kaho.lod1.f8a72015.glb",
+  "triangles": 24599,
+  "bytes": 988828
  },
  "mio": {
-  "file": "c/mio.lod1.4274bc65.glb",
-  "triangles": 22252,
-  "bytes": 497068
+  "file": "c/mio.lod1.5756cb86.glb",
+  "triangles": 26744,
+  "bytes": 1070932
  }
 };

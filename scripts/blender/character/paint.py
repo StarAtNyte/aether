@@ -134,6 +134,10 @@ def eye_shape(kind):
     if kind == 'droopy':
         upper = lambda x: 0.62 - 0.32 * x * x - 0.14 * x
         lower = lambda x: -0.66 + 0.24 * x * x - 0.08 * x
+    elif kind == 'sheet':
+        # the concept sheets' almond: lower and longer than the round eye, the lid's peak toward the inner third
+        upper = lambda x: 0.47 - 0.4 * x * x - 0.05 * x
+        lower = lambda x: -0.42 + 0.22 * x * x
     elif kind == 'narrow':
         upper = lambda x: 0.22 - 0.22 * x * x + 0.04 * x
         lower = lambda x: -0.34 + 0.16 * x * x
@@ -144,19 +148,23 @@ def eye_shape(kind):
 
 
 def paint_face(at, spec):
+    # a painted face (face_style = painted) is drawn at twice the cell size on the 2048 atlas: sharper lines, same shapes
+    FS = 2 if spec.get('face_style') == 'painted' else 1
     skin = srgb(spec['skin'])
     line = srgb(spec['line']) * 0.9
     iris = srgb(spec['eyes'])
     hair = srgb(spec['hair']['colour'])
     lash = mix(line, hair * 0.55, 0.55) * 0.9
     kind = 'narrow' if spec['old'] > 0.3 else spec['eye_shape']
+    if FS == 2 and kind == 'round':
+        kind = 'sheet'
     upper, lower = eye_shape(kind)
     ss = 2
     # Open eye (left; the right eye mirrors its UVs). Cell coordinates x, y in -1..1.
-    at.cell('eye', 256, 256)
+    at.cell('eye', 256 * FS, 256 * FS)
     U, V = at.grid('eye', ss)
     X, Y = U * 2 - 1, V * 2 - 1
-    aa = 4.0 / 256
+    aa = 4.0 / (256 * FS)
     col = np.ones(X.shape + (3,)) * skin
     alpha = np.ones(X.shape)
     yu = upper(X)
@@ -183,7 +191,7 @@ def paint_face(at, spec):
     col[:] = col * (1 - sc[..., None]) + scl * sc[..., None]
     # the iris: large (its top always under the lid), in layers like a painted anime eye
     cx, cy = 0.0, -0.08
-    rx, ry = (0.62, 0.78) if kind != 'narrow' else (0.4, 0.5)
+    rx, ry = (0.62, 0.78) if kind not in ('narrow', 'sheet') else (0.4, 0.5) if kind == 'narrow' else (0.52, 0.66)
     r = np.hypot((X - cx) / rx, (Y - cy) / ry)
     ic = cover((r - 1) * rx, aa) * sc
     t = np.clip((Y - (cy - ry)) / (2 * ry), 0, 1)
@@ -232,18 +240,18 @@ def paint_face(at, spec):
     at.put('eye', col, alpha, ss)
 
     # Closed eye: a soft downward arc with lashes (blink), and a happy arc (smile + blink).
-    at.cell('eye_closed', 256, 128)
+    at.cell('eye_closed', 256 * FS, 128 * FS)
     U, V = at.grid('eye_closed', ss)
     X, Y = U * 2 - 1, V * 2 - 1
     col = np.ones(X.shape + (3,)) * skin
     arc = curve(lambda x: -0.05 - 0.28 * (1 - x * x) + 0.05 * x, -0.95, 1.0)
     d = stroke(X, Y, arc + [(1.1, -0.02)], [0.03 + 0.05 * smooth01((x + 1) / 2) for x, _ in arc] + [0.015])
-    c = cover(d, 6.0 / 256)
+    c = cover(d, 6.0 / (256 * FS))
     layer(col, lash, c)
     at.put('eye_closed', col, 1 - 0.8 * c, ss)
 
     # Brow: a thin tapered stroke, hair-dark.
-    at.cell('brow', 256, 64)
+    at.cell('brow', 256 * FS, 64 * FS)
     U, V = at.grid('brow', ss)
     X, Y = U * 2 - 1, V * 2 - 1
     col = np.ones(X.shape + (3,)) * skin
@@ -251,7 +259,7 @@ def paint_face(at, spec):
     pts = curve(lambda x: -0.1 + 0.35 * (1 - x * x) - 0.15 * x, -0.95, 0.95, 16)
     d = stroke(X, Y, pts, [(0.13 + 0.1 * (1 - (x + 1) / 2) ** 1.5) * thick for x, _ in pts])
     bc = mix(hair * 0.78, skin * 0.5, 0.12)
-    layer(col, bc, cover(d, 8.0 / 64) * 0.97)
+    layer(col, bc, cover(d, 8.0 / (64 * FS)) * 0.97)
     at.put('brow', col, np.ones(X.shape), ss)
 
     # Mouths, one cell each (128 x 96): x, y in -1..1.
@@ -267,11 +275,11 @@ def paint_face(at, spec):
         'mouth_set': lambda X, Y: (None, curve(lambda x: 0.04 * x * x - 0.02, -0.42, 0.42, 10), 0.04),
     }
     for name, f in mouths.items():
-        at.cell(name, 128, 96)
+        at.cell(name, 128 * FS, 96 * FS)
         U, V = at.grid(name, ss)
         X, Y = U * 2 - 1, V * 2 - 1
         col = np.ones(X.shape + (3,)) * skin
-        aa = 5.0 / 128
+        aa = 5.0 / (128 * FS)
         kind = f(X, Y)
         if kind[0] == 'lips':
             lipc = mix(skin * 0.5, line, 0.3) * np.array([1.0, 0.8, 0.78])
@@ -309,7 +317,7 @@ def paint_face(at, spec):
         at.put(name, col, np.ones(X.shape), ss)
 
     # Nose: a small soft shadow under the tip and a short line.
-    at.cell('nose', 64, 64)
+    at.cell('nose', 64 * FS, 64 * FS)
     U, V = at.grid('nose', ss)
     X, Y = U * 2 - 1, V * 2 - 1
     col = np.ones(X.shape + (3,)) * skin
@@ -318,23 +326,23 @@ def paint_face(at, spec):
     # the bridge's shaded side and the tip's own small shape
     layer(col, skin * np.array([0.9, 0.84, 0.85]), cover(stroke(X, Y, [(-0.12, 0.7), (-0.2, 0.05)], [0.1, 0.16]), 0.6) * 0.55)
     nl = mix(skin * 0.55, line, 0.3)
-    layer(col, nl, cover(stroke(X, Y, curve(lambda x: -0.18 - 0.1 * np.cos(x * 3.0), -0.34, 0.3, 8), [0.045] * 8), 8.0 / 64) * 0.9)
-    layer(col, nl, cover(stroke(X, Y, [(-0.3, -0.2), (-0.34, -0.12)], [0.04, 0.02]), 8.0 / 64) * 0.8)
+    layer(col, nl, cover(stroke(X, Y, curve(lambda x: -0.18 - 0.1 * np.cos(x * 3.0), -0.34, 0.3, 8), [0.045] * 8), 8.0 / (64 * FS)) * 0.9)
+    layer(col, nl, cover(stroke(X, Y, [(-0.3, -0.2), (-0.34, -0.12)], [0.04, 0.02]), 8.0 / (64 * FS)) * 0.8)
     at.put('nose', col, np.ones(X.shape), ss)
 
     # Blush: a soft pink ellipse with three short hatches.
-    at.cell('blush', 128, 64)
+    at.cell('blush', 128 * FS, 64 * FS)
     U, V = at.grid('blush', ss)
     X, Y = U * 2 - 1, V * 2 - 1
     col = np.ones(X.shape + (3,)) * skin
     pink = mix(skin, np.array([0.98, 0.55, 0.58]), 0.5)
     layer(col, pink, np.clip(1 - np.hypot(X / 0.85, Y / 0.7), 0, 1) ** 0.8)
     for k in (-0.4, 0, 0.4):
-        layer(col, mix(pink, line, 0.25), cover(stroke(X, Y, [(k - 0.12, -0.3), (k + 0.12, 0.3)], [0.05, 0.05]), 6.0 / 64))
+        layer(col, mix(pink, line, 0.25), cover(stroke(X, Y, [(k - 0.12, -0.3), (k + 0.12, 0.3)], [0.05, 0.05]), 6.0 / (64 * FS)))
     at.put('blush', col, np.ones(X.shape), ss)
 
     # Tears: a glossy band along the lower lid with a bright edge (unshaded).
-    at.cell('tear', 128, 64)
+    at.cell('tear', 128 * FS, 64 * FS)
     U, V = at.grid('tear', ss)
     X, Y = U * 2 - 1, V * 2 - 1
     col = np.ones(X.shape + (3,)) * skin
@@ -344,20 +352,20 @@ def paint_face(at, spec):
     at.put('tear', col, 1 - 0.8 * band, ss)
 
     # Beauty mark / wrinkles (small marks share one cell).
-    at.cell('mark', 64, 64)
+    at.cell('mark', 64 * FS, 64 * FS)
     U, V = at.grid('mark', ss)
     X, Y = U * 2 - 1, V * 2 - 1
     col = np.ones(X.shape + (3,)) * skin
-    layer(col, line * 0.9, cover(np.hypot(X, Y) - 0.28, 8.0 / 64))
+    layer(col, line * 0.9, cover(np.hypot(X, Y) - 0.28, 8.0 / (64 * FS)))
     at.put('mark', col, np.ones(X.shape), ss)
 
-    at.cell('wrinkle', 128, 64)
+    at.cell('wrinkle', 128 * FS, 64 * FS)
     U, V = at.grid('wrinkle', ss)
     X, Y = U * 2 - 1, V * 2 - 1
     col = np.ones(X.shape + (3,)) * skin
     for k in (-0.35, 0.3):
         pts = curve(lambda x: k + 0.12 * (1 - x * x), -0.85, 0.85, 10)
-        layer(col, mix(skin, line, 0.45), cover(stroke(X, Y, pts, [0.03] * len(pts)), 6.0 / 64))
+        layer(col, mix(skin, line, 0.45), cover(stroke(X, Y, pts, [0.03] * len(pts)), 6.0 / (64 * FS)))
     at.put('wrinkle', col, np.ones(X.shape), ss)
 
 

@@ -603,3 +603,25 @@ land under the eaves (the meter's bracket sits too close under them for a wire r
 stills still shadow their own outlines (the kit's stills draw the outline as a separate object). The town atlas keeps 64
 palette rows (59 k thin islands; it was 32); a sign's decal band takes its rows from the props atlas (312 of 2048 for
 Cloudwatch's 15 signs and banners).
+
+### Painted hair and face (`hair_style` / `face_style = painted`, the default for anime)
+
+Trial of the anime-game method: smooth, simple shapes, the look in the texture (November 2026). `scripts/blender/character/painted.py`
+paints the hair cells (numpy signed distances, 2x supersampled, from the brief's hair colour and the sheet's tones):
+per lock a base hue, a hard cel-shadow shape, an "angel ring" highlight (atlas alpha 0.6), strand lines converging to
+the tip, a dark rim line round every lock, alpha-cut tips and flyaway strands (atlas alpha 0 is a hole). `hair_painted.py`
+builds the shapes: the cap, one mass sheet over the sides and back (a bob's inward curl; long hair on three spring chains
+blended across the azimuth), one fringe sheet fanned from the parting, two face-framing strips, each a closed thin shell
+(so a gap shows hair, not a back face). The face keeps its decals; at `face_style = painted` the atlas is 2048 px and the
+face cells are drawn at twice the size (eye 512 px), with the sheet's almond eye (`eye_shape('sheet')`).
+Set `"hair_style": "clumps"` / `"face_style": "sculpted"` in a brief for the old look.
+
+Runtime (`toon.ts`): atlas alpha at or below `CUT_CODE` (0.08) is a hole, in the body, the outline and the sun's map (`maskNode`,
+`maskShadowNode`): no new program. The painted parts have outline width 0 (the rim line in the texture is the outline, so
+only a shape's silhouette gets one, never every card); the atlas texture takes anisotropy 8 so oblique eyes keep their lines
+in the mips. The hair colour grade compensation (`paint.RUNTIME_TOE`) is applied to every painted cell.
+Cost: the 2048 atlas adds about 0.45 MB to a body and again to its far level (PNG; kaho 986 -> 1447 KB, lod1 525 -> 989 KB).
+Whole film, Intel, live world: p50 16.7 ms, p95 24.1 ms (a loaded machine), worst 47 ms, no program linked during it (39 before).
+Known limits: the QA's silhouette masks do not read the cut, so its hair-width and hairline checks see the sheets' full
+rectangles; the fringe's cut edge shows texel steps in a close-up; the far level's mips blur the cut codes at the tips.
+Side by side: `docs/screenshots/cloudwatch/character/kaho-face-sheet-painted.webp`, `mio-face-sheet-painted.webp`.

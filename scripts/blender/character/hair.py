@@ -222,7 +222,7 @@ class Hair:
         ob = bpy.data.objects.new('hair-cap', me)
         bpy.context.scene.collection.objects.link(ob)
         shade_smooth(ob)
-        uv = self.atlas.uv(self.cell, 0.5, 0.86)
+        uv = getattr(self, 'cap_uv', None) or self.atlas.uv(self.cell, 0.5, 0.86)
         uvl = me.uv_layers.new(name='UVMap')
         for l in uvl.data:
             l.uv = uv
@@ -295,7 +295,16 @@ def build_hair(spec, J, head, form, chin, atlas, bones, body_bvh):
     def hairline(theta):
         c = math.cos(theta)
         return math.radians(lerp(112, 68, (c + 1) / 2)) if st != 'short' else math.radians(lerp(108, 66, (c + 1) / 2))
+    painted = spec.get('hair_style') == 'painted' and st in ('bob', 'long', 'short')
+    if painted:
+        import hair_painted
+        hair_painted.prepare(H, part_theta)
     H.cap(head, hairline)
+    if painted:
+        hair_painted.build_painted(H, vol, part_theta, st)
+        H.finish()
+        add_accessories(H)
+        return H
     # thin strands at the locks' edges for the styles that hang (spec['hair_strands'] false turns them off)
     # (a bob's few large clumps carry no strands of their own: thin edge strands read as scratches)
     H.strands = st == 'long' and spec.get('hair_strands', True)
@@ -352,6 +361,11 @@ def build_hair(spec, J, head, form, chin, atlas, bones, body_bvh):
             phi_leave = math.radians(lerp(114, 64, (math.cos(theta) + 1) / 2))
             H.lock(theta, math.radians(8), phi_leave, H.shell.point(phi_leave, theta).z - 0.004 * u, 0.06 * u, 0.008 * u, 0.006 * u, tip='point', theta_root=theta)
     H.finish()
+    add_accessories(H)
+    return H
+
+
+def add_accessories(H):
     for acc in H.h['accessories']:
         it = acc.get('item', '')
         if 'braid' in it:
@@ -362,7 +376,6 @@ def build_hair(spec, J, head, form, chin, atlas, bones, body_bvh):
             knit_cap(H, acc)
     if H.h.get('beard'):
         beard(H, H.h['beard'])
-    return H
 
 
 def bangs(H, part_theta, vol, st):

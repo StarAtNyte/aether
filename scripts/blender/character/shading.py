@@ -126,11 +126,25 @@ def toon_preview_material(img, name='toon-preview', realistic=False):
     col = mixc(unsh.outputs['Result'], col, base)
     em = nt.nodes.new('ShaderNodeEmission')
     nt.links.new(col, em.inputs['Color'])
-    nt.links.new(em.outputs[0], out.inputs[0])
+    cut_out(nt, tex.outputs['Alpha'], em.outputs[0], out)
     return m
 
 
-def outline_material(name='toon-outline'):
+def cut_out(nt, alpha, shader, out):
+    """Atlas alpha at or below toon.ts's CUT_CODE (0.08) is a hole (painted hair cards): transparent there."""
+    keep = nt.nodes.new('ShaderNodeMath')
+    keep.operation = 'GREATER_THAN'
+    keep.inputs[1].default_value = 0.08
+    nt.links.new(alpha, keep.inputs[0])
+    clear = nt.nodes.new('ShaderNodeBsdfTransparent')
+    mix = nt.nodes.new('ShaderNodeMixShader')
+    nt.links.new(keep.outputs[0], mix.inputs[0])
+    nt.links.new(clear.outputs[0], mix.inputs[1])
+    nt.links.new(shader, mix.inputs[2])
+    nt.links.new(mix.outputs[0], out.inputs[0])
+
+
+def outline_material(name='toon-outline', img=None):
     m = bpy.data.materials.new(name)
     m.use_nodes = True
     m.use_backface_culling = True
@@ -140,7 +154,12 @@ def outline_material(name='toon-outline'):
     out = nt.nodes.new('ShaderNodeOutputMaterial')
     em = nt.nodes.new('ShaderNodeEmission')
     em.inputs['Color'].default_value = (0.045, 0.035, 0.035, 1)
-    nt.links.new(em.outputs[0], out.inputs[0])
+    if img is not None:
+        tex = nt.nodes.new('ShaderNodeTexImage')
+        tex.image = img
+        cut_out(nt, tex.outputs['Alpha'], em.outputs[0], out)
+    else:
+        nt.links.new(em.outputs[0], out.inputs[0])
     return m
 
 
@@ -155,7 +174,12 @@ def add_outline(ob, width=0.0014):
         if attr.domain == 'POINT':
             for i, v in enumerate(vals):
                 g.add([i], float(min(1.0, v[0] / 1.5)), 'REPLACE')
-    mat = outline_material()
+    img = None
+    for mt in ob.data.materials:
+        for n in (mt.node_tree.nodes if mt and mt.node_tree else []):
+            if n.type == 'TEX_IMAGE' and n.image is not None:
+                img = img or n.image
+    mat = outline_material(img=img)
     ob.data.materials.append(mat)
     m = ob.modifiers.new('outline', 'SOLIDIFY')
     m.thickness = -width * 1.5

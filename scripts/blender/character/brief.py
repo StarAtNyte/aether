@@ -50,6 +50,8 @@ def spec_of(brief):
         'beauty_mark': 'beauty mark' in json.dumps(brief).lower(),
         'hair': normal_hair(brief.get('hair') or {}),
         'outfit': [normal_item(o) for o in brief.get('outfit') or []],
+        'hair_style': brief.get('hair_style', 'painted' if anime else 'clumps'),
+        'face_style': brief.get('face_style', 'painted' if anime else 'sculpted'),
         'notes': brief.get('notes', ''),
         'install': bool(brief.get('install', False)),
         'expressions': brief.get('expressions', ['smile', 'sad', 'surprised', 'teary', 'blink', 'mouth_open', 'determined']),

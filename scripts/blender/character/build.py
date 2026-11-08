@@ -137,7 +137,7 @@ def build(spec, P, out):
     bones, L = SKEL.proportion(src, spec)
     main_bones = [dict(b) for b in bones]
     J = SKEL.joints_blender(bones)
-    atlas = PAINT.Atlas()
+    atlas = PAINT.Atlas(2048 if 'painted' in (spec.get('hair_style'), spec.get('face_style')) else PAINT.SIZE)
     PAINT.paint_face(atlas, spec)
     log('body')
     body = BODY.build_body(J, spec)
