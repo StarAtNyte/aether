@@ -1,0 +1,639 @@
+{
+ "_note": "World shots for the product film (film-shots.ts). `tour` windows are seconds of <slug>-scout.json; hours are the shot's time of day.",
+ "two-whistles": {
+  "slug": "cloudwatch-harbour",
+  "own": true,
+  "shots": []
+ },
+ "cw-open": {
+  "slug": "cloudwatch-harbour",
+  "shots": [
+   {
+    "duration": 11,
+    "hour": 18.5,
+    "ease": "inOut",
+    "camera": {
+     "fov": 36,
+     "position": [
+      0.75,
+      45.0,
+      -135.2
+     ],
+     "target": [
+      0.6,
+      45.3,
+      -128
+     ]
+    },
+    "via": [
+     {
+      "fov": 40,
+      "position": [
+       0.8,
+       46.2,
+       -136.4
+      ],
+      "target": [
+       -2,
+       42,
+       -60
+      ]
+     }
+    ],
+    "cameraTo": {
+     "fov": 44,
+     "position": [
+      0.9,
+      48.2,
+      -138.6
+     ],
+     "target": [
+      -12,
+      36,
+      40
+     ]
+    },
+    "grade": {
+     "bloom": 1.05,
+     "chroma": 0.22,
+     "contrast": 1.12,
+     "diffusion": 0.4,
+     "dust": 0.25,
+     "exposureEv": -0.2,
+     "flare": 0.3,
+     "godRays": 0.45,
+     "gradientAmount": 0.3,
+     "gradientBottom": "#ff8a6a",
+     "gradientTop": "#b8428a",
+     "grain": 0.2,
+     "practicals": 0.3,
+     "saturation": 1.1,
+     "temperature": 0.05,
+     "vignette": 0.28
+    }
+   }
+  ]
+ },
+ "cw-shop": {
+  "slug": "cloudwatch-harbour",
+  "shots": [
+   {
+    "duration": 6,
+    "hour": 18.7,
+    "camera": {
+     "fov": 34,
+     "position": [
+      1.6,
+      6.4,
+      16.6
+     ],
+     "target": [
+      -2.6,
+      7.6,
+      11.4
+     ]
+    },
+    "cameraTo": {
+     "fov": 30,
+     "position": [
+      0.9,
+      6.4,
+      15.7
+     ],
+     "target": [
+      -2.6,
+      7.7,
+      11.4
+     ]
+    },
+    "grade": {
+     "bloom": 1.05,
+     "chroma": 0.18,
+     "contrast": 1.1,
+     "diffusion": 0.4,
+     "flare": 0.2,
+     "gradientAmount": 0.28,
+     "gradientBottom": "#ff8a6a",
+     "gradientTop": "#b8428a",
+     "grain": 0.15,
+     "practicals": 1,
+     "saturation": 1.08,
+     "vignette": 0.26
+    }
+   }
+  ]
+ },
+ "highland-dawn": {
+  "slug": "highland-trail",
+  "shots": [
+   {
+    "tour": [
+     0.5,
+     9.5
+    ],
+    "hour": 7.4,
+    "grade": {
+     "bloom": 0.9,
+     "diffusion": 0.35,
+     "godRays": 0.5,
+     "vignette": 0.25,
+     "grain": 0.08,
+     "temperature": 0.25
+    }
+   }
+  ]
+ },
+ "lisbon-quay": {
+  "slug": "lisbon-hills",
+  "shots": [
+   {
+    "tour": [
+     0,
+     7
+    ],
+    "hour": 17.4,
+    "grade": {
+     "bloom": 0.9,
+     "diffusion": 0.25,
+     "vignette": 0.22,
+     "grain": 0.06,
+     "practicals": 0.6
+    }
+   }
+  ]
+ },
+ "lisbon-drone": {
+  "slug": "lisbon-hills",
+  "shots": [
+   {
+    "tour": [
+     17,
+     24
+    ],
+    "hour": 17.4,
+    "grade": {
+     "bloom": 0.9,
+     "diffusion": 0.25,
+     "vignette": 0.22,
+     "grain": 0.06,
+     "practicals": 0.6
+    }
+   }
+  ]
+ },
+ "kepler-domes": {
+  "slug": "kepler-base",
+  "shots": [
+   {
+    "tour": [
+     23.5,
+     31
+    ],
+    "grade": {
+     "bloom": 1.0,
+     "diffusion": 0.3,
+     "vignette": 0.25,
+     "grain": 0.06
+    }
+   }
+  ]
+ },
+ "casa-patio": {
+  "slug": "casa-patio",
+  "shots": [
+   {
+    "duration": 6,
+    "camera": {
+     "fov": 42,
+     "position": [
+      16,
+      9,
+      14
+     ],
+     "target": [
+      0,
+      0.5,
+      0
+     ]
+    },
+    "cameraTo": {
+     "fov": 40,
+     "position": [
+      7,
+      8.5,
+      19
+     ],
+     "target": [
+      0,
+      0.5,
+      0
+     ]
+    },
+    "hour": 17.6,
+    "grade": {
+     "bloom": 0.9,
+     "diffusion": 0.3,
+     "vignette": 0.22,
+     "grain": 0.05
+    }
+   }
+  ]
+ },
+ "penthouse-roof": {
+  "slug": "skyline-penthouse",
+  "shots": [
+   {
+    "duration": 6,
+    "hour": 18.8,
+    "camera": {
+     "fov": 55,
+     "position": [
+      -6,
+      4,
+      17
+     ],
+     "target": [
+      -4,
+      1.5,
+      4
+     ]
+    },
+    "cameraTo": {
+     "fov": 52,
+     "position": [
+      -3,
+      8.5,
+      24
+     ],
+     "target": [
+      -4,
+      1.5,
+      4
+     ]
+    },
+    "grade": {
+     "bloom": 1.0,
+     "diffusion": 0.3,
+     "vignette": 0.25,
+     "grain": 0.05,
+     "practicals": 1
+    }
+   }
+  ]
+ },
+ "sweep-casa": {
+  "slug": "casa-patio",
+  "shots": [
+   {
+    "duration": 5,
+    "camera": {
+     "fov": 42,
+     "position": [
+      16,
+      9,
+      14
+     ],
+     "target": [
+      0,
+      0.5,
+      0
+     ]
+    },
+    "cameraTo": {
+     "fov": 41,
+     "position": [
+      13,
+      8.8,
+      16
+     ],
+     "target": [
+      0,
+      0.5,
+      0
+     ]
+    },
+    "hour": 7.6,
+    "grade": {}
+   },
+   {
+    "duration": 5,
+    "camera": {
+     "fov": 42,
+     "position": [
+      16,
+      9,
+      14
+     ],
+     "target": [
+      0,
+      0.5,
+      0
+     ]
+    },
+    "cameraTo": {
+     "fov": 41,
+     "position": [
+      13,
+      8.8,
+      16
+     ],
+     "target": [
+      0,
+      0.5,
+      0
+     ]
+    },
+    "hour": 13.0,
+    "grade": {}
+   },
+   {
+    "duration": 5,
+    "camera": {
+     "fov": 42,
+     "position": [
+      16,
+      9,
+      14
+     ],
+     "target": [
+      0,
+      0.5,
+      0
+     ]
+    },
+    "cameraTo": {
+     "fov": 41,
+     "position": [
+      13,
+      8.8,
+      16
+     ],
+     "target": [
+      0,
+      0.5,
+      0
+     ]
+    },
+    "hour": 18.3,
+    "grade": {}
+   },
+   {
+    "duration": 5,
+    "camera": {
+     "fov": 42,
+     "position": [
+      16,
+      9,
+      14
+     ],
+     "target": [
+      0,
+      0.5,
+      0
+     ]
+    },
+    "cameraTo": {
+     "fov": 41,
+     "position": [
+      13,
+      8.8,
+      16
+     ],
+     "target": [
+      0,
+      0.5,
+      0
+     ]
+    },
+    "hour": 21.6,
+    "grade": {
+     "practicals": 1
+    }
+   }
+  ]
+ },
+ "mio-walk": {
+  "slug": "cloudwatch-harbour",
+  "shots": [
+   {
+    "duration": 8,
+    "hour": 18.4,
+    "camera": {
+     "fov": 9,
+     "position": [
+      52,
+      2.3,
+      26.9
+     ],
+     "target": [
+      20,
+      2.8,
+      26.7
+     ]
+    },
+    "cameraTo": {
+     "fov": 9.5,
+     "position": [
+      51.5,
+      2.3,
+      26.8
+     ],
+     "target": [
+      10,
+      2.8,
+      26.0
+     ]
+    },
+    "ease": "linear",
+    "track": "cw-mio",
+    "trackOffset": [
+     0,
+     1.0,
+     0
+    ],
+    "trackLag": 0.4,
+    "moves": [
+     {
+      "entity": "cw-mio",
+      "path": [
+       [
+        22,
+        1.7,
+        26.9
+       ],
+       [
+        16,
+        1.7,
+        26.5
+       ],
+       [
+        11,
+        1.7,
+        26.1
+       ]
+      ],
+      "ease": "linear",
+      "start": 0,
+      "end": 1
+     }
+    ],
+    "grade": {
+     "bloom": 1.05,
+     "chroma": 0.15,
+     "contrast": 1.1,
+     "diffusion": 0.4,
+     "flare": 0.2,
+     "godRays": 0.3,
+     "gradientAmount": 0.25,
+     "gradientBottom": "#ff8a6a",
+     "gradientTop": "#b8428a",
+     "grain": 0.15,
+     "practicals": 0.3,
+     "saturation": 1.08,
+     "vignette": 0.25
+    }
+   }
+  ]
+ },
+ "cw-close": {
+  "slug": "cloudwatch-harbour",
+  "shots": [
+   {
+    "duration": 11,
+    "hour": 18.6,
+    "camera": {
+     "fov": 40,
+     "position": [
+      0.95,
+      44.9,
+      -133.3
+     ],
+     "target": [
+      0.9,
+      45.4,
+      -128
+     ]
+    },
+    "cameraTo": {
+     "fov": 52,
+     "position": [
+      5.5,
+      53.5,
+      -146
+     ],
+     "target": [
+      -40,
+      24,
+      160
+     ]
+    },
+    "via": [
+     {
+      "fov": 46,
+      "position": [
+       1.8,
+       47.5,
+       -136
+      ],
+      "target": [
+       -6,
+       41,
+       -40
+      ]
+     }
+    ],
+    "moves": [
+     {
+      "entity": "cw-kaho",
+      "path": [
+       [
+        0.9,
+        44.05,
+        -130.9
+       ]
+      ],
+      "face": [
+       -40,
+       40,
+       160
+      ],
+      "ease": "inOut",
+      "start": 0,
+      "end": 1
+     }
+    ],
+    "grade": {
+     "bloom": 1.05,
+     "chroma": 0.22,
+     "contrast": 1.12,
+     "diffusion": 0.4,
+     "dust": 0.25,
+     "exposureEv": -0.2,
+     "flare": 0.3,
+     "godRays": 0.45,
+     "gradientAmount": 0.3,
+     "gradientBottom": "#ff8a6a",
+     "gradientTop": "#b8428a",
+     "grain": 0.2,
+     "practicals": 0.3,
+     "saturation": 1.1,
+     "temperature": 0.05,
+     "vignette": 0.28
+    }
+   }
+  ]
+ },
+ "sweep-lisbon": {
+  "slug": "lisbon-hills",
+  "shots": [
+   {
+    "tour": [
+     0,
+     5
+    ],
+    "hour": 9.5,
+    "grade": {
+     "practicals": 0.3,
+     "bloom": 0.9,
+     "vignette": 0.22
+    }
+   },
+   {
+    "tour": [
+     0,
+     5
+    ],
+    "hour": 13.5,
+    "grade": {
+     "practicals": 0.3,
+     "bloom": 0.9,
+     "vignette": 0.22
+    }
+   },
+   {
+    "tour": [
+     0,
+     5
+    ],
+    "hour": 17.6,
+    "grade": {
+     "practicals": 0.3,
+     "bloom": 0.9,
+     "vignette": 0.22
+    }
+   },
+   {
+    "tour": [
+     0,
+     5
+    ],
+    "hour": 20.9,
+    "grade": {
+     "practicals": 1,
+     "bloom": 0.9,
+     "vignette": 0.22
+    }
+   }
+  ]
+ }
+}

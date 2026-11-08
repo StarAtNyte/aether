@@ -1,0 +1,6 @@
+{
+  "name": "score-60",
+  "slug": "lisbon-hills",
+  "seconds": 70,
+  "cues": [[0, "intro"], [6, "hope"], [24, "run"], [38, "hope"], [53, "coda"]]
+}
