@@ -72,48 +72,24 @@ def balcony_laundry(balconies, seed):
     return ob
 
 
-def text_mesh(text, size, vertical=False):
-    """Blender's built-in font as mesh (in the XZ plane, facing -Y); returns (bmesh, width, height)."""
-    cu = bpy.data.curves.new("txt_tmp", "FONT")
-    cu.body = "\n".join(text) if vertical else text
-    cu.size = size
-    cu.align_x = "CENTER"
-    cu.align_y = "CENTER"
-    cu.space_line = 0.9
-    cu.resolution_u = 2
-    cu.extrude = 0.004
-    tob = bpy.data.objects.new("txt_tmp", cu)
-    collection("props").objects.link(tob)
-    dg = bpy.context.evaluated_depsgraph_get()
-    me = bpy.data.meshes.new_from_object(tob.evaluated_get(dg))
-    bpy.data.objects.remove(tob)
-    bpy.data.curves.remove(cu)
-    xs = [v.co.x for v in me.vertices] or [0.0]
-    ys = [v.co.y for v in me.vertices] or [0.0]
-    bm = bmesh.new()
-    bm.from_mesh(me)
-    bpy.data.meshes.remove(me)
-    cyy = (max(ys) + min(ys)) / 2
-    for v in bm.verts:
-        v.co = Vector((v.co.x, -v.co.z, v.co.y - cyy))
-    return bm, max(xs) - min(xs), max(ys) - min(ys)
-
-
 def nobori(name, x, y, yaw, text, cloth, ink, z_ground, seed=0):
     """A tall shop banner: a pole and a cloth with vertical invented text, standing on the ground at z_ground."""
-    cl, tw, th = text_mesh(text, 0.2, vertical=True)
-    for f in cl.faces:
-        f.material_index = 1
+    import signs
+    _tris, tw, th = signs.text_tris(text, 0.2, vertical=True, space_line=0.9)
     cw, ch = 0.46, max(1.5, th + 0.3)
     zc = 0.55 + ch / 2
-    for v in cl.verts:
-        v.co = Vector((v.co.x + 0.05 + cw / 2, v.co.y - 0.02, v.co.z + zc))
-    add_box(cl, (0.05 + cw / 2, 0.0, zc), (cw, 0.025, ch), mat_index=0)
+    cl = bmesh.new()
+    front = add_box(cl, (0.05 + cw / 2, 0.0, zc), (cw, 0.025, ch), mat_index=0)[2]
+    # The letters painted on the cloth's front (a decal: thin strokes keep their own texels in the bake).
+    front.material_index = 1
+    signs.set_decal_uv(cl, front, (1, 0, 0), (0, 0, 1))
     add_box(cl, (0.05 + cw / 2, 0.0, zc + ch / 2 + 0.03), (cw + 0.06, 0.03, 0.03), mat_index=2)
     bm = bmesh.new()
     add_cylinder(bm, (0.0, 0.0, 0.0), 0.028, zc + ch / 2 + 0.12, segments=6, mat_index=2)
     add_cylinder(bm, (0.0, 0.0, 0.0), 0.11, 0.06, segments=8, mat_index=2)  # weighted foot
-    mats = [toon_material("nobori_" + cloth[1:], cloth), toon_material("ink_" + ink[1:], ink), toon_material("sign_post", "#6a6870")]
+    mats = [toon_material("nobori_" + cloth[1:], cloth),
+            signs.decal_material(f"decal_{name}", text, 0.2, cloth, ink, cw, ch, vertical=True, space_line=0.9, toon=toon_material),
+            toon_material("sign_post", "#6a6870")]
     ob = bm_object(name, bm, "props", mats=mats, prop=True, outline=True, recalc=False)
     ob.location = (x, y, z_ground)
     ob.rotation_euler = (0, 0, yaw)

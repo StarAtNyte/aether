@@ -127,6 +127,19 @@ try {
     await page.evaluate('window.__kahoMove.stop = true');
     report[mode] = states;
   }
+  if (only.has('stair')) {
+    // Up the hill stair (x = sx, from z = 14 uphill toward -z) at a walk, the floor under her read every frame (the rig's
+    // foot IK lifts a knee on each step); the camera follows from her side, then from in front and below.
+    const sx = Number(arg('stair-x') ?? '0');
+    for (const view of ['side', 'front'] as const) {
+      await page.evaluate(`(() => { const r = ${R}; window.__kahoMove = { t0: performance.now(), stop: false }; const m = window.__kahoMove; const ex = new Set(['kaho-test']); const step = () => { if (m.stop) return; const t = (performance.now() - m.t0) / 1000; const z = 14 - 1.3 * t; const h = r.raycastWorld([${sx}, 80, z], [0, -1, 0], 200, ex); const y = h ? h.point[1] : 0; r.setEntityProperty('kaho-test', 'transform.position', [${sx}, y + 0.8, z]); r.setEntityProperty('kaho-test', 'transform.rotation', [0, 180, 0]); if ('${view}' === 'side') r.lookAt([${sx} + 3.0, y + 0.75, z - 0.2], [${sx}, y + 0.6, z], 30); else r.lookAt([${sx} + 0.6, y + 0.35, z - 2.6], [${sx}, y + 0.65, z], 32); requestAnimationFrame(step); }; step(); })()`);
+      for (let k = 0; k < 6; k++) {
+        await page.waitForTimeout(k === 0 ? 3500 : 330);
+        await canvasShot(page, `stair-${view}-${k}`);
+      }
+      await page.evaluate('window.__kahoMove.stop = true');
+    }
+  }
   if (only.has('clips')) {
     // the body's own clips (a built character's extra beats), front on
     for (const clip of ['two_fingers', 'hand_to_chest', 'look_up']) {

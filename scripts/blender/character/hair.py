@@ -223,7 +223,7 @@ class Hair:
             l.uv = uv
         self.parts.append(Part(ob, 'hair', toon=(0.4, 0.0, 0.6, 0.0), bones={'Bip01_Head': 1.0}))
 
-    def finish(self, name='hair', toon=(1.15, 0.0, 1.0, 0.0)):
+    def finish(self, name='hair', toon=(1.15, 0.0, 0.35, 0.0)):
         if not self.verts:
             return
         ob = new_object(name, self.verts, self.faces)

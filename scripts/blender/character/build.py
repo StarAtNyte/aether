@@ -179,13 +179,14 @@ def build(spec, P, out):
         hr = FACE.HEAD_RIM.get(head.name, np.ones(n))
         parts[1].toon_v = np.stack([np.full(n, 0.7), hb, hr, np.zeros(n)], 1)
     if spec['style'] == 'anime':
-        # the chin's shadow on the neck: the front of the neck just under the jaw falls into shadow first
+        # the chin's shadow on the neck: the front of the neck under the jaw falls into shadow first
         bco = np.array([v.co[:] for v in body.data.vertices])
         dz = bco[:, 2] - chin.z
-        under = np.clip((dz + 0.045 * form.u) / (0.025 * form.u), 0, 1) * (bco[:, 2] < chin.z + 0.03 * form.u)
+        # (down the whole front of the neck, so the jaw reads against it and the face does not run on into the neck)
+        under = np.clip((dz + 0.095 * form.u) / (0.035 * form.u), 0, 1) * (bco[:, 2] < chin.z + 0.03 * form.u) * (np.abs(bco[:, 0]) < 0.065 * form.u)
         under = under * under * (3 - 2 * under)
         nb = len(bco)
-        parts[0].toon_v = np.stack([np.full(nb, 0.85), -0.45 * under, np.ones(nb), np.zeros(nb)], 1)
+        parts[0].toon_v = np.stack([np.full(nb, 0.85), -0.75 * under, np.ones(nb), np.zeros(nb)], 1)
     parts += [Part(e, 'head', toon=(0.6, 0.05, 1.0, 0.0), bones={'Bip01_Head': 1.0}, role='skin') for e in ears]
     parts += decals
     parts += H.parts
@@ -230,6 +231,7 @@ def build(spec, P, out):
     m.object = arm
     trs = SKEL.local_trs(bones)
     springs = H.springs + kit.springs
+    spec['leg_fit'] = leg_fit(joined, J)
     colliders = make_colliders(bones, J, spec)
     rest_clear_skirt(springs, kit.skirt_panels, J, spec)
     palette_roles = {'skin': spec['skin'], 'hair': spec['hair']['colour']}
@@ -241,15 +243,63 @@ def build(spec, P, out):
     }
 
 
+# (the thigh in two capsules: it tapers from the hip to the knee, and one radius for both ends was the hip's, 3 cm
+# outside a slim skirt's lower thigh at rest)
+LEG_SEGMENTS = (('thigh', 'Thigh', 'Calf', 0.05, 0.52), ('thigh2', 'Thigh', 'Calf', 0.48, 0.97), ('calf', 'Calf', 'Foot', 0.0, 0.6))
+
+
+def leg_fit(ob, J):
+    """The legs' capsules fitted to the body's own skin (part 0 of the joined mesh), Blender space at rest:
+    {'L_thigh': (a, b, r), ...}. An anime thigh is not round about its bone (the bone runs along its inner side), so the
+    axis is the line through the skin's centroids at a quarter and at four fifths of the segment (hip to knee, knee to
+    ankle), and the radius the 98th percentile of the skin's distance to it: the leg the cloth must clear."""
+    me = ob.data
+    n = len(me.vertices)
+    co = np.empty(n * 3, np.float32)
+    me.vertices.foreach_get('co', co)
+    co = co.reshape(-1, 3).astype(np.float64)
+    part = np.empty(n, np.int32)
+    me.attributes['qa_part'].data.foreach_get('value', part)
+    out = {}
+    for name, a_, b_, t0, t1 in LEG_SEGMENTS:
+        for sd, sg in (('L', 1), ('R', -1)):
+            A, B = np.array(J[f'Bip01_{sd}_{a_}']), np.array(J[f'Bip01_{sd}_{b_}'])
+            ab = B - A
+            t = ((co - A) @ ab) / float(ab @ ab)
+            q = A + np.clip(t, 0, 1)[:, None] * ab
+            d = np.linalg.norm(co - q, axis=1)
+            near = (part == 0) & (co[:, 0] * sg > 0) & (d < 0.16)
+            cs = []
+            ta, tb = t0 + (t1 - t0) * 0.2, t0 + (t1 - t0) * 0.8
+            for tc in (ta, tb):
+                sel = near & (np.abs(t - tc) < 0.06)
+                cs.append(co[sel].mean(axis=0) if sel.sum() > 8 else A + ab * tc)
+            c0, c1 = cs
+            axis = (c1 - c0) / (tb - ta)
+            a = c0 + axis * (t0 - ta)
+            b = c0 + axis * (t1 - ta)
+            seg = b - a
+            sel = near & (t > max(0.0, t0 + 0.08)) & (t < t1)
+            tt = np.clip(((co - a) @ seg) / float(seg @ seg), 0, 1)
+            dd = np.linalg.norm(co - (a + tt[:, None] * seg), axis=1)
+            r = float(np.percentile(dd[sel], 98)) if sel.sum() > 20 else 0.06
+            out[f'{sd}_{name}'] = ([round(float(x), 4) for x in a], [round(float(x), 4) for x in b], round(r, 4))
+    return out
+
+
 def leg_capsules(J, spec):
     """The thigh and calf capsules of make_colliders, in Blender space at rest: (a, b, radius)."""
     s = spec['height'] / 1.54
     g = spec['girth']
     out = []
+    fit = spec.get('leg_fit') or {}
     for side in ('L', 'R'):
         th, cf, ft = J[f'Bip01_{side}_Thigh'], J[f'Bip01_{side}_Calf'], J[f'Bip01_{side}_Foot']
-        out.append((th + Vector((0, 0, -0.03 * s)), th.lerp(cf, 0.8), 0.062 * s * g))
-        out.append((cf, cf.lerp(ft, 0.6), 0.045 * s))
+        f, f2 = fit.get(f'{side}_thigh'), fit.get(f'{side}_thigh2')
+        out.append((Vector(f[0]), Vector(f[1]), f[2]) if f else (th + Vector((0, 0, -0.03 * s)), th.lerp(cf, 0.5), 0.062 * s * g))
+        out.append((Vector(f2[0]), Vector(f2[1]), f2[2]) if f2 else (th.lerp(cf, 0.5), th.lerp(cf, 0.97), 0.055 * s * g))
+        f = fit.get(f'{side}_calf')
+        out.append((Vector(f[0]), Vector(f[1]), f[2]) if f else (cf, cf.lerp(ft, 0.6), 0.045 * s))
     return out
 
 
@@ -260,13 +310,13 @@ def rest_clear_skirt(springs, panels, J, spec):
     caps = leg_capsules(J, spec)
     for idx, at, tip in panels:
         clear = 1.0
-        for p in (at + (tip - at) * 0.5, at + (tip - at) * 0.75, tip):
+        for p in (at + (tip - at) * f for f in SAMPLES_ALONG):
             for a, b, r in caps:
                 ab = b - a
                 t = max(0.0, min(1.0, (p - a).dot(ab) / ab.length_squared))
                 clear = min(clear, (p - (a + ab * t)).length - r)
         sp = springs[idx]
-        sp['radius'] = round(max(0.008, min(sp['radius'], clear - 0.004)), 4)
+        sp['radius'] = round(max(0.0, min(sp['radius'], clear - 0.004)), 4)
 
 
 def make_colliders(bones, J, spec):
@@ -282,9 +332,11 @@ def make_colliders(bones, J, spec):
 
     out = []
     for side in ('L', 'R'):
-        th, cf, ft = J[f'Bip01_{side}_Thigh'], J[f'Bip01_{side}_Calf'], J[f'Bip01_{side}_Foot']
-        out.append({'bone': f'Bip01_{side}_Thigh', 'head': local(f'Bip01_{side}_Thigh', th + Vector((0, 0, -0.03 * s))), 'tail': local(f'Bip01_{side}_Thigh', th.lerp(cf, 0.8)), 'radius': round(0.062 * s * g, 3)})
-        out.append({'bone': f'Bip01_{side}_Calf', 'head': local(f'Bip01_{side}_Calf', cf), 'tail': local(f'Bip01_{side}_Calf', cf.lerp(ft, 0.6)), 'radius': round(0.045 * s * g, 3)})
+        # (the legs' own capsules, fitted to the skin: leg_fit)
+        (ta, tb, tr), (ua, ub, ur), (ca, cb, cr) = leg_capsules(J, spec)[(0 if side == 'L' else 3):(3 if side == 'L' else 6)]
+        out.append({'bone': f'Bip01_{side}_Thigh', 'head': local(f'Bip01_{side}_Thigh', ta), 'tail': local(f'Bip01_{side}_Thigh', tb), 'radius': round(tr, 3)})
+        out.append({'bone': f'Bip01_{side}_Thigh', 'head': local(f'Bip01_{side}_Thigh', ua), 'tail': local(f'Bip01_{side}_Thigh', ub), 'radius': round(ur, 3)})
+        out.append({'bone': f'Bip01_{side}_Calf', 'head': local(f'Bip01_{side}_Calf', ca), 'tail': local(f'Bip01_{side}_Calf', cb), 'radius': round(cr, 3)})
         fa, hn = J[f'Bip01_{side}_Forearm'], J[f'Bip01_{side}_Hand']
         out.append({'bone': f'Bip01_{side}_Forearm', 'head': local(f'Bip01_{side}_Forearm', fa), 'tail': local(f'Bip01_{side}_Forearm', hn), 'radius': round(0.03 * s, 3)})
         out.append({'bone': f'Bip01_{side}_Hand', 'head': local(f'Bip01_{side}_Hand', hn), 'tail': local(f'Bip01_{side}_Hand', J[f'Bip01_{side}_Finger2']), 'radius': round(0.03 * s, 3)})
@@ -315,54 +367,57 @@ def motion_poses(gender, out):
         return json.load(f)
 
 
+SAMPLES_ALONG = (1.0, 0.87, 0.75, 0.64, 0.54, 0.45)  # packages/render/src/characters/springs.ts, for a chain with `collide`
+SAMPLES_TIP_MID = (1.0, 0.5)
+
+
 def skirt_push(gp, springs, colliders, bones):
-    """Turn the skirt panels out of the thigh capsules, as the runtime springs do (for the QA poses)."""
-    from mathutils import Matrix
+    """Turn the skirt panels out of the leg capsules exactly as the runtime springs settle (springs.ts): the panel's tail
+    pushed out wherever a point along it is inside a capsule of the pose (a point at fraction f moves the tail by its
+    push / f), three passes, the length kept, then the swing limit (for the QA poses)."""
     W = gp.world()
-    caps = []
-    for c in colliders:
-        if 'Thigh' not in c['bone'] and 'Calf' not in c['bone']:
-            continue
-        wm = W[c['bone']]
-        caps.append((wm @ Vector(c['head']), wm @ Vector(c['tail']), c['radius']))
+    caps_all = [(c['bone'], W[c['bone']] @ Vector(c['head']), W[c['bone']] @ Vector(c['tail']), c['radius']) for c in colliders]
     for sp in springs:
         if not sp['name'].startswith('skirt'):
             continue
+        only = sp.get('collide')
+        caps = [c for c in caps_all if not only or any(n in c[0] for n in only)]
+        samples = SAMPLES_ALONG if only else SAMPLES_TIP_MID
         b = sp['bones'][0]
-        W0 = gp.world()
-        d0 = (W0[b] @ Vector(sp['tip']) - W0[b].translation).normalized()
-        for _ in range(4):
-            W = gp.world()
-            h = W[b].translation
-            tip = W[b] @ Vector(sp['tip'])
-            mid = (h + tip) / 2
+        W = gp.world()
+        h = W[b].translation.copy()
+        t0 = W[b] @ Vector(sp['tip'])
+        ln = (t0 - h).length
+        n = t0.copy()
+        for _ in range(3):
             moved = False
-            for pnt, k in ((tip, 1.0), (mid, 2.0)):
-                for a, c2, r in caps:
-                    ab = c2 - a
-                    t = max(0.0, min(1.0, (pnt - a).dot(ab) / ab.length_squared))
+            for _bn, a, c2, r in caps:
+                rr = r + sp['radius']
+                ab = c2 - a
+                for f in samples:
+                    m = h + (n - h) * f
+                    t = max(0.0, min(1.0, (m - a).dot(ab) / max(1e-12, ab.length_squared)))
                     q = a + ab * t
-                    d = (pnt - q)
-                    rr = r + sp['radius']
-                    if d.length < rr and d.length > 1e-6:
-                        want = q + d.normalized() * rr
-                        v1 = (pnt - h)
-                        v2 = (h + (want - h) * 1.0 - h)
-                        rot = v1.rotation_difference(v2)
-                        ax, ang = rot.to_axis_angle()
-                        gp.rotate_world(b, ax, ang * k * 0.9)
+                    dm = (m - q).length
+                    if 1e-6 < dm < rr:
+                        n = n + (m - q) * ((rr - dm) / dm / f)
                         moved = True
-                        break
-                if moved:
-                    break
             if not moved:
                 break
-        # the runtime's swing limit
-        W = gp.world()
-        d1 = (W[b] @ Vector(sp['tip']) - W[b].translation).normalized()
+            n = h + (n - h).normalized() * ln
+        d0 = (t0 - h).normalized()
+        d1 = (n - h).normalized()
         ang = d0.angle(d1, 0.0)
-        if ang > sp['limit'] and d0.cross(d1).length > 1e-6:
-            gp.rotate_world(b, d1.cross(d0), ang - sp['limit'])
+        if ang > sp['limit']:
+            ax = d0.cross(d1)
+            if ax.length > 1e-9:
+                from mathutils import Quaternion
+                d1 = Quaternion(ax.normalized(), sp['limit']) @ d0
+                ang = sp['limit']
+        if ang > 1e-5:
+            ax = d0.cross(d1)
+            if ax.length > 1e-9:
+                gp.rotate_world(b, ax.normalized(), ang)
     return gp
 
 
@@ -383,6 +438,15 @@ def run_qa(B, out, sheet, poses):
     log('qa renders')
     q.turnaround(pose_idle)
     q.expressions([k for k in FACE.EXPRESSIONS])
+    # the hands up close: her left in the sheet stance (its back, its thumb side), then her own clips' right hand
+    own_keys = CLIPS.poses(base, spec)
+
+    def pose_key(name, i):
+        def fn():
+            RIG.apply_to_armature(arm, own_keys[name][i][1])
+        return fn
+    q.hands([(pose_idle, 'L', 'back'), (pose_idle, 'L', 'thumb'), (pose_key('two_fingers', 1), 'R', 0), (pose_key('hand_to_chest', 1), 'R', 'back')])
+    pose_idle()
     ids = q.ids()
     log('qa checks')
     q.silhouette(sheet)
@@ -423,14 +487,16 @@ def run_qa(B, out, sheet, poses):
                 under.append(i)
                 rest_d[i] = hit[3]
         if inf['role'] == 'skirt':
-            under = [i for i in under if co[i][2] < B['J']['Bip01_Pelvis'].z - 0.05]
+            # (not the band just above the hem: a leg there leaves under the lifting hem, it does not cross the cloth)
+            hem_z = min(co[i][2] for f in faces for i in f)
+            under = [i for i in under if B['J']['Bip01_Pelvis'].z - 0.05 > co[i][2] > hem_z + 0.03]
         elif inf['layer'] <= 1 and 'skirt' in [x['role'] for x in info]:
             # a top's hem is under the skirt's waistband: check above it
             under = [i for i in under if co[i][2] > B['J']['Bip01_Pelvis'].z + (B['J']['Bip01_Neck'].z - B['J']['Bip01_Pelvis'].z) * 0.4]
         if len(under) > 10:
             # the skirt is checked through locomotion (its panels swing at most 0.6 rad, so a crouch or a seat lifts
             # the thighs through it by design)
-            pairs.append((inf['role'], under, faces, rest_d, ('walk', 'run', 'sprint', 'jog', 'jump_air', 'wave', 'run_stop', 'look_up', 'hand_to_chest', 'two_fingers') if inf['role'] == 'skirt' else None))
+            pairs.append((inf['role'], under, faces, rest_d, ('walk', 'run', 'sprint', 'jog', 'jump_air', 'stair', 'wave', 'run_stop', 'look_up', 'hand_to_chest', 'two_fingers') if inf['role'] == 'skirt' else None))
     frames = []
     for name in ('walk', 'run', 'sprint', 'sit', 'crouch', 'jump_air', 'wave', 'pickup'):
         c = poses['clips'].get(name)
@@ -450,6 +516,20 @@ def run_qa(B, out, sheet, poses):
                 skirt_push(g, B['springs'], B['colliders'], B['bones'])
                 RIG.apply_to_armature(arm, g)
             frames.append((f'{name}@{t:.2f}', fn))
+    # a stair climb, past what the clips author (the runtime's foot placement lifts a knee this far on steps): one thigh
+    # raised 60 and 75 degrees forward, its knee bent 90, the pelvis dropped 5 cm, the other leg straight
+    for side in ('L', 'R'):
+        for lift in (60, 75):
+            g = base.copy()
+            g.rotate_world(f'Bip01_{side}_Thigh', CLIPS.X, CLIPS.rad(-lift))
+            g.rotate_world(f'Bip01_{side}_Calf', CLIPS.X, CLIPS.rad(90))
+            g.t['Bip01'] = base.t['Bip01'] + Vector((0, -0.05, 0))
+
+            def fn(g=g):
+                gg = g.copy()
+                skirt_push(gg, B['springs'], B['colliders'], B['bones'])
+                RIG.apply_to_armature(arm, gg)
+            frames.append((f'stair_{side}{lift}', fn))
     log(f'qa interpenetration: {len(pairs)} garments x {len(frames)} frames')
     q.interpenetration(frames, None, pairs)
     pose_idle()
@@ -528,6 +608,10 @@ def sheet_fit(sheet, spec):
             hm = SH.garment_hem(img, H, [l2s(c) for c in o['rgb']], (0.3 * H, 0.7 * H), others)
             if hm:
                 hems[o['item']] = hm
+            # its extent by height in each view (the side view's depth is what the fitting takes)
+            prof = SH.garment_profile(img, H, [l2s(c) for c in o['rgb']], ((hm or 0.45 * H) + 0.02 * H, 0.84 * H), others + [[l2s(c) for c in spec['skin']]])
+            if prof:
+                fit.setdefault('outer', {})[o['item']] = prof
     if hems:
         fit['hems'] = hems
     vs, _ = SH.views(img)
@@ -537,7 +621,7 @@ def sheet_fit(sheet, spec):
         hf = SH.head_features(SH.Figure(vs[0], H), H - hh, H, [l2s(c) for c in spec['skin']])
         if hf:
             fit['head'] = hf
-    log(f'sheet fit: skirt hem {fit.get("skirt", {}).get("hem")}, eyes {len(fit.get("head", {}).get("eyes", []))}')
+    log(f'sheet fit: skirt hem {fit.get("skirt", {}).get("hem")}, eyes {len(fit.get("head", {}).get("eyes", []))}, outer garments {[(k, len(v.get("side", []))) for k, v in fit.get("outer", {}).items()]}')
     return fit
 
 

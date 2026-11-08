@@ -6,7 +6,14 @@ Every object the build places carries custom properties the later steps read:
   cw_outline 1 to get an inverted-hull outline
 """
 import math
+import os
 import random
+import sys
+
+# scripts/blender (the harness's shared modules: contact.py, signs.py) on the path.
+_UP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+if _UP not in sys.path:
+    sys.path.append(_UP)
 
 import bmesh
 import bpy
@@ -600,12 +607,13 @@ def _brush_albedo(nt, albedo_socket, amount):
     return m2.outputs[0]
 
 
-def toon_material(name, base, var=None, noise_scale=1.5, var_amount=0.35, emission=None, emission_strength=0.0, stripes=None, line=False, brush=1.0):
+def toon_material(name, base, var=None, noise_scale=1.5, var_amount=0.35, emission=None, emission_strength=0.0, stripes=None, line=False, brush=1.0, image=None):
     """A cel-shaded material: diffuse light -> toon bands -> times a painted albedo, drawn as emission (EEVEE).
 
     The node named ALBEDO is the painted base colour; the bake reads it. `var` is a second colour mixed in by a soft noise
     (painted variation); `stripes` = (axis, period, colour, width) draws tile rows or boards.
     Emission materials (lamps, lit windows) skip the ramp and carry `cw_emissive` for the export.
+    `image`: the albedo is that image through the UV map `decal` (a painted sign, `scripts/blender/signs.py`).
     """
     if name in _mats:
         return _mats[name]
@@ -622,6 +630,17 @@ def toon_material(name, base, var=None, noise_scale=1.5, var_amount=0.35, emissi
     base_rgb.outputs[0].default_value = srgb(base)
     base_rgb.location = (-900, 200)
     albedo_socket = base_rgb.outputs[0]
+    if image is not None:
+        uvn = nt.nodes.new("ShaderNodeUVMap")
+        uvn.uv_map = "decal"
+        uvn.location = (-1300, 400)
+        tex = nt.nodes.new("ShaderNodeTexImage")
+        tex.image = image
+        tex.interpolation = "Cubic"
+        tex.extension = "EXTEND"
+        tex.location = (-1100, 400)
+        nt.links.new(uvn.outputs[0], tex.inputs[0])
+        albedo_socket = tex.outputs["Color"]
     if var is not None:
         coord = nt.nodes.new("ShaderNodeTexCoord")
         coord.location = (-1300, 0)

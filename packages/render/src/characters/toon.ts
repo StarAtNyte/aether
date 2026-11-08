@@ -19,6 +19,7 @@
 import { BackSide, Color, FrontSide, Mesh, Vector3, type Material, type MeshStandardMaterial, type Object3D, type Texture } from 'three';
 import { MeshBasicNodeMaterial, type Node } from 'three/webgpu';
 import { lodDitherMask } from './lod';
+import { clothClearNode } from './cloth-clear';
 import { attribute, cameraPosition, clamp, dot, float, length, max, mix, modelViewMatrix, normalize, normalLocal, normalWorld, positionLocal, positionWorld, pow, smoothstep, sqrt, texture, uniform, uv, vec3, vec4 } from 'three/tsl';
 
 /** Look constants of the toon style (linear colours). */
@@ -127,6 +128,11 @@ export class ToonShading {
     const base = tex.rgb;
     const code = tex.a;
     const info = attribute('_toon', 'vec4') as unknown as Node<'vec4'>;
+    // Cloth (`_toon.w`) clears the legs of the pose being drawn (cloth-clear.ts).
+    m.positionNode = clothClearNode(positionLocal as unknown as Node, info.w as unknown as Node) as unknown as Node;
+    // (not in the sun's map: a few millimetres of cloth do not show in a shadow, and the depth pass keeps the program
+    // every skinned body shares instead of one more, linked when a far body first casts mid-film)
+    m.castShadowPositionNode = positionLocal as unknown as Node;
     const n = normalize(normalWorld);
     const l = u.sunDir as unknown as Node<'vec3'>;
     const ndl = dot(n, l).add(info.y);
@@ -161,7 +167,7 @@ export class ToonShading {
     m.name = 'toon-outline';
     m.side = BackSide;
     const info = attribute('_toon', 'vec4') as unknown as Node<'vec4'>;
-    const pl = positionLocal;
+    const pl = clothClearNode(positionLocal as unknown as Node, info.w as unknown as Node) as unknown as typeof positionLocal;
     const view = modelViewMatrix.mul(vec4(pl, 1)).xyz;
     const dist = max(length(view), float(0.05));
     // World width ∝ √distance: lines thin out on screen as she walks away, and stay fine in a close-up.

@@ -401,6 +401,20 @@ def paint_stripes(at, name, base_lin, line_lin, lines=2):
     at.put(name, col, np.ones(U.shape), 2)
 
 
+def paint_collar(at, name, lin):
+    """u across a turn-down collar (0 the stand's foot .. 0.3 the fold .. 1 the leaf's edge) or a lapel (0.3 its front
+    edge's fold .. 1 its outer edge): the stand a step darker, a dark crease at the fold, the leaf a touch lighter than
+    the garment, a topstitched line just inside its edge."""
+    base = srgb(lin)
+    at.cell(name, 64, 64)
+    U, V = at.grid(name, 2)
+    col = np.ones(U.shape + (3,)) * np.clip(base * 1.1 + 0.02, 0, 1)
+    layer(col, base * 0.82, cover(U - 0.28, 1.5 / 64))
+    layer(col, base * 0.55, cover(np.abs(U - 0.3) - 0.025, 1.5 / 64))
+    layer(col, base * 0.6, cover(np.abs(U - 0.88) - 0.012, 1.5 / 64))
+    at.put(name, col, np.ones(U.shape), 2)
+
+
 def paint_pleats(at, name, lin):
     """u across one pleat's face (0 where it comes out from under the last pleat .. 1 its folded edge): the tucked end
     in shade, a thin light line along the folded edge; u 0 itself (a few texels) is the fold's dark underside."""

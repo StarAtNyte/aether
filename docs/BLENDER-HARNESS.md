@@ -94,6 +94,7 @@ Run it with the character's folder as the working directory; on a loaded machine
 | `turnaround.png` | front, her left side, back (orthographic, cel preview with outlines, the model-sheet stance) |
 | `expressions.png` | the face through every morph |
 | `silhouette.png` | with a sheet: our masks (blue) over the sheet's (red), per view |
+| `hands.png` | the hands up close: the left in the sheet stance from its back and its thumb side, the right in `two_fingers` and `hand_to_chest` (for the eye; not judged) |
 | `<id>.blender.glb`, `<id>.meta.json` | the Blender export and its meta (springs, colliders, style) |
 | `<id>.glb` | the runtime body, made by `scripts/characters/finish-character.ts` (`--install` when the brief says `"install": true`) |
 | `<id>.lod1.glb` | the reduced level (decimated to 40 %, no morphs); installed with the body as `c/<id>.lod1.<hash8>.glb`, recorded in `ORIGINAL_LODS` (`original.ts`) |
@@ -129,8 +130,11 @@ line). Colours are words or hex, the hex winning. Missing fields default from st
    heads tall, the shoulder line and width, the hip width, arm segments (anime 0.145 / 0.115 / 0.09 H). Secondary bones
    (hair locks, braid, skirt panels, tie tails) get an identity world rest rotation, as the springs expect.
 2. **Body** (`body.py`). One continuous quad mesh: a skin-modifier graph on the joints (torso from crotch to neck; legs
-   with thigh, knee, calf and ankle profiles; feet with heel and ball; arms; hands with a palm, a knuckle bar and five
-   three-segment fingers), subdivided twice, then shaped (buttocks, chest, the palm flattened in the hand's frame).
+   with thigh, knee, calf and ankle profiles; feet with heel and ball; arms; hands, `build_hand`: a palm and a knuckle
+   bar, four fingers in three phalanges with a slight swell at each joint and a thinner shaft between, so the knuckles
+   read, and rounded tips, a little shorter than before; the thumb's first bone lies in the palm's flesh, the ball of the
+   thumb, so it leaves the palm at its knuckle and not at the wrist, with a shorter tip), subdivided twice, then shaped
+   (buttocks, chest, the palm flattened in the hand's frame).
    Each vertex is labelled by its nearest limb segment: the regions garments and weights use.
 3. **Face** (`face.py`). A quad sphere ray-marched onto a smooth union of forms (cranium, forehead, the face's cone to a
    soft chin, cheeks), subdivided and projected again, a nose bridge and tip pushed out, small ears. For anime the front
@@ -157,26 +161,44 @@ line). Colours are words or hex, the hex winning. Missing fields default from st
 5. **Clothes** (`clothes.py`). Tight garments are cut from the body's own surface (by region), pushed out by ease and
    layer, cut with straight plane cuts at the hem and sleeve ends, solidified, and keep the body's weights vertex for
    vertex: blouse and T-shirt (a sailor blouse closes high under its collar), cardigan and jacket (open front, short or
-   long sleeves), trousers, socks, boot shafts. The others are fitted by casting against the body: the pleated skirt
+   long sleeves; an outer garment's trunk takes its depth from the sheet's side view, `fit_depth`: per height the
+   smallest front-to-back scale about its own middle at which trunk and sleeves together are as deep as the garment's
+   colour run there, only outward, at most 45 %, faded out toward the shoulders and the neck), trousers, socks, boot
+   shafts. Collars (`turn_down_collar`, outfit item parameter `collar`: `turn-down` or `none`; on by default for a
+   jacket, coat or shirt): a stand round the neck (2.8 cm at the back, lower toward the front) folding over into a leaf
+   cast onto the garment's shoulders, its ends coming to points; with an open front, lapels (the facing folded back
+   along each front edge, widest under the points, running out at the chest) cast onto the garment's front; painted as
+   turned cloth (`paint_collar`: the stand a step darker, a crease at the fold, a topstitched edge). The others are fitted by casting against the body: the pleated skirt
    (knife pleats: each pleat's face steps out across its width, 1.7 cm at the hem, and folds back under the next, the
    fold its own dark texels and each face shaded toward its tucked end with a light line on its folded edge; an
    envelope hanging from the body's widest above each height, then an A-line, the straight line from the waist that
-   clears the hips and thighs, flaring at a quarter of that below the knee; 12 panel springs), the sailor collar (its
+   clears the hips and thighs, flaring at a quarter of that below the knee; 16 panel springs), the sailor collar (its
    back flap kept inside the shoulder line; cut from the trunk's surface over the blouse: back
    flap and lapels by plane cuts, two lines near its edge), the neckerchief (knot and two tails on springs), loafers,
    sneakers and boots (lofted shells with soles, the loafer's strap), a watch on the back of the wrist, a bag strap
    across the body and its bag. Body faces under tight garments are removed (farther than 2-3.5 cm from an opening).
 6. **Rig** (`rig.py`). Bone heat on a helper armature whose bones point at their child joints, two smoothing passes,
    hands, feet and neck kept to their own chains, at most four influences, normalized; garments keep the body's weights,
-   other parts take them from the nearest trunk surface. The skirt blends from the pelvis into its panels, and below the
-   hips its front and back mostly follow the thighs (up to 97 % at the front and back, 58 % at the sides; crossfaded
-   between the legs in the middle, narrowly for a knee-length skirt, widely for a long one), so a striding, running or
-   climbing leg carries the cloth instead of cutting through it; below the knee a long skirt hands part of that to the
-   calves (more at the back, where a heel kicks up). The panels' springs swing at most 0.75 rad at the sides and 1.35
-   rad at the front and back. The bag strap is kept clear of everything under it and takes the body's own weights.
+   other parts take them from the nearest trunk surface. The skirt blends from the pelvis into its 16 panels and below
+   the hips is carried by the panels alone, two neighbours per vertex. It no longer follows the thighs: a front blended
+   between the two thighs left its middle between the legs, where a knee lifted by the foot IK on a stair came through
+   it. The panels' springs swing at most 0.9 rad at the sides and 1.65 rad at the front and back, and collide only with
+   the leg capsules (`collide: ['Thigh', 'Calf']`). The leg capsules are fitted to the body's own skin (`leg_fit`):
+   each thigh as two capsules, hip to mid-thigh and mid-thigh to knee, because it tapers, plus the calf. Each capsule's
+   axis runs through the skin's centroids, since an anime thigh is not round about its bone, and its radius is the
+   98th percentile of the skin's distance to that axis. A skirt panel's own radius is cut to what clears them at rest,
+   never below 0. The skirt's vertices carry the cloth flag (`_TOON.w` = 1) for the runtime's per-vertex clearance
+   (below). The bag strap is kept clear of everything under it and takes the body's own weights.
 7. **Clips** (`clips.py`): `look_up`, `hand_to_chest`, `two_fingers` (the right hand beside the face, a V), `run_stop`
    (replaces the shared one), keyed from the motion set's idle pose (sampled by `motion-poses.ts`) with world-axis
-   turns, two-bone IK for the hands and finger curls. They are written into the file as glTF animations in the file's
+   turns, two-bone IK for the hands and finger curls (`curl`, `curl_joint`: toward the palm; `hand_frame`'s cross axis
+   is the palm side on the left hand and the back on the right, which the curls before November 2026 got backwards, so
+   they bent fingers back). The sheet stance's hands are at ease (`relax_hand`): each finger's phalanges turned in the
+   hand's plane toward the middle finger's line (`gather_fingers`, keeping 30 % of the library's spread), curled 14 /
+   24 / 14 degrees at their three joints (three quarters of that on the index, 1.2 times on the little finger), the
+   thumb brought back toward the index's side (`thumb_in`: the library's rest thumb stands well in front of the palm)
+   and bent a little; `two_fingers` folds the ring and little fingers into the palm with the thumb across them. They
+   are written into the file as glTF animations in the file's
    own rest frames, not through Blender's action export (Blender rolls some Biped bones differently).
 8. **Shading** (`shading.py`). One 1024² atlas (flat swatches and the painted cells) whose alpha is the toon code;
    per-vertex `_TOON` (outline width, shade bias, rim): decals have no outline, the face a thinner one. Anime goes
@@ -201,7 +223,8 @@ the build fits to it (`spec['sheet_fit']`), and after, for the QA.
   garment's or the skin's; an arm or a bag over it does not cut the run short, the wider side counts, the hem's pleat
   points trimmed), so the skirt's outer pleat faces lie on the ellipse through the sheet's front half-width and side
   half-depth at every height, and its hem is the sheet's; each outer garment's hem (`garment_hem`: the lowest height its
-  colour shows beside the middle); the eyes' iris and dark colours, which the eye painting takes.
+  colour shows beside the middle) and its extent by height in each view (`garment_profile`), whose side view
+  `fit_depth` takes; the eyes' iris and dark colours, which the eye painting takes.
 - **Corrected in the loop** (`sheet_corrections`), each by the measured ratio: the face template's jaw key (the face's
   half-width between mouth and chin), the fringe's length (the hairline), the hair's volume (its outer width at the
   cheeks).
@@ -228,8 +251,12 @@ pass; the checks support that.
   walk, run, sprint, sit, crouch, jump, wave, pickup and the character's own clips; a vertex counts when the garment is
   no longer above it within its rest distance plus 1.5 cm. For the skirt a thigh vertex counts when the cloth lies
   between it and the thigh bone (the leg crossed it; a thigh leaving under the hem does not count). Skirt panels are
-  first pushed out of the thigh capsules as the runtime springs do, within their swing limit, and the skirt is checked
-  through locomotion only. `through` lists the frames over 0.5 %. The loop adds ease only when a tight garment fails.
+  first pushed out of the leg capsules exactly as the runtime springs settle (`skirt_push`: points along each panel,
+  the tail moved by push / fraction, three passes, the swing limit). The skirt's vertices are then pushed out as the
+  runtime's vertex stage does (`QA.cloth_clear`). The skirt is checked through locomotion, the jump and four stair
+  poses (one thigh raised 60 and 75 degrees, the knee bent 90, the pelvis dropped 5 cm). A band 3 cm above the hem is
+  not checked: a leg there leaves under the lifting hem. `through` lists the frames over 0.5 %. The loop adds ease only
+  when a tight garment fails.
 - `weights` (unweighted, over four influences, not normalized), `topology` (triangles, open edges, loose vertices,
   morphs), `triangles` (anime 30-75 k: the hair's strands, the finer jaw line, knit and pleat detail; the far level
   carries 40 %), `bytes`, `lods`, `clips`, `skeleton`.
@@ -241,6 +268,15 @@ The builds (November 2026; the first ones in brackets):
 | kaho | 65,736 (58,160) | 1,060 KB | 26,294, 555 KB | 0.86 / 0.88 / 0.85 (0.66 / 0.76 / 0.66) | regions 10.2 | blouse 0 %; skirt 16 % in a jump (17.7 mm), locomotion clean |
 | mio | 73,948 (57,516) | 1,204 KB | 29,579, 622 KB | 0.87 / 0.89 / 0.86 (0.60 unreadable) | regions 12.2 | T-shirt, cardigan 0 %; skirt 19 % in a jump |
 | harbour-fisherman | 59,904 (54,100) | 952 KB | 23,960, 501 KB | 0.85 / 0.70 / 0.85 (no sheet) | regions 10.6 | T-shirt 10 % at 4.8 mm (run); jacket 4.9 % |
+
+Third round (November 2026: hands, collars, the side view's depth; the skirt's weights were being reworked in the same
+pass, so its numbers here are not final; built without installing):
+
+| | Triangles | GLB | LOD1 | IoU vs sheet (front / side / back) | Interpenetration (worst frame) |
+|---|---|---|---|---|---|
+| kaho | 65,704 | 1,046 KB | 26,280, 550 KB | 0.83 / 0.85 / 0.83 | blouse 0 % |
+| mio | 73,916 | 1,182 KB | 29,565, 614 KB | 0.77 / 0.86 / 0.76 | T-shirt, cardigan 0 % |
+| harbour-fisherman | 61,296 | 975 KB | 24,518, 514 KB | 0.85 / 0.77 / 0.85 (side 0.70 before the depth fit) | T-shirt 10 % at 4.8 mm (run); jacket 4.9 % |
 
 What changed in the pipeline with these builds (November 2026, second round): the sheet reading above; the skirt fitted
 per view (Mio's no longer flares; its springs' radii cut to what clears the legs at rest, so a slim skirt hangs still);
@@ -258,10 +294,65 @@ Aether frames of the first round were not retaken.
 About a third of the IoU gain is the mask fix (the sheet's gap between the legs), the rest the model: the A-line skirt,
 narrower shoulders, the fuller bob, the stance.
 
-Known limits: a slim skirt fitted to its sheet lets a jumping thigh through its front (16-19 % of the checked thigh
-vertices in `jump_air`; locomotion is clean); the skirt following the thighs reads a little like culottes in a sprint;
-hands are simple (no nails; the thumb is a plain chain) and spread in the sheet stance; the fisherman's side view is
-narrower than his sheet's stooped, boxy jacket (IoU 0.70) and his jacket has no collar; a sheet's hairline is read
+Fourth round (November 2026: the skirt on panels with the runtime's leg clearance, the anime chin and the neck's
+shadow; installed):
+
+| | Triangles | GLB | LOD1 | IoU vs sheet (front / side / back) | Interpenetration (worst frame, Blender QA) |
+|---|---|---|---|---|---|
+| kaho | 65,704 | 1,046 KB | 26,280, 551 KB | 0.85 / 0.87 / 0.84 | blouse 0 %; skirt: stair poses 1-2 %, walk 7-11 %, run_stop lunge 20 % |
+| mio | 73,916 | 1,182 KB | 29,565, 615 KB | 0.82 / 0.87 / 0.81 | T-shirt, cardigan 0 %; skirt: walk 2-6 %, jump 13 % |
+| harbour-fisherman | 61,296 | 975 KB | 24,518, 514 KB | 0.85 / 0.77 / 0.85 | T-shirt 10 % at 4.8 mm (run); jacket 4.9 % |
+
+The skirt's remaining Blender count is mostly cloth bridging. Where a capsule is deeper than the cloth has room for, as
+in the lunge of `run_stop`, the push sends neighbouring vertices to opposite sides of the leg, and the faces between
+them cross it. The in-player measure (`scripts/characters/skirt-probe.ts`, below) and the frames are what the skirt is
+judged by.
+
+The face (all anime characters): the chin is a shorter, rounder end of the jaw's cone (`HeadForm.jaw_rb` and `jaw_b`).
+The neck's front is a shadow down to the collar (shade bias -0.75, from the chin to 9.5 cm under it), so the jaw reads
+against it and the face no longer runs on into the neck. The hair's warm rim is down to 0.35, because it drew a light
+halo along every clump in close-ups.
+
+### Cloth against the legs at runtime
+
+The skirt is judged in the player, where the foot IK on stairs and slopes and the pelvis drop lift a knee far past the
+authored clips. Two layers keep the legs inside the skirt for any pipeline character:
+
+- **The springs** (`packages/render/src/characters/springs.ts`) run after the clip, the foot IK and the pelvis drop.
+  They keep a chain with a collider filter out of its capsules at points along each link (1, 0.87, 0.75, 0.64, 0.54
+  and 0.45 of its length; a point at fraction f pushed out by p moves the tail by p / f), not just at its tail and
+  middle, in three passes.
+- **The vertex stage** (`cloth-clear.ts`, in both toon materials, so it costs no program). The rig writes the posed
+  leg capsules (grown by a 6 mm margin) on the body scene every update. Each drawn mesh, both levels of detail, reads
+  them in its own space through per-object uniforms. A cloth vertex (`_TOON.w`) inside a capsule moves to its surface,
+  except where that way points toward the body's vertical axis (a thigh in front of cloth that hangs from the waist),
+  where the springs carry it.
+
+`skirt-probe.ts` measures it in the player: the skinned positions on the CPU (with the vertex stage's push replayed),
+a thigh vertex counted when the cloth lies between it and its bone, through the film's shots and a play-mode walk up a
+path. It writes per-frame shares, the worst frames' screenshots and where on the thigh the vertices are.
+`kaho-shots.ts --only=stair` walks the body up the hill stair and shoots it from the side and from in front.
+
+Measured in the player on Intel (`skirt-probe.ts`; before/after:
+`docs/screenshots/cloudwatch/character/kaho-skirt-player-before-after.webp`): the slit a lifted knee cut through the
+skirt's front on the stair (film shot 16) is gone, and walking, running and climbing the stair from the side and from in
+front show no leg through the cloth. The probe still counts 10-14 % of Kaho's covered thigh vertices in the stair shots
+(13-17) and up to 26 % on a play-mode run, 2-6 cm deep. That is about what it counted on the old skirt (2-11 %), but
+the vertices are now in other places: just above the 3 cm hem band, where a lifting hem's rim lies between bone and
+skin, and at the front of the hip, under the waist that hangs from the pelvis. Replaying the vertex stage's push changes
+the count little (it is the springs that carry the cloth). The face before/after in the player:
+`docs/screenshots/cloudwatch/character/kaho-face-player-before-after.webp`.
+
+Known limits: the skirt measure (`skirt-probe.ts` and the Blender QA) does not yet tell a leg through the cloth from the
+leg under a lifting hem's rim or a chord near the waist, so it still flags 10-26 % in the player where the frames show
+none, and cannot be the gate on its own yet; where a capsule is deeper than the cloth has room for, the per-vertex push
+can send neighbours to opposite sides of a leg; the panel radius is cut to 0 at rest, so a slim skirt fitted inside the
+capsules flares a little (Kaho's IoU 0.86 to 0.85 front, Mio's 0.87 to 0.82); hands have no nails, the thumb still reads as a hook from the back of a
+hanging hand (the library's rest thumb stands in front of the palm, and its joints are kept), and in `two_fingers` the
+folded ring and little fingers show as stubs; the fisherman's side view still misses the sheet's forward stoop (the
+depth fit only scales the jacket about its middle, it does not lean the trunk; IoU 0.77); the turn-down collar is cast
+on the jacket in the rest pose and rides the trunk's weights, so a raised arm can lift the jacket's shoulder through
+its leaf; the depth fit reads outer garments only, not a bare torso; a sheet's hairline is read
 where its fringe stops, so a long fringe over the eyes (Kaho's) reads as a lower hairline than ours;
 expressions set right after a one-shot clip did not take in the proof run (the rig eases them only at the near level of
 detail), so take the expression shots on their own.
@@ -292,7 +383,7 @@ person is a Rocketbox body, no far level, nothing changes.
 The building kit turns a brief into a detailed, worn, checked house or shop: `scripts/blender/building/`, Python modules
 run by a headless Blender, the same method as the characters (brief, light and colour, materials, form, lived-in detail,
 finishing; design, modelling and visual QA passes). Everything is generated: no external models, textures or HDRIs (the
-signs use Blender's built-in font as mesh). Its first use is Cloudwatch Harbour: the houses the film's shots come close
+signs' letters are Blender's built-in font, rasterized into the sign's own image). Its first use is Cloudwatch Harbour: the houses the film's shots come close
 to are kit buildings (below).
 
 ### How to run
@@ -303,7 +394,7 @@ blender -b --factory-startup -P scripts/blender/building/build.py -- --brief <di
 ```
 
 A build takes 10-30 s on the RTX 4090 (the geometry under a second, the stills, the albedo bake on the GPU, on the CPU
-when the GPU is busy). It writes in `<dir>`:
+when the GPU is busy or its bake comes back black, which a shared GPU does without an error). It writes in `<dir>`:
 
 | File | What |
 |---|---|
@@ -311,6 +402,8 @@ when the GPU is busy). It writes in `<dir>`:
 | `stills.png` | front, three-quarter from above, street eye level (1.5 m, close, looking up the facade); also each alone |
 | `<id>.glb` | LOD0: one atlas with the painted albedo and its wear baked in, emissive windows and lamps kept emissive |
 | `<id>.lod1.glb` | LOD1: collapse-decimated to 40 % on the same atlas |
+| `sign_<k>.png` | each painted sign rendered straight on, as its signage check read it |
+| `<id>.atlas.png` | the baked atlas (its decal band at the top) |
 | `<id>.blend` | the build, for `--review` (stills again) and `--revise` |
 
 `--revise` reads the brief's `revision_notes`: "more wear" / "newer", "taller" / "lower", "steeper roof" / "flatter
@@ -356,10 +449,39 @@ signage, window_style, lit, two_tone, corner_boards, door_wood, pent_roofs, gear
 4. **Lived-in detail** (`lived.py`). Outdoor units on wall brackets, on balcony floors and on ground pads, each with its
    pipe cover to a wall cap; downpipes with an offset bend to the wall, brackets every 1.6 m and a shoe; gas and
    electricity meters with the gas riser and the conduit to the eaves; potted plants (shrub, tall, flowering) by the
-   door and on balconies; signboards; roof antennas (on their own; the town places its own roof gear). Wear on the
+   door and on balconies; signboards (below); roof antennas (on their own; the town places its own roof gear). Wear on the
    mesh: grime at the wall foot (splash) and under the eaves (soot), streak quads under the sills in the wall's own
    material, darkened at the top and fading out, moss on the low courses of the slopes turned from the sun.
 5. **Finishing** (`qa.py`, `export.py`). The QA, the stills, the albedo bake and the LODs.
+
+**Signs are painted, not modelled** (`scripts/blender/signs.py`, shared by the kit, Cloudwatch's props and its banners).
+Letters a few millimetres proud of the board mapped to UV islands a texel or less wide in a town atlas. An I or a T fell
+below a texel and took the palette band's one colour, so the shop read "SH OKAZE S ORE". Now the string is Blender's
+built-in font as filled triangles, rasterized with numpy (4 x 4 samples a pixel) into the board's image: board colour
+with ink letters. The image is the albedo of the board's front face (`decal_material`, through its own UV map `decal`),
+in the style's toon or Principled material. Its texel density follows the letters: the stroke width is measured on the
+mask, and the slot an atlas gives the sign holds at least 3 texels across a stroke (60-220 texels a metre; the image
+itself is twice that). Every atlas the sign goes into keeps a band of rows for its decals (shelf-packed with 4-texel
+gutters, under the palette band). The decal faces stay out of the island pack and map onto their slot, so the bake
+writes the sign at its own density whatever the atlas's (`signs.layout_band`, `place_band`; the kit's `export.py` and
+Cloudwatch's `bake_export.unwrap`). The `decal` UV map is dropped before export, so it costs no attribute.
+
+The signage check is OCR-free. The string's own mask is the reference, and the picture is the sign rendered straight on
+with the build's light (`render.sign_checks`) and the baked atlas's slot (`signs.check_atlas`). The observed ink and
+board colours are taken under the mask, and each pixel is classed along the board-to-ink axis. Then come the IoU over
+the letters' band and each letter's coverage: the letters are the mask's column runs (rows for vertical text), found
+on the source image, where no two touch. A letter under half covered has vanished, and the report says how the sign
+reads ("SH_OKAZE S_ORE"). `signage` and `signage_bake` in report.json; an issue when a sign fails.
+
+**Service drops** (`building/service.py`). Each kit house records where a drop may land (`rec["service"]`): the meter's
+bracket under the eaves, and a point under the eaves of each outer wall the facade plan left free. Once the town's poles
+stand (after every house, tree and prop that could be in the way: `detail.build_service_drops`), each house gets one
+drop. The candidates are its anchors against the poles' lower insulators within 34 m whose wire leaves the wall outward,
+nearest first, an eave anchor costing 4 m more than the meter's own bracket. Each is hung as a true catenary at three
+sags and kept when no point of it, outside 45 cm of its ends, comes nearer than 12 cm to anything (walls, roofs,
+eaves, trees, poles, props, the drops already hung) and it keeps 2.3 m over the ground or a roof. At an eave anchor a
+wall bracket and an insulator are added. A house with no clear drop is reported, not forced. `AETHER_SERVICE` lines in
+the build log; the wires bake with the poles (`infra`).
 
 ### QA (report.json)
 
@@ -369,8 +491,8 @@ cm of its lowest point) must touch the body (walls, roofs, slabs) or the ground 
 allowance; a hanging part's back must touch its wall within 3 cm; no vertex of a part may lie more than 3 cm behind the
 body's surface or another part's. The loop fixes what it can: a part off its support by under 30 cm is moved onto it, a
 part sunk into another is removed, and dressing that still fails (a pipe cover, a pot, a conduit) is removed; each fix
-is listed. Over the triangle budget the build is redone a tier lower. `triangles`, `materials` (draws before the
-export merges them), `windows`, `balconies`, `height_m` complete it. The stills still need an art director's eye every
+is listed. Over the triangle budget the build is redone a tier lower. `signage` and `signage_bake` (above), `triangles`,
+`materials` (draws before the export merges them), `windows`, `balconies`, `height_m` complete it. The stills still need an art director's eye every
 pass.
 
 ### Cloudwatch Harbour
@@ -398,10 +520,27 @@ cameras in Blender, and `21-buildings-aether.webp`, the same shots in Aether on 
 | Intel GPU over the whole film | p50 16.8 ms, p95 25.7 ms | p50 16.7 ms, p95 17.5 ms, no frame over 50 ms, no program linked during the film |
 | prop gate (`check_props.py`) | 78 props, 0 failed | 77 props, 0 failed |
 
+Second pass (8 November 2026: painted signs, service drops, and the cast rebuilt; before/after in the player:
+`docs/screenshots/cloudwatch/before-after/22-signs-wires-cast-aether.webp`, film shots s07, s12, s14 and s16):
+
+| | Before | After |
+|---|---|---|
+| signs and banners | letters as mesh; "SH OKAZE S ORE" in s07 | 15 painted decals; all 13 boards read in full in the baked atlas (`AETHER_SIGN`, min letter coverage 0.70-1.0) and both banners letter by letter |
+| `props.glb` | 4.58 MB, 89 k triangles | 3.42 MB, 74 k triangles (the letters' geometry gone; 312 rows of the 2048 px atlas for the decal band) |
+| `laundry.glb` | 205 KB, 2,680 triangles | 157 KB, 1,440 triangles (244 rows of its 1024 px atlas for the two banners) |
+| service drops | none | 15 of the 17 kit houses, spans 4-29 m, every wire 12 cm or more clear of everything |
+| `infra.glb` | 3.26 MB, 72 k triangles | 3.93 MB, 79 k triangles (the drops and their brackets) |
+| `town.glb` | 13.2 MB | unchanged (not re-baked: no kit house has a sign of its own) |
+| characters (kaho, mio, harbour-fisherman; far levels) | 1,060 + 1,204 + 952 KB (555 + 622 + 501 KB) | 1,046 + 1,182 + 975 KB (551 + 615 + 514 KB): -11 KB in all |
+| Intel GPU over the whole film (live world) | p50 16.7 ms, p95 17.5 ms | p50 16.7 ms, p95 17.7 ms, no frame over 50 ms, no program linked during the film (39 before it) |
+
+So the world's pieces are 0.54 MB lighter in all (props -1.16 MB, laundry -48 KB, infra +0.67 MB).
+
 Known limits: the far houses (51) are still `town.house`; a kit house is one object per house in one shared atlas, so
 its painted wear is bounded by the town's texel density (twice the rest on hero); the standalone GLB's LOD1 is a plain
-collapse decimation (no seam protection); a service wire is drawn only when a pole point is given (the town's poles are
-placed after the houses, so its kit houses have the conduit and bracket but no drop); the town's EEVEE stills still
-shadow their own outlines (the kit's stills draw the outline as a separate object); thin letters of baked signs (an I,
-a T) fall below a texel and take the palette band's single colour, so they can vanish. The town atlas now keeps 64
-palette rows (59 k thin islands; it was 32).
+collapse decimation (no seam protection); two of the 17 kit houses (`house_3_61`, `house_3_67`, on the upper
+terraces) have no service drop: no pole within 34 m gives a wire that clears the houses and trees between; the drops
+land under the eaves (the meter's bracket sits too close under them for a wire rising to a pole); the town's EEVEE
+stills still shadow their own outlines (the kit's stills draw the outline as a separate object). The town atlas keeps 64
+palette rows (59 k thin islands; it was 32); a sign's decal band takes its rows from the props atlas (312 of 2048 for
+Cloudwatch's 15 signs and banners).

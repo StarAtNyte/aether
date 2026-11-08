@@ -230,6 +230,10 @@ class Library:
             self.mats.append(m)
         return self._idx[m.name]
 
+    def slot(self, m):
+        """The slot of a material made elsewhere (a sign's decal)."""
+        return self._slot(m)
+
     def colour(self, role):
         return self.colours.get(role, "#ff00ff")
 

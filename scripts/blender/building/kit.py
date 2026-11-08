@@ -149,6 +149,21 @@ class K:
             skip.add("top")
         return self.box(face.pt(u, z, off), size, mi, skip=skip, grime=grime)
 
+    def decal_quad(self, face, u, z, su, sz, off, mi):
+        """A quad on a wall face, `off` out of the wall plane, centred at (u, z), su wide and sz high, facing out, with
+        its `decal` UVs 0..1 left to right and bottom to top as seen from the front (a painted sign: `signs.py`)."""
+        sgn = 1 if face.n in ((0, -1), (1, 0)) else -1
+        a = face.pt(u - sgn * su / 2, z - sz / 2, off)
+        b = face.pt(u + sgn * su / 2, z - sz / 2, off)
+        c = face.pt(u + sgn * su / 2, z + sz / 2, off)
+        d = face.pt(u - sgn * su / 2, z + sz / 2, off)
+        with self.no_outline():
+            f = self.quad(a, b, c, d, mi)
+        lay = self.bm.loops.layers.uv.get("decal") or self.bm.loops.layers.uv.new("decal")
+        for lp, uv in zip(f.loops, ((0, 0), (1, 0), (1, 1), (0, 1))):
+            lp[lay].uv = uv
+        return f
+
     def prism(self, poly, off, mi, caps=True):
         """A closed prism: the planar polygon `poly` swept by the vector `off` (faces outward whatever the winding)."""
         n = Vector((0.0, 0.0, 0.0))

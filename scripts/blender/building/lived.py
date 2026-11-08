@@ -149,71 +149,30 @@ def plant(K, at, kind, r, scale=1.0, support="below"):
                     K.sphere((x + 0.1 * s, y - 0.08 * s, z + ph + 0.38 * s), 0.16 * s, leaf, subdiv=1)
 
 
-def text_mesh(text, size):
-    """Blender's built-in font as mesh lying in the XZ plane, facing -Y; returns (verts, faces, width, height)."""
-    cu = bpy.data.curves.new("bk_txt", "FONT")
-    cu.body = text
-    cu.size = size
-    cu.align_x = "CENTER"
-    cu.align_y = "CENTER"
-    cu.resolution_u = 2
-    cu.extrude = 0.004
-    ob = bpy.data.objects.new("bk_txt", cu)
-    bpy.context.scene.collection.objects.link(ob)
-    dg = bpy.context.evaluated_depsgraph_get()
-    me = bpy.data.meshes.new_from_object(ob.evaluated_get(dg))
-    bpy.data.objects.remove(ob)
-    bpy.data.curves.remove(cu)
-    vs = [(v.co.x, -v.co.z, v.co.y) for v in me.vertices]
-    fs = [tuple(p.vertices) for p in me.polygons]
-    bpy.data.meshes.remove(me)
-    xs = [v[0] for v in vs] or [0.0]
-    zs = [v[2] for v in vs] or [0.0]
-    return vs, fs, max(xs) - min(xs), max(zs) - min(zs)
-
-
 def signboard(K, face, u, z, text, plan, height=0.42, max_w=None):
-    """A signboard flat on the wall: a board with a frame and the name in raised letters."""
+    """A signboard flat on the wall: a board with a frame, the name painted on its front as a decal (`signs.py`: the
+    text rasterized into the board's own image, with its own texels in the bake, so thin letters never vanish)."""
+    import signs
     n = nrm(face)
     size = height * 0.62
-    vs, fs, tw, th = text_mesh(text, size)
+    _t, tw, th = signs.text_tris(text, size)
     if max_w and tw + height * 0.6 > max_w:
         k = max_w / (tw + height * 0.6)
         size *= k
         height *= k
-        vs, fs, tw, th = text_mesh(text, size)
+        _t, tw, th = signs.text_tris(text, size)
     bw = tw + height * 0.6
+    lib = K.lib
+    mat = signs.decal_material(f"{lib.prefix}_decal_{len(K.parts)}", text, size, lib.colour("sign"), lib.colour("ink"), bw, height,
+                               style=lib.style)
+    from materials import _wear_nodes
+    _wear_nodes(mat, lib.wear)
     with K.part(f"sign_{len(K.parts)}", "back", normal=n):
-        K.fbox(face, u, z, bw, 0.05, height, 0.025, K.lib("sign"))
+        K.fbox(face, u, z, bw, 0.05, height, 0.025, K.lib("sign"), skip=("front",))
+        K.decal_quad(face, u, z, bw, height, 0.05, lib.slot(mat))
         K.fbox(face, u, z + height / 2 - 0.01, bw + 0.04, 0.06, 0.03, 0.03, K.lib("trim"))
         K.fbox(face, u, z - height / 2 + 0.01, bw + 0.04, 0.06, 0.03, 0.03, K.lib("trim"))
-        _place_text(K, face, u, z, vs, fs, 0.052, K.lib("ink"))
     return bw
-
-
-def _place_text(K, face, u, z, vs, fs, off, mi):
-    """Put text mesh (made facing -Y, centred) onto a wall face at (u, z), `off` out of it."""
-    nx, ny = face.n
-    out = []
-    for (x, y, zz) in vs:
-        # local: x along the text, y toward the viewer (-Y in the mesh), z up
-        if face.n == (0, -1):
-            p = (u + x, face.p - off + y, z + zz)
-        elif face.n == (0, 1):
-            p = (u - x, face.p + off - y, z + zz)
-        elif face.n == (1, 0):
-            p = (face.p + off - y, u + x, z + zz)
-        else:
-            p = (face.p - off + y, u - x, z + zz)
-        out.append(p)
-    with K.no_outline():
-        verts = [K._v(p) for p in out]
-        for f in fs:
-            try:
-                fc = K._f([verts[i] for i in f], mi)
-            except ValueError:
-                continue
-    return out
 
 
 def antenna(K, x, y, z, r):

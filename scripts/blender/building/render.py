@@ -130,6 +130,69 @@ def render_stills(out, obs, style, size=(900, 700)):
     return paths, sheet
 
 
+def sign_checks(out, ob, scale=2):
+    """Each painted sign (a decal face: `signs.py`) rendered straight on (orthographic, the build's own light and toon
+    materials, `scale` pixels per atlas texel) and read against its intended string: `signs.legibility` (the IoU over
+    the letters' band, each letter's coverage). Writes `sign_<k>.png`; returns the rows."""
+    sys.path.insert(0, os.path.join(HERE, ".."))
+    import signs
+    sc = bpy.context.scene
+    me = ob.data
+    _dec, slots = signs.decal_polys(me)
+    duv = me.uv_layers.get("decal")
+    rows = []
+    if not slots or duv is None:
+        return rows
+    keep = (sc.camera, sc.render.resolution_x, sc.render.resolution_y, sc.render.filepath)
+    cd = bpy.data.cameras.get("bk_sign") or bpy.data.cameras.new("bk_sign")
+    cam = bpy.data.objects.get("bk_sign") or bpy.data.objects.new("bk_sign", cd)
+    if cam.name not in sc.collection.objects:
+        sc.collection.objects.link(cam)
+    cd.type = "ORTHO"
+    cd.clip_start = 0.01
+    cd.clip_end = 10.0
+    mw = ob.matrix_world
+    for k, (mi, (w, h)) in enumerate(sorted(slots.items())):
+        poly = next(p for p in me.polygons if p.material_index == mi)
+        corners = {}
+        for li in poly.loop_indices:
+            uv = tuple(int(round(c)) for c in duv.data[li].uv)
+            corners[uv] = mw @ me.vertices[me.loops[li].vertex_index].co
+        a, b, d = corners[(0, 0)], corners[(1, 0)], corners[(0, 1)]
+        right, up = b - a, d - a
+        width, height = right.length, up.length
+        n = right.normalized().cross(up.normalized()).normalized()
+        centre = a + right / 2 + up / 2
+        cam.location = centre + n * 2.0
+        cam.rotation_mode = "QUATERNION"
+        cam.rotation_quaternion = _basis_quat(right.normalized(), up.normalized(), n)
+        cd.ortho_scale = max(width, height)
+        rx = int(w * scale)
+        ry = max(4, int(round(rx * height / width)))
+        sc.render.resolution_x, sc.render.resolution_y = rx, ry
+        sc.camera = cam
+        p = os.path.join(out, f"sign_{k}.png")
+        sc.render.filepath = p
+        bpy.ops.render.render(write_still=True)
+        im = bpy.data.images.load(p)
+        px = np.empty(rx * ry * 4, np.float32)
+        im.pixels.foreach_get(px)
+        bpy.data.images.remove(im)
+        rgb = px.reshape(ry, rx, 4)[::-1, :, :3]
+        m = me.materials[mi]
+        lg = signs.legibility(rgb, signs.ref_mask(m, rx, ry), m.get("cw_decal_text", ""), bool(m.get("cw_decal_vertical", 0)),
+                              runs=signs.source_runs(m, rx, ry))
+        rows.append({"text": m.get("cw_decal_text", ""), "render": os.path.basename(p), "read": signs.read(lg), **lg})
+    sc.camera, sc.render.resolution_x, sc.render.resolution_y, sc.render.filepath = keep
+    return rows
+
+
+def _basis_quat(right, up, n):
+    from mathutils import Matrix
+    m = Matrix((right, up, n)).transposed()  # columns: the camera's x (right), y (up), z (toward the viewer)
+    return m.to_quaternion()
+
+
 def compose(paths, out, gap=8):
     imgs = []
     for p in paths:

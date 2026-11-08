@@ -128,10 +128,19 @@ def main():
     paths, sheet = RENDER.render_stills(out, [ob], spec["style"], size)
     for o in [o for o in bpy.data.objects if o.get("bk_outline")]:
         bpy.data.objects.remove(o)
+    # Signage: every painted sign rendered straight on and read against its string (letters that vanish fail).
+    rep["signage"] = RENDER.sign_checks(out, ob)
+    for row in rep["signage"]:
+        if not row.get("ok"):
+            rep["issues"].append(f"sign '{row['text']}' reads '{row.get('read', '')}' in the render (min letter {row.get('min_letter')}, IoU {row.get('iou')})")
     bpy.ops.wm.save_as_mainfile(filepath=os.path.join(out, f"{spec['id']}.blend"), compress=True)
     if not a.get("no_export"):
         log("export")
-        EXPORT.bake_albedo(ob, 2048 if spec["tier"] == "hero" else 1024)
+        EXPORT.bake_albedo(ob, 2048 if spec["tier"] == "hero" else 1024, out_dir=out)
+        rep["signage_bake"] = list(EXPORT.SIGNAGE)
+        for row in rep["signage_bake"]:
+            if not row.get("ok"):
+                rep["issues"].append(f"sign '{row['text']}' reads '{row.get('read', '')}' in the baked atlas (min letter {row.get('min_letter')}, IoU {row.get('iou')})")
         b0 = EXPORT.export_glb(ob, os.path.join(out, f"{spec['id']}.glb"))
         lo = EXPORT.lod(ob, 0.4)
         b1 = EXPORT.export_glb(lo, os.path.join(out, f"{spec['id']}.lod1.glb"))

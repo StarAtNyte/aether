@@ -113,6 +113,46 @@ class QA:
         self.views = views
         return views
 
+    def hands(self, shots, path=None):
+        """hands.png: close-ups of the hands, for the art director's eye (the checks do not judge them). shots: list of
+        (pose callable, side, view): the hand seen from its 'back', its 'palm' or its 'thumb' side (the camera set by
+        the posed hand's own frame), or from an azimuth round her (a number, as the turnaround's cameras)."""
+        dg = bpy.context.evaluated_depsgraph_get()
+        sc = bpy.context.scene
+        imgs = []
+        u = self.spec['height'] / 1.54
+        for pose, side, view in shots:
+            pose()
+            dg.update()
+            pb = self.arm.pose.bones
+            mw = self.arm.matrix_world
+            h = mw @ pb[f'Bip01_{side}_Hand'].head
+            k2 = mw @ pb[f'Bip01_{side}_Finger2'].head
+            x = (k2 - h).normalized()
+            y = (mw @ pb[f'Bip01_{side}_Finger1'].head) - (mw @ pb[f'Bip01_{side}_Finger4'].head)
+            y = (y - x * y.dot(x)).normalized()
+            # (x cross y is the palm side on the left hand, the back on the right)
+            z = x.cross(y) * (-1 if side == 'L' else 1)
+            c = h.lerp(k2, 1.1)
+            bpy.context.scene.camera = R.camera()
+            if isinstance(view, str):
+                d = {'back': z, 'palm': -z, 'thumb': y}[view]
+                cam = R.camera()
+                # close, with the near plane just before the hand: a thigh or a skirt beside it does not hide it
+                R.look_at(cam, c + d * 0.12, c)
+                cam.data.type = 'ORTHO'
+                cam.data.ortho_scale = 0.17 * u
+                cam.data.clip_start = 0.12 - 0.035 * u
+                cam.data.clip_end = 50
+                sc.render.resolution_x = sc.render.resolution_y = 480
+                sc.render.filepath = f'{self.out}/qa-hand.png'
+                bpy.ops.render.render(write_still=True)
+                imgs.append(R.load_image(f'{self.out}/qa-hand.png'))
+            else:
+                imgs.append(R.render_view(f'{self.out}/qa-hand.png', view, 0.2, c.z, ortho=0.17 * u, res=(480, 480), dist=1.2, target=c))
+        R.camera().data.clip_start = 0.05
+        R.save_png(path or f'{self.out}/hands.png', R.side_by_side(imgs))
+
     def ids(self):
         """A flat render of the part ids (front view), for the palette check."""
         m = bpy.data.materials.new('qa-id')
@@ -411,6 +451,37 @@ class QA:
             self.issue(f'weights: {w}')
         return w
 
+    CLOTH_MARGIN = 0.006  # cloth-clear.ts
+
+    def cloth_clear(self, verts, ids):
+        """The vertex stage's push of the cloth out of the leg capsules of the current pose (as cloth-clear.ts)."""
+        fit = self.spec.get('leg_fit') or {}
+        if not fit:
+            return verts
+        pb = self.arm.pose.bones
+        mw = self.arm.matrix_world
+        caps = []
+        for sd in ('L', 'R'):
+            for seg, bone in (('thigh', 'Thigh'), ('thigh2', 'Thigh'), ('calf', 'Calf')):
+                a, b, r = fit[f'{sd}_{seg}']
+                p_ = pb[f'Bip01_{sd}_{bone}']
+                m = mw @ p_.matrix @ p_.bone.matrix_local.inverted()
+                caps.append((m @ Vector(a), m @ Vector(b), r + self.CLOTH_MARGIN))
+        out = list(verts)
+        for i in ids:
+            p = out[i]
+            for a, b, r in caps:
+                ab = b - a
+                t = max(0.0, min(1.0, (p - a).dot(ab) / max(1e-12, ab.length_squared)))
+                q = a + ab * t
+                d = p - q
+                ln = max(d.length, 1e-4)
+                # (never toward the body's vertical axis)
+                if ln < r and d.dot(Vector((p.x, p.y, 0))) >= 0:
+                    p = q + d * (r / ln)
+            out[i] = p
+        return out
+
     def interpenetration(self, frames, pose_apply, pairs):
         """frames: list of (label, callable that poses the armature). pairs: list of (name, skin vertex ids, garment vertex ids, tol)."""
         dg = bpy.context.evaluated_depsgraph_get()
@@ -435,6 +506,11 @@ class QA:
             for name, skin, gfaces, reach, only in pairs:
                 if only and not label.startswith(only):
                     continue
+                if name == 'skirt':
+                    # the runtime's per-vertex clearance (packages/render/src/characters/cloth-clear.ts): skirt
+                    # vertices pushed out of the posed thigh and calf capsules (their radius measured on the skin, plus
+                    # the margin)
+                    verts = self.cloth_clear(verts, {i for f in gfaces for i in f})
                 bvh = BVHTree.FromPolygons(verts, gfaces, all_triangles=False)
                 n_in = 0
                 depth = 0.0
@@ -443,13 +519,18 @@ class QA:
                     # cloth); a thigh that leaves through the hem, under the skirt's opening, is not
                     pb = self.arm.pose.bones
                     mw = self.arm.matrix_world
-                    axis = {sd: (mw @ pb[f'Bip01_{sd}_Thigh'].head, mw @ pb[f'Bip01_{sd}_Calf'].head) for sd in ('L', 'R')}
+                    # (a long skirt covers the calves too: a calf vertex is measured from the calf's bone, the nearer one)
+                    axis = {sd: ((mw @ pb[f'Bip01_{sd}_Thigh'].head, mw @ pb[f'Bip01_{sd}_Calf'].head), (mw @ pb[f'Bip01_{sd}_Calf'].head, mw @ pb[f'Bip01_{sd}_Foot'].head)) for sd in ('L', 'R')}
                     for i in skin:
                         p = verts[i]
-                        a, b = axis['L' if self.rest_x[i] > 0 else 'R']
-                        ab = b - a
-                        t = max(0.0, min(1.0, (p - a).dot(ab) / max(1e-9, ab.length_squared)))
-                        q = a + ab * t
+                        best = None
+                        for a, b in axis['L' if self.rest_x[i] > 0 else 'R']:
+                            ab = b - a
+                            t = max(0.0, min(1.0, (p - a).dot(ab) / max(1e-9, ab.length_squared)))
+                            q = a + ab * t
+                            if best is None or (p - q).length < best[0]:
+                                best = ((p - q).length, q)
+                        q = best[1]
                         d = p - q
                         if d.length < 1e-5:
                             continue

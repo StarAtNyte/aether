@@ -86,6 +86,40 @@ def wire(bm, a, b, sag, mat_index, radius=0.022):
         add_cylinder(bm, p, radius, d.length, segments=4, mat_index=mat_index, axis=d, cap=False)
 
 
+INSULATORS = []
+SERVICE_REPORT = []
+
+
+def build_service_drops():
+    """A service drop from every kit house to a pole (building/service.py: the meter's bracket or an eave bracket facing
+    the pole, a catenary that clears walls, roofs, trees, props and the other drops). Built after everything that can be
+    in a wire's way."""
+    import os
+    import sys
+    here = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "building")
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    import service
+    from common import catenary
+    skip = {"sky", "sea", "clouds", "glitter", "birds", "sun", "forest", "people"}
+    obs = [o for o in bpy.data.objects if o.type == "MESH" and not o.hide_render and o.get("cw_piece", "") not in skip
+           and not o.name.startswith(("sky", "sea", "cloud"))]
+    bvh = service.obstacles(obs, bpy.context.evaluated_depsgraph_get())
+    houses = [(h["name"], h["service"]) for h in HOUSES if h.get("kit") and h.get("service")]
+    drops, rows = service.plan(houses, INSULATORS, bvh, catenary)
+    SERVICE_REPORT[:] = rows
+    for row in rows:
+        print("AETHER_SERVICE", row, flush=True)
+    if not drops:
+        return None
+    mats_l = [toon_material("wire", P["wire"]), toon_material("pole_metal", "#5c5a62"), toon_material("insulator", "#e9e6df")]
+    bm = bmesh.new()
+    service.build(drops, bm, add_cylinder, add_box, {"wire": 0, "metal": 1, "insulator": 2})
+    ob = bm_object("service_drops", bm, "poles", mats=mats_l, outline=False)
+    ob["cw_prop"] = 0
+    return ob
+
+
 def build_poles():
     mats_l = [toon_material("pole_concrete", P["pole"], var="#7f7a76", noise_scale=2), toon_material("pole_metal", "#5c5a62"), toon_material("insulator", "#e9e6df"), toon_material("wire", P["wire"])]
     mats = {"pole": 0, "metal": 1, "insulator": 2, "wire": 3}
@@ -106,6 +140,7 @@ def build_poles():
             d = Vector((nxt[0] - x, nxt[1] - y)).normalized()
             z = drop_min(x, y, 0.2, 0.2)
             pts = pole(bm, x, y, z, (d.x, d.y), mats, seed=li * 100 + k)
+            INSULATORS.extend(pts[2:])  # the lower arm's: where service drops take off
             if prev is not None:
                 for (pa, pb) in zip(prev, pts):
                     span = (pb - pa).length
@@ -490,51 +525,33 @@ def lookout_dress():
 
 
 def _sign(name, text, x, y, z, yaw, size, board, ink, post=False, vertical=False, base_z=None, bracket=0.0):
-    """A board with invented text (Blender's built-in font, converted to mesh).
+    """A board with invented text, painted on its front face as a decal (`scripts/blender/signs.py`: the text in Blender's
+    built-in font rasterized into the board's image, given its own texels in every bake, so thin letters survive).
 
     vertical: letters stacked top to bottom on a tall board. base_z: posts stand on this height (a roof deck) instead
     of the ground (then the sign is not gated). bracket: arms that long from the board's +x edge (a sign sticking out
     of a wall, its +x side against the wall)."""
-    cu = bpy.data.curves.new(name + "_txt", "FONT")
-    cu.body = "\n".join(text) if vertical else text
-    cu.space_line = 0.92
-    cu.resolution_u = 2  # letters a few centimetres high: coarse curves read the same, at a tenth of the triangles
-    cu.size = size
-    cu.align_x = "CENTER"
-    cu.align_y = "CENTER"
-    cu.extrude = 0.004
-    tob = bpy.data.objects.new(name + "_txt", cu)
-    collection("props").objects.link(tob)
-    dg = bpy.context.evaluated_depsgraph_get()
-    me = bpy.data.meshes.new_from_object(tob.evaluated_get(dg))
-    bpy.data.objects.remove(tob)
-    bpy.data.curves.remove(cu)
-    xs = [v.co.x for v in me.vertices]
-    ys = [v.co.y for v in me.vertices] or [0.0]
-    width = (max(xs) - min(xs)) if xs else 1.0
-    height = max(ys) - min(ys)
-    ymid = (max(ys) + min(ys)) / 2
+    import signs
+    _tris, width, height = signs.text_tris(text, size, vertical, space_line=0.92)
+    width = width or 1.0
     bm = bmesh.new()
-    bm.from_mesh(me)
-    bpy.data.meshes.remove(me)
-    # Text stands up in the XZ plane, just in front of the board (facing -Y).
-    for v in bm.verts:
-        v.co = Vector((v.co.x, -0.035 - v.co.z, v.co.y - ymid))
-    for f in bm.faces:
-        f.material_index = 1
     bh = size * 2.0 if not vertical else height + size * 1.0
     bw = width + size * 1.2
-    add_box(bm, (0, 0, 0), (bw, 0.05, bh), mat_index=0)
+    faces = add_box(bm, (0, 0, 0), (bw, 0.05, bh), mat_index=0)
+    front = faces[2]  # the -y face (the box's (0, 1, 5, 4))
+    front.material_index = 1
+    signs.set_decal_uv(bm, front, (1, 0, 0), (0, 0, 1))
     if bracket > 0:
         for bz in (bh / 2 - 0.12, -bh / 2 + 0.12):
             add_box(bm, (bw / 2 + bracket / 2, 0, bz), (bracket + 0.02, 0.04, 0.05), mat_index=2)
     if post or base_z is not None:
         zb = drop(x, y) if base_z is None else base_z
-        size = bh / 2
-        for sx in ((-width / 2 - size * 0.3, width / 2 + size * 0.3) if width > 1.2 else (0,)):
+        size_ = bh / 2
+        for sx in ((-width / 2 - size_ * 0.3, width / 2 + size_ * 0.3) if width > 1.2 else (0,)):
             add_box(bm, (sx, 0.04, zb - z + 0.04), (0.16, 0.16, 0.08), mat_index=2)  # footing
-            add_cylinder(bm, (sx, 0.04, zb - z + 0.08), 0.04, (z - zb) - 0.08 - size, segments=6, mat_index=2)
-    mats = [toon_material("sign_" + board[1:], board), toon_material("ink_" + ink[1:], ink), toon_material("sign_post", "#6a6870")]
+            add_cylinder(bm, (sx, 0.04, zb - z + 0.08), 0.04, (z - zb) - 0.08 - size_, segments=6, mat_index=2)
+    face_m = signs.decal_material(f"decal_{name}", text, size, board, ink, bw, bh, vertical=vertical, toon=toon_material)
+    mats = [toon_material("sign_" + board[1:], board), face_m, toon_material("sign_post", "#6a6870")]
     ob = bm_object(name, bm, "props", mats=mats, prop=post and base_z is None, outline=True, recalc=False)
     ob.location = (x, y, z)
     ob.rotation_euler = (0, 0, yaw)
@@ -555,3 +572,4 @@ def build():
     build_walls_hedges()
     build_small_props()
     build_people()
+    build_service_drops()

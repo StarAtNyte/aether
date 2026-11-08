@@ -26,6 +26,11 @@ export interface SpringChainDef {
   radius: number;
   /** Largest swing from the animated direction (radians). */
   limit: number;
+  /**
+   * Only the capsules on bones whose name contains one of these (a skirt panel collides with the legs, not the hips or
+   * the hands). Such a chain is kept out of them at several points along each link, not just its tail and middle.
+   */
+  collide?: string[];
 }
 
 /** One collision capsule on a bone (local head and tail). */
@@ -50,6 +55,10 @@ interface Link {
 interface Chain {
   def: SpringChainDef;
   links: Link[];
+  /** The capsules this chain collides with. */
+  caps: Capsule[];
+  /** Fractions along a link where it is kept out of them (1 = its tail). */
+  samples: readonly number[];
 }
 
 interface Capsule {
@@ -75,6 +84,14 @@ const _ident = new Quaternion();
 const GRAVITY = 9.81;
 /** A tail this far (m) from its animated place is a teleport: the chain snaps back to the pose. */
 const SNAP = 0.6;
+/**
+ * Where a link is kept out of the capsules: its tail and middle, or, for a chain with a collider filter (a skirt panel
+ * against a thigh or a knee lifted on a stair), along its whole length.
+ */
+const SAMPLES_TIP_MID = [1, 0.5] as const;
+const SAMPLES_ALONG = [1, 0.87, 0.75, 0.64, 0.54, 0.45] as const;
+/** Passes of the push-out: a point pushed out of one capsule can end up in the other leg's. */
+const COLLIDE_PASSES = 3;
 
 /** Closest point on segment a-b to p. */
 export function closestOnSegment(p: Vector3, a: Vector3, b: Vector3, out: Vector3): Vector3 {
@@ -100,6 +117,11 @@ export class SpringSystem {
   enabled = true;
 
   constructor(root: Object3D, chains: readonly SpringChainDef[], colliders: readonly ColliderDef[] = []) {
+    for (const c of colliders) {
+      const bone = root.getObjectByName(c.bone);
+      if (!bone) continue;
+      this.capsules.push({ bone, head: new Vector3(...c.head), tail: new Vector3(...c.tail), radius: c.radius, a: new Vector3(), b: new Vector3() });
+    }
     for (const def of chains) {
       const bones = def.bones.map((n) => root.getObjectByName(n)).filter((b): b is Object3D => b !== undefined);
       if (bones.length !== def.bones.length || bones.length === 0) continue;
@@ -108,18 +130,30 @@ export class SpringSystem {
         const tail = next ? next.position.clone() : new Vector3(def.tip[0], def.tip[1], def.tip[2]);
         return { bone, tail, len: tail.length(), rest: bone.quaternion.clone(), cur: new Vector3(), prev: new Vector3() };
       });
-      this.chains.push({ def, links });
-    }
-    for (const c of colliders) {
-      const bone = root.getObjectByName(c.bone);
-      if (!bone) continue;
-      this.capsules.push({ bone, head: new Vector3(...c.head), tail: new Vector3(...c.tail), radius: c.radius, a: new Vector3(), b: new Vector3() });
+      const only = def.collide;
+      const caps = only ? this.capsules.filter((c) => only.some((n) => c.bone.name.includes(n))) : this.capsules;
+      this.chains.push({ def, links, caps, samples: only ? SAMPLES_ALONG : SAMPLES_TIP_MID });
     }
   }
 
   /** Number of swinging bones. */
   get size(): number {
     return this.chains.reduce((s, c) => s + c.links.length, 0);
+  }
+
+  /**
+   * The capsules on bones whose name contains one of `names`, posed now (world space; the skeleton's world matrices must
+   * be current), their radius grown by `grow`: the leg capsules the cloth clears per vertex (cloth-clear.ts).
+   */
+  posedCapsules(names: readonly string[], grow = 0): Array<{ a: Vector3; b: Vector3; radius: number }> {
+    const out: Array<{ a: Vector3; b: Vector3; radius: number }> = [];
+    for (const c of this.capsules) {
+      if (!names.some((n) => c.bone.name.includes(n))) continue;
+      c.a.copy(c.head).applyMatrix4(c.bone.matrixWorld);
+      c.b.copy(c.tail).applyMatrix4(c.bone.matrixWorld);
+      out.push({ a: c.a, b: c.b, radius: c.radius + grow });
+    }
+    return out;
   }
 
   /** Forget the motion (after a teleport or a pose jump): the next update starts at rest. */
@@ -159,17 +193,28 @@ export class SpringSystem {
         _n.copy(link.cur).sub(link.prev).multiplyScalar(keep).add(link.cur);
         _n.y -= fall;
         _n.lerp(_t, k);
-        // Stay out of the capsules: the tip, and the link's middle (a skirt panel must not cut through a thigh between its
-        // waist and its hem; a push at the middle moves the tip twice as far, about the link's root).
-        for (const c of this.capsules) {
-          closestOnSegment(_n, c.a, c.b, _v);
-          const r = c.radius + d.radius;
-          const dd = _n.distanceTo(_v);
-          if (dd < r && dd > 1e-6) _n.sub(_v).multiplyScalar(r / dd).add(_v);
-          _m.copy(_n).sub(_h).multiplyScalar(0.5).add(_h);
-          closestOnSegment(_m, c.a, c.b, _v);
-          const dm = _m.distanceTo(_v);
-          if (dm < r && dm > 1e-6) _n.addScaledVector(_m.sub(_v), (2 * (r - dm)) / dm);
+        // Stay out of the capsules (posed this frame: after the clip, the foot IK and the pelvis drop): points along the
+        // link (a skirt panel must not cut through a thigh or a knee anywhere between its waist and its hem). A point at
+        // fraction f pushed out by p moves the tail by p / f about the link's root; the length is kept between passes.
+        for (let pass = 0; pass < COLLIDE_PASSES; pass++) {
+          let moved = false;
+          for (const c of chain.caps) {
+            const r = c.radius + d.radius;
+            for (const f of chain.samples) {
+              _m.copy(_n).sub(_h).multiplyScalar(f).add(_h);
+              closestOnSegment(_m, c.a, c.b, _v);
+              const dm = _m.distanceTo(_v);
+              if (dm < r && dm > 1e-6) {
+                _n.addScaledVector(_m.sub(_v), (r - dm) / dm / f);
+                moved = true;
+              }
+            }
+          }
+          if (!moved) break;
+          _n.sub(_h);
+          const l = _n.length();
+          if (l > 1e-6) _n.multiplyScalar(link.len / l);
+          _n.add(_h);
         }
         // Keep the bone's length.
         _n.sub(_h);

@@ -16,6 +16,7 @@ import { buildProp, type Prop } from './props';
 import { buildGear, disposeGear, fitBody, type GearPiece } from './gear';
 import { contactShadow } from './surface';
 import { SpringSystem, type ColliderDef, type SpringChainDef } from './springs';
+import { CLOTH_MARGIN, writeLegCapsules } from './cloth-clear';
 import { BodyLevels, isFarLevel } from './lod';
 import { airPoseOf, ArmSpring, jumpArmTarget, jumpClipPhase, landKeep, PELVIS_ABOVE_SEAT, seatBlendOf } from './motion';
 
@@ -594,7 +595,12 @@ export class CharacterRig {
       if (detail >= 1) {
         this.root.updateMatrixWorld(true);
         this.springs.update(step);
-      } else this.springs.reset();
+        // The leg capsules of this pose, for the cloth's per-vertex clearance (cloth-clear.ts), in the body's own frame.
+        writeLegCapsules(this.opts.scene, this.springs.posedCapsules(['Thigh', 'Calf'], CLOTH_MARGIN));
+      } else {
+        this.springs.reset();
+        writeLegCapsules(this.opts.scene, []);
+      }
     }
   }
 

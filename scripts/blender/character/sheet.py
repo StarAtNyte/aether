@@ -342,6 +342,12 @@ def skirt_profile(rgb, height, col_srgb, z_range, others=()):
     return out
 
 
+def garment_profile(rgb, height, col_srgb, z_range, others=()):
+    """Any garment's extent by height in each view, by its colour (as skirt_profile: the longest run of heights, the
+    colour taken from the sheet near the brief's): what the fitting of outer garments reads the side view's depth from."""
+    return skirt_profile(rgb, height, col_srgb, z_range, others)
+
+
 def garment_hem(rgb, height, col_srgb, z_range, others=(), dx=0.09):
     """The front view's lowest height at which a garment's colour still shows dx metres either side of the middle
     (a jacket's or cardigan's hem, past an open front and over what it covers)."""

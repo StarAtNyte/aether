@@ -7,8 +7,15 @@ collapse decimation of LOD0 to 40 % on the same atlas. Outlines are not exported
 """
 import math
 import os
+import sys
 
 import bpy
+import numpy as np
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+import signs  # noqa: E402
+
+SIGNAGE = []  # the last bake's decal checks (signs.check_atlas rows)
 
 
 def select_only(obs, active=None):
@@ -18,7 +25,20 @@ def select_only(obs, active=None):
     bpy.context.view_layer.objects.active = active or obs[0]
 
 
-def bake_albedo(ob, size=2048, gpu=True):
+def _to_cpu(sc):
+    """Bake on the CPU from now on: the device and the preferences' GPUs off (a CPU bake still opened a CUDA context,
+    and failed with it, while another job held the GPU's memory)."""
+    sc.cycles.device = "CPU"
+    prefs = bpy.context.preferences.addons["cycles"].preferences
+    try:
+        prefs.compute_device_type = "NONE"
+    except TypeError:
+        pass
+    for d in getattr(prefs, "devices", []):
+        d.use = d.type == "CPU"
+
+
+def bake_albedo(ob, size=2048, gpu=True, out_dir=None):
     sc = bpy.context.scene
     sc.render.engine = "CYCLES"
     sc.cycles.device = "CPU"
@@ -39,15 +59,31 @@ def bake_albedo(ob, size=2048, gpu=True):
     print(f"[building] albedo bake on {sc.cycles.device} ({getattr(prefs, 'compute_device_type', '-') if gpu else '-'})", flush=True)
     sc.cycles.samples = 8
     me = ob.data
-    while me.uv_layers:
-        me.uv_layers.remove(me.uv_layers[0])
-    me.uv_layers.new(name="UVMap")
+    for uvl in [u for u in me.uv_layers if u.name != "decal"]:
+        me.uv_layers.remove(uvl)
+    bake_uv = me.uv_layers.new(name="UVMap")
+    me.uv_layers.active = bake_uv
+    bake_uv.active_render = True
     select_only([ob])
     bpy.ops.object.mode_set(mode="EDIT")
     bpy.ops.mesh.select_all(action="SELECT")
     bpy.ops.uv.smart_project(angle_limit=math.radians(60), island_margin=0.002, area_weight=0.0, scale_to_bounds=False)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    # Painted signs (decal faces) stay out of the pack: they get their own band at the letters' density (signs.py).
+    dec, slots = signs.decal_polys(me)
+    rects, band = signs.layout_band(slots, size)
+    me.polygons.foreach_set("select", (~dec).tolist())
+    bpy.context.scene.tool_settings.use_uv_select_sync = True
+    bpy.ops.object.mode_set(mode="EDIT")
     bpy.ops.uv.pack_islands(shape_method="AABB", margin_method="FRACTION", margin=2.0 / size, rotate=True)
     bpy.ops.object.mode_set(mode="OBJECT")
+    slot_px = {}
+    if rects:
+        uv = np.empty(len(me.loops) * 2, np.float32)
+        bake_uv.data.foreach_get("uv", uv)
+        uv[1::2] *= 1.0 - band / size
+        bake_uv.data.foreach_set("uv", uv)
+        slot_px = signs.place_band(me, "UVMap", size, 0, rects, band)
     img = bpy.data.images.new(f"{ob.name}_albedo", size, size, alpha=False)
     srcs = list(me.materials)
     emissive = {i for i, m in enumerate(srcs) if m and m.get("cw_emissive")}
@@ -71,9 +107,20 @@ def bake_albedo(ob, size=2048, gpu=True):
         bpy.ops.object.bake(type="DIFFUSE", pass_filter={"COLOR"}, target="IMAGE_TEXTURES", margin=4, use_clear=True)
     except RuntimeError as e:  # a busy GPU (out of memory): the CPU bakes it (a minute or two at 2048 px)
         print(f"[building] GPU bake failed ({e}); baking on the CPU", flush=True)
-        sc.cycles.device = "CPU"
+        _to_cpu(sc)
         bpy.ops.object.bake(type="DIFFUSE", pass_filter={"COLOR"}, target="IMAGE_TEXTURES", margin=4, use_clear=True)
-    img.filepath_raw = os.path.join(bpy.app.tempdir, f"{ob.name}_albedo.png")
+    px = np.empty(size * size * 4, np.float32)
+    img.pixels.foreach_get(px)
+    if sc.cycles.device == "GPU" and float(px.reshape(-1, 4)[:, :3].max()) < 0.02:
+        # A shared or busy GPU can return a black bake without an error (seen with OptiX): bake again on the CPU.
+        print("[building] the GPU bake came back black; baking on the CPU", flush=True)
+        _to_cpu(sc)
+        bpy.ops.object.bake(type="DIFFUSE", pass_filter={"COLOR"}, target="IMAGE_TEXTURES", margin=4, use_clear=True)
+        img.pixels.foreach_get(px)
+    SIGNAGE.clear()
+    if slot_px:
+        SIGNAGE.extend(signs.check_atlas(list(me.materials), px.reshape(size, size, 4)[..., :3], slot_px))
+    img.filepath_raw = os.path.join(out_dir or bpy.app.tempdir, f"{ob.name}.atlas.png")
     img.file_format = "PNG"
     img.save()
     # One textured material (and the emissive ones).
@@ -99,6 +146,8 @@ def bake_albedo(ob, size=2048, gpu=True):
     for v in variants:
         bpy.data.materials.remove(v)
     _merge_slots(ob)
+    if me.uv_layers.get("decal") is not None:
+        me.uv_layers.remove(me.uv_layers["decal"])
     return img
 
 

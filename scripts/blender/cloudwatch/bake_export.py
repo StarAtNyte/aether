@@ -27,6 +27,7 @@ import numpy as np  # noqa: E402
 from mathutils import Vector  # noqa: E402
 
 from common import P, denoise_np, finish_np, srgb  # noqa: E402
+import signs  # noqa: E402  (scripts/blender/signs.py, on the path through common)
 
 argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 ap = argparse.ArgumentParser()
@@ -60,7 +61,7 @@ PIECES = {
     # The shrine on its own small atlas: in the dense town atlas the gate's round posts were thinner than a texel and
     # baked to nothing (black).
     "shrine": {"match": lambda n: n in ("shrine_hall", "shrine_gate"), "tex": 1024},
-    "infra": {"match": lambda n: n in ("stair", "lookout", "harbour", "lighthouse", "railway", "crossing", "poles_wires", "catenary", "west_line") or n.startswith("tunnel_portal"), "tex": 2048},
+    "infra": {"match": lambda n: n in ("stair", "lookout", "harbour", "lighthouse", "railway", "crossing", "poles_wires", "service_drops", "catenary", "west_line") or n.startswith("tunnel_portal"), "tex": 2048},
     "props": {"match": lambda n: n.startswith(("stone_lantern", "stair_lantern", "vending", "bicycle", "laundry", "sign_", "boat_", "pots")) or n in ("ac_units", "mailbox", "roof_gear"), "tex": 2048},
     "people": {"match": lambda n: n.startswith("person_"), "tex": 1024},
     # The train (extras.py): baked over the open sea, unhazed, moved to its rest just inside the east tunnel.
@@ -317,17 +318,32 @@ def joined_copy(obs, name, keep_outline=False):
 PALETTE_ROWS = 64  # texels at the top of each atlas: 2 x 2 blocks, 32 rows of size/2 entries (the kit houses brought the town to ~59k thin islands)
 
 
+# Painted signs (signs.py: faces whose material carries `cw_decal`) keep their own UV map `decal` through the unwrap,
+# stay out of the island pack and get a band of rows under the palette band, a slot each at the letters' own texel
+# density: in the dense atlas a letter's stroke was under a texel and an I or a T vanished. {piece object: slots}.
+DECAL_SLOTS = {}
+SIGNAGE = []
+
+
 def unwrap(ob, uv_name="bake", size=None):
     me = ob.data
-    while me.uv_layers:
-        me.uv_layers.remove(me.uv_layers[0])
-    me.uv_layers.new(name=uv_name)
+    for uvl in [u for u in me.uv_layers if u.name != "decal"]:
+        me.uv_layers.remove(uvl)
+    bake_uv = me.uv_layers.new(name=uv_name)
+    me.uv_layers.active = bake_uv
+    bake_uv.active_render = True
     select_only([ob])
     bpy.ops.object.mode_set(mode="EDIT")
     bpy.ops.mesh.select_all(action="SELECT")
     bpy.ops.uv.smart_project(angle_limit=math.radians(60), island_margin=0.0005 if size else 0.003, area_weight=0.0, scale_to_bounds=False)
     bpy.ops.object.mode_set(mode="OBJECT")
     texel_density(ob, uv_name)
+    dec, slots = signs.decal_polys(me)
+    rects, band = signs.layout_band(slots, size) if (size and slots) else ({}, 0)
+    if band:
+        print(f"AETHER_UV {ob.name} {len(rects)} decals in a band of {band} rows", flush=True)
+    me.polygons.foreach_set("select", (~dec).tolist())
+    bpy.context.scene.tool_settings.use_uv_select_sync = True
     bpy.ops.object.mode_set(mode="EDIT")
     if size:
         # Box packing with a two-texel margin. The default (concave shapes, a scaled margin) left the town's ~30k islands
@@ -348,7 +364,7 @@ def unwrap(ob, uv_name="bake", size=None):
         lp = np.empty(len(me.loops), np.int32)
         for poly in me.polygons:
             lp[poly.loop_start:poly.loop_start + poly.loop_total] = poly.index
-        already = np.zeros(len(me.polygons), bool)
+        already = dec.copy()
         park = (0.5 / size, 1.0 - 0.5 / size)
         for _ in range(2):
             found = [lps for lps in thin_islands(ob, size, uv_name=uv_name) if not already[lp[lps[0]]]]
@@ -369,7 +385,7 @@ def unwrap(ob, uv_name="bake", size=None):
             bpy.ops.object.mode_set(mode="OBJECT")
             print(f"AETHER_UV {ob.name} repacked without {len(found)} thin islands", flush=True)
         # Keep the palette band free: squeeze the packed atlas below it.
-        keep = 1.0 - PALETTE_ROWS / size
+        keep = 1.0 - (PALETTE_ROWS + band) / size
         uv = np.empty(len(me.loops) * 2, np.float32)
         me.uv_layers[uv_name].data.foreach_get("uv", uv)
         uv[1::2] *= keep
@@ -378,6 +394,7 @@ def unwrap(ob, uv_name="bake", size=None):
             for lps in thin:
                 uv2[lps] = park  # in the palette band (the finish writes each island's own block)
         me.uv_layers[uv_name].data.foreach_set("uv", uv)
+        DECAL_SLOTS[ob.name] = signs.place_band(me, uv_name, size, PALETTE_ROWS, rects, band)
     return thin
 
 
@@ -652,11 +669,19 @@ def atlas_piece(key, spec):
         j.data.uv_layers["bake"].data.foreach_set("uv", uv.reshape(-1))
     # Linear -> sRGB for an 8-bit texture.
     srgb_px = np.where(final <= 0.0031308, final * 12.92, 1.055 * np.power(np.clip(final, 0, None), 1 / 2.4) - 0.055)
+    if DECAL_SLOTS.get(j.name):
+        # Every painted sign read back from the finished atlas against its string (signs.legibility).
+        for row in signs.check_atlas(srcs, np.clip(srgb_px, 0, 1), DECAL_SLOTS[j.name]):
+            row["piece"] = key
+            SIGNAGE.append(row)
+            print(f"AETHER_SIGN {key} '{row['text']}' reads '{row.get('read')}' min letter {row.get('min_letter')} iou {row.get('iou')} {'ok' if row.get('ok') else 'FAILED'}", flush=True)
     out = write_png(os.path.join(A.out, f"{key}.png"), np.clip(srgb_px, 0, 1))
     print(f"AETHER_STATS {key} final mean={float(final.mean()):.4f}", flush=True)
     baked = unlit_texture_material(f"baked_{key}", out)
     for i, m in enumerate(srcs):
         j.data.materials[i] = emissive_export_material(m) if i in emissive_slots else baked
+    if j.data.uv_layers.get("decal") is not None:
+        j.data.uv_layers.remove(j.data.uv_layers["decal"])
     print(f"AETHER_BAKED {key} {size}px faces={len(j.data.polygons)}", flush=True)
     return j
 
@@ -1417,6 +1442,10 @@ def export_glb(ob, key, report):
 
 
 def main():
+    # Packed images without a file name (painted sign decals of older builds) crash Cycles' image loading: name them.
+    for im in bpy.data.images:
+        if im.packed_file is not None and not im.filepath:
+            im.filepath_raw = f"//{im.name}.png"
     setup_cycles()
     report = {}
     want = (lambda k: ONLY is None or k in ONLY)
@@ -1463,6 +1492,8 @@ def main():
         export_glb(j, "sea", report)
     if want("glitter"):
         glitter_export(report)
+    if SIGNAGE:
+        report["signage"] = SIGNAGE
     path = os.path.join(A.out, "pieces.json")
     old = {}
     if os.path.exists(path):

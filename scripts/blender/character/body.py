@@ -89,25 +89,8 @@ def build_body(J, spec):
         ids = G.chain(shoulder, arm)
         wrist = ids[-1]
         hand_s = s * (1.05 if male else 1.0)
-        f = {k: J[f'Bip01_{side}_Finger{k}'] for k in ('0', '01', '02', '1', '11', '12', '2', '21', '22', '3', '31', '32', '4', '41', '42')}
-        palm = G.add(lerp(hn, lerp(f["2"], f["3"], 0.5), 0.55), 0.021 * hand_s, 0.021 * hand_s, wrist)
-        knuck = {}
-        prev = None
-        for k in ('2', '1'):
-            knuck[k] = G.add(f[k], 0.0105 * hand_s, 0.0095 * hand_s, palm if prev is None else prev)
-            prev = knuck[k]
-        prev = knuck['2']
-        for k in ('3', '4'):
-            knuck[k] = G.add(f[k], (0.0102 if k == '3' else 0.0092) * hand_s, 0.009 * hand_s, prev)
-            prev = knuck[k]
-        for k, r in (('1', 0.0085), ('2', 0.0088), ('3', 0.0083), ('4', 0.0074)):
-            a, b, c = f[k], f[k + '1'], f[k + '2']
-            tip = c + (c - b).normalized() * (c - b).length * 0.9
-            G.chain(knuck[k], [(b, r * hand_s, r * hand_s * 0.92), (c, r * 0.9 * hand_s, r * 0.85 * hand_s), (tip, r * 0.75 * hand_s, r * 0.7 * hand_s)])
-        a, b, c = f['0'], f['01'], f['02']
-        tip = c + (c - b).normalized() * (c - b).length * 0.9
-        thumb0 = G.add(lerp(hn, a, 0.6), 0.016 * hand_s, 0.013 * hand_s, palm)
-        G.chain(thumb0, [(a, 0.0115 * hand_s, 0.011 * hand_s), (b, 0.01 * hand_s, 0.0095 * hand_s), (c, 0.0092 * hand_s, 0.0088 * hand_s), (tip, 0.0078 * hand_s, 0.0074 * hand_s)])
+        f = {k: J[f'Bip01_{side}_Finger{k}'] for k in FINGER_JOINTS}
+        build_hand(G, J, side, wrist, f, hand_s, male)
 
     ob = new_object('body', G.v, [])
     me = ob.data
@@ -132,8 +115,63 @@ def build_body(J, spec):
     return ob
 
 
+FINGER_JOINTS = ('0', '01', '02', '1', '11', '12', '2', '21', '22', '3', '31', '32', '4', '41', '42')
+# per finger: radius (m at 1.54 m) and the tip's length as a share of the middle phalanx
+FINGERS = {'1': (0.0078, 0.82), '2': (0.008, 0.85), '3': (0.0076, 0.82), '4': (0.0066, 0.8)}
+
+
+def finger_tip(f, k):
+    """The fingertip of finger k: beyond its last joint along the last phalanx (the thumb's is shorter)."""
+    if k == '0':
+        b, c = f['01'], f['02']
+        return c + (c - b).normalized() * (c - b).length * 0.62
+    b, c = f[k + '1'], f[k + '2']
+    return c + (c - b).normalized() * (c - b).length * FINGERS[k][1]
+
+
+def build_hand(G, J, side, wrist, f, hand_s, male):
+    """The hand on the skin graph: a palm and a knuckle bar, four fingers in three phalanges with a slight swell at each
+    joint and a thinner shaft between (the knuckles read under the outline), rounded tips; the thumb leaves a fleshy
+    base (the ball of the thumb, in the palm) at its knuckle, in two phalanges to a shorter tip."""
+    hn = J[f'Bip01_{side}_Hand']
+    kmid = lerp(f['2'], f['3'], 0.5)
+    palm = G.add(lerp(hn, kmid, 0.5), 0.022 * hand_s, 0.02 * hand_s, wrist)
+    knuck = {}
+    knuck['2'] = G.add(f['2'], 0.0098 * hand_s, 0.0088 * hand_s, palm)
+    knuck['1'] = G.add(f['1'], 0.0096 * hand_s, 0.0088 * hand_s, knuck['2'])
+    knuck['3'] = G.add(f['3'], 0.0094 * hand_s, 0.0085 * hand_s, knuck['2'])
+    knuck['4'] = G.add(f['4'], 0.0084 * hand_s, 0.008 * hand_s, knuck['3'])
+    for k, (r, _) in FINGERS.items():
+        r *= hand_s * (1.08 if male else 1.0)
+        a, b, c = f[k], f[k + '1'], f[k + '2']
+        tip = finger_tip(f, k)
+        G.chain(knuck[k], [
+            (lerp(a, b, 0.5), r * 0.94, r * 0.86),
+            (b, r * 1.0, r * 0.92),            # the middle knuckle
+            (lerp(b, c, 0.5), r * 0.86, r * 0.8),
+            (c, r * 0.9, r * 0.84),             # the last knuckle
+            (lerp(c, tip, 0.55), r * 0.84, r * 0.76),
+            (tip, r * 0.5, r * 0.45),
+        ])
+    a, b, c = f['0'], f['01'], f['02']
+    tip = finger_tip(f, '0')
+    r = 0.0098 * hand_s * (1.08 if male else 1.0)
+    # the ball of the thumb: its first bone lies in the palm's flesh, so the thumb leaves the palm at its knuckle (the
+    # web to the index is that flesh), not at the wrist
+    pc = lerp(hn, kmid, 0.5)
+    ball = G.add(lerp(lerp(a, b, 0.55), pc, 0.35), 0.0165 * hand_s, 0.0125 * hand_s, palm)
+    G.chain(ball, [
+        (b, r * 1.05, r * 0.98),               # the thumb's knuckle
+        (lerp(b, c, 0.5), r * 0.95, r * 0.88),
+        (c, r * 0.95, r * 0.88),
+        (lerp(c, tip, 0.55), r * 0.88, r * 0.8),
+        (tip, r * 0.55, r * 0.5),
+    ])
+
+
 def hand_frame(J, side):
-    """Origin at the wrist, x toward the middle knuckle, y across toward the index, z the back of the hand."""
+    """Origin at the wrist, x toward the middle knuckle, y across toward the index, z = x cross y (the palm side on the
+    left hand, the back on the right)."""
     hn = J[f'Bip01_{side}_Hand']
     k2 = J[f'Bip01_{side}_Finger2']
     x = (k2 - hn).normalized()

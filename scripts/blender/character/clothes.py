@@ -22,7 +22,7 @@ from common import Part, apply_modifiers, b2g_point, catmull, lerp, new_object, 
 from skeleton import add_secondary
 import paint as P
 
-THIGH_SHARE = 0.97   # how much of the skirt's front and back below the hips follows the thighs
+PANELS = 16   # skirt panel springs round the hips (the cloth between two is blended: more panels, smaller chords)
 EASE = 1.0   # the QA loop raises it when the body shows through a garment
 
 
@@ -323,6 +323,10 @@ class Kit:
                     nv = -nv
                 cuts.append(((0, 0, v_bottom), tuple(nv), ('torso',), (lambda c, sx=sx: c.y < -0.02 * s and c.x * sx > 0 and c.z > v_bottom - 0.03 * s)))
         ob = self.extract(name, select, offset, (it['item'].split()[0], colour), layer=layer, hide_margin=None if outer else 0.035 * s, cuts=cuts)
+        if outer:
+            self.fit_depth(ob, it, hem)
+        if self.collar_kind(it) and not self.has('collar') and (outer or not over):
+            self.turn_down_collar(it, ob, open_front, hem)
         if outer and ('rib' in str(it.get('cuffs', '')) or 'cardigan' in it['item'] or it.get('hem_band')):
             # knit: a ribbed band at the hem and the cuffs (each face of the band shows three ribs)
             P.paint_rib(self.atlas, f'{name}_rib', colour)
@@ -401,6 +405,115 @@ class Kit:
                 if n in o['item']:
                     return o
         return None
+
+    # --- the turn-down collar and lapels -----------------------------------------------------------------------------
+    def collar_kind(self, it):
+        """A top's collar from the brief (`collar`: 'turn-down' or true, 'none' or false); by default a jacket or coat
+        has one, a shirt too, a T-shirt, blouse, sweater or cardigan not."""
+        v = it.get('collar')
+        if v is None:
+            return 'turn-down' if any(k in it['item'] for k in ('jacket', 'coat', 'shirt')) and 't-shirt' not in it['item'] else None
+        if v is False or str(v).lower() in ('none', 'no', 'false', 'off'):
+            return None
+        return 'turn-down'
+
+    def turn_down_collar(self, it, garment, open_front, hem):
+        """A shirt or jacket collar: a band standing round the neck (2.4 cm at the back, lower toward the front) that
+        folds over and lies down on the garment's shoulders, its ends coming to points at the front; with an open front,
+        lapels (the facing folded back along each front edge, widest under the collar's points and running out at the
+        chest) lie on the garment's front. Laid on the garment's own surface by casting, so they follow its fitted
+        shape; painted as turned cloth (paint_collar: the stand a step darker, a crease at the fold, a topstitched edge)."""
+        s = self.s
+        z = self.z
+        col = it['rgb']
+        cell = f'{it["item"].split()[0]}_collar'
+        P.paint_collar(self.atlas, cell, col)
+        self.palette[cell] = col
+        U = (0.02, 0.24, 0.42, 0.7, 0.97)
+        uvs = []
+        gb = BVHTree.FromObject(garment, bpy.context.evaluated_depsgraph_get())
+        nk = self.J['Bip01_Neck']
+        cy = nk.y + 0.004 * s
+        z_back = z['neck'] - 0.008 * s
+        phi_e = math.radians(150 if open_front else 165)
+        cols = 36
+        verts, faces = [], []
+        rows = 5
+        for ci in range(cols + 1):
+            u = ci / cols
+            phi = -phi_e + 2 * phi_e * u
+            a = abs(phi) / phi_e
+            d = Vector((math.sin(phi), math.cos(phi), 0.0))
+            z0 = z_back - 0.03 * s * a ** 2
+            o = Vector((0, cy, z0)) + d * 0.3
+            hit = self.bvh.ray_cast(o, -d, 0.3)
+            r = (0.3 - hit[3]) if hit[0] is not None else 0.06 * s
+            r += 0.004 * s
+            c0 = Vector((0, cy, z0))
+            stand = 0.028 * s * (1 - 0.35 * a ** 2)
+            p_base = c0 + d * r
+            p_top = c0 + d * (r + 0.004 * s) + Vector((0, 0, stand))
+            # the leaf: from the fold out over the shoulders, its points longer at the front ends
+            w = 0.042 * s + 0.038 * s * smoothstep(0.6, 1.0, a)
+            leaf = []
+            for k, t in enumerate((0.35, 0.7, 1.0)):
+                q = c0 + d * (r + 0.004 * s + w * t) + Vector((0, 0, stand + 0.02 * s))
+                h = gb.ray_cast(q, Vector((0, 0, -1)), 0.2)
+                if h[0] is None:
+                    h = gb.ray_cast(q + d * 0.05, -d, 0.1)
+                p = (h[0] + h[1] * 0.004 * s) if h[0] is not None else q - Vector((0, 0, stand + 0.02 * s))
+                # the leaf stands off the stand where it turns over
+                p = p.lerp(p_top + d * 0.006 * s, 0.35 * (1 - t))
+                leaf.append(p)
+            # (a point at the front ends: the outer edge dips further)
+            if a > 0.85:
+                leaf[-1] = leaf[-1] - Vector((0, 0, 0.025 * s * smoothstep(0.85, 1.0, a)))
+            verts += [p_base, p_top] + leaf
+            uvs += [self.atlas.uv(cell, uu, 0.5) for uu in U]
+        for ci in range(cols):
+            for ri in range(rows - 1):
+                i0 = ci * rows + ri
+                faces.append((i0, i0 + rows, i0 + rows + 1, i0 + 1))
+        ob = new_object('collar', verts, faces)
+        shade_smooth(ob)
+        set_uvs_per_vertex(ob, uvs)
+        msol = ob.modifiers.new('solid', 'SOLIDIFY')
+        msol.thickness = 0.0025 * s
+        msol.offset = 0
+        apply_modifiers(ob)
+        self.parts.append(Part(ob, 'cloth', toon=(0.9, 0.05, 1.0, 0.0), bones='torso', cloth=True, layer=2, role=cell))
+        if not open_front:
+            return ob
+        # lapels: each front edge's facing folded back, from under the collar's point down to the chest
+        zc = z['chest'] - 0.04 * s
+        for sx in (1, -1):
+            top = Vector((sx * 0.07 * s, 0, z['neck'] - 0.03 * s))
+            bot = Vector((sx * 0.045 * s, 0, zc))
+            lv, lf, luv = [], [], []
+            n_al, n_ac = 10, 4
+            for i in range(n_al + 1):
+                t = i / n_al
+                e = top.lerp(bot, t)
+                wv = 0.06 * s * (1 - t) ** 0.85
+                for j in range(n_ac + 1):
+                    g = e + Vector((sx * wv * j / n_ac, 0, 0.012 * s * (1 - t) * j / n_ac))
+                    h = gb.ray_cast(Vector((g.x, -0.5, g.z)), Vector((0, 1, 0)), 0.8)
+                    p = (h[0] + Vector((0, -1, 0)) * 0.003 * s) if h[0] is not None else Vector((g.x, -0.12 * s, g.z))
+                    lv.append(p)
+                    luv.append(self.atlas.uv(cell, 0.3 + 0.67 * j / n_ac, 0.5))
+            for i in range(n_al):
+                for j in range(n_ac):
+                    a0 = i * (n_ac + 1) + j
+                    lf.append((a0, a0 + 1, a0 + n_ac + 2, a0 + n_ac + 1))
+            lo = new_object('lapel', lv, lf)
+            shade_smooth(lo)
+            set_uvs_per_vertex(lo, luv)
+            msol = lo.modifiers.new('solid', 'SOLIDIFY')
+            msol.thickness = 0.002 * s
+            msol.offset = -1
+            apply_modifiers(lo)
+            self.parts.append(Part(lo, 'cloth', toon=(0.9, 0.05, 1.0, 0.0), bones='torso', cloth=True, layer=2, role=cell))
+        return ob
 
     # --- the sailor collar -------------------------------------------------------------------------------------------
     def sailor_collar(self, it, over):
@@ -581,6 +694,62 @@ class Kit:
         return p
 
     # --- skirt -------------------------------------------------------------------------------------------------------
+    def fit_depth(self, ob, it, hem):
+        """An outer garment's depth from the sheet's side view (build.sheet_fit 'outer'): per height its half-depth
+        there (the garment's colour run, smoothed as the skirt's), against ours over the trunk (the sleeves left out);
+        where the sheet's is deeper, the trunk part is scaled front to back about its own middle at that height (a
+        boxy work jacket hanging off a stooped back and over the belly). Only ever outward, at most 45 %, faded out
+        toward the shoulders' sides and the neck, so nothing under it comes through."""
+        f = ((self.spec.get('sheet_fit') or {}).get('outer') or {}).get(it['item'])
+        if not f or len(f.get('side', [])) < 8:
+            return None
+        sz, sd = smooth_series(f['side'], lambda r: (r[2] - r[1]) / 2)
+        s = self.s
+        me = ob.data
+        co = np.array([v.co[:] for v in me.vertices])
+        arm_x = abs(self.J['Bip01_L_UpperArm'].x)
+        trunk = 1 - np.clip((np.abs(co[:, 0]) - 0.6 * arm_x) / (0.25 * arm_x), 0, 1)
+        trunk = trunk * trunk * (3 - 2 * trunk)
+        top = self.z['neck'] - 0.04 * s
+        step = 0.01
+        zs = np.arange(hem, top, step)
+        ks = np.ones(len(zs))
+        mids = np.zeros(len(zs))
+        for i, zz in enumerate(zs):
+            m = (np.abs(co[:, 2] - zz) < step) & (trunk > 0.9)
+            if m.sum() < 6 or zz < sz[0] - 0.01 or zz > sz[-1] + 0.01:
+                continue
+            y0, y1 = co[m, 1].min(), co[m, 1].max()
+            mids[i] = (y0 + y1) / 2
+            # the sheet's run is the whole garment seen from the side, a sleeve hanging in front included: the
+            # smallest scale of the trunk at which trunk and sleeves together are as deep
+            sl = (np.abs(co[:, 2] - zz) < step) & (trunk < 0.1)
+            s0, s1 = (co[sl, 1].min(), co[sl, 1].max()) if sl.any() else (mids[i], mids[i])
+            want = 2 * float(np.interp(zz, sz, sd))
+            for k in np.arange(1.0, 1.451, 0.01):
+                h = (y1 - y0) / 2 * k
+                if max(s1, mids[i] + h) - min(s0, mids[i] - h) >= want:
+                    break
+            ks[i] = k
+        if (ks <= 1.001).all():
+            return None
+        # smooth along the height (no steps between rows), and fade the scale out over the top rows
+        ks = np.convolve(np.pad(ks, 3, mode='edge'), np.ones(7) / 7, 'valid')
+        have = mids != 0
+        mids = np.interp(zs, zs[have], mids[have]) if have.any() else mids
+        mids = np.convolve(np.pad(mids, 3, mode='edge'), np.ones(7) / 7, 'valid')
+        fade = smoothstep_np(top, top - 0.08 * s, zs)
+        ks = 1 + (ks - 1) * fade
+        k_v = np.interp(co[:, 2], zs, ks, left=ks[0], right=1.0)
+        c_v = np.interp(co[:, 2], zs, mids)
+        k_v = 1 + (k_v - 1) * trunk
+        co[:, 1] = c_v + (co[:, 1] - c_v) * k_v
+        me.vertices.foreach_set('co', co.ravel())
+        me.update()
+        self.depth_fit = {it['item']: {'max_scale': round(float(ks.max()), 3), 'at': round(float(zs[int(np.argmax(ks))]), 3)}}
+        print(f'[clothes] depth fit {self.depth_fit}', flush=True)
+        return ks
+
     def skirt_fit(self):
         """The sheet's skirt (build.sheet_fit): its hem and, by height, the half-width of the front and back views and
         the half-depth of the side view, smoothed (a median over 5 cm, then a running mean) and robust to what hangs
@@ -709,8 +878,11 @@ class Kit:
                 faces.append((a, b, b + na, a + na))
         ob = new_object('skirt', verts, faces)
         shade_smooth(ob)
-        # panel springs: 12 bones on the hip ring, each swinging the hem below it
-        panels = 12
+        # panel springs: PANELS bones on the hip ring, each swinging the hem below it. The cloth below the hips is carried
+        # by the panels alone (no share of the thighs: a blend of the two thighs put the middle of the front between the
+        # legs, where a knee lifted on a stair came through it); the runtime springs keep every panel out of the thigh and
+        # calf capsules of the current pose (foot IK, pelvis drop) along its whole length (`collide`).
+        panels = PANELS
         attach = hipz + 0.02 * s
         names = []
         for k in range(panels):
@@ -723,19 +895,14 @@ class Kit:
             if target is not None and target[-1, kk] > 0:
                 ri = max(env_clear[-1, kk] + ease, target[-1, kk] - pleat_depth / 2)
             tip = Vector((math.sin(th) * ri, cy - math.cos(th) * ri, hem))
-            # front and back panels swing far enough to ride over a striding thigh; the sides less
+            # front and back panels swing far enough to ride over a thigh lifted to the hip line; the sides less
             fb = abs(math.cos(th))
-            self.springs.append({'name': f'skirt{k}', 'bones': [nm], 'tip': b2g_point(tip - at), 'stiffness': 0.34, 'drag': 0.24, 'gravity': 0.2, 'radius': 0.024, 'limit': round(0.75 + 0.6 * fb, 3)})
+            self.springs.append({'name': f'skirt{k}', 'bones': [nm], 'tip': b2g_point(tip - at), 'stiffness': 0.34, 'drag': 0.24, 'gravity': 0.2,
+                                 'radius': 0.024, 'limit': round(0.9 + 0.75 * fb, 3), 'collide': ['Thigh', 'Calf']})
             self.skirt_panels.append((len(self.springs) - 1, at.copy(), tip.copy()))
             names.append(nm)
-        th_x = abs(self.J['Bip01_L_Thigh'].x)
-        # the crossfade between the thighs: narrow for a knee-length skirt, wide for a long one (whose middle hangs)
-        cf = 0.35 if length in ('knee', 'mini') else 1.0
         for r, zz in enumerate(zs):
             wv = smoothstep(attach + 0.01 * s, attach - 0.07 * s, zz)
-            # over each thigh the cloth follows the thigh in part (a striding leg carries the front and back of the
-            # skirt with it; the panels' springs do the rest)
-            deep = smoothstep(attach + 0.035 * s, attach - 0.07 * s, zz)
             for k in range(na):
                 th = thetas[k]
                 f = th / (2 * math.pi) * panels
@@ -748,23 +915,8 @@ class Kit:
                 tsum = sum(top_w.values())
                 top_w = {bb: x / tsum for bb, x in top_w.items()}
                 w = {bb: x * (1 - wv) for bb, x in top_w.items()}
-                vx = verts[r * na + k].x
-                psi = THIGH_SHARE * deep * (0.6 + 0.4 * abs(math.cos(th)))
-                # a long skirt's lower part does not swing out with the thigh like a lever: below the knee it hangs
-                # (that share goes to the calf instead: a kicked-up or striding shin carries the hem with it)
-                below_knee = smoothstep(z['knee'] + 0.06 * s, z['knee'] - 0.12 * s, zz)
-                # (more at the back, where a running heel kicks up into the hem)
-                psi_c = min(1.0 - psi * (1 - 0.45 * below_knee), psi * below_knee * (0.45 + 0.4 * max(0.0, -math.cos(th))))
-                psi *= 1 - 0.45 * below_knee
-                w[names[a]] = w.get(names[a], 0) + wv * (1 - t) * (1 - psi - psi_c)
-                w[names[b]] = w.get(names[b], 0) + wv * t * (1 - psi - psi_c)
-                if psi > 0.01:
-                    # crossfaded between the thighs: the middle of the front and back hangs between the legs
-                    lt = smoothstep(-cf * th_x, cf * th_x, vx)
-                    for bone, share in (('Thigh', psi), ('Calf', psi_c)):
-                        for sd, x in (('L', lt), ('R', 1 - lt)):
-                            if x * share > 0.005:
-                                w[f'Bip01_{sd}_{bone}'] = w.get(f'Bip01_{sd}_{bone}', 0) + wv * share * x
+                w[names[a]] = w.get(names[a], 0) + wv * (1 - t)
+                w[names[b]] = w.get(names[b], 0) + wv * t
                 wts.append(w)
         groups(ob, wts)
         uvl = ob.data.uv_layers.new(name='UVMap')
@@ -778,7 +930,7 @@ class Kit:
         msol.thickness = 0.0022 * s
         msol.offset = -1
         apply_modifiers(ob)
-        self.parts.append(Part(ob, 'cloth', toon=(1.0, 0.0, 0.3, 0.0), bones='groups', cloth=True, layer=1, role='skirt'))
+        self.parts.append(Part(ob, 'cloth', toon=(1.0, 0.0, 0.3, 1.0), bones='groups', cloth=True, layer=1, role='skirt'))
         self.skirt_ob = ob
         # waistband
         band = []
@@ -1190,6 +1342,22 @@ def rib_band(ob, atlas, cell, hem, band_h, arms, cuff_h):
             uvl.data[li].uv = atlas.uv(cell, (u - u0) / max(1e-6, u1 - u0), (v - v0) / max(1e-6, v1 - v0))
 
 
+def smooth_series(rows, fn):
+    """A sheet profile's rows [(z, left, right)] as (heights, values of fn(row)), sorted and smoothed (a median over
+    5 cm, then a running mean)."""
+    zs = np.array([r[0] for r in rows])
+    vs = np.array([fn(r) for r in rows])
+    order = np.argsort(zs)
+    zs, vs = zs[order], vs[order]
+    med = np.array([np.median(vs[max(0, i - 2):i + 3]) for i in range(len(vs))])
+    return zs, np.convolve(np.pad(med, 2, mode='edge'), np.ones(5) / 5, 'valid')
+
+
+def smoothstep_np(a, b, x):
+    t = np.clip((x - a) / (b - a), 0, 1)
+    return t * t * (3 - 2 * t)
+
+
 def resample(pts, n):
     """n + 1 points evenly along a polyline."""
     L = [0.0]
@@ -1202,6 +1370,14 @@ def resample(pts, n):
         f = (t - L[i]) / max(1e-9, L[i + 1] - L[i])
         out.append(pts[i].lerp(pts[i + 1], f))
     return out
+
+
+def set_uvs_per_vertex(ob, uvs):
+    """A UV per vertex (before a solidify, which copies them to the other side)."""
+    uvl = ob.data.uv_layers.new(name='UVMap')
+    for poly in ob.data.polygons:
+        for li in poly.loop_indices:
+            uvl.data[li].uv = uvs[ob.data.loops[li].vertex_index]
 
 
 def set_uv(ob, uv):

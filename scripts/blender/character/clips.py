@@ -26,7 +26,8 @@ def rad(d):
 
 
 def hand_frame(W, side):
-    """World axes of a hand (glTF): fingers, across toward the index, back of the hand."""
+    """World axes of a hand (glTF): fingers, across toward the index, and their cross product: the palm side on the
+    left hand, the back on the right (the frame is mirrored)."""
     h = W[f'Bip01_{side}_Hand'].translation
     k2 = W[f'Bip01_{side}_Finger2'].translation
     x = (k2 - h).normalized()
@@ -36,7 +37,9 @@ def hand_frame(W, side):
 
 
 def curl(gp, side, finger, angle):
-    """Bend a finger's three phalanges about the hand's across axis."""
+    """Bend a finger's three phalanges toward the palm (a positive angle), the fingers about the hand's across axis,
+    the thumb about its long axis (across the palm). hand_frame's z is the palm side on the left hand and the back on
+    the right (the frame is mirrored), so a finger bends about -y on the left and +y on the right."""
     for seg in ('', '1', '2'):
         n = f'Bip01_{side}_Finger{finger}{seg}'
         if n not in gp.r:
@@ -44,8 +47,62 @@ def curl(gp, side, finger, angle):
         W = gp.world()
         x, y, z = hand_frame(W, side)
         axis = y if finger != '0' else x
-        sgn = 1 if side == 'L' else -1
+        sgn = (1 if side == 'L' else -1) * (1 if finger == '0' else -1)
         gp.rotate_world(n, axis * sgn, angle)
+
+
+def _plane_angle(d, x, y, z):
+    """The angle of `d` in the hand's plane, from the middle finger's line (x) toward the index (y)."""
+    d = (d - z * d.dot(z)).normalized()
+    return math.atan2(d.dot(y), d.dot(x))
+
+
+def gather_fingers(gp, side, keep=0.3):
+    """Close the fan of the fingers: each phalanx turns in the hand's plane toward the middle finger's line, keeping
+    `keep` of its spread (the library Biped's rest hand is spread, and its outer fingers bend away at their joints)."""
+    for f in ('1', '3', '4'):
+        for seg, nxt in (('', '1'), ('1', '2')):
+            W = gp.world()
+            x, y, z = hand_frame(W, side)
+            n = f'Bip01_{side}_Finger{f}{seg}'
+            ang = _plane_angle(W[f'Bip01_{side}_Finger{f}{nxt}'].translation - W[n].translation, x, y, z)
+            ang -= _plane_angle(W[f'Bip01_{side}_Finger22'].translation - W[f'Bip01_{side}_Finger2'].translation, x, y, z)
+            gp.rotate_world(n, z, -ang * (1 - keep))
+
+
+def thumb_in(gp, side, lift=-18.0, across=0.0, bend=(10.0, 16.0)):
+    """Place the thumb: its root first turns about the hand's across axis by `lift` degrees (toward the palm when
+    positive: the library's rest thumb stands well in front of the palm, as if holding something, so at ease it comes
+    back toward the index's side), then in the hand's plane by `across` degrees (positive: in over the palm), then
+    bends at its two joints toward the palm."""
+    sgn = 1 if side == 'L' else -1
+    n = f'Bip01_{side}_Finger0'
+    curl_joint(gp, side, '0', rad(lift))
+    if across:
+        W = gp.world()
+        x, y, z = hand_frame(W, side)
+        gp.rotate_world(n, z, -rad(across))
+    for seg, a in zip(('1', '2'), bend):
+        W = gp.world()
+        x, y, z = hand_frame(W, side)
+        gp.rotate_world(f'Bip01_{side}_Finger0{seg}', x * sgn, rad(a))
+
+
+def relax_hand(gp, side, amount=1.0):
+    """The hand at ease: fingers together and softly curled, more toward the little finger (base, middle and tip
+    joints each bending a little more than the one before), the thumb beside the index and bent a little."""
+    gather_fingers(gp, side)
+    for f, k in (('1', 0.75), ('2', 0.9), ('3', 1.05), ('4', 1.2)):
+        for seg, a in (('', 14), ('1', 24), ('2', 14)):
+            curl_joint(gp, side, f'{f}{seg}', rad(a * k * amount))
+    thumb_in(gp, side, across=20, bend=(10 * amount, 16 * amount))
+
+
+def curl_joint(gp, side, joint, angle):
+    """Bend one finger joint (Finger1, Finger21, ...) toward the palm."""
+    W = gp.world()
+    x, y, z = hand_frame(W, side)
+    gp.rotate_world(f'Bip01_{side}_Finger{joint}', y * (-1 if side == 'L' else 1), angle)
 
 
 def orient_hand(gp, side, fingers_to, back_to):
@@ -74,8 +131,7 @@ def sheet_pose(rest):
         g.rotate_world(f'Bip01_{side}_UpperArm', Z, -sx * (rad(79) - cur))
         g.rotate_world(f'Bip01_{side}_Forearm', X, rad(-8))
         g.rotate_world(f'Bip01_{side}_Hand', Z, -sx * rad(8))
-        for f, a in (('1', 18), ('2', 24), ('3', 28), ('4', 32), ('0', 10)):
-            curl(g, side, f, rad(a))
+        relax_hand(g, side)
         # the feet a little apart, as a model sheet stands
         g.rotate_world(f'Bip01_{side}_Thigh', Z, -sx * rad(1.0))
         g.rotate_world(f'Bip01_{side}_Foot', Z, sx * rad(1.0))
@@ -102,6 +158,7 @@ def poses(base, spec):
     target = chest + Vector((0.02, 0.01, front))
     hc.ik('Bip01_R_UpperArm', 'Bip01_R_Forearm', 'Bip01_R_Hand', target, chest + Vector((-0.3, -0.25, 0.0)))
     orient_hand(hc, 'R', (0.85, 0.35, 0.1), (0.15, 0.0, 1.0))
+    gather_fingers(hc, 'R', keep=0.4)
     for f, a in (('1', 12), ('2', 12), ('3', 14), ('4', 16), ('0', 8)):
         curl(hc, 'R', f, rad(a))
     hc.rotate_world('Bip01_Head', X, rad(8))
@@ -116,9 +173,12 @@ def poses(base, spec):
     orient_hand(tf, 'R', (0.05, 1.0, 0.1), (0.0, 0.0, -1.0))
     for f, a in (('1', 4), ('2', 4)):
         curl(tf, 'R', f, rad(a))
-    for f, a in (('3', 85), ('4', 85)):
-        curl(tf, 'R', f, rad(a))
-    curl(tf, 'R', '0', rad(45))
+    gather_fingers(tf, 'R', keep=0.6)
+    for f in ('3', '4'):
+        for seg, a in (('', 70), ('1', 95), ('2', 60)):
+            curl_joint(tf, 'R', f'{f}{seg}', rad(a))
+    # the thumb across the folded fingers
+    thumb_in(tf, 'R', lift=20, across=45, bend=(25, 30))
     tf.rotate_world('Bip01_Head', Z, rad(-8))
     tf.rotate_world('Bip01_Head', Y, rad(-5))
     tf2 = tf.copy()

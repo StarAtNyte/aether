@@ -162,7 +162,7 @@ def build(spec, lib, ground=None, service_to=None, gear=True):
     }
     rec = {"name": spec["id"], "x": (X0 + X1) / 2, "y": (Y0 + Y1) / 2, "w": X1 - X0, "d": Y1 - Y0, "z": z, "front": -1,
            "kind": spec["kind"], "balconies": [], "sills": [], "ac_spots": [], "kit": True, "tier": tier,
-           "blocks": [(b["x0"], b["x1"], b["y0"], b["y1"], b["z1"]) for b in blocks]}
+           "blocks": [(b["x0"], b["x1"], b["y0"], b["y1"], b["z1"]) for b in blocks], "service": []}
 
     def mat_for(b):
         def at(zc):
@@ -557,9 +557,26 @@ def build(spec, lib, ground=None, service_to=None, gear=True):
         eu = L.meters(K, fp.face, u, zb, plan, r, ground(*fp.face.pt(u, 0, 0.1)[:2]))
         top = fp.block["z1"] - 0.25
         L.conduit(K, fp.face, eu, zb + 1.84, top, plan)
+        a = fp.face.pt(eu, top + 0.1, 0.16)
         if service_to is not None and tier != "far":
-            a = fp.face.pt(eu, top + 0.1, 0.16)
             L.wire(K, a, service_to, sag=0.35)
+        rec["service"].append({"at": a, "n": (fp.face.n[0], fp.face.n[1], 0.0), "kind": "meter"})
+    # Where a service drop may land (`service.py` picks the one facing a pole whose wire clears everything): the
+    # meter's bracket above, then a point under the eaves of each outer wall the facade plan left free (a bracket and an
+    # insulator are added there when it is used).
+    if tier != "far":
+        for (bi, sd), fp in fps.items():
+            f, b = fp.face, fp.block
+            if f.length < 2.0:
+                continue
+            zt = b["z1"] - 0.3
+            for t in (0.5, 0.25, 0.75):
+                u = f.u0 + (f.u1 - f.u0) * t
+                x, y, _ = f.pt(u, zt, 0.3)
+                if _inside(blocks, b, x, y, zt) or not fp.free(u - 0.12, u + 0.12, zt - 0.12, zt + 0.12, margin=0.0):
+                    continue
+                rec["service"].append({"at": f.pt(u, zt, 0.16), "n": (f.n[0], f.n[1], 0.0), "kind": "eave"})
+                break
     # Plants by the door.
     if tier != "far":
         for k in range(feats["plants_door"]):
