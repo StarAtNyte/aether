@@ -110,6 +110,11 @@ class Hair:
             elif tip == 'curl':
                 # a bob's lock: a rounded, turned-in end (a short point, not a spike)
                 wf *= 1 - smoothstep(0.66, 1.0, t) * 0.92
+            elif tip == 'soft':
+                # a ribbon's end: a gentle taper to two thirds of its width, then a round cap
+                wf *= 1 - smoothstep(0.25, 0.8, t) * 0.5
+                if t > 0.8:
+                    wf *= 0.1 + 0.9 * math.sqrt(max(0.0, 1 - ((t - 0.8) / 0.2) ** 2))
             elif tip == 'cut':
                 wf *= 1 - smoothstep(0.85, 1.0, t) * 0.5
             tf = wf ** 0.7
@@ -171,12 +176,12 @@ class Hair:
                 f = i / n_h
                 z = leave.z - drop * f
                 fl = flare * math.sin(min(1.0, f * 1.3) * math.pi * 0.5)
-                if tip == 'curl':
+                if tip in ('curl', 'soft'):
                     fl -= curl * smoothstep(0.6, 1.0, f)
                 q = Vector((leave.x, leave.y, z)) + radial * fl
                 q = self.push_out(q, thick * 0.6 + 0.004 * self.u)
                 pts.append(q)
-        if tip == 'curl' and drop > 0.02:
+        if tip in ('curl', 'soft') and drop > 0.02:
             # the end turns in under the mass (a short, smooth hook: a bigger one bunches the tip into a knot)
             last = pts[-1]
             pts.append(last + Vector((0, 0, -0.002 * self.u)) - radial * curl * 0.3)
@@ -221,9 +226,9 @@ class Hair:
         uvl = me.uv_layers.new(name='UVMap')
         for l in uvl.data:
             l.uv = uv
-        self.parts.append(Part(ob, 'hair', toon=(0.4, 0.0, 0.6, 0.0), bones={'Bip01_Head': 1.0}))
+        self.parts.append(Part(ob, 'hair', toon=(0.4, 0.8, 0.6, 0.0), bones={'Bip01_Head': 1.0}))
 
-    def finish(self, name='hair', toon=(0.75, 0.0, 0.35, 0.0)):
+    def finish(self, name='hair', toon=(0.75, 0.8, 0.35, 0.0)):
         if not self.verts:
             return
         ob = new_object(name, self.verts, self.faces)
@@ -308,7 +313,7 @@ def build_hair(spec, J, head, form, chin, atlas, bones, body_bvh):
             tz = lerp(tip_front, tip_front - 0.012 * u, back)
             w = 0.08 * u
             phi_leave = math.radians(lerp(92, 108, back))
-            H.lock(theta, math.radians(10), phi_leave, tz, w, 0.018 * u, vol * (1.3 - 0.25 * back), tip='curl', curl=0.022 * u, flare=0.018 * u,
+            H.lock(theta, math.radians(10), phi_leave, tz, w, 0.018 * u, vol * (1.3 - 0.25 * back), tip='soft', curl=0.024 * u, flare=0.018 * u,
                    theta_root=math.radians(180) + (theta - math.radians(180)) * 0.2)
         side_locks(H, vol, chin_z + 0.0 * u, 'curl')
         # the back mass swings a little
@@ -361,25 +366,27 @@ def build_hair(spec, J, head, form, chin, atlas, bones, body_bvh):
 
 
 def bangs(H, part_theta, vol, st):
-    """Bangs from the parting over the front, laid on the forehead; tips at the brows, side-swept from a side parting."""
+    """The fringe: a few broad ribbons fanned from the parting over the forehead, each curving toward its temple, the ends
+    soft and rounded and overlapping (side-swept from a side parting), with a thin strand or two framing the face."""
     u = H.u
     brow_z = H.chin.z + 0.128 * u
-    n = 7 if st == 'bob' else 9 if st == 'long' else 7
-    sweep = -0.35 if part_theta > 0 else 0.35 if part_theta < 0 else 0.0
+    n = 6 if st == 'bob' else 9 if st == 'long' else 6
+    sweep = -0.45 if part_theta > 0 else 0.45 if part_theta < 0 else 0.0
     for i in range(n):
         f = i / (n - 1)
-        theta = math.radians(lerp(-58, 58, f))
-        root_theta = part_theta + (theta - part_theta) * 0.25
-        tip_theta = theta + sweep * 0.35 * (1 - abs(f - 0.5) * 2)
-        length_k = 1 - 0.25 * abs(f - 0.5) * 2
-        tz = brow_z - 0.004 * u * length_k + 0.012 * u * abs(f - 0.5) * 2 - H.spec.get('fringe_drop', 0.0) * length_k
+        theta = math.radians(lerp(-62, 62, f))
+        root_theta = part_theta + (theta - part_theta) * 0.18
+        # fanned outward from the parting, toward the temples, the whole fringe leaning to the swept side
+        tip_theta = part_theta + (theta - part_theta) * 1.22 + sweep * 0.3 * (1 - abs(f - 0.5) * 2)
+        length_k = 1 - 0.3 * abs(f - 0.5) * 2
+        tz = brow_z + 0.006 * u - 0.004 * u * length_k + 0.012 * u * abs(f - 0.5) * 2 - H.spec.get('fringe_drop', 0.0) * length_k
         pts = []
         for k in range(7):
             g = k / 6
             ph = lerp(math.radians(14), math.radians(78), g)
-            th = lerp(root_theta, tip_theta, g)
+            th = lerp(root_theta, tip_theta, g * g * (3 - 2 * g) * 0.6 + g * 0.4)
             pts.append(H.shell.point(ph, th, (vol * (1 - 0.55 * g) + 0.002 * u) * (0.2 + 0.8 * smoothstep(0.0, 0.35, g))))
-        # down to the tip height, on the forehead
+        # down to the tip height, on the forehead, curving out toward the temple
         last = pts[-1]
         if last.z > tz:
             q = H.shell.point(math.radians(78), tip_theta, 0.003 * u)
@@ -388,15 +395,21 @@ def bangs(H, part_theta, vol, st):
             q2 = q.copy()
             q2.z = tz
             q2 = H.push_out(q2, 0.003 * u) if H.bvh else q2
+            # the end drifts a little further toward the temple
+            q2 = q2 + Vector((math.copysign(0.004 * u, theta - part_theta) if abs(theta - part_theta) > 1e-4 else 0.0, 0, 0))
             pts.append(Vector((q2.x, q2.y - 0.0015 * u, tz)))
-        bw = 0.03 if n == 9 else (0.048 if abs(f - 0.5) < 0.3 else 0.042) if st == 'bob' else (0.034 if abs(f - 0.5) < 0.3 else 0.03)
-        # a long style's fringe is soft: rounded, overlapping ends (a bob's bangs are a few large points)
-        H.clump(pts, (bw * 1.15 if n == 9 else bw) * u, 0.01 * u, tip='curl' if n == 9 else 'point')
-        if False and st == 'bob' and 0 < i < n - 1:
-            mid_t = theta + math.radians(58 * 2 / (n - 1)) * 0.5
-            q = [H.shell.point(lerp(math.radians(30), math.radians(80), g), lerp(root_theta, mid_t, g), (vol * (1 - 0.5 * g) + 0.0035 * u)) for g in (0.0, 0.35, 0.7, 1.0)]
-            q.append(Vector((q[-1].x, q[-1].y - 0.002 * u, tz + 0.012 * u)))
-            H.clump(q, 0.018 * u, 0.006 * u, tip='point')
+        bw = 0.062 if n == 6 else 0.036
+        H.clump(pts, bw * u, 0.011 * u, tip='soft', along=22)
+    # thin face-framing strands: a fine ribbon in front of each ear, from the temple to the jaw
+    for sx in (1, -1):
+        theta = math.radians(sx * 58)
+        sp = [H.shell.point(math.radians(30), theta * 0.6, vol * 0.3), H.shell.point(math.radians(62), theta * 0.9, vol * 0.9), H.shell.point(math.radians(84), theta, vol * 0.8)]
+        leave = sp[-1]
+        zt = H.chin.z + 0.03 * u
+        for k in range(1, 4):
+            q = Vector((leave.x + sx * 0.002 * u * k, leave.y - 0.005 * u * k / 3, leave.z - (leave.z - zt) * k / 3))
+            sp.append(H.push_out(q, 0.006 * u))
+        H.clump(sp, 0.016 * u, 0.006 * u, tip='soft', along=16)
 
 
 def side_locks(H, vol, tip_z, tip):
@@ -412,7 +425,7 @@ def side_locks(H, vol, tip_z, tip):
             q = H.push_out(q, 0.008 * u)
             pts.append(q)
         names, ts = H.chain(f'Hair_Side{side}', pts, [0.55, 0.8], stiffness=0.3, drag=0.2, gravity=0.35, radius=0.012, limit=0.7)
-        H.clump(pts, 0.036 * u, 0.012 * u, tip='point' if tip != 'cut' else 'cut', weights=chain_weights(names, ts, start=0.4))
+        H.clump(pts, 0.04 * u, 0.012 * u, tip='soft' if tip != 'cut' else 'cut', weights=chain_weights(names, ts, start=0.4))
 
 
 def long_weights(H, side):
@@ -491,7 +504,7 @@ def braid(H, acc):
         mid = (a + b) / 2
         pts = [a + Vector((sx2, 0, 0)), mid - Vector((sx2 * 0.3, 0, 0)), b - Vector((sx2, 0, 0))]
         H.clump(pts, 0.011 * u * (1 - 0.25 * i / lobes), 0.008 * u, tip='point', weights=lambda p, t, t0=t0: wfun(p, t0 + 0.1 * t), around=8, along=6)
-    H.finish('braid', toon=(0.8, 0.0, 1.0, 0.0))
+    H.finish('braid', toon=(0.8, 0.7, 1.0, 0.0))
     # tie and charm
     end = catmull(path, 1.0)
     charm = acc.get('charm', 'bead')

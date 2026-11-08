@@ -182,8 +182,8 @@ def paint_face(at, spec):
     scl = white[None, None, :] * (1 - 0.16 * shade[..., None] - 0.08 * corner[..., None]) + np.array([-0.03, -0.01, 0.02]) * shade[..., None]
     col[:] = col * (1 - sc[..., None]) + scl * sc[..., None]
     # the iris: large (its top always under the lid), in layers like a painted anime eye
-    cx, cy = 0.04, -0.08
-    rx, ry = (0.54, 0.78) if kind != 'narrow' else (0.4, 0.5)
+    cx, cy = 0.0, -0.08
+    rx, ry = (0.62, 0.78) if kind != 'narrow' else (0.4, 0.5)
     r = np.hypot((X - cx) / rx, (Y - cy) / ry)
     ic = cover((r - 1) * rx, aa) * sc
     t = np.clip((Y - (cy - ry)) / (2 * ry), 0, 1)
@@ -213,7 +213,7 @@ def paint_face(at, spec):
     layer(col, np.clip(iris * 2.0 + 0.25, 0, 1), arc * 0.55)
     # upper lash line: heavy, tapered at the inner corner, thickest past the middle, three lash points at the outer end
     up = curve(lambda x: upper(x) + 0.025, -1.0, 1.02)
-    w = [0.03 + 0.07 * smooth01((x + 0.9) / 1.4) for x, _ in up]
+    w = [0.042 + 0.09 * smooth01((x + 0.9) / 1.4) for x, _ in up]
     d = stroke(X, Y, up + [(1.14, upper(1.0) - 0.06)], w + [0.01])
     for (lx, ly, ex, ey) in ((0.62, 0.05, 0.86, 0.3), (0.82, 0.0, 1.08, 0.18), (0.95, -0.06, 1.2, 0.02)):
         y0 = upper(lx) + ly
@@ -249,9 +249,9 @@ def paint_face(at, spec):
     col = np.ones(X.shape + (3,)) * skin
     thick = 1.6 if spec['old'] > 0.3 else 1.0
     pts = curve(lambda x: -0.1 + 0.35 * (1 - x * x) - 0.15 * x, -0.95, 0.95, 16)
-    d = stroke(X, Y, pts, [(0.1 + 0.09 * (1 - (x + 1) / 2) ** 1.5) * thick for x, _ in pts])
-    bc = mix(hair * 0.8, skin * 0.6, 0.25)
-    layer(col, bc, cover(d, 9.0 / 64) * 0.92)
+    d = stroke(X, Y, pts, [(0.13 + 0.1 * (1 - (x + 1) / 2) ** 1.5) * thick for x, _ in pts])
+    bc = mix(hair * 0.78, skin * 0.5, 0.12)
+    layer(col, bc, cover(d, 8.0 / 64) * 0.97)
     at.put('brow', col, np.ones(X.shape), ss)
 
     # Mouths, one cell each (128 x 96): x, y in -1..1.
@@ -369,9 +369,24 @@ def smooth01(t):
 # ---------------------------------------------------------------------------------------------------------------------
 # Hair strip and cloth details.
 
+RUNTIME_TOE = 0.6   # measured in the player, against Cloudwatch's grade: dark mid-tones draw as their 1.6th power
+RUNTIME_GAIN = (0.9, 1.0, 0.92)   # and its pull toward red
+
+
+def hair_lift(c):
+    """What paint_hair does to a hair colour (sRGB, 0..1) so that it draws as itself in the player: the preview shows
+    it lifted, and the palette check compares against this."""
+    c = np.asarray(c, float)
+    w = float(np.clip((0.55 - float(np.dot(c, [0.3, 0.59, 0.11]))) / 0.25, 0.0, 1.0))
+    c = np.clip(c, 0, 1) ** (1.0 / (1.0 + RUNTIME_TOE * w))
+    return c * (1 + (np.array(RUNTIME_GAIN) - 1) * w)
+
+
 def paint_hair(at, name, lin, grey=0.0):
     """u across a clump, v from root (1) to tip (0): a root shadow, the jagged highlight band (alpha 0.6), darker tips."""
     base = srgb(lin)
+    # darkness of the hair: how much of the runtime's grade compensation it takes (below)
+    dark_w = float(np.clip((0.55 - float(np.dot(base, [0.3, 0.59, 0.11]))) / 0.25, 0.0, 1.0))
     at.cell(name, 128, 256)
     U, V = at.grid(name, 2)
     col = np.ones(U.shape + (3,)) * base
@@ -403,9 +418,16 @@ def paint_hair(at, name, lin, grey=0.0):
     # the band: a clean arc across the clump with pointed ends (the classic angel ring cut into strands), not noise
     zig = 0.01 * np.sin(U * math.pi * 2 + 0.6)
     mid = np.sin(np.clip(U, 0, 1) * math.pi)
-    band = cover(np.abs(V - 0.79 - zig) - 0.026 * mid ** 2, 3.0 / 256) * (mid > 0.25)
-    hl = np.clip(base * 1.28 + 0.07, 0, 1) if not dark else np.clip(base * 1.3 + np.array([0.2, 0.21, 0.26]), 0, 1)
+    band = cover(np.abs(V - 0.79 - zig) - 0.028 * mid ** 2, 4.0 / 256) * (mid > 0.2)
+    hl = np.clip(base * 1.4 + np.array([0.08, 0.06, 0.04]), 0, 1) if not dark else np.clip(base * 1.3 + np.array([0.2, 0.21, 0.26]), 0, 1)
     layer(col, hl, band)
+    # The world's filmic grade crushes dark mid-tones: a chestnut hair (#644946) painted as itself drew as maroon at half
+    # its value (48/36/36 against the sheet's 91/70/65), the highlight ring alone near it. Dark hair is painted with the
+    # inverse of the toe (a power of 1 / 1.6, weighted by how dark it is: light and grey hair are untouched, black stays
+    # black), so what the player shows is the brief's colour; the Blender preview shows it lighter.
+    col = np.clip(col, 0, 1) ** (1.0 / (1.0 + RUNTIME_TOE * dark_w))
+    # (and the grade's pull toward red: the red and blue channels a tenth lower, measured the same way)
+    col = col * (1 + (np.array(RUNTIME_GAIN) - 1) * dark_w)
     # the code is exact (0.6 where the band is, 1 elsewhere), so filtering never makes a half-highlight texel
     alpha = np.where(band > 0.5, 0.6, 1.0)
     at.put(name, col, alpha, 2)

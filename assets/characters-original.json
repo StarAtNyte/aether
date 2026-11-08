@@ -7,54 +7,54 @@
    "id": "harbour-fisherman",
    "gender": "male",
    "look": "old harbour fisherman, rust knit cap, short grey beard, open navy work jacket over a cream T-shirt, khaki trousers, black rubber boots",
-   "file": "c/harbour-fisherman.119f8ba8.glb",
+   "file": "c/harbour-fisherman.f0f55578.glb",
    "height": 1.674,
    "hip": 0.881,
    "triangles": 61312,
    "faces": 1,
-   "bytes": 977996,
+   "bytes": 977700,
    "style": "toon",
-   "sha256": "119f8ba8c190fc6082523e0047906290f8068772521ab512458d4f7e34793be2",
+   "sha256": "f0f555783bf4b007793e9248c41a7180d2e6fb1471e79fed10e274c5ad289b21",
    "lod1": {
-    "file": "c/harbour-fisherman.lod1.26d0f06f.glb",
+    "file": "c/harbour-fisherman.lod1.2ca1dcf5.glb",
     "triangles": 24523,
-    "bytes": 514848
+    "bytes": 514940
    }
   },
   {
    "id": "kaho",
    "gender": "female",
    "look": "anime girl, summer sailor uniform with a sky-blue collar and a teal neckerchief, chin-length chestnut bob with a thin braid and a seashell charm",
-   "file": "c/kaho.08b0ccfc.glb",
-   "height": 1.54,
+   "file": "c/kaho.04b8d73c.glb",
+   "height": 1.544,
    "hip": 0.824,
-   "triangles": 59468,
+   "triangles": 59964,
    "faces": 1,
-   "bytes": 980784,
+   "bytes": 985992,
    "style": "toon",
-   "sha256": "08b0ccfcee07e67bdd9e0a34af5da79642ed3434213e557db74e09127629e945",
+   "sha256": "04b8d73c5003c3eb4db6c616b669cf4b304f8b543d541469d60b1a1e32c8b149",
    "lod1": {
-    "file": "c/kaho.lod1.ab31acb5.glb",
-    "triangles": 23787,
-    "bytes": 522716
+    "file": "c/kaho.lod1.9b7476b3.glb",
+    "triangles": 23985,
+    "bytes": 525440
    }
   },
   {
    "id": "mio",
    "gender": "female",
    "look": "anime girl, pale mint short-sleeve cardigan over a white T-shirt, long light-beige pleated skirt, long straight black hair with a fringe and a white hairband",
-   "file": "c/mio.f18c2f21.glb",
+   "file": "c/mio.557811fa.glb",
    "height": 1.543,
    "hip": 0.824,
-   "triangles": 73980,
+   "triangles": 55632,
    "faces": 1,
-   "bytes": 1190704,
+   "bytes": 955872,
    "style": "toon",
-   "sha256": "f18c2f213f084b36d905765868815972651c4fefc42b40567d589c5406c079bc",
+   "sha256": "557811fa214f747377a8bb05161826d371270f4f6d9401c77e6719f7eb0a70a7",
    "lod1": {
-    "file": "c/mio.lod1.4543469c.glb",
-    "triangles": 29592,
-    "bytes": 621556
+    "file": "c/mio.lod1.4274bc65.glb",
+    "triangles": 22252,
+    "bytes": 497068
    }
   }
  ]

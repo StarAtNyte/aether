@@ -332,11 +332,29 @@ What differed from the sheet, and what changed:
 - **The shading.** The face's lit zone is wider with a softer edge to the head's sides (bias 0.7, over 3.2 cm instead
   of 1.8), the neck's shadow is the bias -0.75 under the jaw down the whole front of the neck, and the hair's warm
   rim is 0.35.
-- **The hair.** Strand outlines on every clump. A bob is now 11 broad clumps instead of 13 (about 6 k triangles
-  fewer: Kaho 65.7 k to 59.5 k), without the thin edge strands and the thin points between the bangs; the strand lines
-  in the clump texture are 3 faint ones instead of 7, the clump edges 13 % dark instead of 22, and the hair's outline
-  0.75 of what it was. The loop's fringe correction is capped at 1.2 cm: it had chased the sheet's low hairline (a long
-  side-swept fringe) down to the eyes, 4 cm.
+- **The hair, first round.** Strand outlines on every clump. A bob is now 11 broad clumps instead of 13, without the
+  thin edge strands and the thin points between the bangs; the strand lines in the clump texture are 3 faint ones
+  instead of 7, the clump edges 13 % dark instead of 22, and the hair's outline 0.75 of what it was. The loop's fringe
+  correction is capped at 1.2 cm: it had chased the sheet's low hairline (a long side-swept fringe) down to the eyes.
+- **The hair, second round (the fringe, the colour, the outline).**
+  - *The fringe* was a row of pointed cones. It is now six broad, soft ribbons (nine narrower for a long style)
+    fanned from the parting over the forehead, each curving toward its own temple, the whole fringe leaning to the swept
+    side, with a thin rounded strand in front of each ear (`hair.bangs`). The new tip `soft` is a gentle taper to half
+    the width and a round cap, used by the fringe, the bob's locks (they still turn in under the mass) and the side
+    locks; the cones' sharp ends are gone from every style but the long ones'.
+  - *The colour* read as near-black maroon. The cause is the world's grade, not the light: a hair texel painted
+    #5d6a55 draws 48/36/36 in the player (sunset, Intel), because the filmic curve crushes dark mid-tones and pulls them
+    red, and the per-vertex shade bias only sets the shadow band. Measured: dark mid-tones draw as roughly their 1.6th
+    power. `paint.paint_hair` now paints dark hair with the inverse (a power of 1/1.6 weighted by darkness, so light and
+    grey hair are untouched and black stays black, and the red and blue channels a tenth lower): the chestnut now draws
+    115/75/73 lit and 75/50/51 in its shadow band, against the sheet's 91/70/65 mid-tone. The Blender preview, which has
+    no grade, shows the hair lighter and greyer than the brief (`paint.hair_lift`; the palette check compares against
+    it). The hair's shade bias is 0.8 (the face's idea: lit unless the light is well behind it), and the shared toon
+    shadow tone is a warmer violet (0.70, 0.60, 0.78 instead of 0.62, 0.55, 0.80). The crown's highlight ring is wider
+    (2.8 % of the clump) and lighter.
+  - *The outline* is one weight (0.75) across the fringe and the locks.
+- **The brows** are a medium brown a little darker than the hair, thin and curved (0.13-0.23 of the cell), and **the
+  eyes** have the iris centred and larger (a narrower white) with a heavier upper lid line.
 
 The runtime path, checked (`scripts/characters/normal-check.ts <finished> <blender export>`). The face's lit-as-one-shape
 normals (an ellipsoid proxy, transferred in Blender) are in the glTF as exported. The finished body's normals are
@@ -348,10 +366,12 @@ distance (0.75 of the body's width on the face, thinner at the eyes' decals, whi
 which is what keeps the far level's face from looking scratched. The eye and face textures are the 1024 px atlas with
 guttered cells (6 px), so a mip never pulls a neighbour in.
 
-Still unlike the sheet: the fringe is a row of pointed wedges where the sheet's is soft strands swept to one side; the
-hair is a darker brown in the player than on the sheet (the toon shadow tone over the key light); the brows sit lower
-and are fainter; the eyes' whites are wider than the sheet's and its eyes' lids are heavier; the ears are covered by
-the hair and the braid is the only thing the sheet's side locks do.
+Still unlike the sheet: the fringe's ribbons are blunter and more regular than the sheet's overlapping strand groups;
+the hair is a darker and redder brown in its shadow band than the sheet's, which has barely any; the bob's outline is
+a little blocky at the sides and does not curl in as far as the sheet's; the braid is mostly behind the side locks
+from the front; the ears are covered by the hair. The grade compensation is calibrated against Cloudwatch's grade: a
+world with another grade will want its own `RUNTIME_TOE` (a runtime-side inverse of the world's tone curve in the toon
+shader would make it per world).
 
 ### Cloth against the legs at runtime
 

@@ -24,8 +24,8 @@ import { attribute, cameraPosition, clamp, dot, float, length, max, mix, modelVi
 
 /** Look constants of the toon style (linear colours). */
 export const TOON_STYLE = {
-  /** Shadow tone: cool violet multiplier of the base colour. */
-  shadow: new Color(0.62, 0.55, 0.8),
+  /** Shadow tone: a warm violet multiplier of the base colour (warm enough that chestnut hair stays chestnut in it). */
+  shadow: new Color(0.7, 0.6, 0.78),
   /** Warm rim colour (added, linear). */
   rim: new Color(1.0, 0.62, 0.38),
   /** How much of the sun's hue warms the lit tone (0 = none). */

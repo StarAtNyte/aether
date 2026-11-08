@@ -22,6 +22,7 @@ from mathutils.bvhtree import BVHTree
 
 import render as R
 import sheet as SHEET
+import paint as P
 import shading
 from common import delta_e, linear_to_srgb
 
@@ -400,6 +401,10 @@ class QA:
             want_s = [linear_to_srgb(c) for c in want]
             # the lit tone is the base times the lit tint: compare against that
             lit = [linear_to_srgb(c * t) for c, t in zip(want, shading.LIT)]
+            if role == 'hair':
+                # the hair is painted lifted, to draw as itself in the player (paint.hair_lift): the preview shows the lift
+                want_s = list(P.hair_lift(want_s))
+                lit = list(P.hair_lift(lit))
             e = {'brief': '#%02x%02x%02x' % tuple(int(round(c * 255)) for c in want_s), 'render': '#%02x%02x%02x' % tuple(int(round(c * 255)) for c in got),
                  'delta_e': round(min(delta_e(got, want_s), delta_e(got, lit)), 1)}
             if getattr(self, 'sheet', None) is not None and self.sheet_views:
