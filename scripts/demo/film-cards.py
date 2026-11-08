@@ -52,13 +52,13 @@ for name, c in cards.items():
     elif k == 'lower':
         layers = [((112, 958 if sub else 978), text, font(500, 40), (255, 255, 255, 245), 1, 'l')]
         if sub:
-            layers.append(((112, 1000), sub, font(400, 24), (255, 255, 255, 190), 1, 'l'))
+            layers.append(((112, 1008), sub, font(400, 28), (255, 255, 255, 190), 1, 'l'))
         img = render(layers, blur=14, alpha=140)
     elif k == 'note':
         # right-aligned top right: measure, then place
         d = ImageDraw.Draw(Image.new('RGBA', (1, 1)))
-        wdt = sum(d.textlength(ch, font=font(400, 22)) for ch in text) + (len(text) - 1)
-        img = render([((W - 112 - wdt, 92), text, font(400, 22), (255, 255, 255, 200), 1, 'l')], blur=10, alpha=140)
+        wdt = sum(d.textlength(ch, font=font(400, 28)) for ch in text) + (len(text) - 1)
+        img = render([((W - 112 - wdt, 92), text, font(400, 28), (255, 255, 255, 200), 1, 'l')], blur=10, alpha=140)
     elif k == 'title':
         layers = [((W // 2, 566), text, font(600, 132), (255, 255, 255, 255), 6, 'm')]
         if sub:

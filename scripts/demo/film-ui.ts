@@ -1,6 +1,6 @@
 /**
  * Browser UI takes of the studio for the product film, recorded in real time from the built studio with Chrome's
- * screencast (every painted frame with its paint time) at 1920x1080 device pixels (a 1440x810 page at 4/3 scale).
+ * screencast (every painted frame with its paint time) at 3840x2160 device pixels (a 1920x1080 page at device scale 2: a 3840x2160 capture the edit crops into).
  *
  *   STATIC_DIR=<dist> GEN_GPU=nvidia npx tsx scripts/demo/film-ui.ts --scene=edit|publish|modes|play [--out=<dir>]
  *   STATIC_DIR=<dist> GEN_GPU=nvidia npx tsx scripts/demo/film-ui.ts --scene=scout --slugs=villa-pool,casa-patio
@@ -14,7 +14,7 @@
  *   play     a character walking in a game world, third person
  *
  * Every wait (loading, baking, the agent working) is wrapped in a cut or ramp mark; the marks are written as
- * `<out>/<scene>.json` (times in ms from the first captured frame) next to `<out>/<scene>.mp4` (constant 60 fps; a frame
+ * `<out>/<scene>.json` (times in ms from the first captured frame) next to `<out>/<scene>.mp4` (constant 30 fps, 4K; a frame
  * is held until the next one was painted). Nothing is drawn over the page except the demo cursor and its click ripple.
  */
 import { execFileSync } from 'node:child_process';
@@ -30,9 +30,14 @@ const arg = (n: string): string | undefined => ARGS.find((a) => a.startsWith(`--
 const SCENE = arg('scene') ?? 'edit';
 const OUT = resolve(arg('out') ?? join(homedir(), '.local/share/aether/demo/film/ui'));
 const EDIT_SLUG = arg('slug') ?? 'scandi-living-room';
-const W = 1440;
-const H = 810;
-const SCALE = 4 / 3;
+const W = 1920;
+const H = 1080;
+const SCALE = 2;
+/** The takes' pointer positions were laid out for a 1440 px page. */
+const K = W / 1440;
+// Chrome's screencast delivers CSS-sized frames when the scale is emulated (Playwright's deviceScaleFactor), physical ones when
+// the browser itself runs at the scale: so the window is launched at it (`--force-device-scale-factor`) and the context takes
+// the window as it is. The window is 87 px taller than the page it holds.
 const T0 = Date.now();
 const log = (s: string): void => void process.stdout.write(`[${((Date.now() - T0) / 1000).toFixed(0)}s] ${s}\n`);
 
@@ -65,7 +70,7 @@ class Capture {
       this.times.push(t);
       void cdp.send('Page.screencastFrameAck', { sessionId: f.sessionId }).catch(() => undefined);
     });
-    await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 95, maxWidth: 1920, maxHeight: 1080, everyNthFrame: 1 });
+    await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 95, maxWidth: W * SCALE, maxHeight: H * SCALE, everyNthFrame: 1 });
   }
   async stop(): Promise<void> {
     if (!this.cdp) return;
@@ -104,7 +109,7 @@ function mark(t: Take, what: string): void {
 }
 
 async function newTake(browser: Awaited<ReturnType<typeof chromium.launch>>, scene: string, source: string): Promise<Take> {
-  const ctx = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: SCALE });
+  const ctx = await browser.newContext({ viewport: null });
   await ctx.addInitScript({ content: SKIP_FIRST_RUN });
   await ctx.addInitScript({ content: 'globalThis.__name = (f) => f;' });
   await ctx.addInitScript({ content: "try { const k='aether.studio.settings.v1'; const s=JSON.parse(localStorage.getItem(k)||'{}'); s.renderTier='ultra'; s.showNavHint=false; s.motion='sharp'; localStorage.setItem(k, JSON.stringify(s)); localStorage.setItem('aether.player.mute', '1'); } catch {}" });
@@ -153,7 +158,7 @@ async function finish(t: Take): Promise<void> {
   const list = times.map((x, i) => `file 'f${String(i).padStart(5, '0')}.jpg'\nduration ${(i + 1 < times.length ? times[i + 1]! - x : 1 / 60).toFixed(6)}`).join('\n');
   writeFileSync(join(cap.dir, 'list.txt'), `${list}\nfile 'f${String(times.length - 1).padStart(5, '0')}.jpg'\n`);
   const mp4 = join(OUT, `${rec.scene}.mp4`);
-  execFileSync('nice', ['-n', '10', 'ffmpeg', '-loglevel', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', join(cap.dir, 'list.txt'), '-vf', 'fps=60', '-c:v', 'libx264', '-preset', 'slow', '-crf', '14', '-pix_fmt', 'yuv420p', mp4], { stdio: 'inherit' });
+  execFileSync('nice', ['-n', '10', 'ffmpeg', '-loglevel', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', join(cap.dir, 'list.txt'), '-vf', 'fps=30', '-c:v', 'libx264', '-preset', 'medium', '-crf', '15', '-pix_fmt', 'yuv420p', mp4], { stdio: 'inherit' });
   log(`${rec.scene}: ${times.length} frames over ${(total / 1000).toFixed(1)} s, kept ${(kept / 1000).toFixed(1)} s; kept gaps ${JSON.stringify(stats)}`);
   log(`wrote ${mp4}`);
   await t.ctx.close().catch(() => undefined);
@@ -304,7 +309,7 @@ const EDIT = {
   radius: Number(arg('radius') ?? 3),
   presets: (arg('presets') ?? 'Fabric,Wood,Metal').split(','),
   refine: arg('refine') ?? 'make the sofa dark green',
-  hours: [7.5, 20.25] as const,
+  hours: [10.5, 18.6] as const,
 };
 
 async function edit(browser: Awaited<ReturnType<typeof chromium.launch>>, url: string): Promise<void> {
@@ -393,7 +398,7 @@ async function edit(browser: Awaited<ReturnType<typeof chromium.launch>>, url: s
   await sleep(1500);
   await settle(page);
   await sleep(6000);
-  await glide(page, 1050, 300, 10);
+  await glide(page, 1050 * K, 300 * K, 10);
   await t.cap.start();
   const boot = rec.now();
   await sleep(1200);
@@ -447,7 +452,7 @@ async function edit(browser: Awaited<ReturnType<typeof chromium.launch>>, url: s
   }
 
   // (c) deselect, then the scene's time of day from morning through golden hour to dusk.
-  await glide(page, 1000, 200, 700);
+  await glide(page, 1000 * K, 200 * K, 700);
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => window.__aether!.store.getState().selection.length === 0, null, { timeout: 5000 }).catch(() => undefined);
   await sleep(600);
@@ -465,6 +470,7 @@ async function edit(browser: Awaited<ReturnType<typeof chromium.launch>>, url: s
   await page.evaluate(() => window.__aether!.store.getState().showLeftView('agent'));
   const prompt = page.getByLabel('Prompt', { exact: true });
   await click(page, prompt, 1000);
+  mark(t, 'chat typing');
   await type(page, EDIT.refine, 65);
   await sleep(500);
   const head = await page.evaluate(() => window.__aether!.history.head);
@@ -535,7 +541,7 @@ async function publish(browser: Awaited<ReturnType<typeof chromium.launch>>, url
   const rendering = (): Promise<unknown> => page.waitForFunction(() => !/Rendering image/.test(document.body.innerText), null, { timeout: 120_000, polling: 200 }).catch(() => log('still rendering an image'));
   await rendering();
   await sleep(2000);
-  await glide(page, 900, 400, 10);
+  await glide(page, 900 * K, 400 * K, 10);
   await t.cap.start();
   const boot = rec.now();
   await sleep(1200);
@@ -552,6 +558,15 @@ async function publish(browser: Awaited<ReturnType<typeof chromium.launch>>, url
   await page.waitForFunction(() => /#(w|c)=/.test(document.querySelector<HTMLInputElement>('[data-testid="publish-share-link"]')?.value ?? '') || /Too large/.test(document.querySelector<HTMLInputElement>('[data-testid="publish-share-link"]')?.value ?? ''), null, { timeout: 60_000, polling: 200 });
   rec.ramp(making, 1200);
   let link = await input.inputValue();
+  // The replay seal's checks (the hub's quality check of the world), then the link itself.
+  const seal = page.getByTestId('publish-seal-note');
+  if (await seal.count()) {
+    await seal.scrollIntoViewIfNeeded();
+    await sleep(400);
+    await glide(page, (await centre(seal)).x + 120 * K, (await centre(seal)).y + 30 * K, 1000);
+    mark(t, 'seal checks');
+    await dwell(page, 2600);
+  }
   mark(t, `link: ${link.slice(0, 120)} (${link.length} chars)`);
   await input.scrollIntoViewIfNeeded();
   await glide(page, (await centre(input)).x, (await centre(input)).y, 1000);
@@ -741,7 +756,7 @@ async function play(browser: Awaited<ReturnType<typeof chromium.launch>>, url: s
 async function main(): Promise<void> {
   mkdirSync(OUT, { recursive: true });
   const server = await startServer(() => undefined);
-  const browser = await chromium.launch({ executablePath: findChrome(), headless: HEADLESS, args: [...CHROME_ARGS] });
+  const browser = await chromium.launch({ executablePath: findChrome(), headless: HEADLESS, args: [...CHROME_ARGS, `--force-device-scale-factor=${SCALE}`, `--window-size=${W},${H + 87}`] });
   try {
     if (SCENE === 'scout') await scout(browser, server.url);
     else if (SCENE === 'edit') await edit(browser, server.url);

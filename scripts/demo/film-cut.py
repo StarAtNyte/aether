@@ -11,12 +11,18 @@ The edit decision list (JSON):
     "cards": "<dir of PNG overlays>",      film-cards.py output
     "segments": [
       {"name": "cold", "src": "<file>", "in": 0, "dur": 8, "speed": 1,
-       "mode": "full" | "window" | "image" | "frames" | "turntable",
+       "mode": "full" | "window" | "ui" | "image" | "frames" | "turntable",
        "push": [1.0, 1.05],                a slow push-in (scale from..to) over the segment
        "pan": [0, 0, 0, 0],                optional centre drift in output px (x0, y0, x1, y1)
        "focus": [cx, cy],                  for "window": the zoom's centre in the UI frame (0..1)
        "xfade": 0.8,                       crossfade into this segment (0: a cut)
        "audio": 0.0,                       keep the clip's own sound at this gain (the anime excerpt)
+       "cam": [[t, fx, fy, z], ...]        for "ui": the designed camera over a 3840x2160 studio take: at output second t the view
+                                           is centred on (fx, fy) in the studio window's own 0..1 coordinates, z times the window's
+                                           width (z 1 = the window fills the frame, 0.9 = the whole window floating on the backdrop
+                                           with its shadow); eased between keys, so each key is a rest
+       "parts": [[in, out, speed], ...]    for "ui": the take's stretches in order, each at its own speed (the speed ramps)
+       "frame": 0.88                       for "ui": the window's size on the backdrop at z 0.88
        "text": [["card-name", t0, t1], ...] overlays, seconds from the segment's start
       }, ...]
   }
@@ -32,7 +38,7 @@ import sys
 A = sys.argv[1:]
 EDL = json.load(open(A[0]))
 opt = {A[i][2:]: A[i + 1] for i in range(1, len(A) - 1) if A[i].startswith('--')}
-OUT = opt.get('out', os.path.expanduser('~/.local/share/aether/demo/aether-film-v1.mp4'))
+OUT = opt.get('out', os.path.expanduser('~/.local/share/aether/demo/aether-film-v2.mp4'))
 WORK = opt.get('work', os.path.expanduser('~/.local/share/aether/demo/film/work'))
 FPS = EDL.get('fps', 30)
 W, H = 1920, 1080
@@ -102,6 +108,39 @@ def push_filter(s, dur):
     return f",scale={W * 2}:{H * 2}:flags=lanczos,zoompan=z='{z}':x='{cx}-iw/zoom/2':y='{cy}-ih/zoom/2':d=1:s={W}x{H}:fps={FPS}"
 
 
+def ui_assets(cw, ch, uw, uh):
+    """The studio window's stage: a deep blue-grey field with a soft top light and the window's soft shadow, and the
+    window's rounded mask."""
+    bg, mk = os.path.join(WORK, f'uibg-{cw}x{ch}-{uw}x{uh}.png'), os.path.join(WORK, f'uimask-{uw}x{uh}.png')
+    if os.path.exists(bg) and os.path.exists(mk):
+        return bg, mk
+    from PIL import Image, ImageDraw, ImageFilter
+    img = Image.new('RGB', (cw, ch), (12, 15, 22))
+    glow = Image.new('L', (cw, ch), 0)
+    ImageDraw.Draw(glow).ellipse([cw * 0.12, -ch * 0.55, cw * 0.88, ch * 0.75], fill=255)
+    img = Image.composite(Image.new('RGB', (cw, ch), (44, 54, 74)), img, glow.filter(ImageFilter.GaussianBlur(cw // 9)))
+    sh = Image.new('L', (cw, ch), 0)
+    x0, y0 = (cw - uw) // 2, (ch - uh) // 2
+    ImageDraw.Draw(sh).rounded_rectangle([x0, y0 + ch // 60, x0 + uw, y0 + uh + ch // 60], cw // 120, fill=190)
+    sh = sh.filter(ImageFilter.GaussianBlur(cw // 55))
+    img = Image.composite(Image.new('RGB', (cw, ch), (0, 0, 0)), img, sh)
+    img.save(bg)
+    m = Image.new('L', (uw, uh), 0)
+    ImageDraw.Draw(m).rounded_rectangle([0, 0, uw - 1, uh - 1], cw // 140 if uw < cw else 0, fill=255)
+    m.save(mk)
+    return bg, mk
+
+
+def pw(keys, scale=1.0, add=0.0):
+    """An ffmpeg expression of output time t (`T`): the keys [(t, v), ...] joined with eased (cosine) steps."""
+    keys = sorted(keys)
+    expr = f'{keys[-1][1] * scale + add:.5f}'
+    for (ta, va), (tb, vb) in reversed(list(zip(keys, keys[1:]))):
+        e = f'(0.5-0.5*cos(PI*clip((T-{ta})/{max(0.001, tb - ta)},0,1)))'
+        expr = f'if(lt(T,{tb}),({va * scale + add:.5f}+({(vb - va) * scale:.5f})*{e}),{expr})'
+    return expr
+
+
 GRADE = 'eq=contrast=1.02:saturation=0.98'
 
 
@@ -136,6 +175,32 @@ def segment(s):
                   f"[b][tt]overlay=x=900:y=40:shortest=1,format=yuv420p{pf},trim=duration={dur}[v]")
         else:
             vf = f"[1:v]scale=1040:1040[tt];[0:v][tt]overlay=x=(W-w)/2:y=20:shortest=1,format=yuv420p{pf},trim=duration={dur}[v]"
+    elif mode == 'ui':
+        # a 4K studio take composed onto the stage (rounded, with a soft shadow), then a designed camera over it
+        cw, ch = W * 2, H * 2
+        fr = float(s.get('frame', 0.88))
+        uw, uh = int(cw * fr) // 2 * 2, int(ch * fr) // 2 * 2
+        bg, mk = ui_assets(cw, ch, uw, uh)
+        parts = s.get('parts') or [[s.get('in', 0), s.get('in', 0) + dur * speed, speed]]
+        cams = s.get('cam') or [[0, 0.5, 0.5, 1.0]]
+        # a view that fills the window never looks past its edge: the centre is held that far in
+        cl = []
+        for (ct, fx, fy, z) in cams:
+            if z >= 1:
+                fx, fy = min(max(fx, 0.5 / z), 1 - 0.5 / z), min(max(fy, 0.5 / z), 1 - 0.5 / z)
+            cl.append([ct, fx, fy, z])
+        cams = cl
+        T = f'(on/{FPS})'
+        zc = pw([(c[0], c[3]) for c in cams], 1 / fr).replace('T', T)
+        # the centre in canvas fractions: the window is centred on the canvas
+        cx = pw([(c[0], c[1]) for c in cams], fr, 0.5 * (1 - fr)).replace('T', T)
+        cy = pw([(c[0], c[2]) for c in cams], fr, 0.5 * (1 - fr)).replace('T', T)
+        sel = ''.join(f"[0:v]trim=start={a}:end={b},setpts=(PTS-STARTPTS)/{sp},fps={FPS}[p{i}];" for i, (a, b, sp) in enumerate(parts))
+        cat = ''.join(f'[p{i}]' for i in range(len(parts))) + f'concat=n={len(parts)}:v=1:a=0[src];'
+        inputs = ['-i', src, '-loop', '1', '-framerate', str(FPS), '-i', bg, '-loop', '1', '-framerate', str(FPS), '-i', mk]
+        vf = (sel + cat + f"[src]scale={uw}:{uh}:flags=lanczos,format=rgba[ui];[2:v]format=gray,scale={uw}:{uh}[m];[ui][m]alphamerge[uim];"
+              f"[1:v][uim]overlay=x=(W-w)/2:y=(H-h)/2:shortest=1:format=auto,format=yuv420p,"
+              f"zoompan=z='{zc}':x='({cx})*iw-iw/zoom/2':y='({cy})*ih-ih/zoom/2':d=1:s={W}x{H}:fps={FPS},unsharp=5:5:0.45:5:5:0,trim=duration={dur}[v]")
     elif mode == 'window':
         backdrop()
         ww, wh = s.get('win', [1632, 918])
