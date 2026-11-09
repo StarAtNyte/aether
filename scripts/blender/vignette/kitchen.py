@@ -32,6 +32,7 @@ ap.add_argument("--samples", type=int, default=128)
 ap.add_argument("--mode", default="final", choices=["final", "viewport"])
 ap.add_argument("--save")
 ap.add_argument("--qa", action="store_true")
+V2 = bool(os.environ.get("V2"))  # second pass: cut lemon half, stronger stone relief
 ap.add_argument("--cam", help="override camera 'x,y,z:tx,ty,tz' (static)")
 ap.add_argument("--exposure", type=float, default=0.0)
 ap.add_argument("--device", default="OPTIX")
@@ -120,7 +121,7 @@ def reg(ob, support, kind="rest"):
 
 # ------------------------------------------------------------------ materials
 mat = {
-    "stone": M.stone("StoneWall", tint=(0.6, 0.55, 0.47), whitewash=0.3),
+    "stone": M.stone("StoneWall", tint=(0.6, 0.55, 0.47), whitewash=0.3, relief=1.9 if V2 else 1.0),
     "stone_dark": M.stone("StoneDark", tint=(0.32, 0.29, 0.25)),
     "mortar": M.mortar(),
     "plaster": M.plaster("PlasterWall", (0.76, 0.70, 0.60), grime=0.7),
@@ -146,7 +147,8 @@ mat = {
     "steam": M.steam_volume(density=16.0),
     "mote": M.mote(),
     "paper": M.paper(),
-    "lemon": M.lemon(),
+    "lemon": M.lemon(strong=V2),
+    "lemon_cut": M.lemon_cut(),
 }
 mat["mote"].node_tree.nodes["Principled BSDF"].inputs["Emission Color"].default_value = (1.0, 0.9, 0.7, 1.0)
 mat["mote"].node_tree.nodes["Principled BSDF"].inputs["Emission Strength"].default_value = 0.0
@@ -677,7 +679,7 @@ def build_shelf():
 
 def build_lemons():
     """Two lemons on the table: tapered ellipsoids with a nipple, dimpled rind (voronoi bump), subsurface."""
-    for (x, y, rot, s) in ((0.02, 1.62, 40, 1.0), (0.10, 1.70, -20, 0.92)):
+    for (x, y, rot, s) in (((0.02, 1.62, 40, 1.0),) if V2 else ((0.02, 1.62, 40, 1.0), (0.10, 1.70, -20, 0.92))):
         bm = bmesh.new()
         bmesh.ops.create_uvsphere(bm, u_segments=48, v_segments=32, radius=1.0)
         for v in bm.verts:
@@ -690,6 +692,30 @@ def build_lemons():
         o.scale = (s,) * 3
         o.rotation_euler = (0, 0, math.radians(rot))
         reg(o, "Plank*", "rest")
+    if V2:
+        build_lemon_half(0.04, 1.33)
+
+
+def build_lemon_half(x, y):
+    """A lemon cut across its middle, lying on its rind with the cut face tilted up: peel shell (revolved), a face disc with
+    ten segments, pith ring and juicy vesicles (see matlib.lemon_cut)."""
+    prof = [(0.0338, 0.0), (0.0336, 0.004), (0.0325, 0.014), (0.029, 0.027), (0.021, 0.038), (0.0105, 0.0455), (0.004, 0.0488), (0.0, 0.0496)]
+    peel = mesh_obj("LemonHalf", revolve(prof, 48), mat["lemon"], smooth=True, subsurf=1)
+    fb = bmesh.new()
+    bmesh.ops.create_circle(fb, cap_ends=True, segments=64, radius=0.0336)
+    for v in fb.verts:
+        v.co.z = 0.0006 + 0.0014 * (1.0 - (v.co.x ** 2 + v.co.y ** 2) / 0.0336 ** 2)  # juicy bulge
+    face = mesh_obj("LemonFace", fb, mat["lemon_cut"], smooth=True)
+    for ob in (peel, face):
+        ob.location = (x, y, 0.0)
+        nrm_ = Vector((math.sin(math.radians(32)) * 0.727, -math.sin(math.radians(32)) * 0.687, math.cos(math.radians(32))))
+        ob.rotation_euler = (-nrm_).to_track_quat('Z', 'Y').to_euler()  # local -Z is the cut face's outward normal
+    dg = bpy.context.evaluated_depsgraph_get()
+    bpy.context.view_layer.update()
+    lowest = min((peel.matrix_world @ v.co).z for v in peel.data.vertices)
+    for ob in (peel, face):
+        ob.location.z = TZ + 0.0011 - lowest
+    reg(peel, "Plank*", "rest")
 
 
 def build_exterior():
@@ -835,6 +861,8 @@ else:
 
 SC.render.image_settings.color_mode = "RGB"
 
+if os.environ.get("POST"):
+    exec(open(os.environ["POST"]).read())
 if A.qa:
     import qa
     qa.check(REG)

@@ -3,13 +3,14 @@
 #   systemd-run --user --unit=aether-vignette -p Nice=10 scripts/blender/vignette/render_service.sh kitchen.py /path/frames 1 240 80 1920x1080
 # args: scene.py outdir first last samples WxH [mode]
 # Frames already on disk (non-empty) are skipped; a crashed frame leaves a zero-byte placeholder that is removed before
-# each retry. On a GPU out-of-memory failure the loop falls back to CPU for the remaining frames.
+# each retry. When the shared GPU runs out of memory the loop waits and retries (CPU only after 40 fruitless tries).
 set -u
 SCENE=$1; OUT=$2; A=$3; B=$4; SPP=${5:-80}; RES=${6:-1920x1080}; MODE=${7:-final}
 HERE="$(cd "$(dirname "$0")" && pwd)"
 mkdir -p "$OUT"
 DEVICE=OPTIX
-for attempt in 1 2 3 4 5 6; do
+fails=0
+for attempt in $(seq 1 300); do
   find "$OUT" -name 'f_*.png' -size 0 -delete
   have=$(find "$OUT" -name 'f_*.png' -size +0 | wc -l)
   [ "$have" -ge $((B - A + 1)) ] && echo "all frames present" && exit 0
@@ -19,7 +20,8 @@ for attempt in 1 2 3 4 5 6; do
   if grep -q . /dev/null; then :; fi
   have2=$(find "$OUT" -name 'f_*.png' -size +0 | wc -l)
   [ "$have2" -ge $((B - A + 1)) ] && echo "done $(date)" && exit 0
-  [ "$have2" -eq "$have" ] && DEVICE=CPU
-  sleep 5
+  # no progress: the shared GPU is out of memory right now. Wait and retry the GPU; CPU only after 40 fruitless tries
+  if [ "$have2" -eq "$have" ]; then fails=$((fails + 1)); [ "$fails" -ge 40 ] && DEVICE=CPU; else fails=0; fi
+  sleep 30
 done
 echo "gave up"; exit 1

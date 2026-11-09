@@ -139,7 +139,7 @@ def _obj_random(nb):
 
 
 # ---------------------------------------------------------------- materials
-def stone(name="Stone", tint=(0.42, 0.38, 0.32), whitewash=0.0, scale=1.0):
+def stone(name="Stone", tint=(0.42, 0.38, 0.32), whitewash=0.0, scale=1.0, relief=1.0):
     """Rough limestone rubble. Per-object random shifts value; optional limewash coating by world noise and height."""
     nb = NB(name)
     rnd = _obj_random(nb)
@@ -170,7 +170,7 @@ def stone(name="Stone", tint=(0.42, 0.38, 0.32), whitewash=0.0, scale=1.0):
         base = nb.mix(base, chalk, mask)
     rough = nb.ramp(fine.outputs["Fac"], [(0.3, (0.7, 0.7, 0.7)), (0.7, (0.95, 0.95, 0.95))]).outputs["Color"].node.outputs[0]
     h = nb.math("ADD", nb.math("MULTIPLY", vor.outputs["Distance"], 0.5), fine.outputs["Fac"])
-    nrm = nb.bump(h, 0.8, 0.02)
+    nrm = nb.bump(h, 0.8 * relief, 0.02)
     b = nb.bsdf(base, rough, Specular_IOR_Level=0.35)
     nb.l(nrm, b.inputs["Normal"])
     return nb.mat
@@ -576,7 +576,7 @@ def grass(name="Grass"):
     return nb.mat
 
 
-def lemon(name="Lemon"):
+def lemon(name="Lemon", strong=False):
     nb = NB(name)
     v = nb.voronoi(nb.mapping((420, 420, 420)), 1.0, "F1")
     n = nb.tex_noise(nb.mapping((6, 6, 6)), 1.0, 4, 0.5)
@@ -586,5 +586,41 @@ def lemon(name="Lemon"):
     b = nb.bsdf(base, nb.math("ADD", nb.math("MULTIPLY", pits, 0.15), 0.38), Subsurface_Weight=0.35, Specular_IOR_Level=0.5)
     b.inputs["Subsurface Radius"].default_value = (1.0, 0.6, 0.1)
     b.inputs["Subsurface Scale"].default_value = 0.004
-    nb.l(nb.bump(nb.math("ADD", nb.math("MULTIPLY", pits, -1.0), n.outputs["Fac"]), 0.5, 0.0007), b.inputs["Normal"])
+    nb.l(nb.bump(nb.math("ADD", nb.math("MULTIPLY", pits, -1.0), n.outputs["Fac"]), 1.6 if strong else 0.5, 0.0012 if strong else 0.0007), b.inputs["Normal"])
+    return nb.mat
+
+
+def lemon_cut(name="LemonCut"):
+    """Cut face of a lemon in object space (disc radius R=0.0336 in XY): ten juicy segments divided by thin pith walls, a pale
+    pith core, a white pith ring and a yellow rind edge; vesicle texture from stretched voronoi; wet coat and translucency."""
+    R = 0.0336
+    nb = NB(name)
+    tc = nb.n("ShaderNodeTexCoord")
+    sp = nb.n("ShaderNodeSeparateXYZ")
+    nb.l(tc.outputs["Object"], sp.inputs[0])
+    rad = nb.math("DIVIDE", nb.n("ShaderNodeVectorMath", operation="LENGTH").outputs["Value"], R)
+    ln = nb.nt.nodes[-2] if False else None
+    cmb = nb.n("ShaderNodeCombineXYZ")
+    nb.l(sp.outputs["X"], cmb.inputs["X"])
+    nb.l(sp.outputs["Y"], cmb.inputs["Y"])
+    ln = nb.n("ShaderNodeVectorMath", operation="LENGTH")
+    nb.l(cmb.outputs[0], ln.inputs[0])
+    rad = nb.math("DIVIDE", ln.outputs["Value"], R)
+    ang = nb.math("ARCTAN2", sp.outputs["Y"], sp.outputs["X"])
+    wall = nb.ramp(nb.math("ABSOLUTE", nb.math("SINE", nb.math("MULTIPLY", ang, 5.0))), [(0.0, (1, 1, 1)), (0.075, (0, 0, 0))]).outputs["Color"].node.outputs[0]
+    ring = nb.ramp(rad, [(0.84, (0, 0, 0)), (0.87, (1, 1, 1)), (0.93, (1, 1, 1)), (0.95, (0, 0, 0))]).outputs["Color"].node.outputs[0]
+    core = nb.ramp(rad, [(0.05, (1, 1, 1)), (0.14, (0, 0, 0))]).outputs["Color"].node.outputs[0]
+    rind = nb.ramp(rad, [(0.94, (0, 0, 0)), (0.965, (1, 1, 1))]).outputs["Color"].node.outputs[0]
+    ves = nb.voronoi(nb.mapping((260, 260, 260)), 1.0, "F1")
+    vmask = nb.ramp(ves.outputs["Distance"], [(0.0, (1, 1, 1)), (0.4, (0, 0, 0))]).outputs["Color"].node.outputs[0]
+    pulp = nb.mix((0.93, 0.74, 0.14), (0.99, 0.88, 0.32), vmask)
+    pith = nb.math("MAXIMUM", nb.math("MAXIMUM", wall, ring), core)
+    base = nb.mix(pulp, (0.96, 0.93, 0.82), nb.math("MULTIPLY", pith, 0.95, clamp=True))
+    base = nb.mix(base, (0.85, 0.65, 0.06), rind)
+    b = nb.bsdf(base, 0.12, Subsurface_Weight=0.6, Coat_Weight=0.8, Coat_Roughness=0.05, Specular_IOR_Level=0.6)
+    b.inputs["Subsurface Radius"].default_value = (1.0, 0.7, 0.2)
+    b.inputs["Subsurface Scale"].default_value = 0.006
+    nb.l(base, b.inputs["Emission Color"])   # juice scatters light: a faint self-glow so the face is not dead in shadow
+    b.inputs["Emission Strength"].default_value = 0.15
+    nb.l(nb.bump(nb.math("ADD", nb.math("MULTIPLY", vmask, 0.6), nb.math("MULTIPLY", pith, -0.5)), 0.5, 0.0006), b.inputs["Normal"])
     return nb.mat

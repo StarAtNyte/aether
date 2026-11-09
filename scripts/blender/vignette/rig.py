@@ -137,7 +137,7 @@ def render_setup(res=(1920, 1080), samples=192, fps=24, shutter=0.4, device="OPT
     c.use_adaptive_sampling = True
     c.adaptive_threshold = threshold
     c.adaptive_min_samples = 32
-    c.use_denoising = denoise
+    c.use_denoising = denoise and not __import__("os").environ.get("NODENOISE")
     c.denoiser = "OPTIX" if device != "CPU" else "OPENIMAGEDENOISE"
     c.denoising_input_passes = "RGB_ALBEDO_NORMAL"
     c.denoising_prefilter = "ACCURATE"
@@ -155,6 +155,8 @@ def render_setup(res=(1920, 1080), samples=192, fps=24, shutter=0.4, device="OPT
     c.volume_step_rate = 1.0
     c.volume_max_steps = 256
     c.use_light_tree = True
+    c.use_auto_tile = True
+    c.tile_size = int(__import__("os").environ.get("TILE", "2048"))
     c.seed = 7
     c.use_animated_seed = False
     r.filter_size = 1.3
