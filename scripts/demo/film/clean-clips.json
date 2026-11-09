@@ -167,7 +167,10 @@
      "grain": 0.05
     }
    }
-  ]
+  ],
+  "effects": {
+   "taa": false
+  }
  },
  "sweep-penthouse": {
   "slug": "skyline-penthouse",
@@ -324,7 +327,10 @@
      "practicals": 1
     }
    }
-  ]
+  ],
+  "effects": {
+   "taa": false
+  }
  },
  "penthouse-a": {
   "slug": "skyline-penthouse",
@@ -367,7 +373,10 @@
      "practicals": 0.2
     }
    }
-  ]
+  ],
+  "effects": {
+   "taa": false
+  }
  },
  "cw-open": {
   "slug": "cloudwatch-harbour",

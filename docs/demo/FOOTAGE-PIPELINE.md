@@ -78,7 +78,49 @@ from a 4K master to 1080p with Lanczos.
 eye EV and sun-map draws. `frame-crops.py` makes 100 % crops of chosen frames side by side. `blur-stills.py` measures
 stills at delivery size.
 
-RESULTS_PLACEHOLDER
+## Measured results
+
+Lisbon drone, scout window 17 to 21 s, 120 frames, 1080p, Intel iGPU, lossless masters (`footage-metrics.py`, water region
+`1150,450,700,500`). Legacy is the old capture (one draw, TAA on). The other columns are the clean path.
+
+| Measure | Legacy | TAA on, 8 draws | TAA off, 8 draws | TAA off, 16 draws, 180 deg shutter |
+| --- | --- | --- | --- | --- |
+| Luma residual, max (grey levels) | 0.394 | 0.054 | 0.025 | 0.112 |
+| Luma residual, rms | 0.0378 | 0.0076 | 0.0065 | 0.0133 |
+| Block residual p95, worst frame | 1.72 | 0.395 | 0.413 | 0.475 |
+| Difference spikes (ratio to neighbours) | 1 (4.5x, first frames) | 1 (1.9x) | 1 (1.9x) | 0 |
+| Water luma residual, rms | 0.0188 | 0.0051 | 0.0062 | 0.0038 |
+| Water shimmer | 0.191 | 0.148 | 0.176 | 0.164 |
+| Fine-detail noise (`grain_hf`) | 10.0 | 5.0 | 6.8 | 6.5 |
+| blurdetect | 4.98 | 5.31 | 4.88 | 4.91 |
+| Tier changes, ladder level | 0, 0 | 0, 0 | 0, 0 | 0, 0 |
+
+* The tier never changed in either path (the capture pins `ultra`); the adaptive scale that the live viewport had left at 0.5
+  is not applied in a capture. So the tier ladder was not a source of flicker.
+* TAA on ghosts moving thin structures (trees on the Lisbon hillside show faded second copies at 100%): TAA off with
+  jittered accumulation of one moment is crisper (blurdetect 4.88 against 5.31) and the clean mode uses it.
+* Pops found in the old windows: Lisbon 17 to 24 s, frames 134 to 135 (a foreground crown vanishes at the near plane, 23
+  grey levels over one 60 px block); Sanctuary falls path, frames 62 to 63 (44 grey levels). The clean clips start after them.
+* The shipped v7 world clips (in-page H.264, 0.12 bits per pixel): luma residual rms 0.0355 against 0.0104 for the same
+  render lossless, spikes of 17x to 22x at frame 3 of the drone and falls clips, 20 spikes (up to 416x) in the near-static
+  house clip, blurdetect 5.2 against 4.99 lossless.
+* blurdetect is a content-dominated measure (flat-shaded, soft-shadowed scenes; the photoreal Blender reference scores
+  6.44). It is used as a relative check only: finished Lisbon 4.01 against 4.9 for the lossless base.
+
+Softness experiments (same fixed frame; blurdetect, lower is sharper): TAA on 4.75, TAA off 4.77, 8 draws 4.96, grain off
+4.92, halation and aberration off 4.90, AO and contact and SSR off 4.77, 4K rendered and downscaled 4.78, grade diffusion
+0 4.96, grade bloom 0.9 to 0.4 4.30, luma unsharp 0.8 4.34 and 1.5 3.94. A textured interior frame stays at 6.0 for every
+setting. Texture LOD bias is 0 at scale 1 (the capture never scales the scene pass) and anisotropy is already 16.
+
+Render cost (4K, 16 draws, RTX 4090 through real headed Chrome, WebGL2 over ANGLE/GL): about 7 s per frame for the Lisbon
+drone, 26 minutes for a 5.8 s clip. Editor-based replays are CPU-bound (the village costs 4 to 5 s per draw whatever the GPU), so they
+are rendered at 1080p with 4 draws. WebGPU: works in the real app with `--gpu=nvidia-webgpu` (headed Chrome, Vulkan flags; the engine reports `backend: webgpu`,
+`nvidia lovelace`). On the Lisbon frame it renders the same picture as WebGL2 (blurdetect 4.51 against 4.49, no extra
+effects or tier appear), so it brings no quality here; every clip is rendered on WebGL2 (the more tested path).
+
+Known weak spots: one interior shot (penthouse) has a screen-space dithered penumbra on a wall reveal that the jittered
+accumulation does not average out; no depth of field (the engine's DoF focuses on the orbit target, which footage paths do not set).
+
 
 ## Build replays
 

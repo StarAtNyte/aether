@@ -36,8 +36,13 @@ const SHUTTER = num('shutter', 0);
 const SETTLE = num('settle', 1);
 const WARMUP = num('warmup', MODE === 'clean' ? 24 : 0);
 const TRIM = num('trim', 0);
-/** Clean mode: temporal anti-aliasing off (no history carried across moments; the sub-frame jitter does the anti-aliasing); `--taa=1` keeps it. */
-const EFFECTS = arg('effects') ? (JSON.parse(arg('effects')!) as Record<string, boolean>) : MODE === 'clean' && arg('taa') !== '1' ? { taa: false } : undefined;
+/**
+ * Clean mode: temporal anti-aliasing off (no history carried across moments; the sub-frame jitter does the anti-aliasing) and
+ * screen-space AO off: with TAA off the AO pass takes its spatial denoise path, which on the NVIDIA GL driver leaves dark
+ * blue streaks and blotches over cloud layers (measured: same frame, same flags, clean on Intel and with TAA on). A clip
+ * can set `effects` to differ (interiors keep AO). `--taa=1` keeps TAA.
+ */
+const EFFECTS = arg('effects') ? (JSON.parse(arg('effects')!) as Record<string, boolean>) : MODE === 'clean' && arg('taa') !== '1' ? { taa: false, ao: false } : undefined;
 /** `--globals='{"__AETHER_LOD_BIAS":false}'`: page globals set before the engine loads (engine experiments). */
 const GLOBALS = arg('globals') ? (JSON.parse(arg('globals')!) as Record<string, unknown>) : {};
 /** `--matrix=file.json`: one still of frame `--from` per config (`{ name, effects?, sub?, size?, settle? }`), PNGs in `--out`. */
@@ -54,6 +59,8 @@ interface Entry {
   /** Capture flags for this clip (merged over the mode's defaults). */
   flags?: Record<string, unknown>;
   shots: Array<Record<string, unknown>>;
+  /** Post effects forced on or off for this clip (default: TAA and AO off in clean mode). */
+  effects?: Record<string, boolean>;
   /** Render the world's own film (its story, as the player's Render video does) instead of `shots`. */
   own?: boolean;
   /** Smooth the single shot's `tour` window into one camera path instead of six via poses. */
@@ -154,7 +161,7 @@ async function runMatrix(page: Page, story: Record<string, unknown> | null, path
 }
 
 async function renderClip(browser: Browser, url: string, name: string, e: Entry): Promise<void> {
-  const flags = { ...(e.flags ?? {}) };
+  const flags = { ...(e.flags ?? {}), ...(arg('flags') ? (JSON.parse(arg('flags')!) as Record<string, unknown>) : {}) };
   const page = await open(browser, url, e.slug, flags);
   await page.waitForTimeout(8000);
   log(`gpu: ${JSON.stringify(await page.evaluate(() => { const r = (window as unknown as { __aetherPlayer: { simulation: { renderer: { gpu?: { description?: string; tier?: string }; backend?: string } } } }).__aetherPlayer.simulation.renderer; const c = document.createElement('canvas').getContext('webgl2'); const d = c?.getExtension('WEBGL_debug_renderer_info'); return { backend: r.backend, description: r.gpu?.description, tier: r.gpu?.tier, webgl: c && d ? c.getParameter(d.UNMASKED_RENDERER_WEBGL) : null }; }))}`);
@@ -202,7 +209,7 @@ async function renderClip(browser: Browser, url: string, name: string, e: Entry)
         },
       });
     },
-    { story, path: path ?? null, o: { fps: FPS, width: W, height: H, tier: 'ultra', subframes: SUB, shutter: SHUTTER, settle: e.settle ?? SETTLE, warmup: WARMUP, from, to, ...(EFFECTS ? { effects: EFFECTS } : {}) } },
+    { story, path: path ?? null, o: { fps: FPS, width: W, height: H, tier: 'ultra', subframes: SUB, shutter: SHUTTER, settle: e.settle ?? SETTLE, warmup: WARMUP, from, to, ...((e.effects ?? EFFECTS) ? { effects: e.effects ?? EFFECTS } : {}) } },
   );
   ff.stdin.end();
   await ffDone;

@@ -100,7 +100,7 @@ async function main(): Promise<void> {
       n++;
       if (n % 5 === 0) log(`frame ${n}`);
     });
-    const marks = await page.evaluate(async ({ all, per, hold, c, r, W, H, sub, taaOff, noJitter, az0, arc, elev0, dm, fov }) => {
+    const marks = await page.evaluate(async ({ all, per, hold, c, r, W, H, sub, warm, taaOff, noJitter, az0, arc, elev0, dm, fov }) => {
       const a = window.__aether!;
       const sim = a.simulation as unknown as { renderer: unknown; whenSynced(): Promise<void> };
       const rend = sim.renderer as {
@@ -157,7 +157,7 @@ async function main(): Promise<void> {
       let frame = 0;
       a.history.commit(all.slice(0, 3), 'replay start', 'agent');
       await Promise.race([sim.whenSynced(), new Promise((r) => setTimeout(r, 25_000))]);
-      for (let f = 0; f < 8; f++) await shoot(0, false);
+      for (let f = 0; f < warm; f++) await shoot(0, false);
       for (let f = 0; f < hold; f++) { await shoot(k++ / total, true); frame++; }
       for (let i = 3; i < all.length; i += per) {
         const ts = performance.now();
@@ -165,7 +165,7 @@ async function main(): Promise<void> {
         await Promise.race([sim.whenSynced(), new Promise((r) => setTimeout(r, 25_000))]);
         console.log(`replay: step ${i} synced in ${Math.round(performance.now() - ts)} ms`);
         (rend as unknown as { grow?: { finishAll(): void } }).grow?.finishAll();
-        for (let f = 0; f < 8; f++) await shoot(k / total, false);
+        for (let f = 0; f < warm; f++) await shoot(k / total, false);
         marks.push({ frame, step: i });
         for (let f = 0; f < hold; f++) { await shoot(k++ / total, true); frame++; }
       }
@@ -173,7 +173,7 @@ async function main(): Promise<void> {
       session.end();
       rend.setEffects({});
       return marks;
-    }, { all, per, hold, c: info.c, r: info.r, W, H, sub: SUB, taaOff: arg('taa') !== '1', noJitter: arg('jitter') === '0', az0: num('az', 200), arc: num('arc', 50), elev0: num('elev', 26), dm: num('dist', 1.7), fov: num('fov', 40) });
+    }, { all, per, hold, c: info.c, r: info.r, W, H, sub: SUB, warm: num('warm', 4), taaOff: arg('taa') !== '1', noJitter: arg('jitter') === '0', az0: num('az', 200), arc: num('arc', 50), elev0: num('elev', 26), dm: num('dist', 1.7), fov: num('fov', 40) });
     ff.stdin.end();
     await ffDone;
     writeFileSync(join(OUT, `${NAME}.steps.json`), JSON.stringify({ messages: commits.map((c) => c.m), marks, fps: FPS, size: [W, H], sub: SUB }, null, 1));
