@@ -20,6 +20,7 @@ BLENDER_REAL = f'{D}/aether-blender-real-shot.mp4'
 BLENDER_REAL_SECONDS = 9.0
 ARCH_EQ = 'eq=contrast=1.16:saturation=1.1:gamma=0.92:brightness=-0.03'
 BUILD_DIR = {'village': 'village3', 'villa': 'villa2', 'valley': 'valley'}
+REPLAY_POST = "tmix=frames=5:weights='1 2 3 2 1',"
 CUT = 0.2  # the longest dissolve between two shots, seconds (six frames)
 SHORT_CUT = 0.1
 
@@ -52,10 +53,12 @@ def clip(name, src, i, dur, xfade=CUT, text=None, sfx=None, **kw):
     return s
 
 
-def frames(name, pattern, start, dur, xfade=CUT, text=None, sfx=None, speed=1.0, eq=None):
+def frames(name, pattern, start, dur, xfade=CUT, text=None, sfx=None, speed=1.0, eq=None, post=None):
     s = {'name': name, 'src': pattern, 'mode': 'frames', 'in': start, 'dur': dur, 'speed': speed, 'xfade': xfade, 'grade': False}
     if eq:
         s['eq'] = eq
+    if post:
+        s['post'] = post
     if text:
         s['text'] = text
     if sfx:
@@ -99,13 +102,13 @@ def full():
                     text=[['st-describe', 0.3, 4.9], ['note-offline', 0.3, 4.9]], sfx='whoosh', inset='br'))
     for key, name, start, dur, speed, tag in (('village', 'r-village', 10, 5.0, 0.7, 'tag-rv-village'), ('villa', 'r-villa', 10, 4.6, 0.8, 'tag-rv-villa')):
         if have(f'{F7}/build-{BUILD_DIR[key]}/f00000.jpg'):
-            S.append(frames(name, f'{F7}/build-{BUILD_DIR[key]}/f%05d.jpg', start, dur, CUT, [[tag, 0.2, dur - 0.3], ['note-replay', 0.2, dur - 0.3]], 'whoosh', speed=speed))
+            S.append(frames(name, f'{F7}/build-{BUILD_DIR[key]}/f%05d.jpg', start, dur, CUT, [[tag, 0.2, dur - 0.3], ['note-replay', 0.2, dur - 0.3]], 'whoosh', speed=speed, post=REPLAY_POST))
     # 2 Edit, 3 Relight
     E = f'{F7}/edit/edit.mp4'
     if have(E):
         sel, fab, ts, te, ct = ev('edit', 'selected'), ev('edit', 'material Fabric'), ev('edit', 'time sweep start'), ev('edit', 'time sweep end'), ev('edit', 'chat typing')
         end = 48.0
-        S.append(ui('e-select', E, [[sel - 3.1, sel + 2.9, 1.6]], [[0, 0.5, 0.5, 1.0], [1.3, 0.5, 0.5, 1.0], [2.2, 0.44, 0.5, 1.6], [3.7, 0.5, 0.5, 1.7]], 3.75, CUT, text=[['st-edit', 0.3, 3.5]], sfx='whoosh'))
+        S.append(ui('e-select', E, [[sel + 0.6, sel + 6.6, 1.6]], [[0, 0.5, 0.5, 1.0], [1.3, 0.5, 0.5, 1.0], [2.2, 0.44, 0.5, 1.6], [3.7, 0.5, 0.5, 1.7]], 3.75, CUT, text=[['st-edit', 0.3, 3.5]], sfx='whoosh'))
         S.append(ui('e-material', E, [[fab - 1.9, fab + 6.1, 2.5]], [[0, 0.73, 0.64, 1.9], [3.2, 0.73, 0.66, 1.9]], 3.2, CUT))
         S.append(ui('e-chat', E, [[ct - 1.9, ct + 2.1, 1.5], [ct + 2.1, min(end, ct + 7.5), 2.0]], [[0, 0.2, 0.84, 2.1], [2.3, 0.2, 0.84, 2.1], [3.1, 0.25, 0.4, 2.0], [4.5, 0.25, 0.4, 2.0], [5.4, 0.5, 0.5, 1.0]], 5.0, CUT, text=[['note-offline', 0.3, 4.7]], inset='br'))
         S.append(ui('e-time', E, [[ts - 1.4, te + 1.2, 2.4]], [[0, 0.78, 0.3, 2.0], [3.6, 0.78, 0.3, 2.0], [4.4, 0.5, 0.5, 1.0], [5.5, 0.5, 0.5, 1.0]], 5.5, CUT, text=[['st-relight', 0.3, 5.2]], sfx='whoosh'))
@@ -137,7 +140,6 @@ def full():
         S.append(frames('a-step', f'{F7}/arch-step/f%05d.jpg', 0, round(n / 30 / 1.1, 2), CUT, [['st-arch', 0.3, 5.2], ['tag-walls-down', 6.0, 9.2], ['tag-explode', 9.6, 12.8], ['tag-onefloor', 13.2, 15.6]], 'whoosh', speed=1.1, eq=ARCH_EQ))
     A = f'{F7}/arch/arch.mp4'
     if have(A):
-        S.append(ui('a-bar', A, [[ev('arch', 'cutaway') + 14.0, ev('arch', 'cutaway') + 17.0, 1.0]], [[0, 0.5, 0.5, 1.0], [0.4, 0.47, 0.2, 2.3], [3.0, 0.47, 0.2, 2.3]], 3.0, CUT))
         S.append(ui('a-plan', A, [[ev('arch', 'plan') + 4.6, ev('arch', 'plan') + 9.0, 1.0]], [[0, 0.5, 0.5, 1.0], [1.0, 0.5, 0.5, 1.0], [1.8, 0.42, 0.55, 1.7], [3.8, 0.42, 0.55, 1.7], [4.4, 0.5, 0.5, 1.0]], 4.4, CUT, text=[['tag-plan', 0.3, 4.1]]))
     # 5 Publish, 6 Share
     PU = f'{F7}/publish/publish.mp4'
@@ -174,7 +176,7 @@ def full():
     # build locally: the named Blender slot (photoreal shot when it exists, the character turntable until then)
     if have(BLENDER_REAL):
         S.append({'name': 'blender-real', 'src': BLENDER_REAL, 'mode': 'full', 'in': 0.5, 'dur': BLENDER_REAL_SECONDS, 'xfade': CUT, 'grade': False, 'text': [['st-local', 0.3, BLENDER_REAL_SECONDS - 0.4], ['note-local', 0.3, BLENDER_REAL_SECONDS - 0.4]], 'sfx': 'whoosh'})
-    S.append({'name': 'bl-sheet', 'src': f'{D}/film2/tt-mio/f%04d.png', 'mode': 'turntable', 'beside': f'{D}/film2/mio/sheet.png', 'dur': 6.0, 'speed': 1.1, 'xfade': CUT, 'text': [['tag-sheet', 0.3, 5.7], ['note-local', 0.3, 5.7]], 'sfx': 'whoosh'})
+    S.append({'name': 'bl-sheet', 'src': f'{D}/film2/tt-mio/f%04d.png', 'mode': 'turntable', 'beside': f'{D}/film2/mio/sheet.png', 'dur': 7.0, 'speed': 1.1, 'xfade': CUT, 'text': [['tag-sheet', 0.3, 6.7], ['note-local', 0.3, 6.7]], 'sfx': 'whoosh'})
     # the animated short: a chapter with the film's own sound; no stair-descent close-up
     if have(f'{F6}/shots/two-whistles.mp4'):
         S += [
@@ -199,9 +201,9 @@ def short():
     if have(f'{F7}/describe/describe.mp4'):
         S.append(ui('gen-type', f'{F7}/describe/describe.mp4', [[ev('describe', 'typing') - 0.8, ev('describe', 'build pressed') - 0.1, 1.5]], [[0, 0.5, 0.5, 1.0], [0.8, 0.5, 0.3, 1.65], [3.0, 0.5, 0.3, 1.65]], 3.3, CUT, text=[['st-describe', 0.2, 3.1], ['note-offline', 0.2, 3.1]], sfx='whoosh', inset='br'))
     if have(f'{F7}/build-village3/f00000.jpg'):
-        S.append(frames('r-village', f'{F7}/build-village3/f%05d.jpg', 10, 4.0, CUT, [['tag-rv-village', 0.2, 3.7], ['note-replay', 0.2, 3.7]], 'whoosh', speed=0.85))
+        S.append(frames('r-village', f'{F7}/build-village3/f%05d.jpg', 10, 4.0, CUT, [['tag-rv-village', 0.2, 3.7], ['note-replay', 0.2, 3.7]], 'whoosh', speed=0.85, post=REPLAY_POST))
     if have(f'{F7}/build-villa2/f00000.jpg'):
-        S.append(frames('r-villa', f'{F7}/build-villa2/f%05d.jpg', 10, 3.6, CUT, [['tag-rv-villa', 0.2, 3.3], ['note-replay', 0.2, 3.3]], 'whoosh', speed=1.0))
+        S.append(frames('r-villa', f'{F7}/build-villa2/f%05d.jpg', 10, 3.6, CUT, [['tag-rv-villa', 0.2, 3.3], ['note-replay', 0.2, 3.3]], 'whoosh', speed=1.0, post=REPLAY_POST))
     E = f'{F7}/edit/edit.mp4'
     if have(E):
         S.append(ui('e-material', E, [[ev('edit', 'material Fabric') - 1.9, ev('edit', 'material Fabric') + 6.1, 3.0]], [[0, 0.73, 0.64, 1.9], [2.7, 0.73, 0.66, 1.9]], 2.8, CUT, text=[['st-edit', 0.2, 2.6]], sfx='whoosh'))

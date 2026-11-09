@@ -165,7 +165,7 @@ def segment(s):
         vf = f"[0:v]scale={W}:{H}:force_original_aspect_ratio=decrease,pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:color=0x0c0f16,setsar=1,format=yuv420p{pf}{g},trim=duration={dur}[v]"
     elif mode == 'frames':
         inputs = ['-framerate', str(s.get('srcFps', FPS) * speed), '-start_number', str(int(s.get('in', 0))), '-i', src]
-        vf = f"[0:v]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},setsar=1,fps={FPS},format=yuv420p{pf}{g},trim=duration={dur}[v]"
+        vf = f"[0:v]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},setsar=1,fps={FPS},{s.get('post', '')}format=yuv420p{pf}{g},trim=duration={dur}[v]"
     elif mode == 'turntable':
         # transparent frames over the backdrop, beside an optional still (the concept sheet) on the left
         backdrop()
