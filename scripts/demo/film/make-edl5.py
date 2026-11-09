@@ -17,8 +17,8 @@ F2, F1, UI, UI5 = f'{D}/film2/shots', f'{D}/film/shots', f'{D}/film2/ui', f'{D}/
 INTRO = f'{D}/intro/shots'
 
 
-def ui(name, src, parts, cam, dur, xfade=0.5, frame=0.88, text=None, sfx='click'):
-    s = {'name': name, 'src': (f'{D}/raw-live/generate.webm' if src == 'live' else src if src.endswith('.mp4') else f'{UI}/{src}.mp4'), 'mode': 'ui', 'parts': parts, 'cam': cam, 'dur': dur, 'xfade': xfade, 'frame': frame, 'sfx': sfx}
+def ui(name, src, parts, cam, dur, xfade=0.5, frame=0.88, text=None, sfx='click', inset='tl'):
+    s = {'name': name, 'src': (f'{D}/raw-live/generate.webm' if src == 'live' else src if src.endswith('.mp4') else f'{UI}/{src}.mp4'), 'mode': 'ui', 'parts': parts, 'cam': cam, 'dur': dur, 'xfade': xfade, 'frame': frame, 'sfx': sfx, 'insetPos': inset}
     if text:
         s['text'] = text
     return s
@@ -72,13 +72,13 @@ def full():
         # 1 Describe: every take opens on the whole app (z 1 = the window fills the frame), zooms to the part that matters, and
         # eases back out. The typed prompt and the built world (offline planner, labelled), then the recorded live AI session
         # shown whole, uncropped
-        ui('gen-type', 'describe', [[2.6, 8.6, 1.3]], [[0, 0.5, 0.5, 1.0], [1.2, 0.5, 0.5, 1.0], [2.0, 0.392, 0.23, 2.7], [3.7, 0.392, 0.23, 2.7], [4.5, 0.5, 0.5, 1.0]], 4.6, 0.5, text=[['st-describe', 0.3, 4.4]], sfx='whoosh'),
+        ui('gen-type', 'describe', [[2.6, 8.6, 1.3]], [[0, 0.5, 0.5, 1.0], [1.2, 0.5, 0.5, 1.0], [2.0, 0.5, 0.3, 1.65], [3.7, 0.5, 0.3, 1.65], [4.5, 0.5, 0.5, 1.0]], 4.6, 0.5, text=[['st-describe', 0.3, 4.4]], sfx='whoosh', inset='br'),
         ui('gen-build', 'describe', [[8.6, 12.0, 2.0], [12.0, 40.0, 18.0], [40.0, 43.5, 1.0]], [[0, 0.5, 0.5, 1.0], [6.8, 0.5, 0.5, 1.04]], 6.8, 0.25, text=[['note-offline', 0.3, 6.5]]),
         ui('gen-live', 'live', [[9.0, 15.0, 4.0], [15.0, 60.0, 30.0], [60.0, 190.0, 80.0], [190.0, 193.0, 2.5]], [[0, 0.5, 0.5, 1.0]], 4.3, 0.2, 1.0, text=[['note-live', 0.3, 4.6]]),
         # 2 Edit: select and move, swap a material, ask for a change (offline planner), 3 Relight
         ui('e-select', 'edit', [[1.6, 7.6, 1.6]], [[0, 0.5, 0.5, 1.0], [1.3, 0.5, 0.5, 1.0], [2.2, 0.44, 0.5, 1.6], [3.7, 0.5, 0.5, 1.7]], 3.75, 0.6, text=[['st-edit', 0.3, 3.5]], sfx='whoosh'),
         ui('e-material', 'edit', [[13.2, 21.2, 2.5]], [[0, 0.73, 0.64, 1.9], [3.2, 0.73, 0.66, 1.9]], 3.2, 0.3),
-        ui('e-chat', 'edit', [[40.0, 44.0, 1.5], [44.0, 49.4, 2.0]], [[0, 0.2, 0.84, 2.1], [2.3, 0.2, 0.84, 2.1], [3.1, 0.25, 0.4, 2.0], [4.5, 0.25, 0.4, 2.0], [5.4, 0.5, 0.5, 1.0]], 5.4, 0.3, text=[['note-offline', 0.3, 5.0]]),
+        ui('e-chat', 'edit', [[40.0, 44.0, 1.5], [44.0, 49.4, 2.0]], [[0, 0.2, 0.84, 2.1], [2.3, 0.2, 0.84, 2.1], [3.1, 0.25, 0.4, 2.0], [4.5, 0.25, 0.4, 2.0], [5.4, 0.5, 0.5, 1.0]], 5.4, 0.3, text=[['note-offline', 0.3, 5.0]], inset='br'),
         ui('e-time', 'edit', [[26.4, 39.6, 2.4]], [[0, 0.78, 0.3, 2.0], [3.6, 0.78, 0.3, 2.0], [4.4, 0.5, 0.5, 1.0], [5.5, 0.5, 0.5, 1.0]], 5.5, 0.4, text=[['st-relight', 0.3, 5.2]], sfx='whoosh'),
         clip('sw-1', f'{F2}/sweep-penthouse.mp4', 0.4, 3.2, 0.6, [['tag-relight', 0.4, 3.0]]),
         *arch_segments(),
@@ -93,6 +93,7 @@ def full():
         # build locally: a character from a brief, then in the world
         {'name': 'bl-sheet', 'src': f'{D}/film2/tt-mio/f%04d.png', 'mode': 'turntable', 'beside': f'{D}/film2/mio/sheet.png', 'dur': 4.8, 'speed': 1.1, 'xfade': 0.5, 'text': [['st-local', 0.3, 4.5], ['note-local', 0.3, 4.5]], 'sfx': 'whoosh'},
         # one short animated proof
+        {'name': 'bl-kit', 'src': f'{D}/film/orbit-shop/f%04d.png', 'mode': 'frames', 'dur': 2.8, 'xfade': 0.4, 'text': [['tag-kit', 0.2, 2.6]]},
         clip('film', f'{F2}/cw-open.mp4', 0.5, 5.5, 0.5, [['tag-film', 0.3, 5.2]], 'whoosh'),
         {'name': 'end', 'src': f'{D}/film5/cards/end.png', 'mode': 'image', 'dur': 5.0, 'xfade': 0.8, 'grade': False},
     ]
@@ -101,7 +102,7 @@ def full():
 def short():
     return [
         clip('hook', f'{INTRO}/m-terraces-falls.mp4', 1.8, 3.0, 0, [['hook', 0.3, 2.8]]),
-        ui('gen-type', 'describe', [[3.3, 8.6, 2.0]], [[0, 0.5, 0.5, 1.0], [0.5, 0.5, 0.5, 1.0], [1.2, 0.392, 0.23, 2.7]], 2.65, 0.4, text=[['st-describe', 0.2, 2.5]], sfx='whoosh'),
+        ui('gen-type', 'describe', [[3.3, 8.6, 2.0]], [[0, 0.5, 0.5, 1.0], [0.5, 0.5, 0.5, 1.0], [1.2, 0.5, 0.3, 1.65]], 2.65, 0.4, text=[['st-describe', 0.2, 2.5]], sfx='whoosh', inset='br'),
         ui('gen-build', 'describe', [[8.6, 11.0, 2.0], [11.0, 40.0, 24.0], [40.0, 41.5, 1.0]], [[0, 0.5, 0.5, 1.0], [3.9, 0.5, 0.5, 1.04]], 3.9, 0.25, text=[['note-offline', 0.2, 4.1]]),
         ui('e-material', 'edit', [[13.2, 21.2, 3.0]], [[0, 0.73, 0.64, 1.9], [2.7, 0.73, 0.66, 1.9]], 2.67, 0.4, text=[['st-edit', 0.2, 2.5]], sfx='whoosh'),
         ui('e-time', 'edit', [[26.4, 39.6, 3.2]], [[0, 0.78, 0.3, 2.0], [3.0, 0.78, 0.3, 2.0], [4.1, 0.5, 0.5, 1.0]], 4.13, 0.4, text=[['st-relight', 0.2, 4.0]], sfx='whoosh'),

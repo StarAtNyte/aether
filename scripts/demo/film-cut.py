@@ -230,8 +230,9 @@ def segment(s):
         base = f"[{n}:v][uim]overlay=x=(W-w)/2:y=(H-h)/2:shortest=1:format=auto,format=yuv420p,zoompan=z='{zc}':x='({cx})*iw-iw/zoom/2':y='({cy})*ih-ih/zoom/2':d=1:s={W}x{H}:fps={FPS},unsharp=5:5:0.45:5:5:0"
         ov = ''
         cur = '[zm]'
+        ipos = {'tl': (40, 40), 'tr': (W - 480, 40), 'bl': (40, H - 288), 'br': (W - 480, H - 288)}[s.get('insetPos', 'tl')]
         for i, (a_, b_) in enumerate(spans):
-            ov += f"{cur}[tf{i}]overlay=x=40:y=40:enable='between(t,{a_:.3f},{b_:.3f})'[zo{i}];"
+            ov += f"{cur}[tf{i}]overlay=x={ipos[0]}:y={ipos[1]}:enable='between(t,{a_:.3f},{b_:.3f})'[zo{i}];"
             cur = f'[zo{i}]'
         vf = (sel + cat + f"{"[src]split=2[srcA][srcB];[srcA]" if spans else "[src]"}scale={uw}:{uh}:flags=lanczos,format=rgba[ui];[{n + 1}:v]format=gray,scale={uw}:{uh}[m];[ui][m]alphamerge[uim];"
               + th_chain + base + "[zm];" + ov + f"{cur}trim=duration={dur}[v]")
