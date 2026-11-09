@@ -43,6 +43,7 @@ import { resolveFog, MAX_FOG_DENSITY, type FogParams } from './fog';
 import { ENV_MAP_HEIGHT, ENV_MAP_WIDTH, skyEnvironmentPixels } from './env-map';
 import { createHdriSource, HdriController, hdriRotationFor, type HdriSource } from './hdri';
 import { setFoliageSun } from '../materials/foliage-shading';
+import { fixedClock } from '../view/fixed-clock';
 import { planSunShadows, type SunShadowPlan } from './sun-shadow-plan';
 import { SoftShadowFilter, SunCascades, type NodeLightShadow } from '../gpu/sun-shadow-nodes';
 
@@ -426,6 +427,8 @@ export class EnvironmentRig {
   private live = false;
   /** When the analytic reflection image was last redrawn by a live apply (ms, `performance.now`). */
   private liveEnvMapAt = Number.NEGATIVE_INFINITY;
+  /** The film clock the live sky map was last drawn at (offline captures). */
+  private liveEnvMapClock: number | null = null;
 
   /**
    * Tell the rig how large the meaningful content is (framing radius, metres).
@@ -537,10 +540,14 @@ export class EnvironmentRig {
     this.envBase = this.state.envIntensity;
     if (this.live && this.envMap && scene.environment === this.envMap) {
       const now = performance.now();
-      if (now - this.liveEnvMapAt < LIVE_ENV_MAP_MS && (globalThis as { __AETHER_CAPTURE?: { on?: boolean } }).__AETHER_CAPTURE?.on !== true) {
+      // Offline footage (`__AETHER_CAPTURE`): the map follows the film clock, once per moment (never the wall clock: the sub-frame
+      // draws of one moment share it, and a slow render does not change what a frame shows).
+      const clock = (globalThis as { __AETHER_CAPTURE?: { on?: boolean } }).__AETHER_CAPTURE?.on === true ? fixedClock() : null;
+      if (clock !== null ? clock === this.liveEnvMapClock : now - this.liveEnvMapAt < LIVE_ENV_MAP_MS) {
         scene.environmentIntensity = this.envBase * this.envScale;
         return;
       }
+      this.liveEnvMapClock = clock;
       this.liveEnvMapAt = now;
     } else this.liveEnvMapAt = Number.NEGATIVE_INFINITY;
     const groundSpec = this.state.showGround ? this.env?.ground : null;

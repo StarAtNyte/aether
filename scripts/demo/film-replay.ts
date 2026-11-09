@@ -64,9 +64,10 @@ async function main(): Promise<void> {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
     await ctx.addInitScript({ content: SKIP_FIRST_RUN });
     await ctx.addInitScript({ content: 'globalThis.__name = (f) => f;' });
-    await ctx.addInitScript({ content: `globalThis.__AETHER_CAPTURE = { on: true, lodBoost: 4, mirrorScale: 1, shadowMapCap: 4096, lockEye: true };` });
+    await ctx.addInitScript({ content: `globalThis.__AETHER_CAPTURE = { on: true, lodBoost: ${num('lod', 2)}, mirrorScale: ${num('mirror', 1)}, shadowMapCap: ${num('shadowcap', 4096)}, lockEye: true };` });
     await ctx.addInitScript({ content: "try { const k='aether.studio.settings.v1'; const s=JSON.parse(localStorage.getItem(k)||'{}'); s.renderTier='ultra'; s.showNavHint=false; s.motion='sharp'; localStorage.setItem(k, JSON.stringify(s)); } catch {}" });
     const page = await ctx.newPage();
+    page.on('console', (m) => { if (m.text().startsWith('replay:')) log(m.text()); });
     page.on('pageerror', (e) => log(`pageerror: ${e.message.slice(0, 200)}`));
     await page.goto(`${server.url}/?debug=1#/new/${arg('base') ?? 'scandi-living-room'}`, { waitUntil: 'domcontentloaded' });
     await editorReady(page);
@@ -97,9 +98,9 @@ async function main(): Promise<void> {
       const buf = Buffer.from(b64, 'base64');
       if (!ff.stdin.write(buf)) await new Promise<void>((r) => ff.stdin.once('drain', () => r()));
       n++;
-      if (n % 30 === 0) log(`frame ${n}`);
+      if (n % 5 === 0) log(`frame ${n}`);
     });
-    const marks = await page.evaluate(async ({ all, per, hold, c, r, W, H, sub, az0, arc, elev0, dm, fov }) => {
+    const marks = await page.evaluate(async ({ all, per, hold, c, r, W, H, sub, taaOff, noJitter, az0, arc, elev0, dm, fov }) => {
       const a = window.__aether!;
       const sim = a.simulation as unknown as { renderer: unknown; whenSynced(): Promise<void> };
       const rend = sim.renderer as {
@@ -108,7 +109,7 @@ async function main(): Promise<void> {
       };
       rend.setRenderTier('ultra');
       rend.stopTour();
-      rend.setEffects({ taa: false });
+      if (taaOff) rend.setEffects({ taa: false });
       await rend.preparePost();
       rend.setFixedClock(0, 0);
       let session: ReturnType<typeof rend.beginCapture> | null = null;
@@ -134,13 +135,19 @@ async function main(): Promise<void> {
         rend.setFixedClock(t, 1 / 30);
         const n = save ? sub : 1;
         const acc = save ? new Uint32Array(W * H * 4) : null;
+        const tShoot = performance.now();
         for (let s = 0; s < n; s++) {
           // The world steps by the frame's time once (with the first draw); the other draws are the same moment.
-          const px = await cap.frame(pose, { dt: s === 0 ? 1 / 30 : 0, jitter: jit(k * 11 + s) });
+          const t1 = performance.now();
+          const px = await cap.frame(pose, { dt: s === 0 ? 1 / 30 : 0, ...(noJitter ? {} : { jitter: jit(k * 11 + s) }) });
+          const t2 = performance.now();
           if (acc) for (let i = 0; i < acc.length; i++) acc[i]! += px[i]!;
+          if (k % 3 === 0) console.log(`replay: draw ${s} ${Math.round(t2 - t1)} ms, accumulate ${Math.round(performance.now() - t2)} ms`);
         }
+        const drawMs = Math.round(performance.now() - tShoot);
         t += 1 / 30;
-        if (!acc) return;
+        if (!acc) { if (k % 4 === 0) console.log(`replay: warm draw ${drawMs} ms`); return; }
+        if (k % 3 === 0) console.log(`replay: frame ${k} ${n} draws ${drawMs} ms`);
         const out = new Uint8Array(W * H * 4);
         for (let i = 0; i < out.length; i++) out[i] = i % 4 === 3 ? 255 : Math.round(acc[i]! / n);
         const url = await new Promise<string>((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result as string); fr.readAsDataURL(new Blob([out])); });
@@ -153,8 +160,10 @@ async function main(): Promise<void> {
       for (let f = 0; f < 8; f++) await shoot(0, false);
       for (let f = 0; f < hold; f++) { await shoot(k++ / total, true); frame++; }
       for (let i = 3; i < all.length; i += per) {
+        const ts = performance.now();
         a.history.commit(all.slice(i, i + per), `replay ${i}`, 'agent');
         await Promise.race([sim.whenSynced(), new Promise((r) => setTimeout(r, 25_000))]);
+        console.log(`replay: step ${i} synced in ${Math.round(performance.now() - ts)} ms`);
         (rend as unknown as { grow?: { finishAll(): void } }).grow?.finishAll();
         for (let f = 0; f < 8; f++) await shoot(k / total, false);
         marks.push({ frame, step: i });
@@ -164,7 +173,7 @@ async function main(): Promise<void> {
       session.end();
       rend.setEffects({});
       return marks;
-    }, { all, per, hold, c: info.c, r: info.r, W, H, sub: SUB, az0: num('az', 200), arc: num('arc', 50), elev0: num('elev', 26), dm: num('dist', 1.7), fov: num('fov', 40) });
+    }, { all, per, hold, c: info.c, r: info.r, W, H, sub: SUB, taaOff: arg('taa') !== '1', noJitter: arg('jitter') === '0', az0: num('az', 200), arc: num('arc', 50), elev0: num('elev', 26), dm: num('dist', 1.7), fov: num('fov', 40) });
     ff.stdin.end();
     await ffDone;
     writeFileSync(join(OUT, `${NAME}.steps.json`), JSON.stringify({ messages: commits.map((c) => c.m), marks, fps: FPS, size: [W, H], sub: SUB }, null, 1));

@@ -5301,7 +5301,9 @@ export class WorldRenderer {
     let changed = last[32] !== this.cssHeight * this.renderer.getPixelRatio();
     for (let i = 0; i < 16; i++) {
       if (last[i] !== w[i]) changed = true;
-      if (last[16 + i] !== p[i]) changed = true;
+      // A capture's sub-pixel jitter (offline supersampling, temporal AA) shifts the projection by a fraction of a pixel: the
+      // level-of-detail plan of the scatter fields does not depend on it, and a re-plan per draw costs seconds on a forest.
+      if (last[16 + i] !== p[i] && !(this.captureActive && (i === 8 || i === 9))) changed = true;
       last[i] = w[i] as number;
       last[16 + i] = p[i] as number;
     }
