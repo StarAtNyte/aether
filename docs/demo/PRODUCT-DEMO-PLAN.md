@@ -189,7 +189,7 @@ Prove it, Share it, Go further, then the end card. Captions are sentences with a
 no jargon ("a bot plays your game", not "replay seal"). Beats run 3.5 to 6 s; the result is held for a full second; transitions are
 at most three frames. Length about 2:56 (container at most 179 s) and a 60 s trailer with one beat per act.
 
-Ten capabilities, shown properly: describe a world; the AI builds it step by step; edit by hand; edit by chat; time of day without
+Eleven capabilities, shown properly: describe a world; start from a photo; the AI builds it step by step; edit by hand; edit by chat; time of day without
 re-baking; the architecture views; the playability bot and the checks; publish a link and open it on a laptop and a phone;
 exports (one clip walks through the hub's targets); play modes (drone, walk, game); the local Blender harness; an animated short.
 Dropped to one closing sentence: terrain sculpting, game rules beyond one beat, the command palette.
@@ -208,6 +208,7 @@ encode retries at the first frame's size (`film-ui.ts` devices).
 | Act 1 | a1b1 | Type the world you want, in plain words. | 5.2 | film7/describe (full app, then zoom to the box) | v7 capture good (0% of gaps over 50 ms) |  |
 | Act 1 | a1b2 | The AI builds it step by step: the land and the market first, then the houses. | 5.2 | film7/build-village3 (offline render, fixed clock) | v7 render good; re-render if the world pipeline offers better |  |
 | Act 1 | a1b3 | A house builds the same way: floors, then stairs, then the garden. | 4.8 | film7/build-villa2 (offline render, fixed clock) | v7 render good; re-render if the world pipeline offers better |  |
+| Act 1 | a1b4 | Start from a photo: the AI rebuilds the room in 3D. | 0 | photo (CC0) + film8/clips/photo-hotel-walk.mp4 | LEFT OUT until the walk is rendered | film-shots.ts photo-hotel |
 | Act 2 | act2 | (title card) Shape it: Change it by hand, by words, by light. | 1.3 | card | new |  |
 | Act 2 | a2b1 | Click a piece, then drag it where you want it. | 5.0 | film7/edit (select, move gizmo) | RE-RECORD: gaps 3-6% over 50 ms; the click shows a wall brightness jump | edit scene, quiet machine |
 | Act 2 | a2b2 | Swap its material with one click. | 3.9 | film7/edit (material presets) | RE-RECORD with the edit take (5.8% over 50 ms) | edit scene |
@@ -228,12 +229,12 @@ encode retries at the first frame's size (`film-ui.ts` devices).
 | Act 4 | a4b4 | Published worlds open in their own mode, and any of them can be remixed. | 5.0 | film7/livehome (live site, Featured) | v7 capture good (0% over 50 ms) |  |
 | Act 4 | a4b5 | Fly over a whole city by drone. | 5.0 | film8/clips/drone-lisbon (fallback v6/v7 footage) | world clip | world-footage pipeline |
 | Act 4 | a4b6 | Walk through a house, at any time of day. | 4.2 | film8/clips/house-walk (fallback v6/v7 footage) | world clip | world-footage pipeline |
-| Act 4 | a4b7 | Or float over a landscape at golden hour. | 4.6 | film8/clips/landscape (fallback v6/v7 footage) | world clip | world-footage pipeline |
-| Act 4 | a4b8 | Play a game as a character. | 3.8 | film2/ui/play (real-time 4K capture) or a film8 clip | REPLACE with a film8 clip if the pipeline renders a game shot |  |
+| Act 4 | a4b7 | Or float over a landscape at golden hour. | 4.0 | film8/clips/landscape (fallback v6/v7 footage) | world clip | world-footage pipeline |
+| Act 4 | a4b8 | Play a game as a character. | 3.0 | film2/ui/play (real-time 4K capture) or a film8 clip | REPLACE with a film8 clip if the pipeline renders a game shot |  |
 | Act 5 | act5 | (title card) Go further: Characters, photoreal shots, a short film. | 1.3 | card | new |  |
 | Act 5 | a5b1 | Describe a character: Blender builds it on your computer, front, side and back. | 6.0 | film2/tt-mio + sheet | existing |  |
 | Act 5 | a5b2 | And it renders a photoreal shot of it, locally. | 0 | aether-blender-real-shot.mp4 | LEFT OUT until the file lands |  |
-| Act 5 | a5b3 | Stories too: a short film written and rendered in Aether, with its own sound. (about 30 s, three captions carry the story) | 38.3 | film6/shots/two-whistles (offline render from current main) | existing; re-render if the pipeline improves it |  |
+| Act 5 | a5b3 | Stories too: a short film written and rendered in Aether, with its own sound. (about 30 s, three captions carry the story) | 31.9 | film6/shots/two-whistles (offline render from current main) | existing; re-render if the pipeline improves it |  |
 | Act 5 | a5b4 | And more: sculpt terrain, write game rules, search every command. | 3.8 | film8/clips/isles (one calm shot) | world clip |  |
 | End | end | Aether. Describe it. Shape it. Share it. | 5.0 | card | existing style |  |
 
@@ -249,3 +250,22 @@ Kept from v7 (good pacing): describe, publish hub link, architecture plan, Featu
 render. Recorded already at the quiet time: `film8/tour-hub` (3.4% of gaps over 50 ms). Waiting on: world clips in `film8/clips/`
 (hook, drone-lisbon, house-walk, landscape, isles; v6/v7 footage is the fallback) and `aether-blender-real-shot.mp4`.
 Offline after the captures: cards, score, cut (about 15 to 25 min) and the trailer (about 10 min).
+
+## Photo to 3D (added to Act 1)
+
+The feature is real and has real saved runs: the four "Rooms rebuilt from a photo" examples (photo-hotel-bedroom, photo-twin-room,
+photo-four-poster, photo-vaulted-bedroom) are saved runs of the photo-to-room flow (`apps/studio/src/showcase/manifest.ts`, "credit on
+each card"; the run transcripts are in `tests/fixtures/photo`, for example `hotel.transcript.json`, and the twin room was re-recorded
+from a live run). The source photos are in `tests/fixtures/photo` and each carries its licence in the manifest: the hotel bedroom is
+CC0 1.0 (Markus Spiske, Wikimedia Commons), the twin room CC0 1.0 (Profpcde), the two others public domain (Government of the United
+States Virgin Islands). So a real photo and its result can be shown side by side in time, with the credit on screen.
+
+Beat a1b4, caption "Start from a photo: the AI rebuilds the room in 3D." (7.2 s): the CC0 hotel photo for 2.2 s with "Example photo:
+Markus Spiske, CC0", then the saved run's room walked for 5 s (an offline render of the world from the player's spawn, the shot
+`photo-hotel-walk` in `scripts/demo/film/shots.json`) with "Saved run of the photo flow, no model call now". Nothing is faked: no
+live model call is made and the room is the one built from that photograph. A live capture can replace the whole beat: drop it at
+`~/.local/share/aether/demo/aether-photo-to-3d-live.mp4` (`PHOTO_TO_3D` in `make-edl8.py`).
+
+Capture needed after "go": render `photo-hotel-walk` with `film-shots.ts --only=photo-hotel-walk --out=film8/clips` (one 6 s clip,
+about 5 minutes; check the first frame against the photo, adjust the camera in shots.json if it does not match). No generated
+photo is needed, so no Codex image generation was used.

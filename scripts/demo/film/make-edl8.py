@@ -20,6 +20,14 @@ F6, F7, F8 = f'{D}/film6', f'{D}/film7', f'{D}/film8'
 F2, F1, INTRO = f'{D}/film2/shots', f'{D}/film/shots', f'{D}/intro/shots'
 BLENDER_REAL = f'{D}/aether-blender-real-shot.mp4'
 BLENDER_REAL_SECONDS = 9.0
+# Photo to 3D. The pair is real and rights-clean: the example photo is CC0 (Markus Spiske, Wikimedia Commons; credit in
+# apps/studio/src/showcase/manifest.ts) and the room is the saved run of the photo flow that was built from it (template
+# photo-hotel-bedroom; the transcripts are in tests/fixtures/photo). The walk is an offline render of that world (film8/clips/
+# photo-hotel-walk.mp4, from the player's spawn). PHOTO_TO_3D is the named slot for a live capture of the whole beat (a photo
+# attached in the chat, the build, the walk): when that file exists it replaces the photo and the render. No live model is used.
+PHOTO_SRC = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../../tests/fixtures/photo/bedroom-cc0-hotel.jpg'))
+PHOTO_WALK = f'{F8}/clips/photo-hotel-walk.mp4'
+PHOTO_TO_3D = f'{D}/aether-photo-to-3d-live.mp4'
 XF = 0.1  # the longest dissolve between two shots: three frames (the cards' fades are separate)
 ARCH_EQ = 'eq=contrast=1.16:saturation=1.1:gamma=0.92:brightness=-0.03'
 REPLAY_POST = "tmix=frames=5:weights='1 2 3 2 1',"
@@ -134,7 +142,7 @@ def build():
     CARDS['hook'] = {'kind': 'hook', 'text': 'Describe a world.', 'sub': 'Aether builds it, lights it and publishes it.'}
     CARDS['end'] = {'kind': 'end', 'text': 'Aether', 'sub': 'Describe it. Shape it. Share it.', 'url': 'aether-studio-lyart.vercel.app'}
     for k, t in (('note-offline', 'Offline planner, no model call'), ('note-replay', 'Build replay, frame by frame'), ('note-local', 'Local run, Blender'),
-                 ('note-live-site', 'Captured from the live site'), ('note-nothing', 'Real link, nothing uploaded'), ('note-film', 'Animated short, made with Aether')):
+                 ('note-live-site', 'Captured from the live site'), ('note-photo', 'Example photo: Markus Spiske, CC0'), ('note-photo-run', 'Saved run of the photo flow, no model call now'), ('note-nothing', 'Real link, nothing uploaded'), ('note-film', 'Animated short, made with Aether')):
         CARDS[k] = {'kind': 'note', 'text': t}
     CARDS['dev'] = {'kind': 'devlabels', 'x1': 763, 'x2': 1554, 'y': 90, 't1': 'Laptop', 't2': 'Phone'}
 
@@ -162,6 +170,21 @@ def build():
             c = caption_card(1, bid, n, cap)
             s = frames(bid, f'{F7}/build-{d}/f%05d.jpg', 10, dur, speed=speed, post=REPLAY_POST, sfx='whoosh')
             add('Act 1', bid, n, cap, with_text(s, c, ['note-replay']), f'film7/build-{d} (offline render, fixed clock)', 'v7 render good; re-render if the world pipeline offers better', trailer=4.0 if key == 'villa' else None)
+
+    # ---- photo to 3D (still Act 1: another way to start)
+    n += 1
+    cap = 'Start from a photo: the AI rebuilds the room in 3D.'
+    c = caption_card(1, 'a1b4', n, cap)
+    if have(PHOTO_TO_3D):
+        add('Act 1', 'a1b4', n, cap, with_text({'name': 'a1b4', 'src': PHOTO_TO_3D, 'mode': 'full', 'in': 0.0, 'dur': 9.0, 'xfade': XF, 'grade': False, 'sfx': 'whoosh'}, c),
+            'aether-photo-to-3d-live.mp4 (live capture, PHOTO_TO_3D slot)', 'live capture', '')
+    elif have(PHOTO_SRC) and have(PHOTO_WALK):
+        ph = {'name': 'a1b4a', 'src': PHOTO_SRC, 'mode': 'image', 'dur': 2.2, 'xfade': XF, 'grade': False, 'sfx': 'whoosh', 'text': [[c, 0.2, 2.05], ['note-photo', 0.2, 2.05]]}
+        wk = clip('a1b4b', PHOTO_WALK, 0.3, 5.0, [[c, 0.2, 4.85], ['note-photo-run', 0.2, 4.85]])
+        SEGS.extend([ph, wk])
+        BEATS.append(('Act 1', 'a1b4', cap + ' (the photo, then the room walked)', 7.2, 'tests/fixtures/photo/bedroom-cc0-hotel.jpg (CC0) + offline render of template photo-hotel-bedroom', 'NEW render (the saved run built from that photo)', 'film-shots.ts: scout photo-hotel-bedroom, one 5 s walk from the spawn'))
+    else:
+        BEATS.append(('Act 1', 'a1b4', cap, 0, 'photo (CC0) + film8/clips/photo-hotel-walk.mp4', 'LEFT OUT until the walk is rendered', 'film-shots.ts photo-hotel'))
 
     # ---- Act 2: Shape it
     act_card(2)
@@ -261,13 +284,13 @@ def build():
         seg = {'name': 'a4b4', 'src': LH, 'mode': 'browser', 'url': 'aether-studio-lyart.vercel.app', 'in': ev('livehome', 'featured') + 1.0, 'dur': 5.0, 'xfade': XF, 'sfx': 'whoosh'}
         add('Act 4', 'a4b4', n, 'Published worlds open in their own mode, and any of them can be remixed.', with_text(seg, c, ['note-live-site']), 'film7/livehome (live site, Featured)', 'v7 capture good (0% over 50 ms)')
     for bid, name, fb, i0, dur, cap, tr in (('a4b5', 'drone-lisbon', f'{F1}/lisbon-drone.mp4', 0.5, 5.0, 'Fly over a whole city by drone.', 3.5), ('a4b6', 'house-walk', f'{F1}/casa-pool.mp4', 1.0, 4.2, 'Walk through a house, at any time of day.', None),
-                                           ('a4b7', 'landscape', f'{INTRO}/m-terraces-falls.mp4', 9.0, 4.6, 'Or float over a landscape at golden hour.', None)):
+                                           ('a4b7', 'landscape', f'{INTRO}/m-terraces-falls.mp4', 9.0, 4.0, 'Or float over a landscape at golden hour.', None)):
         n += 1
         c = caption_card(4, bid, n, cap)
         add('Act 4', bid, n, cap, with_text(clip(bid, clipsrc(name, fb), i0, dur, sfx='whoosh' if bid == 'a4b5' else None), c), f'film8/clips/{name} (fallback v6/v7 footage)', 'world clip', 'world-footage pipeline', trailer=tr)
     n += 1
     c = caption_card(4, 'a4b8', n, 'Play a game as a character.')
-    add('Act 4', 'a4b8', n, 'Play a game as a character.', with_text(ui('a4b8', f'{D}/film2/ui/play.mp4', [[1.0, 4.8, 1.0]], [[0, 0.5, 0.5, 1.0]], 3.8, sfx=None), c), 'film2/ui/play (real-time 4K capture) or a film8 clip', 'REPLACE with a film8 clip if the pipeline renders a game shot', '')
+    add('Act 4', 'a4b8', n, 'Play a game as a character.', with_text(ui('a4b8', f'{D}/film2/ui/play.mp4', [[1.0, 4.0, 1.0]], [[0, 0.5, 0.5, 1.0]], 3.0, sfx=None), c), 'film2/ui/play (real-time 4K capture) or a film8 clip', 'REPLACE with a film8 clip if the pipeline renders a game shot', '')
 
     # ---- Act 5: Go further
     act_card(5)
@@ -290,7 +313,7 @@ def build():
         c2 = caption_card(5, 'a5b3b', n, 'Mio is leaving on the evening train. Kaho runs to say goodbye.')
         s1 = anime('a5b3b', 28.2, 31.5)
         s2 = anime('a5b3c', 32.3, 36.3, [[c2, 0.25, 3.8]])
-        rest = [anime('a5b3d', 17.4, 21.4)] + [anime(*a) for a in (('a5b3e', 36.8, 40.8), ('a5b3f', 41.8, 45.4), ('a5b3g', 56.8, 60.3), ('a5b3h', 61.2, 64.2), ('a5b3i', 68.0, 70.4), ('a5b3j', 87.0, 92.5))]
+        rest = [anime('a5b3d', 17.4, 21.4)] + [anime(*a) for a in (('a5b3e', 36.8, 40.8), ('a5b3f', 41.8, 45.4), ('a5b3g', 56.8, 60.3), ('a5b3j', 87.0, 91.5))]
         c3 = caption_card(5, 'a5b3k', n, 'Two whistles from the cape: the promise kept.')
         rest[-1]['text'] = [[c3, 0.5, 5.2]]
         for sg in [s0, s1, s2] + rest:

@@ -792,5 +792,42 @@
     }
    }
   ]
+ },
+ "photo-hotel-walk": {
+  "slug": "photo-hotel-bedroom",
+  "settle": 8,
+  "shots": [
+   {
+    "duration": 6,
+    "ease": "inOut",
+    "_note": "from the world's player spawn (3.4, 0.1, 2.54, yaw 10): eye height, looking across the room like the photo; a slow dolly in and a small turn. Check the first frame against the photo before the full render.",
+    "camera": {
+     "fov": 62,
+     "position": [
+      3.4,
+      1.55,
+      2.54
+     ],
+     "target": [
+      2.9,
+      1.35,
+      -0.4
+     ]
+    },
+    "cameraTo": {
+     "fov": 62,
+     "position": [
+      3.0,
+      1.55,
+      1.3
+     ],
+     "target": [
+      1.2,
+      1.3,
+      -0.9
+     ]
+    }
+   }
+  ]
  }
 }
