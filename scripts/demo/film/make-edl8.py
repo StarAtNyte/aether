@@ -338,17 +338,16 @@ def build():
     if have(LH):
         n += 1
         c = caption_card(4, 'a4b4', n, 'Published worlds open in their own mode, and any of them can be remixed.')
-        seg = {'name': 'a4b4', 'src': LH, 'mode': 'browser', 'url': 'aether-studio-lyart.vercel.app', 'in': ev('livehome', 'featured') + 1.0, 'dur': 5.0, 'xfade': XF, 'sfx': 'whoosh'}
+        seg = {'name': 'a4b4', 'src': LH, 'mode': 'browser', 'url': 'aether-studio-lyart.vercel.app', 'in': ev('livehome', 'featured') + 1.0, 'dur': 5.5, 'xfade': XF, 'sfx': 'whoosh'}
         add('Act 4', 'a4b4', n, 'Published worlds open in their own mode, and any of them can be remixed.', with_text(seg, c, ['note-live-site']), 'film7/livehome (live site, Featured)', 'v7 capture good (0% over 50 ms)')
     MD = f'{F8}/modes/modes.mp4'
     if have(MD) and evx('modes', 'drone button pressed'):
         n += 1
         c = caption_card(4, 'a4b4d', n, 'Press Drone: the camera lifts off and flies over the city.')
         pr = ev('modes', 'drone button pressed')
-        sg = ui('a4b4d', MD, [[pr - 2.0, pr + 1.3, 1.0], [pr + 1.3, pr + 13.3, 3.0]], [[0, 0.5, 0.5, 1.0], [7.3, 0.5, 0.5, 1.0]], 7.3, sfx='whoosh')
-        CARDS['note-sped'] = {'kind': 'note', 'text': 'The first seconds of the flight, sped up 3x'}
-        sg['text'] = [[c, 0.25, 7.1], ['note-sped', 3.4, 7.1]]
-        add('Act 4', 'a4b4d', n, 'Press Drone: the camera lifts off and flies over the city.', sg, 'film8/modes (real take: the Drone button, then the lift-off, slow start sped up 3x)', 'NEW capture (12% of gaps over 50 ms in the heavy city; used for the click and the start only)', 'modes --clickDrone=1', trailer=4.5)
+        sg = ui('a4b4d', MD, [[pr + 0.0, pr + 2.2, 1.0]], [[0, 0.5, 0.5, 1.0]], 2.2, sfx='whoosh')
+        sg['text'] = [[c, 0.25, 2.05]]
+        add('Act 4', 'a4b4d', n, 'Press Drone: the camera lifts off and flies over the city.', sg, 'film8/modes (real take: the Drone button and the click, 2.2 s at 1:1, then the clean flight clip)', 'NEW capture (12% of gaps over 50 ms and blocky at 100%; used for the click only; re-record at scale 1.5 when the machine is quiet)', 'modes --clickDrone=1 --scale=1.5', trailer=2.2)
     for bid, name, fb, i0, dur, cap, tr in (('a4b5', 'drone-lisbon', f'{F1}/lisbon-drone.mp4', 0.0, 4.3, 'Fly over a whole city by drone.', 4.5), ('a4b6', 'house-walk', f'{F1}/casa-pool.mp4', 1.0, 4.2, 'Walk through a house, at any time of day.', None),
                                            ('a4b7', 'landscape', f'{INTRO}/m-terraces-falls.mp4', 0.4, 5.0, 'Or float over a landscape at golden hour.', None)):
         n += 1
@@ -362,7 +361,7 @@ def build():
     n += 1
     c = caption_card(5, 'a5b1', n, 'Describe a character: Blender builds it on your computer, front, side and back.')
     add('Act 5', 'a5b1', n, 'Describe a character: Blender builds it on your computer, front, side and back.',
-        with_text({'name': 'a5b1', 'src': f'{D}/film2/tt-mio/f%04d.png', 'mode': 'turntable', 'beside': f'{D}/film2/mio/sheet.png', 'dur': 5.0, 'speed': 1.1, 'xfade': XF, 'sfx': 'whoosh'}, c, ['note-local']), 'film2/tt-mio + sheet', 'existing', '', trailer=3.5)
+        with_text({'name': 'a5b1', 'src': f'{D}/film2/tt-mio/f%04d.png', 'mode': 'turntable', 'beside': f'{D}/film2/mio/sheet.png', 'dur': 6.5, 'speed': 1.1, 'xfade': XF, 'sfx': 'whoosh'}, c, ['note-local']), 'film2/tt-mio + sheet', 'existing', '', trailer=3.5)
     if have(BLENDER_REAL):
         n += 1
         c = caption_card(5, 'a5b2', n, 'And it renders a photoreal shot of it, locally.')
