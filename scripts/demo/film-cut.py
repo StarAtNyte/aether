@@ -148,7 +148,7 @@ def segment(s):
     # the cache key: the segment's settings and its source file's time (a retaken source renders again)
     srcf = os.path.expanduser(s['src'])
     stamp = os.path.getmtime(srcf) if os.path.exists(srcf) else 0
-    key = hashlib.sha1(json.dumps({**{k: v for k, v in s.items() if k not in ('text', 'xfade')}, '_t': stamp}, sort_keys=True).encode()).hexdigest()[:10]
+    key = hashlib.sha1(json.dumps({**{k: v for k, v in s.items() if k not in ('text', 'xfade', 'sfx')}, '_t': stamp}, sort_keys=True).encode()).hexdigest()[:10]
     out = os.path.join(WORK, f"seg-{s['name']}-{key}.mp4")
     if os.path.exists(out):
         return out
@@ -197,15 +197,72 @@ def segment(s):
         cy = pw([(c[0], c[2]) for c in cams], fr, 0.5 * (1 - fr)).replace('T', T)
         # each part is its own seeked input: with one shared input the concat would buffer the other parts' 4K frames
         n = len(parts)
-        sel = ''.join(f"[{i}:v]setpts=(PTS-STARTPTS)/{sp},fps={FPS}[p{i}];" for i, (a, b, sp) in enumerate(parts))
+        # "smooth": a take painted at a few frames a second (a heavy scene at 4K): the repeated frames are dropped and the 30 fps
+        # picture is blended between the painted ones, by their paint times
+        if s.get('smooth'):
+            sel = ''.join(f"[{i}:v]mpdecimate,setpts=(PTS-STARTPTS)/{sp},framerate=fps={FPS}:interp_start=0:interp_end=255:scene=100[p{i}];" for i, (a, b, sp) in enumerate(parts))
+        else:
+            sel = ''.join(f"[{i}:v]setpts=(PTS-STARTPTS)/{sp},fps={FPS}[p{i}];" for i, (a, b, sp) in enumerate(parts))
         cat = ''.join(f'[p{i}]' for i in range(n)) + f'concat=n={n}:v=1:a=0[src];'
         inputs = []
         for (a, b, sp) in parts:
             inputs += ['-ss', str(a), '-t', str(b - a), '-i', src]
         inputs += ['-loop', '1', '-framerate', str(FPS), '-i', bg, '-loop', '1', '-framerate', str(FPS), '-i', mk]
-        vf = (sel + cat + f"[src]scale={uw}:{uh}:flags=lanczos,format=rgba[ui];[{n + 1}:v]format=gray,scale={uw}:{uh}[m];[ui][m]alphamerge[uim];"
-              f"[{n}:v][uim]overlay=x=(W-w)/2:y=(H-h)/2:shortest=1:format=auto,format=yuv420p,"
-              f"zoompan=z='{zc}':x='({cx})*iw-iw/zoom/2':y='({cy})*ih-ih/zoom/2':d=1:s={W}x{H}:fps={FPS},unsharp=5:5:0.45:5:5:0,trim=duration={dur}[v]")
+        # a small whole-window thumbnail in the corner while the camera is zoomed in (so the viewer always knows where they are)
+        spans, inside, prev = [], False, None
+        for (ct, fx, fy, z) in cams:
+            if not inside and z >= 1.4:
+                spans.append([prev[0] if prev else ct, None])
+                inside = True
+            elif inside and z < 1.4:
+                spans[-1][1] = prev[0] + 0.5 * (ct - prev[0])
+                inside = False
+            prev = (ct, z)
+        if inside:
+            spans[-1][1] = dur
+        spans = [(a_, b_) for a_, b_ in spans if b_ - a_ > 1.0] if s.get('inset', True) else []
+        thumbs, th_chain = '', ''
+        if spans:
+            k_ = len(spans)
+            th_chain = f"[srcB]scale=440:248:flags=lanczos,drawbox=0:0:iw:ih:color=white@0.85:t=3,format=rgba,split={k_}" + ''.join(f'[tz{i}]' for i in range(k_)) + ';'
+            for i, (a_, b_) in enumerate(spans):
+                th_chain += f"[tz{i}]fade=t=in:st={a_:.3f}:d=0.4:alpha=1,fade=t=out:st={b_ - 0.4:.3f}:d=0.4:alpha=1[tf{i}];"
+        base = f"[{n}:v][uim]overlay=x=(W-w)/2:y=(H-h)/2:shortest=1:format=auto,format=yuv420p,zoompan=z='{zc}':x='({cx})*iw-iw/zoom/2':y='({cy})*ih-ih/zoom/2':d=1:s={W}x{H}:fps={FPS},unsharp=5:5:0.45:5:5:0"
+        ov = ''
+        cur = '[zm]'
+        for i, (a_, b_) in enumerate(spans):
+            ov += f"{cur}[tf{i}]overlay=x=40:y=40:enable='between(t,{a_:.3f},{b_:.3f})'[zo{i}];"
+            cur = f'[zo{i}]'
+        vf = (sel + cat + f"{"[src]split=2[srcA][srcB];[srcA]" if spans else "[src]"}scale={uw}:{uh}:flags=lanczos,format=rgba[ui];[{n + 1}:v]format=gray,scale={uw}:{uh}[m];[ui][m]alphamerge[uim];"
+              + th_chain + base + "[zm];" + ov + f"{cur}trim=duration={dur}[v]")
+    elif mode == 'devices':
+        # a laptop-sized and a phone-sized capture of the same player side by side on the stage, each rounded with a soft shadow
+        lw, lh, pw_, ph = 1120, 700, 323, 700
+        gap = 70
+        lx, ly = (W - (lw + gap + pw_)) // 2, 110
+        px, py = lx + lw + gap, ly
+        stage = os.path.join(WORK, 'devstage.png')
+        if not os.path.exists(stage):
+            from PIL import Image, ImageDraw, ImageFilter
+            img = Image.open(backdrop() or BACKDROP).convert('RGB')
+            sh = Image.new('L', (W, H), 0)
+            d = ImageDraw.Draw(sh)
+            d.rounded_rectangle([lx, ly + 16, lx + lw, ly + lh + 16], 16, fill=200)
+            d.rounded_rectangle([px - 8, py + 16, px + pw_ + 8, py + ph + 24], 36, fill=200)
+            img = Image.composite(Image.new('RGB', (W, H), (0, 0, 0)), img, sh.filter(ImageFilter.GaussianBlur(30)))
+            d2 = ImageDraw.Draw(img)
+            d2.rounded_rectangle([px - 8, py - 8, px + pw_ + 8, py + ph + 8], 36, fill=(26, 29, 36))
+            img.save(stage)
+            for nm, (w_, h_, r_) in (('lap', (lw, lh, 14)), ('pho', (pw_, ph, 28))):
+                m = Image.new('L', (w_, h_), 0)
+                ImageDraw.Draw(m).rounded_rectangle([0, 0, w_ - 1, h_ - 1], r_, fill=255)
+                m.save(os.path.join(WORK, f'devmask-{nm}.png'))
+        (lf, li), (pf_, pi) = s['laptop'], s['phone']
+        inputs = ['-loop', '1', '-framerate', str(FPS), '-i', stage, '-ss', str(li), '-t', str(dur), '-i', os.path.expanduser(lf), '-ss', str(pi), '-t', str(dur), '-i', os.path.expanduser(pf_),
+                  '-loop', '1', '-framerate', str(FPS), '-i', os.path.join(WORK, 'devmask-lap.png'), '-loop', '1', '-framerate', str(FPS), '-i', os.path.join(WORK, 'devmask-pho.png')]
+        vf = (f"[1:v]setpts=PTS-STARTPTS,scale={lw}:{lh}:flags=lanczos,fps={FPS},format=rgba[l];[3:v]format=gray[ml];[l][ml]alphamerge[lm];"
+              f"[2:v]setpts=PTS-STARTPTS,scale={pw_}:{ph}:flags=lanczos,fps={FPS},format=rgba[p];[4:v]format=gray[mp];[p][mp]alphamerge[pm];"
+              f"[0:v][lm]overlay=x={lx}:y={ly}:shortest=1[a];[a][pm]overlay=x={px}:y={py}:shortest=1,format=yuv420p,trim=duration={dur}[v]")
     elif mode == 'window':
         backdrop()
         ww, wh = s.get('win', [1632, 918])
@@ -283,7 +340,10 @@ def main():
     v = prev_v
     for j, (idx, t0, t1) in enumerate(ov):
         chain.append(f"[{idx}:v]format=rgba,fade=t=in:st={t0:.3f}:d=0.7:alpha=1,fade=t=out:st={t1 - 0.7:.3f}:d=0.7:alpha=1[o{j}]")
-        chain.append(f"{v}[o{j}]overlay=enable='between(t,{t0:.3f},{t1:.3f})'[w{j}]")
+        # a short eased rise on the way in (cubic out) and a small drop on the way out, with the fade
+        pin, pout = f"clip((t-{t0:.3f})/0.7,0,1)", f"clip((t-{t1 - 0.7:.3f})/0.7,0,1)"
+        yexp = f"26*pow(1-{pin},3)+14*pow({pout},2)"
+        chain.append(f"{v}[o{j}]overlay=x=0:y='{yexp}':enable='between(t,{t0:.3f},{t1:.3f})'[w{j}]")
         v = f'[w{j}]'
     chain.append(f"{v}fade=t=in:st=0:d=1.2,fade=t=out:st={total - 2.0:.3f}:d=2.0,format=yuv420p[vout]")
     # 3. the score, ducked, under the clips' own sound

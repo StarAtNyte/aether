@@ -52,7 +52,7 @@ def pill(img, x0, y0, x1, y1):
 
 
 for name, c in cards.items():
-    k, text, sub = c['kind'], c['text'], c.get('sub')
+    k, text, sub = c['kind'], c.get('text'), c.get('sub')
     if k == 'chapter':
         # a single quiet word, low left, widely tracked capitals
         img = render([((112, 968), text.upper(), font(500, 30), (255, 255, 255, 235), 9, 'l')], blur=16, alpha=150)
@@ -74,6 +74,70 @@ for name, c in cards.items():
         if sub:
             layers.append(((W // 2, 640), sub, font(300, 40), (255, 255, 255, 220), 2, 'm'))
         img = render(layers, blur=24, alpha=150)
+    elif k == 'hook':
+        # the opening promise: two lines, sentence case, centred low over the shot
+        layers = [((W // 2, 838), text, font(600, 92), (255, 255, 255, 255), 0, 'm')]
+        if sub:
+            layers.append(((W // 2, 916), sub, font(400, 44), (255, 255, 255, 235), 0, 'm'))
+        img = render(layers, blur=26, alpha=190)
+        # a soft dark rise from the bottom edge so the line reads over a bright sky
+        sc = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+        sd = ImageDraw.Draw(sc)
+        for y in range(560, H):
+            sd.line([(0, y), (W, y)], fill=(6, 9, 15, int(150 * ((y - 560) / (H - 560)) ** 1.5)))
+        img = Image.alpha_composite(sc, img)
+    elif k == 'step':
+        # a numbered step of the product's flow: the verb big, one plain sentence under it, on a dark plate low left
+        d = ImageDraw.Draw(Image.new('RGBA', (1, 1)))
+        fv, fs = font(600, 60), font(400, 32)
+        wv = d.textlength(text, font=fv)
+        ws = d.textlength(sub, font=fs) if sub else 0
+        x0, y1 = 96, 1000
+        y0 = y1 - (170 if sub else 112)
+        num = c.get('num', '')
+        tx = x0 + (124 if num else 44)
+        x1 = tx + max(wv, ws) + 44
+        plate = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+        pd = ImageDraw.Draw(plate)
+        pd.rounded_rectangle([x0, y0, x1, y1], 28, fill=(9, 12, 19, 196))
+        if num:
+            pd.ellipse([x0 + 28, y0 + 28, x0 + 100, y0 + 100], fill=(255, 255, 255, 235))
+            pd.text((x0 + 64, y0 + 66), num, font=font(600, 40), fill=(9, 12, 19, 255), anchor='mm')
+        pd.text((tx, y0 + 78), text, font=fv, fill=(255, 255, 255, 255), anchor='ls')
+        if sub:
+            pd.text((tx, y0 + 130), sub, font=fs, fill=(255, 255, 255, 205), anchor='ls')
+        sh = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+        ImageDraw.Draw(sh).rounded_rectangle([x0, y0 + 8, x1, y1 + 8], 28, fill=(0, 0, 0, 120))
+        img = Image.alpha_composite(sh.filter(ImageFilter.GaussianBlur(18)), plate)
+    elif k == 'tag':
+        # a plain label for a shot, bottom left, on a small plate
+        d = ImageDraw.Draw(Image.new('RGBA', (1, 1)))
+        f = font(500, 36)
+        wd = d.textlength(text, font=f)
+        x0, y1 = 96, 996
+        plate = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+        pd = ImageDraw.Draw(plate)
+        pd.rounded_rectangle([x0, y1 - 78, x0 + wd + 56, y1], 39, fill=(9, 12, 19, 190))
+        pd.text((x0 + 28, y1 - 24), text, font=f, fill=(255, 255, 255, 250), anchor='ls')
+        img = plate
+    elif k == 'devlabels':
+        # two captions under the split screen's windows
+        f = font(500, 34)
+        img = render([((c['x1'], c['y']), c['t1'], f, (255, 255, 255, 235), 0, 'm'), ((c['x2'], c['y']), c['t2'], f, (255, 255, 255, 235), 0, 'm')], blur=10, alpha=140)
+    elif k == 'end':
+        # the end card: an opaque plate with the name, the promise and the address
+        from PIL import ImageChops
+        bg = Image.new('RGB', (W, H), (12, 15, 22))
+        glow = Image.new('L', (W, H), 0)
+        ImageDraw.Draw(glow).ellipse([W * 0.2, -H * 0.5, W * 0.8, H * 0.7], fill=255)
+        bg = Image.composite(Image.new('RGB', (W, H), (44, 54, 74)), bg, glow.filter(ImageFilter.GaussianBlur(200))).convert('RGBA')
+        layers = [((W // 2, 470), text, font(600, 150), (255, 255, 255, 255), 2, 'm'), ((W // 2, 560), sub, font(400, 46), (255, 255, 255, 225), 0, 'm')]
+        img = Image.alpha_composite(bg, render(layers, blur=20, alpha=120))
+        d = ImageDraw.Draw(img)
+        fu = font(500, 52)
+        wu = d.textlength(c['url'], font=fu)
+        d.rounded_rectangle([W // 2 - wu / 2 - 44, 650, W // 2 + wu / 2 + 44, 752], 51, fill=(255, 255, 255, 245))
+        d.text((W // 2, 716), c['url'], font=fu, fill=(12, 15, 22, 255), anchor='ms')
     else:
         raise SystemExit(f'unknown kind {k}')
     img.save(os.path.join(OUT, f'{name}.png'))

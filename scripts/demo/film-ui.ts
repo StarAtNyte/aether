@@ -108,8 +108,10 @@ function mark(t: Take, what: string): void {
   log(`[${(t.rec.now() / 1000).toFixed(1)}] ${what}`);
 }
 
-async function newTake(browser: Awaited<ReturnType<typeof chromium.launch>>, scene: string, source: string): Promise<Take> {
-  const ctx = await browser.newContext({ viewport: null });
+async function newTake(browser: Awaited<ReturnType<typeof chromium.launch>>, scene: string, source: string, device?: 'laptop' | 'phone'): Promise<Take> {
+  const ctx = await browser.newContext(
+    device === 'phone' ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } : device === 'laptop' ? { viewport: { width: 1440, height: 900 } } : { viewport: null },
+  );
   await ctx.addInitScript({ content: SKIP_FIRST_RUN });
   await ctx.addInitScript({ content: 'globalThis.__name = (f) => f;' });
   await ctx.addInitScript({ content: "try { const k='aether.studio.settings.v1'; const s=JSON.parse(localStorage.getItem(k)||'{}'); s.renderTier='ultra'; s.showNavHint=false; s.motion='sharp'; localStorage.setItem(k, JSON.stringify(s)); localStorage.setItem('aether.player.mute', '1'); } catch {}" });
@@ -158,7 +160,7 @@ async function finish(t: Take): Promise<void> {
   const list = times.map((x, i) => `file 'f${String(i).padStart(5, '0')}.jpg'\nduration ${(i + 1 < times.length ? times[i + 1]! - x : 1 / 60).toFixed(6)}`).join('\n');
   writeFileSync(join(cap.dir, 'list.txt'), `${list}\nfile 'f${String(times.length - 1).padStart(5, '0')}.jpg'\n`);
   const mp4 = join(OUT, `${rec.scene}.mp4`);
-  execFileSync('nice', ['-n', '10', 'ffmpeg', '-loglevel', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', join(cap.dir, 'list.txt'), '-vf', 'fps=30', '-c:v', 'libx264', '-preset', 'medium', '-crf', '15', '-pix_fmt', 'yuv420p', mp4], { stdio: 'inherit' });
+  execFileSync('nice', ['-n', '10', 'ffmpeg', '-loglevel', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', join(cap.dir, 'list.txt'), '-vf', 'fps=30', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '15', '-pix_fmt', 'yuv420p', mp4], { stdio: 'inherit' });
   log(`${rec.scene}: ${times.length} frames over ${(total / 1000).toFixed(1)} s, kept ${(kept / 1000).toFixed(1)} s; kept gaps ${JSON.stringify(stats)}`);
   log(`wrote ${mp4}`);
   await t.ctx.close().catch(() => undefined);
@@ -795,6 +797,174 @@ async function play(browser: Awaited<ReturnType<typeof chromium.launch>>, url: s
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// devices: one world opened in the player at laptop size and at phone size, for the edit's split screen
+// ---------------------------------------------------------------------------------------------------------------
+
+async function devices(browser: Awaited<ReturnType<typeof chromium.launch>>, url: string): Promise<void> {
+  for (const dev of ['laptop', 'phone'] as const) {
+    const t = await newTake(browser, `dev-${dev}`, 'player', dev);
+    const { page, rec } = t;
+    await t.cap.start();
+    const boot = rec.now();
+    await page.goto(`${url}/play.html#t=${arg('slug') ?? 'casa-patio'}&cook=use&tier=ultra`, { waitUntil: 'domcontentloaded' });
+    await playerUp(page, ['exploring', 'title', 'story'], 300_000);
+    if ((await phase(page)) === 'title') await page.evaluate(() => (window as unknown as { __aetherPlayer: { enterExplore(): void } }).__aetherPlayer.enterExplore());
+    await page.waitForSelector('[data-testid="pl-xbar"]', { timeout: 60_000 });
+    await page.evaluate(() => (window as unknown as { __aetherPlayer: { exploreController: { setAutoplay(on: boolean): void } } }).__aetherPlayer.exploreController.setAutoplay(false));
+    await sleep(4000);
+    rec.cut(boot);
+    mark(t, `${dev}: hero view`);
+    await sleep(2500);
+    await page.evaluate(() => (window as unknown as { __aetherPlayer: { exploreController: { setAutoplay(on: boolean): void } } }).__aetherPlayer.exploreController.setAutoplay(true));
+    mark(t, `${dev}: tour plays`);
+    await sleep(9000);
+    await finish(t);
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// arch: a two-storey house in the editor: walls up, cutaway, walls down, exploded storeys, one storey, plan, daylight
+// ---------------------------------------------------------------------------------------------------------------
+
+async function arch(browser: Awaited<ReturnType<typeof chromium.launch>>, url: string): Promise<void> {
+  const t = await newTake(browser, 'arch', 'editor; the architecture bar');
+  const { page, rec } = t;
+  const slug = arg('slug') ?? 'dusk-lake-house';
+  const boot = rec.now();
+  await t.cap.start();
+  await page.goto(`${url}/?debug=1#/new/${slug}`, { waitUntil: 'domcontentloaded' });
+  await editorReady(page);
+  await settle(page);
+  await page.evaluate((h) => {
+    const a = window.__aether!;
+    if (h > 0) void a.studio.commitUser([{ op: 'setEnvironment', set: { timeOfDay: h } }], 'Time of day');
+    a.store.getState().updateSettings({ showLabels: false, motion: 'sharp' });
+    (a.simulation as unknown as { frameWorld(): Promise<void> }).frameWorld = async () => undefined;
+  }, Number(arg('hour') ?? 17.4));
+  await settle(page);
+  // The house's bounds from its wall entities, then a slow orbit round it that runs under every step below.
+  const info = await page.evaluate(() => {
+    const a = window.__aether!;
+    const sim = a.simulation as unknown as { entityBounds(id: string): { min: number[]; max: number[] } | null };
+    let lo = [1e9, 1e9, 1e9];
+    let hi = [-1e9, -1e9, -1e9];
+    for (const [id, e] of Object.entries(a.history.current.entities) as Array<[string, { arch?: { role?: string } }]>) {
+      if (e.arch?.role !== 'wall') continue;
+      const b = sim.entityBounds(id);
+      if (!b) continue;
+      for (let i = 0; i < 3; i++) { lo[i] = Math.min(lo[i]!, b.min[i]!); hi[i] = Math.max(hi[i]!, b.max[i]!); }
+    }
+    return { c: [0, 1, 2].map((i) => (lo[i]! + hi[i]!) / 2), r: Math.hypot(hi[0]! - lo[0]!, hi[1]! - lo[1]!, hi[2]! - lo[2]!) / 2 };
+  });
+  log(`house centre ${JSON.stringify(info.c)} radius ${info.r.toFixed(1)}`);
+  const R0 = Number(arg('radius') ?? 1.4) * info.r;
+  await page.evaluate(([c, R]) => {
+    const w = window as unknown as { __orbit: { az: number; rate: number; el: number; k: number; stop: boolean } };
+    w.__orbit = { az: Number(new URLSearchParams(location.search).get('az') ?? 215), rate: 7, el: 24, k: 1, stop: false };
+    const rend = window.__aether!.simulation!.renderer as unknown as { frameSphere(c: number[], r: number, d: number[], s: number): void };
+    let last = performance.now();
+    const tick = (): void => {
+      const now = performance.now();
+      const o = w.__orbit;
+      o.az += o.rate * ((now - last) / 1000);
+      last = now;
+      const az = (o.az * Math.PI) / 180;
+      const el = (o.el * Math.PI) / 180;
+      rend.frameSphere(c as number[], (R as number) * o.k, [Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az)], 0);
+      if (!o.stop) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }, [info.c, R0] as const);
+  await sleep(2500);
+  await settle(page);
+  await glide(page, W * 0.6, H * 0.5, 10);
+  rec.cut(boot);
+  const set = (patch: string): Promise<void> => page.evaluate((p) => window.__aether!.store.getState().setArch(JSON.parse(p)), patch);
+  void set;
+  const orbit = (patch: Partial<{ rate: number; el: number; k: number }>): Promise<void> => page.evaluate((p) => void Object.assign((window as unknown as { __orbit: object }).__orbit, p), patch);
+  const bar = page.locator('.arch-bar');
+  await bar.waitFor({ timeout: 30_000 });
+  mark(t, 'walls up: exterior');
+  await cursor(page, false);
+  await sleep(Number(arg('extMs') ?? 4500));
+  await cursor(page, true);
+  const pick = async (trigger: RegExp | string, item: string, ms = 900): Promise<void> => {
+    await click(page, bar.getByRole('button', { name: trigger }), 900);
+    const it = page.getByRole('menuitem', { name: item, exact: true }).or(page.getByRole('menuitemcheckbox', { name: item, exact: true }));
+    await it.first().waitFor({ timeout: 5000 });
+    await sleep(500);
+    await click(page, it.first(), ms);
+  };
+  mark(t, 'cutaway');
+  await pick(/^Walls/, 'Cutaway');
+  await glide(page, W * 0.62, H * 0.62, 900);
+  await cursor(page, false);
+  await sleep(4000);
+  await cursor(page, true);
+  mark(t, 'walls down');
+  await pick(/^Walls/, 'Walls down');
+  await glide(page, W * 0.62, H * 0.62, 900);
+  await cursor(page, false);
+  await sleep(3800);
+  await cursor(page, true);
+  mark(t, 'walls up again');
+  await pick(/^Walls/, 'Walls up');
+  await orbit({ el: 30 });
+  await sleep(1500);
+  mark(t, 'exploded');
+  await orbit({ el: 22, k: 1.25 });
+  await pick(/^Storeys/, 'Exploded');
+  await glide(page, W * 0.62, H * 0.62, 900);
+  await cursor(page, false);
+  await sleep(4500);
+  await cursor(page, true);
+  mark(t, 'one floor');
+  await orbit({ el: 30, k: 1.0 });
+  await pick(/^Storeys|^Exploded/, 'One floor');
+  await glide(page, W * 0.62, H * 0.62, 900);
+  await cursor(page, false);
+  await sleep(2500);
+  await cursor(page, true);
+  // The level picker: the floor above (the menu lists the top floor first)
+  await click(page, bar.getByRole('button', { name: /^Storeys|^Ground|^Upper|^First|^Level/ }), 900);
+  const levels = page.getByRole('menuitemcheckbox').filter({ hasText: /m$/ });
+  await sleep(500);
+  const n = await levels.count();
+  log(`level items: ${n}`);
+  await click(page, levels.first(), 900);
+  await glide(page, W * 0.62, H * 0.62, 900);
+  await cursor(page, false);
+  await sleep(3000);
+  await cursor(page, true);
+  mark(t, 'stacked');
+  await pick(/^Storeys|^Ground|^Upper|^First|^Level/, 'Stacked');
+  await orbit({ k: 1.0 });
+  await sleep(1200);
+  mark(t, 'plan');
+  await click(page, bar.getByRole('radio', { name: 'Plan' }), 900);
+  if (!(await page.evaluate(() => window.__aether!.store.getState().arch.plan))) {
+    log('plan click did not take: set by the store');
+    await page.evaluate(() => window.__aether!.store.getState().setArch({ plan: true }));
+  }
+  await glide(page, W * 0.62, H * 0.7, 900);
+  await cursor(page, false);
+  await sleep(4200);
+  await cursor(page, true);
+  await click(page, bar.getByRole('radio', { name: '3D' }), 900);
+  await sleep(1500);
+  mark(t, 'daylight');
+  await click(page, bar.getByRole('button', { name: 'Daylight study' }), 900);
+  const r = page.locator('.arch-pop__range[aria-label="Time of day"]');
+  await r.waitFor({ timeout: 5000 });
+  await sleep(400);
+  await click(page, page.locator('.arch-pop__chips .chip', { hasText: 'Midday' }), 900);
+  await sleep(1500);
+  await slide(page, r, 5, 23, 13, 21, 5500);
+  await sleep(1500);
+  await finish(t);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 
 async function main(): Promise<void> {
   mkdirSync(OUT, { recursive: true });
@@ -807,6 +977,8 @@ async function main(): Promise<void> {
     else if (SCENE === 'publish') await publish(browser, server.url);
     else if (SCENE === 'modes') await modes(browser, server.url);
     else if (SCENE === 'play') await play(browser, server.url);
+    else if (SCENE === 'devices') await devices(browser, server.url);
+    else if (SCENE === 'arch') await arch(browser, server.url);
     else throw new Error(`unknown scene ${SCENE}`);
   } finally {
     await browser.close().catch(() => undefined);
