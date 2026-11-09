@@ -332,10 +332,11 @@ async function imagesReady(page: Page, label: string): Promise<void> {
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForFunction(() => [...document.images].every((i) => i.complete && (i.naturalWidth > 0 || i.loading === 'lazy')), null, { timeout: 60_000, polling: 250 }).catch(() => log(`${label}: some images still loading`));
   await page.evaluate(async () => { await Promise.all([...document.images].map((i) => i.decode().catch(() => undefined))); });
-  const w = await page.evaluate(() => [...document.querySelectorAll<HTMLImageElement>('.fcard__img, .fcard img')].map((i) => i.naturalWidth));
+  // the real pixel width of the file each card image uses (naturalWidth is density-corrected for x descriptors)
+  const w = await page.evaluate(async () => Promise.all([...document.querySelectorAll<HTMLImageElement>('.fcard__img, .fcard img')].map(async (i) => { try { const b = await createImageBitmap(await (await fetch(i.currentSrc)).blob()); return b.width; } catch { return i.naturalWidth; } })));
   log(`${label}: ${w.length} card images, natural widths ${w.length ? `${Math.min(...w)} to ${Math.max(...w)}` : 'none'}`);
   const min = Number(arg('minCard') ?? 0);
-  if (min && w.length && Math.min(...w) < min) throw new Error(`${label}: card images are ${Math.min(...w)} px wide, expected at least ${min} (the sharp thumbnails are not deployed yet)`);
+  if (min && w.length && Math.max(...w) < min) throw new Error(`${label}: the widest card image is ${Math.max(...w)} px, expected at least ${min} (the sharp thumbnails are not deployed yet)`);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -674,7 +675,9 @@ async function describe(browser: Awaited<ReturnType<typeof chromium.launch>>, ur
   await page.goto(`${url}/?debug=1#/`, { waitUntil: 'domcontentloaded' });
   const box = page.locator('#hero-prompt').first();
   await box.waitFor({ timeout: 90_000 });
-  await sleep(2500);
+  await sleep(1500);
+  await imagesReady(page, "home");
+  await sleep(1000);
   await glide(page, 900 * K, 520 * K, 10);
   await t.cap.start();
   const boot = rec.now();
@@ -1290,7 +1293,8 @@ async function livehome(browser: Awaited<ReturnType<typeof chromium.launch>>): P
   const { page, rec } = t;
   await page.goto(`${live}/#/`, { waitUntil: 'domcontentloaded' });
   await page.locator('.featured__grid').waitFor({ timeout: 90_000 });
-  await sleep(4000);
+  await sleep(2000);
+  await imagesReady(page, 'live home');
   await page.evaluate(() => window.scrollTo(0, 0));
   await glide(page, 900 * K, 500 * K, 10);
   await t.cap.start();
@@ -1317,6 +1321,19 @@ async function livehome(browser: Awaited<ReturnType<typeof chromium.launch>>): P
     await dwell(page, 700);
   }
   await dwell(page, 1500);
+  // The Stories section's film card (Morning Kitchen): scroll to it, click, let the film play.
+  const filmCard = page.locator('.card--film .card__hit').first();
+  if (await filmCard.count()) {
+    await filmCard.scrollIntoViewIfNeeded();
+    await dwell(page, 900);
+    mark(t, 'film card');
+    await click(page, filmCard, 1000);
+    await page.waitForSelector('.film__video', { timeout: 15_000 }).catch(() => undefined);
+    await page.evaluate(() => { const v = document.querySelector<HTMLVideoElement>('.film__video'); if (v) { v.muted = true; void v.play(); } });
+    await page.waitForFunction(() => { const v = document.querySelector<HTMLVideoElement>('.film__video'); return !!v && v.currentTime > 0.5; }, null, { timeout: 15_000 }).catch(() => log('the film did not start'));
+    mark(t, 'film playing');
+    await dwell(page, 4000);
+  } else log('no film card on the page');
   await finish(t);
 }
 

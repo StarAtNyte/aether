@@ -202,11 +202,11 @@ def build():
     # ---- Act 1: Describe
     act_card(1)
     n = 0
-    D1 = f'{F7}/describe/describe.mp4'
+    D1 = f'{F8}/describe/describe.mp4'
     if have(D1):
         n += 1
         c = caption_card(1, 'a1b1', n, 'Type the world you want, in plain words.')
-        s = ui('a1b1', D1, [[ev('describe', 'typing', F7) - 0.8, ev('describe', 'build pressed', F7) - 0.1, 1.15]],
+        s = ui('a1b1', D1, [[ev('describe', 'typing') - 0.8, ev('describe', 'build pressed') - 0.1, 1.15]],
                [[0, 0.5, 0.5, 1.0], [1.2, 0.5, 0.5, 1.0], [2.0, 0.5, 0.3, 1.65], [4.0, 0.5, 0.3, 1.65], [4.8, 0.5, 0.5, 1.0]], 5.2, inset='br', sfx='whoosh')
         add('Act 1', 'a1b1', n, 'Type the world you want, in plain words.', with_text(s, c, ['note-offline']), 'film7/describe (full app, then zoom to the box)', 'v7 capture good (0% of gaps over 50 ms)')
     for key, bid, dur, speed, cap in (('village', 'a1b2', 5.2, 0.7, 'The AI builds it step by step: the land and the market first, then the houses.'),
@@ -301,8 +301,8 @@ def build():
     if have(H):
         n += 1
         c = caption_card(4, 'a4b1', n, 'Pick what to make: a game, a video, a picture, a 3D model or a floor plan.')
-        hp = [[ev('tour-hub', f'hub-{k}', F8) - 0.3, ev('tour-hub', f'hub-{k}', F8) + 1.5, 1.0] for k in ('game', 'video', 'render', 'model', 'plan')]
-        add('Act 4', 'a4b1', n, 'Pick what to make: a game, a video, a picture, a 3D model or a floor plan.', with_text(ui('a4b1', H, hp, [[0, 0.5, 0.5, 1.0], [0.4, 0.8, 0.3, 1.5], [9.0, 0.8, 0.3, 1.5]], 9.0, sfx='whoosh'), c),
+        hp = [[ev('tour-hub', f'hub-{k}', F8) - 0.3, ev('tour-hub', f'hub-{k}', F8) + 1.3, 1.0] for k in ('game', 'video', 'render', 'model', 'plan')]
+        add('Act 4', 'a4b1', n, 'Pick what to make: a game, a video, a picture, a 3D model or a floor plan.', with_text(ui('a4b1', H, hp, [[0, 0.5, 0.5, 1.0], [0.4, 0.8, 0.3, 1.5], [8.0, 0.8, 0.3, 1.5]], 8.0, sfx='whoosh'), c),
             'film8/tour-hub (new: pointer clicks each target)', 'NEW capture', 'tour --kind=hub')
     else:
         BEATS.append(('Act 4', 'a4b1', 'Pick what to make: a game, a video, a picture, a 3D model or a floor plan.', 0, 'film8/tour-hub', 'LEFT OUT until captured', 'tour --kind=hub'))
@@ -324,11 +324,11 @@ def build():
         add('Act 4', 'a4b3', n, 'Open it anywhere: the same world on a laptop and a phone.', seg, 'film8/devices (the share link opened on the live site)', 'NEW capture (v7 phone encode failed; encode fixed)', 'devices scene, scale 1.5', trailer=5.0)
     else:
         BEATS.append(('Act 4', 'a4b3', 'Open it anywhere: the same world on a laptop and a phone.', 0, 'film8/devices', 'LEFT OUT until captured', 'devices scene'))
-    LH = f'{F7}/livehome/livehome.mp4'
+    LH = f'{F8}/livehome/livehome.mp4'
     if have(LH):
         n += 1
         c = caption_card(4, 'a4b4', n, 'Published worlds open in their own mode, and any of them can be remixed.')
-        seg = {'name': 'a4b4', 'src': LH, 'mode': 'browser', 'url': 'aether-studio-lyart.vercel.app', 'in': ev('livehome', 'featured', F7) + 1.0, 'dur': 5.0, 'xfade': XF, 'sfx': 'whoosh'}
+        seg = {'name': 'a4b4', 'src': LH, 'mode': 'browser', 'url': 'aether-studio-lyart.vercel.app', 'in': ev('livehome', 'featured') + 1.0, 'dur': 5.0, 'xfade': XF, 'sfx': 'whoosh'}
         add('Act 4', 'a4b4', n, 'Published worlds open in their own mode, and any of them can be remixed.', with_text(seg, c, ['note-live-site']), 'film7/livehome (live site, Featured)', 'v7 capture good (0% over 50 ms)')
     MD = f'{F8}/modes/modes.mp4'
     if have(MD) and evx('modes', 'drone button pressed'):
@@ -339,7 +339,7 @@ def build():
         CARDS['note-sped'] = {'kind': 'note', 'text': 'The first seconds of the flight, sped up 3x'}
         sg['text'] = [[c, 0.25, 7.1], ['note-sped', 3.4, 7.1]]
         add('Act 4', 'a4b4d', n, 'Press Drone: the camera lifts off and flies over the city.', sg, 'film8/modes (real take: the Drone button, then the lift-off, slow start sped up 3x)', 'NEW capture (12% of gaps over 50 ms in the heavy city; used for the click and the start only)', 'modes --clickDrone=1', trailer=4.5)
-    for bid, name, fb, i0, dur, cap, tr in (('a4b5', 'drone-lisbon', f'{F1}/lisbon-drone.mp4', 0.5, 5.0, 'Fly over a whole city by drone.', 4.5), ('a4b6', 'house-walk', f'{F1}/casa-pool.mp4', 1.0, 4.2, 'Walk through a house, at any time of day.', None),
+    for bid, name, fb, i0, dur, cap, tr in (('a4b5', 'drone-lisbon', f'{F1}/lisbon-drone.mp4', 0.0, 4.3, 'Fly over a whole city by drone.', 4.5), ('a4b6', 'house-walk', f'{F1}/casa-pool.mp4', 1.0, 4.2, 'Walk through a house, at any time of day.', None),
                                            ('a4b7', 'landscape', f'{INTRO}/m-terraces-falls.mp4', 9.0, 4.0, 'Or float over a landscape at golden hour.', None)):
         n += 1
         c = caption_card(4, bid, n, cap)
@@ -352,7 +352,7 @@ def build():
     n += 1
     c = caption_card(5, 'a5b1', n, 'Describe a character: Blender builds it on your computer, front, side and back.')
     add('Act 5', 'a5b1', n, 'Describe a character: Blender builds it on your computer, front, side and back.',
-        with_text({'name': 'a5b1', 'src': f'{D}/film2/tt-mio/f%04d.png', 'mode': 'turntable', 'beside': f'{D}/film2/mio/sheet.png', 'dur': 6.0, 'speed': 1.1, 'xfade': XF, 'sfx': 'whoosh'}, c, ['note-local']), 'film2/tt-mio + sheet', 'existing', '', trailer=3.5)
+        with_text({'name': 'a5b1', 'src': f'{D}/film2/tt-mio/f%04d.png', 'mode': 'turntable', 'beside': f'{D}/film2/mio/sheet.png', 'dur': 5.0, 'speed': 1.1, 'xfade': XF, 'sfx': 'whoosh'}, c, ['note-local']), 'film2/tt-mio + sheet', 'existing', '', trailer=3.5)
     if have(BLENDER_REAL):
         n += 1
         c = caption_card(5, 'a5b2', n, 'And it renders a photoreal shot of it, locally.')
@@ -360,6 +360,12 @@ def build():
             'aether-blender-real-shot.mp4', 'pending: another job is rendering it', '')
     else:
         BEATS.append(('Act 5', 'a5b2', 'And it renders a photoreal shot of it, locally.', 0, 'aether-blender-real-shot.mp4', 'LEFT OUT until the file lands', ''))
+    if have(LH) and evx('livehome', 'film card'):
+        n += 1
+        c = caption_card(5, 'a5b2f', n, 'Finished films sit on the home page: this one is a Blender render.')
+        fc = ev('livehome', 'film card')
+        seg = {'name': 'a5b2f', 'src': LH, 'mode': 'browser', 'url': 'aether-studio-lyart.vercel.app', 'in': fc - 1.0, 'dur': 3.9, 'xfade': XF, 'sfx': 'whoosh'}
+        add('Act 5', 'a5b2f', n, 'Finished films sit on the home page: this one is a Blender render.', with_text(seg, c, ['note-live-site']), 'film8/livehome (live site: the Stories film card, click, the film plays)', 'NEW capture (live site, 3.1% of gaps over 50 ms)', '')
     if have(f'{F6}/shots/two-whistles.mp4'):
         n += 1
         c1 = caption_card(5, 'a5b3', n, 'Stories too: a short film written and rendered in Aether, with its own sound.')
@@ -376,7 +382,7 @@ def build():
         TRAILER.append(('a5b3', 9.0))
     n += 1
     c = caption_card(5, 'a5b4', n, 'And more: sculpt terrain, write game rules, search every command.')
-    add('Act 5', 'a5b4', n, 'And more: sculpt terrain, write game rules, search every command.', with_text(clip('a5b4', clipsrc('isles', f'{INTRO}/m-lantern.mp4'), 2.0, 3.8), c), 'film8/clips/isles (one calm shot)', 'world clip', '')
+    add('Act 5', 'a5b4', n, 'And more: sculpt terrain, write game rules, search every command.', with_text(clip('a5b4', clipsrc('isles', f'{INTRO}/m-lantern.mp4'), 2.0, 3.2), c), 'film8/clips/isles (one calm shot)', 'world clip', '')
     SEGS.append({'name': 'end', 'src': f'{F8}/cards/end.png', 'mode': 'image', 'dur': 5.0, 'xfade': 0.8, 'grade': False})
     BEATS.append(('End', 'end', 'Aether. Describe it. Shape it. Share it.', 5.0, 'card', 'existing style', ''))
 
