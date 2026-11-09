@@ -102,8 +102,8 @@ capture would stutter.
 
 | Capability | In v6 | Source |
 |------------|-------|--------|
-| Describe a world, the AI works in steps, a build log | yes | v5 typed prompt (offline planner, labelled), the recorded live session (labelled "Live AI session, recorded") |
-| Watch a world being built | yes | build replay: the real patches of an offline-planner build (a villa, a village, a valley) applied in steps and rendered frame by frame (`film-build.ts`), labelled |
+| Describe a world, the AI works in steps, a build log | yes | typed prompt (offline planner, labelled). The recorded live session is not in v6: its prompt and world are a Japanese tea house garden, which is out of the film |
+| Watch a world being built | yes | build replay: the real patches of an offline-planner build (a village, a valley) applied in steps and rendered frame by frame (`film-build.ts`), labelled. A villa replay was also tried and dropped (it did not finish on the loaded machine) |
 | Refine by chat, undo | yes | edit take (offline planner, labelled) |
 | Gizmos (move, rotate, scale), snapping, materials | yes | edit take and the tour take (`film-ui.ts --scene=tour`) |
 | Time of day, relight, nothing re-baked | yes | edit take, penthouse sweep |
@@ -117,7 +117,7 @@ capture would stutter.
 | Featured gallery, Remix | yes | captured from the live site |
 | Drone tour, walk, orbit, colony, floating isles | yes | offline-rendered shots |
 | Story film made in Aether, Render video | yes | "Two Whistles", rendered with the player's Render video path from current main |
-| Local Blender harness: character from a brief, house from a brief | yes | concept sheet and turntable, kit house (labelled "Local run") |
+| Local Blender harness: character from a brief | yes | concept sheet and turntable, then the character in the world (labelled "Local run"). The kit shop house is left out: it has a Japanese-style tiled roof |
 | Photo to room | no | needs a vision model and credit; only the finished example rooms exist, not shown as a live capability |
 | Look presets (anime, realistic) | no | the app has graphics tiers and time of day, not look presets |
 | VR | no | no WebXR mode in the app |
@@ -146,3 +146,14 @@ capture would stutter.
     python3 scripts/demo/film/make-edl6.py <dir>
     python3 scripts/demo/film-score.py <dir>/edl6.json <dir>/edl6.wav
     python3 scripts/demo/film-cut.py <dir>/edl6.json --out <mp4> --work <work> --sheet <contact.jpg>
+
+## Result of the v6 run
+
+- Length 2:55.4 (175.4 s container), 1920x1080 at 30 fps, H.264 and AAC, -16.4 LUFS integrated, true peak under -2 dBFS.
+- Frame-by-frame renders (build replays, architecture, drone and walk shots, the animated short) have uniform 33.3 ms pacing
+  in the encoded file. The real-time UI takes were captured on a machine with a load average of 50 to 80 and paint at 5 to
+  15 frames a second (median gap 66 to 216 ms); they are blended to 30 fps by paint time, which hides most of it but not all.
+  The editor take (select, material, chat) is the v5 capture.
+- The live-site shots show a drawn browser toolbar around a page capture; the address is the real address of the page.
+- The share link is the real 90 kB link of the Villa with a pool world, made with the Player address set to the live site, opened
+  on the live site (laptop and phone windows). Nothing was published or uploaded.

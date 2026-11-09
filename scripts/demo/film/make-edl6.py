@@ -77,7 +77,7 @@ def segments():
     # hook
     S.append(clip('hook', f'{INTRO}/m-terraces-falls.mp4', 1.8, 6.0, 0, [['hook', 0.4, 5.6]]))
     # 1 Describe: typed prompt (offline planner), three real builds replayed frame by frame, the recorded live session
-    S.append(ui('gen-type', 'describe', [[2.6, 9.2, 1.3]], [[0, 0.5, 0.5, 1.0], [1.2, 0.5, 0.5, 1.0], [2.0, 0.5, 0.3, 1.65], [4.2, 0.5, 0.3, 1.65], [5.0, 0.5, 0.5, 1.0]], 5.1, 0.5, text=[['st-describe', 0.3, 4.9], ['note-offline', 0.3, 4.9]], sfx='whoosh', inset='br', smooth=True))
+    S.append(ui('gen-type', 'describe', [[2.6, 8.2, 1.25]], [[0, 0.5, 0.5, 1.0], [1.2, 0.5, 0.5, 1.0], [2.0, 0.5, 0.3, 1.65], [3.7, 0.5, 0.3, 1.65], [4.4, 0.5, 0.5, 1.0]], 4.48, 0.5, text=[['st-describe', 0.3, 4.3], ['note-offline', 0.3, 4.3]], sfx='whoosh', inset='br', smooth=True))
     if have(f'{F6}/build-villa/f00000.jpg'):
         S.append(frames('r-villa', f'{F6}/build-villa/f%05d.jpg', 4, 4.0, 0.4, [['tag-replay1', 0.2, 3.7], ['note-replay', 0.2, 3.7]], 'whoosh'))
     if have(f'{F6}/build-village/f00000.jpg'):
@@ -145,16 +145,15 @@ def segments():
     S.append(clip('k-drone', f'{F1}/lisbon-drone.mp4', 0.5, 6.0, 0.5, [['tag-drone', 0.2, 5.6]], 'whoosh'))
     S.append(clip('k-falls', f'{INTRO}/m-terraces-falls.mp4', 9.0, 6.0, 0.5, [['tag-land', 0.2, 5.6]]))
     S.append(clip('k-ascent', f'{INTRO}/m-ascent.mp4', 1.0, 5.0, 0.5, [['tag-ascent', 0.2, 4.6]]))
-    S.append(clip('k-colony', f'{F1}/kepler-domes.mp4', 0.5, 3.8, 0.4, [['tag-colony', 0.2, 3.5]]))
+    S.append(clip('k-colony', f'{F1}/kepler-domes.mp4', 0.5, 4.8, 0.4, [['tag-colony', 0.2, 4.5]]))
     S.append(clip('k-isles', f'{INTRO}/m-lantern.mp4', 2.0, 3.8, 0.4, [['tag-isles', 0.2, 3.5]]))
     S.append(clip('k-house', f'{F1}/casa-pool.mp4', 1.0, 3.4, 0.4, [['tag-walk', 0.2, 3.1]]))
     S.append(clip('k-highland', f'{F1}/highland-dawn.mp4', 1.0, 4.0, 0.4, [['tag-land', 0.2, 3.7]]))
     S.append(clip('k-village', f'{INTRO}/m-linden.mp4', 3.0, 4.0, 0.4))
     S.append(ui('k-game', 'play', [[1.0, 4.5, 1.0]], [[0, 0.5, 0.5, 1.0]], 3.5, 0.3, 1.0, [['tag-game', 0.2, 3.2]], sfx=None))
-    S.append(clip('k-quay', f'{F1}/lisbon-quay.mp4', 0.5, 4.0, 0.4, [['tag-walk', 0.2, 3.7]]))
+    S.append(clip('k-quay', f'{F1}/lisbon-quay.mp4', 0.5, 5.0, 0.4, [['tag-walk', 0.2, 4.7]]))
     # build locally: a character from a brief (sheet, Blender turntable), then a house, then in the world
-    S.append({'name': 'bl-sheet', 'src': f'{D}/film2/tt-mio/f%04d.png', 'mode': 'turntable', 'beside': f'{D}/film2/mio/sheet.png', 'dur': 4.8, 'speed': 1.1, 'xfade': 0.5, 'text': [['st-local', 0.3, 4.5], ['note-local', 0.3, 4.5]], 'sfx': 'whoosh'})
-    S.append({'name': 'bl-kit', 'src': f'{D}/film/orbit-shop/f%04d.png', 'mode': 'frames', 'dur': 3.0, 'xfade': 0.4, 'text': [['tag-blhouse', 0.2, 2.8], ['note-local', 0.2, 2.8]]})
+    S.append({'name': 'bl-sheet', 'src': f'{D}/film2/tt-mio/f%04d.png', 'mode': 'turntable', 'beside': f'{D}/film2/mio/sheet.png', 'dur': 6.0, 'speed': 1.1, 'xfade': 0.5, 'text': [['st-local', 0.3, 5.7], ['note-local', 0.3, 5.7]], 'sfx': 'whoosh'})
     # the animated short: a chapter, with the film's own sound
     if have(f'{F6}/shots/two-whistles.mp4'):
         S += [
