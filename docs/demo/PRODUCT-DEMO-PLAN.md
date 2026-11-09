@@ -323,3 +323,21 @@ should use a window of the tour where the camera really flies (for example scout
   click must show the camera clearly rising and travelling (checked on the frames before the take is used). World clips use a stretch
   of the tour where the camera really flies.
 - After every run: the script's browser closed, x11grab/ffmpeg stopped, `ps` checked for leftovers of this run's own profile only.
+
+## v8 draft built (2:54.6, with the fallbacks)
+
+`aether-product-demo-v8.mp4` (174.57 s, 1920x1080, 30 fps, H.264 High CRF 14 slow, AAC 256 kbps, -16.2 LUFS, true peak -1.9 dBFS,
+about 293 MB) and `aether-product-demo-v8-60s.mp4` (about 56 s, about 92 MB), with contact sheets. Edit list `make-edl8.py`.
+
+- UI takes: real Chrome 150 in headless=new on the integrated GPU, CDP screencast (JPEG q95, scale 1 to 1.5), recorded 23:03 to 23:41.
+  Gap rule results (median at most 40 ms and under 5% over 50 ms): accepted arch plan (2.8%), publish link (2.8%), laptop (5.2%
+  overall) and phone (0.8%); best-of-three but not accepted: edit 7.8%, game tour 5.7%, hub 8.5% (a 4 s freeze in the hub take is cut
+  out), Lisbon Hills drone take 12% (used only for the click and the start of the flight). Headed Chrome presents at 60 fps
+  in-page, but neither its screencast (67 to 80 ms median) nor an x11grab of its window (33 to 66 ms, unstable) records it smoothly.
+- Zoom in the cut is limited to what a take's pixels carry (1.05x for scale-1 takes, 1.5x for scale 1.5).
+- Still on fallbacks: the build replays, drone, house, landscape and isles world shots come from v6/v7 footage until the footage
+  agent's clips land in `film8/clips/` (the replay frames also show the editor's white corner brackets, which the new clips hide);
+  the describe and live Featured takes wait for the sharp thumbnails (the home page still shows the old 640 px cards).
+- Blur (blurdetect, every 30th frame, mean per 10 s, v8 against v7): mean 4.83 against 5.16; worst segment 8.09 at 130 to 140 s
+  (the photoreal Blender shot, soft by its depth of field) against 6.82. Content dominates the score; ghost check crops at 100% show
+  no blended frames.
