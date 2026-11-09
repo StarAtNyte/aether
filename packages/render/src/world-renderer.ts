@@ -735,6 +735,18 @@ const CPU_RELEASE_MS = 250;
  * (the machine swapped during loading). `globalThis.__AETHER_FULL_WARMUP = true` turns it on.
  */
 const FULL_WARMUP = (globalThis as { __AETHER_FULL_WARMUP?: boolean }).__AETHER_FULL_WARMUP === true;
+/**
+ * Offline footage flags (`globalThis.__AETHER_CAPTURE = { on: true, lodBoost: 4 }`, set by scripts/demo/render-clean.ts):
+ * a capture plans the level of detail of scatter fields and virtual geometry for a picture `lodBoost` times taller, so
+ * far detail levels and distance cuts that would swap while the camera moves (a pop in the footage) sit far beyond
+ * what the shot shows. Default 1 (the live planning, unchanged).
+ */
+function captureFlags(): { lodBoost: number; mirrorScale: number; shadowMapCap: number; lockEye: boolean } {
+  const f = (globalThis as { __AETHER_CAPTURE?: { on?: boolean; lodBoost?: number; mirrorScale?: number; shadowMapCap?: number; lockEye?: boolean } }).__AETHER_CAPTURE;
+  const on = f?.on === true;
+  const n = (v: number | undefined, lo: number, hi: number, d: number): number => (on && v !== undefined && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d);
+  return { lodBoost: n(f?.lodBoost, 1, 16, 1), mirrorScale: n(f?.mirrorScale, 0.25, 1, MIRROR_SCALE), shadowMapCap: n(f?.shadowMapCap, 0, 8192, 0), lockEye: on && f?.lockEye === true };
+}
 /** Frames after which the cached sun shadow map is drawn again whatever happened (a safety net). */
 const SUN_MAP_REFRESH = 24;
 /**
@@ -6466,6 +6478,8 @@ export class WorldRenderer {
   }
 
   private adaptEye(dt: number): void {
+    // Offline footage can pin the exposure for the whole shot (`__AETHER_CAPTURE.lockEye`): the eye stays where it is.
+    if (this.captureActive && captureFlags().lockEye) return;
     this.eyeClock += dt;
     if (this.eyeClock < 0.08) return;
     const step = this.eyeClock;
@@ -6916,7 +6930,7 @@ export class WorldRenderer {
     // Scatter fields and virtual geometry re-plan for whatever camera draws this frame
     // (the viewport, or a capture view), only when the view or content changed.
     // The cheaper tiers plan the level of detail for a smaller picture (see `lodHeightScale`); a change of tier re-plans.
-    const lodScale = capture ? 1 : lodHeightScale(this.qualityPlan.tier, this.qualityPlan.quality !== 'realtime', this.gpu.tier);
+    const lodScale = capture ? captureFlags().lodBoost : lodHeightScale(this.qualityPlan.tier, this.qualityPlan.quality !== 'realtime', this.gpu.tier);
     const lodChanged = !capture && lodScale !== this.lodScale;
     if (lodChanged) this.lodScale = lodScale;
     if (this.viewChanged() || this.sync.viewNeedsUpdate || lodChanged) {
@@ -7191,6 +7205,7 @@ export class WorldRenderer {
     let wasVisible: boolean[] = [];
     let savedRatio = 1;
     let adaptive = false;
+    let savedShadowCap = 0;
     return {
       camera: this.perspective,
       flipY: this.backend === 'webgl2',
@@ -7209,6 +7224,13 @@ export class WorldRenderer {
         this.renderer.setPixelRatio(1);
         this.renderer.setSize(w, h, false);
         this.bufferCss = [0, 0];
+        const cap = captureFlags().shadowMapCap;
+        if (cap > this.qualityPlan.shadowMapCap) {
+          savedShadowCap = this.qualityPlan.shadowMapCap;
+          this.qualityPlan = { ...this.qualityPlan, shadowMapCap: cap };
+          this.env.shadowMapCap = cap;
+          this.syncSunShadows();
+        }
         this.vignetteOff = !vignette;
         if (!vignette && this.animeStyle) this.applyLook();
         this.post?.setVignette(vignette ? this.vignetteStrength() : 0);
@@ -7250,6 +7272,12 @@ export class WorldRenderer {
         return this.renderToPixels(w, h, () => this.draw(true), () => undefined);
       },
       finish: () => {
+        if (savedShadowCap > 0) {
+          this.qualityPlan = { ...this.qualityPlan, shadowMapCap: savedShadowCap };
+          this.env.shadowMapCap = savedShadowCap;
+          this.syncSunShadows();
+          savedShadowCap = 0;
+        }
         this.captureTargets.trim();
         hidden.forEach((o, i) => (o.visible = wasVisible[i] ?? true));
         this.vignetteOff = false;
@@ -7951,7 +7979,7 @@ export class WorldRenderer {
     const k = via ? this.adaptive.scale : 1;
     setTextureLodBias(lodBiasFor(k));
     // The planar water mirror and the scene backdrop are sized from the drawing buffer: they follow the scene pass.
-    this.materials.mirror.mirror.scale = MIRROR_SCALE * k;
+    this.materials.mirror.mirror.scale = this.captureActive ? captureFlags().mirrorScale : MIRROR_SCALE * k;
     this.materials.backdrop.scale = k;
     const post = this.post;
     if (!post?.sceneScalable) return;

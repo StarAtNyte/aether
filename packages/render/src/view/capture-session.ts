@@ -36,6 +36,11 @@ export interface CaptureFrameOptions {
    * session's buffer shows the region at (`x`, `y`) of a `fullWidth`×`fullHeight` image.
    */
   view?: { fullWidth: number; fullHeight: number; x: number; y: number };
+  /**
+   * Sub-pixel shift of the projection in pixels (offline supersampling: frames drawn at different shifts and averaged
+   * give clean edges). Applied after the frame's own view offset; temporal AA's own jitter still replaces it where on.
+   */
+  jitter?: [number, number];
 }
 
 /** An exclusive capture (see module docs). */
@@ -157,6 +162,7 @@ export function openCaptureSession(host: CaptureHost, width: number, height: num
         cam.zoom = 1;
         cam.aspect = region ? region.fullWidth / region.fullHeight : w / h;
         if (region) cam.setViewOffset(w, h, 0, 0, w, h);
+        else if (o.jitter && Number.isFinite(o.jitter[0]) && Number.isFinite(o.jitter[1])) cam.setViewOffset(w, h, o.jitter[0], o.jitter[1], w, h);
         else cam.clearViewOffset();
         cam.updateProjectionMatrix();
         cam.updateMatrixWorld();

@@ -94,6 +94,7 @@ interface PlayerHandle {
   pauseStory(on: boolean): void;
   /** The film export module (probes: its offline sound render). */
   filmModule(): Promise<typeof import('./film-export')>;
+  framesModule(): Promise<typeof import('./film-frames')>;
   /** The Render video panel (story worlds): its frame rate, the render's progress, the finished file; null when closed. */
   readonly film: FilmPanelState | null;
   start(): void;
@@ -1112,6 +1113,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
       playStory: (at?: number) => void playStory(at),
       pauseStory: (on: boolean) => storyRef.current?.pause(on),
       filmModule: () => import('./film-export'),
+      framesModule: () => import('./film-frames'),
       get film() {
         return filmRef.current;
       },

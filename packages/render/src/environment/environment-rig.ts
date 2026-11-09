@@ -537,7 +537,7 @@ export class EnvironmentRig {
     this.envBase = this.state.envIntensity;
     if (this.live && this.envMap && scene.environment === this.envMap) {
       const now = performance.now();
-      if (now - this.liveEnvMapAt < LIVE_ENV_MAP_MS) {
+      if (now - this.liveEnvMapAt < LIVE_ENV_MAP_MS && (globalThis as { __AETHER_CAPTURE?: { on?: boolean } }).__AETHER_CAPTURE?.on !== true) {
         scene.environmentIntensity = this.envBase * this.envScale;
         return;
       }

@@ -118,7 +118,7 @@ export async function renderFilmAudio(world: WorldDoc, story: Story, seconds: nu
 }
 
 /** The live renderer behind the film's runner: its camera calls become the capture's pose; the rest goes through. */
-function filmRenderer(r: WorldRenderer, pose: { pos: [number, number, number]; target: [number, number, number]; fov: number; roll: number }): RunnerRenderer {
+export function filmRenderer(r: WorldRenderer, pose: { pos: [number, number, number]; target: [number, number, number]; fov: number; roll: number }): RunnerRenderer {
   return {
     lookAt: (pos: [number, number, number], target: [number, number, number], fov?: number, roll?: number) => {
       pose.pos = [pos[0], pos[1], pos[2]];

@@ -1,0 +1,136 @@
+{
+ "_note": "Clean footage clips (render-clean.ts). Entries are shots.json shots plus smooth/pathFile options.",
+ "lisbon-drone": {
+  "slug": "lisbon-hills",
+  "shots": [
+   {
+    "tour": [
+     17,
+     21
+    ],
+    "hour": 17.4,
+    "grade": {
+     "bloom": 0.9,
+     "diffusion": 0.25,
+     "vignette": 0.22,
+     "grain": 0.06,
+     "practicals": 0.6
+    }
+   }
+  ],
+  "smooth": {
+   "sigma": 0.35,
+   "ease": 0.9
+  }
+ },
+ "kepler-domes": {
+  "slug": "kepler-base",
+  "shots": [
+   {
+    "tour": [
+     23.5,
+     31
+    ],
+    "grade": {
+     "bloom": 1.0,
+     "diffusion": 0.3,
+     "vignette": 0.25,
+     "grain": 0.06
+    }
+   }
+  ],
+  "smooth": {
+   "sigma": 0.35,
+   "ease": 0.9
+  }
+ },
+ "lisbon-quay": {
+  "slug": "lisbon-hills",
+  "shots": [
+   {
+    "tour": [
+     0,
+     7
+    ],
+    "hour": 17.4,
+    "grade": {
+     "bloom": 0.9,
+     "diffusion": 0.25,
+     "vignette": 0.22,
+     "grain": 0.06,
+     "practicals": 0.6
+    }
+   }
+  ],
+  "smooth": {
+   "sigma": 0.35,
+   "ease": 0.9
+  }
+ },
+ "penthouse-a": {
+  "slug": "skyline-penthouse",
+  "shots": [
+   {
+    "duration": 5,
+    "camera": {
+     "fov": 55,
+     "position": [
+      -6.5,
+      4,
+      17.5
+     ],
+     "target": [
+      -4,
+      1.5,
+      4
+     ]
+    },
+    "cameraTo": {
+     "fov": 50,
+     "position": [
+      -5.2,
+      3.7,
+      15.6
+     ],
+     "target": [
+      -4,
+      1.5,
+      4
+     ]
+    },
+    "hour": 12.5,
+    "ease": "linear",
+    "grade": {
+     "bloom": 1.0,
+     "diffusion": 0.3,
+     "vignette": 0.25,
+     "grain": 0.05,
+     "practicals": 0.2
+    }
+   }
+  ]
+ },
+ "terraces-falls": {
+  "slug": "sanctuary-terraces",
+  "pathFile": "~/.local/share/aether/demo/intro/shots/m-terraces-falls.path.json",
+  "smooth": {
+   "sigma": 0.35,
+   "ease": 0.9
+  },
+  "shots": [
+   {
+    "hour": 16.5,
+    "grade": {
+     "bloom": 0.9,
+     "diffusion": 0.3,
+     "vignette": 0.22,
+     "grain": 0.05
+    }
+   }
+  ],
+  "window": [
+   2.3,
+   9.9
+  ]
+ }
+}
