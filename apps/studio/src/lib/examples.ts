@@ -60,6 +60,11 @@ export function templateThumbnail(slug: string): string {
   return `/templates/${slug}.webp`;
 }
 
+/** `srcset` of a template's thumbnail: the 640 px file and its 1280 px `@2x` twin (a card is ~380 px wide, so a retina screen wants the twin). */
+export function templateThumbnailSrcSet(slug: string): string {
+  return `/templates/${slug}.webp 640w, /templates/${slug}@2x.webp 1280w`;
+}
+
 /** Public URL of a template's saved world. */
 export function templateWorldUrl(slug: string): string {
   return `/templates/worlds/${slug}.json`;

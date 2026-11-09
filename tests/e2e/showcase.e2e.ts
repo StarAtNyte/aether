@@ -15,7 +15,8 @@
  * `--capture [slug…]` — Chromium only: renders each flagship from its saved
  * world at 1600×900 from its cover camera and writes the cover
  * (`docs/screenshots/showcase/<slug>.webp`) and the card thumbnail
- * (`apps/studio/public/templates/<slug>.webp`, 640×360, ≤ 30 KB).
+ * (`apps/studio/public/templates/<slug>.webp`, 640×360, ≤ 40 KB, and `<slug>@2x.webp`, 1280×720, ≤ 110 KB;
+ * `scripts/showcase/hires-thumbs.ts` renders sharper 2560 px stills for them).
  * `--gallery` instead cuts the thumbnails of gallery entries from their
  * screenshots (no browser).
  *
@@ -39,7 +40,8 @@ const FILTERS = ARGS.filter((a) => !a.startsWith('--'));
 const BROWSERS = ARGS.includes('--firefox') ? ['firefox'] : ARGS.includes('--chromium') || CAPTURE ? ['chromium'] : ['chromium', 'firefox'];
 const VIEWPORT = { width: 1440, height: 900 };
 const TIMEOUT = 120_000;
-const THUMB_BUDGET = 30 * 1024;
+const THUMB_BUDGET = 40 * 1024;
+const THUMB_2X_BUDGET = 110 * 1024;
 const COVER_BUDGET = 160 * 1024;
 const PUBLIC = join(REPO_ROOT, 'apps/studio/public/templates');
 const COVERS = join(REPO_ROOT, 'docs/screenshots/showcase');
@@ -107,6 +109,7 @@ function galleryThumbs(): void {
   for (const e of SHOWCASE) {
     if (e.origin !== 'gallery' || !e.shot || !wanted(e.slug)) continue;
     const size = toWebp(join(GALLERY_DIR, e.shot), join(PUBLIC, `${e.slug}.webp`), 640, 360, THUMB_BUDGET);
+    toWebp(join(GALLERY_DIR, e.shot), join(PUBLIC, `${e.slug}@2x.webp`), 1280, 720, THUMB_2X_BUDGET);
     log(`  ${e.slug}: ${(size / 1024).toFixed(1)} KB from ${e.shot}`);
   }
 }
@@ -191,6 +194,7 @@ async function captureFlagship(page: Page, url: string, entry: ShowcaseEntry, sc
   check(stats.stdDev > 8, `${entry.slug}: blank capture (stddev ${stats.stdDev.toFixed(1)})`);
   const cover = toWebp(file, join(COVERS, `${entry.slug}.webp`), 1600, 900, COVER_BUDGET);
   const thumb = toWebp(file, join(PUBLIC, `${entry.slug}.webp`), 640, 360, THUMB_BUDGET);
+  toWebp(file, join(PUBLIC, `${entry.slug}@2x.webp`), 1280, 720, THUMB_2X_BUDGET);
   log(`  ${entry.slug}: ${opened.entities} entities, cover ${(cover / 1024).toFixed(0)} KB, thumb ${(thumb / 1024).toFixed(1)} KB, mean ${stats.mean.toFixed(0)}`);
 }
 

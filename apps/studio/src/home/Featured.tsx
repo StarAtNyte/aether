@@ -5,7 +5,7 @@
  * Remix opens a copy in the editor. Loaded lazily (its own chunk), so the first download does not carry it.
  */
 import { memo, type ReactElement } from 'react';
-import { FEATURED_TEMPLATES, templateThumbnail, type WorldTemplate } from '../lib/examples';
+import { FEATURED_TEMPLATES, templateThumbnail, templateThumbnailSrcSet, type WorldTemplate } from '../lib/examples';
 import { templatePublish } from '../showcase/publish';
 import { Icon } from '../components/Icon';
 import { templatePlayUrl } from './cards';
@@ -13,7 +13,7 @@ import '../styles/featured.css';
 
 /** Worlds with baked light and a time-of-day slider in the player. */
 const TIME_OF_DAY: ReadonlySet<string> = new Set(['casa-patio', 'skyline-penthouse', 'dusk-lake-house']);
-/** Larger stills for the lead card (1080 px wide; the others use the 640 px thumbnail). */
+/** Larger stills for the lead card (1920 px wide; the others use the thumbnail and its @2x twin). */
 const LEAD_STILL: ReadonlySet<string> = new Set(['cloudwatch-harbour']);
 
 /** "Walkthrough · time of day", "Story film", "Game", "City · drone tour", "Scene · orbit": what the player does with the world. */
@@ -41,10 +41,12 @@ const FeaturedCard = memo(function FeaturedCard({ t, size, onRemix }: { t: World
       <img
         className="fcard__img"
         src={big ? `/templates/featured/${t.slug}.webp` : templateThumbnail(t.slug)}
+        srcSet={big ? `/templates/${t.slug}@2x.webp 1280w, /templates/featured/${t.slug}.webp 1920w` : templateThumbnailSrcSet(t.slug)}
+        sizes={lead ? '(max-width: 1023px) 100vw, 760px' : '(max-width: 639px) 80vw, (max-width: 1023px) 50vw, 380px'}
         alt=""
-        width={big ? 1080 : 640}
-        height={big ? 608 : 360}
-        loading="eager"
+        width={big ? 1920 : 640}
+        height={big ? 1080 : 360}
+        loading={size === 'tile' ? 'lazy' : 'eager'}
         decoding="async"
         draggable={false}
         {...(lead ? { fetchPriority: 'high' as const } : {})}

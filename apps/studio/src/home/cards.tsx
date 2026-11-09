@@ -1,19 +1,22 @@
 /** Template and project cards for the home page (grid and list variants). */
 import { memo, useState, type KeyboardEvent, type ReactElement } from 'react';
-import { TEMPLATE_KIND_LABEL, templateThumbnail, type WorldTemplate } from '../lib/examples';
+import { TEMPLATE_KIND_LABEL, templateThumbnail, templateThumbnailSrcSet, type WorldTemplate } from '../lib/examples';
 import { formatRelative, formatTimestamp } from '../lib/relativeTime';
 import type { ProjectMeta } from '../projects/model';
 import { PROVENANCE_LABEL } from '../showcase/manifest';
 import { Icon } from '../components/Icon';
 import { Menu, type MenuEntry } from '../components/ui/Menu';
 
+/** What a card image's width is, for `sizes`: a grid column (about 380 px), a phone's full width. */
+const CARD_SIZES = '(max-width: 639px) 100vw, (max-width: 1279px) 33vw, 380px';
+
 /** Thumbnail frame: the image, or a quiet placeholder when there is none (or it fails to load). */
-export const Thumb = memo(function Thumb({ src, alt, eager }: { src: string | null; alt: string; eager?: boolean }): ReactElement {
+export const Thumb = memo(function Thumb({ src, alt, eager, srcSet, sizes }: { src: string | null; alt: string; eager?: boolean; srcSet?: string; sizes?: string }): ReactElement {
   const [failed, setFailed] = useState(false);
   return (
     <span className="thumb">
       {src && !failed ? (
-        <img src={src} alt={alt} width={480} height={270} loading={eager ? 'eager' : 'lazy'} decoding="async" draggable={false} onError={() => setFailed(true)} />
+        <img src={src} srcSet={srcSet} sizes={srcSet ? sizes ?? CARD_SIZES : undefined} alt={alt} width={480} height={270} loading={eager ? 'eager' : 'lazy'} decoding="async" draggable={false} onError={() => setFailed(true)} />
       ) : (
         <span className="thumb__empty">
           <Icon name="image" />
@@ -37,7 +40,7 @@ export const TemplateCard = memo(function TemplateCard({ template, onPick, eager
   return (
     <div className="card card--template">
       <a className="card__hit" href={templatePlayUrl(template.slug)} aria-label={`Play ${template.title}`}>
-        <Thumb src={templateThumbnail(template.slug)} alt="" eager={eager} />
+        <Thumb src={templateThumbnail(template.slug)} srcSet={templateThumbnailSrcSet(template.slug)} alt="" eager={eager} />
         <span className="card__body">
           <span className="card__title-row">
             <span className="card__title">{template.title}</span>

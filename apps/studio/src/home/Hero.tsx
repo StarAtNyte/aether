@@ -7,7 +7,7 @@
  */
 import { memo, useEffect, useRef, useState, type ReactElement } from 'react';
 import { MAX_PROMPT_CHARS } from '../config';
-import { FEATURED_TEMPLATES, TEMPLATES, templateThumbnail, type WorldTemplate } from '../lib/examples';
+import { FEATURED_TEMPLATES, TEMPLATES, templateThumbnail, templateThumbnailSrcSet, type WorldTemplate } from '../lib/examples';
 import { Icon } from '../components/Icon';
 
 /** Seconds each example world stays on the stage. */
@@ -89,6 +89,8 @@ const Stage = memo(function Stage({ onPick }: { onPick: (t: WorldTemplate) => vo
             key={t.slug}
             className={`hero-stage__img${i === index ? ' is-on' : ''}`}
             src={templateThumbnail(t.slug)}
+            srcSet={templateThumbnailSrcSet(t.slug)}
+            sizes="(max-width: 1023px) 100vw, 560px"
             alt={i === index ? `${t.title}: ${t.description}` : ''}
             aria-hidden={i === index ? undefined : true}
             width={640}

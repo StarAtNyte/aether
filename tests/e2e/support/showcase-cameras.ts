@@ -28,5 +28,8 @@ export const COVER_CAMERAS: Readonly<Record<string, CoverCamera>> = Object.freez
   'casa-patio': { pos: [-22, 11, -26], target: [0, 1, 0], arch: { walls: 'cutaway' } },
   'skyline-penthouse': { pos: [-20, 9, -25], target: [2, 2, 2], arch: { walls: 'cutaway' } },
   'dusk-lake-house': { pos: [30, 13, 38], target: [6, 4.5, 4], arch: { walls: 'cutaway', levelMode: 'stacked' } },
+  'villa-pool': { pos: [14, 5.5, 19], target: [5, 2.2, 3], arch: { walls: 'up' } },
+  'sanctuary-falls': { pos: [0, 6, 30], target: [0, 26, -50] },
+  'lisbon-hills': { pos: [60, 60, 200], target: [0, 10, 50] },
   'hollow-gate': { pos: [-1.5, 1.75, 28], target: [-9, 1.4, 17.5] },
 });

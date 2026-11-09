@@ -24,10 +24,11 @@ describe('the home Featured gallery', () => {
       expect(TEMPLATE_PUBLISH[t.slug], `${t.slug} publish row`).toBeDefined();
       const thumb = resolve(PUBLIC, `${t.slug}.webp`);
       expect(existsSync(thumb), `${t.slug} thumbnail`).toBe(true);
-      expect(statSync(thumb).size, `${t.slug} thumbnail size`).toBeLessThanOrEqual(30 * 1024);
+      expect(statSync(thumb).size, `${t.slug} thumbnail size`).toBeLessThanOrEqual(40 * 1024);
+      expect(statSync(resolve(PUBLIC, `${t.slug}@2x.webp`)).size, `${t.slug} @2x size`).toBeLessThanOrEqual(110 * 1024);
       expect(existsSync(resolve(PUBLIC, 'worlds', `${t.slug}.json`)), `${t.slug} world`).toBe(true);
     }
-    expect(statSync(resolve(PUBLIC, 'featured/cloudwatch-harbour.webp')).size).toBeLessThanOrEqual(60 * 1024);
+    expect(statSync(resolve(PUBLIC, 'featured/cloudwatch-harbour.webp')).size).toBeLessThanOrEqual(160 * 1024);
   });
 
   it('labels each world by what the player does with it', () => {

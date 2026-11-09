@@ -2,7 +2,7 @@
  * Thumbnail renderer: produces the small WebP images the studio ships in
  * `apps/studio/public/`:
  *
- *  - `templates/<slug>.webp` (640×360, ≤ 30 KB), only with `--templates`:
+ *  - `templates/<slug>.webp` (640×360, ≤ 40 KB), only with `--templates`:
  *    each built-in template is opened through the real "new from template"
  *    route, framed by the editor and captured from the renderer (the shipped
  *    cards come from `npm run showcase:thumbs` instead);
@@ -27,7 +27,7 @@ const ARGS = process.argv.slice(2);
 const ONLY_TEMPLATES = ARGS.includes('--templates');
 const ONLY_PALETTE = ARGS.includes('--palette');
 const FILTERS = ARGS.filter((a) => !a.startsWith('--'));
-const TEMPLATE_BUDGET = 30 * 1024;
+const TEMPLATE_BUDGET = 40 * 1024;
 const PALETTE_BUDGET = 12 * 1024;
 /** The default desktop editor (same framing visitors see). */
 const VIEWPORT = { width: 1440, height: 900 };

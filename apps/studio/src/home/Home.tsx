@@ -417,7 +417,7 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
             <p className="home-section__lead">{g.lead}</p>
             <div className="template-grid">
               {templatesInGroup(g.id).map((t, i) => (
-                <TemplateCard key={t.slug} template={t} onPick={pickTemplate} eager={gi === 0 && i < 8} />
+                <TemplateCard key={t.slug} template={t} onPick={pickTemplate} eager={gi === 0 && i < 4} />
               ))}
             </div>
           </section>

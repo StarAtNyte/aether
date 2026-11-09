@@ -76,11 +76,14 @@ describe('showcase manifest', () => {
     }
   });
 
-  it('ships a thumbnail (WebP ≤ 30 KB) and a valid saved world for every entry', () => {
+  it('ships a thumbnail (WebP ≤ 40 KB, 640 px) with a 1280 px @2x twin (≤ 110 KB) and a valid saved world for every entry', () => {
     for (const e of SHOWCASE) {
       const thumb = pub(`templates/${e.slug}.webp`);
       expect(existsSync(thumb), `${e.slug} thumbnail`).toBe(true);
-      expect(statSync(thumb).size, `${e.slug} thumbnail size`).toBeLessThanOrEqual(30 * 1024);
+      expect(statSync(thumb).size, `${e.slug} thumbnail size`).toBeLessThanOrEqual(40 * 1024);
+      const twin = pub(`templates/${e.slug}@2x.webp`);
+      expect(existsSync(twin), `${e.slug} @2x thumbnail`).toBe(true);
+      expect(statSync(twin).size, `${e.slug} @2x size`).toBeLessThanOrEqual(110 * 1024);
       expect(readFileSync(thumb).subarray(8, 12).toString('latin1')).toBe('WEBP');
       const raw = JSON.parse(readFileSync(pub(`templates/worlds/${e.slug}.json`), 'utf8')) as { format: string; world: unknown };
       expect(raw.format).toBe('aether-world');
