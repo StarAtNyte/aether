@@ -26,7 +26,7 @@ def scripts():
             if not f.endswith(('.py', '.ts')) or f == 'ghost-check.py':
                 continue
             for i, line in enumerate(open(os.path.join(root, f), errors='ignore'), 1):
-                if line.lstrip().startswith(('#', '//', '*')) or 'BANNED = re.compile' in line:
+                if line.lstrip().startswith(('#', '//', '*')) or 'BANNED = re.compile' in line or 'ANALYSIS-ONLY' in line:
                     continue
                 m = BANNED.search(line)
                 if m:

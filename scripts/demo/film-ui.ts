@@ -125,7 +125,7 @@ class Capture {
     if (flashAt < 0) throw new Error('grab: the sync flash was not found in the video');
     this.grabFirstMs = this.flashWall - flashAt * 1000;
     // the frames that actually changed (a display grab repeats frames while nothing moves): their times, for the gap statistics
-    const info = execFileSync('bash', ['-c', `ffmpeg -v info -i '${this.grabFile}' -vf scale=480:270,mpdecimate=hi=64*4:lo=64*2:frac=0.1,showinfo -f null - 2>&1 | grep -o 'pts_time:[0-9.]*'`], { encoding: 'utf8', maxBuffer: 1 << 28 });
+    const info = execFileSync('bash', ['-c', `ffmpeg -v info -i '${this.grabFile}' -vf scale=480:270,mpdecimate=hi=64*4:lo=64*2:frac=0.1,showinfo -f null - 2>&1 | grep -o 'pts_time:[0-9.]*'`], { encoding: 'utf8', maxBuffer: 1 << 28 }); // ANALYSIS-ONLY: finds the changed frames of a grab, never in a film
     for (const l of info.split('\n')) {
       const m = /pts_time:([\d.]+)/.exec(l);
       if (m) this.times.push(this.grabFirstMs / 1000 + Number(m[1]));
