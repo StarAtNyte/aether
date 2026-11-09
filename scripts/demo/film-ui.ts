@@ -160,7 +160,15 @@ async function finish(t: Take): Promise<void> {
   const list = times.map((x, i) => `file 'f${String(i).padStart(5, '0')}.jpg'\nduration ${(i + 1 < times.length ? times[i + 1]! - x : 1 / 60).toFixed(6)}`).join('\n');
   writeFileSync(join(cap.dir, 'list.txt'), `${list}\nfile 'f${String(times.length - 1).padStart(5, '0')}.jpg'\n`);
   const mp4 = join(OUT, `${rec.scene}.mp4`);
-  execFileSync('nice', ['-n', '10', 'ffmpeg', '-loglevel', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', join(cap.dir, 'list.txt'), '-vf', 'fps=30', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '15', '-pix_fmt', 'yuv420p', mp4], { stdio: 'inherit' });
+  const encode = (extra: string[], vf: string): void => void execFileSync('nice', ['-n', '10', 'ffmpeg', '-loglevel', 'error', '-y', ...extra, '-f', 'concat', '-safe', '0', '-i', join(cap.dir, 'list.txt'), '-vf', vf, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '15', '-pix_fmt', 'yuv420p', mp4], { stdio: 'inherit' });
+  try {
+    encode([], 'fps=30,scale=trunc(iw/2)*2:trunc(ih/2)*2');
+  } catch (e) {
+    // A screencast whose frames change size (a phone window) can fail to filter: fix the size to the first frame's and retry.
+    log(`encode failed (${String(e).slice(0, 80)}); retrying at the first frame's size`);
+    const dims = execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'csv=p=0:s=x', join(cap.dir, 'f00000.jpg')]).toString().trim().split('x').map((v) => Math.floor(Number(v) / 2) * 2);
+    encode(['-reinit_filter', '0'], `fps=30,scale=${dims[0]}:${dims[1]}`);
+  }
   log(`${rec.scene}: ${times.length} frames over ${(total / 1000).toFixed(1)} s, kept ${(kept / 1000).toFixed(1)} s; kept gaps ${JSON.stringify(stats)}`);
   log(`wrote ${mp4}`);
   await t.ctx.close().catch(() => undefined);
@@ -1010,6 +1018,7 @@ async function tour(browser: Awaited<ReturnType<typeof chromium.launch>>, url: s
     const t1 = rec.now();
     await page.waitForFunction(() => /Checks passed|failing|Checks failed/.test(document.body.innerText), null, { timeout: 180_000, polling: 300 });
     rec.ramp(t1, 1500);
+    mark(t, 'checks-passed');
     await dwell(page, 2600);
     mark(t, 'playability');
     const pb = page.locator('button', { hasText: /Check playability/ }).first();
@@ -1018,6 +1027,7 @@ async function tour(browser: Awaited<ReturnType<typeof chromium.launch>>, url: s
       const t2 = rec.now();
       await page.waitForFunction(() => /Verified playable|Could not verify|Not verified/.test(document.body.innerText), null, { timeout: 280_000, polling: 400 }).catch(() => log('playability did not finish'));
       rec.ramp(t2, 1200);
+      mark(t, 'verified');
       await dwell(page, 3200);
     }
     mark(t, 'gizmos');
@@ -1063,6 +1073,22 @@ async function tour(browser: Awaited<ReturnType<typeof chromium.launch>>, url: s
     mark(t, 'undo');
     for (let i = 0; i < 2; i++) await page.evaluate(() => window.__aether!.studio.undo());
     await dwell(page, 1500);
+  }
+  if (kind === 'hub') {
+    // The Publish hub with the pointer visible: open it, pick each target in turn (what each makes is the caption's job), then
+    // the share link. Marks: hub-open, hub-<target>, hub-link.
+    mark(t, 'hub-open');
+    await click(page, page.getByTestId('topbar-publish'), 900);
+    await page.getByTestId('publish-target-share').waitFor({ timeout: 60_000 });
+    await dwell(page, 1400);
+    for (const id of ['game', 'video', 'render', 'model', 'plan']) {
+      mark(t, `hub-${id}`);
+      await click(page, page.getByTestId(`publish-target-${id}`), 800);
+      await dwell(page, 1500);
+    }
+    mark(t, 'hub-link');
+    await click(page, page.getByTestId('publish-target-share'), 800);
+    await dwell(page, 2500);
   }
   if (kind === 'publish') {
     for (const id of ['video', 'render', 'model', 'plan', 'game']) {

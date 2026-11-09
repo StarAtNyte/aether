@@ -177,3 +177,75 @@ capture would stutter.
   1080p, 24 fps, 9 s used). When that file exists it is placed before the character turntable; until then only the turntable plays.
 - Scripts added: `take-gaps.py --range` (gap statistics of the stretch a cut uses), `frame-sheet.py` (full-size frames for checking
   details such as skirts), `film-build.ts --rscale --hour`, `film-ui.ts --tier --hubOnly`.
+
+# v8: a clearer film (storyboard)
+
+Feedback on v7: the grids of four scenes in one frame could not be understood. v8 shows one idea at a time, full frame, as cause and
+effect, with a plain sentence for every beat.
+
+Rules: no mosaics, no picture-in-picture, no split screens (the one exception is the laptop and phone share scene: one world on two
+devices, large). Five titled acts, each opening on a 1.3 s card (a big word, one line, five dots for the five acts): Describe, Shape it,
+Prove it, Share it, Go further, then the end card. Captions are sentences with a verb, 44 px, on a numbered plate at the bottom, with
+no jargon ("a bot plays your game", not "replay seal"). Beats run 3.5 to 6 s; the result is held for a full second; transitions are
+at most three frames. Length about 2:56 (container at most 179 s) and a 60 s trailer with one beat per act.
+
+Ten capabilities, shown properly: describe a world; the AI builds it step by step; edit by hand; edit by chat; time of day without
+re-baking; the architecture views; the playability bot and the checks; publish a link and open it on a laptop and a phone;
+exports (one clip walks through the hub's targets); play modes (drone, walk, game); the local Blender harness; an animated short.
+Dropped to one closing sentence: terrain sculpting, game rules beyond one beat, the command palette.
+
+`make-edl8.py` is the single source: it writes `edl8.json`, `edl8-60.json` and `cards8.json` (captions and act cards), and
+`--table` prints the table below. Captures: `film-ui.ts --scene=tour --kind=hub` (new: the pointer clicks each Publish target) is
+recorded and dry-run tested; `--kind=game` now marks `checks-passed` and `verified` so the bot beat can hold the result; the phone
+encode retries at the first frame's size (`film-ui.ts` devices).
+
+## Storyboard
+
+| Act | Beat | Caption | s | Source | Status | Needs |
+|---|---|---|---|---|---|---|
+| Hook | hook | Describe a world. Aether builds it, lights it and publishes it. | 5.5 | film8/clips/hook (fallback: v7 terraces shot) | world clip | world-footage pipeline |
+| Act 1 | act1 | (title card) Describe: Type a world. Watch it appear. | 1.3 | card | new |  |
+| Act 1 | a1b1 | Type the world you want, in plain words. | 5.2 | film7/describe (full app, then zoom to the box) | v7 capture good (0% of gaps over 50 ms) |  |
+| Act 1 | a1b2 | The AI builds it step by step: the land and the market first, then the houses. | 5.2 | film7/build-village3 (offline render, fixed clock) | v7 render good; re-render if the world pipeline offers better |  |
+| Act 1 | a1b3 | A house builds the same way: floors, then stairs, then the garden. | 4.8 | film7/build-villa2 (offline render, fixed clock) | v7 render good; re-render if the world pipeline offers better |  |
+| Act 2 | act2 | (title card) Shape it: Change it by hand, by words, by light. | 1.3 | card | new |  |
+| Act 2 | a2b1 | Click a piece, then drag it where you want it. | 5.0 | film7/edit (select, move gizmo) | RE-RECORD: gaps 3-6% over 50 ms; the click shows a wall brightness jump | edit scene, quiet machine |
+| Act 2 | a2b2 | Swap its material with one click. | 3.9 | film7/edit (material presets) | RE-RECORD with the edit take (5.8% over 50 ms) | edit scene |
+| Act 2 | a2b3 | Or just ask: "make the sofa dark green". | 5.6 | film7/edit (chat typed, result, Undo) | RE-RECORD: this stretch was 16% over 50 ms; hold the result a full second | edit scene |
+| Act 2 | a2b4 | Drag the sun: the light changes at once, with nothing re-baked. | 5.0 | film7/edit (time sweep) | RE-RECORD with the edit take | edit scene |
+| Act 2 | a2b5 | Cut a building open to see its rooms. | 4.33 | film7/arch-step (offline render, clear weather) | v7 render good |  |
+| Act 2 | a2b6 | Or take every wall down. | 3.0 | film7/arch-step (offline render, clear weather) | v7 render good |  |
+| Act 2 | a2b7 | Pull the floors apart to see each storey. | 3.83 | film7/arch-step (offline render, clear weather) | v7 render good |  |
+| Act 2 | a2b8 | Switch to the floor plan, with the area of every room. | 4.4 | film7/arch (plan view) | v7 capture good (1% over 50 ms) |  |
+| Act 3 | act3 | (title card) Prove it: A bot plays it. The checks run. | 1.3 | card | new |  |
+| Act 3 | a3b1 | Press one button: a bot plays your game to prove it can be won. | 6.0 | film7/tour-game (click, the bot runs sped up, "Verified playable") | RE-RECORD: the take needs a "verified" mark and the result held 1 s | tour --kind=game (adds a verified mark) |
+| Act 3 | a3b2 | Run the world's own tests: one clear badge says they pass. | 4.1 | film7/tour-game (Checks) | v7 capture acceptable |  |
+| Act 3 | a3b3 | Game rules read like sentences: when the timer ends, you lose. | 3.8 | film7/tour-game (Logic panel) | v7 capture acceptable |  |
+| Act 4 | act4 | (title card) Share it: One link. Any screen. Any kind of world. | 1.3 | card | new |  |
+| Act 4 | a4b1 | Pick what to make: a game, a video, a picture, a 3D model or a floor plan. | 9.0 | film8/tour-hub (new: pointer clicks each target) | NEW capture | tour --kind=hub |
+| Act 4 | a4b2 | One click makes a link that carries the whole world. | 5.0 | film7/publish (link made with the Player address set to the live site) | v7 capture good (1.5% over 50 ms) |  |
+| Act 4 | a4b3 | Open it anywhere: the same world on a laptop and a phone. | 0 | film8/devices | LEFT OUT until captured | devices scene |
+| Act 4 | a4b4 | Published worlds open in their own mode, and any of them can be remixed. | 5.0 | film7/livehome (live site, Featured) | v7 capture good (0% over 50 ms) |  |
+| Act 4 | a4b5 | Fly over a whole city by drone. | 5.0 | film8/clips/drone-lisbon (fallback v6/v7 footage) | world clip | world-footage pipeline |
+| Act 4 | a4b6 | Walk through a house, at any time of day. | 4.2 | film8/clips/house-walk (fallback v6/v7 footage) | world clip | world-footage pipeline |
+| Act 4 | a4b7 | Or float over a landscape at golden hour. | 4.6 | film8/clips/landscape (fallback v6/v7 footage) | world clip | world-footage pipeline |
+| Act 4 | a4b8 | Play a game as a character. | 3.8 | film2/ui/play (real-time 4K capture) or a film8 clip | REPLACE with a film8 clip if the pipeline renders a game shot |  |
+| Act 5 | act5 | (title card) Go further: Characters, photoreal shots, a short film. | 1.3 | card | new |  |
+| Act 5 | a5b1 | Describe a character: Blender builds it on your computer, front, side and back. | 6.0 | film2/tt-mio + sheet | existing |  |
+| Act 5 | a5b2 | And it renders a photoreal shot of it, locally. | 0 | aether-blender-real-shot.mp4 | LEFT OUT until the file lands |  |
+| Act 5 | a5b3 | Stories too: a short film written and rendered in Aether, with its own sound. (about 30 s, three captions carry the story) | 38.3 | film6/shots/two-whistles (offline render from current main) | existing; re-render if the pipeline improves it |  |
+| Act 5 | a5b4 | And more: sculpt terrain, write game rules, search every command. | 3.8 | film8/clips/isles (one calm shot) | world clip |  |
+| End | end | Aether. Describe it. Shape it. Share it. | 5.0 | card | existing style |  |
+
+## Capture plan (after "go"; the machine is quiet, real time, one at a time, niced, integrated GPU)
+
+| Capture | Command (scale 1.5, tier high) | Time |
+|---|---|---|
+| edit: select and drag, material, chat, sun | `film-ui.ts --scene=edit --scale=1 --tier=high` | about 5 min with a retry |
+| game tour with the bot (adds the verified mark) | `--scene=tour --kind=game --slug=coin-rush --scale=1 --tier=high` | about 4 min |
+| devices: laptop and phone on the live site | `--scene=devices --link=film7/publish/link.txt --scale=1.5` | about 4 min |
+
+Kept from v7 (good pacing): describe, publish hub link, architecture plan, Featured on the live site, the replays, the architecture
+render. Recorded already at the quiet time: `film8/tour-hub` (3.4% of gaps over 50 ms). Waiting on: world clips in `film8/clips/`
+(hook, drone-lisbon, house-walk, landscape, isles; v6/v7 footage is the fallback) and `aether-blender-real-shot.mp4`.
+Offline after the captures: cards, score, cut (about 15 to 25 min) and the trailer (about 10 min).

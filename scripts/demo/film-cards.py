@@ -109,6 +109,54 @@ for name, c in cards.items():
         sh = Image.new('RGBA', (W, H), (0, 0, 0, 0))
         ImageDraw.Draw(sh).rounded_rectangle([x0, y0 + 8, x1, y1 + 8], 28, fill=(0, 0, 0, 120))
         img = Image.alpha_composite(sh.filter(ImageFilter.GaussianBlur(18)), plate)
+    elif k == 'cap':
+        # v8 caption: one plain sentence, 44 px, on a dark plate low left with a step number; two lines when it is long
+        d = ImageDraw.Draw(Image.new('RGBA', (1, 1)))
+        f = font(500, 44)
+        words, lines, cur = text.split(), [], ''
+        for w_ in words:
+            trial = (cur + ' ' + w_).strip()
+            if d.textlength(trial, font=f) > 1500 and cur:
+                lines.append(cur)
+                cur = w_
+            else:
+                cur = trial
+        lines.append(cur)
+        num = c.get('num', '')
+        tw = max(d.textlength(l_, font=f) for l_ in lines)
+        x0, y1 = 72, 1012
+        lh_ = 58
+        y0 = y1 - (len(lines) * lh_ + 44)
+        tx = x0 + (112 if num else 40)
+        x1 = tx + tw + 44
+        plate = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+        pd = ImageDraw.Draw(plate)
+        pd.rounded_rectangle([x0, y0, x1, y1], 30, fill=(9, 12, 19, 205))
+        if num:
+            cy = (y0 + y1) // 2
+            pd.ellipse([x0 + 24, cy - 32, x0 + 88, cy + 32], fill=(255, 255, 255, 240))
+            pd.text((x0 + 56, cy + 2), str(num), font=font(600, 38), fill=(9, 12, 19, 255), anchor='mm')
+        for i_, l_ in enumerate(lines):
+            pd.text((tx, y0 + 22 + (i_ + 1) * lh_ - 14), l_, font=f, fill=(255, 255, 255, 255), anchor='ls')
+        sh = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+        ImageDraw.Draw(sh).rounded_rectangle([x0, y0 + 8, x1, y1 + 8], 30, fill=(0, 0, 0, 120))
+        img = Image.alpha_composite(sh.filter(ImageFilter.GaussianBlur(18)), plate)
+    elif k == 'act':
+        # v8 act title: an opaque card, the act's word large, one line under it, five dots for the five acts
+        bg = Image.new('RGB', (W, H), (12, 15, 22))
+        glow = Image.new('L', (W, H), 0)
+        ImageDraw.Draw(glow).ellipse([W * 0.2, -H * 0.5, W * 0.8, H * 0.7], fill=255)
+        bg = Image.composite(Image.new('RGB', (W, H), (44, 54, 74)), bg, glow.filter(ImageFilter.GaussianBlur(200))).convert('RGBA')
+        img = Image.alpha_composite(bg, render([((W // 2, 560), text, font(600, 190), (255, 255, 255, 255), 2, 'm'), ((W // 2, 650), sub, font(400, 50), (255, 255, 255, 225), 0, 'm')], blur=20, alpha=120))
+        n_, cur_ = int(c.get('total', 5)), int(c.get('idx', 1))
+        lay = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+        d = ImageDraw.Draw(lay)
+        x_start = W // 2 - (n_ - 1) * 28
+        for i_ in range(n_):
+            cx = x_start + i_ * 56
+            d.ellipse([cx - 9, 790 - 9, cx + 9, 790 + 9], fill=(255, 255, 255, 255 if i_ + 1 == cur_ else 70))
+        d.text((W // 2, 740), f'Act {cur_} of {n_}', font=font(400, 32), fill=(255, 255, 255, 170), anchor='mm')
+        img = Image.alpha_composite(img, lay)
     elif k == 'tag':
         # a plain label for a shot, bottom left, on a small plate
         d = ImageDraw.Draw(Image.new('RGBA', (1, 1)))
