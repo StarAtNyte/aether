@@ -261,9 +261,103 @@ def segment(s):
         (lf, li), (pf_, pi) = s['laptop'], s['phone']
         inputs = ['-loop', '1', '-framerate', str(FPS), '-i', stage, '-ss', str(li), '-t', str(dur), '-i', os.path.expanduser(lf), '-ss', str(pi), '-t', str(dur), '-i', os.path.expanduser(pf_),
                   '-loop', '1', '-framerate', str(FPS), '-i', os.path.join(WORK, 'devmask-lap.png'), '-loop', '1', '-framerate', str(FPS), '-i', os.path.join(WORK, 'devmask-pho.png')]
-        vf = (f"[1:v]setpts=PTS-STARTPTS,scale={lw}:{lh}:flags=lanczos,fps={FPS},format=rgba[l];[3:v]format=gray[ml];[l][ml]alphamerge[lm];"
+        lap_in = f"[1:v]setpts=PTS-STARTPTS,scale={lw}:{lh}:flags=lanczos,fps={FPS},format=rgba[l];[3:v]format=gray[ml];[l][ml]alphamerge[lm];"
+        if s.get('url'):
+            # the laptop window gets a browser toolbar with the address of the page that was captured
+            from PIL import Image, ImageDraw, ImageFont
+            bar_h = 52
+            chrome = os.path.join(WORK, f"devchrome-{hashlib.sha1(s['url'].encode()).hexdigest()[:10]}.png")
+            if not os.path.exists(chrome):
+                fdir = EDL.get('fonts', '')
+                im = Image.new('RGBA', (lw, lh), (0, 0, 0, 0))
+                d = ImageDraw.Draw(im)
+                d.rectangle([0, 0, lw, bar_h], fill=(34, 36, 42, 255))
+                for k_, col in enumerate(((255, 96, 92), (255, 189, 68), (0, 202, 78))):
+                    d.ellipse([18 + k_ * 26, bar_h // 2 - 7, 18 + k_ * 26 + 14, bar_h // 2 + 7], fill=col)
+                f = ImageFont.truetype(os.path.join(fdir, 'Inter-400-14.ttf'), 28)
+                d.rounded_rectangle([130, 7, lw - 24, bar_h - 7], (bar_h - 14) // 2, fill=(20, 21, 26, 255))
+                d.text((130 + 28, bar_h // 2 + 10), s['url'], font=f, fill=(232, 234, 240, 255), anchor='ls')
+                im.save(chrome)
+            inputs += ['-loop', '1', '-framerate', str(FPS), '-i', chrome]
+            lap_in = f"[1:v]setpts=PTS-STARTPTS,scale={lw}:{lh}:flags=lanczos,fps={FPS},format=rgba[l0];[l0][5:v]overlay=0:0:format=auto[l];[3:v]format=gray[ml];[l][ml]alphamerge[lm];"
+        vf = (lap_in +
               f"[2:v]setpts=PTS-STARTPTS,scale={pw_}:{ph}:flags=lanczos,fps={FPS},format=rgba[p];[4:v]format=gray[mp];[p][mp]alphamerge[pm];"
               f"[0:v][lm]overlay=x={lx}:y={ly}:shortest=1[a];[a][pm]overlay=x={px}:y={py}:shortest=1,format=yuv420p,trim=duration={dur}[v]")
+    elif mode == 'mosaic':
+        # a grid of tiles playing at once on the stage: each tile is a clip (optionally a cropped part of it) in a rounded frame
+        # with a short label, appearing one after another (tile["at"], seconds)
+        from PIL import Image, ImageDraw, ImageFont
+        backdrop()
+        cols, rows = s['grid']
+        tiles = s['tiles']
+        gut, mar = int(s.get('gutter', 18)), int(s.get('margin', 30))
+        tw = (W - 2 * mar - gut * (cols - 1)) // cols // 2 * 2
+        th = (H - 2 * mar - gut * (rows - 1)) // rows // 2 * 2
+        fdir = EDL.get('fonts', os.path.join(os.path.dirname(os.path.abspath(EDL.get('cards', ''))), 'fonts'))
+        fsize = int(s.get('labelSize', 30))
+        font = ImageFont.truetype(os.path.join(fdir, 'Inter-500-14.ttf'), fsize)
+        mk = os.path.join(WORK, f'tilemask-{tw}x{th}.png')
+        if not os.path.exists(mk):
+            m = Image.new('L', (tw, th), 0)
+            ImageDraw.Draw(m).rounded_rectangle([0, 0, tw - 1, th - 1], 16, fill=255)
+            m.save(mk)
+        inputs = ['-loop', '1', '-framerate', str(FPS), '-t', str(dur), '-i', BACKDROP]
+        chains, last = [], '[0:v]'
+        for i, t in enumerate(tiles):
+            r, c = t.get('cell', divmod(i, cols))
+            lab = os.path.join(WORK, f"tilelab-{hashlib.sha1((t['label'] + str(tw) + str(th) + str(fsize)).encode()).hexdigest()[:10]}.png")
+            if not os.path.exists(lab):
+                im = Image.new('RGBA', (tw, th), (0, 0, 0, 0))
+                d = ImageDraw.Draw(im)
+                wd = d.textlength(t['label'], font=font)
+                d.rounded_rectangle([14, th - 14 - fsize - 24, 14 + wd + 36, th - 14], (fsize + 24) // 2, fill=(9, 12, 19, 205))
+                d.text((14 + 18, th - 14 - 12), t['label'], font=font, fill=(255, 255, 255, 250), anchor='ls')
+                im.save(lab)
+            sp_ = os.path.expanduser(t['src'])
+            if sp_.lower().endswith(('.png', '.jpg', '.jpeg')):
+                inputs += ['-loop', '1', '-framerate', str(FPS), '-t', str(dur), '-i', sp_]
+            else:
+                inputs += ['-ss', str(t.get('in', 0)), '-t', str(dur * float(t.get('speed', 1)) + 1), '-i', sp_]
+            inputs += ['-loop', '1', '-framerate', str(FPS), '-t', str(dur), '-i', lab, '-loop', '1', '-framerate', str(FPS), '-t', str(dur), '-i', mk]
+            vi, li, mi = 1 + 3 * i, 2 + 3 * i, 3 + 3 * i
+            crop = t.get('crop')
+            cf = f"crop=iw*{crop[2]}:ih*{crop[3]}:iw*{crop[0]}:ih*{crop[1]}," if crop else ''
+            sp = float(t.get('speed', 1))
+            at = float(t.get('at', 0))
+            x, y = mar + c * (tw + gut), mar + r * (th + gut)
+            chains.append(
+                f"[{vi}:v]" + (f"mpdecimate,setpts=(PTS-STARTPTS)/{sp},framerate=fps={FPS}:interp_start=0:interp_end=255:scene=100," if t.get('smooth') else f"setpts=(PTS-STARTPTS)/{sp},fps={FPS},") + f"tpad=stop_mode=clone:stop_duration={dur},{cf}scale={tw}:{th}:force_original_aspect_ratio=increase:flags=lanczos,crop={tw}:{th},setsar=1,format=rgba[t{i}];"
+                f"[{li}:v]format=rgba[l{i}];[t{i}][l{i}]overlay=0:0:format=auto[tl{i}];[{mi}:v]format=gray[g{i}];[tl{i}][g{i}]alphamerge,fade=t=in:st={at}:d=0.35:alpha=1[f{i}];"
+                f"{last}[f{i}]overlay=x={x}:y={y}:format=auto[o{i}];")
+            last = f'[o{i}]'
+        vf = ''.join(chains) + f"{last}format=yuv420p,trim=duration={dur}[v]"
+    elif mode == 'browser':
+        # a page capture in a browser window on the stage: toolbar with the real address (s["url"], the address of the page captured)
+        from PIL import Image, ImageDraw, ImageFont
+        backdrop()
+        ww = int(s.get('width', 1680))
+        bar = 64
+        ch_ = int(ww * 9 / 16) // 2 * 2
+        wh = ch_ + bar
+        sh, mk = window_shadow(ww, wh), window_mask(ww, wh)
+        fdir = EDL.get('fonts', os.path.join(os.path.dirname(os.path.abspath(EDL.get('cards', ''))), 'fonts'))
+        chrome = os.path.join(WORK, f"chrome-{hashlib.sha1((s['url'] + str(ww)).encode()).hexdigest()[:10]}.png")
+        if not os.path.exists(chrome):
+            im = Image.new('RGBA', (ww, bar), (34, 36, 42, 255))
+            d = ImageDraw.Draw(im)
+            for k, col in enumerate(((255, 96, 92), (255, 189, 68), (0, 202, 78))):
+                d.ellipse([22 + k * 30, bar // 2 - 8, 22 + k * 30 + 16, bar // 2 + 8], fill=col)
+            f = ImageFont.truetype(os.path.join(fdir, 'Inter-400-14.ttf'), 28)
+            x0, x1 = 160, ww - 60
+            d.rounded_rectangle([x0, 9, x1, bar - 9], (bar - 18) // 2, fill=(20, 21, 26, 255))
+            d.rounded_rectangle([x0 + 20, 25, x0 + 34, 38], 3, outline=(170, 175, 185, 255), width=2)
+            d.arc([x0 + 22, 18, x0 + 32, 31], 180, 360, fill=(170, 175, 185, 255), width=2)
+            d.text((x0 + 52, bar // 2 + 10), s['url'], font=f, fill=(232, 234, 240, 255), anchor='ls')
+            im.save(chrome)
+        inputs = ['-ss', str(s.get('in', 0)), '-i', src, '-loop', '1', '-i', BACKDROP, '-loop', '1', '-i', sh, '-loop', '1', '-i', mk, '-loop', '1', '-i', chrome]
+        fx = f"setpts=(PTS-STARTPTS)/{speed}," if speed != 1 else 'setpts=PTS-STARTPTS,'
+        vf = (f"[0:v]{fx}scale={ww}:{ch_}:flags=lanczos,fps={FPS},pad={ww}:{wh}:0:{bar}:color=black,format=rgba[ui0];[ui0][4:v]overlay=0:0:format=auto[ui1];[3:v]format=gray,scale={ww}:{wh}[m];[ui1][m]alphamerge[uim];"
+              f"[1:v][2:v]overlay[bd];[bd][uim]overlay=x=(W-w)/2:y=(H-h)/2:shortest=1,format=yuv420p,trim=duration={dur}[v]")
     elif mode == 'window':
         backdrop()
         ww, wh = s.get('win', [1632, 918])
@@ -361,7 +455,7 @@ def main():
     graph = os.path.join(WORK, 'graph.txt')
     open(graph, 'w').write(';\n'.join(chain + achain))
     ff(inputs + ['-filter_complex_script', graph, '-map', '[vout]', '-map', '[aout]', '-t', f'{total:.3f}', '-r', str(FPS),
-                 '-c:v', 'libx264', '-preset', 'slow', '-crf', '15', '-profile:v', 'high', '-pix_fmt', 'yuv420p', '-maxrate', '40M', '-bufsize', '80M',
+                 '-c:v', 'libx264', '-preset', 'medium', '-crf', '16', '-profile:v', 'high', '-pix_fmt', 'yuv420p', '-maxrate', '40M', '-bufsize', '80M',
                  '-c:a', 'aac', '-b:a', '320k', '-ar', '48000', '-movflags', '+faststart', OUT])
     print(f'wrote {OUT} ({probe(OUT):.1f} s)')
     print('starts', json.dumps([[s['name'], round(st, 2)] for s, st in zip(segs, starts)]))

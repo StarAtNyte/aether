@@ -91,3 +91,58 @@ standing character and a kit house. Every character frame was checked at full si
     python3 scripts/demo/film/make-edl5.py <dir>
     python3 scripts/demo/film-score.py <dir>/edl5.json <dir>/edl5.wav
     python3 scripts/demo/film-cut.py <dir>/edl5.json --out <mp4> --work <work>
+
+# Submission cut (v6, about 2:55)
+
+v6 keeps the v5 spine (product first, numbered step plates, full app then zoom then back out, honest labels, the original
+score) and uses the three minutes for the app's range, with footage that is generated frame by frame wherever a real-time
+capture would stutter.
+
+## Capability checklist (what the app does, and whether v6 shows it as a real capture)
+
+| Capability | In v6 | Source |
+|------------|-------|--------|
+| Describe a world, the AI works in steps, a build log | yes | v5 typed prompt (offline planner, labelled), the recorded live session (labelled "Live AI session, recorded") |
+| Watch a world being built | yes | build replay: the real patches of an offline-planner build (a villa, a village, a valley) applied in steps and rendered frame by frame (`film-build.ts`), labelled |
+| Refine by chat, undo | yes | edit take (offline planner, labelled) |
+| Gizmos (move, rotate, scale), snapping, materials | yes | edit take and the tour take (`film-ui.ts --scene=tour`) |
+| Time of day, relight, nothing re-baked | yes | edit take, penthouse sweep |
+| Rules (Logic), checks, the playability bot, Play | yes | tour take on Coin Rush, tiles of the first mosaic |
+| Terrain sculpt and paint, undo | yes | tour take on Highland Trail |
+| Architecture: walls up, cutaway, walls down, exploded storeys, one floor | yes | frame-by-frame render (`film-arch.ts`, the architecture state driven, fixed clock) |
+| Floor plan, room chips | yes | studio take (1080p real time), a short glimpse |
+| Publish hub targets: game, video, still, 3D model, floor plan | yes | hub take, second mosaic |
+| Command palette | yes | tour take |
+| Share link that carries the world, opens with no upload | yes | the link made with the Player address set to the live site, opened on the live site in a laptop and a phone window |
+| Featured gallery, Remix | yes | captured from the live site |
+| Drone tour, walk, orbit, colony, floating isles | yes | offline-rendered shots |
+| Story film made in Aether, Render video | yes | "Two Whistles", rendered with the player's Render video path from current main |
+| Local Blender harness: character from a brief, house from a brief | yes | concept sheet and turntable, kit house (labelled "Local run") |
+| Photo to room | no | needs a vision model and credit; only the finished example rooms exist, not shown as a live capability |
+| Look presets (anime, realistic) | no | the app has graphics tiers and time of day, not look presets |
+| VR | no | no WebXR mode in the app |
+
+## Footage rules for v6
+
+- World footage is rendered offline with a fixed clock (`beginCapture`), 1080p, ultra tier, warm-up frames before the first
+  saved frame, flat frames discarded and rendered again. UI footage is real time and is smoothed to 30 fps by paint time.
+- `scripts/demo/flicker-check.py` runs on every clip and on the cut: frame gaps, black frames, difference spikes,
+  luminance flicker, shimmer in static regions. `scripts/demo/take-gaps.py` reports the paint gaps of the UI takes.
+- The live-site shots are page captures in a drawn browser toolbar that shows the real address of the page captured.
+- The Japanese house generator is not shown anywhere.
+
+## Rebuild (v6)
+
+    node scripts/demo/film-fonts.py <fonts>            (Inter instances)
+    python3 scripts/demo/film-cards.py scripts/demo/film/cards6.json <cards> <fonts>
+    STATIC_DIR=<dist> GEN_GPU=nvidia npx tsx scripts/demo/film-build.ts --prompt="..." --out=<dir>
+    STATIC_DIR=<dist> GEN_GPU=nvidia npx tsx scripts/demo/film-build.ts --patches=<patches.json> --out=<dir>
+    STATIC_DIR=<dist> GEN_GPU=nvidia npx tsx scripts/demo/film-arch.ts --slug=villa-pool --out=<dir>
+    STATIC_DIR=<dist> GEN_GPU=nvidia npx tsx scripts/demo/film-ui.ts --scene=tour --kind=game|land|publish --slug=<world> --scale=1 --out=<dir>
+    STATIC_DIR=<dist> GEN_GPU=nvidia npx tsx scripts/demo/film-ui.ts --scene=publish --slug=villa-pool --out=<dir>
+    STATIC_DIR=<dist> GEN_GPU=nvidia npx tsx scripts/demo/film-ui.ts --scene=devices --link=<dir>/link.txt --out=<dir>
+    STATIC_DIR=<dist> GEN_GPU=nvidia npx tsx scripts/demo/film-ui.ts --scene=livehome --out=<dir>
+    STATIC_DIR=<dist> GEN_GPU=nvidia npx tsx scripts/demo/film-shots.ts --only=two-whistles --out=<dir>
+    python3 scripts/demo/film/make-edl6.py <dir>
+    python3 scripts/demo/film-score.py <dir>/edl6.json <dir>/edl6.wav
+    python3 scripts/demo/film-cut.py <dir>/edl6.json --out <mp4> --work <work> --sheet <contact.jpg>

@@ -18,7 +18,7 @@
  * is held until the next one was painted). Nothing is drawn over the page except the demo cursor and its click ripple.
  */
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { chromium, type BrowserContext, type CDPSession, type Locator, type Page } from 'playwright';
@@ -32,7 +32,7 @@ const OUT = resolve(arg('out') ?? join(homedir(), '.local/share/aether/demo/film
 const EDIT_SLUG = arg('slug') ?? 'scandi-living-room';
 const W = 1920;
 const H = 1080;
-const SCALE = 2;
+const SCALE = Number(arg('scale') ?? 2);
 /** The takes' pointer positions were laid out for a 1440 px page. */
 const K = W / 1440;
 // Chrome's screencast delivers CSS-sized frames when the scale is emulated (Playwright's deviceScaleFactor), physical ones when
@@ -574,6 +574,8 @@ async function publish(browser: Awaited<ReturnType<typeof chromium.launch>>, url
   // The opening's background passes (saving, the world-quality pass) finish before the take.
   await page.waitForFunction(() => !/Saving|World-quality pass/.test(document.body.innerText), null, { timeout: 180_000, polling: 500 }).catch(() => log('still busy'));
   await sleep(4000);
+  // The hub's Player address is the hosted studio, so the link on screen is the real site's (set before the link is made).
+  await page.evaluate((u) => (window.__aether!.studio as unknown as { publish: { setPlayerBase(u: string): string | null } }).publish.setPlayerBase(u), arg('playerBase') ?? 'https://aether-studio-lyart.vercel.app/play');
   // Off camera, open the hub once and let it make the link (encoding a large world holds the page for ~10-15 s, and
   // the hub renders a cover image); on camera the hub then opens and shows the link at once.
   await page.evaluate(() => (window.__aether!.studio as unknown as { publish: { open(t?: string): void } }).publish.open('share'));
@@ -613,6 +615,7 @@ async function publish(browser: Awaited<ReturnType<typeof chromium.launch>>, url
     await dwell(page, 2600);
   }
   mark(t, `link: ${link.slice(0, 120)} (${link.length} chars)`);
+  writeFileSync(join(OUT, 'link.txt'), link);
   await input.scrollIntoViewIfNeeded();
   await glide(page, (await centre(input)).x, (await centre(input)).y, 1000);
   await dwell(page, 2000);
@@ -806,7 +809,7 @@ async function devices(browser: Awaited<ReturnType<typeof chromium.launch>>, url
     const { page, rec } = t;
     await t.cap.start();
     const boot = rec.now();
-    await page.goto(`${url}/play.html#t=${arg('slug') ?? 'casa-patio'}&cook=use&tier=ultra`, { waitUntil: 'domcontentloaded' });
+    await page.goto(arg('link') ? readFileSync(arg('link')!, 'utf8').trim() : `${url}/play.html#t=${arg('slug') ?? 'casa-patio'}&cook=use&tier=ultra`, { waitUntil: 'domcontentloaded' });
     await playerUp(page, ['exploring', 'title', 'story'], 300_000);
     if ((await phase(page)) === 'title') await page.evaluate(() => (window as unknown as { __aetherPlayer: { enterExplore(): void } }).__aetherPlayer.enterExplore());
     await page.waitForSelector('[data-testid="pl-xbar"]', { timeout: 60_000 });
@@ -965,6 +968,158 @@ async function arch(browser: Awaited<ReturnType<typeof chromium.launch>>, url: s
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// tour: the editor's range in one session per world: panels, rules, checks, the bot's playability check, the gizmos,
+// terrain sculpting, play, and the Publish hub's targets. Events (`mark`) say where each beat starts.
+// ---------------------------------------------------------------------------------------------------------------
+
+async function tour(browser: Awaited<ReturnType<typeof chromium.launch>>, url: string): Promise<void> {
+  const kind = arg('kind') ?? 'game';
+  const t = await newTake(browser, `tour-${kind}`, `editor tour (${kind})`);
+  const { page, rec } = t;
+  const slug = arg('slug') ?? 'coin-rush';
+  await page.goto(`${url}/?debug=1#/new/${slug}`, { waitUntil: 'domcontentloaded' });
+  await editorReady(page);
+  await settle(page);
+  await page.waitForFunction(() => !/Saving|World-quality pass/.test(document.body.innerText), null, { timeout: 120_000, polling: 500 }).catch(() => log('still busy'));
+  await page.evaluate(() => {
+    const a = window.__aether!;
+    a.store.getState().updateSettings({ showLabels: false, motion: 'sharp' });
+  });
+  await sleep(2500);
+  const rail = (name: string): Locator => page.getByRole('tab', { name });
+  const tool = (id: string): Locator => page.getByTestId(`tool-${id}`);
+  await glide(page, 900 * K, 520 * K, 10);
+  await t.cap.start();
+  const boot = rec.now();
+  await sleep(1200);
+  rec.cut(boot);
+  await dwell(page, 1400);
+  if (kind === 'game') {
+    mark(t, 'objects');
+    await click(page, rail('Objects'), 900);
+    await dwell(page, 1800);
+    mark(t, 'logic');
+    await click(page, rail('Logic'), 900);
+    await dwell(page, 2800);
+    mark(t, 'checks');
+    await click(page, page.locator('.vp-btn--label', { hasText: /Run checks|Checks/ }).first(), 900);
+    const t1 = rec.now();
+    await page.waitForFunction(() => /Checks passed|failing|Checks failed/.test(document.body.innerText), null, { timeout: 180_000, polling: 300 });
+    rec.ramp(t1, 1500);
+    await dwell(page, 2600);
+    mark(t, 'playability');
+    const pb = page.locator('button', { hasText: /Check playability/ }).first();
+    if (await pb.count()) {
+      await click(page, pb, 900);
+      const t2 = rec.now();
+      await page.waitForFunction(() => /Verified playable|Could not verify|Not verified/.test(document.body.innerText), null, { timeout: 280_000, polling: 400 }).catch(() => log('playability did not finish'));
+      rec.ramp(t2, 1200);
+      await dwell(page, 3200);
+    }
+    mark(t, 'gizmos');
+    const first = await page.evaluate(() => Object.entries(window.__aether!.history.current.entities).find(([, e]) => (e as { kind?: string }).kind !== 'terrain' && !/ground|terrain|sky/.test(e.name ?? ''))?.[0] ?? null);
+    if (first) {
+      await page.evaluate((id) => window.__aether!.store.getState().select([id]), first);
+      await sleep(600);
+      for (const id of ['move', 'rotate', 'scale']) {
+        await click(page, tool(id), 800);
+        await dwell(page, 1500);
+      }
+    }
+    mark(t, 'play');
+    await page.evaluate(() => window.__aether!.store.getState().select([]));
+    await page.keyboard.press('Control+Enter');
+    await sleep(4000);
+    await cursor(page, false);
+    await page.keyboard.down('w');
+    await sleep(3500);
+    await page.keyboard.up('w');
+    await page.keyboard.press('Escape');
+    await cursor(page, true);
+    await dwell(page, 800);
+  }
+  if (kind === 'land') {
+    mark(t, 'sculpt');
+    await click(page, tool('sculpt'), 900);
+    await dwell(page, 900);
+    const box = (await page.locator('.viewport__host canvas').boundingBox())!;
+    const cx = box.x + box.width * 0.5;
+    const cy = box.y + box.height * 0.62;
+    await glide(page, cx - 200, cy, 700);
+    await page.mouse.down();
+    for (let i = 0; i < 40; i++) {
+      await page.mouse.move(cx - 200 + i * 10, cy + Math.sin(i / 5) * 24);
+      await sleep(60);
+    }
+    await page.mouse.up();
+    await dwell(page, 1500);
+    mark(t, 'paint');
+    await click(page, tool('paint'), 900);
+    await dwell(page, 1600);
+    mark(t, 'undo');
+    for (let i = 0; i < 2; i++) await page.evaluate(() => window.__aether!.studio.undo());
+    await dwell(page, 1500);
+  }
+  if (kind === 'publish') {
+    for (const id of ['video', 'render', 'model', 'plan', 'game']) {
+      mark(t, `hub-${id}`);
+      await page.evaluate((x) => (window.__aether!.studio as unknown as { publish: { open(t: string): void } }).publish.open(x), id);
+      await dwell(page, id === 'render' || id === 'video' ? 3200 : 2600);
+    }
+    await page.evaluate(() => (window.__aether!.studio as unknown as { publish: { close(): void } }).publish.close());
+    await dwell(page, 800);
+    mark(t, 'palette');
+    await page.keyboard.press('Control+k');
+    await dwell(page, 900);
+    await type(page, 'export', 90);
+    await dwell(page, 2000);
+    await page.keyboard.press('Escape');
+    await dwell(page, 600);
+  }
+  await finish(t);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------------------------------------------
+// livehome: the live site's home page: the prompt, then the Featured section of published worlds (real site, nothing local)
+// ---------------------------------------------------------------------------------------------------------------
+
+async function livehome(browser: Awaited<ReturnType<typeof chromium.launch>>): Promise<void> {
+  const live = arg('live') ?? 'https://aether-studio-lyart.vercel.app';
+  const t = await newTake(browser, 'livehome', `the live site ${live}`);
+  const { page, rec } = t;
+  await page.goto(`${live}/#/`, { waitUntil: 'domcontentloaded' });
+  await page.locator('.featured__grid').waitFor({ timeout: 90_000 });
+  await sleep(4000);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await glide(page, 900 * K, 500 * K, 10);
+  await t.cap.start();
+  const boot = rec.now();
+  await sleep(1500);
+  rec.cut(boot);
+  await dwell(page, 2200);
+  mark(t, 'featured');
+  const grid = page.locator('.featured__grid');
+  const y = await grid.evaluate((el) => el.getBoundingClientRect().top + window.scrollY);
+  const steps = 40;
+  const from = await page.evaluate(() => window.scrollY);
+  for (let i = 1; i <= steps; i++) {
+    const k = i / steps;
+    const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+    await page.evaluate((v) => window.scrollTo(0, v), from + (y - 90 - from) * e);
+    await sleep(40);
+  }
+  await dwell(page, 1800);
+  const cards = page.locator('.fcard');
+  const n = await cards.count();
+  for (let i = 0; i < Math.min(n, 4); i++) {
+    await glide(page, (await centre(cards.nth(i))).x, (await centre(cards.nth(i))).y, 700);
+    await dwell(page, 700);
+  }
+  await dwell(page, 1500);
+  await finish(t);
+}
 
 async function main(): Promise<void> {
   mkdirSync(OUT, { recursive: true });
@@ -979,6 +1134,8 @@ async function main(): Promise<void> {
     else if (SCENE === 'play') await play(browser, server.url);
     else if (SCENE === 'devices') await devices(browser, server.url);
     else if (SCENE === 'arch') await arch(browser, server.url);
+    else if (SCENE === 'tour') await tour(browser, server.url);
+    else if (SCENE === 'livehome') await livehome(browser);
     else throw new Error(`unknown scene ${SCENE}`);
   } finally {
     await browser.close().catch(() => undefined);

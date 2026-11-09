@@ -1,0 +1,219 @@
+{
+ "hook": {
+  "kind": "hook",
+  "text": "Describe a world.",
+  "sub": "Aether builds it, lights it and publishes it."
+ },
+ "st-describe": {
+  "kind": "step",
+  "num": "1",
+  "text": "Describe",
+  "sub": "Type what you want. Watch the world appear."
+ },
+ "st-edit": {
+  "kind": "step",
+  "num": "2",
+  "text": "Edit",
+  "sub": "Move things, change materials, or just ask."
+ },
+ "st-relight": {
+  "kind": "step",
+  "num": "3",
+  "text": "Relight",
+  "sub": "Change the time of day. Nothing is re-baked."
+ },
+ "st-publish": {
+  "kind": "step",
+  "num": "5",
+  "text": "Publish",
+  "sub": "Checks run, then you get a share link."
+ },
+ "st-share": {
+  "kind": "step",
+  "num": "6",
+  "text": "Share",
+  "sub": "The link opens on the live site, on any screen."
+ },
+ "st-kinds": {
+  "kind": "step",
+  "num": "",
+  "text": "Any kind of world",
+  "sub": "Each one opens in its own mode."
+ },
+ "st-local": {
+  "kind": "step",
+  "num": "",
+  "text": "Build locally",
+  "sub": "Characters and houses from a brief, made with Blender."
+ },
+ "note-offline": {
+  "kind": "note",
+  "text": "Offline planner, no model call"
+ },
+ "note-live": {
+  "kind": "note",
+  "text": "Live AI session, recorded"
+ },
+ "note-local": {
+  "kind": "note",
+  "text": "Local run, Blender"
+ },
+ "note-nothing": {
+  "kind": "note",
+  "text": "Real link, nothing uploaded"
+ },
+ "tag-relight": {
+  "kind": "tag",
+  "text": "Day to dusk, relit live, not re-baked"
+ },
+ "tag-kit": {
+  "kind": "tag",
+  "text": "A house from a brief"
+ },
+ "tag-house": {
+  "kind": "tag",
+  "text": "House: walkthrough, any time of day"
+ },
+ "tag-city": {
+  "kind": "tag",
+  "text": "City: drone tour"
+ },
+ "tag-game": {
+  "kind": "tag",
+  "text": "Game: third person"
+ },
+ "tag-space": {
+  "kind": "tag",
+  "text": "Colony: explore"
+ },
+ "tag-nature": {
+  "kind": "tag",
+  "text": "Landscape: fly through"
+ },
+ "tag-film": {
+  "kind": "tag",
+  "text": "Animated short, made with Aether"
+ },
+ "tag-char": {
+  "kind": "tag",
+  "text": "From a brief to a rigged character"
+ },
+ "tag-inworld": {
+  "kind": "tag",
+  "text": "Then into the world"
+ },
+ "dev": {
+  "kind": "devlabels",
+  "x1": 763,
+  "x2": 1554,
+  "y": 90,
+  "t1": "Laptop",
+  "t2": "Phone"
+ },
+ "end": {
+  "kind": "end",
+  "text": "Aether",
+  "sub": "Describe it. Shape it. Share it.",
+  "url": "aether-studio-lyart.vercel.app"
+ },
+ "st-arch": {
+  "kind": "step",
+  "num": "4",
+  "text": "Architecture",
+  "sub": "Cut the house open, take it apart, see the plan."
+ },
+ "tag-walls-down": {
+  "kind": "tag",
+  "text": "Walls down"
+ },
+ "tag-explode": {
+  "kind": "tag",
+  "text": "Explode the storeys"
+ },
+ "tag-onefloor": {
+  "kind": "tag",
+  "text": "One floor at a time"
+ },
+ "tag-plan": {
+  "kind": "tag",
+  "text": "Floor plan with rooms and areas"
+ },
+ "st-more": {
+  "kind": "step",
+  "num": "",
+  "text": "And everything around it",
+  "sub": "Rules, checks, tools, exports."
+ },
+ "st-worlds": {
+  "kind": "step",
+  "num": "",
+  "text": "Any kind of world",
+  "sub": "Each one opens in its own mode."
+ },
+ "st-film": {
+  "kind": "step",
+  "num": "",
+  "text": "Stories too",
+  "sub": "A film, authored and rendered in Aether."
+ },
+ "note-replay": {
+  "kind": "note",
+  "text": "Build replay, frame by frame"
+ },
+ "note-live-site": {
+  "kind": "note",
+  "text": "Captured from the live site"
+ },
+ "tag-replay1": {
+  "kind": "tag",
+  "text": "A villa, built step by step"
+ },
+ "tag-replay2": {
+  "kind": "tag",
+  "text": "A landscape"
+ },
+ "tag-replay3": {
+  "kind": "tag",
+  "text": "A village"
+ },
+ "tag-drone": {
+  "kind": "tag",
+  "text": "City: drone tour"
+ },
+ "tag-land": {
+  "kind": "tag",
+  "text": "Landscape: fly over"
+ },
+ "tag-ascent": {
+  "kind": "tag",
+  "text": "Sanctuary: golden hour"
+ },
+ "tag-isles": {
+  "kind": "tag",
+  "text": "Floating isles"
+ },
+ "tag-colony": {
+  "kind": "tag",
+  "text": "Colony: explore"
+ },
+ "tag-walk": {
+  "kind": "tag",
+  "text": "House: walk through it"
+ },
+ "tag-feat": {
+  "kind": "tag",
+  "text": "Featured worlds: play or remix in one click"
+ },
+ "tag-render": {
+  "kind": "tag",
+  "text": "Render video: frame by frame"
+ },
+ "tag-sheet": {
+  "kind": "tag",
+  "text": "Concept sheet to Blender model"
+ },
+ "tag-blhouse": {
+  "kind": "tag",
+  "text": "A house from a brief"
+ }
+}
