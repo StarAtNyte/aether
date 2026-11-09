@@ -45,7 +45,7 @@ const stoneMat = (color: string): MaterialSpec => ({ finish: 'stone', color, rou
 const japaneseHouse = defineGenerator({
   id: 'japanese-house',
   description:
-    'Japanese house, crafted: use it for any Japanese house, tea house (chashitsu), minka, machiya or ryokan, never a European cottage. Raised floor, covered veranda (engawa), shoji screens, hipped roof of tile or thatch with deep upturned eaves; garden adds gravel, stepping stones and a stone basin. `style` 0 minka 10 x 7 m, 1 tea house 3.6 m, 2 machiya 5.6 x 11 m; width/depth 0 = the style\'s own. Front is +Z. Settled on terrain by default.',
+    'Japanese house, crafted: use it for any Japanese house, tea house (chashitsu), minka, machiya or ryokan, never a European cottage. Raised floor, covered veranda (engawa), shoji screens, hipped roof of tile or thatch with deep upturned eaves; garden:true adds gravel, stepping stones and a basin (flat ground only). `style` 0 minka 10 x 7 m, 1 tea house 3.6 m, 2 machiya 5.6 x 11 m; width/depth 0 = the style\'s own. Front is +Z. Settled on terrain by default.',
   category: 'architecture',
   params: {
     style: pInt(0, 0, 2, '0 minka farmhouse, 1 chashitsu tea house, 2 machiya townhouse'),
@@ -55,7 +55,7 @@ const japaneseHouse = defineGenerator({
     wallColor: pColor('#e9e0cc', 'plaster wall colour'),
     woodColor: pColor('#5a4130', 'frame, floor and shutter timber'),
     roofColor: pColor('#4a4f52', 'roof tile colour (thatch uses its own straw tone)'),
-    garden: pBool(true, 'gravel apron, stepping stones and a stone water basin (tsukubai) in front'),
+    garden: pBool(false, 'gravel apron, stepping stones and a stone water basin (tsukubai) in front'),
     lights: pBool(false, 'the shoji glow warmly (evening)'),
     variant: pInt(0, 0, 99, 'changes the proportions and the stepping-stone path'),
   },
@@ -94,7 +94,8 @@ const japaneseHouse = defineGenerator({
     const postZ = (j: number): number => -D / 2 + j * (D / nz);
 
     // ---- Footings, shadowed crawlspace and the floor ----
-    const footing = stoneMat('#85807a');
+    // A tint that differs with the size: the renderer batches the parts of identical materials across houses, and a house of another size must not share its footings.
+    const footing = stoneMat(shade('#85807a', ((p.int('style') * 7 + Math.round(W * 10) * 3 + Math.round(D * 10) * 5) % 13) * 0.007));
     const postSet: Array<[number, number]> = [];
     for (let i = 0; i <= nx; i++) postSet.push([postX(i), -D / 2], [postX(i), D / 2]);
     for (let j = 1; j < nz; j++) postSet.push([-W / 2, postZ(j)], [W / 2, postZ(j)]);

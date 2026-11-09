@@ -74,6 +74,8 @@ export function findSunk(world: WorldDoc): SunkPiece[] {
   if (!hasTerrain) return [];
   const ground = worldGround(world);
   const decks = supports(world);
+  // Piers and stone bases the harness or the model added under a building (tag "foundation"): it stands on them over the drop on purpose.
+  const foundations = Object.values(world.entities).filter((f) => f.tags.includes('foundation')).map((f) => f.transform.position);
   const out: SunkPiece[] = [];
   let pieces = 0;
   let instances = 0;
@@ -149,7 +151,8 @@ export function findSunk(world: WorldDoc): SunkPiece[] {
       }
     }
     if (sunk > 0) out.push({ id: e.id, generator: shape.generator, depth: worst, height, sunk, of: pts.length, climb: worstClimb, kind: 'sunk' });
-    if (over > 0 && !e.tags.some((t) => OVERHANG_OK.test(t))) out.push({ id: e.id, generator: shape.generator, depth: worstOver, height, sunk: over, of: pts.length, climb: overClimb, kind: 'overhang' });
+    const footed = foundations.some((f) => Math.abs(f[0] - ox) <= narrow + 2 && Math.abs(f[2] - oz) <= narrow + 2);
+    if (over > 0 && !footed && !e.tags.some((t) => OVERHANG_OK.test(t))) out.push({ id: e.id, generator: shape.generator, depth: worstOver, height, sunk: over, of: pts.length, climb: overClimb, kind: 'overhang' });
   }
   return out.sort((p, q) => q.depth - p.depth);
 }

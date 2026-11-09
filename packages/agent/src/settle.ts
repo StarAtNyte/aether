@@ -73,7 +73,7 @@ export function settleFindings(world: WorldDoc, only?: ReadonlySet<string>): Set
     } else if (hover > 0.3 && hover <= MAX_HOVER) {
       kind = 'overhang';
       depth = hover;
-    } else if (s.plinth && !world.entities[`${e.id}-plinth`] && Math.abs(hover) <= 0.3 && s.hi - s.lo > 0.3) {
+    } else if (s.foundation.length > 0 && !world.entities[`${e.id}-plinth`] && Math.abs(hover) <= 0.3 && s.hi - s.lo > 0.3) {
       kind = 'footing';
       depth = s.hi - s.lo;
     }
@@ -81,19 +81,21 @@ export function settleFindings(world: WorldDoc, only?: ReadonlySet<string>): Set
     if (kind !== 'footing') newY = r2(s.floorY - bounds.min[1] * sc[1]);
     const patches: PatchInput[] = [];
     if (newY !== y) patches.push({ op: 'update', id: e.id, set: { transform: { ...e.transform, position: [x, newY, z] } } } as PatchInput);
-    if (s.plinth && !world.entities[`${e.id}-plinth`]) {
-      patches.push({
-        op: 'add',
-        entity: {
-          id: `${e.id}-plinth`,
-          name: `${e.name || e.id} plinth`,
-          transform: { position: s.plinth.position, rotation: [0, s.plinth.yaw, 0] },
-          shape: { kind: 'primitive', primitive: 'box', size: s.plinth.size },
-          material: { ...PLINTH_MATERIAL },
-          physics: { body: 'static' },
-          tags: ['foundation'],
-        },
-      } as PatchInput);
+    if (!world.entities[`${e.id}-plinth`]) {
+      s.foundation.forEach((f, i) => {
+        patches.push({
+          op: 'add',
+          entity: {
+            id: i === 0 ? `${e.id}-plinth` : `${e.id}-plinth-${i + 1}`,
+            name: `${e.name || e.id} ${f.shape === 'cylinder' ? 'pier' : 'plinth'}`,
+            transform: { position: f.position, rotation: [0, f.yaw, 0] },
+            shape: { kind: 'primitive', primitive: f.shape, size: f.size },
+            material: { ...PLINTH_MATERIAL },
+            physics: { body: 'static' },
+            tags: ['foundation'],
+          },
+        } as PatchInput);
+      });
     }
     if (patches.length > 0) out.push({ id: e.id, kind, depth, patches });
   }
