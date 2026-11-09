@@ -32,7 +32,9 @@ const OUT = resolve(arg('out') ?? join(homedir(), '.local/share/aether/demo/film
 const EDIT_SLUG = arg('slug') ?? 'scandi-living-room';
 const W = 1920;
 const H = 1080;
-const SCALE = Number(arg('scale') ?? 2);
+/** `--grabsize=1080`: the display grab of a 1920x1080 page at device scale 1 (x11grab reaches 32 fps at this size; 4K reaches 2). */
+const GRAB1080 = arg('grabsize') === '1080';
+const SCALE = GRAB1080 ? 1 : Number(arg('scale') ?? 2);
 /** `--png=1`: the screencast delivers lossless PNG frames (4K UI takes for the master); the default is JPEG quality 95. */
 const PNG = arg('png') === '1';
 /**
@@ -49,7 +51,12 @@ const REAL_CHROME = '/usr/bin/google-chrome';
  * white flash the page shows once recording runs; the first video frame whose brightness jumps is that flash.
  */
 const GRAB = arg('grab') === '1';
-const GRAB_DISPLAY = ':0.0+1920,0';
+/** The left edge of the monitor the window sits on (the 4K monitor is at x 1920; the 1080p one at 0). */
+const GX = Number(arg('gx') ?? 1920);
+const GRAB_DISPLAY = `:0.0+${GX},0`;
+const GW = W + 60;
+const GH = H + 250;
+const GRAB_SIZE = GRAB1080 ? `${GW}x${GH}` : '3840x2160';
 const EXT = PNG ? 'png' : 'jpg';
 /** The takes' pointer positions were laid out for a 1440 px page. */
 const K = W / 1440;
@@ -84,11 +91,11 @@ class Capture {
     if (GRAB) {
       if (this.grabProc) return; // one continuous recording across navigations
       this.grabFile = join(this.dir, 'grab.mkv');
-      this.grabProc = spawn('nice', ['-n', '5', 'ffmpeg', '-loglevel', 'error', '-y', '-f', 'x11grab', '-draw_mouse', '0', '-framerate', '30', '-video_size', '3840x2160', '-i', GRAB_DISPLAY,
+      this.grabProc = spawn('nice', ['-n', '5', 'ffmpeg', '-loglevel', 'error', '-y', '-f', 'x11grab', '-draw_mouse', '0', '-framerate', '30', '-video_size', GRAB_SIZE, '-i', GRAB_DISPLAY,
         '-c:v', 'libx264', '-preset', 'ultrafast', '-qp', '0', '-pix_fmt', 'yuv444p', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-threads', '12', this.grabFile], { stdio: ['pipe', 'ignore', 'inherit'] });
       await sleep(3500); // ffmpeg needs a moment to open the 4K display grab
       this.flashWall = Date.now();
-      await this.page.evaluate(() => { const d = document.createElement('div'); d.style.cssText = 'position:fixed;inset:0;background:#fff;z-index:2147483647'; document.body.appendChild(d); setTimeout(() => d.remove(), 250); });
+      await this.page.evaluate(() => { const d = document.createElement('div'); d.style.cssText = 'position:fixed;inset:0;background:#ff00ff;z-index:2147483647'; document.body.appendChild(d); setTimeout(() => d.remove(), 250); });
       await sleep(700);
       return;
     }
@@ -113,22 +120,43 @@ class Capture {
     this.grabProc.stdin?.write('q');
     await new Promise<void>((res) => this.grabProc!.once('exit', () => res()));
     this.grabProc = null;
-    const stat = execFileSync('bash', ['-c', `ffmpeg -v info -t 10 -i '${this.grabFile}' -vf scale=64:36,signalstats,metadata=print:key=lavfi.signalstats.YAVG -f null - 2>&1 | grep -E 'pts_time|YAVG' `], { encoding: 'utf8' });
+    const stat = execFileSync('bash', ['-c', `ffmpeg -v info -t 10 -i '${this.grabFile}' -vf scale=64:36,signalstats,metadata=print:key=lavfi.signalstats.SATAVG -f null - 2>&1 | grep -E 'pts_time|SATAVG' `], { encoding: 'utf8' });
     let flashAt = -1;
     let pts = 0;
     for (const line of stat.split('\n')) {
       const m = /pts_time:([\d.]+)/.exec(line);
       if (m) pts = Number(m[1]);
-      const y = /YAVG=([\d.]+)/.exec(line);
-      if (y && Number(y[1]) > 200 && flashAt < 0) flashAt = pts;
+      const y = /SATAVG=([\d.]+)/.exec(line);
+      if (y && Number(y[1]) > 60 && flashAt < 0) flashAt = pts;
     }
     if (flashAt < 0) throw new Error('grab: the sync flash was not found in the video');
     this.grabFirstMs = this.flashWall - flashAt * 1000;
+    if (GRAB1080) {
+      // the page's rectangle inside the grabbed window: the bounding box of the magenta flash, then a lossless crop to exactly 1920x1080
+      const gw = GW, gh = GH;
+      const raw = execFileSync('ffmpeg', ['-v', 'error', '-ss', String(flashAt + 0.04), '-i', this.grabFile, '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], { maxBuffer: 1 << 26 });
+      let x0 = gw, y0 = gh, x1 = -1, y1 = -1;
+      for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
+        const o = (y * gw + x) * 3;
+        if (raw[o]! > 190 && raw[o + 1]! < 120 && raw[o + 2]! > 190) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+      }
+      log(`grab: the page is ${x1 - x0 + 1}x${y1 - y0 + 1} at ${x0},${y0} in the grabbed window`);
+      const cw = Math.floor((x1 - x0 + 1) / 2) * 2;
+      const ch = Math.floor((y1 - y0 + 1) / 2) * 2;
+      if (cw < 300 || ch < 300) throw new Error('grab: the page rectangle was not found (window too small or covered)');
+      const cropped = join(this.dir, 'crop.mp4');
+      execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', this.grabFile, '-vf', `crop=${cw}:${ch}:${x0}:${y0}`, '-c:v', 'libx264', '-preset', 'veryfast', '-qp', '0', '-pix_fmt', 'yuv444p', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', cropped]);
+      this.grabFile = cropped;
+    }
     // the frames that actually changed (a display grab repeats frames while nothing moves): their times, for the gap statistics
-    const info = execFileSync('bash', ['-c', `ffmpeg -v info -i '${this.grabFile}' -vf scale=480:270,mpdecimate=hi=64*4:lo=64*2:frac=0.1,showinfo -f null - 2>&1 | grep -o 'pts_time:[0-9.]*'`], { encoding: 'utf8', maxBuffer: 1 << 28 }); // ANALYSIS-ONLY: finds the changed frames of a grab, never in a film
+    const info = execFileSync('bash', ['-c', `ffmpeg -v info -i '${this.grabFile}' -vf scale=960:540:flags=area,showinfo -f null - 2>&1 | grep -o 'pts_time:[0-9.]*.*checksum:[0-9A-F]*'`], { encoding: 'utf8', maxBuffer: 1 << 28 });
+    let last = '';
     for (const l of info.split('\n')) {
-      const m = /pts_time:([\d.]+)/.exec(l);
-      if (m) this.times.push(this.grabFirstMs / 1000 + Number(m[1]));
+      const m = /pts_time:([\d.]+).*checksum:([0-9A-F]+)/.exec(l);
+      if (m && m[2] !== last) {
+        this.times.push(this.grabFirstMs / 1000 + Number(m[1]));
+        last = m[2]!;
+      }
     }
   }
   async stop(): Promise<void> {
@@ -171,19 +199,26 @@ function mark(t: Take, what: string): void {
 
 async function newTake(browser: Awaited<ReturnType<typeof chromium.launch>>, scene: string, source: string, device?: 'laptop' | 'phone'): Promise<Take> {
   const ctx = await browser.newContext(
-    device === 'phone' ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } : device === 'laptop' ? { viewport: { width: 1440, height: 900 } } : GRAB ? { viewport: null } : REAL ? { viewport: { width: W, height: H } } : { viewport: null },
+    device === 'phone' ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } : device === 'laptop' ? { viewport: { width: 1440, height: 900 } } : GRAB && !GRAB1080 ? { viewport: null } : REAL ? { viewport: { width: W, height: H } } : { viewport: null },
   );
   await ctx.addInitScript({ content: SKIP_FIRST_RUN });
   await ctx.addInitScript({ content: 'globalThis.__name = (f) => f;' });
   await ctx.addInitScript({ content: `try { const k='aether.studio.settings.v1'; const s=JSON.parse(localStorage.getItem(k)||'{}'); s.renderTier='${arg('tier') ?? 'ultra'}'; s.showNavHint=false; s.motion='sharp'; localStorage.setItem(k, JSON.stringify(s)); localStorage.setItem('aether.player.mute', '1'); } catch {}` });
   await ctx.addInitScript({ content: OVERLAY_SCRIPT });
   const page = await ctx.newPage();
-  if (GRAB) {
+  if (GRAB && !GRAB1080) {
     const bs = await ctx.newCDPSession(page);
     const { windowId } = (await bs.send('Browser.getWindowForTarget')) as { windowId: number };
-    await bs.send('Browser.setWindowBounds', { windowId, bounds: { left: 1920, top: 0, width: W, height: H } });
+    await bs.send('Browser.setWindowBounds', { windowId, bounds: { left: GX, top: 0, width: W, height: H } });
     await bs.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'fullscreen' } });
     await page.waitForFunction(([w, h]) => window.innerWidth === w && window.innerHeight === h, [W, H], { timeout: 15_000 }).catch(async () => log(`fullscreen page is ${await page.evaluate(() => `${window.innerWidth}x${window.innerHeight}`)}, not ${W}x${H}`));
+  }
+  if (GRAB1080) {
+    // a normal window, large enough that the 1920x1080 page is fully visible, on the 4K monitor
+    const bs = await ctx.newCDPSession(page);
+    const { windowId } = (await bs.send('Browser.getWindowForTarget')) as { windowId: number };
+    await bs.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'normal', left: GX, top: 0, width: GW, height: GH } });
+    await sleep(800);
   }
   if (REAL) {
     await page.goto('about:blank');
@@ -234,9 +269,9 @@ async function finish(t: Take): Promise<void> {
   writeFileSync(join(OUT, `${rec.scene}.json`), JSON.stringify({ scene: rec.scene, source: rec.source, durationMs: Math.round(total), keptMs: Math.round(kept), frameGapsKept: stats, marks, events: t.events.map((e) => ({ t: Math.round(e.t + shift), what: e.what })) }, null, 1));
   writeFileSync(join(OUT, `${rec.scene}.frames.json`), JSON.stringify({ t0: times[0], gapsMs: times.slice(1).map((x, i) => Math.round((x - times[i]!) * 10000) / 10) }));
   if (GRAB) {
-    renameSync(cap.grabFile, join(OUT, `${rec.scene}.mkv`));
+    renameSync(cap.grabFile, join(OUT, GRAB1080 ? `${rec.scene}.mp4` : `${rec.scene}.mkv`));
     log(`${rec.scene}: grabbed ${times.length} changed frames over ${(total / 1000).toFixed(1)} s; kept gaps ${JSON.stringify(stats)}`);
-    log(`wrote ${join(OUT, `${rec.scene}.mkv`)} (lossless 4K 4:4:4)`);
+    log(`wrote the lossless ${GRAB1080 ? '1080p' : '4K'} 4:4:4 take`);
     await t.ctx.close().catch(() => undefined);
     rmSync(cap.dir, { recursive: true, force: true });
     return;
@@ -1280,7 +1315,7 @@ async function main(): Promise<void> {
         executablePath: REAL_CHROME,
         headless: false,
         env: { ...process.env, DISPLAY: ':0' } as Record<string, string>,
-        args: [`--force-device-scale-factor=${SCALE}`, '--window-position=1920,0', `--window-size=${W},${GRAB ? H : H + 140}`, ...(GRAB ? ['--kiosk'] : []), '--ignore-gpu-blocklist', '--enable-gpu-rasterization', '--disable-features=TranslateUI', '--no-first-run', '--no-default-browser-check'],
+        args: [`--force-device-scale-factor=${SCALE}`, `--window-position=${GX},0`, `--window-size=${W},${GRAB && !GRAB1080 ? H : H + 140}`, ...(GRAB && !GRAB1080 ? ['--kiosk'] : []), '--ignore-gpu-blocklist', '--enable-gpu-rasterization', ...(arg('uncap') === '1' ? ['--disable-gpu-vsync', '--disable-frame-rate-limit'] : []), '--disable-features=TranslateUI', '--no-first-run', '--no-default-browser-check'],
         ignoreDefaultArgs: ['--enable-automation'],
       })
     : await chromium.launch({ executablePath: findChrome(), headless: HEADLESS, args: [...CHROME_ARGS, `--force-device-scale-factor=${SCALE}`, `--window-size=${W},${H + 87}`] });
