@@ -33,15 +33,17 @@ def clip(name, src, i, dur, xfade=0.6, text=None, **kw):
 def full():
     return [
         clip('cold-cw', f'{F2}/cw-open.mp4', 0, 9.5, xfade=0.6),
-        clip('cold-terraces', f'{INTRO}/m-terraces-falls.mp4', 1.8, 5.5, xfade=1.2),
+        clip('cold-terraces', f'{INTRO}/m-terraces-falls.mp4', 1.8, 5.5, xfade=0.2),
         # Describe: a fresh 4K take of the prompt typed and built by the offline planner (labelled), then the recorded live AI
         # session (1280x720: never faked, shown cropped in on the prompt, the build log and the result)
-        ui('gen-type', 'describe', [[3.9, 8.4, 1.1]], [[0, 0.33, 0.2, 2.2], [4.1, 0.36, 0.2, 2.5]], 4.1, 1.0, text=[['ch-describe', 0.6, 3.8]]),
-        ui('gen-build', 'describe', [[9.0, 13.6, 3.0], [13.6, 16.6, 1.0], [16.6, 36.0, 8.0], [36.0, 42.0, 1.5]], [[0, 0.12, 0.42, 2.2], [6.9, 0.12, 0.42, 2.2], [8.2, 0.45, 0.45, 1.5], [10.9, 0.45, 0.45, 1.5]], 10.9, 0.6, text=[['note-offline', 0.4, 10.5]]),
-        ui('gen-live', 'live', [[5.0, 9.0, 1.5], [14.0, 60.0, 16.0], [60.0, 190.0, 40.0]], [[0, 0.39, 0.35, 2.4], [2.4, 0.39, 0.35, 2.4], [3.4, 0.12, 0.45, 2.3], [5.6, 0.12, 0.45, 2.3], [6.8, 0.5, 0.5, 1.4], [8.8, 0.5, 0.5, 1.4]], 8.8, 0.6, text=[['note-live', 0.4, 8.5]]),
-        clip('m-lisbon', f'{F1}/lisbon-quay.mp4', 0.5, 4.6, 0.9, [['ch-worlds', 0.6, 2.8], ['lt-lisbon', 3.0, 4.3]]),
-        clip('m-lisbon2', f'{F1}/lisbon-drone.mp4', 1, 3.6, 0.5),
-        clip('m-kepler', f'{F1}/kepler-domes.mp4', 0.5, 4.6, 0.6, [['lt-kepler', 0.6, 4.0]]),
+        # Describe v4: the 4K offline-planner take, every frame a whole composition (the prompt box centred and complete, then the
+        # whole studio window), then the recorded 1280x720 live session at 1.2x on a dark plate: no zoom past its native sharpness
+        ui('gen-type', 'describe', [[3.3, 8.6, 1.0]], [[0, 0.5, 0.5, 0.92], [0.4, 0.5, 0.5, 0.92], [1.9, 0.392, 0.23, 2.7]], 5.3, 0.25, text=[['ch-describe', 0.5, 3.6]]),
+        ui('gen-build', 'describe', [[8.6, 12.0, 2.0], [12.0, 40.0, 12.0], [40.0, 45.0, 1.0]], [[0, 0.5, 0.5, 0.95], [9.03, 0.5, 0.5, 1.05]], 9.03, 0.2, text=[['note-offline', 0.4, 8.6]]),
+        ui('gen-live', 'live', [[6.0, 15.0, 2.2], [15.0, 60.0, 18.0], [60.0, 190.0, 45.0], [190.0, 200.0, 5.0]], [[0, 0.5, 0.5, 0.8], [11.5, 0.5, 0.5, 0.84]], 11.49, 0.12, 0.8, text=[['note-live', 0.4, 11.0]]),
+        clip('m-lisbon', f'{F1}/lisbon-quay.mp4', 0.5, 4.6, 0.12, [['ch-worlds', 0.6, 2.8], ['lt-lisbon', 3.0, 4.3]]),
+        clip('m-lisbon2', f'{F1}/lisbon-drone.mp4', 1, 3.6, 0.3),
+        clip('m-kepler', f'{F1}/kepler-domes.mp4', 0.5, 4.6, 0.25, [['lt-kepler', 0.6, 4.0]]),
         clip('m-falls', f'{INTRO}/m-falls.mp4', 1, 4.4, 0.6, [['lt-sanctuary', 0.6, 3.8]]),
         clip('m-highland', f'{F1}/highland-dawn.mp4', 1, 4.4, 0.6, [['lt-highland', 0.6, 3.8]]),
         # Edit: the sofa and its gizmo, a material swatch, the chat and its answer, the time-of-day slider
@@ -73,10 +75,10 @@ def full():
 def short():
     return [
         clip('cold-cw-60', f'{F2}/cw-open.mp4', 0, 5.2, xfade=0.6),
-        ui('gen-type-60', 'live', [[4.0, 9.0, 1.6]], [[0, 0.39, 0.35, 2.4]], 3.1, 0.7, text=[['ch-describe', 0.4, 2.9]]),
-        ui('gen-build-60', 'live', [[14.0, 60.0, 20.0], [60.0, 190.0, 40.0]], [[0, 0.12, 0.45, 2.3], [2.2, 0.12, 0.45, 2.3], [3.3, 0.5, 0.5, 1.4], [5.5, 0.5, 0.5, 1.4]], 5.5, 0.5, text=[['note-live', 0.3, 5.2]]),
-        clip('m-lisbon-60', f'{F1}/lisbon-quay.mp4', 0.5, 3.0, 0.6, [['lt-lisbon', 0.5, 2.8]]),
-        clip('m-kepler-60', f'{F1}/kepler-domes.mp4', 0.5, 2.8, 0.5, [['lt-kepler', 0.5, 2.6]]),
+        ui('gen-type-60', 'describe', [[3.5, 8.6, 1.4]], [[0, 0.5, 0.5, 0.92], [0.3, 0.5, 0.5, 0.92], [1.4, 0.392, 0.23, 2.7]], 3.64, 0.25, text=[['ch-describe', 0.4, 3.0]]),
+        ui('gen-build-60', 'describe', [[8.6, 12.0, 3.0], [12.0, 40.0, 20.0], [40.0, 43.0, 1.0]], [[0, 0.5, 0.5, 0.95], [5.5, 0.5, 0.5, 1.05]], 5.53, 0.3, text=[['note-offline', 0.3, 5.2]]),
+        clip('m-lisbon-60', f'{F1}/lisbon-quay.mp4', 0.5, 3.0, 0.4, [['lt-lisbon', 0.5, 2.8]]),
+        clip('m-kepler-60', f'{F1}/kepler-domes.mp4', 0.5, 2.8, 0.25, [['lt-kepler', 0.5, 2.6]]),
         ui('e-select-60', 'edit', [[3.0, 9.0, 1.6]], [[0, 0.45, 0.5, 1.6], [3.5, 0.48, 0.5, 1.8]], 3.5, 0.5, text=[['ch-edit', 0.4, 3.2]]),
         ui('e-material-60', 'edit', [[14.0, 21.2, 2.0]], [[0, 0.73, 0.64, 1.9], [3.6, 0.73, 0.66, 1.9]], 3.6, 0.4),
         ui('e-chat-60', 'edit', [[44.0, 48.2, 1.0]], [[0, 0.25, 0.4, 2.0], [2.8, 0.25, 0.4, 2.0], [4.2, 0.5, 0.5, 1.0]], 4.2, 0.4, text=[['note-offline', 0.3, 4.0]]),
