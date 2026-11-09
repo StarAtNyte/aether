@@ -64,7 +64,7 @@ async function main(): Promise<void> {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
     await ctx.addInitScript({ content: SKIP_FIRST_RUN });
     await ctx.addInitScript({ content: 'globalThis.__name = (f) => f;' });
-    await ctx.addInitScript({ content: `globalThis.__AETHER_CAPTURE = { on: true, lodBoost: ${num('lod', 2)}, mirrorScale: ${num('mirror', 1)}, shadowMapCap: ${num('shadowcap', 4096)}, lockEye: true };` });
+    if (arg('noflags') !== '1') await ctx.addInitScript({ content: `globalThis.__AETHER_CAPTURE = { on: true, lodBoost: ${num('lod', 2)}, mirrorScale: ${num('mirror', 1)}, shadowMapCap: ${num('shadowcap', 4096)}, lockEye: true };` });
     await ctx.addInitScript({ content: "try { const k='aether.studio.settings.v1'; const s=JSON.parse(localStorage.getItem(k)||'{}'); s.renderTier='ultra'; s.showNavHint=false; s.motion='sharp'; localStorage.setItem(k, JSON.stringify(s)); } catch {}" });
     const page = await ctx.newPage();
     page.on('console', (m) => { if (m.text().startsWith('replay:')) log(m.text()); });
@@ -100,7 +100,7 @@ async function main(): Promise<void> {
       n++;
       if (n % 5 === 0) log(`frame ${n}`);
     });
-    const marks = await page.evaluate(async ({ all, per, hold, c, r, W, H, sub, warm, taaOff, noJitter, az0, arc, elev0, dm, fov }) => {
+    const marks = await page.evaluate(async ({ all, per, hold, c, r, W, H, sub, warm, taaOff, aoOff, noJitter, az0, arc, elev0, dm, fov }) => {
       const a = window.__aether!;
       const sim = a.simulation as unknown as { renderer: unknown; whenSynced(): Promise<void> };
       const rend = sim.renderer as {
@@ -109,7 +109,7 @@ async function main(): Promise<void> {
       };
       rend.setRenderTier('ultra');
       rend.stopTour();
-      if (taaOff) rend.setEffects({ taa: false });
+      if (taaOff) rend.setEffects(aoOff ? { taa: false, ao: false } : { taa: false });
       await rend.preparePost();
       rend.setFixedClock(0, 0);
       let session: ReturnType<typeof rend.beginCapture> | null = null;
@@ -173,7 +173,7 @@ async function main(): Promise<void> {
       session.end();
       rend.setEffects({});
       return marks;
-    }, { all, per, hold, c: info.c, r: info.r, W, H, sub: SUB, warm: num('warm', 4), taaOff: arg('taa') !== '1', noJitter: arg('jitter') === '0', az0: num('az', 200), arc: num('arc', 50), elev0: num('elev', 26), dm: num('dist', 1.7), fov: num('fov', 40) });
+    }, { all, per, hold, c: info.c, r: info.r, W, H, sub: SUB, warm: num('warm', 4), taaOff: arg('taa') !== '1', aoOff: arg('ao') !== '1', noJitter: arg('jitter') === '0', az0: num('az', 200), arc: num('arc', 50), elev0: num('elev', 26), dm: num('dist', 1.7), fov: num('fov', 40) });
     ff.stdin.end();
     await ffDone;
     writeFileSync(join(OUT, `${NAME}.steps.json`), JSON.stringify({ messages: commits.map((c) => c.m), marks, fps: FPS, size: [W, H], sub: SUB }, null, 1));
