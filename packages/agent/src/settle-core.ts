@@ -11,7 +11,7 @@ export const IN_GROUND = /(^|-)(walls?|fences?|hedges?|stairs?|steps?|stairway|r
 /** Library structures (not built in) that stand on the ground: a pagoda, a gazebo, a torii. */
 export const LIBRARY_BUILT = /(^|-)(house|home|cottage|villa|temple|shrine|pagoda|gazebo|torii|pavilion|tower|lighthouse|windmill|chapel|church|hut|cabin|barn|pergola|kiosk)(s)?($|-)/;
 /** Building and structure words of generator ids (built-in, library or world-defined). */
-const STRUCTURE = /(^|-)(house|home|cottage|villa|temple|shrine|chapel|church|tower|hall|shop|inn|tavern|barn|hut|cabin|pavilion|kiosk|palace|castle|fort|mill|building|dwelling|apartment|gazebo|pagoda|tholos|teahouse|chashitsu|machiya|minka|lodge|bungalow|manor|farmhouse)(s)?($|-)/;
+const STRUCTURE = /(^|-)(house|home|cottage|villa|temple|shrine|chapel|church|tower|hall|shop|inn|tavern|barn|hut|cabin|pavilion|kiosk|palace|castle|fort|mill|building|dwelling|apartment|gazebo|pagoda|tholos|teahouse|machiya|lodge|bungalow|manor|farmhouse)(s)?($|-)/;
 
 /** True when a generator makes a building or structure that stands on its footprint (settled on terrain by default). */
 export function isSettleable(generator: string): boolean {

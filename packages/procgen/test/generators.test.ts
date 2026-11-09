@@ -18,8 +18,6 @@ const REQUIRED_IDS = [
   'figure-statue', 'column', 'classical-temple', 'balustrade', 'aqueduct', 'cliff-face', 'brazier', 'amphora', 'banner', 'awning', 'tree-cypress', 'tree-olive', 'ivy',
   // Outpost and industrial props (outpost.ts).
   'shipping-container', 'sandbag-wall', 'radio-mast',
-  // Japanese house (japanese.ts).
-  'japanese-house',
 ];
 /** High-detail sculptures (virtual geometry): up to 786k triangles by design. */
 const SCULPTURES = new Set(['colossus', 'sculpted-statue']);
@@ -100,10 +98,6 @@ function checkOutput(id: string, out: GeneratorOutput): void {
     // A monumental building: fluted columns, a carved entablature, pediment sculpture, a tiled roof with antefixes
     // (~52k for a 20 x 34 m Doric peristyle, ~90k at the 40 x 70 m, ten-column extreme), split into parts under 20k each.
     expect(tris).toBeLessThan(100_000);
-    for (const p of out.parts) expect(p.indices.length / 3).toBeLessThan(20_000);
-  } else if (id === 'japanese-house') {
-    // A crafted house: a smooth hipped roof with thickness (two grids), rafter tails, lattice and screens, merged per material.
-    expect(tris).toBeLessThan(36_000);
     for (const p of out.parts) expect(p.indices.length / 3).toBeLessThan(20_000);
   } else if (id === 'cloud') {
     // Billowing clouds: smooth puffs (up to ~14 k triangles for a large one), still a handful per world.

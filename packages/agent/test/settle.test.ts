@@ -7,7 +7,7 @@
 import { applyPatches, createWorld, type Entity, type Patch, type WorldDoc } from '@aether/core';
 import { describe, expect, it } from 'vitest';
 import { worldGround } from '../src/land';
-import { localBounds, pieceBounds } from '../src/footprint';
+import { pieceBounds } from '../src/footprint';
 import { qualityChecks, runQualityPass, type QualityHost } from '../src/presentation/quality';
 import { Builder } from '../src/providers/mock/builder';
 import { settleFindings, settleOnTerrain } from '../src/settle';
@@ -131,15 +131,6 @@ describe('house on sloped terrain', () => {
     expect(settleFindings(current)).toEqual([]);
   });
 
-  it('sizes the foundation from the building, not from the garden the generator adds', () => {
-    const body = settleBounds('japanese-house', { style: 1, garden: true } as never, 1)!;
-    const all = localBounds('japanese-house', { style: 1, garden: true } as never, 1)!;
-    // The tea house is 3.6 m; the gravel apron and stepping stones reach well past it.
-    expect(body.max[0] - body.min[0]).toBeLessThan(4);
-    expect(body.max[2] - body.min[2]).toBeLessThan(5);
-    expect(all.max[2] - all.min[2]).toBeGreaterThan(body.max[2] - body.min[2]);
-  });
-
   it('settles a library structure (a torii has no width param) by its catalogue footprint', () => {
     const b = pieceBounds('torii-gate', { height: 6.5 }, 1);
     expect(b).not.toBeNull();
@@ -148,22 +139,22 @@ describe('house on sloped terrain', () => {
 });
 
 describe('the AI tool path settles buildings too (replayed tool sequence)', () => {
-  const ctxFor = (host: MemoryHost): ExecutorContext => ({ host, provider: {} as never, coderSystem: '', builtinGenerators: new Set(['house', 'japanese-house', 'terrain']), usage: { inputTokens: 0, outputTokens: 0 } }) as unknown as ExecutorContext;
+  const ctxFor = (host: MemoryHost): ExecutorContext => ({ host, provider: {} as never, coderSystem: '', builtinGenerators: new Set(['house', 'terrain']), usage: { inputTokens: 0, outputTokens: 0 } }) as unknown as ExecutorContext;
 
-  it('a hilly land, then a tea house added at the ground height of its centre ends up on it, on a foundation sized from the building', async () => {
+  it('a hilly land, then a house added at the ground height of its centre ends up on it, on a foundation sized from the building', async () => {
     const host = new MemoryHost();
     const ctx = ctxFor(host);
     const land = await executeTool(ctx, 'shape_land', { op: 'land', kind: 'meadow', plot: { x: 0, z: 0, radius: 8 }, relief: 40 });
     expect(land.isError).toBe(false);
     const ground = worldGround(host.world);
-    const params = { style: 1 };
-    const [x, z] = fallSpot(ground, 'japanese-house', params as never, 0.6, 3);
-    const patches = [{ op: 'add', entity: { id: 'tea-house', name: 'Tea house', shape: { kind: 'procedural', generator: 'japanese-house', params, seed: 1 }, transform: { position: [x, Math.round(ground(x, z) * 100) / 100, z] } } }];
-    const out = await executeTool(ctx, 'apply_patches', { patches, message: 'Tea house by the pond' });
+    const params = HOUSE;
+    const [x, z] = fallSpot(ground, 'house', params as never, 0.6, 3);
+    const patches = [{ op: 'add', entity: { id: 'cottage-2', name: 'Cottage', shape: { kind: 'procedural', generator: 'house', params, seed: 1 }, transform: { position: [x, Math.round(ground(x, z) * 100) / 100, z] } } }];
+    const out = await executeTool(ctx, 'apply_patches', { patches, message: 'House by the pond' });
     expect(out.isError).toBe(false);
     expect(out.content).toMatch(/on the terrain/);
-    expectSettled(host.world, ground, 'tea-house', 'japanese-house', params as never, [x, z]);
-    expect(findSunk(host.world).filter((p) => p.id === 'tea-house')).toEqual([]);
+    expectSettled(host.world, ground, 'cottage-2', 'house', params as never, [x, z]);
+    expect(findSunk(host.world).filter((p) => p.id === 'cottage-2')).toEqual([]);
   });
 
   it('leaves a building on level ground, and a world without terrain, alone', async () => {
