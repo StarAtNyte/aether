@@ -11,8 +11,8 @@
  *   buried or hanging over a drop is raised or footed through patches.
  */
 import type { Entity, Json, PatchInput, WorldDoc } from '@aether/core';
-import { settleBounds, settleOnTerrain, PLINTH_MATERIAL } from './settle-core';
-import { findSunk } from './sunk';
+import { isSettleable, settleBounds, settleOnTerrain, PLINTH_MATERIAL } from './settle-core';
+import { supports } from './sunk';
 import { worldGround } from './land';
 
 export { SETTLE_CLEARANCE, SETTLE_FLAT, PLINTH_MARGIN, PLINTH_MATERIAL, settleBounds, settleOnTerrain, type Settled } from './settle-core';
@@ -22,34 +22,66 @@ const r2 = (n: number): number => Math.round(n * 100) / 100;
 /** A finding of the settle fix: the piece, what was wrong, and the patches that set it down. */
 export interface SettleFix {
   id: string;
-  kind: 'sunk' | 'overhang';
-  /** Metres the floor was under the highest ground (sunk) or above the ground it hangs over (overhang). */
+  /** sunk: the floor was under the highest ground; overhang: it hovered over the ground; footing: it stood on a slope with a gap on the low side. */
+  kind: 'sunk' | 'overhang' | 'footing';
+  /** Metres the floor was under the highest ground (sunk) or above it (overhang); the ground rise across the footprint for a footing. */
   depth: number;
   patches: PatchInput[];
 }
 
+const NO_SETTLE_TAG = /^(sunk|buried|underground|in-ground|dug-in|floating|hover|flying|sky|backdrop)$/;
+/** A building is buried by at most this much and hovers by at most this much when a tool placed it by its centre point (m). */
+const MAX_BURIED = 8;
+const MAX_HOVER = 2.5;
+
 /**
- * The fixes for every building of `world` that is sunk into the terrain or hangs over a drop: the piece is raised to the
- * highest ground of its footprint and a plinth fills the slope under it. A piece with a footing param, an arch building (it
- * has its own plinth option), a scatter layer or a parented piece is left to its own rules (the sunk check never reports
- * them for settling).
+ * The fixes for the buildings of `world` (or only `only`) that are not settled on the terrain: buried on the uphill side,
+ * hovering a little above it, or standing on a slope with a gap on the downhill side. Each is set on the highest ground of
+ * its footprint with a plinth down to the lowest. Left alone: anything on a built surface (a platform, a terrace), with
+ * its own footing param, tagged sunk/floating, parented, an arch building (it has its own plinth option) or with no
+ * terrain in the world.
  */
-export function settleFindings(world: WorldDoc): SettleFix[] {
+export function settleFindings(world: WorldDoc, only?: ReadonlySet<string>): SettleFix[] {
+  const hasTerrain = Object.values(world.entities).some((e) => e.shape.kind === 'procedural' && e.shape.generator === 'terrain' && !e.parent);
+  if (!hasTerrain) return [];
   const ground = worldGround(world);
+  const decks = supports(world);
   const out: SettleFix[] = [];
-  for (const p of findSunk(world)) {
-    const e: Entity | undefined = world.entities[p.id];
-    if (!e || e.shape.kind !== 'procedural' || e.parent || e.arch) continue;
+  for (const e of Object.values(world.entities)) {
+    if (only && !only.has(e.id)) continue;
+    if (e.shape.kind !== 'procedural' || e.parent || e.arch || e.template || !e.visible) continue;
+    if (e.tags.some((t) => NO_SETTLE_TAG.test(t)) || !isSettleable(e.shape.generator)) continue;
     const params = e.shape.params as Record<string, Json>;
+    if (typeof params['footing'] === 'number' && params['footing'] > 0) continue;
     const bounds = settleBounds(e.shape.generator, params, e.shape.seed ?? 0);
     if (!bounds) continue;
     const [x, y, z] = e.transform.position;
-    // The bounds' own floor is at min y; the entity origin sits that far above the floor.
-    const s = settleOnTerrain(ground, [x, z], bounds, e.transform.rotation[1], e.transform.scale);
-    const newY = r2(s.floorY - bounds.min[1] * e.transform.scale[1]);
-    if (Math.abs(newY - y) < 0.02 && !s.plinth) continue;
-    const patches: PatchInput[] = [{ op: 'update', id: e.id, set: { transform: { ...e.transform, position: [x, newY, z] } } } as PatchInput];
-    if (s.plinth) {
+    const sc = e.transform.scale;
+    const s = settleOnTerrain(ground, [x, z], bounds, e.transform.rotation[1], sc);
+    const foot = y + bounds.min[1] * sc[1];
+    // On a built surface (not on the terrain): it stands where it was put.
+    const held = decks.top(x, z, foot + Math.max(0.4, (bounds.max[1] - bounds.min[1]) * sc[1]), e.id);
+    if (Number.isFinite(held) && held > s.hi + 0.2 && held >= foot - 0.5) continue;
+    const buried = s.hi - foot;
+    const hover = foot - s.hi;
+    let newY = y;
+    let kind: SettleFix['kind'] | null = null;
+    let depth = 0;
+    if (buried > 0.05 && buried <= MAX_BURIED) {
+      kind = 'sunk';
+      depth = buried;
+    } else if (hover > 0.3 && hover <= MAX_HOVER) {
+      kind = 'overhang';
+      depth = hover;
+    } else if (s.plinth && !world.entities[`${e.id}-plinth`] && Math.abs(hover) <= 0.3 && s.hi - s.lo > 0.3) {
+      kind = 'footing';
+      depth = s.hi - s.lo;
+    }
+    if (!kind) continue;
+    if (kind !== 'footing') newY = r2(s.floorY - bounds.min[1] * sc[1]);
+    const patches: PatchInput[] = [];
+    if (newY !== y) patches.push({ op: 'update', id: e.id, set: { transform: { ...e.transform, position: [x, newY, z] } } } as PatchInput);
+    if (s.plinth && !world.entities[`${e.id}-plinth`]) {
       patches.push({
         op: 'add',
         entity: {
@@ -63,7 +95,7 @@ export function settleFindings(world: WorldDoc): SettleFix[] {
         },
       } as PatchInput);
     }
-    out.push({ id: e.id, kind: p.kind === 'overhang' ? 'overhang' : 'sunk', depth: p.depth, patches });
+    if (patches.length > 0) out.push({ id: e.id, kind, depth, patches });
   }
   return out;
 }

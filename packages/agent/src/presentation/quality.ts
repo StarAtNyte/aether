@@ -263,8 +263,8 @@ function settleChecks(world: WorldDoc, out: QualityFinding[]): void {
     return;
   }
   for (const f of fixes) {
-    const what = f.kind === 'sunk' ? `sunk ${f.depth.toFixed(1)} m into the terrain on its high side` : `hanging ${f.depth.toFixed(1)} m over the ground on its low side`;
-    out.push({ check: 'interpenetration', severity: 'error', subject: f.id, note: `"${f.id}" is ${what}`, fix: { kind: 'patches', patches: f.patches as Patch[], label: `${f.id} set on the terrain (base on the highest ground, plinth under it)` }, by: 'data' });
+    const what = f.kind === 'sunk' ? `sunk ${f.depth.toFixed(1)} m into the terrain on its high side` : f.kind === 'overhang' ? `hovering ${f.depth.toFixed(1)} m over the ground` : `standing on a ${f.depth.toFixed(1)} m slope with a gap under its low side`;
+    out.push({ check: 'interpenetration', severity: f.kind === 'footing' ? 'warn' : 'error', subject: f.id, note: `"${f.id}" is ${what}`, fix: { kind: 'patches', patches: f.patches as Patch[], label: `${f.id} set on the terrain (base on the highest ground, plinth under it)` }, by: 'data' });
   }
 }
 

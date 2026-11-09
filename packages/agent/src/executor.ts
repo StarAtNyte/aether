@@ -23,6 +23,7 @@ import { bakePatches, type BakeLightInput } from './bake-edit';
 import { needsGeneratorOutput, sculptPatches, sculptRefusal, type SculptInput } from './sculpt-edit';
 import { generate, type GeneratorOutput } from '@aether/procgen';
 import { lookPatches, type TuneLookInput } from './look-edit';
+import { settleFindings } from './settle';
 import { makeRealistic } from './providers/mock/realistic';
 import { errorMessage } from './providers/errors';
 import { TOOL_LIMITS, ToolInputs, isAgentTool, isLevelToolName } from './tools';
@@ -721,7 +722,44 @@ function setPresentationTool(ctx: ExecutorContext, input: { profile: string; sta
 }
 
 /** Execute one tool call. Never throws except when aborted. */
+/**
+ * Every edit a tool makes passes through here: a building (a house, a tea house, a pagoda, a gazebo, a torii...) the edit
+ * added or moved on a world with terrain is settled on it by its whole footprint, as its own undo step. The model places
+ * a house by one point (the ground at its centre, or y = 0); the high side of a slope then buries its floor and the low side
+ * hangs. The base is set on the highest ground under the footprint and a plinth fills the slope (see settle.ts).
+ */
+async function settleEdit(ctx: ExecutorContext, before: WorldDoc, out: ToolOutcome): Promise<ToolOutcome> {
+  const after = ctx.host.getWorld();
+  const touched = new Set<string>();
+  for (const [id, e] of Object.entries(after.entities)) {
+    const was = before.entities[id];
+    if (!was || was !== e) {
+      if (!was || JSON.stringify([was.transform, was.shape]) !== JSON.stringify([e.transform, e.shape])) touched.add(id);
+    }
+  }
+  if (touched.size === 0) return out;
+  let fixes: ReturnType<typeof settleFindings>;
+  try {
+    fixes = settleFindings(after, touched);
+  } catch {
+    return out;
+  }
+  if (fixes.length === 0) return out;
+  const message = `Set ${fixes.length} building${fixes.length === 1 ? '' : 's'} on the terrain`;
+  const applied = ctx.host.applyPatches(fixes.flatMap((f) => f.patches), message);
+  if (applied.applied.length === 0) return out;
+  const lines = fixes.slice(0, 6).map((f) => `${f.id} (${f.kind === 'sunk' ? `its floor was ${f.depth.toFixed(1)} m under the ground on the uphill side` : f.kind === 'overhang' ? `it hovered ${f.depth.toFixed(1)} m above the ground` : `a ${f.depth.toFixed(1)} m slope left a gap under it`})`);
+  const note = `Note: ${message} (base on the highest ground of its footprint, a stone plinth under the slope): ${lines.join('; ')}. Place buildings by their ground point; the harness settles them. Tag a piece "floating" or "sunk" to keep its height.`;
+  return { ...out, content: `${out.content}\n${note}`, events: [...out.events, { type: 'patches', patches: applied.applied, message, result: { applied: applied.applied.length, errors: applied.errors } }] };
+}
+
 export async function executeTool(ctx: ExecutorContext, name: string, rawInput: unknown): Promise<ToolOutcome> {
+  const before = ctx.host.getWorld();
+  const out = await executeToolRaw(ctx, name, rawInput);
+  return out.edited && !out.isError ? settleEdit(ctx, before, out) : out;
+}
+
+async function executeToolRaw(ctx: ExecutorContext, name: string, rawInput: unknown): Promise<ToolOutcome> {
   const hostTools = ctx.blender;
   if (hostTools && hostTools.tools.some((t) => t.name === name)) {
     if (typeof rawInput === 'string') return fail('The tool arguments were not valid JSON. Resend the call with a valid JSON object.');

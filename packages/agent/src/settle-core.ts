@@ -3,19 +3,19 @@
  * it without pulling in the sunk check.
  */
 import type { Json } from '@aether/core';
-import { getBuiltinGenerator } from '@aether/procgen';
 import { pieceBounds, type Bounds } from './footprint';
 
 /** Generators that are built to go into the ground or follow it (walls, bridges, docks, paths...): never settled on a plinth. Whole words of the hyphenated id ("dwelling" is not a well). */
 export const IN_GROUND = /(^|-)(walls?|fences?|hedges?|stairs?|steps?|stairway|retaining|terraces?|piers?|piles?|bridges?|aqueducts?|cliffs?|roads?|streets?|lanes?|paths?|paving|pavement|plaza|bollards?|kerbs?|curbs?|ramps?|tunnels?|wells?|pools?|ponds?|canals?|docks?|quays?|graves?|ruins?|rubble|ground|terrain|water|waterfall|fall|sheet)(s)?($|-)/;
 /** Library structures (not built in) that stand on the ground: a pagoda, a gazebo, a torii. */
-export const LIBRARY_BUILT = /house|home|cottage|villa|temple|shrine|pagoda|gazebo|torii|pavilion|tower|lighthouse|windmill|chapel|church|hut|cabin|barn|pergola|kiosk/;
+export const LIBRARY_BUILT = /(^|-)(house|home|cottage|villa|temple|shrine|pagoda|gazebo|torii|pavilion|tower|lighthouse|windmill|chapel|church|hut|cabin|barn|pergola|kiosk)(s)?($|-)/;
+/** Building and structure words of generator ids (built-in, library or world-defined). */
+const STRUCTURE = /(^|-)(house|home|cottage|villa|temple|shrine|chapel|church|tower|hall|shop|inn|tavern|barn|hut|cabin|pavilion|kiosk|palace|castle|fort|mill|building|dwelling|apartment|gazebo|pagoda|tholos|teahouse|chashitsu|machiya|minka|lodge|bungalow|manor|farmhouse)(s)?($|-)/;
+
 /** True when a generator makes a building or structure that stands on its footprint (settled on terrain by default). */
 export function isSettleable(generator: string): boolean {
   if (IN_GROUND.test(generator)) return false;
-  const builtin = getBuiltinGenerator(generator);
-  if (builtin) return builtin.category === 'architecture' && /house|home|cottage|villa|temple|shrine|chapel|church|tower|hall|shop|inn|tavern|barn|hut|cabin|pavilion|kiosk|palace|castle|fort|mill|building|dwelling|apartment|gazebo|pagoda/.test(generator);
-  return LIBRARY_BUILT.test(generator);
+  return STRUCTURE.test(generator) || LIBRARY_BUILT.test(generator);
 }
 
 /** On a slope the base stands this far above the highest ground of the footprint (m): a footing shows, the floor is never in the ground. */

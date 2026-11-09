@@ -74,7 +74,7 @@ export function seasonsGarden(): MockPlan {
     const [x, , z] = onCircle(0, 0, b.rand(4, 7), b.rand(0, Math.PI * 2));
     b.asset('lily-pad', 'lily-pad', [x, 0.25, z], { yaw: r2(b.rand(0, 360)), castShadow: false });
   }
-  b.gen('tea-house', 'hero-gazebo', { width: 6, height: 5, color: '#efe6d6', roofColor: '#3d4a52', deckColor: '#8a6a4a' }, [0, 0, -34], { physics: 'static', name: 'Tea house', tags: ['landmark'] });
+  b.gen('tea-house', 'japanese-house', { style: 1, width: 6, depth: 5, wallColor: '#efe6d6', roofColor: '#3d4a52', woodColor: '#5a4130', lights: true, garden: false }, [0, 0, -34], { physics: 'static', name: 'Tea house', tags: ['landmark'] });
   b.light(b.empty('tea-light', [0, 2.6, -34]), [0, 0, 0], '#ffc27a', 2.6, 14);
   for (const [x, z] of [[-3, -9.5], [3, -9.5], [-3, 9.5], [3, 9.5], [-9.5, -3], [9.5, 3]] as const) glowLantern(b, [x, 0, z], '#ffb35c', { height: 1.1, lit: x > 0, shade: '#efe2c4' });
 

@@ -10,6 +10,8 @@ import { qualityChecks, runQualityPass, type QualityHost } from '../src/presenta
 import { Builder } from '../src/providers/mock/builder';
 import { settleFindings, settleOnTerrain } from '../src/settle';
 import { findSunk } from '../src/sunk';
+import { executeTool, type ExecutorContext } from '../src/executor';
+import { MemoryHost } from './helpers';
 
 const TERRAIN = { size: 200, height: 40, resolution: 128, roughness: 0.55, color: '#9a8a4f', variant: 3 };
 const HOUSE = { width: 7, depth: 6, variant: 0 };
@@ -97,5 +99,48 @@ describe('house on sloped terrain', () => {
     const b = pieceBounds('torii-gate', { height: 6.5 }, 1);
     expect(b).not.toBeNull();
     expect(b!.max[0] - b!.min[0]).toBeGreaterThan(3);
+  });
+});
+
+describe('the AI tool path settles buildings too (replayed tool sequence)', () => {
+  const ctxFor = (host: MemoryHost): ExecutorContext => ({ host, provider: {} as never, coderSystem: '', builtinGenerators: new Set(['house', 'japanese-house', 'terrain']), usage: { inputTokens: 0, outputTokens: 0 } }) as unknown as ExecutorContext;
+
+  it('a hilly land, then a tea house and a house added at the ground height of their centre end up on it with a plinth', async () => {
+    const host = new MemoryHost();
+    const ctx = ctxFor(host);
+    // 1. Shape the land: hills round a small level plot.
+    const land = await executeTool(ctx, 'shape_land', { op: 'land', kind: 'meadow', plot: { x: 0, z: 0, radius: 8 }, relief: 40 });
+    expect(land.isError).toBe(false);
+    const ground = worldGround(host.world);
+    // 2. The model places a house by one point: y = the ground under its centre (a spot on a slope).
+    const b = pieceBounds('japanese-house', { style: 1 }, 1)!;
+    let spot: [number, number] | null = null;
+    for (let x = -80; x < 80 && !spot; x += 2) for (let z = -80; z < 80 && !spot; z += 2) if (x * x + z * z > 400) { const s = settleOnTerrain(ground, [x, z], b); if (s.hi - s.lo > 1.2 && s.hi - s.lo < 3) spot = [x, z]; }
+    expect(spot).not.toBeNull();
+    const [x, z] = spot as [number, number];
+    const patches = [
+      { op: 'add', entity: { id: 'tea-house', name: 'Tea house', shape: { kind: 'procedural', generator: 'japanese-house', params: { style: 1 }, seed: 1 }, transform: { position: [x, Math.round(ground(x, z) * 100) / 100, z] } } },
+    ];
+    const out = await executeTool(ctx, 'apply_patches', { patches, message: 'Tea house by the pond' });
+    expect(out.isError).toBe(false);
+    expect(out.content).toMatch(/on the terrain/);
+    const e = host.world.entities['tea-house']!;
+    const s = settleOnTerrain(ground, [x, z], b);
+    expect(e.transform.position[1] + b.min[1]).toBeGreaterThanOrEqual(s.hi);
+    const plinth = host.world.entities['tea-house-plinth']!;
+    expect(plinth).toBeDefined();
+    const size = plinth.shape.kind === 'primitive' ? (plinth.shape.size as number[]) : [0, 0, 0];
+    expect(plinth.transform.position[1] + (size[1] as number) / 2).toBeGreaterThanOrEqual(e.transform.position[1] + b.min[1] - 0.01);
+    expect(plinth.transform.position[1] - (size[1] as number) / 2).toBeLessThan(s.lo);
+    expect(findSunk(host.world).filter((p) => p.id === 'tea-house')).toEqual([]);
+  });
+
+  it('leaves a building the model tagged floating, and a world without terrain, alone', async () => {
+    const host = new MemoryHost();
+    const ctx = ctxFor(host);
+    const add = (id: string, tags: string[]) => ({ op: 'add', entity: { id, shape: { kind: 'procedural', generator: 'house', params: HOUSE, seed: 1 }, transform: { position: [0, 3, 0] }, tags } });
+    await executeTool(ctx, 'apply_patches', { patches: [add('flat', [])], message: 'house' });
+    expect(host.world.entities['flat']?.transform.position[1]).toBe(3);
+    expect(host.world.entities['flat-plinth']).toBeUndefined();
   });
 });
