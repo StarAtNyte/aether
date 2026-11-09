@@ -86,9 +86,9 @@ describe('the player opens a template as a published world', () => {
 
 describe('template publish settings', () => {
   it('has a start mode and a profile for every template, matching its kind', () => {
-    const slugs = SHOWCASE.map((e) => e.slug);
+    const slugs = SHOWCASE.filter((e) => !e.film).map((e) => e.slug);
     expect(Object.keys(TEMPLATE_PUBLISH).sort()).toEqual([...slugs].sort());
-    for (const e of SHOWCASE) {
+    for (const e of SHOWCASE.filter((x) => !x.film)) {
       const p = templatePublish(e.slug, e.kind);
       expect(['play', 'walkthrough', 'orbit', 'story']).toContain(p.startMode);
       expect(['game', 'walkthrough', 'showcase', 'city', 'vr', 'story']).toContain(p.profile);

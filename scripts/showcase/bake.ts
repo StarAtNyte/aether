@@ -115,7 +115,7 @@ async function main(): Promise<void> {
   const sandbox = createNodeSandbox({ timeoutMs: GENERATOR_DRY_RUN_MS });
   let failed = 0;
   try {
-    for (const entry of SHOWCASE) {
+    for (const entry of SHOWCASE.filter((x) => !x.film)) {
       if (FILTERS.length > 0 && !FILTERS.some((f) => entry.slug.includes(f))) continue;
       const file = join(OUT_DIR, `${entry.slug}.json`);
       try {

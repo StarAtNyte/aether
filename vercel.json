@@ -24,6 +24,15 @@
   ],
   "headers": [
     {
+      "source": "/stories/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
       "source": "/((?!assets/sandbox\\.worker-|assets/verify\\.worker-|assets/dag\\.worker-|basis/ktx2-worker\\.js$|play$|play\\.html$).*)",
       "headers": [
         {

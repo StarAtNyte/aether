@@ -1420,3 +1420,25 @@
     scroll-snap-align: start;
   }
 }
+
+/* Film cards: the poster with a play disc; the card is a button (it opens the player, there is no world to remix). */
+.card--film .card__hit {
+  text-align: left;
+}
+
+.thumb__play {
+  position: absolute;
+  inset: auto var(--s-2) var(--s-2) auto;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: oklch(14% 0.02 260 / 0.62);
+  color: #fff;
+  transition: transform var(--dur-slow) var(--ease);
+}
+
+.card--film:hover .thumb__play {
+  transform: scale(1.1);
+}

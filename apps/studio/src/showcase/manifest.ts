@@ -38,6 +38,29 @@ export const PROVENANCE_LABEL: Readonly<Record<Provenance, string>> = Object.fre
   codex: 'Generated live by Codex',
 });
 
+/** Card line for a film: a real Cycles render made through the local Blender harness (procedural, no outside assets). */
+export const FILM_PROVENANCE = 'Local run · Blender';
+
+/**
+ * A short film instead of a saved world (`origin: 'film'`, `kind: 'story'`): it is listed in Stories, opens a video
+ * player and has no Remix or editor. Files live in `public/stories/<slug>/` (each ≤ 6 MB, poster ≤ 60 KB);
+ * `scripts/stories/add-film.ts` copies them in and adds the entry.
+ */
+export interface FilmInfo {
+  /** URL of the 1280x720 WebP poster (also the card image). */
+  poster: string;
+  /** H.264 MP4 (the fallback source). */
+  mp4: string;
+  /** WebM (tried first). */
+  webm: string;
+  /** Duration in seconds. */
+  seconds: number;
+  /** Credit line shown under the player. */
+  credit: string;
+  /** What the footage is (shown under the credit). */
+  note: string;
+}
+
 /** One bundled default project. */
 export interface ShowcaseEntry {
   /** URL-safe id (`#/new/<slug>`, file names). */
@@ -46,7 +69,7 @@ export interface ShowcaseEntry {
   title: string;
   /** One-line description for cards. */
   description: string;
-  /** The prompt the world was built from (typing it in the chat rebuilds it). */
+  /** The prompt the world was built from (typing it in the chat rebuilds it). Empty for a film. */
   prompt: string;
   kind: TemplateKind;
   curation: Curation;
@@ -56,7 +79,9 @@ export interface ShowcaseEntry {
    * `showcase:bake`, not re-planned); 'blender': a world assembled around pieces modelled and baked in Blender by the scripts in
    * `scripts/blender/<slug>/` (procedural only), stored as built (re-validated and re-verified, not re-planned).
    */
-  origin: 'flagship' | 'gallery' | 'photo' | 'agent' | 'blender';
+  origin: 'flagship' | 'gallery' | 'photo' | 'agent' | 'blender' | 'film';
+  /** Required for `origin: 'film'` (and only there): the footage; there is no world, so no thumbnail, saved world or publish row. */
+  film?: FilmInfo;
   /** Required for `origin: 'agent'`: how the stored world was made (shown on the card). */
   provenance?: Provenance;
   /** Gallery screenshot (in docs/screenshots/gallery) the thumbnail was cut from. */

@@ -208,7 +208,7 @@ async function main(): Promise<void> {
   let browser: Browser | null = null;
   try {
     browser = FIREFOX ? await firefox.launch({ executablePath: findFirefox(), firefoxUserPrefs: { ...FIREFOX_PREFS } }) : await chromium.launch({ executablePath: findChrome(), args: [...CHROME_ARGS] });
-    for (const entry of SHOWCASE) {
+    for (const entry of SHOWCASE.filter((x) => !x.film)) {
       if (entry.origin !== 'flagship' || (FILTERS.length > 0 && !FILTERS.some((f) => entry.slug.includes(f)))) continue;
       const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1 });
       await context.addInitScript({ content: SKIP_FIRST_RUN });

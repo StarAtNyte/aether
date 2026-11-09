@@ -8,7 +8,7 @@ import { lazyBoundary } from '../components/ErrorBoundary';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { useApp, useAppState } from '../app/appContext';
 import { MAX_IMPORT_BYTES } from '../config';
-import { FEATURED_TEMPLATES, TEMPLATES, TEMPLATE_GROUPS, templatesInGroup, type TemplateGroup } from '../lib/examples';
+import { FEATURED_TEMPLATES, TEMPLATES, TEMPLATE_GROUPS, isFilm, templateBySlug, templatesInGroup, type FilmTemplate, type TemplateGroup } from '../lib/examples';
 import { shortcut } from '../lib/keys';
 import { formatRelative } from '../lib/relativeTime';
 import type { HomeSection } from '../lib/router';
@@ -39,6 +39,9 @@ import { prefetchEditor } from '../editor/prefetch';
 /** The publish history (IndexedDB library) loads with the page that shows it. */
 const PublishedPage = lazyBoundary(async () => ({ default: (await import('./Published')).PublishedPage }), { what: 'published page', fallback: null, variant: 'inline' });
 const RecentlyPublished = lazyBoundary(async () => ({ default: (await import('./Published')).RecentlyPublished }), { what: 'published list', fallback: null, variant: 'inline' });
+
+/** The film player (a modal) loads only when a film card is opened. */
+const FilmDialog = lazyBoundary(async () => ({ default: (await import('./FilmDialog')).default }), { what: 'film player', fallback: null, variant: 'inline' });
 
 const FeaturedGallery = lazyBoundary(async () => ({ default: (await import('./Featured')).default }), { what: 'featured worlds', fallback: <FeaturedSkeleton />, variant: 'inline' });
 
@@ -315,7 +318,16 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
     else setSelection((cur) => new Set([...cur].filter((id) => !gone.includes(id))));
   }, [actions, afterDelete, chosen, exitSelect]);
   const openNew = useCallback(() => store.getState().setNewProjectOpen(true), [store]);
-  const pickTemplate = useCallback((slug: string) => void actions.createFromTemplate(slug), [actions]);
+  const [film, setFilm] = useState<FilmTemplate | null>(null);
+  /** A world opens as a copy in the editor; a film (no world) opens the player. */
+  const pickTemplate = useCallback(
+    (slug: string) => {
+      const t = templateBySlug(slug);
+      if (t && isFilm(t)) setFilm(t);
+      else void actions.createFromTemplate(slug);
+    },
+    [actions],
+  );
   const importFiles = useCallback(
     (files: FileList | null) => {
       const f = files?.[0];
@@ -615,6 +627,7 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
           </div>
         </div>
       )}
+      {film && <FilmDialog template={film} onClose={() => setFilm(null)} />}
       <NewProjectDialog
         open={newOpen}
         onClose={() => store.getState().setNewProjectOpen(false)}

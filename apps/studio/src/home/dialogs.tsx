@@ -1,7 +1,7 @@
 /** Home dialogs: new project, rename. */
 import { memo, useEffect, useRef, useState, type ReactElement } from 'react';
 import { MAX_PROMPT_CHARS } from '../config';
-import { TEMPLATES, templateThumbnail } from '../lib/examples';
+import { WORLD_TEMPLATES, templateThumbnail } from '../lib/examples';
 import { MAX_PROJECT_NAME } from '../projects/model';
 import type { BlankKind } from '../projects/create';
 import { Icon, type IconName } from '../components/Icon';
@@ -113,7 +113,7 @@ export const NewProjectDialog = memo(function NewProjectDialog({
       </div>
       <h3 className="dialog__section">From a template</h3>
       <div className="mini-templates">
-        {TEMPLATES.map((t) => (
+        {WORLD_TEMPLATES.map((t) => (
           <button key={t.slug} type="button" className="mini-template" onClick={() => pick(() => onTemplate(t.slug))} aria-label={`Template: ${t.title}`}>
             <Thumb src={templateThumbnail(t.slug)} alt="" />
             <span className="mini-template__title">{t.title}</span>

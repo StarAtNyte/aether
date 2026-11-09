@@ -97,7 +97,7 @@ async function main(): Promise<void> {
     browser = FIREFOX
       ? await firefox.launch({ executablePath: findFirefox(), firefoxUserPrefs: { ...FIREFOX_PREFS } })
       : await chromium.launch({ executablePath: findChrome(), args: GPU ? ['--enable-unsafe-webgpu', ...GPU_ARGS] : [...CHROME_ARGS] });
-    for (const e of SHOWCASE) {
+    for (const e of SHOWCASE.filter((x) => !x.film)) {
       if (e.origin !== 'flagship' || (FILTERS.length > 0 && !FILTERS.some((f) => e.slug.includes(f)))) continue;
       const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1 });
       await context.addInitScript({ content: SKIP_FIRST_RUN });

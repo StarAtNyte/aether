@@ -117,7 +117,7 @@ async function dryRun(): Promise<number> {
   // --gen=<version>: check against another build's version (what a deployment of it would find stale).
   const gen = flag('gen') ?? (await expectedGenVersion());
   const only = flag('only')?.split(',').filter(Boolean);
-  const slugs = SHOWCASE.map((e) => e.slug).filter((s) => !only || only.includes(s));
+  const slugs = SHOWCASE.filter((x) => !x.film).map((e) => e.slug).filter((s) => !only || only.includes(s));
   const ops = hfCliOps({ log });
   const stale: string[] = [];
   log(`generator code ${gen}; checking ${slugs.length} templates on ${COOKED_REPO}`);
@@ -140,7 +140,7 @@ async function all(): Promise<number> {
   const gen = await expectedGenVersion();
   checkDist(resolve(dist), gen);
   const only = flag('only')?.split(',').filter(Boolean);
-  const slugs = SHOWCASE.map((e) => e.slug).filter((s) => !only || only.includes(s));
+  const slugs = SHOWCASE.filter((x) => !x.film).map((e) => e.slug).filter((s) => !only || only.includes(s));
   const stateFile = join(OUT, '.cook-all-state.json');
   const state: Record<string, SlugState> = existsSync(stateFile) ? JSON.parse(readFileSync(stateFile, 'utf8')) : {};
   const save = (): void => writeFileSync(stateFile, JSON.stringify(state, null, 1));

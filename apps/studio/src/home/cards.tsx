@@ -1,17 +1,23 @@
 /** Template and project cards for the home page (grid and list variants). */
 import { memo, useState, type KeyboardEvent, type ReactElement } from 'react';
-import { TEMPLATE_KIND_LABEL, templateThumbnail, templateThumbnailSrcSet, type WorldTemplate } from '../lib/examples';
+import { TEMPLATE_KIND_LABEL, isFilm, templateThumbnail, templateThumbnailSrcSet, type WorldTemplate } from '../lib/examples';
 import { formatRelative, formatTimestamp } from '../lib/relativeTime';
 import type { ProjectMeta } from '../projects/model';
-import { PROVENANCE_LABEL } from '../showcase/manifest';
+import { FILM_PROVENANCE, PROVENANCE_LABEL } from '../showcase/manifest';
 import { Icon } from '../components/Icon';
 import { Menu, type MenuEntry } from '../components/ui/Menu';
 
 /** What a card image's width is, for `sizes`: a grid column (about 380 px), a phone's full width. */
 const CARD_SIZES = '(max-width: 639px) 100vw, (max-width: 1279px) 33vw, 380px';
 
+/** "0:06" / "1:05". */
+export const clock = (seconds: number): string => {
+  const t = Math.round(seconds);
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+};
+
 /** Thumbnail frame: the image, or a quiet placeholder when there is none (or it fails to load). */
-export const Thumb = memo(function Thumb({ src, alt, eager, srcSet, sizes }: { src: string | null; alt: string; eager?: boolean; srcSet?: string; sizes?: string }): ReactElement {
+export const Thumb = memo(function Thumb({ src, alt, eager, srcSet, sizes, play }: { src: string | null; alt: string; eager?: boolean; srcSet?: string; sizes?: string; play?: boolean }): ReactElement {
   const [failed, setFailed] = useState(false);
   return (
     <span className="thumb">
@@ -21,6 +27,11 @@ export const Thumb = memo(function Thumb({ src, alt, eager, srcSet, sizes }: { s
         <span className="thumb__empty">
           <Icon name="image" />
           <span>No preview</span>
+        </span>
+      )}
+      {play && (
+        <span className="thumb__play" aria-hidden="true">
+          <Icon name="play" />
         </span>
       )}
     </span>
@@ -37,6 +48,26 @@ export function templatePlayUrl(slug: string): string {
  * from it and opens that in the editor.
  */
 export const TemplateCard = memo(function TemplateCard({ template, onPick, eager }: { template: WorldTemplate; onPick: (slug: string) => void; eager?: boolean }): ReactElement {
+  if (isFilm(template)) {
+    // A film has a poster and a player (a modal), no world: no Remix.
+    return (
+      <div className="card card--template card--film">
+        <button type="button" className="card__hit" onClick={() => onPick(template.slug)} aria-haspopup="dialog" aria-label={`Watch ${template.title}, a ${clock(template.film.seconds)} film`}>
+          <Thumb src={template.film.poster} alt="" eager={eager} play />
+          <span className="card__body">
+            <span className="card__title-row">
+              <span className="card__title">{template.title}</span>
+              <span className="card__label">Film · {clock(template.film.seconds)}</span>
+            </span>
+            <span className="card__desc" title={template.description}>
+              {template.description}
+            </span>
+            <span className="card__desc">{FILM_PROVENANCE}</span>
+          </span>
+        </button>
+      </div>
+    );
+  }
   return (
     <div className="card card--template">
       <a className="card__hit" href={templatePlayUrl(template.slug)} aria-label={`Play ${template.title}`}>

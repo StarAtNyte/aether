@@ -106,7 +106,7 @@ function toWebp(png: string, out: string, w: number, h: number, budget: number):
 /** Thumbnails of gallery entries, cut from their screenshots. */
 function galleryThumbs(): void {
   mkdirSync(PUBLIC, { recursive: true });
-  for (const e of SHOWCASE) {
+  for (const e of SHOWCASE.filter((x) => !x.film)) {
     if (e.origin !== 'gallery' || !e.shot || !wanted(e.slug)) continue;
     const size = toWebp(join(GALLERY_DIR, e.shot), join(PUBLIC, `${e.slug}.webp`), 640, 360, THUMB_BUDGET);
     toWebp(join(GALLERY_DIR, e.shot), join(PUBLIC, `${e.slug}@2x.webp`), 1280, 720, THUMB_2X_BUDGET);
@@ -205,7 +205,7 @@ async function runCapture(): Promise<void> {
   let browser: Browser | null = null;
   try {
     browser = await chromium.launch({ executablePath: findChrome(), args: [...CHROME_ARGS] });
-    for (const entry of SHOWCASE) {
+    for (const entry of SHOWCASE.filter((x) => !x.film)) {
       if (entry.origin !== 'flagship' || !wanted(entry.slug)) continue;
       const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1 });
       await context.addInitScript({ content: SKIP_FIRST_RUN });

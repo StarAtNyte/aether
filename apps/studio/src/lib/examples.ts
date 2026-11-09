@@ -6,7 +6,7 @@
  * `public/templates/<slug>.webp` and a saved world in
  * `public/templates/worlds/<slug>.json`, fetched only when it is opened.
  */
-import { SHOWCASE, type Curation, type ShowcaseEntry, type TemplateKind } from '../showcase/manifest';
+import { SHOWCASE, type Curation, type FilmInfo, type ShowcaseEntry, type TemplateKind } from '../showcase/manifest';
 
 export type { Curation, TemplateKind };
 
@@ -16,11 +16,20 @@ export type WorldTemplate = ShowcaseEntry;
 /** Human labels for template categories. */
 export const TEMPLATE_KIND_LABEL: Readonly<Record<TemplateKind, string>> = Object.freeze({ scene: 'Scene', physics: 'Physics', game: 'Game', story: 'Story', architecture: 'Architecture' });
 
-/** The featured templates (home row, agent empty state), in manifest order. */
-export const FEATURED_TEMPLATES: readonly WorldTemplate[] = Object.freeze(SHOWCASE.filter((t) => t.curation === 'featured'));
+/** A film entry: footage with a poster, no world (never remixed or opened in the editor). */
+export type FilmTemplate = WorldTemplate & { film: FilmInfo };
+
+/** True for a film entry. */
+export const isFilm = (t: WorldTemplate): t is FilmTemplate => t.film !== undefined;
+
+/** The featured templates (home row, agent empty state), in manifest order. Films are never featured (the gallery cards open worlds). */
+export const FEATURED_TEMPLATES: readonly WorldTemplate[] = Object.freeze(SHOWCASE.filter((t) => t.curation === 'featured' && !isFilm(t)));
+
+/** Films (listed in Stories, right after the featured worlds), in manifest order. */
+export const FILM_TEMPLATES: readonly FilmTemplate[] = Object.freeze(SHOWCASE.filter((t): t is FilmTemplate => t.curation === 'candidate' && isFilm(t)));
 
 /** The other shown templates ("More worlds"), in manifest order. */
-export const MORE_TEMPLATES: readonly WorldTemplate[] = Object.freeze(SHOWCASE.filter((t) => t.curation === 'candidate' && t.origin !== 'photo' && t.origin !== 'agent'));
+export const MORE_TEMPLATES: readonly WorldTemplate[] = Object.freeze(SHOWCASE.filter((t) => t.curation === 'candidate' && t.origin !== 'photo' && t.origin !== 'agent' && t.origin !== 'film'));
 
 /** Example rooms rebuilt from a photograph (credited), in manifest order. */
 export const PHOTO_TEMPLATES: readonly WorldTemplate[] = Object.freeze(SHOWCASE.filter((t) => t.curation === 'candidate' && t.origin === 'photo'));
@@ -29,7 +38,10 @@ export const PHOTO_TEMPLATES: readonly WorldTemplate[] = Object.freeze(SHOWCASE.
 export const AGENT_TEMPLATES: readonly WorldTemplate[] = Object.freeze(SHOWCASE.filter((t) => t.curation === 'candidate' && t.origin === 'agent'));
 
 /** Every template that is shown somewhere: featured first, then the others. */
-export const TEMPLATES: readonly WorldTemplate[] = Object.freeze([...FEATURED_TEMPLATES, ...MORE_TEMPLATES, ...AGENT_TEMPLATES, ...PHOTO_TEMPLATES]);
+export const TEMPLATES: readonly WorldTemplate[] = Object.freeze([...FEATURED_TEMPLATES, ...FILM_TEMPLATES, ...MORE_TEMPLATES, ...AGENT_TEMPLATES, ...PHOTO_TEMPLATES]);
+
+/** The templates that are worlds (everything but films): what can be opened in the editor, remixed or rebuilt. */
+export const WORLD_TEMPLATES: readonly WorldTemplate[] = Object.freeze(TEMPLATES.filter((t) => !isFilm(t)));
 
 /** The groups of the Templates page: one per kind, plus the rooms rebuilt from a photograph. */
 export type TemplateGroup = 'game' | 'architecture' | 'scene' | 'physics' | 'story' | 'photo';
@@ -65,6 +77,9 @@ export function templateThumbnailSrcSet(slug: string): string {
   return `/templates/${slug}.webp 640w, /templates/${slug}@2x.webp 1280w`;
 }
 
+/** Card image of an entry: a film's poster, else the template thumbnail. */
+export const templateImage = (t: WorldTemplate): string => t.film?.poster ?? templateThumbnail(t.slug);
+
 /** Public URL of a template's saved world. */
 export function templateWorldUrl(slug: string): string {
   return `/templates/worlds/${slug}.json`;
@@ -78,7 +93,7 @@ export interface ExamplePrompt {
 }
 
 /** True when the offline planner rebuilds the template from its prompt (not a photo room, not a world from a live Claude Code or Codex run). */
-export const isPlannerRebuildable = (t: WorldTemplate): boolean => t.origin !== 'photo' && t.origin !== 'blender' && !(t.origin === 'agent' && t.provenance !== 'offline-planner');
+export const isPlannerRebuildable = (t: WorldTemplate): boolean => t.origin !== 'photo' && t.origin !== 'blender' && t.origin !== 'film' && !(t.origin === 'agent' && t.provenance !== 'offline-planner');
 
 /** The shown templates' prompts as example prompts (photo rooms and live-run worlds are left out: their prompt does not rebuild the room offline). */
 export const EXAMPLE_PROMPTS: readonly ExamplePrompt[] = Object.freeze(TEMPLATES.filter(isPlannerRebuildable).map((t) => ({ title: t.title, prompt: t.prompt, kind: t.kind })));

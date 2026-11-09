@@ -7,7 +7,7 @@
  */
 import { memo, useEffect, useRef, useState, type ReactElement } from 'react';
 import { MAX_PROMPT_CHARS } from '../config';
-import { FEATURED_TEMPLATES, TEMPLATES, templateThumbnail, templateThumbnailSrcSet, type WorldTemplate } from '../lib/examples';
+import { FEATURED_TEMPLATES, WORLD_TEMPLATES, templateThumbnail, templateThumbnailSrcSet, type WorldTemplate } from '../lib/examples';
 import { Icon } from '../components/Icon';
 
 /** Seconds each example world stays on the stage. */
@@ -32,7 +32,7 @@ export function stageTemplates(shown: readonly WorldTemplate[], featured: readon
 }
 
 /** Example worlds on the stage, in order. */
-const STAGE: readonly WorldTemplate[] = stageTemplates(TEMPLATES, FEATURED_TEMPLATES);
+const STAGE: readonly WorldTemplate[] = stageTemplates(WORLD_TEMPLATES, FEATURED_TEMPLATES);
 /** One-tap example prompts under the bar. */
 export const HERO_EXAMPLES: readonly string[] = Object.freeze([
   'A coin collecting game on a tropical island',

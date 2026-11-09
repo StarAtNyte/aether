@@ -68,7 +68,7 @@ async function capture(page: Page, w: number, h: number, budget: number): Promis
 
 async function renderTemplates(page: Page, url: string): Promise<void> {
   mkdirSync(join(PUBLIC, 'templates'), { recursive: true });
-  for (const t of TEMPLATES) {
+  for (const t of TEMPLATES.filter((x) => !x.film)) {
     if (!wanted(t.slug)) continue;
     await page.goto(`${url}/?debug=1#/new/${t.slug}`);
     await waitReady(page);

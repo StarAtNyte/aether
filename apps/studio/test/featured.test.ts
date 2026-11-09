@@ -56,6 +56,7 @@ describe('the home Featured gallery', () => {
   it('keeps every shown template reachable (featured first, none duplicated) and every entry published', () => {
     expect(new Set(TEMPLATES.map((t) => t.slug)).size).toBe(TEMPLATES.length);
     expect(TEMPLATES.slice(0, FEATURED_TEMPLATES.length)).toEqual([...FEATURED_TEMPLATES]);
-    for (const e of SHOWCASE) expect(TEMPLATE_PUBLISH[e.slug], e.slug).toBeDefined();
+    for (const e of SHOWCASE.filter((x) => !x.film)) expect(TEMPLATE_PUBLISH[e.slug], e.slug).toBeDefined();
+    for (const e of SHOWCASE.filter((x) => x.film)) expect(TEMPLATE_PUBLISH[e.slug], `${e.slug}: a film has no publish row`).toBeUndefined();
   });
 });

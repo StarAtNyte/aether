@@ -4,7 +4,7 @@ import { useStudio, useUI, useWorld } from '../app/context';
 import { useApp } from '../app/appContext';
 import type { Command } from '../components/ui/CommandPalette';
 import type { IconName } from '../components/Icon';
-import { TEMPLATES } from '../lib/examples';
+import { WORLD_TEMPLATES } from '../lib/examples';
 import { shortcut } from '../lib/keys';
 import { PALETTE_ITEMS } from '../lib/palette';
 import { formatRelative } from '../lib/relativeTime';
@@ -88,7 +88,7 @@ export function useEditorCommands(projects: readonly ProjectMeta[]): Command[] {
         .slice(0, 20)
         .map((p) => ({ id: `proj-${p.id}`, title: `Open ${p.name}`, group: 'Projects', icon: 'folder' as IconName, hint: formatRelative(p.updatedAt), run: () => navigate({ name: 'editor', id: p.id }) })),
       ...PALETTE_ITEMS.map((p) => ({ id: `add-${p.id}`, title: `Add ${p.label.toLowerCase()}`, group: 'Add', icon: 'plus' as IconName, keywords: p.keywords, run: () => void studio.addFromPalette(p.id) })),
-      ...TEMPLATES.filter((t) => t.origin !== 'photo').map((t) => ({ id: `tpl-${t.slug}`, title: `Build ${t.title.toLowerCase()}`, group: 'Templates', icon: 'template' as IconName, keywords: t.description, run: () => void studio.send(t.prompt, { offline: true }) })),
+      ...WORLD_TEMPLATES.filter((t) => t.origin !== 'photo').map((t) => ({ id: `tpl-${t.slug}`, title: `Build ${t.title.toLowerCase()}`, group: 'Templates', icon: 'template' as IconName, keywords: t.description, run: () => void studio.send(t.prompt, { offline: true }) })),
     ];
     const ids = Object.keys(world.entities).slice(0, MAX_ENTITY_COMMANDS);
     for (const id of ids) {

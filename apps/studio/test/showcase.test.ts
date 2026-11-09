@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateWorld } from '@aether/core';
 import { describe, expect, it, vi } from 'vitest';
-import { AGENT_TEMPLATES, FEATURED_TEMPLATES, MORE_TEMPLATES, PHOTO_TEMPLATES, TEMPLATES, templateBySlug } from '../src/lib/examples';
+import { AGENT_TEMPLATES, FEATURED_TEMPLATES, FILM_TEMPLATES, MORE_TEMPLATES, PHOTO_TEMPLATES, TEMPLATES, templateBySlug } from '../src/lib/examples';
 import { SHOWCASE } from '../src/showcase/manifest';
 import { loadTemplateThumbnail, loadTemplateWorld, readCapped, type FetchLike } from '../src/showcase/load';
 import { FLAGSHIPS } from '../../../packages/agent/src/providers/mock/showcase/index';
@@ -20,7 +20,8 @@ describe('showcase manifest', () => {
   it('has unique slugs, titles and prompts (exact duplicate prompts removed)', () => {
     expect(new Set(SHOWCASE.map((e) => e.slug)).size).toBe(SHOWCASE.length);
     expect(new Set(SHOWCASE.map((e) => e.title)).size).toBe(SHOWCASE.length);
-    expect(new Set(SHOWCASE.map((e) => e.prompt)).size).toBe(SHOWCASE.length);
+    const worlds = SHOWCASE.filter((e) => !e.film);
+    expect(new Set(worlds.map((e) => e.prompt)).size).toBe(worlds.length);
     for (const e of SHOWCASE) expect(e.slug).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+){0,7}$/);
   });
 
@@ -76,8 +77,8 @@ describe('showcase manifest', () => {
     }
   });
 
-  it('ships a thumbnail (WebP ≤ 40 KB, 640 px) with a 1280 px @2x twin (≤ 110 KB) and a valid saved world for every entry', () => {
-    for (const e of SHOWCASE) {
+  it('ships a thumbnail (WebP ≤ 40 KB, 640 px) with a 1280 px @2x twin (≤ 110 KB) and a valid saved world for every world entry', () => {
+    for (const e of SHOWCASE.filter((x) => !x.film)) {
       const thumb = pub(`templates/${e.slug}.webp`);
       expect(existsSync(thumb), `${e.slug} thumbnail`).toBe(true);
       expect(statSync(thumb).size, `${e.slug} thumbnail size`).toBeLessThanOrEqual(40 * 1024);
@@ -93,10 +94,31 @@ describe('showcase manifest', () => {
     }
   });
 
+  it('hosts every film as same-origin files (poster WebP ≤ 60 KB, MP4 and WebM ≤ 6 MB), listed in Stories, with no world', () => {
+    const films = SHOWCASE.filter((e) => e.origin === 'film');
+    expect(SHOWCASE.filter((e) => e.film).map((e) => e.slug)).toEqual(films.map((e) => e.slug));
+    expect(FILM_TEMPLATES.map((e) => e.slug)).toEqual(films.map((e) => e.slug));
+    for (const e of films) {
+      const f = e.film!;
+      expect(e.kind, e.slug).toBe('story');
+      expect(e.curation, e.slug).toBe('candidate');
+      expect(e.description.length, e.slug).toBeGreaterThan(20);
+      expect(f.seconds, e.slug).toBeGreaterThan(0);
+      expect(f.credit.length, e.slug).toBeGreaterThan(0);
+      for (const [u, max] of [[f.poster, 60 * 1024], [f.mp4, 6 * 1024 * 1024], [f.webm, 6 * 1024 * 1024]] as const) {
+        expect(u.startsWith(`/stories/${e.slug}/`), u).toBe(true);
+        expect(existsSync(pub(u.slice(1))), u).toBe(true);
+        expect(statSync(pub(u.slice(1))).size, u).toBeLessThanOrEqual(max);
+      }
+      expect(readFileSync(pub(f.poster.slice(1))).subarray(8, 12).toString('latin1')).toBe('WEBP');
+      expect(existsSync(pub(`templates/worlds/${e.slug}.json`)), `${e.slug} has no world`).toBe(false);
+    }
+  });
+
   it('derives the shown lists from curation (featured first, hidden nowhere)', () => {
     expect(FEATURED_TEMPLATES.every((t) => t.curation === 'featured')).toBe(true);
     expect(MORE_TEMPLATES.every((t) => t.curation === 'candidate')).toBe(true);
-    expect(TEMPLATES).toEqual([...FEATURED_TEMPLATES, ...MORE_TEMPLATES, ...AGENT_TEMPLATES, ...PHOTO_TEMPLATES]);
+    expect(TEMPLATES).toEqual([...FEATURED_TEMPLATES, ...FILM_TEMPLATES, ...MORE_TEMPLATES, ...AGENT_TEMPLATES, ...PHOTO_TEMPLATES]);
     expect(TEMPLATES.some((t) => t.curation === 'hidden')).toBe(false);
     expect(templateBySlug('lantern-isles')?.title).toBe('Lantern Isles');
   });

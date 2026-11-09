@@ -8,7 +8,7 @@ import { memo, useEffect, useMemo, useRef, useState, type KeyboardEvent, type Re
 import { MAX_PROMPT_CHARS } from '../config';
 import { useStudio, useUI, useWorld } from '../app/context';
 import type { ChatEntry, ChatEventView } from '../lib/chat';
-import { FEATURED_TEMPLATES, SUGGESTION_CHIPS, TEMPLATES, templateThumbnail } from '../lib/examples';
+import { FEATURED_TEMPLATES, SUGGESTION_CHIPS, WORLD_TEMPLATES, templateThumbnail } from '../lib/examples';
 import { MAX_REFERENCE_IMAGES, prepareReferenceImage } from '../lib/images';
 import { followUpChips, remixSuggestions } from '../lib/remix';
 import { composerPlaceholder, hasContent, refineChips } from '../lib/refine';
@@ -103,7 +103,7 @@ const EmptyAgent = memo(function EmptyAgent({ onPrompt, onRefine, onTemplate }: 
           <span className="agent-empty__label">Templates</span>
         </div>
         <div className="agent-templates">
-          {(FEATURED_TEMPLATES.length > 0 ? FEATURED_TEMPLATES : TEMPLATES).slice(0, 12).map((t) => (
+          {(FEATURED_TEMPLATES.length > 0 ? FEATURED_TEMPLATES : WORLD_TEMPLATES).slice(0, 12).map((t) => (
             <button key={t.slug} type="button" className="agent-template" onClick={() => onTemplate(t.prompt)} title={t.description} aria-label={`Build template: ${t.title}`}>
               <Thumb src={templateThumbnail(t.slug)} alt="" />
               <span className="agent-template__title">{t.title}</span>
