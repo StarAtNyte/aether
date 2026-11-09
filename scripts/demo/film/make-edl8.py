@@ -20,6 +20,7 @@ F6, F7, F8 = f'{D}/film6', f'{D}/film7', f'{D}/film8'
 F2, F1, INTRO = f'{D}/film2/shots', f'{D}/film/shots', f'{D}/intro/shots'
 BLENDER_REAL = f'{D}/aether-blender-real-shot.mp4'
 BLENDER_REAL_SECONDS = 9.0
+BLENDER_EQ = 'eq=gamma=1.14:brightness=0.012:saturation=1.03'
 # Photo to 3D. The pair is real and rights-clean: the example photo is CC0 (Markus Spiske, Wikimedia Commons; credit in
 # apps/studio/src/showcase/manifest.ts) and the room is the saved run of the photo flow that was built from it (template
 # photo-hotel-bedroom; the transcripts are in tests/fixtures/photo). The walk is an offline render of that world (film8/clips/
@@ -63,8 +64,12 @@ def evf(path, what):
 
 def clipsrc(name, fallback):
     """A world clip from the world-footage pipeline when it has landed, else the older footage."""
-    p = f'{F8}/clips/{name}.mp4'
-    return p if have(p) else fallback
+    # the footage agent's names differ a little from the beat names; the 4K render (when there is one) is the source
+    for nm in {'drone-lisbon': ['lisbon-drone'], 'house-walk': ['house-walk'], 'landscape': ['landscape']}.get(name, [name]):
+        for cand in (f'{F8}/clips/{nm}-4k.mp4', f'{F8}/clips/{nm}.mp4'):
+            if have(cand):
+                return cand
+    return fallback
 
 
 # ------------------------------------------------------------------------------------------------------------------ segment makers
@@ -211,7 +216,7 @@ def build():
             n += 1
             c = caption_card(1, bid, n, cap)
             s = frames(bid, f'{F7}/build-{d}/f%05d.jpg', 10, dur, speed=speed, sfx='whoosh')
-            add('Act 1', bid, n, cap, with_text(s, c, ['note-replay']), f'film7/build-{d} (offline render, fixed clock)', 'v7 render good; re-render if the world pipeline offers better', trailer=4.0 if key == 'villa' else None)
+            add('Act 1', bid, n, cap, with_text(s, c, ['note-replay']), f'film7/build-{d} (offline render, fixed clock)', 'v7 render good; re-render if the world pipeline offers better', trailer=4.5 if key == 'villa' else None)
 
     # ---- photo to 3D (still Act 1: another way to start)
     n += 1
@@ -333,8 +338,8 @@ def build():
         sg = ui('a4b4d', MD, [[pr - 2.0, pr + 1.3, 1.0], [pr + 1.3, pr + 13.3, 3.0]], [[0, 0.5, 0.5, 1.0], [7.3, 0.5, 0.5, 1.0]], 7.3, sfx='whoosh')
         CARDS['note-sped'] = {'kind': 'note', 'text': 'The first seconds of the flight, sped up 3x'}
         sg['text'] = [[c, 0.25, 7.1], ['note-sped', 3.4, 7.1]]
-        add('Act 4', 'a4b4d', n, 'Press Drone: the camera lifts off and flies over the city.', sg, 'film8/modes (real take: the Drone button, then the lift-off, slow start sped up 3x)', 'NEW capture (12% of gaps over 50 ms in the heavy city; used for the click and the start only)', 'modes --clickDrone=1', trailer=4.0)
-    for bid, name, fb, i0, dur, cap, tr in (('a4b5', 'drone-lisbon', f'{F1}/lisbon-drone.mp4', 0.5, 5.0, 'Fly over a whole city by drone.', 3.5), ('a4b6', 'house-walk', f'{F1}/casa-pool.mp4', 1.0, 4.2, 'Walk through a house, at any time of day.', None),
+        add('Act 4', 'a4b4d', n, 'Press Drone: the camera lifts off and flies over the city.', sg, 'film8/modes (real take: the Drone button, then the lift-off, slow start sped up 3x)', 'NEW capture (12% of gaps over 50 ms in the heavy city; used for the click and the start only)', 'modes --clickDrone=1', trailer=4.5)
+    for bid, name, fb, i0, dur, cap, tr in (('a4b5', 'drone-lisbon', f'{F1}/lisbon-drone.mp4', 0.5, 5.0, 'Fly over a whole city by drone.', 4.5), ('a4b6', 'house-walk', f'{F1}/casa-pool.mp4', 1.0, 4.2, 'Walk through a house, at any time of day.', None),
                                            ('a4b7', 'landscape', f'{INTRO}/m-terraces-falls.mp4', 9.0, 4.0, 'Or float over a landscape at golden hour.', None)):
         n += 1
         c = caption_card(4, bid, n, cap)
@@ -351,7 +356,7 @@ def build():
     if have(BLENDER_REAL):
         n += 1
         c = caption_card(5, 'a5b2', n, 'And it renders a photoreal shot of it, locally.')
-        add('Act 5', 'a5b2', n, 'And it renders a photoreal shot of it, locally.', with_text({'name': 'a5b2', 'src': BLENDER_REAL, 'mode': 'full', 'in': 0.5, 'dur': BLENDER_REAL_SECONDS, 'xfade': XF, 'grade': False, 'sfx': 'whoosh'}, c, ['note-local']),
+        add('Act 5', 'a5b2', n, 'And it renders a photoreal shot of it, locally.', with_text({'name': 'a5b2', 'src': BLENDER_REAL, 'mode': 'full', 'in': 0.5, 'dur': BLENDER_REAL_SECONDS, 'xfade': XF, 'grade': False, 'eq': BLENDER_EQ, 'sfx': 'whoosh'}, c, ['note-local']),
             'aether-blender-real-shot.mp4', 'pending: another job is rendering it', '')
     else:
         BEATS.append(('Act 5', 'a5b2', 'And it renders a photoreal shot of it, locally.', 0, 'aether-blender-real-shot.mp4', 'LEFT OUT until the file lands', ''))
@@ -388,7 +393,7 @@ def trailer():
         if key is None:
             continue
         t = dict(s)
-        d = want[key] if nm in want else {'a5b3a': 3.0, 'a5b3c': 2.5, 'a5b3f': 2.0, 'a5b3j': 2.5}[nm]
+        d = want[key] if nm in want else {'a5b3a': 3.5, 'a5b3c': 3.0, 'a5b3f': 2.5, 'a5b3j': 2.4}[nm]
         d = min(d, s['dur'])
         t['dur'] = d
         if nm.startswith('act'):
@@ -402,7 +407,16 @@ def trailer():
     return out
 
 
+def hard_cuts_at_acts(segs):
+    """An act title is a clean hard cut in and out: no dissolve joins it to the scenes around it."""
+    for i, sg in enumerate(segs):
+        if sg['name'].startswith('act') or (i > 0 and segs[i - 1]['name'].startswith('act')):
+            sg['xfade'] = 1 / 30
+    return segs
+
+
 def write(name, segs, score):
+    segs = hard_cuts_at_acts(segs)
     xf = [0.0] + [float(s.get('xfade', XF)) for s in segs[1:]]
     total = sum(float(s['dur']) for s in segs) - sum(xf)
     duck, t = [], 0.0
