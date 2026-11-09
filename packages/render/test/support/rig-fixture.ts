@@ -7,6 +7,7 @@ import type { Object3D } from 'three';
 import { clipTable, motionSet, resolveLook, type ResolvedLook } from '@aether/assets';
 import { cloneModel } from '../../src/geometry/model-loader';
 import { CharacterRig } from '../../src/characters/rig';
+import type { ColliderDef, SpringChainDef } from '../../src/characters/springs';
 
 const LIB = resolve(__dirname, '../../../../assets/lib/');
 
@@ -64,4 +65,26 @@ export async function loadRig(seed = 'tester', opts: { castShadow?: boolean; own
     castShadow: opts.castShadow ?? false,
   });
   return { rig, look };
+}
+
+/** A rig of a named cast body (a pipeline character: kaho, mio) with the motion set and its own clips, toon extras as in the player. */
+export async function loadBodyRig(id: string): Promise<Fixture & { scene: Object3D; clips: import('three').AnimationClip[] }> {
+  const look = resolveLook({ body: id }, id);
+  const set = motionSet(look.body.gender);
+  if (!set) throw new Error('no motion set');
+  const [body, motions] = await Promise.all([parse(look.body.file), parse(set.file)]);
+  const clips = body.animations.length > 0 ? [...motions.animations.filter((c) => !body.animations.some((b) => b.name === c.name)), ...body.animations] : motions.animations;
+  const toonData = body.scene.userData['toon'] as { springs?: SpringChainDef[]; colliders?: ColliderDef[] } | undefined;
+  const rig = new CharacterRig({
+    scene: body.scene,
+    clips,
+    table: clipTable(look.body.gender),
+    look,
+    faces: look.body.faces,
+    hip: look.body.hip,
+    motionHip: set.hip,
+    castShadow: false,
+    ...(toonData ? { toon: { springs: toonData.springs ?? [], colliders: toonData.colliders ?? [] } } : {}),
+  });
+  return { rig, look, scene: body.scene, clips };
 }

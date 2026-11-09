@@ -468,7 +468,7 @@ export class CharacterSystem {
       e.accumulated += dt;
       e.frame++;
       if (every > 1 && (e.frame + (e.id.length & 3)) % every !== 0) continue;
-      const step = poseStep(e.accumulated, e.poseFps);
+      const step = poseStep(e.accumulated, e.poseFps > 0 && !e.rig.mayPoseOnTwos ? 0 : e.poseFps);
       if (step <= 0) continue;
       e.rig.update(step, detail);
       e.accumulated = 0;

@@ -625,3 +625,34 @@ Whole film, Intel, live world: p50 16.7 ms, p95 24.1 ms (a loaded machine), wors
 Known limits: the QA's silhouette masks do not read the cut, so its hair-width and hairline checks see the sheets' full
 rectangles; the fringe's cut edge shows texel steps in a close-up; the far level's mips blur the cut codes at the tips.
 Side by side: `docs/screenshots/cloudwatch/character/kaho-face-sheet-painted.webp`, `mio-face-sheet-painted.webp`.
+
+### Skirt clearance and the procedural gait (November 2026)
+
+The skirt gate is a headless test on the real rig, not a Blender count: `packages/render/test/skirt-clearance.test.ts`
+steps Kaho and Mio through idle, walk, run, stair up and down, turns, a jump and the film's clips (`support/gait-scenarios.ts`),
+skins the body on the CPU every frame with the vertex stage's drape replayed (`support/skirt-measure.ts`), and counts the
+leg vertices the skirt covers at rest that lie outside the cloth (cloth between the vertex and its bone, deeper than 4 mm,
+above the local hem). It must read zero on every clip. Before: Kaho walk 64 % of frames (4.7 % of covered vertices, 64 mm),
+run 88 %, stair up 79 %, stair down 63 %, jump 94 %; Mio 60-94 % on the same. After: 0 on every clip, both bodies.
+
+The root cause was the panels, not the vertex push: a spring panel pushed out of a thigh by the nearest way out was
+carried inward between the legs, so the front and back of the skirt split. Two runtime fixes, for any skirt:
+
+- **Drape** (`springs.ts` `lineExit`/`softExit`, `cloth-clear.ts` `drapeOver`). Seen from the hips' vertical axis, cloth
+  behind a leg capsule (grown 2 cm, lengthened 5 cm at each end, with a 45-degree shoulder that bridges the gap between two
+  legs) is carried to the capsule's far side along that line of sight. The springs use it for panels (and keep a panel at
+  least 0.8 of its posed radius); the toon vertex stage uses it per vertex (one more uniform slot, no new program). The old
+  nearest-way-out push stays under it.
+- **Gait** (`gait.ts`). Toon bodies walk and run procedurally: the legs by two-bone IK to ankles whose path follows the
+  foot's roll with the pivot (heel, then ball) fixed on the ground, so a planted foot does not slide; pelvis bob, sway,
+  turn and drop; spine counter-rotation; arms opposite the legs; head held level; forward lean from acceleration (into a
+  start, back into a stop); the walk to run is one family (duty factor 0.62 to 0.34, flight, bent arms). Built from the
+  body's own leg length, on its idle pose, so every pipeline character gets it. The clip's pose blends in and out with the
+  speed. Pose on twos only while standing, talking or sitting (`mayPoseOnTwos`); walking and running pose every frame.
+  Measured planted-foot slide (heel or ball on the ground), clips before, gait after: walk 23 % of ground speed to 1 %,
+  run 22 % to 2 %, sprint 10 % to 1 % (`support/foot-slide.ts`, gated below 8 %).
+
+`GAIT_STRIPS=<dir> npx vitest run packages/render/test/gait-strips.test.ts` writes 12-frame side and front strips
+(`docs/screenshots/cloudwatch/character/strip-*.webp`); the stair and run in the player: `kaho-stair-after.webp`,
+`kaho-run-after.webp`. Not done: blinks and turn in place are still the shared clips; the far level shares the uniforms but
+is not in the CPU gate.

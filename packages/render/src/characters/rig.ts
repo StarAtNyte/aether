@@ -18,6 +18,7 @@ import { contactShadow } from './surface';
 import { SpringSystem, type ColliderDef, type SpringChainDef } from './springs';
 import { CLOTH_MARGIN, writeLegCapsules } from './cloth-clear';
 import { BodyLevels, isFarLevel } from './lod';
+import { ProceduralGait } from './gait';
 import { airPoseOf, ArmSpring, jumpArmTarget, jumpClipPhase, landKeep, PELVIS_ABOVE_SEAT, seatBlendOf } from './motion';
 
 /** Foot of a footstep event. */
@@ -52,10 +53,16 @@ const TOON_ARM_CLEARANCE = 0.11;
 const TOON_HEAD_STEADY = 0.8;
 const _v = new Vector3();
 const _v2 = new Vector3();
+const _hips = new Vector3();
 const _q = new Quaternion();
 const _target = new Vector3();
 const _pole = new Vector3();
 const _target2 = new Vector3();
+
+function smoothstep01(a: number, b: number, x: number): number {
+  const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
 
 function boneOf(root: Object3D, name: string): Bone | null {
   return (root.getObjectByName(name) as Bone | undefined) ?? null;
@@ -209,6 +216,13 @@ export class CharacterRig {
   readonly levels: BodyLevels | null = null;
   /** Hair and skirt springs of a toon body. */
   readonly springs: SpringSystem | null = null;
+  /** A toon body's procedural walk and run (gait.ts); null for the others. */
+  readonly gait: ProceduralGait | null = null;
+  private gaitSpeed = 0;
+  private gaitWeight = 0;
+  private gaitAccel = 0;
+  /** Turn the procedural gait off (the clips' walk and run play). */
+  gaitEnabled = true;
   private shadowOnly = false;
   private swapped = new Map<Mesh, Material | Material[]>();
   private readonly shadowMaterials = new Map<Material, Material>();
@@ -245,6 +259,10 @@ export class CharacterRig {
     this.blob = contactShadow();
     this.root.add(this.blob);
     for (const c of opts.clips) this.clips.set(c.name, c);
+    if (opts.toon) {
+      const g = new ProceduralGait(opts.scene, this.root, this.model, this.clips.get('idle'));
+      if (g.usable) (this as { gait: ProceduralGait | null }).gait = g;
+    }
     this.mixer = new AnimationMixer(opts.scene);
     this.machine = new LocomotionMachine(opts.table);
     this.hipScale = opts.motionHip > 0.1 ? opts.hip / opts.motionHip : 1;
@@ -574,11 +592,12 @@ export class CharacterRig {
     this.mixer.update(step);
     this.saveClean();
     if (this.bones.root && this.hipScale !== 1) this.bones.root.position.y = this.bones.root.position.y * this.hipScale;
-    this.checkFootsteps();
     this.dampHeldArm(plan.state);
     if (detail >= 1) this.turnHipsAndChest(plan.state, step);
     this.model.position.set(0, 0, 0);
     this.airArms = 0;
+    const gaiting = detail >= 1 && this.gaitStep(plan.state, step);
+    if (!gaiting) this.checkFootsteps();
     this.trackAir(step);
     if (detail >= 1) this.applyBodyPose(plan.state, step);
     if (detail >= 1) this.relaxAirArms(plan.state, step);
@@ -594,9 +613,10 @@ export class CharacterRig {
     if (this.springs) {
       if (detail >= 1) {
         this.root.updateMatrixWorld(true);
-        this.springs.update(step);
+        const axis = this.hipsAxis();
+        this.springs.update(step, axis ?? undefined);
         // The leg capsules of this pose, for the cloth's per-vertex clearance (cloth-clear.ts), in the body's own frame.
-        writeLegCapsules(this.opts.scene, this.springs.posedCapsules(['Thigh', 'Calf'], CLOTH_MARGIN));
+        writeLegCapsules(this.opts.scene, this.springs.posedCapsules(['Thigh', 'Calf'], CLOTH_MARGIN), axis);
       } else {
         this.springs.reset();
         writeLegCapsules(this.opts.scene, []);
@@ -943,6 +963,16 @@ export class CharacterRig {
     }
   }
 
+  /** The hips' centre (world): between the two thigh bones, the vertical axis the skirt hangs around. */
+  private hipsAxis(): Vector3 | null {
+    const l = this.bones.lThigh;
+    const r = this.bones.rThigh;
+    if (!l || !r) return null;
+    l.getWorldPosition(_hips);
+    r.getWorldPosition(_v2);
+    return _hips.add(_v2).multiplyScalar(0.5);
+  }
+
   /** Standing pelvis height above the feet (m), measured once from the idle pose. */
   private pelvisRest(sc: number): number {
     if (this.pelvisRestY > 0) return this.pelvisRestY * sc;
@@ -1139,6 +1169,40 @@ export class CharacterRig {
     this.lookState.yaw = g.yaw * g.weight;
     this.lookState.pitch = g.pitch * g.weight;
     if (detail >= 1) applyLook(this.bones, this.lookState, bodyYaw);
+  }
+
+  /**
+   * The procedural walk and run (gait.ts) for a toon body on the ground: the clip's pose blends into it as the speed
+   * rises and back as it falls. True when it is posing the body now (the clip's own foot contacts are then not used).
+   */
+  private gaitStep(state: string, dt: number): boolean {
+    const g = this.gait;
+    if (!g || !this.gaitEnabled) return false;
+    const walking = state === 'loco' && this.input.grounded && !this.forced && !this.backward && !this.input.sitting && this.seatTop === null && this.seatAnchor === null && Math.abs(this.hipYaw) < 0.2;
+    const want = walking ? this.smoothSpeed : 0;
+    const prev = this.gaitSpeed;
+    this.gaitSpeed += (want - prev) * (1 - Math.exp(-dt / (want > prev ? 0.1 : 0.06)));
+    const a = (this.gaitSpeed - prev) / Math.max(1e-3, dt);
+    this.gaitAccel += (a - this.gaitAccel) * (1 - Math.exp(-dt / 0.15));
+    const wantW = walking ? smoothstep01(0.06, 0.4, this.gaitSpeed) : 0;
+    this.gaitWeight += (wantW - this.gaitWeight) * (1 - Math.exp(-dt / (wantW > this.gaitWeight ? 0.07 : 0.05)));
+    if (this.gaitWeight < 0.003) this.gaitWeight = 0;
+    const arms = !(this.prop && this.prop.shouldered) && this.propHold === 'none';
+    g.update(dt, this.gaitSpeed, this.gaitWeight, arms, this.gaitAccel);
+    if (this.gaitWeight > 0.5) {
+      const cb = this.opts.onFootstep;
+      if (cb) for (const f of g.strikes) cb(f === 0 ? 'L' : 'R', this.gaitSpeed, this);
+    }
+    return this.gaitWeight > 0.003;
+  }
+
+  /**
+   * Whether the pose may step on twos (the toon look): only while the body stands, talks, sits or gestures. A walk, a
+   * run, a jump or a stair is posed every frame, so the foot contacts keep to the ground and the secondary motion is smooth.
+   */
+  get mayPoseOnTwos(): boolean {
+    const st = this.plan?.state ?? 'loco';
+    return this.gaitWeight < 0.003 && this.smoothSpeed < 0.1 && (st === 'loco' || st === 'talk' || st === 'sit' || st === 'action');
   }
 
   private lastStep = 0;
