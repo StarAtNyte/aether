@@ -201,7 +201,7 @@ def build():
     hook = clip('hook', clipsrc('hook', f'{INTRO}/m-terraces-falls.mp4'), 1.8, 5.5, [['hook', 0.4, 5.1]], xfade=0)
     SEGS.append(hook)
     BEATS.append(('Hook', 'hook', 'Describe a world. Aether builds it, lights it and publishes it.', 5.5, 'film8/clips/hook (fallback: v7 terraces shot)', 'world clip', 'world-footage pipeline'))
-    TRAILER.append(('hook', 3.2))
+    TRAILER.append(('hook', 3.8))
 
     # ---- Act 1: Describe
     act_card(1)
