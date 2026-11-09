@@ -20,7 +20,6 @@ BLENDER_REAL = f'{D}/aether-blender-real-shot.mp4'
 BLENDER_REAL_SECONDS = 9.0
 ARCH_EQ = 'eq=contrast=1.16:saturation=1.1:gamma=0.92:brightness=-0.03'
 BUILD_DIR = {'village': 'village3', 'villa': 'villa2', 'valley': 'valley'}
-REPLAY_POST = "tmix=frames=5:weights='1 2 3 2 1',"
 CUT = 0.2  # the longest dissolve between two shots, seconds (six frames)
 SHORT_CUT = 0.1
 
@@ -102,7 +101,7 @@ def full():
                     text=[['st-describe', 0.3, 4.9], ['note-offline', 0.3, 4.9]], sfx='whoosh', inset='br'))
     for key, name, start, dur, speed, tag in (('village', 'r-village', 10, 5.0, 0.7, 'tag-rv-village'), ('villa', 'r-villa', 10, 4.6, 0.8, 'tag-rv-villa')):
         if have(f'{F7}/build-{BUILD_DIR[key]}/f00000.jpg'):
-            S.append(frames(name, f'{F7}/build-{BUILD_DIR[key]}/f%05d.jpg', start, dur, CUT, [[tag, 0.2, dur - 0.3], ['note-replay', 0.2, dur - 0.3]], 'whoosh', speed=speed, post=REPLAY_POST))
+            S.append(frames(name, f'{F7}/build-{BUILD_DIR[key]}/f%05d.jpg', start, dur, CUT, [[tag, 0.2, dur - 0.3], ['note-replay', 0.2, dur - 0.3]], 'whoosh', speed=speed))
     # 2 Edit, 3 Relight
     E = f'{F7}/edit/edit.mp4'
     if have(E):
@@ -201,9 +200,9 @@ def short():
     if have(f'{F7}/describe/describe.mp4'):
         S.append(ui('gen-type', f'{F7}/describe/describe.mp4', [[ev('describe', 'typing') - 0.8, ev('describe', 'build pressed') - 0.1, 1.5]], [[0, 0.5, 0.5, 1.0], [0.8, 0.5, 0.3, 1.65], [3.0, 0.5, 0.3, 1.65]], 3.3, CUT, text=[['st-describe', 0.2, 3.1], ['note-offline', 0.2, 3.1]], sfx='whoosh', inset='br'))
     if have(f'{F7}/build-village3/f00000.jpg'):
-        S.append(frames('r-village', f'{F7}/build-village3/f%05d.jpg', 10, 4.0, CUT, [['tag-rv-village', 0.2, 3.7], ['note-replay', 0.2, 3.7]], 'whoosh', speed=0.85, post=REPLAY_POST))
+        S.append(frames('r-village', f'{F7}/build-village3/f%05d.jpg', 10, 4.0, CUT, [['tag-rv-village', 0.2, 3.7], ['note-replay', 0.2, 3.7]], 'whoosh', speed=0.85))
     if have(f'{F7}/build-villa2/f00000.jpg'):
-        S.append(frames('r-villa', f'{F7}/build-villa2/f%05d.jpg', 10, 3.6, CUT, [['tag-rv-villa', 0.2, 3.3], ['note-replay', 0.2, 3.3]], 'whoosh', speed=1.0, post=REPLAY_POST))
+        S.append(frames('r-villa', f'{F7}/build-villa2/f%05d.jpg', 10, 3.6, CUT, [['tag-rv-villa', 0.2, 3.3], ['note-replay', 0.2, 3.3]], 'whoosh', speed=1.0))
     E = f'{F7}/edit/edit.mp4'
     if have(E):
         S.append(ui('e-material', E, [[ev('edit', 'material Fabric') - 1.9, ev('edit', 'material Fabric') + 6.1, 3.0]], [[0, 0.73, 0.64, 1.9], [2.7, 0.73, 0.66, 1.9]], 2.8, CUT, text=[['st-edit', 0.2, 2.6]], sfx='whoosh'))

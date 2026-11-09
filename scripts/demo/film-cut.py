@@ -31,6 +31,7 @@ crossfades, the overlays laid on with fades, the score mixed under the clips' ow
 """
 import hashlib
 import json
+import re
 import os
 import subprocess
 import sys
@@ -46,7 +47,15 @@ os.makedirs(WORK, exist_ok=True)
 BACKDROP = os.path.join(WORK, 'backdrop.png')
 
 
+# Frames are never blended across time (no minterpolate, tblend, tmix, the framerate filter or mpdecimate retiming): a low-fps take is
+# re-recorded or dropped, speed ramps drop or repeat whole frames. The only blends are the short dissolves between two shots (xfade).
+BANNED = re.compile(r'(?<![-\w])(minterpolate|tblend|tmix|lagfun|framerate=|mpdecimate|blend=)')
+
+
 def ff(args):
+    hit = BANNED.search(' '.join(str(a) for a in args))
+    if hit:
+        raise SystemExit(f'refusing a frame-blending filter: {hit.group(1)}')
     cmd = ['nice', '-n', '10', 'ffmpeg', '-hide_banner', '-loglevel', 'error', '-y'] + args
     r = subprocess.run(cmd)
     if r.returncode:
@@ -199,12 +208,7 @@ def segment(s):
         cy = pw([(c[0], c[2]) for c in cams], fr, 0.5 * (1 - fr)).replace('T', T)
         # each part is its own seeked input: with one shared input the concat would buffer the other parts' 4K frames
         n = len(parts)
-        # "smooth": a take painted at a few frames a second (a heavy scene at 4K): the repeated frames are dropped and the 30 fps
-        # picture is blended between the painted ones, by their paint times
-        if s.get('smooth'):
-            sel = ''.join(f"[{i}:v]mpdecimate,setpts=(PTS-STARTPTS)/{sp},framerate=fps={FPS}:interp_start=0:interp_end=255:scene=100[p{i}];" for i, (a, b, sp) in enumerate(parts))
-        else:
-            sel = ''.join(f"[{i}:v]setpts=(PTS-STARTPTS)/{sp},fps={FPS}[p{i}];" for i, (a, b, sp) in enumerate(parts))
+        sel = ''.join(f"[{i}:v]setpts=(PTS-STARTPTS)/{sp},fps={FPS}[p{i}];" for i, (a, b, sp) in enumerate(parts))
         cat = ''.join(f'[p{i}]' for i in range(n)) + f'concat=n={n}:v=1:a=0[src];'
         inputs = []
         for (a, b, sp) in parts:
@@ -328,7 +332,7 @@ def segment(s):
             at = float(t.get('at', 0))
             x, y = mar + c * (tw + gut), mar + r * (th + gut)
             chains.append(
-                f"[{vi}:v]" + (f"mpdecimate,setpts=(PTS-STARTPTS)/{sp},framerate=fps={FPS}:interp_start=0:interp_end=255:scene=100," if t.get('smooth') else f"setpts=(PTS-STARTPTS)/{sp},fps={FPS},") + f"tpad=stop_mode=clone:stop_duration={dur},{cf}scale={tw}:{th}:force_original_aspect_ratio=increase:flags=lanczos,crop={tw}:{th},setsar=1,format=rgba[t{i}];"
+                f"[{vi}:v]setpts=(PTS-STARTPTS)/{sp},fps={FPS},tpad=stop_mode=clone:stop_duration={dur},{cf}scale={tw}:{th}:force_original_aspect_ratio=increase:flags=lanczos,crop={tw}:{th},setsar=1,format=rgba[t{i}];"
                 f"[{li}:v]format=rgba[l{i}];[t{i}][l{i}]overlay=0:0:format=auto[tl{i}];[{mi}:v]format=gray[g{i}];[tl{i}][g{i}]alphamerge,fade=t=in:st={at}:d=0.35:alpha=1[f{i}];"
                 f"{last}[f{i}]overlay=x={x}:y={y}:format=auto[o{i}];")
             last = f'[o{i}]'

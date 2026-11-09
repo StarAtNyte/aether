@@ -30,7 +30,6 @@ PHOTO_WALK = f'{F8}/clips/photo-hotel-walk.mp4'
 PHOTO_TO_3D = f'{D}/aether-photo-to-3d-live.mp4'
 XF = 0.1  # the longest dissolve between two shots: three frames (the cards' fades are separate)
 ARCH_EQ = 'eq=contrast=1.16:saturation=1.1:gamma=0.92:brightness=-0.03'
-REPLAY_POST = "tmix=frames=5:weights='1 2 3 2 1',"
 ACTS = [('Describe', 'Type a world. Watch it appear.'), ('Shape it', 'Change it by hand, by words, by light.'), ('Prove it', 'A bot plays it. The checks run.'),
         ('Share it', 'One link. Any screen. Any kind of world.'), ('Go further', 'Characters, photoreal shots, a short film.')]
 
@@ -168,7 +167,7 @@ def build():
         if have(f'{F7}/build-{d}/f00000.jpg'):
             n += 1
             c = caption_card(1, bid, n, cap)
-            s = frames(bid, f'{F7}/build-{d}/f%05d.jpg', 10, dur, speed=speed, post=REPLAY_POST, sfx='whoosh')
+            s = frames(bid, f'{F7}/build-{d}/f%05d.jpg', 10, dur, speed=speed, sfx='whoosh')
             add('Act 1', bid, n, cap, with_text(s, c, ['note-replay']), f'film7/build-{d} (offline render, fixed clock)', 'v7 render good; re-render if the world pipeline offers better', trailer=4.0 if key == 'villa' else None)
 
     # ---- photo to 3D (still Act 1: another way to start)

@@ -17,8 +17,8 @@
  * `<out>/<scene>.json` (times in ms from the first captured frame) next to `<out>/<scene>.mp4` (constant 30 fps, 4K; a frame
  * is held until the next one was painted). Nothing is drawn over the page except the demo cursor and its click ripple.
  */
-import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { chromium, type BrowserContext, type CDPSession, type Locator, type Page } from 'playwright';
@@ -33,6 +33,24 @@ const EDIT_SLUG = arg('slug') ?? 'scandi-living-room';
 const W = 1920;
 const H = 1080;
 const SCALE = Number(arg('scale') ?? 2);
+/** `--png=1`: the screencast delivers lossless PNG frames (4K UI takes for the master); the default is JPEG quality 95. */
+const PNG = arg('png') === '1';
+/**
+ * `--real=1`: the final-footage browser. The real, headed Google Chrome on the real display (the 4K monitor at +1920+0), the
+ * hardware GPU, a clean profile (Playwright's temporary one), a page of 1920x1080 CSS px at the device scale given by --scale.
+ * Never the bundled headless Chromium for footage that goes in a film.
+ */
+const REAL = arg('real') === '1' || arg('grab') === '1';
+const REAL_CHROME = '/usr/bin/google-chrome';
+/**
+ * `--grab=1` (implies --real): the capture is the display itself. Real Chrome runs fullscreen on the 4K monitor (the page is
+ * 1920x1080 CSS px at device scale 2) and ffmpeg's x11grab records the monitor's true pixels at 30 fps, lossless (x264 QP 0, 4:4:4):
+ * no CDP screenshot readback, so nothing slows the page, and no lossy frame format. The take's clock is aligned to the video by a
+ * white flash the page shows once recording runs; the first video frame whose brightness jumps is that flash.
+ */
+const GRAB = arg('grab') === '1';
+const GRAB_DISPLAY = ':0.0+1920,0';
+const EXT = PNG ? 'png' : 'jpg';
 /** The takes' pointer positions were laid out for a 1440 px page. */
 const K = W / 1440;
 // Chrome's screencast delivers CSS-sized frames when the scale is emulated (Playwright's deviceScaleFactor), physical ones when
@@ -56,7 +74,24 @@ class Capture {
     private readonly page: Page,
     readonly dir: string,
   ) {}
+  private grabProc: ChildProcess | null = null;
+  private grabFirstMs: number | null = null;
+  /** The recorder clock reader of the take (set by newTake), for the flash that aligns the video. */
+  rec: Recorder | null = null;
+  grabFile = '';
+  private flashWall = 0;
   async start(): Promise<void> {
+    if (GRAB) {
+      if (this.grabProc) return; // one continuous recording across navigations
+      this.grabFile = join(this.dir, 'grab.mkv');
+      this.grabProc = spawn('nice', ['-n', '5', 'ffmpeg', '-loglevel', 'error', '-y', '-f', 'x11grab', '-draw_mouse', '0', '-framerate', '30', '-video_size', '3840x2160', '-i', GRAB_DISPLAY,
+        '-c:v', 'libx264', '-preset', 'ultrafast', '-qp', '0', '-pix_fmt', 'yuv444p', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-threads', '12', this.grabFile], { stdio: ['pipe', 'ignore', 'inherit'] });
+      await sleep(3500); // ffmpeg needs a moment to open the 4K display grab
+      this.flashWall = Date.now();
+      await this.page.evaluate(() => { const d = document.createElement('div'); d.style.cssText = 'position:fixed;inset:0;background:#fff;z-index:2147483647'; document.body.appendChild(d); setTimeout(() => d.remove(), 250); });
+      await sleep(700);
+      return;
+    }
     const cdp = await this.ctx.newCDPSession(this.page);
     this.cdp = cdp;
     cdp.on('Page.screencastFrame', (f: { data: string; sessionId: number; metadata: { timestamp?: number } }) => {
@@ -66,13 +101,38 @@ class Capture {
         void cdp.send('Page.screencastFrameAck', { sessionId: f.sessionId }).catch(() => undefined);
         return;
       }
-      writeFileSync(join(this.dir, `f${String(this.times.length).padStart(5, '0')}.jpg`), Buffer.from(f.data, 'base64'));
+      writeFileSync(join(this.dir, `f${String(this.times.length).padStart(5, '0')}.${EXT}`), Buffer.from(f.data, 'base64'));
       this.times.push(t);
       void cdp.send('Page.screencastFrameAck', { sessionId: f.sessionId }).catch(() => undefined);
     });
-    await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 95, maxWidth: W * SCALE, maxHeight: H * SCALE, everyNthFrame: 1 });
+    await cdp.send('Page.startScreencast', { format: PNG ? 'png' : 'jpeg', ...(PNG ? {} : { quality: Number(arg('jpegQ') ?? 95) }), maxWidth: W * SCALE, maxHeight: H * SCALE, everyNthFrame: 1 });
+  }
+  /** The grab ends: stop ffmpeg, find the flash in the video, and derive the first-frame time and the unique-frame times. */
+  async finishGrab(): Promise<void> {
+    if (!this.grabProc) return;
+    this.grabProc.stdin?.write('q');
+    await new Promise<void>((res) => this.grabProc!.once('exit', () => res()));
+    this.grabProc = null;
+    const stat = execFileSync('bash', ['-c', `ffmpeg -v info -t 10 -i '${this.grabFile}' -vf scale=64:36,signalstats,metadata=print:key=lavfi.signalstats.YAVG -f null - 2>&1 | grep -E 'pts_time|YAVG' `], { encoding: 'utf8' });
+    let flashAt = -1;
+    let pts = 0;
+    for (const line of stat.split('\n')) {
+      const m = /pts_time:([\d.]+)/.exec(line);
+      if (m) pts = Number(m[1]);
+      const y = /YAVG=([\d.]+)/.exec(line);
+      if (y && Number(y[1]) > 200 && flashAt < 0) flashAt = pts;
+    }
+    if (flashAt < 0) throw new Error('grab: the sync flash was not found in the video');
+    this.grabFirstMs = this.flashWall - flashAt * 1000;
+    // the frames that actually changed (a display grab repeats frames while nothing moves): their times, for the gap statistics
+    const info = execFileSync('bash', ['-c', `ffmpeg -v info -i '${this.grabFile}' -vf scale=480:270,mpdecimate=hi=64*4:lo=64*2:frac=0.1,showinfo -f null - 2>&1 | grep -o 'pts_time:[0-9.]*'`], { encoding: 'utf8', maxBuffer: 1 << 28 });
+    for (const l of info.split('\n')) {
+      const m = /pts_time:([\d.]+)/.exec(l);
+      if (m) this.times.push(this.grabFirstMs / 1000 + Number(m[1]));
+    }
   }
   async stop(): Promise<void> {
+    if (GRAB) return;
     if (!this.cdp) return;
     await this.cdp.send('Page.stopScreencast').catch(() => undefined);
     await sleep(300);
@@ -81,6 +141,7 @@ class Capture {
   }
   /** Wall-clock ms of the first frame. */
   get first(): number {
+    if (this.grabFirstMs !== null) return this.grabFirstMs;
     return (this.times[0] ?? Date.now() / 1000) * 1000;
   }
 }
@@ -110,24 +171,39 @@ function mark(t: Take, what: string): void {
 
 async function newTake(browser: Awaited<ReturnType<typeof chromium.launch>>, scene: string, source: string, device?: 'laptop' | 'phone'): Promise<Take> {
   const ctx = await browser.newContext(
-    device === 'phone' ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } : device === 'laptop' ? { viewport: { width: 1440, height: 900 } } : { viewport: null },
+    device === 'phone' ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } : device === 'laptop' ? { viewport: { width: 1440, height: 900 } } : GRAB ? { viewport: null } : REAL ? { viewport: { width: W, height: H } } : { viewport: null },
   );
   await ctx.addInitScript({ content: SKIP_FIRST_RUN });
   await ctx.addInitScript({ content: 'globalThis.__name = (f) => f;' });
   await ctx.addInitScript({ content: `try { const k='aether.studio.settings.v1'; const s=JSON.parse(localStorage.getItem(k)||'{}'); s.renderTier='${arg('tier') ?? 'ultra'}'; s.showNavHint=false; s.motion='sharp'; localStorage.setItem(k, JSON.stringify(s)); localStorage.setItem('aether.player.mute', '1'); } catch {}` });
   await ctx.addInitScript({ content: OVERLAY_SCRIPT });
   const page = await ctx.newPage();
+  if (GRAB) {
+    const bs = await ctx.newCDPSession(page);
+    const { windowId } = (await bs.send('Browser.getWindowForTarget')) as { windowId: number };
+    await bs.send('Browser.setWindowBounds', { windowId, bounds: { left: 1920, top: 0, width: W, height: H } });
+    await bs.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'fullscreen' } });
+    await page.waitForFunction(([w, h]) => window.innerWidth === w && window.innerHeight === h, [W, H], { timeout: 15_000 }).catch(async () => log(`fullscreen page is ${await page.evaluate(() => `${window.innerWidth}x${window.innerHeight}`)}, not ${W}x${H}`));
+  }
+  if (REAL) {
+    await page.goto('about:blank');
+    const gpu = await page.evaluate(() => { const c = document.createElement('canvas'); const g = c.getContext('webgl2'); const e = g?.getExtension('WEBGL_debug_renderer_info'); return g && e ? String(g.getParameter(e.UNMASKED_RENDERER_WEBGL)) : 'no webgl2'; });
+    log(`real Chrome ${browser.version()} on DISPLAY :0, GPU: ${gpu}`);
+  }
   page.on('pageerror', (e) => log(`pageerror: ${e.message.slice(0, 200)}`));
   page.on('crash', () => log('page crashed'));
   const dir = join(OUT, `.frames-${scene}`);
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
-  return { ctx, page, rec: new Recorder(scene, source), cap: new Capture(ctx, page, dir), events: [] };
+  const take: Take = { ctx, page, rec: new Recorder(scene, source), cap: new Capture(ctx, page, dir), events: [] };
+  take.cap.rec = take.rec;
+  return take;
 }
 
 /** Write the marks (shifted to the first frame), the frame times, the mp4 and six check stills. */
 async function finish(t: Take): Promise<void> {
   await t.cap.stop();
+  if (GRAB) await t.cap.finishGrab();
   const { rec, cap } = t;
   const times = cap.times;
   if (times.length < 2) throw new Error('no frames');
@@ -157,22 +233,50 @@ async function finish(t: Take): Promise<void> {
   const stats = allGaps.length ? { median: allGaps[allGaps.length >> 1]!, p95: allGaps[Math.floor(allGaps.length * 0.95)]!, max: allGaps[allGaps.length - 1]!, over50: allGaps.filter((g) => g > 50).length } : null;
   writeFileSync(join(OUT, `${rec.scene}.json`), JSON.stringify({ scene: rec.scene, source: rec.source, durationMs: Math.round(total), keptMs: Math.round(kept), frameGapsKept: stats, marks, events: t.events.map((e) => ({ t: Math.round(e.t + shift), what: e.what })) }, null, 1));
   writeFileSync(join(OUT, `${rec.scene}.frames.json`), JSON.stringify({ t0: times[0], gapsMs: times.slice(1).map((x, i) => Math.round((x - times[i]!) * 10000) / 10) }));
-  const list = times.map((x, i) => `file 'f${String(i).padStart(5, '0')}.jpg'\nduration ${(i + 1 < times.length ? times[i + 1]! - x : 1 / 60).toFixed(6)}`).join('\n');
-  writeFileSync(join(cap.dir, 'list.txt'), `${list}\nfile 'f${String(times.length - 1).padStart(5, '0')}.jpg'\n`);
+  if (GRAB) {
+    renameSync(cap.grabFile, join(OUT, `${rec.scene}.mkv`));
+    log(`${rec.scene}: grabbed ${times.length} changed frames over ${(total / 1000).toFixed(1)} s; kept gaps ${JSON.stringify(stats)}`);
+    log(`wrote ${join(OUT, `${rec.scene}.mkv`)} (lossless 4K 4:4:4)`);
+    await t.ctx.close().catch(() => undefined);
+    rmSync(cap.dir, { recursive: true, force: true });
+    return;
+  }
+  const list = times.map((x, i) => `file 'f${String(i).padStart(5, '0')}.${EXT}'\nduration ${(i + 1 < times.length ? times[i + 1]! - x : 1 / 60).toFixed(6)}`).join('\n');
+  writeFileSync(join(cap.dir, 'list.txt'), `${list}\nfile 'f${String(times.length - 1).padStart(5, '0')}.${EXT}'\n`);
   const mp4 = join(OUT, `${rec.scene}.mp4`);
-  const encode = (extra: string[], vf: string): void => void execFileSync('nice', ['-n', '10', 'ffmpeg', '-loglevel', 'error', '-y', ...extra, '-f', 'concat', '-safe', '0', '-i', join(cap.dir, 'list.txt'), '-vf', vf, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '15', '-pix_fmt', 'yuv420p', mp4], { stdio: 'inherit' });
+  const encode = (extra: string[], vf: string): void => void execFileSync('nice', ['-n', '10', 'ffmpeg', '-loglevel', 'error', '-y', ...extra, '-f', 'concat', '-safe', '0', '-i', join(cap.dir, 'list.txt'), '-vf', vf, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', PNG ? '8' : '15', '-pix_fmt', PNG ? 'yuv444p' : 'yuv420p', ...(PNG ? ['-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709'] : []), mp4], { stdio: 'inherit' });
   try {
-    encode([], 'fps=30,scale=trunc(iw/2)*2:trunc(ih/2)*2');
+    encode(PNG ? ['-color_trc', 'bt709'] : [], PNG ? 'fps=30,scale=trunc(iw/2)*2:trunc(ih/2)*2:out_color_matrix=bt709:out_range=tv,format=yuv444p' : 'fps=30,scale=trunc(iw/2)*2:trunc(ih/2)*2');
   } catch (e) {
     // A screencast whose frames change size (a phone window) can fail to filter: fix the size to the first frame's and retry.
     log(`encode failed (${String(e).slice(0, 80)}); retrying at the first frame's size`);
-    const dims = execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'csv=p=0:s=x', join(cap.dir, 'f00000.jpg')]).toString().trim().split('x').map((v) => Math.floor(Number(v) / 2) * 2);
+    const dims = execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'csv=p=0:s=x', join(cap.dir, `f00000.${EXT}`)]).toString().trim().split('x').map((v) => Math.floor(Number(v) / 2) * 2);
     encode(['-reinit_filter', '0'], `fps=30,scale=${dims[0]}:${dims[1]}`);
   }
   log(`${rec.scene}: ${times.length} frames over ${(total / 1000).toFixed(1)} s, kept ${(kept / 1000).toFixed(1)} s; kept gaps ${JSON.stringify(stats)}`);
   log(`wrote ${mp4}`);
   await t.ctx.close().catch(() => undefined);
   rmSync(cap.dir, { recursive: true, force: true });
+}
+
+/**
+ * Wait until every image on the page is loaded and decoded, scrolling the page through once so lazy images load (a blur-up or a
+ * half-loaded thumbnail must never be in a captured frame). Logs the smallest and the largest natural width of the featured
+ * cards (`.fcard__img`) and, with `--minCard=<px>`, refuses to go on when a card image is smaller (the sharp thumbnails are not live).
+ */
+async function imagesReady(page: Page, label: string): Promise<void> {
+  const h = await page.evaluate(() => document.documentElement.scrollHeight);
+  for (let y = 0; y < h; y += 500) {
+    await page.evaluate((v) => window.scrollTo(0, v), y);
+    await sleep(120);
+  }
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForFunction(() => [...document.images].every((i) => i.complete && (i.naturalWidth > 0 || i.loading === 'lazy')), null, { timeout: 60_000, polling: 250 }).catch(() => log(`${label}: some images still loading`));
+  await page.evaluate(async () => { await Promise.all([...document.images].map((i) => i.decode().catch(() => undefined))); });
+  const w = await page.evaluate(() => [...document.querySelectorAll<HTMLImageElement>('.fcard__img, .fcard img')].map((i) => i.naturalWidth));
+  log(`${label}: ${w.length} card images, natural widths ${w.length ? `${Math.min(...w)} to ${Math.max(...w)}` : 'none'}`);
+  const min = Number(arg('minCard') ?? 0);
+  if (min && w.length && Math.min(...w) < min) throw new Error(`${label}: card images are ${Math.min(...w)} px wide, expected at least ${min} (the sharp thumbnails are not deployed yet)`);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -739,7 +843,13 @@ async function modes(browser: Awaited<ReturnType<typeof chromium.launch>>, url: 
     // The city's entry starts the drone on its own after the hero view; the button would then stop it.
     const touring = await page.evaluate(() => (window as unknown as { __aetherPlayer: { simulation: { renderer: { touring: boolean } } } }).__aetherPlayer.simulation.renderer.touring);
     mark(t, `drone tour${touring ? ' (already flying)' : ''}`);
-    if (touring) await glide(page, (await centre(drone)).x, (await centre(drone)).y, 1000);
+    if (touring && arg('clickDrone') === '1') {
+      // The city starts its own drone tour; to show the button as the cause, stop it first, then press it again on camera.
+      await click(page, drone, 900);
+      await sleep(1500);
+      mark(t, 'drone button pressed');
+      await click(page, drone, 900);
+    } else if (touring) await glide(page, (await centre(drone)).x, (await centre(drone)).y, 1000);
     else await click(page, drone, 1000);
     await glide(page, W / 2 + 200, H / 2 - 150, 900);
     await cursor(page, false);
@@ -1151,10 +1261,29 @@ async function livehome(browser: Awaited<ReturnType<typeof chromium.launch>>): P
   await finish(t);
 }
 
+/** `--scene=grabtest`: about 8 s of a plain animated page, to test the display grab alone (size, flash sync, pacing, nothing foreign). */
+async function grabtest(browser: Awaited<ReturnType<typeof chromium.launch>>): Promise<void> {
+  const t = await newTake(browser, 'grabtest', 'a plain animated page');
+  const { page } = t;
+  await page.setContent(`<body style="margin:0;background:#101620;color:#fff;font:48px Inter,sans-serif"><div id=b style="position:absolute;left:0;top:300px;width:200px;height:200px;background:#4af"></div><div style="position:absolute;left:60px;top:60px">grab test 1920x1080 css, device scale ${SCALE}</div><div style="position:absolute;left:60px;top:800px;width:1800px;height:2px;background:#fff"></div><script>let x=0;(function f(){x=(x+12)%1700;document.getElementById('b').style.left=x+'px';requestAnimationFrame(f)})()</script></body>`);
+  await sleep(800);
+  await t.cap.start();
+  await sleep(6000);
+  await finish(t);
+}
+
 async function main(): Promise<void> {
   mkdirSync(OUT, { recursive: true });
   const server = await startServer(() => undefined);
-  const browser = await chromium.launch({ executablePath: findChrome(), headless: HEADLESS, args: [...CHROME_ARGS, `--force-device-scale-factor=${SCALE}`, `--window-size=${W},${H + 87}`] });
+  const browser = REAL
+    ? await chromium.launch({
+        executablePath: REAL_CHROME,
+        headless: false,
+        env: { ...process.env, DISPLAY: ':0' } as Record<string, string>,
+        args: [`--force-device-scale-factor=${SCALE}`, '--window-position=1920,0', `--window-size=${W},${GRAB ? H : H + 140}`, ...(GRAB ? ['--kiosk'] : []), '--ignore-gpu-blocklist', '--enable-gpu-rasterization', '--disable-features=TranslateUI', '--no-first-run', '--no-default-browser-check'],
+        ignoreDefaultArgs: ['--enable-automation'],
+      })
+    : await chromium.launch({ executablePath: findChrome(), headless: HEADLESS, args: [...CHROME_ARGS, `--force-device-scale-factor=${SCALE}`, `--window-size=${W},${H + 87}`] });
   try {
     if (SCENE === 'scout') await scout(browser, server.url);
     else if (SCENE === 'edit') await edit(browser, server.url);
@@ -1166,6 +1295,7 @@ async function main(): Promise<void> {
     else if (SCENE === 'arch') await arch(browser, server.url);
     else if (SCENE === 'tour') await tour(browser, server.url);
     else if (SCENE === 'livehome') await livehome(browser);
+    else if (SCENE === 'grabtest') await grabtest(browser);
     else throw new Error(`unknown scene ${SCENE}`);
   } finally {
     await browser.close().catch(() => undefined);

@@ -269,3 +269,42 @@ live model call is made and the room is the one built from that photograph. A li
 Capture needed after "go": render `photo-hotel-walk` with `film-shots.ts --only=photo-hotel-walk --out=film8/clips` (one 6 s clip,
 about 5 minutes; check the first frame against the photo, adjust the camera in shots.json if it does not match). No generated
 photo is needed, so no Codex image generation was used.
+
+## v8 quality rules and what the capture tests found
+
+**No frame blending, anywhere.** The v7-60s villa replay was blurred by temporal smoothing (`tmix`), which drew each pine as three
+faded copies. `film-cut.py` no longer has any smoothing path and refuses any ffmpeg call that uses `minterpolate`, `tblend`, `tmix`,
+`lagfun`, the `framerate` filter, `mpdecimate` or `blend` (the only blends left are the short xfade dissolves between two shots).
+`scripts/demo/ghost-check.py --scripts` greps all edit scripts for them; `ghost-check.py <cut.mp4>` writes 100% crops of moving shots
+(trees, wires, railings) to look at. Speed ramps drop or repeat whole frames. A take under 24 fps is re-recorded or dropped.
+
+**Capture backends, all in `film-ui.ts`:**
+- default: headless Chromium on the integrated GPU, CDP screencast (JPEG 95), scale 1 to 1.5. Median frame gap 17 to 33 ms.
+- `--real=1`: real headed Google Chrome 150 on the real display, hardware GPU (the page reports ANGLE / NVIDIA RTX 4090), window on the
+  4K monitor, `--png=1` for lossless frames, `--jpegQ`. Tested on the Publish hub scene at device scale 2 while the 4090 was busy with
+  a Cycles render: PNG gave a median gap of 126 ms (8 fps), JPEG q100 73 ms (64% of gaps over 50 ms). The 4K frame readback of the
+  screencast is the limit.
+- `--grab=1`: the display itself, Chrome fullscreen (through its window API; `--kiosk` is ignored under Playwright) on the 4K monitor,
+  ffmpeg x11grab, `-draw_mouse 0`, a white flash for the clock alignment. Fullscreen and the exact 3840x2160 page area worked and
+  showed nothing foreign (checked on the grabtest scene). It does not reach real time: x11grab reads a 4K frame at about 2 fps on this
+  machine (1080p: 32 fps), with or without lossless NVENC. So a 4K lossless real-time UI capture is not possible here, with CDP or
+  with x11grab. The options for the final UI takes: real headed Chrome with the CDP screencast at device scale 1.5 and JPEG q95 once
+  the GPU is free (to be measured after the render), or an x11grab of a 1920x1080 window at device scale 1 (32 fps, lossless, native
+  1x text).
+- The take scripts close their browser (`finally` in `main()`) and the grab stops its ffmpeg; check with `ps` afterwards.
+
+**Images decoded before the first frame:** `imagesReady()` scrolls the page through, waits for every image to be complete and decoded,
+logs the card images' natural widths, and `--minCard=1200` refuses to record while the old 640 px thumbnails are served.
+
+**Blur target:** measure the v8 cut with ffmpeg `blurdetect=block_pct=80:high=0.12:low=0.06` on every 30th frame, a table per 10 s
+(v7: mean 5.2 px, worst 3.9 to 6.8 around 130 to 170 s). Target: mean below 3.5, no segment above 4.5. The 4K master needs a
+`--res 4k` path in `film-cut.py` (every pixel constant scaled, cards rendered at 3840x2160); that is not written yet.
+
+## The drone tour (found in v7)
+
+The v7 city drone shot (`film/shots/lisbon-drone.mp4`) is an offline render along a 7 s stretch of the player's real drone-tour path
+(scout seconds 17 to 24), but in that stretch the camera barely travels (it hovers over one quay street), and there is no button.
+So it does not read as the feature. v8 plan: a real-time take of the player on Lisbon Hills in which the Drone button is clicked and
+the flight starts (full app first, then the flight): `film-ui.ts --scene=modes --slug=lisbon-hills --clickDrone=1` (the city starts
+its own tour, so the take stops it, presses the button on camera, and marks `drone button pressed`). The footage-agent's drone clips
+should use a window of the tour where the camera really flies (for example scout seconds 6 to 16).
