@@ -20,6 +20,8 @@ F6, F7, F8 = f'{D}/film6', f'{D}/film7', f'{D}/film8'
 F2, F1, INTRO = f'{D}/film2/shots', f'{D}/film/shots', f'{D}/intro/shots'
 BLENDER_REAL = f'{D}/aether-blender-real-shot.mp4'
 BLENDER_REAL_SECONDS = 9.0
+# the villa replay is rendered with locked exposure and reads a little dark and hazy next to the village one: about +0.3 stop
+VILLA_EQ = 'eq=gamma=1.10:brightness=0.012:contrast=1.04'
 BLENDER_EQ = 'eq=gamma=1.14:brightness=0.012:saturation=1.03'
 # Photo to 3D. The pair is real and rights-clean: the example photo is CC0 (Markus Spiske, Wikimedia Commons; credit in
 # apps/studio/src/showcase/manifest.ts) and the room is the saved run of the photo flow that was built from it (template
@@ -123,8 +125,10 @@ def ui(name, src, parts, cam, dur, text=None, sfx='click', inset='tl', xfade=XF)
     return s
 
 
-def clip(name, src, i, dur, text=None, sfx=None, xfade=XF):
+def clip(name, src, i, dur, text=None, sfx=None, xfade=XF, eq=None):
     s = {'name': name, 'src': src, 'in': i, 'dur': dur, 'xfade': xfade}
+    if eq:
+        s['eq'] = eq
     if text:
         s['text'] = text
     if sfx:
@@ -219,7 +223,7 @@ def build():
             clean = {'village': 'village-market', 'villa': 'villa-pool'}[key]
             cp = clipsrc(clean, None)
             if cp:
-                s = clip(bid, cp, 1.2 if key == 'village' else 1.0, 3.8 if key == 'village' else dur, sfx='whoosh')
+                s = clip(bid, cp, 1.2 if key == 'village' else 1.0, 3.8 if key == 'village' else 3.1, sfx='whoosh', eq=None if key == 'village' else VILLA_EQ)
             else:
                 s = frames(bid, f'{F7}/build-{d}/f%05d.jpg', 10, dur, speed=speed, sfx='whoosh')
             add('Act 1', bid, n, cap, with_text(s, c, ['note-replay']), f'film7/build-{d} (offline render, fixed clock)', 'v7 render good; re-render if the world pipeline offers better', trailer=4.5 if key == 'villa' else None)
