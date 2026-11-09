@@ -446,7 +446,7 @@ def main():
         yexp = f"26*pow(1-{pin},3)+14*pow({pout},2)"
         chain.append(f"{v}[o{j}]overlay=x=0:y='{yexp}':enable='between(t,{t0:.3f},{t1:.3f})'[w{j}]")
         v = f'[w{j}]'
-    chain.append(f"{v}fade=t=in:st=0:d=1.2,fade=t=out:st={total - 2.0:.3f}:d=2.0,format=yuv420p[vout]")
+    chain.append(f"{v}unsharp=5:5:{opt.get('unsharp', '0.5')}:5:5:0,fade=t=in:st=0:d=1.2,fade=t=out:st={total - 2.0:.3f}:d=2.0,format=yuv420p[vout]")
     # 3. the score, ducked, under the clips' own sound
     sidx = k
     inputs += ['-i', os.path.expanduser(EDL['score'])]
@@ -461,8 +461,8 @@ def main():
     graph = os.path.join(WORK, 'graph.txt')
     open(graph, 'w').write(';\n'.join(chain + achain))
     ff(inputs + ['-filter_complex_script', graph, '-map', '[vout]', '-map', '[aout]', '-t', f'{total:.3f}', '-r', str(FPS),
-                 '-c:v', 'libx264', '-preset', 'medium', '-crf', '16', '-profile:v', 'high', '-pix_fmt', 'yuv420p', '-maxrate', '40M', '-bufsize', '80M',
-                 '-c:a', 'aac', '-b:a', '320k', '-ar', '48000', '-movflags', '+faststart', OUT])
+                 '-c:v', 'libx264', '-preset', opt.get('preset', 'slow'), '-crf', opt.get('crf', '14'), '-profile:v', 'high', '-pix_fmt', 'yuv420p', '-maxrate', '40M', '-bufsize', '80M',
+                 '-c:a', 'aac', '-b:a', '256k', '-ar', '48000', '-movflags', '+faststart', OUT])
     print(f'wrote {OUT} ({probe(OUT):.1f} s)')
     print('starts', json.dumps([[s['name'], round(st, 2)] for s, st in zip(segs, starts)]))
     if opt.get('sheet'):

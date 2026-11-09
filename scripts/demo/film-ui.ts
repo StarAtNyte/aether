@@ -87,11 +87,34 @@ class Capture {
   rec: Recorder | null = null;
   grabFile = '';
   private flashWall = 0;
+  private region: { x: number; y: number; w: number; h: number } | null = null;
   async start(): Promise<void> {
     if (GRAB) {
       if (this.grabProc) return; // one continuous recording across navigations
       this.grabFile = join(this.dir, 'grab.mkv');
-      this.grabProc = spawn('nice', ['-n', '5', 'ffmpeg', '-loglevel', 'error', '-y', '-f', 'x11grab', '-draw_mouse', '0', '-framerate', '30', '-video_size', GRAB_SIZE, '-i', GRAB_DISPLAY,
+      let size = GRAB_SIZE;
+      let display = GRAB_DISPLAY;
+      if (GRAB1080) {
+        // calibration: flash the page magenta, grab one frame of the whole window area, find the page's rectangle; the recording
+        // then grabs exactly that 1920x1080 region (x11grab reads about 32 fps at that size, so no more than that is read)
+        await this.page.evaluate(() => { const d = document.createElement('div'); d.id = '__cal'; d.style.cssText = 'position:fixed;inset:0;background:#ff00ff;z-index:2147483647'; document.body.appendChild(d); });
+        await sleep(500);
+        const raw = execFileSync('ffmpeg', ['-v', 'error', '-f', 'x11grab', '-draw_mouse', '0', '-video_size', `${GW}x${GH}`, '-i', GRAB_DISPLAY, '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], { maxBuffer: 1 << 26 });
+        await this.page.evaluate(() => document.getElementById('__cal')?.remove());
+        let x0 = GW, y0 = GH, x1 = -1, y1 = -1;
+        for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) {
+          const o = (y * GW + x) * 3;
+          if (raw[o]! > 190 && raw[o + 1]! < 120 && raw[o + 2]! > 190) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+        }
+        const cw = Math.floor((x1 - x0 + 1) / 2) * 2;
+        const ch = Math.floor((y1 - y0 + 1) / 2) * 2;
+        if (cw < 300 || ch < 300) throw new Error('grab: the page rectangle was not found (window too small or covered)');
+        this.region = { x: x0, y: y0, w: cw, h: ch };
+        log(`grab: the page is ${cw}x${ch} at ${x0},${y0} in the window; grabbing exactly that region`);
+        size = `${cw}x${ch}`;
+        display = `:0.0+${GX + x0},${y0}`;
+      }
+      this.grabProc = spawn('ffmpeg', ['-loglevel', 'error', '-y', '-thread_queue_size', '1024', '-f', 'x11grab', '-draw_mouse', '0', '-framerate', '60', '-video_size', size, '-i', display, '-vf', 'fps=30',
         '-c:v', 'libx264', '-preset', 'ultrafast', '-qp', '0', '-pix_fmt', 'yuv444p', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-threads', '12', this.grabFile], { stdio: ['pipe', 'ignore', 'inherit'] });
       await sleep(3500); // ffmpeg needs a moment to open the 4K display grab
       this.flashWall = Date.now();
@@ -131,7 +154,7 @@ class Capture {
     }
     if (flashAt < 0) throw new Error('grab: the sync flash was not found in the video');
     this.grabFirstMs = this.flashWall - flashAt * 1000;
-    if (GRAB1080) {
+    if (GRAB1080 && !this.region) {
       // the page's rectangle inside the grabbed window: the bounding box of the magenta flash, then a lossless crop to exactly 1920x1080
       const gw = GW, gh = GH;
       const raw = execFileSync('ffmpeg', ['-v', 'error', '-ss', String(flashAt + 0.04), '-i', this.grabFile, '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], { maxBuffer: 1 << 26 });
@@ -206,6 +229,7 @@ async function newTake(browser: Awaited<ReturnType<typeof chromium.launch>>, sce
   await ctx.addInitScript({ content: `try { const k='aether.studio.settings.v1'; const s=JSON.parse(localStorage.getItem(k)||'{}'); s.renderTier='${arg('tier') ?? 'ultra'}'; s.showNavHint=false; s.motion='sharp'; localStorage.setItem(k, JSON.stringify(s)); localStorage.setItem('aether.player.mute', '1'); } catch {}` });
   await ctx.addInitScript({ content: OVERLAY_SCRIPT });
   const page = await ctx.newPage();
+  if (arg('chrome') === 'real') log(`real Chrome ${browser.version()} (headless=new), GPU args ${process.env['GEN_GPU'] ?? 'default'}`);
   if (GRAB && !GRAB1080) {
     const bs = await ctx.newCDPSession(page);
     const { windowId } = (await bs.send('Browser.getWindowForTarget')) as { windowId: number };
@@ -1307,6 +1331,25 @@ async function grabtest(browser: Awaited<ReturnType<typeof chromium.launch>>): P
   await finish(t);
 }
 
+/** `--scene=raftest`: the presented frame rate of the page itself (requestAnimationFrame intervals inside the page), no capture involved. */
+async function raftest(browser: Awaited<ReturnType<typeof chromium.launch>>): Promise<void> {
+  const t = await newTake(browser, 'raftest', 'rAF rate');
+  const { page } = t;
+  await page.setContent(`<body style="margin:0;background:#101620"><div id=b style="position:absolute;left:0;top:300px;width:200px;height:200px;background:#4af"></div><script>window.__t=[];let x=0;(function f(ts){__t.push(ts);x=(x+12)%1700;document.getElementById('b').style.left=x+'px';requestAnimationFrame(f)})(0)</script></body>`);
+  if (arg('focus') === '1') {
+    await page.bringToFront();
+    await sleep(500);
+    const url = await page.evaluate(() => document.title);
+    void url;
+  }
+  await sleep(1000);
+  await page.evaluate(() => { (window as unknown as { __t: number[] }).__t.length = 0; });
+  await sleep(6000);
+  const stats = await page.evaluate(() => { const t = (window as unknown as { __t: number[] }).__t; const g = t.slice(1).map((v, i) => v - t[i]!).sort((a, b) => a - b); return { n: t.length, median: g[g.length >> 1], p95: g[Math.floor(g.length * 0.95)], over25: g.filter((v) => v > 25).length / g.length, vis: document.visibilityState, focus: document.hasFocus() }; });
+  log(`rAF ${JSON.stringify(stats)} (60 fps = median 16.7)`);
+  await t.ctx.close().catch(() => undefined);
+}
+
 async function main(): Promise<void> {
   mkdirSync(OUT, { recursive: true });
   const server = await startServer(() => undefined);
@@ -1315,10 +1358,10 @@ async function main(): Promise<void> {
         executablePath: REAL_CHROME,
         headless: false,
         env: { ...process.env, DISPLAY: ':0' } as Record<string, string>,
-        args: [`--force-device-scale-factor=${SCALE}`, `--window-position=${GX},0`, `--window-size=${W},${GRAB && !GRAB1080 ? H : H + 140}`, ...(GRAB && !GRAB1080 ? ['--kiosk'] : []), '--ignore-gpu-blocklist', '--enable-gpu-rasterization', ...(arg('uncap') === '1' ? ['--disable-gpu-vsync', '--disable-frame-rate-limit'] : []), '--disable-features=TranslateUI', '--no-first-run', '--no-default-browser-check'],
+        args: [`--force-device-scale-factor=${SCALE}`, `--window-position=${GX},0`, `--window-size=${W},${GRAB && !GRAB1080 ? H : H + 140}`, ...(GRAB && !GRAB1080 ? ['--kiosk'] : []), ...(arg('xargs') ? arg('xargs')!.split(/\s+/).filter(Boolean) : []), '--ignore-gpu-blocklist', '--enable-gpu-rasterization', ...(arg('uncap') === '1' ? ['--disable-gpu-vsync', '--disable-frame-rate-limit'] : []), '--disable-features=TranslateUI', '--no-first-run', '--no-default-browser-check'],
         ignoreDefaultArgs: ['--enable-automation'],
       })
-    : await chromium.launch({ executablePath: findChrome(), headless: HEADLESS, args: [...CHROME_ARGS, `--force-device-scale-factor=${SCALE}`, `--window-size=${W},${H + 87}`] });
+    : await chromium.launch({ executablePath: arg('chrome') === 'real' ? REAL_CHROME : findChrome(), headless: arg('chrome') === 'real' ? true : HEADLESS, args: [...CHROME_ARGS, `--force-device-scale-factor=${SCALE}`, `--window-size=${W},${H + 87}`] });
   try {
     if (SCENE === 'scout') await scout(browser, server.url);
     else if (SCENE === 'edit') await edit(browser, server.url);
@@ -1331,6 +1374,7 @@ async function main(): Promise<void> {
     else if (SCENE === 'tour') await tour(browser, server.url);
     else if (SCENE === 'livehome') await livehome(browser);
     else if (SCENE === 'grabtest') await grabtest(browser);
+    else if (SCENE === 'raftest') await raftest(browser);
     else throw new Error(`unknown scene ${SCENE}`);
   } finally {
     await browser.close().catch(() => undefined);

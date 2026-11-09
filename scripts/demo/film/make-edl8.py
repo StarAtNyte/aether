@@ -38,7 +38,7 @@ def have(p):
     return os.path.exists(os.path.expanduser(p))
 
 
-def ev(take, what, base=F7):
+def ev(take, what, base=F8):
     j = json.load(open(f'{base}/{take}/{take}.json'))
     for e in j['events']:
         if e['what'].startswith(what):
@@ -46,7 +46,7 @@ def ev(take, what, base=F7):
     raise KeyError(f'{take}: no event {what}')
 
 
-def evx(take, what, base=F7):
+def evx(take, what, base=F8):
     """ev(), or None when the take is missing (the beat is then left out and the table says why)."""
     try:
         return ev(take, what, base)
@@ -68,7 +68,50 @@ def clipsrc(name, fallback):
 
 
 # ------------------------------------------------------------------------------------------------------------------ segment makers
+# the most a take may be zoomed in the cut: the device scale it was recorded at (1.5 for a 2880 px take), never above 1.05x for scale 1
+ZOOM_CAP = {'edit': 1.05, 'arch': 1.05, 'publish': 1.05, 'modes': 1.05, 'tour-game': 1.5, 'tour-hub': 1.5, 'describe': 1.5, 'livehome': 1.5}
+_STALLS = {}
+
+
+def stalls(src):
+    """[(start, end)] seconds of a take where no frame was painted for over 600 ms (the take's frames.json)."""
+    if src in _STALLS:
+        return _STALLS[src]
+    out = []
+    fj = src.rsplit('.', 1)[0] + '.frames.json'
+    if os.path.exists(fj):
+        t = 0.0
+        for g in json.load(open(fj))['gapsMs']:
+            if g > 600:
+                out.append((t / 1000.0, (t + g) / 1000.0))
+            t += g
+    _STALLS[src] = out
+    return out
+
+
+def cut_stalls(src, parts):
+    res = []
+    for a, b, sp in parts:
+        cur = a
+        for (x, y) in stalls(src):
+            if y <= cur or x >= b:
+                continue
+            if x > cur:
+                res.append([cur, x, sp])
+            cur = max(cur, y)
+        if cur < b:
+            res.append([cur, b, sp])
+    return res
+
+
+def capz(cam, maxz):
+    """No zoom beyond what the take's pixels carry (never scale a UI take up by more than 1.05x)."""
+    return [[c[0], c[1], c[2], min(c[3], maxz)] for c in cam]
+
+
 def ui(name, src, parts, cam, dur, text=None, sfx='click', inset='tl', xfade=XF):
+    parts = cut_stalls(src, parts) if os.path.exists(src) else parts
+    cam = capz(cam, ZOOM_CAP.get(os.path.basename(os.path.dirname(src)), 1.5))
     s = {'name': name, 'src': src, 'mode': 'ui', 'parts': parts, 'cam': cam, 'dur': dur, 'xfade': xfade, 'frame': 0.88, 'sfx': sfx, 'insetPos': inset}
     if text:
         s['text'] = text
@@ -158,7 +201,7 @@ def build():
     if have(D1):
         n += 1
         c = caption_card(1, 'a1b1', n, 'Type the world you want, in plain words.')
-        s = ui('a1b1', D1, [[ev('describe', 'typing') - 0.8, ev('describe', 'build pressed') - 0.1, 1.15]],
+        s = ui('a1b1', D1, [[ev('describe', 'typing', F7) - 0.8, ev('describe', 'build pressed', F7) - 0.1, 1.15]],
                [[0, 0.5, 0.5, 1.0], [1.2, 0.5, 0.5, 1.0], [2.0, 0.5, 0.3, 1.65], [4.0, 0.5, 0.3, 1.65], [4.8, 0.5, 0.5, 1.0]], 5.2, inset='br', sfx='whoosh')
         add('Act 1', 'a1b1', n, 'Type the world you want, in plain words.', with_text(s, c, ['note-offline']), 'film7/describe (full app, then zoom to the box)', 'v7 capture good (0% of gaps over 50 ms)')
     for key, bid, dur, speed, cap in (('village', 'a1b2', 5.2, 0.7, 'The AI builds it step by step: the land and the market first, then the houses.'),
@@ -179,7 +222,7 @@ def build():
             'aether-photo-to-3d-live.mp4 (live capture, PHOTO_TO_3D slot)', 'live capture', '')
     elif have(PHOTO_SRC) and have(PHOTO_WALK):
         ph = {'name': 'a1b4a', 'src': PHOTO_SRC, 'mode': 'image', 'dur': 2.2, 'xfade': XF, 'grade': False, 'sfx': 'whoosh', 'text': [[c, 0.2, 2.05], ['note-photo', 0.2, 2.05]]}
-        wk = clip('a1b4b', PHOTO_WALK, 0.3, 5.0, [[c, 0.2, 4.85], ['note-photo-run', 0.2, 4.85]])
+        wk = clip('a1b4b', PHOTO_WALK, 0.2, 3.6, [[c, 0.2, 3.45], ['note-photo-run', 0.2, 3.45]])
         SEGS.extend([ph, wk])
         BEATS.append(('Act 1', 'a1b4', cap + ' (the photo, then the room walked)', 7.2, 'tests/fixtures/photo/bedroom-cc0-hotel.jpg (CC0) + offline render of template photo-hotel-bedroom', 'NEW render (the saved run built from that photo)', 'film-shots.ts: scout photo-hotel-bedroom, one 5 s walk from the spawn'))
     else:
@@ -188,7 +231,7 @@ def build():
     # ---- Act 2: Shape it
     act_card(2)
     n = 0
-    E = f'{F7}/edit/edit.mp4'
+    E = f'{F8}/edit/edit.mp4'
     if have(E):
         sel, fab, ts, te, ct = (ev('edit', k) for k in ('selected', 'material Fabric', 'time sweep start', 'time sweep end', 'chat typing'))
         n += 1
@@ -216,7 +259,7 @@ def build():
             c = caption_card(2, bid, n, cap)
             add('Act 2', bid, n, cap, with_text(frames(bid, f'{AS}/f%05d.jpg', a, round((b - a) / 30 / speed, 2), speed=speed, eq=ARCH_EQ, sfx='whoosh' if bid == 'a2b5' else None), c),
                 'film7/arch-step (offline render, clear weather)', 'v7 render good', '', trailer=tr)
-    A = f'{F7}/arch/arch.mp4'
+    A = f'{F8}/arch/arch.mp4'
     if have(A) and evx('arch', 'plan'):
         n += 1
         c = caption_card(2, 'a2b8', n, 'Switch to the floor plan, with the area of every room.')
@@ -226,7 +269,7 @@ def build():
     # ---- Act 3: Prove it
     act_card(3)
     n = 0
-    G = f'{F7}/tour-game/tour-game.mp4'
+    G = f'{F8}/tour-game/tour-game.mp4'
     pb, ver = evx('tour-game', 'playability'), evx('tour-game', 'verified')
     if have(G) and pb:
         n += 1
@@ -253,12 +296,12 @@ def build():
     if have(H):
         n += 1
         c = caption_card(4, 'a4b1', n, 'Pick what to make: a game, a video, a picture, a 3D model or a floor plan.')
-        h0, h1 = ev('tour-hub', 'hub-open', F8), ev('tour-hub', 'hub-plan', F8)
-        add('Act 4', 'a4b1', n, 'Pick what to make: a game, a video, a picture, a 3D model or a floor plan.', with_text(ui('a4b1', H, [[h0 + 0.2, h1 + 2.2, 1.0]], [[0, 0.5, 0.5, 1.0], [1.0, 0.82, 0.3, 1.9], [8.5, 0.82, 0.3, 1.9]], 9.0, sfx='whoosh'), c),
+        hp = [[ev('tour-hub', f'hub-{k}', F8) - 0.3, ev('tour-hub', f'hub-{k}', F8) + 1.5, 1.0] for k in ('game', 'video', 'render', 'model', 'plan')]
+        add('Act 4', 'a4b1', n, 'Pick what to make: a game, a video, a picture, a 3D model or a floor plan.', with_text(ui('a4b1', H, hp, [[0, 0.5, 0.5, 1.0], [0.4, 0.8, 0.3, 1.5], [9.0, 0.8, 0.3, 1.5]], 9.0, sfx='whoosh'), c),
             'film8/tour-hub (new: pointer clicks each target)', 'NEW capture', 'tour --kind=hub')
     else:
         BEATS.append(('Act 4', 'a4b1', 'Pick what to make: a game, a video, a picture, a 3D model or a floor plan.', 0, 'film8/tour-hub', 'LEFT OUT until captured', 'tour --kind=hub'))
-    P = f'{F7}/publish/publish.mp4'
+    P = f'{F8}/publish/publish.mp4'
     if have(P):
         n += 1
         t0 = ev('publish', 'seal checks')
@@ -280,16 +323,23 @@ def build():
     if have(LH):
         n += 1
         c = caption_card(4, 'a4b4', n, 'Published worlds open in their own mode, and any of them can be remixed.')
-        seg = {'name': 'a4b4', 'src': LH, 'mode': 'browser', 'url': 'aether-studio-lyart.vercel.app', 'in': ev('livehome', 'featured') + 1.0, 'dur': 5.0, 'xfade': XF, 'sfx': 'whoosh'}
+        seg = {'name': 'a4b4', 'src': LH, 'mode': 'browser', 'url': 'aether-studio-lyart.vercel.app', 'in': ev('livehome', 'featured', F7) + 1.0, 'dur': 5.0, 'xfade': XF, 'sfx': 'whoosh'}
         add('Act 4', 'a4b4', n, 'Published worlds open in their own mode, and any of them can be remixed.', with_text(seg, c, ['note-live-site']), 'film7/livehome (live site, Featured)', 'v7 capture good (0% over 50 ms)')
+    MD = f'{F8}/modes/modes.mp4'
+    if have(MD) and evx('modes', 'drone button pressed'):
+        n += 1
+        c = caption_card(4, 'a4b4d', n, 'Press Drone: the camera lifts off and flies over the city.')
+        pr = ev('modes', 'drone button pressed')
+        sg = ui('a4b4d', MD, [[pr - 2.0, pr + 1.3, 1.0], [pr + 1.3, pr + 13.3, 3.0]], [[0, 0.5, 0.5, 1.0], [7.3, 0.5, 0.5, 1.0]], 7.3, sfx='whoosh')
+        CARDS['note-sped'] = {'kind': 'note', 'text': 'The first seconds of the flight, sped up 3x'}
+        sg['text'] = [[c, 0.25, 7.1], ['note-sped', 3.4, 7.1]]
+        add('Act 4', 'a4b4d', n, 'Press Drone: the camera lifts off and flies over the city.', sg, 'film8/modes (real take: the Drone button, then the lift-off, slow start sped up 3x)', 'NEW capture (12% of gaps over 50 ms in the heavy city; used for the click and the start only)', 'modes --clickDrone=1', trailer=4.0)
     for bid, name, fb, i0, dur, cap, tr in (('a4b5', 'drone-lisbon', f'{F1}/lisbon-drone.mp4', 0.5, 5.0, 'Fly over a whole city by drone.', 3.5), ('a4b6', 'house-walk', f'{F1}/casa-pool.mp4', 1.0, 4.2, 'Walk through a house, at any time of day.', None),
                                            ('a4b7', 'landscape', f'{INTRO}/m-terraces-falls.mp4', 9.0, 4.0, 'Or float over a landscape at golden hour.', None)):
         n += 1
         c = caption_card(4, bid, n, cap)
         add('Act 4', bid, n, cap, with_text(clip(bid, clipsrc(name, fb), i0, dur, sfx='whoosh' if bid == 'a4b5' else None), c), f'film8/clips/{name} (fallback v6/v7 footage)', 'world clip', 'world-footage pipeline', trailer=tr)
-    n += 1
-    c = caption_card(4, 'a4b8', n, 'Play a game as a character.')
-    add('Act 4', 'a4b8', n, 'Play a game as a character.', with_text(ui('a4b8', f'{D}/film2/ui/play.mp4', [[1.0, 4.0, 1.0]], [[0, 0.5, 0.5, 1.0]], 3.0, sfx=None), c), 'film2/ui/play (real-time 4K capture) or a film8 clip', 'REPLACE with a film8 clip if the pipeline renders a game shot', '')
+    BEATS.append(('Act 4', 'a4b8', 'Play a game as a character.', 0, 'film8/clips/game-play', 'LEFT OUT until a clean clip exists (the game tour take shows the game for the bot beat)', ''))
 
     # ---- Act 5: Go further
     act_card(5)
@@ -312,7 +362,7 @@ def build():
         c2 = caption_card(5, 'a5b3b', n, 'Mio is leaving on the evening train. Kaho runs to say goodbye.')
         s1 = anime('a5b3b', 28.2, 31.5)
         s2 = anime('a5b3c', 32.3, 36.3, [[c2, 0.25, 3.8]])
-        rest = [anime('a5b3d', 17.4, 21.4)] + [anime(*a) for a in (('a5b3e', 36.8, 40.8), ('a5b3f', 41.8, 45.4), ('a5b3g', 56.8, 60.3), ('a5b3j', 87.0, 91.5))]
+        rest = [anime('a5b3d', 17.4, 21.4)] + [anime(*a) for a in (('a5b3e', 36.8, 40.8), ('a5b3f', 41.8, 45.4), ('a5b3j', 87.0, 91.5))]
         c3 = caption_card(5, 'a5b3k', n, 'Two whistles from the cape: the promise kept.')
         rest[-1]['text'] = [[c3, 0.5, 5.2]]
         for sg in [s0, s1, s2] + rest:
