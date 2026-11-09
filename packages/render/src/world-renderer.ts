@@ -741,11 +741,11 @@ const FULL_WARMUP = (globalThis as { __AETHER_FULL_WARMUP?: boolean }).__AETHER_
  * far detail levels and distance cuts that would swap while the camera moves (a pop in the footage) sit far beyond
  * what the shot shows. Default 1 (the live planning, unchanged).
  */
-function captureFlags(): { lodBoost: number; mirrorScale: number; shadowMapCap: number; lockEye: boolean } {
+function captureFlags(): { on: boolean; lodBoost: number; mirrorScale: number; shadowMapCap: number; lockEye: boolean } {
   const f = (globalThis as { __AETHER_CAPTURE?: { on?: boolean; lodBoost?: number; mirrorScale?: number; shadowMapCap?: number; lockEye?: boolean } }).__AETHER_CAPTURE;
   const on = f?.on === true;
   const n = (v: number | undefined, lo: number, hi: number, d: number): number => (on && v !== undefined && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d);
-  return { lodBoost: n(f?.lodBoost, 1, 16, 1), mirrorScale: n(f?.mirrorScale, 0.25, 1, MIRROR_SCALE), shadowMapCap: n(f?.shadowMapCap, 0, 8192, 0), lockEye: on && f?.lockEye === true };
+  return { on, lodBoost: n(f?.lodBoost, 1, 16, 1), mirrorScale: n(f?.mirrorScale, 0.25, 1, MIRROR_SCALE), shadowMapCap: n(f?.shadowMapCap, 0, 8192, 0), lockEye: on && f?.lockEye === true };
 }
 /** Frames after which the cached sun shadow map is drawn again whatever happened (a safety net). */
 const SUN_MAP_REFRESH = 24;
@@ -5374,7 +5374,9 @@ export class WorldRenderer {
     // Scatter fields cast through their coarser stand-ins (cascade cameras draw the levels themselves).
     sunLayers.enable(FIELD_SHADOW_LAYER);
     const cascades = this.env.sunCascades;
-    const temporal = this.post?.effects.taa === true;
+    // Offline footage averages jittered draws of one moment: the soft shadow filter's sampling pattern turns on every draw
+    // (as it does under temporal AA) so the average converges instead of freezing one noise pattern into the picture.
+    const temporal = this.post?.effects.taa === true || (capture && captureFlags().on);
     if (temporal) {
       const k = (this.shadowFrame = (this.shadowFrame + 1) % 64);
       shadowNoiseValue.set((k * 37) % 64, (k * 23) % 64);
@@ -7215,7 +7217,7 @@ export class WorldRenderer {
         this.captureActive = true;
         this.rig.stopTour();
         this.grow.finishAll();
-        hidden = [this.highlighter.group, this.editOverlay.group, this.pathOverlay.group, this.debug.group, this.ghost.root, ...this.editComponentGroups(), ...(this.gizmo?.helper ? [this.gizmo.helper] : [])];
+        hidden = [this.highlighter.group, this.editOverlay.group, this.pathOverlay.group, this.debug.group, this.ghost.root, this.proof.group, this.ghostRun.group, this.blueprint.group, ...(this.proofSync ? [this.proofSync.root] : []), ...this.editComponentGroups(), ...(this.gizmo?.helper ? [this.gizmo.helper] : [])];
         wasVisible = hidden.map((o) => o.visible);
         for (const o of hidden) o.visible = false;
         savedRatio = this.renderer.getPixelRatio();

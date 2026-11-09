@@ -5,16 +5,18 @@
 #   scripts/demo/finish-footage.sh master.mkv out.mp4 [--scale=1920:1080] [--grain=5] [--glow=0.14] [--denoise=0] [--no-grade]
 #
 # --scale     downscale target (Lanczos); default none (keep the master's size, e.g. 3840x2160 for a 4K source)
+# --sharpen   luma unsharp mask amount after scaling (0 = off); default 0.8 (blurdetect 4.96 to 4.34 on a still)
 # --grain     temporal film grain strength (noise filter, luma only; 0 = off); default 5
 # --glow      screen-blended highlight glow strength (0 = off); default 0.14
 # --denoise   hqdn3d luma temporal strength for a last-resort clean-up (0 = off); default 0
 # --no-grade  skip the LUT (glow and grain only)
 set -e
 IN="$1"; OUT="$2"; shift 2
-SCALE=""; GRAIN=5; GLOW=0.14; DEN=0; GRADE=1
+SCALE=""; SHARP=0.8; GRAIN=5; GLOW=0.14; DEN=0; GRADE=1
 for a in "$@"; do
   case "$a" in
     --scale=*) SCALE="${a#--scale=}";;
+    --sharpen=*) SHARP="${a#--sharpen=}";;
     --grain=*) GRAIN="${a#--grain=}";;
     --glow=*) GLOW="${a#--glow=}";;
     --denoise=*) DEN="${a#--denoise=}";;
@@ -32,7 +34,8 @@ if [ "$GLOW" != "0" ]; then
   # Highlights only (curves cut the mids), blurred wide, screened back over the picture.
   G="$F,split[a][b];[b]curves=all='0/0 0.55/0 0.85/0.5 1/1',gblur=sigma=26:steps=3[g];[a][g]blend=all_mode=screen:all_opacity=$GLOW"
 fi
-if [ "$GRAIN" != "0" ]; then G="$G,noise=alls=$GRAIN:allf=t+u:all_seed=7"; fi
 [ -n "$SCALE" ] && G="$G,scale=$SCALE:flags=lanczos+accurate_rnd"
+[ "$SHARP" != "0" ] && G="$G,unsharp=5:5:$SHARP:5:5:0"
+if [ "$GRAIN" != "0" ]; then G="$G,noise=alls=$GRAIN:allf=t+u:all_seed=7"; fi
 G="$G,format=yuv420p"
 exec ffmpeg -y -v error -i "$IN" -vf "$G" -c:v libx264 -preset slow -crf 13 -tune film -profile:v high -movflags +faststart -an "$OUT"

@@ -97,6 +97,13 @@ def analyse(path, log_path=None, regions=()):
         den = float(np.sqrt(np.mean([(x ** 2).mean() for x in laps])))
         res['edge_crawl'] = round(float(np.mean(num)) / max(den, 1e-6), 4)
     res['grain_hf'] = round(float(np.mean(hf)), 3)
+    bd = subprocess.run(['ffmpeg', '-v', 'info', '-i', path, '-vf', 'blurdetect', '-f', 'null', '-'], capture_output=True, text=True).stderr
+    for line in bd.splitlines():
+        if 'blur mean' in line:
+            try:
+                res['blurdetect_mean'] = round(float(line.split('blur mean:')[1].split()[0]), 2)
+            except (ValueError, IndexError):
+                pass
     for name, (rx, ry, rw, rh) in regions:
         # A named region (full-size pixels): water, glass, a static wall. Mean-luma stability and per-pixel shimmer.
         p = subprocess.Popen(['ffmpeg', '-v', 'error', '-i', path, '-vf', f'crop={rw}:{rh}:{rx}:{ry},format=gray', '-f', 'rawvideo', '-'], stdout=subprocess.PIPE)

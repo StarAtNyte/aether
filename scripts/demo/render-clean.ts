@@ -36,8 +36,14 @@ const SHUTTER = num('shutter', 0);
 const SETTLE = num('settle', 1);
 const WARMUP = num('warmup', MODE === 'clean' ? 24 : 0);
 const TRIM = num('trim', 0);
-/** `--taa=0`: temporal anti-aliasing off (no history carried across moments; the sub-frame jitter does the anti-aliasing). */
-const EFFECTS = arg('taa') === '0' ? { taa: false } : arg('effects') ? (JSON.parse(arg('effects')!) as Record<string, boolean>) : undefined;
+/** Clean mode: temporal anti-aliasing off (no history carried across moments; the sub-frame jitter does the anti-aliasing); `--taa=1` keeps it. */
+const EFFECTS = arg('effects') ? (JSON.parse(arg('effects')!) as Record<string, boolean>) : MODE === 'clean' && arg('taa') !== '1' ? { taa: false } : undefined;
+/** `--globals='{"__AETHER_LOD_BIAS":false}'`: page globals set before the engine loads (engine experiments). */
+const GLOBALS = arg('globals') ? (JSON.parse(arg('globals')!) as Record<string, unknown>) : {};
+/** `--matrix=file.json`: one still of frame `--from` per config (`{ name, effects?, sub?, size?, settle? }`), PNGs in `--out`. */
+const MATRIX = arg('matrix') ? (JSON.parse(readFileSync(resolve(arg('matrix')!), 'utf8')) as Array<{ name: string; effects?: Record<string, boolean>; sub?: number; size?: [number, number]; settle?: number; flags?: Record<string, unknown>; grade?: Record<string, number> }>) : null;
+/** `--bloom-scale=0.55`: every shot's grade bloom times this (a softer glow reads sharper; measured 4.9 to 4.3 on the Lisbon frame at 0.9 to 0.4). */
+const BLOOM_SCALE = num('bloom-scale', MODE === 'clean' ? 0.55 : 1);
 const T0 = Date.now();
 const log = (s: string): void => void process.stdout.write(`[${((Date.now() - T0) / 1000).toFixed(0)}s] ${s}\n`);
 
@@ -48,6 +54,8 @@ interface Entry {
   /** Capture flags for this clip (merged over the mode's defaults). */
   flags?: Record<string, unknown>;
   shots: Array<Record<string, unknown>>;
+  /** Render the world's own film (its story, as the player's Render video does) instead of `shots`. */
+  own?: boolean;
   /** Smooth the single shot's `tour` window into one camera path instead of six via poses. */
   smooth?: { sigma?: number; ease?: number };
   /** A camera path file (`{ keys: [{ t, pos, target, fov }] }`, as intro-shots.ts writes): one shot over its length, smoothed. */
@@ -65,8 +73,9 @@ function tourKeys(slug: string, w: [number, number]): Array<{ t: number; pos: Ve
 }
 
 /** The story the player's film runner takes (the schema's defaults filled), plus the camera path of a smoothed tour shot. */
-function build(e: Entry): { story: Record<string, unknown>; path?: { keys: unknown[]; sigma?: number; ease?: number } } {
+function build(e: Entry): { story: Record<string, unknown> | null; path?: { keys: unknown[]; sigma?: number; ease?: number } } {
   let path: { keys: unknown[]; sigma?: number; ease?: number } | undefined;
+  if (e.own) return { story: null };
   if (e.pathFile) {
     const all = (JSON.parse(readFileSync(resolve(e.pathFile.replace(/^~/, homedir())), 'utf8')) as { keys: Array<{ t: number; pos: Vec3; target: Vec3; fov: number }> }).keys;
     const w = e.window ?? [all[0]!.t, all[all.length - 1]!.t];
@@ -87,7 +96,7 @@ function build(e: Entry): { story: Record<string, unknown>; path?: { keys: unkno
   });
   const story = {
     letterbox: 0,
-    shots: shots.map((s) => ({ ease: 'inOut', shake: 0, transition: 'cut', transitionSeconds: 0, moves: [], music: 'none', ambience: { wind: 0, waves: 0, cicadas: 0, gulls: 0, town: 0 }, ...s })),
+    shots: shots.map((s) => ({ ease: 'inOut', shake: 0, transition: 'cut', transitionSeconds: 0, moves: [], music: 'none', ambience: { wind: 0, waves: 0, cicadas: 0, gulls: 0, town: 0 }, ...s })).map((s) => { const g = (s as { grade?: { bloom?: number } }).grade; return g && typeof g.bloom === 'number' ? { ...s, grade: { ...g, bloom: g.bloom * BLOOM_SCALE } } : s; }),
   };
   return { story, ...(path ? { path } : {}) };
 }
@@ -97,6 +106,7 @@ async function open(browser: Browser, url: string, slug: string, flags: Record<s
   await page.addInitScript({ content: "try { localStorage.setItem('aether.player.mute', '1'); } catch {}" });
   await page.addInitScript({ content: 'globalThis.__name = (f) => f;' });
   if (MODE === 'clean') await page.addInitScript({ content: `globalThis.__AETHER_CAPTURE = ${JSON.stringify({ on: true, lodBoost: 4, mirrorScale: 1, shadowMapCap: 4096, ...flags })};` });
+  for (const [k, v] of Object.entries(GLOBALS)) await page.addInitScript({ content: `globalThis[${JSON.stringify(k)}] = ${JSON.stringify(v)};` });
   page.on('pageerror', (e) => log(`pageerror: ${e.message.slice(0, 200)}`));
   page.on('crash', () => log('page crashed'));
   page.on('console', (m) => {
@@ -109,18 +119,57 @@ async function open(browser: Browser, url: string, slug: string, flags: Record<s
   return page;
 }
 
+async function runMatrix(page: Page, story: Record<string, unknown> | null, path: unknown, e: Entry): Promise<void> {
+  let cur: ReturnType<typeof spawn> | null = null;
+  await page.exposeFunction('__sink', async (b64: string) => {
+    const buf = Buffer.from(b64, 'base64');
+    if (cur && !cur.stdin!.write(buf)) await new Promise<void>((r) => cur!.stdin!.once('drain', () => r()));
+  });
+  const f = num('from', 60);
+  for (const cfg of MATRIX!) {
+    const [w, h] = cfg.size ?? [W, H];
+    const file = join(OUT, `${cfg.name}.png`);
+    cur = spawn('ffmpeg', ['-y', '-v', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${w}x${h}`, '-i', '-', '-frames:v', '1', file], { stdio: ['pipe', 'inherit', 'inherit'] });
+    const done = new Promise<void>((res) => cur!.on('exit', () => res()));
+    const t = Date.now();
+    await page.evaluate(
+      async ({ story, path, o }) => {
+        const p = (window as unknown as { __aetherPlayer: { world: object; framesModule(): Promise<{ renderStoryFrames(r: unknown, w: object, o: object): Promise<unknown> }>; simulation: { renderer: unknown } } }).__aetherPlayer;
+        const m = await p.framesModule();
+        await m.renderStoryFrames(p.simulation.renderer, { ...p.world, ...(story ? { story } : {}) }, {
+          ...o,
+          ...(path ? { path } : {}),
+          onFrame: async (_i: number, rgba: Uint8Array) => {
+            const url = await new Promise<string>((res) => { const r = new FileReader(); r.onload = () => res(r.result as string); r.readAsDataURL(new Blob([rgba as unknown as BlobPart])); });
+            await (window as unknown as { __sink(b: string): Promise<void> }).__sink(url.slice(url.indexOf(',') + 1));
+          },
+        });
+      },
+      { story: story && cfg.grade ? { ...story, shots: (story['shots'] as Array<{ grade?: object }>).map((s) => ({ ...s, grade: { ...(s.grade ?? {}), ...cfg.grade } })) } : story, path: path ?? null, o: { fps: FPS, width: w, height: h, tier: 'ultra', subframes: cfg.sub ?? 1, shutter: 0, settle: cfg.settle ?? e.settle ?? SETTLE, warmup: WARMUP || 24, from: f, to: f + 1, ...(cfg.effects ? { effects: cfg.effects } : {}) } },
+    );
+    cur.stdin!.end();
+    await done;
+    log(`${cfg.name}: ${file} in ${((Date.now() - t) / 1000).toFixed(0)} s`);
+  }
+}
+
 async function renderClip(browser: Browser, url: string, name: string, e: Entry): Promise<void> {
   const flags = { ...(e.flags ?? {}) };
   const page = await open(browser, url, e.slug, flags);
   await page.waitForTimeout(8000);
   log(`gpu: ${JSON.stringify(await page.evaluate(() => { const r = (window as unknown as { __aetherPlayer: { simulation: { renderer: { gpu?: { description?: string; tier?: string }; backend?: string } } } }).__aetherPlayer.simulation.renderer; const c = document.createElement('canvas').getContext('webgl2'); const d = c?.getExtension('WEBGL_debug_renderer_info'); return { backend: r.backend, description: r.gpu?.description, tier: r.gpu?.tier, webgl: c && d ? c.getParameter(d.UNMASKED_RENDERER_WEBGL) : null }; }))}`);
   const { story, path } = build(e);
+  if (MATRIX) {
+    await runMatrix(page, story, path, e);
+    await page.close();
+    return;
+  }
   const frameLog: unknown[] = [];
   const file = join(OUT, `${name}.mkv`);
-  const total = (story['shots'] as Array<{ duration: number }>).reduce((a, s) => a + s.duration, 0);
+  const total = story ? (story['shots'] as Array<{ duration: number }>).reduce((a, s) => a + s.duration, 0) : 0;
   const trim = Math.round(TRIM * FPS);
   const from = arg('from') !== undefined ? num('from', 0) : trim;
-  const to = arg('to') !== undefined ? num('to', 0) : Math.round(total * FPS) - trim;
+  const to = arg('to') !== undefined ? num('to', 0) : story ? Math.round(total * FPS) - trim : undefined;
   const ff = spawn('ffmpeg', ['-y', '-v', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${W}x${H}`, '-r', String(FPS), '-i', '-', '-an', '-c:v', 'ffv1', '-level', '3', '-pix_fmt', 'bgr0', '-g', '1', file], { stdio: ['pipe', 'inherit', 'inherit'] });
   const ffDone = new Promise<void>((res, rej) => {
     ff.on('exit', (c) => (c === 0 ? res() : rej(new Error(`ffmpeg exit ${c}`))));
@@ -139,7 +188,7 @@ async function renderClip(browser: Browser, url: string, name: string, e: Entry)
     async ({ story, path, o }) => {
       const p = (window as unknown as { __aetherPlayer: { world: object; framesModule(): Promise<{ renderStoryFrames(r: unknown, w: object, o: object): Promise<unknown> }>; simulation: { renderer: unknown } } }).__aetherPlayer;
       const m = await p.framesModule();
-      await m.renderStoryFrames(p.simulation.renderer, { ...p.world, story }, {
+      await m.renderStoryFrames(p.simulation.renderer, { ...p.world, ...(story ? { story } : {}) }, {
         ...o,
         ...(path ? { path } : {}),
         onFrame: async (_i: number, rgba: Uint8Array, info: object) => {

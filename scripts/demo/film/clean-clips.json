@@ -1,12 +1,12 @@
 {
- "_note": "Clean footage clips (render-clean.ts). Entries are shots.json shots plus smooth/pathFile options.",
+ "_note": "Clean footage clips (render-clean.ts). Shots are scripts/demo/film/shots.json shots plus smooth / pathFile / own options; names match the clips the v7 edit list uses.",
  "lisbon-drone": {
   "slug": "lisbon-hills",
   "shots": [
    {
     "tour": [
-     17,
-     21
+     22.2,
+     28.6
     ],
     "hour": 17.4,
     "grade": {
@@ -15,27 +15,6 @@
      "vignette": 0.22,
      "grain": 0.06,
      "practicals": 0.6
-    }
-   }
-  ],
-  "smooth": {
-   "sigma": 0.35,
-   "ease": 0.9
-  }
- },
- "kepler-domes": {
-  "slug": "kepler-base",
-  "shots": [
-   {
-    "tour": [
-     23.5,
-     31
-    ],
-    "grade": {
-     "bloom": 1.0,
-     "diffusion": 0.3,
-     "vignette": 0.25,
-     "grain": 0.06
     }
    }
   ],
@@ -66,6 +45,286 @@
    "sigma": 0.35,
    "ease": 0.9
   }
+ },
+ "terraces-falls": {
+  "slug": "sanctuary-terraces",
+  "pathFile": "~/.local/share/aether/demo/intro/shots/m-terraces-falls.path.json",
+  "window": [
+   2.3,
+   9.9
+  ],
+  "smooth": {
+   "sigma": 0.35,
+   "ease": 0.9
+  },
+  "shots": [
+   {
+    "hour": 16.5,
+    "grade": {
+     "bloom": 0.5,
+     "diffusion": 0.25,
+     "vignette": 0.22,
+     "grain": 0.04
+    }
+   }
+  ]
+ },
+ "m-ascent": {
+  "slug": "sanctuary-terraces",
+  "pathFile": "~/.local/share/aether/demo/intro/shots/m-ascent.path.json",
+  "smooth": {
+   "sigma": 0.35,
+   "ease": 0.9
+  },
+  "shots": [
+   {
+    "hour": 17.0,
+    "grade": {
+     "bloom": 0.5,
+     "diffusion": 0.25,
+     "vignette": 0.22,
+     "grain": 0.04
+    }
+   }
+  ]
+ },
+ "m-lantern": {
+  "slug": "lantern-isles",
+  "pathFile": "~/.local/share/aether/demo/intro/shots/m-lantern.path.json",
+  "smooth": {
+   "sigma": 0.35,
+   "ease": 0.9
+  },
+  "shots": [
+   {
+    "hour": 18.0,
+    "grade": {
+     "bloom": 0.5,
+     "diffusion": 0.25,
+     "vignette": 0.22,
+     "grain": 0.04
+    }
+   }
+  ]
+ },
+ "kepler-domes": {
+  "slug": "kepler-base",
+  "shots": [
+   {
+    "tour": [
+     23.5,
+     31
+    ],
+    "grade": {
+     "bloom": 1.0,
+     "diffusion": 0.3,
+     "vignette": 0.25,
+     "grain": 0.06
+    }
+   }
+  ],
+  "smooth": {
+   "sigma": 0.35,
+   "ease": 0.9
+  }
+ },
+ "casa-pool": {
+  "slug": "casa-patio",
+  "shots": [
+   {
+    "duration": 6,
+    "camera": {
+     "fov": 42,
+     "position": [
+      16,
+      9,
+      14
+     ],
+     "target": [
+      0,
+      0.5,
+      0
+     ]
+    },
+    "cameraTo": {
+     "fov": 40,
+     "position": [
+      7,
+      8.5,
+      19
+     ],
+     "target": [
+      0,
+      0.5,
+      0
+     ]
+    },
+    "hour": 17.6,
+    "grade": {
+     "bloom": 0.9,
+     "diffusion": 0.3,
+     "vignette": 0.22,
+     "grain": 0.05
+    }
+   }
+  ]
+ },
+ "sweep-penthouse": {
+  "slug": "skyline-penthouse",
+  "shots": [
+   {
+    "duration": 5,
+    "camera": {
+     "fov": 55,
+     "position": [
+      -6.5,
+      4,
+      17.5
+     ],
+     "target": [
+      -4,
+      1.5,
+      4
+     ]
+    },
+    "cameraTo": {
+     "fov": 50,
+     "position": [
+      -5.2,
+      3.7,
+      15.6
+     ],
+     "target": [
+      -4,
+      1.5,
+      4
+     ]
+    },
+    "hour": 12.5,
+    "ease": "linear",
+    "grade": {
+     "bloom": 1.0,
+     "diffusion": 0.3,
+     "vignette": 0.25,
+     "grain": 0.05,
+     "practicals": 0.2
+    }
+   },
+   {
+    "duration": 5,
+    "camera": {
+     "fov": 55,
+     "position": [
+      -6.5,
+      4,
+      17.5
+     ],
+     "target": [
+      -4,
+      1.5,
+      4
+     ]
+    },
+    "cameraTo": {
+     "fov": 50,
+     "position": [
+      -5.2,
+      3.7,
+      15.6
+     ],
+     "target": [
+      -4,
+      1.5,
+      4
+     ]
+    },
+    "hour": 17.0,
+    "ease": "linear",
+    "grade": {
+     "bloom": 1.0,
+     "diffusion": 0.3,
+     "vignette": 0.25,
+     "grain": 0.05,
+     "practicals": 0.4
+    }
+   },
+   {
+    "duration": 5,
+    "camera": {
+     "fov": 55,
+     "position": [
+      -6.5,
+      4,
+      17.5
+     ],
+     "target": [
+      -4,
+      1.5,
+      4
+     ]
+    },
+    "cameraTo": {
+     "fov": 50,
+     "position": [
+      -5.2,
+      3.7,
+      15.6
+     ],
+     "target": [
+      -4,
+      1.5,
+      4
+     ]
+    },
+    "hour": 18.2,
+    "ease": "linear",
+    "grade": {
+     "bloom": 1.0,
+     "diffusion": 0.3,
+     "vignette": 0.25,
+     "grain": 0.05,
+     "practicals": 0.8
+    }
+   },
+   {
+    "duration": 5,
+    "camera": {
+     "fov": 55,
+     "position": [
+      -6.5,
+      4,
+      17.5
+     ],
+     "target": [
+      -4,
+      1.5,
+      4
+     ]
+    },
+    "cameraTo": {
+     "fov": 50,
+     "position": [
+      -5.2,
+      3.7,
+      15.6
+     ],
+     "target": [
+      -4,
+      1.5,
+      4
+     ]
+    },
+    "hour": 19.8,
+    "ease": "linear",
+    "grade": {
+     "bloom": 1.0,
+     "diffusion": 0.3,
+     "vignette": 0.25,
+     "grain": 0.05,
+     "practicals": 1
+    }
+   }
+  ]
  },
  "penthouse-a": {
   "slug": "skyline-penthouse",
@@ -110,27 +369,322 @@
    }
   ]
  },
- "terraces-falls": {
-  "slug": "sanctuary-terraces",
-  "pathFile": "~/.local/share/aether/demo/intro/shots/m-terraces-falls.path.json",
-  "smooth": {
-   "sigma": 0.35,
-   "ease": 0.9
-  },
+ "cw-open": {
+  "slug": "cloudwatch-harbour",
   "shots": [
    {
-    "hour": 16.5,
+    "duration": 11,
+    "hour": 18.5,
+    "ease": "inOut",
+    "camera": {
+     "fov": 36,
+     "position": [
+      0.75,
+      45.0,
+      -135.2
+     ],
+     "target": [
+      0.6,
+      45.3,
+      -128
+     ]
+    },
+    "via": [
+     {
+      "fov": 40,
+      "position": [
+       0.8,
+       46.2,
+       -136.4
+      ],
+      "target": [
+       -2,
+       42,
+       -60
+      ]
+     }
+    ],
+    "cameraTo": {
+     "fov": 44,
+     "position": [
+      0.9,
+      48.2,
+      -138.6
+     ],
+     "target": [
+      -12,
+      36,
+      40
+     ]
+    },
+    "grade": {
+     "bloom": 1.05,
+     "chroma": 0.22,
+     "contrast": 1.12,
+     "diffusion": 0.4,
+     "dust": 0.25,
+     "exposureEv": -0.2,
+     "flare": 0.3,
+     "godRays": 0.45,
+     "gradientAmount": 0.3,
+     "gradientBottom": "#ff8a6a",
+     "gradientTop": "#b8428a",
+     "grain": 0.2,
+     "practicals": 0.3,
+     "saturation": 1.1,
+     "temperature": 0.05,
+     "vignette": 0.28
+    }
+   }
+  ]
+ },
+ "cw-shop": {
+  "slug": "cloudwatch-harbour",
+  "shots": [
+   {
+    "duration": 6,
+    "hour": 18.7,
+    "camera": {
+     "fov": 34,
+     "position": [
+      1.6,
+      6.4,
+      16.6
+     ],
+     "target": [
+      -2.6,
+      7.6,
+      11.4
+     ]
+    },
+    "cameraTo": {
+     "fov": 30,
+     "position": [
+      0.9,
+      6.4,
+      15.7
+     ],
+     "target": [
+      -2.6,
+      7.7,
+      11.4
+     ]
+    },
+    "grade": {
+     "bloom": 1.05,
+     "chroma": 0.18,
+     "contrast": 1.1,
+     "diffusion": 0.4,
+     "flare": 0.2,
+     "gradientAmount": 0.28,
+     "gradientBottom": "#ff8a6a",
+     "gradientTop": "#b8428a",
+     "grain": 0.15,
+     "practicals": 1,
+     "saturation": 1.08,
+     "vignette": 0.26
+    }
+   }
+  ]
+ },
+ "mio-walk": {
+  "slug": "cloudwatch-harbour",
+  "shots": [
+   {
+    "duration": 8,
+    "hour": 18.4,
+    "camera": {
+     "fov": 9,
+     "position": [
+      52,
+      2.3,
+      26.9
+     ],
+     "target": [
+      20,
+      2.8,
+      26.7
+     ]
+    },
+    "cameraTo": {
+     "fov": 9.5,
+     "position": [
+      51.5,
+      2.3,
+      26.8
+     ],
+     "target": [
+      10,
+      2.8,
+      26.0
+     ]
+    },
+    "ease": "linear",
+    "track": "cw-mio",
+    "trackOffset": [
+     0,
+     1.0,
+     0
+    ],
+    "trackLag": 0.4,
+    "moves": [
+     {
+      "entity": "cw-mio",
+      "path": [
+       [
+        22,
+        1.7,
+        26.9
+       ],
+       [
+        16,
+        1.7,
+        26.5
+       ],
+       [
+        11,
+        1.7,
+        26.1
+       ]
+      ],
+      "ease": "linear",
+      "start": 0,
+      "end": 1
+     }
+    ],
+    "grade": {
+     "bloom": 1.05,
+     "chroma": 0.15,
+     "contrast": 1.1,
+     "diffusion": 0.4,
+     "flare": 0.2,
+     "godRays": 0.3,
+     "gradientAmount": 0.25,
+     "gradientBottom": "#ff8a6a",
+     "gradientTop": "#b8428a",
+     "grain": 0.15,
+     "practicals": 0.3,
+     "saturation": 1.08,
+     "vignette": 0.25
+    }
+   }
+  ]
+ },
+ "cw-close": {
+  "slug": "cloudwatch-harbour",
+  "shots": [
+   {
+    "duration": 11,
+    "hour": 18.6,
+    "camera": {
+     "fov": 40,
+     "position": [
+      0.95,
+      44.9,
+      -133.3
+     ],
+     "target": [
+      0.9,
+      45.4,
+      -128
+     ]
+    },
+    "cameraTo": {
+     "fov": 52,
+     "position": [
+      5.5,
+      53.5,
+      -146
+     ],
+     "target": [
+      -40,
+      24,
+      160
+     ]
+    },
+    "via": [
+     {
+      "fov": 46,
+      "position": [
+       1.8,
+       47.5,
+       -136
+      ],
+      "target": [
+       -6,
+       41,
+       -40
+      ]
+     }
+    ],
+    "moves": [
+     {
+      "entity": "cw-kaho",
+      "path": [
+       [
+        0.9,
+        44.05,
+        -130.9
+       ]
+      ],
+      "face": [
+       -40,
+       40,
+       160
+      ],
+      "ease": "inOut",
+      "start": 0,
+      "end": 1
+     }
+    ],
+    "grade": {
+     "bloom": 1.05,
+     "chroma": 0.22,
+     "contrast": 1.12,
+     "diffusion": 0.4,
+     "dust": 0.25,
+     "exposureEv": -0.2,
+     "flare": 0.3,
+     "godRays": 0.45,
+     "gradientAmount": 0.3,
+     "gradientBottom": "#ff8a6a",
+     "gradientTop": "#b8428a",
+     "grain": 0.2,
+     "practicals": 0.3,
+     "saturation": 1.1,
+     "temperature": 0.05,
+     "vignette": 0.28
+    }
+   }
+  ]
+ },
+ "two-whistles": {
+  "slug": "cloudwatch-harbour",
+  "own": true,
+  "shots": []
+ },
+ "highland-dawn": {
+  "slug": "highland-trail",
+  "shots": [
+   {
+    "tour": [
+     0.5,
+     9.5
+    ],
+    "hour": 7.4,
     "grade": {
      "bloom": 0.9,
-     "diffusion": 0.3,
-     "vignette": 0.22,
-     "grain": 0.05
+     "diffusion": 0.35,
+     "godRays": 0.5,
+     "vignette": 0.25,
+     "grain": 0.08,
+     "temperature": 0.25
     }
    }
   ],
-  "window": [
-   2.3,
-   9.9
-  ]
+  "smooth": {
+   "sigma": 0.35,
+   "ease": 0.9
+  }
  }
 }
