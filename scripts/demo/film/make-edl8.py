@@ -212,10 +212,16 @@ def build():
     for key, bid, dur, speed, cap in (('village', 'a1b2', 5.2, 0.7, 'The AI builds it step by step: the land and the market first, then the houses.'),
                                        ('villa', 'a1b3', 4.8, 0.8, 'A house builds the same way: floors, then stairs, then the garden.')):
         d = {'village': 'village3', 'villa': 'villa2'}[key]
-        if have(f'{F7}/build-{d}/f00000.jpg'):
+        if have(f'{F7}/build-{d}/f00000.jpg') or clipsrc({'village': 'village-market', 'villa': 'villa-pool'}[key], None):
             n += 1
             c = caption_card(1, bid, n, cap)
-            s = frames(bid, f'{F7}/build-{d}/f%05d.jpg', 10, dur, speed=speed, sfx='whoosh')
+            # the footage agent's clean replays (offline render from the planner's real patches, one moment per frame, no blending)
+            clean = {'village': 'village-market', 'villa': 'villa-pool'}[key]
+            cp = clipsrc(clean, None)
+            if cp:
+                s = clip(bid, cp, 1.2 if key == 'village' else 1.0, 3.8 if key == 'village' else dur, sfx='whoosh')
+            else:
+                s = frames(bid, f'{F7}/build-{d}/f%05d.jpg', 10, dur, speed=speed, sfx='whoosh')
             add('Act 1', bid, n, cap, with_text(s, c, ['note-replay']), f'film7/build-{d} (offline render, fixed clock)', 'v7 render good; re-render if the world pipeline offers better', trailer=4.5 if key == 'villa' else None)
 
     # ---- photo to 3D (still Act 1: another way to start)
