@@ -656,3 +656,54 @@ carried inward between the legs, so the front and back of the skirt split. Two r
 (`docs/screenshots/cloudwatch/character/strip-*.webp`); the stair and run in the player: `kaho-stair-after.webp`,
 `kaho-run-after.webp`. Not done: blinks and turn in place are still the shared clips; the far level shares the uniforms but
 is not in the CPU gate.
+
+## Photoreal vignettes (`scripts/blender/vignette/`)
+
+A small, intimate shot (one table, one window, one light idea) rendered by Cycles to look like a photograph, 10 to 15 s at
+1080p. It is the harness's answer to "make it lifelike, not stylised, and small": the same method as above, with a
+physically based lighting rig, a procedural PBR material library and a hard visual QA loop. Nothing is downloaded: no image
+textures, HDRIs, models or audio; the sound bed is synthesised too.
+
+| File | Role |
+|------|------|
+| `matlib.py` | Procedural PBR node materials: `stone`, `plaster`, `wood` (grain, pores, scratches, edge wear, optional chipped paint), `ceramic` (pooled glaze, iron lip, bare foot), `linen` (warp and weft, slubs, selvedge stripe), `bread_crust`/`crumb`, `glass` (IOR 1.45, smudges, shadow rays pass through), `terracotta`, `soil`, `leaf` (veins, subsurface, translucency), `metal`, `lemon`, `grass`, `flagstone`, `liquid`, and the volumes `steam_volume` (domain-warped, driver-animated) and `dust_air` (with an edge-faded shaft variant). Every surface has two scales of albedo variation, a roughness map, a bump from real micro-structure, a Bevel-node edge-wear mask and an AO-node crevice-dirt mask. |
+| `rig.py` | Lighting and camera rig: Nishita sky (sun disc off) plus a sun lamp with a 1 degree disc, a portal light in the window, a faint cool fill, a real lens with f-stop depth of field and an animated focus empty, a keyed dolly with an F-curve noise modifier for hand-held drift, AgX with the High Contrast look, OptiX denoising with albedo and normal passes, a fixed seed, motion blur, and a compositor with fog-glow bloom and a little chromatic aberration. |
+| `kitchen.py` | The worked example: a stone kitchen corner at early morning. A coursed rubble wall (about 200 bevelled, lumpy stones), a deep window, an oak table of three planks, a loaf on a board with a cut slice and a knife, a teal mug of coffee with steam, two lemons, a basil pot made of instanced leaves, a glass bottle, a shelf with jars, a flagstone floor, oak beams, 170 dust motes and a thin air volume for the sun shaft. |
+| `qa.py` | The interpenetration check: for each registered prop the lowest vertices are ray-cast down; each must touch its support within 4 mm (no floating) and sink no deeper than 12 mm. `kitchen.py --qa` prints one line per prop and a summary. |
+| `render_service.sh`, `run.sh` | A resumable frame-by-frame render run under `systemd-run --user` with `nice`; zero-byte placeholders are cleaned before each retry and the loop falls back to CPU if the GPU run makes no progress. |
+| `audio.py`, `assemble.sh` | A procedural room tone, distant rain, clock, kettle simmer and birds; then ffmpeg grading (a restrained curve, vignette, temporal grain) and H.264. `assemble.sh` writes a clean cut and a cut with a grey viewport inset. |
+
+### How to build one from a brief
+
+1. **Brief and reference.** One tiny space, one strong light idea, 10 to 15 s, a slow camera. Our own words or the user's
+   photo; never another artist's scene. Write the elements with real sizes (a mug is 9 cm, a table top 78 cm).
+2. **Light and colour first.** Block the room with plain geometry, set the sun direction so that a clean patch falls on the
+   hero object and the window mullion throws a shadow, tune exposure and the sky. Check the still before any detail.
+3. **Materials.** Pick from `matlib.py` and set the colours; add a new function there when a surface is missing, keeping
+   the same structure (albedo variation, roughness, bump, edge wear, crevice dirt).
+4. **Form and lived-in detail.** Build in world coordinates so per-object textures never repeat across planks and stones;
+   bevel every edge (modifier or hand-made rounding); add the imperfections: crumbs, flour, a water ring, uneven plaster,
+   a worn edge, asymmetry. Register each placed prop with `reg(obj, support)`.
+5. **Role passes on stills.** Design (read at a glance, value structure, focal point), modelling (`--qa`, silhouettes,
+   nothing floating or sunk), visual QA at full size and at 100 % crops against "could this pass as a photograph". Typical
+   fixes found this way: plastic ceramic (add pooled glaze, a lip and a bare foot), a faceted mug (too much wobble), fog
+   washing the frame (air density 0.02 is already a lot; use a local shaft box that fades at its faces), a blown-out cloth
+   in the foreground (move it), dotted wood pores (stretch them along the grain and soften the bump).
+6. **Budget.** Render one frame at the target size and time it (a cold OptiX kernel build takes several minutes the first
+   time, then it is cached). Choose samples so the whole clip fits about 4 hours; the GPU is shared, so measure on the
+   loaded machine. With a fixed seed and OptiX denoising, check two adjacent frames for noise crawl before committing.
+7. **Finish.** `assemble.sh` adds the grade, grain and sound; the inset cut comes from `kitchen.py --mode viewport`, which
+   renders the same scene in Workbench as plain grey with cavity shading, from an orbiting overview camera with a small
+   frustum standing in for the shot camera.
+
+```
+scripts/blender/vignette/run.sh kitchen.py --qa
+scripts/blender/vignette/run.sh kitchen.py --frame 120 --out /tmp/t.png --res 1920x1080 --samples 128
+systemd-run --user --unit=aether-vignette -p Nice=10 scripts/blender/vignette/render_service.sh kitchen.py DIR/frames 1 240 64 1920x1080
+scripts/blender/vignette/render_service.sh kitchen.py DIR/viewport 1 240 1 640x360 viewport
+python3 -I scripts/blender/vignette/audio.py DIR/bed.wav 10
+scripts/blender/vignette/assemble.sh DIR/frames DIR/viewport DIR/bed.wav DIR/shot
+```
+
+Measured on the RTX 4090 shared with other jobs: 1080p at 64 samples with OptiX denoising is about a minute a frame
+(256 samples is about two and a half minutes), so 240 frames is about four hours.
