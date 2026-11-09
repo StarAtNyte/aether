@@ -9,6 +9,7 @@ import { rng, slugify, type EntityInput, type MeshAssetInput, type Json, type Pa
 import type { z } from 'zod';
 import { realisticStandIn } from './realistic';
 import { CLUSTERED_GENERATORS, clusterPoints } from './cluster';
+import { PLINTH_MATERIAL, isSettleable, settleBounds, settleOnTerrain } from '../../settle-core';
 
 /** Input shape of a world test (defaults optional). */
 export type WorldTestInput = z.input<typeof WorldTest>;
@@ -59,6 +60,14 @@ export interface PlaceOpts {
   footprint?: number;
   /** Keep `y` absolute even when the scene stands on a landscape ({@link Builder.ground}); default: y is above the ground. */
   absolute?: boolean;
+  /**
+   * A building or structure stands on terrain by its whole footprint (default `'terrain'` whenever the builder has a
+   * landscape or `terrain` is given): its base is set on the highest ground under the footprint and a stone plinth fills
+   * the slope below it, so it is neither buried on the uphill side nor hanging on the downhill side. `'flat'` keeps `y` as given.
+   */
+  ground?: 'terrain' | 'flat';
+  /** Ground height at (x, z) for a builder with no landscape of its own ({@link Builder.ground}): hand-placed worlds on a terrain they sampled. */
+  terrain?: (x: number, z: number) => number;
 }
 
 /** Extra options of scatter entities. */
@@ -367,7 +376,20 @@ export class Builder {
         params = stand.params;
       }
     }
-    this.add(this.compose(id, pos, { kind: 'procedural', generator, params, seed: this.subSeed() % 100_000 }, o));
+    const seed = this.subSeed() % 100_000;
+    const h = o.ground === 'flat' || o.parent || o.absolute === true && !o.terrain ? null : (o.terrain ?? this.ground?.h ?? null);
+    const bounds = h && isSettleable(generator) ? settleBounds(generator, params, seed) : null;
+    if (h && bounds) {
+      const sc = typeof o.scale === 'number' ? ([o.scale, o.scale, o.scale] as V3) : (o.scale ?? [1, 1, 1]);
+      const yaw = o.rot?.[1] ?? o.yaw ?? 0;
+      const s = settleOnTerrain(h, [pos[0], pos[2]], bounds, yaw, sc);
+      if (s.plinth) {
+        this.prim('foundation', 'box', s.plinth.size, s.plinth.position, { name: 'Foundation', yaw, material: { ...PLINTH_MATERIAL }, physics: 'static', tags: ['foundation'], absolute: true });
+      }
+      this.add(this.compose(id, [pos[0], r2(s.floorY - bounds.min[1] * sc[1] + pos[1]), pos[2]], { kind: 'procedural', generator, params, seed }, { ...o, absolute: true }));
+      return id;
+    }
+    this.add(this.compose(id, pos, { kind: 'procedural', generator, params, seed }, o));
     return id;
   }
 

@@ -99,6 +99,7 @@ export { BRIEF_TOOL, BRIEF_TOOL_NAME, BriefSchema, REFERENCE_TOOL, briefChecklis
 export { briefStage, lookReference, referencePrompt, type BriefReviewer, type BriefStageResult } from './brief-stage';
 export type { PerceptionReport, PerceivedObject } from './photo/perception/perceive';
 export { PERCEIVE_TOOL_NAME } from './photo/perception/names';
+export { settleFindings, settleOnTerrain, type SettleFix, type Settled } from './settle';
 export { findAfloat, afloatFindings, findSunk, sunkFindings, withSunk, type SunkPiece } from './sunk';
 export { findPlaceholders, generatorForName, placeholderFindings, withPlaceholders, PROP_GENERATORS, type Placeholder } from './placeholders';
 export { findBuriedFalls, fallsFindings, withFalls, type BuriedFall } from './falls';

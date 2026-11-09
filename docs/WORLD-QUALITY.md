@@ -67,7 +67,10 @@ Each item has a detector (data, host measurement or AI from renders) and a fix t
      - People are 1.5 to 1.9 m.
    - Fix: reset people to human scale. The others are flagged.
 7. **Interpenetration**
-   - Detector: things floating or sunk (the level tools' grounding).
+   - Detectors:
+     - Things floating or sunk (the level tools' grounding).
+     - A building, pagoda, gazebo or torii sunk into the terrain on its high side or hanging over a drop on its low side, measured over its whole footprint (`sunk.ts`; library structures are sized from their catalogue footprint).
+   - Fix (data, automatic): `settle.ts` raises the piece to the highest ground of its footprint and adds a stone plinth down to the lowest ground, so the floor is never buried and nothing hangs. The same rule (`settle-core.ts`) is the builder's default: `Builder.gen` settles every building it places on a landscape (`ground: 'terrain'`, or `terrain: heightFn` on a hand-placed world; `ground: 'flat'` opts out).
    - AI: props through walls, and clothes through bodies.
    - Fix: the agent sets them down with `place_level_items` in its review.
 8. **Lighting per shot**

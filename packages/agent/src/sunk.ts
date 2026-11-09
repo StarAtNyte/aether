@@ -17,17 +17,18 @@
 import type { Entity, Json, WorldDoc } from '@aether/core';
 import { findingKey, scoreFindings, type Finding } from '@aether/arch';
 import type { ReviewSnapshot } from './review';
-import { generateBuiltinSync, getBuiltinGenerator } from '@aether/procgen';
+import { getBuiltinGenerator, isLibraryGenerator } from '@aether/procgen';
 import { worldGround } from './land';
+import { localBounds, paramBounds, pieceBounds } from './footprint';
+import { IN_GROUND, LIBRARY_BUILT } from './settle-core';
+
+export { localBounds, paramBounds };
 import { rockTop } from './falls';
 
 /** Most pieces and scatter instances measured per call. */
 export const SUNK_LIMITS = Object.freeze({ MAX_PIECES: 400, MAX_INSTANCES: 3000 });
 
 const CHECKED_CATEGORIES: ReadonlySet<string> = new Set(['architecture', 'props', 'interior', 'vehicles']);
-/** Generators that are built to go into the ground or follow it. */
-// Whole words of the hyphenated id ("dwelling" is not a well).
-const IN_GROUND = /(^|-)(walls?|fences?|hedges?|stairs?|steps?|stairway|retaining|terraces?|piers?|piles?|bridges?|aqueducts?|cliffs?|roads?|streets?|lanes?|paths?|paving|pavement|plaza|bollards?|kerbs?|curbs?|ramps?|tunnels?|wells?|pools?|ponds?|canals?|docks?|quays?|graves?|ruins?|rubble|ground|terrain|water|waterfall|fall|sheet)(s)?($|-)/;
 const OPT_OUT = /^(sunk|buried|underground|in-ground|dug-in)$/;
 /** Tags that say a piece hangs out over a drop on purpose (a cantilevered deck, a balcony shrine). */
 const OVERHANG_OK = /float|cantilever|overhang|hanging|balcony/;
@@ -52,24 +53,6 @@ export interface SunkPiece {
   kind: 'sunk' | 'overhang' | 'afloat';
 }
 
-const boundsCache = new Map<string, { min: [number, number, number]; max: [number, number, number] } | null>();
-
-/** Local bounds of a built-in generator's output for these params (cached), or null. */
-export function localBounds(generator: string, params: Record<string, Json>, seed: number): { min: [number, number, number]; max: [number, number, number] } | null {
-  const key = `${generator}|${seed}|${JSON.stringify(params)}`;
-  if (boundsCache.has(key)) return boundsCache.get(key) ?? null;
-  let b: { min: [number, number, number]; max: [number, number, number] } | null = null;
-  try {
-    const out = generateBuiltinSync(generator, params, seed);
-    if (out.bounds.min.every(Number.isFinite) && out.bounds.max.every(Number.isFinite)) b = { min: [...out.bounds.min] as [number, number, number], max: [...out.bounds.max] as [number, number, number] };
-  } catch {
-    b = null;
-  }
-  if (boundsCache.size > 600) boundsCache.clear();
-  boundsCache.set(key, b);
-  return b;
-}
-
 /** A building the world defines itself (its generator code lives in the world): looked at by name and sized from its params. */
 const BUILT = /house|home|cottage|villa|temple|shrine|tholos|chapel|church|tower|hall|shop|inn|tavern|barn|hut|cabin|pavilion|kiosk|stoa|palace|castle|fort|mill|building|dwelling|block|apartment/;
 
@@ -79,17 +62,7 @@ function checked(e: Entity, generator: string, world: WorldDoc): boolean {
   if (IN_GROUND.test(generator)) return false;
   const builtin = getBuiltinGenerator(generator);
   if (builtin) return CHECKED_CATEGORIES.has(builtin.category);
-  return BUILT.test(generator) && world.generators?.[generator] !== undefined;
-}
-
-/** Footprint and height of a world-defined piece from its params (width, depth, height or floors), or null. */
-export function paramBounds(params: Record<string, Json>): { min: [number, number, number]; max: [number, number, number] } | null {
-  const num = (k: string): number | null => (typeof params[k] === 'number' && Number.isFinite(params[k]) ? (params[k] as number) : null);
-  const w = num('width') ?? num('size') ?? num('length');
-  if (w === null || w <= 0) return null;
-  const d = num('depth') ?? w;
-  const h = num('height') ?? (num('floors') ?? 1) * 3.2 + 1.5;
-  return { min: [-w / 2, 0, -d / 2], max: [w / 2, h, d / 2] };
+  return (BUILT.test(generator) && world.generators?.[generator] !== undefined) || (isLibraryGenerator(generator) && LIBRARY_BUILT.test(generator));
 }
 
 /**
@@ -110,7 +83,7 @@ export function findSunk(world: WorldDoc): SunkPiece[] {
     const shape = s.kind === 'scatter' ? s.of : s;
     if (shape.kind !== 'procedural' || !checked(e, shape.generator, world)) continue;
     const params = shape.params as Record<string, Json>;
-    const b = getBuiltinGenerator(shape.generator) ? localBounds(shape.generator, params, shape.seed ?? 0) : paramBounds(params);
+    const b = pieceBounds(shape.generator, params, shape.seed ?? 0);
     // A stone footing (a house on a slope) is meant to be in the ground: the floor is on top of it.
     const footing = typeof params['footing'] === 'number' && Number.isFinite(params['footing']) ? Math.max(0, params['footing']) : 0;
     if (!b) continue;

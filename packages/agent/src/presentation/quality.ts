@@ -13,6 +13,7 @@
 import type { Entity, Patch, Story, Vec3, WorldDoc } from '@aether/core';
 import type { LevelToolRunner, Provider } from '../types';
 import { presentationSignals } from './kind';
+import { settleFindings } from '../settle';
 import type { PoseLike, PresentationViews } from './poi';
 import { projectInFrame } from './story';
 import { reviewShots, type PresentHost, type ShotReview } from './director';
@@ -252,6 +253,21 @@ async function groundingChecks(world: WorldDoc, host: QualityHost | null, out: Q
   if (lines.length > 0) out.push({ check: 'interpenetration', severity: 'warn', note: `${lines.length} object${lines.length === 1 ? '' : 's'} floating or sunk: ${lines.slice(0, 4).map((l) => l.trim().slice(0, 120)).join('; ')}`, fix: { kind: 'route', to: 'user', label: 'set them down with place_level_items (the agent does in its review)' }, by: 'host' });
 }
 
+/** 7b. Interpenetration: a building sunk into the terrain on its high side or hanging over a drop on its low side: raised to the highest ground of its footprint on a plinth (a measurement, then the fix). */
+function settleChecks(world: WorldDoc, out: QualityFinding[]): void {
+  if (world.voxel) return;
+  let fixes;
+  try {
+    fixes = settleFindings(world);
+  } catch {
+    return;
+  }
+  for (const f of fixes) {
+    const what = f.kind === 'sunk' ? `sunk ${f.depth.toFixed(1)} m into the terrain on its high side` : `hanging ${f.depth.toFixed(1)} m over the ground on its low side`;
+    out.push({ check: 'interpenetration', severity: 'error', subject: f.id, note: `"${f.id}" is ${what}`, fix: { kind: 'patches', patches: f.patches as Patch[], label: `${f.id} set on the terrain (base on the highest ground, plinth under it)` }, by: 'data' });
+  }
+}
+
 const WORD = /\b[A-Z][a-z]{2,}\b/g;
 const COMMON = new Set(['The', 'This', 'That', 'There', 'Then', 'When', 'Where', 'And', 'But', 'Her', 'His', 'She', 'They', 'Its', 'Our', 'Your', 'Press', 'Tab', 'Play', 'Explore']);
 
@@ -358,6 +374,7 @@ export async function qualityChecks(world: WorldDoc, views: PresentationViews | 
   await playChecks(world, host, out);
   scaleChecks(world, out);
   await groundingChecks(world, host, out);
+  settleChecks(world, out);
   lightingChecks(world, host, out);
   storyChecks(world, out);
   characterChecks(world, out);

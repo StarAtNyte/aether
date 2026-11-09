@@ -56,11 +56,6 @@ function grove(b: Builder, base: string, generatorId: string, params: Record<str
   });
 }
 
-/** A stone plinth hiding the bank slope under a riverside building. */
-function plinth(b: Builder, x: number, z: number, w: number, d: number, yaw: number): void {
-  b.prim('plinth', 'box', [w, 2.2, d], [x, -0.1, z], { yaw, material: { preset: 'stone', color: '#9a948a', roughness: 0.9 }, physics: 'static' });
-}
-
 /** Plan the Sakura River Journey. */
 export function sakuraRiver(): MockPlan {
   const b = flagshipBuilder(0x5a4a, { dusk: true, water: true });
@@ -136,14 +131,13 @@ export function sakuraRiver(): MockPlan {
   // Start dock with a vermilion torii and stone lanterns.
   const dx = r2(sx + HALF + 1);
   b.gen('start-dock', 'dock', { length: 9, width: 3, height: 0.7, variant: 1 }, [dx, 0, START_Z + 2], { yaw: 180, physics: 'static', name: 'Start dock' });
-  b.gen('torii', 'torii-gate', { height: 6.5 }, [r2(sx + HALF + 7), 0, START_Z + 2], { yaw: 90, physics: 'static', name: 'Torii gate' });
+  b.gen('torii', 'torii-gate', { height: 6.5 }, [r2(sx + HALF + 7), 0, START_Z + 2], { yaw: 90, physics: 'static', name: 'Torii gate', terrain: ground });
   for (let i = 0; i < 4; i++) glowLantern(b, [r2(sx + HALF + 4 + (i % 2) * 6), 0.3, r2(START_Z - 4 + Math.floor(i / 2) * 12)], '#ffb35c', { lit: i < 2 });
   // A tiny riverside village.
   for (let i = 0; i < 3; i++) {
     const z = 168 - i * 14;
     const x = r2(riverX(z) - HALF - 8);
-    plinth(b, x, z, 8.6, 7.4, 90);
-    b.gen('machiya', 'house', { width: 7, depth: 6, color: '#efe2c8', roofColor: '#3d4a52', trimColor: '#4a2f22', lights: true, variant: 2 }, [x, 1, z], { yaw: 90, physics: 'static', name: 'Riverside house' });
+    b.gen('machiya', 'house', { width: 7, depth: 6, color: '#efe2c8', roofColor: '#3d4a52', trimColor: '#4a2f22', lights: true, variant: 2 }, [x, 0, z], { yaw: 90, physics: 'static', name: 'Riverside house', terrain: ground });
   }
 
   // Riverbanks the whole way down: grass, pebbles at the waterline, blossom flowers in spring.
@@ -163,10 +157,9 @@ export function sakuraRiver(): MockPlan {
   grove(b, 'maples-gold', 'tree-oak', { height: 6.5, color: '#e3a83a', density: 6 }, bankPoints(b, -5, -100, 17, 14, 22), terrain, [0.8, 1.2], 'Golden maples');
   const pz = -42;
   const px = r2(riverX(pz) - HALF - 12);
-  plinth(b, px, pz, 15, 15, 0);
-  b.gen('pagoda', 'pagoda', { tiers: 5, roofColor: '#3a4d4a', wallColor: '#e9d9bb' }, [px, 1, pz], { physics: 'static', name: 'Pagoda', tags: ['landmark'] });
-  glowLantern(b, [r2(px + 7), 1, r2(pz + 7)], '#ff9d4a');
-  glowLantern(b, [r2(px + 7), 1, r2(pz - 7)], '#ff9d4a');
+  b.gen('pagoda', 'pagoda', { tiers: 5, roofColor: '#3a4d4a', wallColor: '#e9d9bb' }, [px, 0, pz], { physics: 'static', name: 'Pagoda', tags: ['landmark'], terrain: ground });
+  glowLantern(b, [r2(px + 7), r2(ground(px + 7, pz + 7)), r2(pz + 7)], '#ff9d4a');
+  glowLantern(b, [r2(px + 7), r2(ground(px + 7, pz - 7)), r2(pz - 7)], '#ff9d4a');
   b.gen('autumn-bridge', 'bridge', { length: r2(HALF * 2 + 14), width: 3.6, height: 6, color: '#9a948a', variant: 1 }, [riverX(-74), 0, -74], { physics: 'static', name: 'Stone bridge' });
 
   // --- Winter: snowy pines and the shrine -----------------------------------------
@@ -176,7 +169,7 @@ export function sakuraRiver(): MockPlan {
   const gx = riverX(gz);
   // The landing reaches out from the east bank, leaving the channel open to the shrine.
   b.gen('shrine-dock', 'dock', { length: 10, width: 4, height: 0.7, variant: 1 }, [r2(gx + HALF - 4), 0, r2(gz - 4)], { yaw: 180, physics: 'static', name: 'Shrine dock' });
-  b.gen('shrine-torii', 'torii-gate', { height: 7.5, color: '#c8402c' }, [gx, 0, r2(gz - 8)], { physics: 'static', name: 'Shrine gate', tags: ['landmark'] });
+  b.gen('shrine-torii', 'torii-gate', { height: 7.5, color: '#c8402c' }, [gx, 0, r2(gz - 8)], { physics: 'static', name: 'Shrine gate', tags: ['landmark'], terrain: ground });
   glowLantern(b, [r2(gx - 4), 0.3, r2(gz - 6)], '#ffcf8a');
   glowLantern(b, [r2(gx + 4), 0.3, r2(gz - 6)], '#ffcf8a');
   b.prim('journey-end', 'box', [r2(HALF * 2), 4, 8], [gx, 2, r2(gz + 4)], { name: 'Journey end', visible: false, physics: { body: 'static', sensor: true }, behaviors: [{ type: 'goal', params: { text: 'You reached the winter shrine. The river carried you through every season.' } }], tags: ['goal'] });
