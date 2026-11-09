@@ -52,7 +52,8 @@ describe('showcase manifest', () => {
   it('lists the generated worlds as agent templates, each with a prompt and a stored world', () => {
     const agent = SHOWCASE.filter((e) => e.origin === 'agent');
     expect(agent.length).toBeGreaterThanOrEqual(1);
-    expect(AGENT_TEMPLATES.map((t) => t.slug)).toEqual(agent.map((t) => t.slug));
+    // Agent worlds curated as featured (Sanctuary Falls, Lisbon Hills) are listed in the Featured gallery instead.
+    expect(AGENT_TEMPLATES.map((t) => t.slug)).toEqual(agent.filter((t) => t.curation === 'candidate').map((t) => t.slug));
     expect(MORE_TEMPLATES.some((t) => t.origin === 'agent')).toBe(false);
     for (const e of agent) {
       expect(e.prompt.length, e.slug).toBeGreaterThan(5);

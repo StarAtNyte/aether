@@ -13,7 +13,7 @@ import { Icon } from '../components/Icon';
 /** Seconds each example world stays on the stage. */
 export const STAGE_SECONDS = 4.5;
 /** Slugs the stage prefers, when they are still shown. */
-const STAGE_PREFERRED: readonly string[] = ['lakeside-camp', 'coin-island', 'domino-run', 'haunted-forest', 'medieval-village', 'canyon-of-colossi'];
+const STAGE_PREFERRED: readonly string[] = ['highland-trail', 'lakeside-camp', 'coin-island', 'domino-run', 'haunted-forest', 'medieval-village', 'canyon-of-colossi'];
 /** Most worlds on the stage. */
 const STAGE_MAX = 6;
 

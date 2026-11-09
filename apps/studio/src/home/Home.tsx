@@ -40,6 +40,8 @@ import { prefetchEditor } from '../editor/prefetch';
 const PublishedPage = lazyBoundary(async () => ({ default: (await import('./Published')).PublishedPage }), { what: 'published page', fallback: null, variant: 'inline' });
 const RecentlyPublished = lazyBoundary(async () => ({ default: (await import('./Published')).RecentlyPublished }), { what: 'published list', fallback: null, variant: 'inline' });
 
+const FeaturedGallery = lazyBoundary(async () => ({ default: (await import('./Featured')).default }), { what: 'featured worlds', fallback: <FeaturedSkeleton />, variant: 'inline' });
+
 const NAV: ReadonlyArray<{ id: HomeSection; label: string; icon: IconName }> = [
   { id: 'home', label: 'Home', icon: 'home' },
   { id: 'templates', label: 'Templates', icon: 'template' },
@@ -48,8 +50,21 @@ const NAV: ReadonlyArray<{ id: HomeSection; label: string; icon: IconName }> = [
   { id: 'docs', label: 'Documentation', icon: 'book' },
 ];
 
-/** The home page's template row: the featured templates (or the first shown ones when none is featured). */
-const HOME_ROW = FEATURED_TEMPLATES.length > 0 ? FEATURED_TEMPLATES : TEMPLATES.slice(0, 8);
+/** The "Start from a template" row: the shown templates that are not in the Featured section (or the first shown ones when none is featured). */
+const HOME_ROW = FEATURED_TEMPLATES.length > 0 ? TEMPLATES.filter((t) => t.curation !== 'featured').slice(0, 16) : TEMPLATES.slice(0, 8);
+
+/** Placeholder with the gallery's exact geometry (the grid CSS is in the entry stylesheet), so the lazy chunk never shifts the page. */
+function FeaturedSkeleton(): ReactElement {
+  return (
+    <div className="featured__grid" aria-hidden="true">
+      {FEATURED_TEMPLATES.map((t, i) => (
+        <div key={t.slug} className={`featured__item${i === 0 ? ' featured__item--lead' : i < 3 ? ' featured__item--side' : ''}`}>
+          <span className="fskel" />
+        </div>
+      ))}
+    </div>
+  );
+}
 
 const TITLES: Readonly<Record<HomeSection, string>> = { home: 'Home', templates: 'Templates', projects: 'Projects', published: 'Published', docs: 'Documentation' };
 const RECENT_LIMIT = 12;
@@ -414,6 +429,20 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
     content = (
       <>
         {showTemplates && <Hero onPrompt={(p) => void actions.createFromPrompt(p)} onTemplate={pickTemplate} />}
+        {showTemplates && FEATURED_TEMPLATES.length > 0 && (
+          <section className="home-section featured" aria-labelledby="h-featured">
+            <div className="section-head">
+              <h2 id="h-featured" className="section-head__title">
+                Featured worlds
+              </h2>
+              <a className="link" href="#/templates">
+                View all
+              </a>
+            </div>
+            <p className="featured__lead">Published worlds, ready to open. Click one to play or explore it; Remix opens a copy in the editor to change by chat.</p>
+            <FeaturedGallery onRemix={pickTemplate} />
+          </section>
+        )}
         {showTemplates && (
           <section className="home-section" aria-labelledby="h-templates">
             <div className="section-head">
