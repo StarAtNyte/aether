@@ -13,6 +13,8 @@ import sys
 import numpy as np
 
 args = sys.argv[1:]
+accept = '--accept' in args
+args = [a for a in args if a != '--accept']
 rng = None
 if '--range' in args:
     i = args.index('--range')
@@ -24,4 +26,9 @@ for f in args:
         t = np.cumsum(g) / 1000.0
         g = g[(t >= rng[0]) & (t <= rng[1])]
     a = g[g <= 400]
-    print(f"{f}{' ' + str(rng) if rng else ''}: n={len(g)} median={np.median(g):.0f} p95={np.percentile(g, 95):.0f} p99={np.percentile(g, 99):.0f} max={g.max():.0f} over50={100 * (g > 50).mean():.1f}% | active: median={np.median(a):.0f} p95={np.percentile(a, 95):.0f} over50={100 * (a > 50).mean():.1f}%")
+    verdict = ''
+    if accept:
+        # a UI take is accepted when the median gap is at most 40 ms and under 5% of the (active) gaps exceed 50 ms
+        ok = np.median(a) <= 40 and 100 * (a > 50).mean() < 5
+        verdict = '  ' + ('ACCEPT' if ok else 'REJECT')
+    print(f"{f}{' ' + str(rng) if rng else ''}{verdict}: n={len(g)} median={np.median(g):.0f} p95={np.percentile(g, 95):.0f} p99={np.percentile(g, 99):.0f} max={g.max():.0f} over50={100 * (g > 50).mean():.1f}% | active: median={np.median(a):.0f} p95={np.percentile(a, 95):.0f} over50={100 * (a > 50).mean():.1f}%")

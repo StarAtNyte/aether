@@ -308,3 +308,18 @@ So it does not read as the feature. v8 plan: a real-time take of the player on L
 the flight starts (full app first, then the flight): `film-ui.ts --scene=modes --slug=lisbon-hills --clickDrone=1` (the city starts
 its own tour, so the take stops it, presses the button on camera, and marks `drone button pressed`). The footage-agent's drone clips
 should use a window of the tour where the camera really flies (for example scout seconds 6 to 16).
+
+## Decisions after the capture tests
+
+- UI takes: real headed Chrome plus the CDP screencast at device scale 1.5 (2880 px wide), JPEG q95 (`--real=1 --scale=1.5 --jpegQ=95`),
+  measured after the Cycles render ends. A take is accepted only if the median gap is at most 40 ms and fewer than 5% of the active
+  gaps exceed 50 ms (`take-gaps.py --accept`); otherwise the fallback is an x11grab of a 1920x1080 window at device scale 1.
+- One more option for the Edit and Publish takes if the above disappoints: a deterministic stepped capture with Chrome's virtual time
+  (`Emulation.setVirtualTimePolicy`, 33.3 ms per tick, one lossless PNG per tick at device scale 2). To check first: that the UI
+  animations, the typing effects and the world canvas advance under virtual time (the canvas may need the renderer's fixed-clock hook).
+  At most about an hour; used only for a scene where it works.
+- 4K master: not now. The deliverable is a sharp 1080p master (CRF 14, slow, one Lanczos resample from the high-resolution sources).
+- Drone: a real-time take on Lisbon Hills that clicks the Drone button in the full app, then the flight; the first second after the
+  click must show the camera clearly rising and travelling (checked on the frames before the take is used). World clips use a stretch
+  of the tour where the camera really flies.
+- After every run: the script's browser closed, x11grab/ffmpeg stopped, `ps` checked for leftovers of this run's own profile only.
