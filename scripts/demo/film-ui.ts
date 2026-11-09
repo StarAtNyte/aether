@@ -114,7 +114,7 @@ async function newTake(browser: Awaited<ReturnType<typeof chromium.launch>>, sce
   );
   await ctx.addInitScript({ content: SKIP_FIRST_RUN });
   await ctx.addInitScript({ content: 'globalThis.__name = (f) => f;' });
-  await ctx.addInitScript({ content: "try { const k='aether.studio.settings.v1'; const s=JSON.parse(localStorage.getItem(k)||'{}'); s.renderTier='ultra'; s.showNavHint=false; s.motion='sharp'; localStorage.setItem(k, JSON.stringify(s)); localStorage.setItem('aether.player.mute', '1'); } catch {}" });
+  await ctx.addInitScript({ content: `try { const k='aether.studio.settings.v1'; const s=JSON.parse(localStorage.getItem(k)||'{}'); s.renderTier='${arg('tier') ?? 'ultra'}'; s.showNavHint=false; s.motion='sharp'; localStorage.setItem(k, JSON.stringify(s)); localStorage.setItem('aether.player.mute', '1'); } catch {}` });
   await ctx.addInitScript({ content: OVERLAY_SCRIPT });
   const page = await ctx.newPage();
   page.on('pageerror', (e) => log(`pageerror: ${e.message.slice(0, 200)}`));
@@ -619,6 +619,10 @@ async function publish(browser: Awaited<ReturnType<typeof chromium.launch>>, url
   await input.scrollIntoViewIfNeeded();
   await glide(page, (await centre(input)).x, (await centre(input)).y, 1000);
   await dwell(page, 2000);
+  if (arg('hubOnly')) {
+    await finish(t);
+    return;
+  }
   // `--open=link` opens the share link itself (the world in the URL, run live: slow to start, and it opens as its
   // presentation says). The default opens the same world's published, cooked copy, which is what a visitor gets fastest.
   let fromLink = arg('open') === 'link' && /#(w|c)=/.test(link);
@@ -840,10 +844,10 @@ async function arch(browser: Awaited<ReturnType<typeof chromium.launch>>, url: s
   await settle(page);
   await page.evaluate((h) => {
     const a = window.__aether!;
-    if (h > 0) void a.studio.commitUser([{ op: 'setEnvironment', set: { timeOfDay: h } }], 'Time of day');
+    if (h > 0) void a.studio.commitUser([{ op: 'setEnvironment', set: { timeOfDay: h, fog: null, weather: 'clear', sky: 'day' } }], 'Clear afternoon');
     a.store.getState().updateSettings({ showLabels: false, motion: 'sharp' });
     (a.simulation as unknown as { frameWorld(): Promise<void> }).frameWorld = async () => undefined;
-  }, Number(arg('hour') ?? 17.4));
+  }, Number(arg('hour') ?? 16.0));
   await settle(page);
   // The house's bounds from its wall entities, then a slow orbit round it that runs under every step below.
   const info = await page.evaluate(() => {

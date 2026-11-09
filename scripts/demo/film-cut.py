@@ -156,6 +156,8 @@ def segment(s):
     src = os.path.expanduser(s['src'])
     grade = s.get('grade', mode in ('full', 'frames'))
     g = (',' + GRADE) if grade else ''
+    if s.get('eq'):
+        g = ',' + s['eq']
     pf = push_filter(s, dur)
     aud = s.get('audio', 0)
     if mode == 'image':

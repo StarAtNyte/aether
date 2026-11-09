@@ -164,6 +164,18 @@
   "kind": "note",
   "text": "Captured from the live site"
  },
+ "tag-rv-village": {
+  "kind": "tag",
+  "text": "\u201ca small medieval village with a market square\u201d"
+ },
+ "tag-rv-villa": {
+  "kind": "tag",
+  "text": "\u201ca two-storey villa with a pool\u201d"
+ },
+ "tag-rv-valley": {
+  "kind": "tag",
+  "text": "\u201ca river valley with snow-capped mountains and a wooden bridge\u201d"
+ },
  "tag-replay1": {
   "kind": "tag",
   "text": "A villa, built step by step"

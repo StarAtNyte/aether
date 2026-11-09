@@ -157,3 +157,23 @@ capture would stutter.
 - The live-site shots show a drawn browser toolbar around a page capture; the address is the real address of the page.
 - The share link is the real 90 kB link of the Villa with a pool world, made with the Player address set to the live site, opened
   on the live site (laptop and phone windows). Nothing was published or uploaded.
+
+# v7 fix pass (about 2:55 and a 60 s cut)
+
+`scripts/demo/film/make-edl7.py` builds `edl7.json` (main) and `edl7-60.json` (short). Changes against v6:
+
+- Transitions: no dissolve between two shots is longer than six frames (0.2 s); inside the animated short the cuts are three frames.
+  Only the end card keeps its 0.8 s dissolve (a film frame into a dark card).
+- The capability montage is three 2x2 mosaics (tiles about 920 x 500 on the frame, 38 px labels, tight crops of the panel that
+  matters), 5.2 s each.
+- The typed prompt is exactly the first replay's prompt ("a small medieval village with a market square"). The replays are of the
+  real patches of offline-planner builds (village, then "a two-storey villa with a pool") with the hour set to the afternoon, the haze
+  thinned and a slow orbit; captions quote the prompt and say "Build replay, frame by frame". A valley build was tried and dropped
+  (flat and grey).
+- Architecture: the frame-by-frame render now sets a clear afternoon with fog off before rendering, and is graded with a little contrast.
+- Real-time UI takes were re-recorded on the integrated GPU, one at a time, niced, at 1080p (describe at 1.5x), medium gap
+  30 ms or better; no blending of low-fps takes (the `smooth` option is no longer used).
+- The "Build locally" chapter has a named slot: `BLENDER_REAL` in the edit list (`~/.local/share/aether/demo/aether-blender-real-shot.mp4`,
+  1080p, 24 fps, 9 s used). When that file exists it is placed before the character turntable; until then only the turntable plays.
+- Scripts added: `take-gaps.py --range` (gap statistics of the stretch a cut uses), `frame-sheet.py` (full-size frames for checking
+  details such as skirts), `film-build.ts --rscale --hour`, `film-ui.ts --tier --hubOnly`.

@@ -49,11 +49,11 @@ async function main(): Promise<void> {
     await page.evaluate(async () => (window as unknown as { __aether: { simulation: { whenSynced(): Promise<void> } } }).__aether.simulation.whenSynced());
     await page.waitForFunction(() => !/Saving|World-quality pass|Baking/.test(document.body.innerText) && window.__aether?.simulation?.renderer.animating !== true, null, { timeout: 240_000, polling: 400 }).catch(() => undefined);
     await sleep(3000);
-    const hour = Number(arg('hour') ?? 17.4);
+    const hour = Number(arg('hour') ?? 16.0);
     const total = await page.evaluate(
       async ({ steps, hour, dist }) => {
         const a = window.__aether!;
-        await a.studio.commitUser([{ op: 'setEnvironment', set: { timeOfDay: hour } }], 'Time of day');
+        await a.studio.commitUser([{ op: 'setEnvironment', set: { timeOfDay: hour, fog: null, weather: 'clear', sky: 'day' } }], 'Clear afternoon');
         a.store.getState().updateSettings({ showLabels: false, motion: 'sharp' });
         const sim = a.simulation as unknown as { entityBounds(id: string): { min: number[]; max: number[] } | null; whenSynced(): Promise<void>; renderer: unknown };
         await sim.whenSynced();

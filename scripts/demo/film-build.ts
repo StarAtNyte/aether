@@ -62,6 +62,13 @@ async function main(): Promise<void> {
       writeFileSync(join(OUT, 'patches.json'), JSON.stringify(commits));
     }
     const all = commits.flatMap((c) => c.patches);
+    // The shot is lit at golden hour with the haze thinned (the build's own environment patch, only its hour and fog changed).
+    for (const p of all as Array<{ op?: string; set?: { timeOfDay?: number; fog?: { density: number } | null } }>) {
+      if (p.op === 'setEnvironment' && p.set) {
+        p.set.timeOfDay = Number(arg('hour') ?? 17.2);
+        if (p.set.fog) p.set.fog = { ...p.set.fog, density: p.set.fog.density * 0.4 };
+      }
+    }
     // The land first (right after the root entity it hangs under): the replay reads as land, then the building, then the garden.
     const isLand = (p: unknown): boolean => { const e = (p as { op?: string; entity?: { tags?: string[]; shape?: { generator?: string } } }); return e.op === 'add' && ((e.entity?.tags ?? []).includes('terrain') || e.entity?.shape?.generator === 'terrain'); };
     const li = all.findIndex(isLand);
@@ -92,7 +99,7 @@ async function main(): Promise<void> {
     log(`bounds ${JSON.stringify(info)}`);
     await page.evaluate(() => { const a = window.__aether!; a.history.checkout(a.history.entries()[0]!.id); });
     await sleep(1500);
-    const ok = await page.evaluate(async ({ all, per, hold, c, r, instant }) => {
+    const ok = await page.evaluate(async ({ all, per, hold, c, r, instant, rscale }) => {
       const a = window.__aether!;
       const sim = a.simulation as unknown as { renderer: unknown; whenSynced(): Promise<void> };
       const rend = sim.renderer as {
@@ -118,9 +125,9 @@ async function main(): Promise<void> {
       const total = (Math.ceil(all.length / per) + 3) * hold;
       const shoot = async (k: number, save = true): Promise<void> => {
         const u = k / total;
-        const az = ((200 + 50 * u) * Math.PI) / 180;
-        const el = ((26 - 6 * u) * Math.PI) / 180;
-        const dist = r * (1.5 - 0.35 * u);
+        const az = ((190 + 70 * u) * Math.PI) / 180;
+        const el = ((20 - 4 * u) * Math.PI) / 180;
+        const dist = r * rscale * (1.25 - 0.3 * u);
         const pos = [c[0]! + dist * Math.cos(el) * Math.sin(az), c[1]! + dist * Math.sin(el), c[2]! + dist * Math.cos(el) * Math.cos(az)];
         rend.setFixedClock(t, 1 / 30);
         let px = await cap.frame({ pos, target: c, fov: 38, roll: 0 }, { dt: 1 / 30 });
@@ -164,7 +171,7 @@ async function main(): Promise<void> {
       (window as unknown as { __frames: string[] }).__frames = out;
       (window as unknown as { __marks: unknown }).__marks = marks;
       return n;
-    }, { all, per, hold, c: info.c, r: info.r, instant: arg('instant') !== '0' });
+    }, { all, per, hold, c: info.c, r: info.r, instant: arg('instant') !== '0', rscale: Number(arg('rscale') ?? 1) });
     log(`rendered ${ok} frames`);
     await page.screenshot({ path: join(OUT, 'dbg.png') });
     const marks = await page.evaluate(() => (window as unknown as { __marks: unknown }).__marks);
