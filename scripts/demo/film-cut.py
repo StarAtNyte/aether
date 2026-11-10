@@ -377,7 +377,10 @@ def segment(s):
     else:
         inputs = ['-ss', str(s.get('in', 0)), '-i', src]
         fx = f"setpts=(PTS-STARTPTS)/{speed}," if speed != 1 else 'setpts=PTS-STARTPTS,'
-        vf = f"[0:v]{fx}scale={W}:{H}:force_original_aspect_ratio=increase:flags=lanczos,crop={W}:{H},setsar=1,fps={FPS},format=yuv420p{pf}{g},trim=duration={dur}[v]"
+        # cropf: [x, y, w, h] as fractions of the source, cut before the one Lanczos resample (a strip of unwanted world along an edge)
+        cr = s.get('cropf')
+        cf = f"crop=iw*{cr[2]}:ih*{cr[3]}:iw*{cr[0]}:ih*{cr[1]}," if cr else ''
+        vf = f"[0:v]{fx}{cf}scale={W}:{H}:force_original_aspect_ratio=increase:flags=lanczos,crop={W}:{H},setsar=1,fps={FPS},format=yuv420p{pf}{g},trim=duration={dur}[v]"
     af = []
     if aud and mode == 'full':
         af = ['-filter_complex', vf + f";[0:a]asetpts=PTS-STARTPTS,atrim=duration={dur},volume={aud},aresample=48000,aformat=channel_layouts=stereo[a]", '-map', '[v]', '-map', '[a]']

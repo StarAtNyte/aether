@@ -67,7 +67,7 @@ def evf(path, what):
 def clipsrc(name, fallback):
     """A world clip from the world-footage pipeline when it has landed, else the older footage."""
     # the footage agent's names differ a little from the beat names; the 4K render (when there is one) is the source
-    for nm in {'drone-lisbon': ['lisbon-drone'], 'house-walk': ['house-walk'], 'landscape': ['terraces-falls']}.get(name, [name]):
+    for nm in {'drone-lisbon': ['lisbon-drone'], 'house-walk': ['house-walk'], 'landscape': ['terraces-falls'], 'isles': ['m-lantern']}.get(name, [name]):
         for cand in (f'{F8}/clips/{nm}-4k.mp4', f'{F8}/clips/{nm}.mp4'):
             if have(cand):
                 return cand
@@ -125,8 +125,10 @@ def ui(name, src, parts, cam, dur, text=None, sfx='click', inset='tl', xfade=XF)
     return s
 
 
-def clip(name, src, i, dur, text=None, sfx=None, xfade=XF, eq=None):
+def clip(name, src, i, dur, text=None, sfx=None, xfade=XF, eq=None, cropf=None):
     s = {'name': name, 'src': src, 'in': i, 'dur': dur, 'xfade': xfade}
+    if cropf:
+        s['cropf'] = cropf
     if eq:
         s['eq'] = eq
     if text:
@@ -254,8 +256,9 @@ def build():
         add('Act 2', 'a2b1', n, 'Click a piece, then drag it where you want it.', with_text(ui('a2b1', E, [[sel + 0.4, sel + 7.4, 1.4]], [[0, 0.5, 0.5, 1.0], [1.0, 0.45, 0.5, 1.5], [4.0, 0.5, 0.5, 1.6]], 5.0), c),
             'film7/edit (select, move gizmo)', 'RE-RECORD: gaps 3-6% over 50 ms; the click shows a wall brightness jump', 'edit scene, quiet machine')
         n += 1
+        # the capture has a 3-frame dark pop at fab + 5.9 s (the app re-lights when the material changes): skipped, 0.17 s of source
         c = caption_card(2, 'a2b2', n, 'Swap its material with one click.')
-        add('Act 2', 'a2b2', n, 'Swap its material with one click.', with_text(ui('a2b2', E, [[fab - 1.2, fab + 8.2, 2.4]], [[0, 0.73, 0.64, 1.9], [3.9, 0.73, 0.66, 1.9]], 3.9), c),
+        add('Act 2', 'a2b2', n, 'Swap its material with one click.', with_text(ui('a2b2', E, [[fab - 1.2, fab + 5.86, 2.4], [fab + 6.03, fab + 8.2, 2.4]], [[0, 0.73, 0.64, 1.9], [3.83, 0.73, 0.66, 1.9]], 3.83), c),
             'film7/edit (material presets)', 'RE-RECORD with the edit take (5.8% over 50 ms)', 'edit scene')
         n += 1
         c = caption_card(2, 'a2b3', n, 'Or just ask: "make the sofa dark green".')
@@ -348,7 +351,7 @@ def build():
         sg = ui('a4b4d', MD, [[pr + 0.0, pr + 2.2, 1.0]], [[0, 0.5, 0.5, 1.0]], 2.2, sfx='whoosh')
         sg['text'] = [[c, 0.25, 2.05]]
         add('Act 4', 'a4b4d', n, 'Press Drone: the camera lifts off and flies over the city.', sg, 'film8/modes (real take: the Drone button and the click, 2.2 s at 1:1, then the clean flight clip)', 'NEW capture (12% of gaps over 50 ms and blocky at 100%; used for the click only; re-record at scale 1.5 when the machine is quiet)', 'modes --clickDrone=1 --scale=1.5', trailer=2.2)
-    for bid, name, fb, i0, dur, cap, tr in (('a4b5', 'drone-lisbon', f'{F1}/lisbon-drone.mp4', 0.0, 4.3, 'Fly over a whole city by drone.', 4.5), ('a4b6', 'house-walk', f'{F1}/casa-pool.mp4', 1.0, 4.2, 'Walk through a house, at any time of day.', None),
+    for bid, name, fb, i0, dur, cap, tr in (('a4b5', 'drone-lisbon', f'{F1}/lisbon-drone.mp4', 0.0, 4.3, 'Fly over a whole city by drone.', 4.5), ('a4b6', 'house-walk', f'{F1}/casa-pool.mp4', 1.0, 4.2, 'Walk through a house, at any time of day.', 2.5),
                                            ('a4b7', 'landscape', f'{INTRO}/m-terraces-falls.mp4', 0.4, 5.0, 'Or float over a landscape at golden hour.', None)):
         n += 1
         c = caption_card(4, bid, n, cap)
@@ -391,7 +394,7 @@ def build():
         TRAILER.append(('a5b3', 9.0))
     n += 1
     c = caption_card(5, 'a5b4', n, 'And more: sculpt terrain, write game rules, search every command.')
-    add('Act 5', 'a5b4', n, 'And more: sculpt terrain, write game rules, search every command.', with_text(clip('a5b4', clipsrc('isles', f'{INTRO}/m-lantern.mp4'), 2.0, 3.2), c), 'film8/clips/isles (one calm shot)', 'world clip', '')
+    add('Act 5', 'a5b4', n, 'And more: sculpt terrain, write game rules, search every command.', with_text(clip('a5b4', clipsrc('isles', f'{INTRO}/m-lantern.mp4'), 1.5, 3.2, cropf=[0.06, 0.12, 0.88, 0.88]), c), 'film8/clips/isles (one calm shot)', 'world clip', '')
     SEGS.append({'name': 'end', 'src': f'{F8}/cards/end.png', 'mode': 'image', 'dur': 5.0, 'xfade': 0.8, 'grade': False})
     BEATS.append(('End', 'end', 'Aether. Describe it. Shape it. Share it.', 5.0, 'card', 'existing style', ''))
 
@@ -418,7 +421,7 @@ def trailer():
         if t.get('mode') == 'ui':
             t['parts'] = s['parts']
         out.append(t)
-    out.append({'name': 'end', 'src': f'{F8}/cards/end.png', 'mode': 'image', 'dur': 3.0, 'xfade': 0.6, 'grade': False})
+    out.append({'name': 'end', 'src': f'{F8}/cards/end.png', 'mode': 'image', 'dur': 4.0, 'xfade': 0.6, 'grade': False})
     return out
 
 
