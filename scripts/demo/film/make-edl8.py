@@ -275,7 +275,7 @@ def build():
             add('Act 2', sid, n, 'Drag the sun: the light changes at once, with nothing re-baked.', clip(sid, sweep, t0, 3.0, xfade=1 / 30), 'film8/clips/sweep-penthouse (four times of day)', 'world clip', 'world-footage pipeline', trailer=1.8 if k == 2 else None)
     AS = f'{F7}/arch-step'
     if have(f'{AS}/f00000.jpg'):
-        for bid, a, b, speed, cap, tr in (('a2b5', 20, 150, 1.0, 'Cut a building open to see its rooms.', 3.5), ('a2b6', 150, 240, 1.0, 'Or take every wall down.', 2.5),
+        for bid, a, b, speed, cap, tr in (('a2b5', 20, 150, 1.0, 'Cut a building open to see its rooms.', 3.5), ('a2b6', 150, 240, 1.0, 'Or take every wall down.', None),
                                           ('a2b7', 285, 400, 1.0, 'Pull the floors apart to see each storey.', None)):
             n += 1
             c = caption_card(2, bid, n, cap)
@@ -347,16 +347,16 @@ def build():
         c = caption_card(4, 'a4b4', n, 'Published worlds open in their own mode, and any of them can be remixed.')
         seg = {'name': 'a4b4', 'src': LH, 'mode': 'browser', 'url': 'aether-studio-lyart.vercel.app', 'in': ev('livehome', 'featured') + 1.0, 'dur': 5.5, 'xfade': XF, 'sfx': 'whoosh'}
         add('Act 4', 'a4b4', n, 'Published worlds open in their own mode, and any of them can be remixed.', with_text(seg, c, ['note-live-site']), 'film7/livehome (live site, Featured)', 'v7 capture good (0% over 50 ms)')
-    # the Lisbon aerial and the Drone-button pair are out (user: the Lisbon hills look poor; the film shows the home shot instead)
-    # the home shot: street level on the quay at golden hour (the footage agent's lisbon-quay); until it lands there is no Lisbon at all
-    for bid, name, i0, dur, cap, tr in (('a4b5', 'quay', 0.3, 4.5, 'A whole city, walked at street level.', 3.0),):
-        q = clipsrc(name, '')
-        if q and have(q):
-            n += 1
-            c = caption_card(4, bid, n, cap)
-            add('Act 4', bid, n, cap, with_text(clip(bid, q, i0, dur), c), 'film8/clips/lisbon-quay', 'world clip', 'world-footage pipeline', trailer=tr)
-    for bid, name, fb, i0, dur, cap, tr in (('a4b6', 'house-walk', f'{F1}/casa-pool.mp4', 1.0, 4.2, 'Walk through a house, at any time of day.', 2.3),
-                                           ('a4b7a', 'ascent', f'{F8}/clips/m-ascent.mp4', 0.2, 6.0, 'Or descend over a sanctuary at dusk.', 3.0),
+    MD = f'{F8}/modes/modes.mp4'
+    if have(MD) and evx('modes', 'drone button pressed'):
+        n += 1
+        c = caption_card(4, 'a4b4d', n, 'Press Drone: the camera lifts off and flies over the city.')
+        pr = ev('modes', 'drone button pressed')
+        sg = ui('a4b4d', MD, [[pr + 0.0, pr + 2.2, 1.0]], [[0, 0.5, 0.5, 1.0]], 2.2, sfx='whoosh')
+        sg['text'] = [[c, 0.25, 2.05]]
+        add('Act 4', 'a4b4d', n, 'Press Drone: the camera lifts off and flies over the city.', sg, 'film8/modes (real take: the Drone button and the click, 2.2 s at 1:1, then the clean flight clip)', 'NEW capture (12% of gaps over 50 ms and blocky at 100%; used for the click only; re-record at scale 1.5 when the machine is quiet)', 'modes --clickDrone=1 --scale=1.5', trailer=2.2)
+    for bid, name, fb, i0, dur, cap, tr in (('a4b5', 'drone-lisbon', f'{F1}/lisbon-drone.mp4', 0.0, 4.3, 'Fly over a whole city by drone.', 4.5), ('a4b6', 'house-walk', f'{F1}/casa-pool.mp4', 1.0, 4.2, 'Walk through a house, at any time of day.', 2.3),
+                                           ('a4b7a', 'ascent', f'{F8}/clips/m-ascent.mp4', 0.2, 6.0, 'Or descend over a sanctuary at dusk.', None),
                                            ('a4b7', 'landscape', f'{INTRO}/m-terraces-falls.mp4', 0.4, 5.0, 'Or float over a landscape at golden hour.', 3.0)):
         n += 1
         c = caption_card(4, bid, n, cap)
