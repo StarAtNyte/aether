@@ -27,6 +27,25 @@ import { OVERLAY_SCRIPT, Recorder, centre, click, cursor, dwell, glide, sleep, t
 
 const ARGS = process.argv.slice(2);
 const arg = (n: string): string | undefined => ARGS.find((a) => a.startsWith(`--${n}=`))?.slice(n.length + 3);
+/**
+ * `--td=N` (time dilation): the take runs N times slower on every clock, so a renderer that cannot keep 30 fps in real time still gives
+ * a frame at least every 33 ms of take time. The page's clocks (performance.now, Date.now, timers, requestAnimationFrame stamps, CSS
+ * animations) and this script's clocks (Date.now, timers) all run at 1/N; the screencast's frame times are divided by N, so the video
+ * plays at the speed the take meant. Each paint still costs what it costs: at N = 4 a 37 ms paint is 9 ms of take time.
+ */
+const TD = Math.max(1, Number(arg('td') ?? 1));
+const TD_BASE = Date.now();
+if (TD > 1) {
+  const realNow = Date.now.bind(Date);
+  Date.now = (): number => TD_BASE + (realNow() - TD_BASE) / TD;
+  const st = globalThis.setTimeout.bind(globalThis);
+  const si = globalThis.setInterval.bind(globalThis);
+  (globalThis as unknown as { setTimeout: unknown }).setTimeout = ((fn: () => void, ms?: number, ...r: unknown[]) => st(fn, (ms ?? 0) * TD, ...r)) as unknown;
+  (globalThis as unknown as { setInterval: unknown }).setInterval = ((fn: () => void, ms?: number, ...r: unknown[]) => si(fn, (ms ?? 0) * TD, ...r)) as unknown;
+}
+/** A screencast timestamp (real epoch seconds) on the dilated clock. */
+const realWallSec = (): number => (TD > 1 ? TD_BASE + (Date.now() - TD_BASE) * TD : Date.now()) / 1000;
+const vsec = (sec: number): number => (TD > 1 ? (TD_BASE + (sec * 1000 - TD_BASE) / TD) / 1000 : sec);
 const SCENE = arg('scene') ?? 'edit';
 const OUT = resolve(arg('out') ?? join(homedir(), '.local/share/aether/demo/film/ui'));
 const EDIT_SLUG = arg('slug') ?? 'scandi-living-room';
@@ -125,7 +144,7 @@ class Capture {
     const cdp = await this.ctx.newCDPSession(this.page);
     this.cdp = cdp;
     cdp.on('Page.screencastFrame', (f: { data: string; sessionId: number; metadata: { timestamp?: number } }) => {
-      const t = f.metadata.timestamp ?? Date.now() / 1000;
+      const t = vsec(f.metadata.timestamp ?? realWallSec());
       // A frame painted before the last one (a restarted screencast) is dropped.
       if (this.times.length && t <= this.times[this.times.length - 1]!) {
         void cdp.send('Page.screencastFrameAck', { sessionId: f.sessionId }).catch(() => undefined);
@@ -229,6 +248,15 @@ async function newTake(browser: Awaited<ReturnType<typeof chromium.launch>>, sce
   await ctx.addInitScript({ content: `try { const k='aether.studio.settings.v1'; const s=JSON.parse(localStorage.getItem(k)||'{}'); s.renderTier='${arg('tier') ?? 'ultra'}'; s.showNavHint=false; s.motion='sharp'; localStorage.setItem(k, JSON.stringify(s)); localStorage.setItem('aether.player.mute', '1'); } catch {}` });
   // `--capture=1`: the engine's capture mode (frozen per-frame noise, boosted LOD, shadow maps up to 4096), as the clean renderer uses it
   if (arg('capture') === '1') await ctx.addInitScript({ content: `globalThis.__AETHER_CAPTURE = ${JSON.stringify({ on: true, lodBoost: 4, mirrorScale: 1, shadowMapCap: 4096 })};` });
+  if (TD > 1) {
+    await ctx.addInitScript({ content: `(() => { const TD = ${TD};
+      const pn = performance.now.bind(performance); const b0 = pn(); performance.now = () => b0 + (pn() - b0) / TD;
+      const dn = Date.now.bind(Date); const d0 = dn(); Date.now = () => d0 + (dn() - d0) / TD;
+      const st = window.setTimeout.bind(window); window.setTimeout = (f, ms, ...a) => st(f, (ms || 0) * TD, ...a);
+      const si = window.setInterval.bind(window); window.setInterval = (f, ms, ...a) => si(f, (ms || 0) * TD, ...a);
+      const raf = window.requestAnimationFrame.bind(window); window.requestAnimationFrame = (cb) => raf((t) => cb(b0 + (t - b0) / TD));
+    })();` });
+  }
   await ctx.addInitScript({ content: OVERLAY_SCRIPT });
   const page = await ctx.newPage();
   if (arg('chrome') === 'real') log(`real Chrome ${browser.version()} (headless=new), GPU args ${process.env['GEN_GPU'] ?? 'default'}`);
@@ -348,6 +376,12 @@ async function imagesReady(page: Page, label: string): Promise<void> {
 
 /** The quality ladder of the editor's renderer: the tier in effect and the performance level (0: nothing given up). The take is refused above 0, and a watcher notes every change while it runs. */
 async function ladderGuard(page: Page): Promise<void> {
+  if (TD > 1) {
+    const c = await page.context().newCDPSession(page);
+    await c.send('Animation.enable');
+    await c.send('Animation.setPlaybackRate', { playbackRate: 1 / TD });
+    log(`time dilation ${TD}: CSS animations at ${1 / TD}x`);
+  }
   const want = arg('tier') ?? 'ultra';
   const st = await page.evaluate(() => {
     const r = (window as unknown as { __aether?: { simulation?: { renderer?: { renderTier?: string; performanceLevel?: number } } } }).__aether?.simulation?.renderer;

@@ -258,13 +258,13 @@ def build():
         add('Act 2', 'a2b1', n, 'Click a piece, then drag it where you want it.', with_text(ui('a2b1', E, [[sel + 0.4, sel + 7.4, 1.4]], [[0, 0.5, 0.5, 1.0], [1.0, 0.45, 0.5, 1.5], [4.0, 0.5, 0.5, 1.6]], 5.0), c),
             'film7/edit (select, move gizmo)', 'RE-RECORD: gaps 3-6% over 50 ms; the click shows a wall brightness jump', 'edit scene, quiet machine')
         n += 1
-        # the capture has a 3-frame dark pop at fab + 5.9 s (the app re-lights when the material changes): skipped, 0.17 s of source
+        # the time-dilated retake relights the room 1 s after the last material (fab + 7.4 s, a step in the light): the beat ends before it
         c = caption_card(2, 'a2b2', n, 'Swap its material with one click.')
-        add('Act 2', 'a2b2', n, 'Swap its material with one click.', with_text(ui('a2b2', E, [[fab - 1.2, fab + 5.86, 2.4], [fab + 6.03, fab + 8.2, 2.4]], [[0, 0.73, 0.64, 1.9], [3.83, 0.73, 0.66, 1.9]], 3.83), c),
+        add('Act 2', 'a2b2', n, 'Swap its material with one click.', with_text(ui('a2b2', E, [[fab - 1.2, fab + 7.2, 2.4]], [[0, 0.73, 0.64, 1.9], [3.5, 0.73, 0.66, 1.9]], 3.5), c),
             'film7/edit (material presets)', 'RE-RECORD with the edit take (5.8% over 50 ms)', 'edit scene')
         n += 1
         c = caption_card(2, 'a2b3', n, 'Or just ask: "make the sofa dark green".')
-        add('Act 2', 'a2b3', n, 'Or just ask: "make the sofa dark green".', with_text(ui('a2b3', E, [[ct - 1.2, ct + 3.4, 1.4], [ct + 3.4, min(ct + 8.4, 48.0), 1.6]],
+        add('Act 2', 'a2b3', n, 'Or just ask: "make the sofa dark green".', with_text(ui('a2b3', E, [[ct - 1.2, ct + 3.4, 1.4], [ct + 3.4, min(ct + 8.4, 45.6), 1.6]],
             [[0, 0.2, 0.84, 2.0], [2.4, 0.2, 0.84, 2.0], [3.2, 0.5, 0.5, 1.0], [5.4, 0.5, 0.5, 1.0]], 5.6, inset='br'), c, ['note-offline']),
             'film7/edit (chat typed, result, Undo)', 'RE-RECORD: this stretch was 16% over 50 ms; hold the result a full second', 'edit scene', trailer=4.5)
         n += 1
