@@ -695,5 +695,48 @@
    "sigma": 0.35,
    "ease": 0.9
   }
+ },
+ "lisbon-aerial": {
+  "slug": "lisbon-hills",
+  "shots": [
+   {
+    "duration": 7,
+    "hour": 17.3,
+    "ease": "inOut",
+    "camera": {
+     "position": [
+      -100,
+      75,
+      108
+     ],
+     "target": [
+      -30,
+      0,
+      190
+     ],
+     "fov": 55
+    },
+    "cameraTo": {
+     "position": [
+      -58,
+      72,
+      108
+     ],
+     "target": [
+      10,
+      0,
+      195
+     ],
+     "fov": 55
+    },
+    "grade": {
+     "bloom": 0.7,
+     "diffusion": 0.2,
+     "vignette": 0.2,
+     "grain": 0,
+     "practicals": 0.6
+    }
+   }
+  ]
  }
 }
