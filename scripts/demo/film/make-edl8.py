@@ -32,6 +32,8 @@ PHOTO_SRC = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file_
 PHOTO_WALK = f'{F8}/clips/photo-hotel-walk.mp4'
 PHOTO_TO_3D = f'{D}/aether-photo-to-3d-live.mp4'
 XF = 0.1  # the longest dissolve between two shots: three frames (the cards' fades are separate)
+# lisbon-aerial: the top 24% is a hazy strip with upside-down trees; a 16:9 window of the rest, from the 4K file, one downscale
+AERIAL_CROP = [0.12, 0.24, 0.76, 0.76]
 ARCH_EQ = 'eq=contrast=1.16:saturation=1.1:gamma=0.92:brightness=-0.03'
 ACTS = [('Describe', 'Type a world. Watch it appear.'), ('Shape it', 'Change it by hand, by words, by light.'), ('Prove it', 'A bot plays it. The checks run.'),
         ('Share it', 'One link. Any screen. Any kind of world.'), ('Go further', 'Characters, photoreal shots, a short film.')]
@@ -67,7 +69,7 @@ def evf(path, what):
 def clipsrc(name, fallback):
     """A world clip from the world-footage pipeline when it has landed, else the older footage."""
     # the footage agent's names differ a little from the beat names; the 4K render (when there is one) is the source
-    for nm in {'drone-lisbon': ['lisbon-drone'], 'house-walk': ['casa-pool'], 'landscape': ['terraces-falls'], 'arch-cutaway': ['arch-cutaway'], 'quay': ['lisbon-quay'], 'ascent': ['m-ascent'], 'isles': ['m-lantern']}.get(name, [name]):
+    for nm in {'drone-lisbon': ['lisbon-aerial', 'lisbon-drone'], 'house-walk': ['casa-pool'], 'landscape': ['terraces-falls'], 'arch-cutaway': ['arch-cutaway'], 'quay': ['lisbon-quay'], 'ascent': ['m-ascent'], 'isles': ['m-lantern']}.get(name, [name]):
         for cand in (f'{F8}/clips/{nm}-4k.mp4', f'{F8}/clips/{nm}.mp4'):
             if have(cand):
                 return cand
@@ -358,12 +360,12 @@ def build():
         sg = ui('a4b4d', MD, [[pr + 0.0, pr + 2.2, 1.0]], [[0, 0.5, 0.5, 1.0]], 2.2, sfx='whoosh')
         sg['text'] = [[c, 0.25, 2.05]]
         add('Act 4', 'a4b4d', n, 'Press Drone: the camera lifts off and flies over the city.', sg, 'film8/modes (real take: the Drone button and the click, 2.2 s at 1:1, then the clean flight clip)', 'NEW capture (12% of gaps over 50 ms and blocky at 100%; used for the click only; re-record at scale 1.5 when the machine is quiet)', 'modes --clickDrone=1 --scale=1.5', trailer=2.2)
-    for bid, name, fb, i0, dur, cap, tr in (('a4b5', 'drone-lisbon', f'{F1}/lisbon-drone.mp4', 0.0, 4.3, 'Fly over a whole city by drone.', 4.5), ('a4b6', 'house-walk', f'{F1}/casa-pool.mp4', 1.0, 4.2, 'Walk through a house, at any time of day.', 2.3),
+    for bid, name, fb, i0, dur, cap, tr in (('a4b5', 'drone-lisbon', f'{F1}/lisbon-drone.mp4', 0.2, 5.0, 'Fly over a whole city by drone.', 4.5), ('a4b6', 'house-walk', f'{F1}/casa-pool.mp4', 1.0, 4.2, 'Walk through a house, at any time of day.', 2.3),
                                            ('a4b7a', 'ascent', f'{F8}/clips/m-ascent.mp4', 0.2, 6.0, 'Or descend over a sanctuary at dusk.', None),
                                            ('a4b7', 'landscape', f'{INTRO}/m-terraces-falls.mp4', 0.4, 5.0, 'Or float over a landscape at golden hour.', 3.0)):
         n += 1
         c = caption_card(4, bid, n, cap)
-        add('Act 4', bid, n, cap, with_text(clip(bid, clipsrc(name, fb), i0, dur, sfx='whoosh' if bid == 'a4b5' else None), c), f'film8/clips/{name} (fallback v6/v7 footage)', 'world clip', 'world-footage pipeline', trailer=tr)
+        add('Act 4', bid, n, cap, with_text(clip(bid, clipsrc(name, fb), i0, dur, sfx='whoosh' if bid == 'a4b5' else None, cropf=AERIAL_CROP if (bid == 'a4b5' and 'lisbon-aerial' in clipsrc(name, fb)) else None), c), f'film8/clips/{name} (fallback v6/v7 footage)', 'world clip', 'world-footage pipeline', trailer=tr)
     BEATS.append(('Act 4', 'a4b8', 'Play a game as a character.', 0, 'film8/clips/game-play', 'LEFT OUT until a clean clip exists (the game tour take shows the game for the bot beat)', ''))
 
     # ---- Act 5: Go further
