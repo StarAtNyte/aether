@@ -121,7 +121,7 @@ def capz(cam, maxz):
 def ui(name, src, parts, cam, dur, text=None, sfx='click', inset='tl', xfade=XF):
     parts = cut_stalls(src, parts) if os.path.exists(src) else parts
     cam = capz(cam, ZOOM_CAP.get(os.path.basename(os.path.dirname(src)), 1.5))
-    s = {'name': name, 'src': src, 'mode': 'ui', 'parts': parts, 'cam': cam, 'dur': dur, 'xfade': xfade, 'frame': 0.88, 'sfx': sfx, 'insetPos': inset}
+    s = {'name': name, 'src': src, 'mode': 'ui', 'parts': parts, 'cam': cam, 'dur': dur, 'xfade': xfade, 'frame': 0.88, 'sfx': sfx, 'insetPos': inset, 'inset': False}  # no picture-in-picture: the whole-window thumbnail is off
     if text:
         s['text'] = text
     return s
