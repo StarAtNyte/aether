@@ -385,11 +385,11 @@ def build():
         add('Act 5', 'a5b2f', n, 'Finished films sit on the home page: this one is a Blender render.', with_text(seg, c, ['note-live-site']), 'film8/livehome (live site: the Stories film card, click, the film plays)', 'NEW capture (live site, 3.1% of gaps over 50 ms)', '')
     if have(f'{F6}/shots/two-whistles.mp4'):
         n += 1
-        # no face is readable in any frame: the title, the train on the viaduct, the crossing signal, the lookout and its lamps,
+        # no face is readable in any frame: the title, the train on the viaduct, the crossing signal, the lamps,
         # the sunset over the town from behind (checked at 1.5 s steps, and at 0.4 s steps on the ranges used)
         c1 = caption_card(5, 'a5b3', n, 'An animated short, made with Aether.')
         c3 = caption_card(5, 'a5b3k', n, 'Two whistles from the cape: the promise kept.')
-        films = [anime('a5b3a', 18.5, 21.0, [[c1, 0.2, 2.3]]), anime('a5b3b', 59.0, 61.4), anime('a5b3c', 35.8, 36.9), anime('a5b3d', 62.4, 64.0),
+        films = [anime('a5b3a', 18.5, 21.0, [[c1, 0.2, 2.3]]), anime('a5b3b', 59.0, 61.4), anime('a5b3c', 35.8, 36.9),
                  anime('a5b3e', 73.0, 76.2, [[c3, 0.2, 3.0]]), anime('a5b3f', 90.2, 92.7)]
         for sg in films:
             SEGS.append(sg)
