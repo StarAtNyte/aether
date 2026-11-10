@@ -741,11 +741,11 @@ const FULL_WARMUP = (globalThis as { __AETHER_FULL_WARMUP?: boolean }).__AETHER_
  * far detail levels and distance cuts that would swap while the camera moves (a pop in the footage) sit far beyond
  * what the shot shows. Default 1 (the live planning, unchanged).
  */
-function captureFlags(): { on: boolean; lodBoost: number; mirrorScale: number; shadowMapCap: number; lockEye: boolean } {
-  const f = (globalThis as { __AETHER_CAPTURE?: { on?: boolean; lodBoost?: number; mirrorScale?: number; shadowMapCap?: number; lockEye?: boolean } }).__AETHER_CAPTURE;
+function captureFlags(): { on: boolean; lodBoost: number; mirrorScale: number; shadowMapCap: number; lockEye: boolean; shadowNoise: boolean } {
+  const f = (globalThis as { __AETHER_CAPTURE?: { on?: boolean; lodBoost?: number; mirrorScale?: number; shadowMapCap?: number; lockEye?: boolean; shadowNoise?: boolean } }).__AETHER_CAPTURE;
   const on = f?.on === true;
   const n = (v: number | undefined, lo: number, hi: number, d: number): number => (on && v !== undefined && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d);
-  return { on, lodBoost: n(f?.lodBoost, 1, 16, 1), mirrorScale: n(f?.mirrorScale, 0.25, 1, MIRROR_SCALE), shadowMapCap: n(f?.shadowMapCap, 0, 8192, 0), lockEye: on && f?.lockEye === true };
+  return { on, lodBoost: n(f?.lodBoost, 1, 16, 1), mirrorScale: n(f?.mirrorScale, 0.25, 1, MIRROR_SCALE), shadowMapCap: n(f?.shadowMapCap, 0, 8192, 0), lockEye: on && f?.lockEye === true, shadowNoise: on && f?.shadowNoise === true };
 }
 /** Frames after which the cached sun shadow map is drawn again whatever happened (a safety net). */
 const SUN_MAP_REFRESH = 24;
@@ -5376,9 +5376,9 @@ export class WorldRenderer {
     // Scatter fields cast through their coarser stand-ins (cascade cameras draw the levels themselves).
     sunLayers.enable(FIELD_SHADOW_LAYER);
     const cascades = this.env.sunCascades;
-    // Offline footage averages jittered draws of one moment: the soft shadow filter's sampling pattern turns on every draw
-    // (as it does under temporal AA) so the average converges instead of freezing one noise pattern into the picture.
-    const temporal = this.post?.effects.taa === true || (capture && captureFlags().on);
+    // Offline footage keeps the soft shadow filter's sampling pattern FIXED by default (a static dither, never flicker: the same
+    // pattern in every frame); `__AETHER_CAPTURE.shadowNoise = true` turns it on every draw, as under temporal AA, to average it away.
+    const temporal = this.post?.effects.taa === true || (capture && captureFlags().shadowNoise);
     if (temporal) {
       const k = (this.shadowFrame = (this.shadowFrame + 1) % 64);
       shadowNoiseValue.set((k * 37) % 64, (k * 23) % 64);

@@ -5,14 +5,15 @@
 #   scripts/demo/finish-footage.sh master.mkv out.mp4 [--scale=1920:1080] [--grain=5] [--glow=0.14] [--denoise=0] [--no-grade]
 #
 # --scale     downscale target (Lanczos); default none (keep the master's size, e.g. 3840x2160 for a 4K source)
-# --sharpen   luma unsharp mask amount after scaling (0 = off); default 0.8 (blurdetect 4.96 to 4.34 on a still)
-# --grain     temporal film grain strength (noise filter, luma only; 0 = off); default 5
+# --sharpen   luma unsharp mask amount after scaling (0 = off); default 0.5 (a still: blurdetect 4.96 to about 4.5)
+# --grain     temporal film grain strength; default 0 (OFF: per-frame grain read as flicker, +1.4 to +3.2 grey levels of temporal
+#             noise in smooth areas of the finished clips against the lossless masters)
 # --glow      screen-blended highlight glow strength (0 = off); default 0.14
 # --denoise   hqdn3d luma temporal strength for a last-resort clean-up (0 = off); default 0
 # --no-grade  skip the LUT (glow and grain only)
 set -e
 IN="$1"; OUT="$2"; shift 2
-SCALE=""; SHARP=0.8; GRAIN=5; GLOW=0.14; DEN=0; GRADE=1
+SCALE=""; SHARP=0.5; GRAIN=0; GLOW=0.14; DEN=0; GRADE=1
 for a in "$@"; do
   case "$a" in
     --scale=*) SCALE="${a#--scale=}";;

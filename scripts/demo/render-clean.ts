@@ -42,7 +42,7 @@ const TRIM = num('trim', 0);
  * blue streaks and blotches over cloud layers (measured: same frame, same flags, clean on Intel and with TAA on). A clip
  * can set `effects` to differ (interiors keep AO). `--taa=1` keeps TAA.
  */
-const EFFECTS = arg('effects') ? (JSON.parse(arg('effects')!) as Record<string, boolean>) : MODE === 'clean' && arg('taa') !== '1' ? { taa: false, ao: false } : undefined;
+const EFFECTS = arg('effects') ? (JSON.parse(arg('effects')!) as Record<string, boolean>) : MODE === 'clean' && arg('taa') !== '1' ? { taa: false, ao: false, grain: false } : undefined;
 /** `--globals='{"__AETHER_LOD_BIAS":false}'`: page globals set before the engine loads (engine experiments). */
 const GLOBALS = arg('globals') ? (JSON.parse(arg('globals')!) as Record<string, unknown>) : {};
 /** `--matrix=file.json`: one still of frame `--from` per config (`{ name, effects?, sub?, size?, settle? }`), PNGs in `--out`. */
@@ -103,7 +103,7 @@ function build(e: Entry): { story: Record<string, unknown> | null; path?: { keys
   });
   const story = {
     letterbox: 0,
-    shots: shots.map((s) => ({ ease: 'inOut', shake: 0, transition: 'cut', transitionSeconds: 0, moves: [], music: 'none', ambience: { wind: 0, waves: 0, cicadas: 0, gulls: 0, town: 0 }, ...s })).map((s) => { const g = (s as { grade?: { bloom?: number } }).grade; return g && typeof g.bloom === 'number' ? { ...s, grade: { ...g, bloom: g.bloom * BLOOM_SCALE } } : s; }),
+    shots: shots.map((s) => ({ ease: 'inOut', shake: 0, transition: 'cut', transitionSeconds: 0, moves: [], music: 'none', ambience: { wind: 0, waves: 0, cicadas: 0, gulls: 0, town: 0 }, ...s })).map((s) => { const g = (s as { grade?: { bloom?: number } }).grade; return g && typeof g.bloom === 'number' ? { ...s, grade: { ...g, bloom: g.bloom * BLOOM_SCALE, ...(MODE === 'clean' ? { grain: 0 } : {}) } } : s; }),
   };
   return { story, ...(path ? { path } : {}) };
 }
