@@ -85,8 +85,15 @@ export const CASCADE_MIN_RADIUS = 16;
 export const SUN_ANGLE = 0.019;
 /** Sun shadow maps when cascades run (two focus boxes and the content fit), the same on every tier that has them. */
 export const CASCADES = 3;
-/** Soft-filter taps per tier: blocker search and filter. */
-export const SOFT_TAPS: Readonly<Record<Exclude<RenderTier, 'low'> | 'still', readonly [number, number]>> = Object.freeze({ medium: [3, 6], high: [6, 10], ultra: [6, 12], still: [8, 16] });
+/**
+ * Soft-filter taps per tier: blocker search and filter. The blocker search needs the most taps for what they cost: it
+ * looks for a caster within a disc as wide as the widest possible penumbra (about 0.3 m at the sun's apparent size), and a
+ * pixel just outside a shadow whose few taps all miss the caster reads as fully lit. At 3 to 6 taps those misses are
+ * isolated bright dots along every shadow edge (a halftone speckle that swims when the view moves); at 8 and more they
+ * are gone. The search taps are one comparison each (the three distance comparisons run only where a blocker exists), so
+ * this adds less than the noise of a frame time measured on an integrated GPU.
+ */
+export const SOFT_TAPS: Readonly<Record<Exclude<RenderTier, 'low'> | 'still', readonly [number, number]>> = Object.freeze({ medium: [8, 6], high: [10, 10], ultra: [12, 12], still: [14, 16] });
 /** Fraction of a near cascade (from its edge inwards) over which it blends into the next one. */
 export const CASCADE_BLEND = 0.18;
 

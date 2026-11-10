@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CASCADES, CASCADE_MIN_RADIUS, focusHalf, footprintMisses, pcfRadius, planSunShadows, quantizeHalf, snapToTexel, viewFocus } from '../src/environment/sun-shadow-plan';
+import { CASCADES, CASCADE_MIN_RADIUS, focusHalf, footprintMisses, pcfRadius, planSunShadows, SOFT_TAPS, quantizeHalf, snapToTexel, viewFocus } from '../src/environment/sun-shadow-plan';
 import { BLOCKER_LEVELS, MAX_BLOCKER_TAPS, MAX_FILTER_TAPS, meanBlockerDistance } from '../src/gpu/sun-shadow-nodes';
 import { effectsOf, needsPrePass } from '../src/gpu/finishing';
 
@@ -40,6 +40,13 @@ describe('sun shadow plan', () => {
     expect(still.filterSamples).toBeGreaterThan(high.filterSamples);
     expect(still.filterSamples).toBeLessThanOrEqual(MAX_FILTER_TAPS);
     expect(still.blockerSamples).toBeLessThanOrEqual(MAX_BLOCKER_TAPS);
+  });
+
+  it('searches for blockers with enough taps that no tier leaves isolated lit dots along shadow edges', () => {
+    // Fewer than 8 search taps over a penumbra-wide disc miss a caster at random: bright speckles on every shadow edge.
+    for (const tier of ['medium', 'high', 'ultra'] as const) expect(planSunShadows({ ...big, tier, still: false }).blockerSamples).toBeGreaterThanOrEqual(8);
+    expect(planSunShadows({ ...big, tier: 'high', still: true }).blockerSamples).toBeGreaterThanOrEqual(8);
+    expect(SOFT_TAPS.medium[0]).toBeGreaterThanOrEqual(8);
   });
 
   it('keeps maps within the budget (medium has no near map: one fitted map)', () => {
