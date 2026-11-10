@@ -263,6 +263,7 @@ async function newTake(browser: Awaited<ReturnType<typeof chromium.launch>>, sce
 
 /** Write the marks (shifted to the first frame), the frame times, the mp4 and six check stills. */
 async function finish(t: Take): Promise<void> {
+  await ladderReport(t.page, SCENE);
   await t.cap.stop();
   if (GRAB) await t.cap.finishGrab();
   const { rec, cap } = t;
@@ -345,9 +346,33 @@ async function imagesReady(page: Page, label: string): Promise<void> {
 // page helpers
 // ---------------------------------------------------------------------------------------------------------------
 
+/** The quality ladder of the editor's renderer: the tier in effect and the performance level (0: nothing given up). The take is refused above 0, and a watcher notes every change while it runs. */
+async function ladderGuard(page: Page): Promise<void> {
+  const want = arg('tier') ?? 'ultra';
+  const st = await page.evaluate(() => {
+    const r = (window as unknown as { __aether?: { simulation?: { renderer?: { renderTier?: string; performanceLevel?: number } } } }).__aether?.simulation?.renderer;
+    return r ? { tier: r.renderTier ?? '?', level: r.performanceLevel ?? -1 } : null;
+  });
+  log(`quality ladder: tier ${st?.tier ?? 'n/a'}, level ${st?.level ?? 'n/a'} (pinned tier ${want})`);
+  if (st && (st.level !== 0 || (want !== 'auto' && st.tier !== want))) throw new Error(`REFUSED: the ladder is at level ${st.level}, tier ${st.tier}; a take needs level 0 on tier ${want}`);
+  await page.evaluate(() => {
+    const w = window as unknown as { __ladderLog?: Array<{ t: number; tier: string; level: number }>; __aether?: { simulation?: { renderer?: { renderTier?: string; performanceLevel?: number } } } };
+    w.__ladderLog = [];
+    let last = '';
+    setInterval(() => { const r = w.__aether?.simulation?.renderer; const k = `${r?.renderTier}/${r?.performanceLevel}`; if (k !== last) { last = k; w.__ladderLog!.push({ t: Math.round(performance.now()), tier: r?.renderTier ?? '?', level: r?.performanceLevel ?? -1 }); } }, 250);
+  });
+}
+
+async function ladderReport(page: Page, label: string): Promise<void> {
+  const l = await page.evaluate(() => (window as unknown as { __ladderLog?: unknown[] }).__ladderLog ?? []).catch(() => []);
+  const changed = (l as Array<{ level: number }>).some((x) => x.level !== 0);
+  log(`ladder log ${label}: ${JSON.stringify(l)}${changed ? '  LEVEL CHANGED DURING THE TAKE: re-record' : '  (level 0 throughout)'}`);
+}
+
 async function editorReady(page: Page): Promise<void> {
   await page.waitForFunction(() => { const a = window.__aether; const s = a?.store.getState(); return !!a && a.simulation !== null && s?.loading === null && !s.agentBusy && Object.keys(a.history.current.entities).length > 0; }, null, { timeout: 300_000, polling: 250 });
   await page.evaluate(async () => Promise.race([(window as unknown as { __aether: { simulation: { whenSynced(): Promise<void> } } }).__aether.simulation.whenSynced(), new Promise((r) => setTimeout(r, 60_000))]));
+  await ladderGuard(page);
 }
 
 const settle = (page: Page, ms = 240_000): Promise<unknown> =>

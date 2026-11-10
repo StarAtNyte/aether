@@ -67,7 +67,7 @@ def evf(path, what):
 def clipsrc(name, fallback):
     """A world clip from the world-footage pipeline when it has landed, else the older footage."""
     # the footage agent's names differ a little from the beat names; the 4K render (when there is one) is the source
-    for nm in {'drone-lisbon': ['lisbon-drone'], 'house-walk': ['casa-pool'], 'landscape': ['terraces-falls'], 'quay': ['lisbon-quay'], 'ascent': ['m-ascent'], 'isles': ['m-lantern']}.get(name, [name]):
+    for nm in {'drone-lisbon': ['lisbon-drone'], 'house-walk': ['casa-pool'], 'landscape': ['terraces-falls'], 'arch-cutaway': ['arch-cutaway'], 'quay': ['lisbon-quay'], 'ascent': ['m-ascent'], 'isles': ['m-lantern']}.get(name, [name]):
         for cand in (f'{F8}/clips/{nm}-4k.mp4', f'{F8}/clips/{nm}.mp4'):
             if have(cand):
                 return cand
@@ -273,14 +273,17 @@ def build():
         sweep = clipsrc('sweep-penthouse', f'{F8}/clips/sweep-penthouse.mp4')
         for k, (sid, t0) in enumerate((('a2b4s1', 0.6), ('a2b4s2', 5.3), ('a2b4s3', 10.3), ('a2b4s4', 15.3))):
             add('Act 2', sid, n, 'Drag the sun: the light changes at once, with nothing re-baked.', clip(sid, sweep, t0, 3.0, xfade=1 / 30), 'film8/clips/sweep-penthouse (four times of day)', 'world clip', 'world-footage pipeline', trailer=1.8 if k == 2 else None)
-    AS = f'{F7}/arch-step'
-    if have(f'{AS}/f00000.jpg'):
-        for bid, a, b, speed, cap, tr in (('a2b5', 20, 150, 1.0, 'Cut a building open to see its rooms.', 3.5), ('a2b6', 150, 240, 1.0, 'Or take every wall down.', None),
-                                          ('a2b7', 285, 400, 1.0, 'Pull the floors apart to see each storey.', None)):
+    # the footage agent's architecture cutaway (one 9 s render: roof and walls, the cutaway, walls down, floors apart, one floor), cut in three beats;
+    # it is dark and green at golden hour: a light lift of about a quarter stop
+    ARCHC = clipsrc('arch-cutaway', f'{F8}/clips/arch-cutaway.mp4')
+    ARCHC_EQ = 'eq=gamma=1.10:brightness=0.01'
+    if have(ARCHC):
+        for bid, a, d, cap, tr in (('a2b5', 0.0, 3.6, 'Cut a building open to see its rooms.', 3.5), ('a2b6', 3.6, 1.6, 'Or take every wall down.', None),
+                                   ('a2b7', 5.2, 3.8, 'Pull the floors apart to see each storey.', None)):
             n += 1
             c = caption_card(2, bid, n, cap)
-            add('Act 2', bid, n, cap, with_text(frames(bid, f'{AS}/f%05d.jpg', a, round((b - a) / 30 / speed, 2), speed=speed, eq=ARCH_EQ, sfx='whoosh' if bid == 'a2b5' else None), c),
-                'film7/arch-step (offline render, clear weather)', 'v7 render good', '', trailer=tr)
+            add('Act 2', bid, n, cap, with_text(clip(bid, ARCHC, a, d, sfx='whoosh' if bid == 'a2b5' else None, xfade=XF if bid == 'a2b5' else 1 / 30, eq=ARCHC_EQ), c),
+                'film8/clips/arch-cutaway (clean render)', 'world clip', '', trailer=tr)
     A = f'{F8}/arch/arch.mp4'
     if have(A) and evx('arch', 'plan'):
         n += 1
