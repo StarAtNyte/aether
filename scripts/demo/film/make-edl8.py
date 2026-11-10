@@ -394,8 +394,13 @@ def build():
         # the sunset over the town from behind (checked at 1.5 s steps, and at 0.4 s steps on the ranges used)
         c1 = caption_card(5, 'a5b3', n, 'An animated short, made with Aether.')
         c3 = caption_card(5, 'a5b3k', n, 'Two whistles from the cape: the promise kept.')
-        films = [anime('a5b3a', 18.5, 21.0, [[c1, 0.2, 2.3]]), anime('a5b3b', 59.0, 61.4), anime('a5b3c', 35.8, 36.9),
-                 anime('a5b3e', 73.0, 76.2, [[c3, 0.2, 3.0]]), anime('a5b3f', 90.2, 92.7)]
+        # the footage agent's face-free Cloudwatch clips (backs and silhouettes only), with the title from the film
+        cwo, cws, cwc = (clipsrc(k, '') for k in ('cw-open', 'cw-shop', 'cw-close'))
+        if cwo and cws and cwc and have(cwo) and have(cws) and have(cwc):
+            films = [anime('a5b3a', 18.8, 20.8, [[c1, 0.2, 1.8]]), clip('a5b3b', cwo, 0.6, 3.6), clip('a5b3c', cws, 1.0, 3.0), clip('a5b3e', cwc, 3.7, 4.6, [[c3, 0.2, 4.4]])]
+        else:
+            films = [anime('a5b3a', 18.5, 21.0, [[c1, 0.2, 2.3]]), anime('a5b3b', 59.0, 61.4), anime('a5b3c', 35.8, 36.9),
+                     anime('a5b3e', 73.0, 76.2, [[c3, 0.2, 3.0]]), anime('a5b3f', 90.2, 92.7)]
         for sg in films:
             SEGS.append(sg)
         BEATS.append(('Act 5', 'a5b3', 'An animated short, made with Aether. / Two whistles from the cape: the promise kept. (face-free: title, train, signal, lookout, sunset from behind)', sum(sg['dur'] for sg in films), 'film6/shots/two-whistles (face-free stretches only; the face-free Cloudwatch re-render replaces them when it lands)', 'existing, face-free cut', ''))
