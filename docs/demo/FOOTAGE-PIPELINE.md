@@ -135,3 +135,33 @@ environment patch are the hour (golden hour) and a thinner haze.
   edit). Anti-aliasing is done within one moment.
 * Quality is pinned for the whole capture: top tier, no ladder, no resolution scaling, no streaming-dependent detail.
 * Video files are not committed; clips live under `~/.local/share/aether/demo/film8/`.
+
+## Finishing and temporal noise (measured)
+
+Mean absolute frame-to-frame difference of a patch after removing its mean (grey levels at 1920 wide, `noise-measure.py`),
+lossless master, first finish (grain 5 at 1080p, unsharp 0.8), final finish (no grain, unsharp 0.5):
+
+| Patch | Master | First finish | Final finish |
+| --- | --- | --- | --- |
+| terraces-falls sky | 0.58 | 2.26 | 0.79 |
+| m-lantern sky | 0.27 | 2.15 | 0.39 |
+| village-market lawn | 0.73 | 2.33 | 0.94 |
+| villa-pool grass (textured, moving) | 2.31 | 3.71 | 2.72 |
+| lisbon-drone water (moving waves) | 1.90 | 3.65 | 2.76 |
+
+The per-frame film grain was the whole difference (+1.4 to +3.2 levels). The engine's own grain effect and the shots' grade
+grain are off in clean mode, the soft shadow filter's pattern is fixed (a static dither, never flicker) unless
+`__AETHER_CAPTURE.shadowNoise` is set, and finishing has no grain (`--grain` is 0).
+
+## Clips (film8)
+
+`scripts/demo/film/clean-clips.json` holds the shots; `render-film8.sh` renders and finishes them, `render-replays.sh` and
+`film-arch-clean.sh` do the editor-based beats. Landed: lisbon-aerial (the Lisbon pick: flies east along the waterfront at
+about 6 m/s with the camera tilted down toward the river and the red bridge; the old lisbon-drone stays on disk), terraces-falls,
+m-ascent, m-lantern, kepler-domes, casa-pool, penthouse-a, sweep-penthouse, cw-open, cw-shop, cw-close (face-free: characters
+only from behind), highland-dawn (nearly static), villa-pool and village-market (build replays), arch-cutaway (9 s).
+
+Findings worth keeping: the AO pass on NVIDIA GL with TAA off leaves dark streaks over cloud layers (clean mode turns AO off,
+interiors keep it); a story film's end card appears after its last shot (cut it with `finish-footage.sh --frames`); editor
+worlds cost 2 to 8 s per draw whatever the GPU, so replays use fewer draws; Lisbon's far shore shows an upside-down mirrored tree
+strip along the top (world content, crop it).

@@ -13,10 +13,11 @@
 # --no-grade  skip the LUT (glow and grain only)
 set -e
 IN="$1"; OUT="$2"; shift 2
-SCALE=""; SHARP=0.5; GRAIN=0; GLOW=0.14; DEN=0; GRADE=1
+FRAMES=""; SCALE=""; SHARP=0.5; GRAIN=0; GLOW=0.14; DEN=0; GRADE=1
 for a in "$@"; do
   case "$a" in
     --scale=*) SCALE="${a#--scale=}";;
+    --frames=*) FRAMES="${a#--frames=}";;
     --sharpen=*) SHARP="${a#--sharpen=}";;
     --grain=*) GRAIN="${a#--grain=}";;
     --glow=*) GLOW="${a#--glow=}";;
@@ -39,4 +40,4 @@ fi
 [ "$SHARP" != "0" ] && G="$G,unsharp=5:5:$SHARP:5:5:0"
 if [ "$GRAIN" != "0" ]; then G="$G,noise=alls=$GRAIN:allf=t+u:all_seed=7"; fi
 G="$G,format=yuv420p"
-exec ffmpeg -y -v error -i "$IN" -vf "$G" -c:v libx264 -preset slow -crf 13 -tune film -profile:v high -movflags +faststart -an "$OUT"
+exec ffmpeg -y -v error -i "$IN" ${FRAMES:+-frames:v "$FRAMES"} -vf "$G" -c:v libx264 -preset slow -crf 13 -tune film -profile:v high -movflags +faststart -an "$OUT"
