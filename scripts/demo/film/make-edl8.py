@@ -267,8 +267,12 @@ def build():
             'film7/edit (chat typed, result, Undo)', 'RE-RECORD: this stretch was 16% over 50 ms; hold the result a full second', 'edit scene', trailer=4.5)
         n += 1
         c = caption_card(2, 'a2b4', n, 'Drag the sun: the light changes at once, with nothing re-baked.')
-        add('Act 2', 'a2b4', n, 'Drag the sun: the light changes at once, with nothing re-baked.', with_text(ui('a2b4', E, [[ts - 1.0, te + 1.0, 2.6]], [[0, 0.78, 0.3, 2.0], [3.2, 0.78, 0.3, 2.0], [4.0, 0.5, 0.5, 1.0], [5.0, 0.5, 0.5, 1.0]], 5.0), c),
-            'film7/edit (time sweep)', 'RE-RECORD with the edit take', 'edit scene', trailer=3.5)
+        add('Act 2', 'a2b4', n, 'Drag the sun: the light changes at once, with nothing re-baked.', with_text(ui('a2b4', E, [[ts - 1.0, ts - 1.0 + 2.2 * 2.6, 2.6]], [[0, 0.78, 0.3, 2.0], [2.2, 0.78, 0.3, 2.0]], 2.2), c),
+            'film7/edit (the slider, 2.2 s)', 'RE-RECORD with the edit take', 'edit scene', trailer=2.2)
+        # the result: the footage agent's four-hour relight of one camera push-in (hard cuts inside the clip at 4.7, 9.7 and 14.7 s)
+        sweep = clipsrc('sweep-penthouse', f'{F8}/clips/sweep-penthouse.mp4')
+        for k, (sid, t0) in enumerate((('a2b4s1', 0.6), ('a2b4s2', 5.3), ('a2b4s3', 10.3), ('a2b4s4', 15.3))):
+            add('Act 2', sid, n, 'Drag the sun: the light changes at once, with nothing re-baked.', clip(sid, sweep, t0, 2.5, xfade=1 / 30), 'film8/clips/sweep-penthouse (four times of day)', 'world clip', 'world-footage pipeline', trailer=1.8 if k == 2 else None)
     AS = f'{F7}/arch-step'
     if have(f'{AS}/f00000.jpg'):
         for bid, a, b, speed, cap, tr in (('a2b5', 20, 150, 1.0, 'Cut a building open to see its rooms.', 3.5), ('a2b6', 150, 240, 1.0, 'Or take every wall down.', None),
@@ -351,8 +355,7 @@ def build():
         sg = ui('a4b4d', MD, [[pr + 0.0, pr + 2.2, 1.0]], [[0, 0.5, 0.5, 1.0]], 2.2, sfx='whoosh')
         sg['text'] = [[c, 0.25, 2.05]]
         add('Act 4', 'a4b4d', n, 'Press Drone: the camera lifts off and flies over the city.', sg, 'film8/modes (real take: the Drone button and the click, 2.2 s at 1:1, then the clean flight clip)', 'NEW capture (12% of gaps over 50 ms and blocky at 100%; used for the click only; re-record at scale 1.5 when the machine is quiet)', 'modes --clickDrone=1 --scale=1.5', trailer=2.2)
-    for bid, name, fb, i0, dur, cap, tr in (('a4b5', 'drone-lisbon', f'{F1}/lisbon-drone.mp4', 0.0, 4.3, 'Fly over a whole city by drone.', 4.5), ('a4b6', 'house-walk', f'{F1}/casa-pool.mp4', 1.0, 4.2, 'Walk through a house, at any time of day.', 2.5),
-                                           ('a4b6b', 'penthouse-a', f'{F8}/clips/penthouse-a.mp4', 0.4, 3.6, 'Or a penthouse above the skyline at dusk.', None),
+    for bid, name, fb, i0, dur, cap, tr in (('a4b5', 'drone-lisbon', f'{F1}/lisbon-drone.mp4', 0.0, 4.3, 'Fly over a whole city by drone.', 4.5), ('a4b6', 'house-walk', f'{F1}/casa-pool.mp4', 1.0, 4.2, 'Walk through a house, at any time of day.', 2.3),
                                            ('a4b7', 'landscape', f'{INTRO}/m-terraces-falls.mp4', 0.4, 5.0, 'Or float over a landscape at golden hour.', None)):
         n += 1
         c = caption_card(4, bid, n, cap)
