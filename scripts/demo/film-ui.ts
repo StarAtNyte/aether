@@ -227,6 +227,8 @@ async function newTake(browser: Awaited<ReturnType<typeof chromium.launch>>, sce
   await ctx.addInitScript({ content: SKIP_FIRST_RUN });
   await ctx.addInitScript({ content: 'globalThis.__name = (f) => f;' });
   await ctx.addInitScript({ content: `try { const k='aether.studio.settings.v1'; const s=JSON.parse(localStorage.getItem(k)||'{}'); s.renderTier='${arg('tier') ?? 'ultra'}'; s.showNavHint=false; s.motion='sharp'; localStorage.setItem(k, JSON.stringify(s)); localStorage.setItem('aether.player.mute', '1'); } catch {}` });
+  // `--capture=1`: the engine's capture mode (frozen per-frame noise, boosted LOD, shadow maps up to 4096), as the clean renderer uses it
+  if (arg('capture') === '1') await ctx.addInitScript({ content: `globalThis.__AETHER_CAPTURE = ${JSON.stringify({ on: true, lodBoost: 4, mirrorScale: 1, shadowMapCap: 4096 })};` });
   await ctx.addInitScript({ content: OVERLAY_SCRIPT });
   const page = await ctx.newPage();
   if (arg('chrome') === 'real') log(`real Chrome ${browser.version()} (headless=new), GPU args ${process.env['GEN_GPU'] ?? 'default'}`);

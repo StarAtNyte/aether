@@ -272,7 +272,7 @@ def build():
         # the result: the footage agent's four-hour relight of one camera push-in (hard cuts inside the clip at 4.7, 9.7 and 14.7 s)
         sweep = clipsrc('sweep-penthouse', f'{F8}/clips/sweep-penthouse.mp4')
         for k, (sid, t0) in enumerate((('a2b4s1', 0.6), ('a2b4s2', 5.3), ('a2b4s3', 10.3), ('a2b4s4', 15.3))):
-            add('Act 2', sid, n, 'Drag the sun: the light changes at once, with nothing re-baked.', clip(sid, sweep, t0, 2.5, xfade=1 / 30), 'film8/clips/sweep-penthouse (four times of day)', 'world clip', 'world-footage pipeline', trailer=1.8 if k == 2 else None)
+            add('Act 2', sid, n, 'Drag the sun: the light changes at once, with nothing re-baked.', clip(sid, sweep, t0, 3.0, xfade=1 / 30), 'film8/clips/sweep-penthouse (four times of day)', 'world clip', 'world-footage pipeline', trailer=1.8 if k == 2 else None)
     AS = f'{F7}/arch-step'
     if have(f'{AS}/f00000.jpg'):
         for bid, a, b, speed, cap, tr in (('a2b5', 20, 150, 1.0, 'Cut a building open to see its rooms.', 3.5), ('a2b6', 150, 240, 1.0, 'Or take every wall down.', None),
@@ -356,7 +356,7 @@ def build():
         sg['text'] = [[c, 0.25, 2.05]]
         add('Act 4', 'a4b4d', n, 'Press Drone: the camera lifts off and flies over the city.', sg, 'film8/modes (real take: the Drone button and the click, 2.2 s at 1:1, then the clean flight clip)', 'NEW capture (12% of gaps over 50 ms and blocky at 100%; used for the click only; re-record at scale 1.5 when the machine is quiet)', 'modes --clickDrone=1 --scale=1.5', trailer=2.2)
     for bid, name, fb, i0, dur, cap, tr in (('a4b5', 'drone-lisbon', f'{F1}/lisbon-drone.mp4', 0.0, 4.3, 'Fly over a whole city by drone.', 4.5), ('a4b6', 'house-walk', f'{F1}/casa-pool.mp4', 1.0, 4.2, 'Walk through a house, at any time of day.', 2.3),
-                                           ('a4b7', 'landscape', f'{INTRO}/m-terraces-falls.mp4', 0.4, 5.0, 'Or float over a landscape at golden hour.', None)):
+                                           ('a4b7', 'landscape', f'{INTRO}/m-terraces-falls.mp4', 0.4, 5.0, 'Or float over a landscape at golden hour.', 3.0)):
         n += 1
         c = caption_card(4, bid, n, cap)
         add('Act 4', bid, n, cap, with_text(clip(bid, clipsrc(name, fb), i0, dur, sfx='whoosh' if bid == 'a4b5' else None), c), f'film8/clips/{name} (fallback v6/v7 footage)', 'world clip', 'world-footage pipeline', trailer=tr)
@@ -384,18 +384,16 @@ def build():
         add('Act 5', 'a5b2f', n, 'Finished films sit on the home page: this one is a Blender render.', with_text(seg, c, ['note-live-site']), 'film8/livehome (live site: the Stories film card, click, the film plays)', 'NEW capture (live site, 3.1% of gaps over 50 ms)', '')
     if have(f'{F6}/shots/two-whistles.mp4'):
         n += 1
-        c1 = caption_card(5, 'a5b3', n, 'Stories too: a short film written and rendered in Aether, with its own sound.')
-        s0 = anime('a5b3a', 0.5, 5.5, [[c1, 0.25, 4.8], ['note-film', 0.25, 4.8]])
-        c2 = caption_card(5, 'a5b3b', n, 'Mio is leaving on the evening train. Kaho runs to say goodbye.')
-        s1 = anime('a5b3b', 28.2, 31.5)
-        s2 = anime('a5b3c', 32.3, 36.3, [[c2, 0.25, 3.8]])
-        rest = [anime('a5b3d', 17.4, 21.4)] + [anime(*a) for a in (('a5b3e', 36.8, 40.8), ('a5b3f', 41.8, 45.4), ('a5b3j', 87.0, 91.5))]
+        # no face is readable in any frame: the title, the train on the viaduct, the crossing signal, the lookout and its lamps,
+        # the sunset over the town from behind (checked at 1.5 s steps, and at 0.4 s steps on the ranges used)
+        c1 = caption_card(5, 'a5b3', n, 'An animated short, made with Aether.')
         c3 = caption_card(5, 'a5b3k', n, 'Two whistles from the cape: the promise kept.')
-        rest[-1]['text'] = [[c3, 0.5, 5.2]]
-        for sg in [s0, s1, s2] + rest:
+        films = [anime('a5b3a', 18.5, 21.0, [[c1, 0.2, 2.3]]), anime('a5b3b', 59.0, 61.4), anime('a5b3c', 35.8, 36.9), anime('a5b3d', 62.4, 64.0),
+                 anime('a5b3e', 73.0, 76.2, [[c3, 0.2, 3.0]]), anime('a5b3f', 90.2, 92.7)]
+        for sg in films:
             SEGS.append(sg)
-        BEATS.append(('Act 5', 'a5b3', 'Stories too: a short film written and rendered in Aether, with its own sound. (about 30 s, three captions carry the story)', sum(sg['dur'] for sg in [s0, s1, s2] + rest), 'film6/shots/two-whistles (offline render from current main)', 'existing; re-render if the pipeline improves it', ''))
-        TRAILER.append(('a5b3', 9.0))
+        BEATS.append(('Act 5', 'a5b3', 'An animated short, made with Aether. / Two whistles from the cape: the promise kept. (face-free: title, train, signal, lookout, sunset from behind)', sum(sg['dur'] for sg in films), 'film6/shots/two-whistles (face-free stretches only; the face-free Cloudwatch re-render replaces them when it lands)', 'existing, face-free cut', ''))
+        TRAILER.append(('a5b3', 7.7))
     n += 1
     c = caption_card(5, 'a5b4', n, 'And more: sculpt terrain, write game rules, search every command.')
     add('Act 5', 'a5b4', n, 'And more: sculpt terrain, write game rules, search every command.', with_text(clip('a5b4', clipsrc('isles', f'{INTRO}/m-lantern.mp4'), 1.5, 3.2, cropf=[0.06, 0.12, 0.88, 0.88]), c), 'film8/clips/isles (one calm shot)', 'world clip', '')
@@ -410,12 +408,12 @@ def trailer():
     for s in SEGS:
         nm = s['name']
         key = nm if nm in want else None
-        if nm.startswith('a5b3') and 'a5b3' in want and nm in ('a5b3a', 'a5b3c', 'a5b3f', 'a5b3j'):
+        if nm.startswith('a5b3') and 'a5b3' in want and nm in ('a5b3a', 'a5b3b', 'a5b3e'):
             key = 'a5b3'
         if key is None:
             continue
         t = dict(s)
-        d = want[key] if nm in want else {'a5b3a': 3.5, 'a5b3c': 3.0, 'a5b3f': 2.5, 'a5b3j': 2.4}[nm]
+        d = want[key] if nm in want else {'a5b3a': 2.5, 'a5b3b': 2.4, 'a5b3e': 2.8}[nm]
         d = min(d, s['dur'])
         t['dur'] = d
         if nm.startswith('act'):

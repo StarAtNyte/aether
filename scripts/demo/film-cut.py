@@ -233,7 +233,7 @@ def segment(s):
             th_chain = f"[srcB]scale=440:248:flags=lanczos,drawbox=0:0:iw:ih:color=white@0.85:t=3,format=rgba,split={k_}" + ''.join(f'[tz{i}]' for i in range(k_)) + ';'
             for i, (a_, b_) in enumerate(spans):
                 th_chain += f"[tz{i}]fade=t=in:st={a_:.3f}:d=0.4:alpha=1,fade=t=out:st={b_ - 0.4:.3f}:d=0.4:alpha=1[tf{i}];"
-        base = f"[{n}:v][uim]overlay=x=(W-w)/2:y=(H-h)/2:shortest=1:format=auto,format=yuv420p,zoompan=z='{zc}':x='({cx})*iw-iw/zoom/2':y='({cy})*ih-ih/zoom/2':d=1:s={W}x{H}:fps={FPS},unsharp=5:5:0.45:5:5:0"
+        base = f"[{n}:v][uim]overlay=x=(W-w)/2:y=(H-h)/2:shortest=1:format=auto,format=yuv420p,zoompan=z='{zc}':x='({cx})*iw-iw/zoom/2':y='({cy})*ih-ih/zoom/2':d=1:s={W}x{H}:fps={FPS},unsharp=5:5:0.3:5:5:0"
         ov = ''
         cur = '[zm]'
         ipos = {'tl': (40, 40), 'tr': (W - 480, 40), 'bl': (40, H - 288), 'br': (W - 480, H - 288)}[s.get('insetPos', 'tl')]
@@ -449,7 +449,9 @@ def main():
         yexp = f"26*pow(1-{pin},3)+14*pow({pout},2)"
         chain.append(f"{v}[o{j}]overlay=x=0:y='{yexp}':enable='between(t,{t0:.3f},{t1:.3f})'[w{j}]")
         v = f'[w{j}]'
-    chain.append(f"{v}unsharp=5:5:{opt.get('unsharp', '0.5')}:5:5:0,fade=t=in:st=0:d=1.2,fade=t=out:st={total - 2.0:.3f}:d=2.0,format=yuv420p[vout]")
+    # no sharpen or grain over the whole cut: world clips are shown as delivered (--unsharp N adds a final sharpen for a test)
+    sh = f"unsharp=5:5:{opt['unsharp']}:5:5:0," if 'unsharp' in opt else ''
+    chain.append(f"{v}{sh}fade=t=in:st=0:d=1.2,fade=t=out:st={total - 2.0:.3f}:d=2.0,format=yuv420p[vout]")
     # 3. the score, ducked, under the clips' own sound
     sidx = k
     inputs += ['-i', os.path.expanduser(EDL['score'])]
