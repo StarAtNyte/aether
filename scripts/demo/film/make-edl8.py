@@ -362,7 +362,8 @@ def build():
         add('Act 4', 'a4b4d', n, 'Press Drone: the camera lifts off and flies over the city.', sg, 'film8/modes (real take: the Drone button and the click, 2.2 s at 1:1, then the clean flight clip)', 'NEW capture (12% of gaps over 50 ms and blocky at 100%; used for the click only; re-record at scale 1.5 when the machine is quiet)', 'modes --clickDrone=1 --scale=1.5', trailer=2.2)
     for bid, name, fb, i0, dur, cap, tr in (('a4b5', 'drone-lisbon', f'{F1}/lisbon-drone.mp4', 0.2, 5.0, 'Fly over a whole city by drone.', 4.5), ('a4b6', 'house-walk', f'{F1}/casa-pool.mp4', 1.0, 4.2, 'Walk through a house, at any time of day.', 2.3),
                                            ('a4b7a', 'ascent', f'{F8}/clips/m-ascent.mp4', 0.2, 6.0, 'Or descend over a sanctuary at dusk.', None),
-                                           ('a4b7', 'landscape', f'{INTRO}/m-terraces-falls.mp4', 0.4, 5.0, 'Or float over a landscape at golden hour.', 3.0)):
+                                           ('a4b7', 'landscape', f'{INTRO}/m-terraces-falls.mp4', 0.4, 5.0, 'Or float over a landscape at golden hour.', 3.0),
+                                           ('a4b7b', 'kepler-domes', f'{F8}/clips/kepler-domes.mp4', 0.3, 5.0, 'Or a dome colony on a red desert.', None)):
         n += 1
         c = caption_card(4, bid, n, cap)
         add('Act 4', bid, n, cap, with_text(clip(bid, clipsrc(name, fb), i0, dur, sfx='whoosh' if bid == 'a4b5' else None, cropf=AERIAL_CROP if (bid == 'a4b5' and 'lisbon-aerial' in clipsrc(name, fb)) else None), c), f'film8/clips/{name} (fallback v6/v7 footage)', 'world clip', 'world-footage pipeline', trailer=tr)
