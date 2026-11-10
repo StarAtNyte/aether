@@ -67,7 +67,7 @@ def evf(path, what):
 def clipsrc(name, fallback):
     """A world clip from the world-footage pipeline when it has landed, else the older footage."""
     # the footage agent's names differ a little from the beat names; the 4K render (when there is one) is the source
-    for nm in {'drone-lisbon': ['lisbon-drone'], 'house-walk': ['house-walk'], 'landscape': ['terraces-falls'], 'isles': ['m-lantern']}.get(name, [name]):
+    for nm in {'drone-lisbon': ['lisbon-drone'], 'house-walk': ['casa-pool'], 'landscape': ['terraces-falls'], 'isles': ['m-lantern']}.get(name, [name]):
         for cand in (f'{F8}/clips/{nm}-4k.mp4', f'{F8}/clips/{nm}.mp4'):
             if have(cand):
                 return cand
@@ -352,6 +352,7 @@ def build():
         sg['text'] = [[c, 0.25, 2.05]]
         add('Act 4', 'a4b4d', n, 'Press Drone: the camera lifts off and flies over the city.', sg, 'film8/modes (real take: the Drone button and the click, 2.2 s at 1:1, then the clean flight clip)', 'NEW capture (12% of gaps over 50 ms and blocky at 100%; used for the click only; re-record at scale 1.5 when the machine is quiet)', 'modes --clickDrone=1 --scale=1.5', trailer=2.2)
     for bid, name, fb, i0, dur, cap, tr in (('a4b5', 'drone-lisbon', f'{F1}/lisbon-drone.mp4', 0.0, 4.3, 'Fly over a whole city by drone.', 4.5), ('a4b6', 'house-walk', f'{F1}/casa-pool.mp4', 1.0, 4.2, 'Walk through a house, at any time of day.', 2.5),
+                                           ('a4b6b', 'penthouse-a', f'{F8}/clips/penthouse-a.mp4', 0.4, 3.6, 'Or a penthouse above the skyline at dusk.', None),
                                            ('a4b7', 'landscape', f'{INTRO}/m-terraces-falls.mp4', 0.4, 5.0, 'Or float over a landscape at golden hour.', None)):
         n += 1
         c = caption_card(4, bid, n, cap)
