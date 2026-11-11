@@ -6,6 +6,7 @@
  * Also: planted feet do not slide.
  */
 import { describe, expect, it } from 'vitest';
+import { Vector3 } from 'three';
 import { loadBodyRig } from './support/rig-fixture';
 import { measureFrame, prepSkirt } from './support/skirt-measure';
 import { measureSlide } from './support/foot-slide';
@@ -37,6 +38,29 @@ describe.each(['kaho', 'mio'])('skirt clearance: %s', (body) => {
     }
     console.log(`${body}\n${rows.join('\n')}`);
   }, 400_000);
+
+  it('never stands the skirt out like an opened umbrella (each panel within 55 degrees of straight down)', async () => {
+    const { rig } = await loadBodyRig(body);
+    const panels: import('three').Object3D[] = [];
+    rig.root.traverse((o) => void (/^Skirt_\d+$/.test(o.name) && panels.push(o)));
+    expect(panels.length).toBeGreaterThan(0);
+    const h = new Vector3();
+    const t = new Vector3();
+    const rows: string[] = [];
+    for (const sc of SCENARIOS) {
+      let worst = 0;
+      runScenario(rig, sc, () => {
+        for (const b of panels) {
+          h.setFromMatrixPosition(b.matrixWorld);
+          t.set(0, -0.3, 0).applyMatrix4(b.matrixWorld).sub(h);
+          worst = Math.max(worst, Math.acos(Math.max(-1, Math.min(1, -t.y / t.length()))));
+        }
+      });
+      rows.push(`${sc.name.padEnd(14)} ${((worst * 180) / Math.PI).toFixed(0)} deg`);
+      expect((worst * 180) / Math.PI, `${body} ${sc.name}`).toBeLessThan(55);
+    }
+    console.log(`${body} panel swing\n${rows.join('\n')}`);
+  }, 120_000);
 
   it('plants the feet on the ground at every speed (the slide is a few percent of the ground speed)', async () => {
     const { rig } = await loadBodyRig(body);

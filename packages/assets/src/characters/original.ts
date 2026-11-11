@@ -18,24 +18,24 @@ export const ORIGINAL_CAST: CastFile[] = [
   "id": "kaho",
   "gender": "female",
   "look": "anime girl, summer sailor uniform with a sky-blue collar and a teal neckerchief, chin-length chestnut bob with a thin braid and a seashell charm",
-  "file": "c/kaho.49bef055.glb",
-  "height": 1.547,
+  "file": "c/kaho.efc43f20.glb",
+  "height": 1.549,
   "hip": 0.824,
   "triangles": 61500,
   "faces": 1,
-  "bytes": 1446908,
+  "bytes": 1420788,
   "style": "toon"
  },
  {
   "id": "mio",
   "gender": "female",
   "look": "anime girl, pale mint short-sleeve cardigan over a white T-shirt, long light-beige pleated skirt, long straight black hair with a fringe and a white hairband",
-  "file": "c/mio.49b4a0ff.glb",
-  "height": 1.55,
+  "file": "c/mio.5d15c601.glb",
+  "height": 1.552,
   "hip": 0.824,
   "triangles": 66864,
   "faces": 1,
-  "bytes": 1588108,
+  "bytes": 1539812,
   "style": "toon"
  }
 ] as CastFile[];
@@ -48,13 +48,13 @@ export const ORIGINAL_LODS: Record<string, { file: string; triangles: number; by
   "bytes": 1053296
  },
  "kaho": {
-  "file": "c/kaho.lod1.f8a72015.glb",
-  "triangles": 24599,
-  "bytes": 988828
+  "file": "c/kaho.lod1.e0904720.glb",
+  "triangles": 24600,
+  "bytes": 947260
  },
  "mio": {
-  "file": "c/mio.lod1.5756cb86.glb",
-  "triangles": 26744,
-  "bytes": 1070932
+  "file": "c/mio.lod1.0759d1b3.glb",
+  "triangles": 26745,
+  "bytes": 1007096
  }
 };

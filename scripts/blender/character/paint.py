@@ -148,6 +148,8 @@ def eye_shape(kind):
 
 
 def paint_face(at, spec):
+    if spec.get('face_style') == 'painted':
+        return paint_face_cel(at, spec)
     # a painted face (face_style = painted) is drawn at twice the cell size on the 2048 atlas: sharper lines, same shapes
     FS = 2 if spec.get('face_style') == 'painted' else 1
     skin = srgb(spec['skin'])
@@ -372,6 +374,289 @@ def paint_face(at, spec):
 def smooth01(t):
     t = np.clip(t, 0, 1)
     return t * t * (3 - 2 * t)
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# The cel face (face_style = painted): the anime look of the concept sheets, drawn as hard-edged cel shapes.
+
+# Skin kept round a feature, in cell widths; beyond it the decal is a hole (atlas alpha 0). Thin: the decals float a
+# fraction of a millimetre over the face and cast into the sun's map, so the ring's edge draws its own shadow line on
+# the skin beside it; kept this close it falls on the feature's own dark edge.
+RING = 0.012
+
+
+def dilate(m, r):
+    """Binary dilation of a mask by r px (an octagon: alternating cross and square steps)."""
+    out = m.copy()
+    for i in range(r):
+        n = out.copy()
+        n[1:] = np.maximum(n[1:], out[:-1])
+        n[:-1] = np.maximum(n[:-1], out[1:])
+        n[:, 1:] = np.maximum(n[:, 1:], out[:, :-1])
+        n[:, :-1] = np.maximum(n[:, :-1], out[:, 1:])
+        if i % 2:
+            n[1:, 1:] = np.maximum(n[1:, 1:], out[:-1, :-1])
+            n[:-1, :-1] = np.maximum(n[:-1, :-1], out[1:, 1:])
+            n[1:, :-1] = np.maximum(n[1:, :-1], out[:-1, 1:])
+            n[:-1, 1:] = np.maximum(n[:-1, 1:], out[1:, :-1])
+        out = n
+    return out
+
+
+def put_cut(at, name, col, code, feat, ss=2):
+    """Write a face cell whose margin is cut away: the features (coverage `feat`) and a thin ring of skin round them
+    keep their codes, the rest of the decal is a hole (alpha 0), so the head's own skin shows there and a decal's
+    rectangle can never shade differently from the face around it. The ring keeps the features' coverage up in the
+    smaller mip levels (a far face keeps its eyes)."""
+    w = feat.shape[1]
+    keep = dilate((feat > 0.02).astype(np.float32), max(2, int(RING * w)))
+    at.put(name, col, np.where(keep > 0.5, code, 0.0), ss)
+
+
+def eye_lids(kind):
+    """Upper and lower lids of the left eye (x from -1 inner corner to 1 outer corner), large and tall like the
+    sheets': the lids meet in points at the corners; `gentle` (Mio) lets the outer corner fall, `sheet` (Kaho) lifts it."""
+    tilt = -0.07 if kind == 'droopy' else 0.06
+    def yc(x):
+        return 0.0 + tilt * x
+    def upper(x):
+        x = np.clip(x, -1, 1)
+        return yc(x) + 0.56 * (1 - x * x) ** 0.55 * (1 - 0.1 * x)
+    def lower(x):
+        x = np.clip(x, -1, 1)
+        return yc(x) - 0.43 * (1 - x * x) ** 0.8
+    return upper, lower
+
+
+def paint_face_cel(at, spec):
+    FS = 2
+    ss = 2
+    skin = srgb(spec['skin'])
+    line = srgb(spec['line']) * 0.9
+    iris = srgb(spec['eyes'])
+    hair = srgb(spec['hair']['colour'])
+    # the lash line: near black with the hair's warmth (sheets draw it darker than the hair)
+    lash = np.clip(mix(line * 0.75, hair * 0.45, 0.3), 0, 1)
+    kind = spec['eye_shape']
+    upper, lower = eye_lids(kind)
+    droopy = kind == 'droopy'
+
+    # --- the open eye (left; the right mirrors its UVs) --------------------------------------------------------------
+    at.cell('eye', 256 * FS, 256 * FS)
+    U, V = at.grid('eye', ss)
+    X, Y = U * 2 - 1, V * 2 - 1
+    aa = 3.0 / (256 * FS)
+    col = np.ones(X.shape + (3,)) * skin
+    yu, yl = upper(X), lower(X)
+    inside = np.maximum(np.maximum(Y - yu, yl - Y), np.abs(X) - 0.99)
+    sc = cover(inside, aa)
+    white = np.array([0.98, 0.97, 0.98])
+    layer(col, white, sc)
+    # the sclera's cel shadow under the upper lid: one flat cool band
+    lidsh = cover(Y - (yu - 0.1 - 0.02 * np.cos(X * 2)), aa) * sc
+    layer(col, np.array([0.86, 0.86, 0.94]), lidsh)
+    sf = ((spec.get('sheet_fit') or {}).get('head') or {}).get('eyes') or []
+    if sf:
+        mid = np.mean([e['iris'] for e in sf], 0)
+        deep = np.mean([e['dark'] for e in sf], 0)
+        iris = mix(iris, mid, 0.5)
+        iris_deep = mix(iris * 0.32, deep, 0.5)
+    else:
+        iris_deep = iris * 0.32
+    iris = np.clip(iris * 1.12, 0, 1)
+    iris_light = np.clip(iris * 1.55 + np.array([0.08, 0.06, 0.05]), 0, 1)
+    iris_deep = np.clip(iris_deep * 0.85, 0, 1)
+    # the iris: big, its top under the lash line, its bottom cut by the lower lid
+    cx, cy = (0.02, -0.03)
+    rx, ry = 0.48, 0.58
+    r = np.hypot((X - cx) / rx, (Y - cy) / ry)
+    ic = cover((r - 1) * rx, aa) * sc
+    layer(col, iris, ic)
+    # the deep upper half: a hard curved edge (the lid's shadow on the iris and the iris' own dark top in one)
+    top = cover((cy + 0.05 - 0.12 * ((X - cx) / rx) ** 2) - Y, aa)
+    layer(col, iris_deep, ic * (1 - top))
+    # the lit lower crescent
+    cres = cover(np.hypot((X - cx) / (rx * 0.72), (Y - (cy - ry * 0.48)) / (ry * 0.36)) - 1, 0.03) * ic
+    layer(col, iris_light, cres)
+    # a few fibres in the light, soft
+    ang = np.arctan2(Y - cy, X - cx)
+    fib = (np.sin(ang * 17) > 0.6) * smooth01((r - 0.45) / 0.15) * (r < 0.9)
+    layer(col, mix(iris_light, iris, 0.6), ic * fib * cres * 0.5)
+    # the limbal ring and the pupil
+    layer(col, iris_deep * 0.8, cover(np.abs(r - 0.97) * rx - 0.028, aa) * sc)
+    pr = np.hypot((X - cx) / 0.17, (Y - (cy + 0.04)) / 0.25)
+    layer(col, iris_deep * 0.45, cover((pr - 1) * 0.17, aa) * ic)
+    # catchlights: the key (upper, toward the outer corner), a small second (lower inner), a dot
+    for (hx, hy, hrx, hry) in ((cx + 0.17, cy + 0.24, 0.15, 0.17), (cx - 0.2, cy - 0.3, 0.075, 0.065), (cx + 0.3, cy - 0.12, 0.035, 0.035)):
+        layer(col, np.array([1.0, 1.0, 1.0]), cover((np.hypot((X - hx) / hrx, (Y - hy) / hry) - 1) * hrx, aa) * sc)
+    # the upper lash line: heavy, thin at the inner corner, thickest toward the outer third, ending in a flick
+    xs = np.linspace(-1.0, 1.0, 40)
+    up = [(x, float(upper(x)) + 0.02 + 0.03 * smooth01((x - 0.3) / 0.7)) for x in xs]
+    w = [0.02 + 0.085 * smooth01((x + 0.85) / 1.35) for x in xs]
+    flick = (1.17, float(upper(1.0)) + (0.0 if droopy else 0.12))
+    d = stroke(X, Y, up + [flick], w + [0.008])
+    # two small lash points past the outer end
+    for (lx, ex, ey) in ((0.7, 1.0, 0.36 if not droopy else 0.26), (0.86, 1.1, 0.24 if not droopy else 0.12)):
+        y0 = float(upper(lx)) + 0.06
+        d = np.minimum(d, stroke(X, Y, [(lx, y0), (ex, y0 + ey * 0.6)], [0.035, 0.006]))
+    lc = cover(d, aa)
+    layer(col, lash, lc)
+    # the crease: a thin line above the lid
+    cr = [(x, float(upper(x)) + 0.2 + 0.02 * x) for x in np.linspace(-0.4, 0.85, 12)]
+    crc = cover(stroke(X, Y, cr, [0.012] * len(cr)), aa)
+    layer(col, mix(skin, lash, 0.55), crc)
+    # the lower lash: a fine line on the outer half, a touch of the inner corner
+    lo = [(x, float(lower(x)) - 0.03) for x in np.linspace(0.1, 0.97, 12)]
+    loc = cover(stroke(X, Y, lo, [0.008 + 0.018 * smooth01((x - 0.1) / 0.8) for x, _ in lo]), aa)
+    layer(col, mix(lash, skin, 0.3), loc)
+    eye_px = np.maximum(sc, lc)
+    put_cut(at, 'eye', col, np.where(eye_px > 0.5, 0.2, 1.0), np.maximum(np.maximum(eye_px, crc), loc), ss)
+
+    # --- closed eye: a downward arc of lash (blink) ------------------------------------------------------------------
+    at.cell('eye_closed', 256 * FS, 128 * FS)
+    U, V = at.grid('eye_closed', ss)
+    X, Y = U * 2 - 1, V * 2 - 1
+    col = np.ones(X.shape + (3,)) * skin
+    xs = np.linspace(-0.95, 1.0, 30)
+    arc = [(x, -0.05 - 0.3 * (1 - x * x) + (0.0 if droopy else 0.06) * x) for x in xs]
+    d = stroke(X, Y, arc + [(1.12, 0.02)], [0.035 + 0.07 * smooth01((x + 0.9) / 1.6) for x in xs] + [0.012])
+    c = cover(d, 5.0 / (256 * FS))
+    layer(col, lash, c)
+    put_cut(at, 'eye_closed', col, np.where(c > 0.5, 0.2, 1.0), c, ss)
+
+    # --- brow: a crisp tapered stroke, thick at the inner end ---------------------------------------------------------
+    at.cell('brow', 256 * FS, 64 * FS)
+    U, V = at.grid('brow', ss)
+    X, Y = U * 2 - 1, V * 2 - 1
+    asp = 4.0
+    Xa = X * asp
+    xs = np.linspace(-0.92, 0.95, 20)
+    pts = [(x * asp, -0.3 + 0.4 * (1 - x * x) - 0.06 * x) for x in xs]
+    wd = [0.32 * (1 - 0.75 * smooth01((x + 0.9) / 1.85)) + 0.045 for x in xs]
+    bc = np.clip(mix(hair * 0.6, lash, 0.3), 0, 1)
+    c = cover(stroke(Xa, Y, pts, wd), 6.0 / (64 * FS))
+    col = np.ones(X.shape + (3,)) * skin
+    layer(col, bc, c)
+    put_cut(at, 'brow', col, np.ones(X.shape), c, ss)
+
+    # --- mouths (cells 4:3; x, y in -1..1) ----------------------------------------------------------------------------
+    inner = np.array([0.5, 0.18, 0.22])
+    tongue = np.array([0.9, 0.5, 0.5])
+    mline = np.clip(mix(lash, np.array([0.55, 0.22, 0.22]), 0.35), 0, 1)
+    asp = 4.0 / 3.0
+
+    def tapered(f, x0, x1, w0, n=24):
+        xs = np.linspace(x0, x1, n)
+        pts = [(x * asp, f(x)) for x in xs]
+        m = (x0 + x1) / 2
+        hw = (x1 - x0) / 2
+        return pts, [w0 * (1 - 0.65 * ((x - m) / hw) ** 2) + 0.008 for x in xs]
+
+    for name in ('mouth', 'mouth_smile', 'mouth_sad', 'mouth_o', 'mouth_open', 'mouth_set'):
+        at.cell(name, 128 * FS, 96 * FS)
+        U, V = at.grid(name, ss)
+        X, Y = U * 2 - 1, V * 2 - 1
+        Xa = X * asp
+        col = np.ones(X.shape + (3,)) * skin
+        aa = 4.0 / (96 * FS)
+        feat = np.zeros(X.shape)
+        if name == 'mouth':
+            # calm: a short line, its ends barely lifted
+            pts, wd = tapered(lambda x: 0.02 + 0.08 * x * x, -0.34, 0.34, 0.05)
+            c = cover(stroke(Xa, Y, pts, wd), aa)
+            layer(col, mline, c)
+            feat = c
+        elif name == 'mouth_smile':
+            # a gentle closed smile: a shallow curve, the corners lifted
+            pts, wd = tapered(lambda x: -0.06 + 0.32 * x * x, -0.5, 0.5, 0.055)
+            c = cover(stroke(Xa, Y, pts, wd), aa)
+            layer(col, mline, c)
+            feat = c
+        elif name == 'mouth_sad':
+            pts, wd = tapered(lambda x: 0.0 - 0.2 * x * x + 0.03, -0.36, 0.36, 0.05)
+            c = cover(stroke(Xa, Y, pts, wd), aa)
+            layer(col, mline, c)
+            feat = c
+        elif name == 'mouth_set':
+            pts, wd = tapered(lambda x: 0.02 - 0.05 * x * x, -0.36, 0.36, 0.055)
+            c = cover(stroke(Xa, Y, pts, wd), aa)
+            layer(col, mline, c)
+            feat = c
+        else:
+            if name == 'mouth_o':
+                # a small open mouth, its top flatter (the sheets' surprise)
+                half, topf, botf = 0.3, (lambda x: 0.26 - 0.15 * x * x), (lambda x: -0.42 + 0.55 * x * x)
+            else:
+                # open: a wide D, the top nearly straight, the bottom round
+                half, topf, botf = 0.4, (lambda x: 0.24 - 0.08 * x * x), (lambda x: 0.22 - 0.72 * np.clip(1 - (x / 0.4) ** 2, 0, 1) ** 0.6)
+            inside = np.maximum(np.maximum(Y - topf(X), botf(X) - Y), np.abs(X) - half)
+            c = cover(inside, aa)
+            layer(col, inner, c)
+            tg = cover(np.hypot(X / (half * 0.6), (Y - botf(0 * X) - 0.06) / 0.16) - 1, 0.03) * c
+            layer(col, tongue, tg)
+            edge = cover(np.abs(inside) - 0.03, aa)
+            layer(col, mline, edge)
+            feat = np.maximum(c, edge)
+        put_cut(at, name, col, np.ones(X.shape), feat, ss)
+
+    # --- nose: a short tick on its shaded side and a small hard shadow under the tip ----------------------------------
+    at.cell('nose', 64 * FS, 64 * FS)
+    U, V = at.grid('nose', ss)
+    X, Y = U * 2 - 1, V * 2 - 1
+    col = np.ones(X.shape + (3,)) * skin
+    aa = 5.0 / (64 * FS)
+    sh = cover(np.hypot((X + 0.05) / 0.28, (Y + 0.32) / 0.1) - 1, 0.15) * (Y < -0.28)
+    layer(col, skin * np.array([0.9, 0.82, 0.84]), sh)
+    tick = cover(stroke(X, Y, [(-0.16, 0.2), (-0.2, -0.12), (-0.08, -0.26)], [0.03, 0.05, 0.03]), aa)
+    nl = np.clip(mix(skin * 0.6, line, 0.25), 0, 1)
+    layer(col, nl, tick * 0.9)
+    put_cut(at, 'nose', col, np.ones(X.shape), np.maximum(tick, sh), ss)
+
+    # --- blush: a soft pink oval with three fine hatches ---------------------------------------------------------------
+    at.cell('blush', 128 * FS, 64 * FS)
+    U, V = at.grid('blush', ss)
+    X, Y = U * 2 - 1, V * 2 - 1
+    col = np.ones(X.shape + (3,)) * skin
+    pink = mix(skin, np.array([0.97, 0.56, 0.6]), 0.3)
+    # (a cel oval with a hard edge: a soft one would end in skin, then the ring, then its shadow line round it)
+    soft = cover((np.hypot(X / 0.78, Y / 0.56) - 1) * 0.6, 0.04)
+    layer(col, pink, soft)
+    hatch = np.zeros(X.shape)
+    for k in (-0.3, 0.0, 0.3):
+        hatch = np.maximum(hatch, cover(stroke(X * 2, Y, [((k - 0.08) * 2, -0.28), ((k + 0.08) * 2, 0.28)], [0.035, 0.035]), 5.0 / (64 * FS)))
+    layer(col, mix(pink, line, 0.18), hatch * 0.8)
+    put_cut(at, 'blush', col, np.ones(X.shape), np.maximum(soft, hatch), ss)
+
+    # --- tears: a glossy band along the lower lid with a bright edge (unshaded) ---------------------------------------
+    at.cell('tear', 128 * FS, 64 * FS)
+    U, V = at.grid('tear', ss)
+    X, Y = U * 2 - 1, V * 2 - 1
+    col = np.ones(X.shape + (3,)) * skin
+    band = cover((np.abs(Y + 0.05 - 0.3 * X * X) - 0.16) * 2, 0.05) * (np.abs(X) < 0.85)
+    layer(col, np.array([0.74, 0.88, 0.99]), band)
+    layer(col, np.array([1, 1, 1]), cover(np.hypot((X - 0.3) / 0.22, (Y - 0.05) / 0.09) - 1, 0.1) * band)
+    put_cut(at, 'tear', col, np.where(band > 0.5, 0.2, 1.0), band, ss)
+
+    # --- beauty mark / wrinkles -----------------------------------------------------------------------------------------
+    at.cell('mark', 64 * FS, 64 * FS)
+    U, V = at.grid('mark', ss)
+    X, Y = U * 2 - 1, V * 2 - 1
+    col = np.ones(X.shape + (3,)) * skin
+    c = cover(np.hypot(X, Y) - 0.3, 6.0 / (64 * FS))
+    layer(col, lash * 0.9, c)
+    put_cut(at, 'mark', col, np.ones(X.shape), c, ss)
+
+    at.cell('wrinkle', 128 * FS, 64 * FS)
+    U, V = at.grid('wrinkle', ss)
+    X, Y = U * 2 - 1, V * 2 - 1
+    col = np.ones(X.shape + (3,)) * skin
+    feat = np.zeros(X.shape)
+    for k in (-0.35, 0.3):
+        pts = curve(lambda x: k + 0.12 * (1 - x * x), -0.85, 0.85, 10)
+        c = cover(stroke(X, Y, pts, [0.03] * len(pts)), 6.0 / (64 * FS))
+        layer(col, mix(skin, line, 0.45), c)
+        feat = np.maximum(feat, c)
+    put_cut(at, 'wrinkle', col, np.ones(X.shape), feat, ss)
 
 
 # ---------------------------------------------------------------------------------------------------------------------

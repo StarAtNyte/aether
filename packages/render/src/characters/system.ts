@@ -25,6 +25,24 @@ import type { ColliderDef, SpringChainDef } from './springs';
 export const LOD_NEAR = 16;
 export const LOD_MID = 42;
 export const LOD_FAR = 90;
+/**
+ * The lens the distances above are meant for (vertical fov, degrees: the player's camera). Through a longer lens a body
+ * is as large on screen as one proportionally nearer, and it is posed as such (a long-lens shot of a runner 45 m away
+ * fills the frame: on the mixer alone her feet slid and her skirt stood still).
+ */
+export const LOD_REF_FOV = 55;
+
+/**
+ * How much nearer than its distance a body looks through a camera of vertical fov `fov` (degrees) and `zoom`, against
+ * {@link LOD_REF_FOV}: 1 for that lens or a wider one, about 0.13 for an 8-degree long lens. The distance a body's pose
+ * detail is chosen by is its distance times this.
+ */
+export function lensDetailScale(fov: number, zoom = 1): number {
+  const t = Math.tan(((fov * Math.PI) / 180) * 0.5) / Math.max(1e-3, zoom);
+  const ref = Math.tan(((LOD_REF_FOV * Math.PI) / 180) * 0.5);
+  return Number.isFinite(t) && t > 0 ? Math.min(1, t / ref) : 1;
+}
+
 /** Most characters updated at full detail per frame. */
 export const MAX_FULL_DETAIL = 10;
 /** Most characters in a scene; later ones are not mounted (a hostile world cannot ask for thousands). */
@@ -389,6 +407,12 @@ export class CharacterSystem {
     return { view, shadow };
   }
 
+  private lensFactor(): number {
+    const cam = this.camera as PerspectiveCamera | null;
+    if (!cam || !(cam as { isPerspectiveCamera?: boolean }).isPerspectiveCamera) return 1;
+    return lensDetailScale(cam.fov, cam.zoom);
+  }
+
   /** A body's height on screen (CSS px), Infinity when unknown or not a perspective view. */
   private screenHeight(e: Entry): number {
     const cam = this.camera as PerspectiveCamera | null;
@@ -438,8 +462,11 @@ export class CharacterSystem {
     }
     let full = 0;
     let casting = 0;
+    const lens = this.lensFactor();
     for (const e of sorted) {
       const d = e.dist;
+      // (the distance the pose's detail is chosen by: as near as the lens makes the body look, never farther)
+      const dl = d * lens;
       const levels = e.rig.levels;
       if (levels) {
         const px = this.screenHeight(e);
@@ -449,9 +476,9 @@ export class CharacterSystem {
         else levels.update(px, dt);
         e.lastPx = Number.isFinite(px) ? px : 1e6;
       }
-      let detail: 0 | 1 | 2 = d < LOD_NEAR && full < MAX_FULL_DETAIL ? 2 : d < LOD_MID ? 1 : 0;
+      let detail: 0 | 1 | 2 = dl < LOD_NEAR && full < MAX_FULL_DETAIL ? 2 : dl < LOD_MID ? 1 : 0;
       if (detail === 2) full++;
-      if (d >= LOD_MID && list.length > MAX_FULL_DETAIL) detail = 0;
+      if (dl >= LOD_MID && list.length > MAX_FULL_DETAIL) detail = 0;
       // Only the nearest few cast into the sun's shadow map: every part of every character is a draw call there.
       const shadows = d < this.shadowRange && casting < this.shadowBudget && this.opts.shadows !== false;
       if (shadows) casting++;
@@ -464,7 +491,7 @@ export class CharacterSystem {
         });
       }
       // Far characters step their mixer less often (accumulated time keeps their clips in step).
-      const every = d < LOD_MID ? 1 : d < LOD_FAR ? 2 : 4;
+      const every = dl < LOD_MID ? 1 : dl < LOD_FAR ? 2 : 4;
       e.accumulated += dt;
       e.frame++;
       if (every > 1 && (e.frame + (e.id.length & 3)) % every !== 0) continue;

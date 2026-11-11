@@ -442,14 +442,16 @@ def run_qa(B, out, sheet, poses):
     if os.environ.get('AETHER_FACE_ONLY'):
         log('face only: stills written, nothing exported')
         sys.exit(0)
-    # the hands up close: her left in the sheet stance (its back, its thumb side), then her own clips' right hand
+    # the hands up close: her left in the sheet stance (its back, its thumb side), then her own clips' right hand (the V
+    # from the front and her right three-quarter, the wave's open hand from the front, the hand on the chest)
     own_keys = CLIPS.poses(base, spec)
 
     def pose_key(name, i):
         def fn():
             RIG.apply_to_armature(arm, own_keys[name][i][1])
         return fn
-    q.hands([(pose_idle, 'L', 'back'), (pose_idle, 'L', 'thumb'), (pose_key('two_fingers', 1), 'R', 0), (pose_key('hand_to_chest', 1), 'R', 'back')])
+    q.hands([(pose_idle, 'L', 'back'), (pose_idle, 'L', 'thumb'), (pose_key('two_fingers', 2), 'R', 0), (pose_key('two_fingers', 2), 'R', -35),
+             (pose_key('wave', 8), 'R', 0), (pose_key('hand_to_chest', 1), 'R', 'back')])
     pose_idle()
     ids = q.ids()
     log('qa checks')
@@ -502,9 +504,11 @@ def run_qa(B, out, sheet, poses):
             # the thighs through it by design)
             pairs.append((inf['role'], under, faces, rest_d, ('walk', 'run', 'sprint', 'jog', 'jump_air', 'stair', 'wave', 'run_stop', 'look_up', 'hand_to_chest', 'two_fingers') if inf['role'] == 'skirt' else None))
     frames = []
+    own = {k: v for k, v in CLIPS.poses(base, spec).items() if k in spec['clips']}
     for name in ('walk', 'run', 'sprint', 'sit', 'crouch', 'jump_air', 'wave', 'pickup'):
         c = poses['clips'].get(name)
-        if not c:
+        # (a clip of her own replaces the motion set's of the same name at runtime: that one is checked below)
+        if not c or name in own:
             continue
         for fi, fr in enumerate(c['frames'][::2]):
             def fn(fr=fr):
@@ -512,7 +516,6 @@ def run_qa(B, out, sheet, poses):
                 skirt_push(gp, B['springs'], B['colliders'], B['bones'])
                 RIG.apply_to_armature(arm, gp)
             frames.append((f'{name}@{fr["t"]:.2f}', fn))
-    own = CLIPS.poses(base, spec)
     for name, keys in own.items():
         for t, gp in keys[1:-1]:
             def fn(gp=gp):

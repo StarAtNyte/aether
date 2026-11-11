@@ -99,6 +99,15 @@ const SOFT_SPAN = 0.04;
 /** The least share of its posed radius (about the hips' axis) a skirt panel's tail keeps. */
 const MIN_RADIAL = 0.8;
 
+/**
+ * The most a skirt panel (a chain with a collider filter) turns from where the pose hangs it (radians), whatever carries
+ * it: its swing, or the line-of-sight carry over a thigh. A panel is one straight bone as long as the thigh: carried all
+ * the way over a knee lifted in a run or on a stair it stands out level with the hips, the hem flipped up like an opened
+ * umbrella. Held to this, the panel hangs down past the knee and the toon vertex stage drapes the cloth over the leg
+ * (cloth-clear.ts), as a skirt falls over a raised knee.
+ */
+export const PANEL_SWING = 0.5;
+
 /** Closest point on segment a-b to p. */
 export function closestOnSegment(p: Vector3, a: Vector3, b: Vector3, out: Vector3): Vector3 {
   const abx = b.x - a.x;
@@ -310,9 +319,10 @@ export class SpringSystem {
         _d0.copy(_t).sub(_h).normalize();
         _d1.copy(_n).normalize();
         const ang = Math.acos(Math.max(-1, Math.min(1, _d0.dot(_d1))));
-        if (ang > d.limit) {
+        const lim = d.collide ? Math.min(d.limit, PANEL_SWING) : d.limit;
+        if (ang > lim) {
           _q.setFromUnitVectors(_d0, _d1);
-          _q.slerp(_ident, 1 - d.limit / ang);
+          _q.slerp(_ident, 1 - lim / ang);
           _d1.copy(_d0).applyQuaternion(_q);
           _n.copy(_d1).multiplyScalar(link.len);
         }

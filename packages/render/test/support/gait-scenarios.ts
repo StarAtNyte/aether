@@ -36,10 +36,10 @@ function walker(speed: number, sprint = false): Scenario['step'] {
   };
 }
 
-function stairs(speed: number, dir: 1 | -1): Scenario {
+function stairs(speed: number, dir: 1 | -1, name = dir > 0 ? 'stair-up' : 'stair-down'): Scenario {
   let y = 0;
   return {
-    name: dir > 0 ? 'stair-up' : 'stair-down',
+    name,
     seconds: 6,
     start: (rig) => {
       rig.root.position.set(0, dir > 0 ? 0 : 12 * STAIR_RISE, FWD * (dir > 0 ? -0.5 : 0.2));
@@ -100,6 +100,9 @@ export const SCENARIOS: Scenario[] = [
   { name: 'run', seconds: 5, step: walker(4.5, true) },
   stairs(1.2, 1),
   stairs(1.2, -1),
+  // (running up a stair, as Kaho does near the end of the Cloudwatch film: the knees lift highest here)
+  stairs(3.5, 1, 'stair-run-up'),
+  stairs(3.5, -1, 'stair-run-down'),
   oneShot('turn-left', 'turn_left', 2.4),
   oneShot('turn-right', 'turn_right', 2.4),
   oneShot('turn-around', 'turn_around', 2),

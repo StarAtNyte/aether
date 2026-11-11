@@ -160,10 +160,10 @@ try {
   }
   if (only.has('clips')) {
     // the body's own clips (a built character's extra beats), front on
-    for (const clip of ['two_fingers', 'hand_to_chest', 'look_up']) {
+    for (const clip of ['two_fingers', 'wave', 'hand_to_chest', 'look_up']) {
       await place(x0, z0, 180);
       await cam([x0, floor + 1.0, z0 + 3.0], [x0, floor + 0.85, z0], 32);
-      report[`clip-${clip}`] = await page.evaluate(`${R}.characterRig('kaho-test').playClip('${clip}')`);
+      report[`clip-${clip}`] = await page.evaluate(`(() => { const g = ${R}.characterRig('kaho-test'); g.stopClip(); return g.playClip('${clip}'); })()`);
       await page.waitForTimeout(900);
       await canvasShot(page, `clip-${clip}`);
       await page.waitForTimeout(1800);

@@ -94,7 +94,7 @@ Run it with the character's folder as the working directory; on a loaded machine
 | `turnaround.png` | front, her left side, back (orthographic, cel preview with outlines, the model-sheet stance) |
 | `expressions.png` | the face through every morph |
 | `silhouette.png` | with a sheet: our masks (blue) over the sheet's (red), per view |
-| `hands.png` | the hands up close: the left in the sheet stance from its back and its thumb side, the right in `two_fingers` and `hand_to_chest` (for the eye; not judged) |
+| `hands.png` | the hands up close: the left in the sheet stance from its back and its thumb side, the right in `two_fingers` (front and her right three-quarter), `wave` (front) and `hand_to_chest` (for the eye; not judged) |
 | `<id>.blender.glb`, `<id>.meta.json` | the Blender export and its meta (springs, colliders, style) |
 | `<id>.glb` | the runtime body, made by `scripts/characters/finish-character.ts` (`--install` when the brief says `"install": true`) |
 | `<id>.lod1.glb` | the reduced level (decimated to 40 %, no morphs); installed with the body as `c/<id>.lod1.<hash8>.glb`, recorded in `ORIGINAL_LODS` (`original.ts`) |
@@ -189,7 +189,7 @@ line). Colours are words or hex, the hex winning. Missing fields default from st
    98th percentile of the skin's distance to that axis. A skirt panel's own radius is cut to what clears them at rest,
    never below 0. The skirt's vertices carry the cloth flag (`_TOON.w` = 1) for the runtime's per-vertex clearance
    (below). The bag strap is kept clear of everything under it and takes the body's own weights.
-7. **Clips** (`clips.py`): `look_up`, `hand_to_chest`, `two_fingers` (the right hand beside the face, a V), `run_stop`
+7. **Clips** (`clips.py`): `look_up`, `hand_to_chest`, `two_fingers` (the right hand beside the face, a V), `wave`, `run_stop`
    (replaces the shared one), keyed from the motion set's idle pose (sampled by `motion-poses.ts`) with world-axis
    turns, two-bone IK for the hands and finger curls (`curl`, `curl_joint`: toward the palm; `hand_frame`'s cross axis
    is the palm side on the left hand and the back on the right, which the curls before November 2026 got backwards, so
@@ -615,6 +615,32 @@ blended across the azimuth), one fringe sheet fanned from the parting, two face-
 (so a gap shows hair, not a back face). The face keeps its decals; at `face_style = painted` the atlas is 2048 px and the
 face cells are drawn at twice the size (eye 512 px), with the sheet's almond eye (`eye_shape('sheet')`).
 Set `"hair_style": "clumps"` / `"face_style": "sculpted"` in a brief for the old look.
+
+**The cel face and the hand clips (November 2026).** The film's close-ups showed a washed-out face with blotchy skin
+patches and small soft eyes, and Mio's V sign at the train window drifted out sideways, limp, palm down.
+- `paint.paint_face_cel` (anime, `face_style = painted`) draws the face cells as hard-edged cel shapes:
+  - Eyes: large and tall (`eye_lids`, with the lids meeting in points; `droopy` lets the outer corner fall), a cool
+    flat lid shadow on the sclera, an iris with a hard deep upper half, a lit lower crescent, a dark pupil, a limbal
+    ring and three catchlights, and a heavy near-black lash line with a flick and two points.
+  - The rest: crisp tapered brows, simple line mouths (an open D and a small open `o`), a nose tick, and a hard pink
+    blush oval with hatches.
+  - The anime girl's eyes are 0.05 head units (was 0.044), set 0.037 apart, with the brows 4 mm higher (`face.decal_layout`).
+- Each face cell's margin is cut away (`put_cut`). Only the features and a ring of skin 1.2 % of the cell wide keep
+  their codes, and the rest is atlas alpha 0. The head's own skin shows there, so a decal's rectangle can no longer
+  shade differently from the face. The ring is thin because the decals float over the face and cast into the sun's
+  map: a wider ring's edge drew its own shadow line on the skin. The ring keeps the eyes at the far level (9 m).
+- `two_fingers` (2.7 s): the hand rises in front of the body through a mid key, so it no longer swings out to the
+  side. It rests beside the cheek with the palm to the front. Index and middle are straight and apart, ring and little
+  fold under the thumb (`v_hand`), and the head tilts toward the hand.
+- `wave` (2.7 s, new, in the default `clips`): the forearm is raised beside the head and the open hand (`open_hand`:
+  fingers straight and together, the thumb beside them) faces front. It makes four swings about the elbow in the
+  body's plane, eased, from the idle and back. It replaces the motion set's `wave` by name (`system.ts` puts a body's
+  own clips over the set's), and the QA's interpenetration checks it instead of the library's.
+- `orient_hand(..., twist)` gives part of the hand's turn to the forearm, so the wrist does not wring.
+  For the right hand, the renders show that `orient_hand`'s `back_to` turns the palm, not the back, toward that
+  direction, so the new clips pass the palm's direction. `palm_normal` finds the palm side by test-bending a finger.
+- `kaho-shots.ts --only=clips` stops the previous clip first: a played clip stays forced until `stopClip`, so a
+  following `wave` had been hidden.
 
 Runtime (`toon.ts`): atlas alpha at or below `CUT_CODE` (0.08) is a hole, in the body, the outline and the sun's map (`maskNode`,
 `maskShadowNode`): no new program. The painted parts have outline width 0 (the rim line in the texture is the outline, so

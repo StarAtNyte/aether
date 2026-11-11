@@ -7,7 +7,8 @@ in glTF terms (character facing +Z, her left +X) with world-axis turns, two-bone
 
 - look_up: the head and neck tip back to look at the sky, a breath, back down.
 - hand_to_chest: the right hand comes to rest flat on the chest, the head bows a little, and returns.
-- two_fingers: the right hand rises beside the face showing two fingers (a V), a small tilt of the head.
+- two_fingers: the right hand rises in front of the body to beside the cheek, palm to the front, a V; the head tilts.
+- wave: the right forearm raised, the open hand palm to the front, four swings; replaces the motion set's `wave`.
 - run_stop: braking from a run: the body leans back, the arms swing forward for balance, settles to the idle.
 """
 import math
@@ -105,8 +106,22 @@ def curl_joint(gp, side, joint, angle):
     gp.rotate_world(f'Bip01_{side}_Finger{joint}', y * (-1 if side == 'L' else 1), angle)
 
 
-def orient_hand(gp, side, fingers_to, back_to):
-    """Turn the hand so its fingers point along `fingers_to` and its back faces `back_to` (world)."""
+def orient_hand(gp, side, fingers_to, back_to, twist=0.0):
+    """Turn the hand so its fingers point along `fingers_to` and its back faces `back_to` (world). `twist`: the share
+    of the turn about the forearm's axis that the forearm takes (pronation), so the wrist does not wring."""
+    if twist:
+        W = gp.world()
+        x, y, z = hand_frame(W, side)
+        from mathutils import Matrix
+        cur = Matrix((x, y, z)).transposed()
+        fx = Vector(fingers_to).normalized()
+        fz = (Vector(back_to) - fx * Vector(back_to).dot(fx)).normalized()
+        want = Matrix((fx, fz.cross(fx), fz)).transposed()
+        q = (want @ cur.inverted()).to_quaternion()
+        ax = (W[f'Bip01_{side}_Hand'].translation - W[f'Bip01_{side}_Forearm'].translation).normalized()
+        ang = 2 * math.atan2(Vector((q.x, q.y, q.z)).dot(ax), q.w)
+        ang = (ang + math.pi) % (2 * math.pi) - math.pi
+        gp.rotate_world(f'Bip01_{side}_Forearm', ax, ang * twist)
     W = gp.world()
     x, y, z = hand_frame(W, side)
     from mathutils import Matrix
@@ -118,6 +133,103 @@ def orient_hand(gp, side, fingers_to, back_to):
     d = (want @ cur.inverted()).to_quaternion()
     hq = W[f'Bip01_{side}_Hand'].to_quaternion()
     gp.set_world_rotation(f'Bip01_{side}_Hand', d @ hq)
+
+
+def spread(gp, side, finger, deg):
+    """Set a finger's direction in the hand's plane: `deg` degrees from the middle finger's rest line toward the index
+    (negative: toward the little finger)."""
+    n = f'Bip01_{side}_Finger{finger}'
+    W = gp.world()
+    x, y, z = hand_frame(W, side)
+    cur = _plane_angle(W[n + '1'].translation - W[n].translation, x, y, z)
+    for sgn in (1, -1):
+        g = gp.copy()
+        g.rotate_world(n, z, sgn * (rad(deg) - cur))
+        W2 = g.world()
+        x2, y2, z2 = hand_frame(W2, side)
+        if abs(_plane_angle(W2[n + '1'].translation - W2[n].translation, x2, y2, z2) - rad(deg)) < rad(2):
+            gp.rotate_world(n, z, sgn * (rad(deg) - cur))
+            return
+
+
+def straighten(gp, side, finger):
+    """The finger's middle and end phalanges in line with its first: the Biped's phalanges lie along their local x, and
+    their rest rotations are the curl, so an identity local rotation is a straight joint."""
+    for seg in ('1', '2'):
+        n = f'Bip01_{side}_Finger{finger}{seg}'
+        if n in gp.r:
+            gp.r[n] = Quaternion()
+
+
+def flatten(gp, side, finger):
+    """Lift a finger's first phalanx back into the hand's plane (the idle pose curls the ring and little fingers)."""
+    n = f'Bip01_{side}_Finger{finger}'
+    W = gp.world()
+    x, y, z = hand_frame(W, side)
+    d = (W[n + '1'].translation - W[n].translation).normalized()
+    want = (d - z * d.dot(z)).normalized()
+    ax = d.cross(want)
+    if ax.length > 1e-6:
+        gp.rotate_world(n, ax.normalized(), d.angle(want))
+
+
+def palm_normal(gp, side):
+    """The world direction the palm faces (found by bending the middle finger: it curls toward the palm)."""
+    W = gp.world()
+    x, y, z = hand_frame(W, side)
+    g = gp.copy()
+    curl_joint(g, side, '2', rad(30))
+    d = g.world()[f'Bip01_{side}_Finger21'].translation - W[f'Bip01_{side}_Finger21'].translation
+    return z if d.dot(z) > 0 else -z
+
+
+def thumb_to(gp, side, along, toward_index, out_of_palm, bend=(0.0, 0.0)):
+    """Point the thumb's first bone along a direction given in the hand's terms (along the fingers, toward the index,
+    out in front of the palm), then bend its two joints toward the palm by `bend` degrees."""
+    W = gp.world()
+    x, y, z = hand_frame(W, side)
+    pn = palm_normal(gp, side)
+    want = (x * along + y * toward_index + pn * out_of_palm).normalized()
+    n = f'Bip01_{side}_Finger0'
+    d = (W[n + '1'].translation - W[n].translation).normalized()
+    ax = d.cross(want)
+    if ax.length > 1e-6:
+        gp.rotate_world(n, ax.normalized(), d.angle(want))
+    for seg, a in zip(('1', '2'), bend):
+        gp.r[f'{n}{seg}'] = Quaternion()
+        W = gp.world()
+        t = W[f'{n}{seg}'].translation
+        # bend toward the palm: about the axis across the thumb and the palm normal
+        dd = (W[f'{n}{seg}'].translation - W[n if seg == '1' else n + '1'].translation).normalized()
+        axb = dd.cross(pn)
+        if axb.length > 1e-6 and a:
+            gp.rotate_world(f'{n}{seg}', axb.normalized(), rad(a))
+
+
+def v_hand(gp, side='R'):
+    """The V sign: index and middle straight and apart, ring and little folded into the palm, the thumb over them."""
+    for f in ('1', '2', '3', '4'):
+        flatten(gp, side, f)
+    gather_fingers(gp, side, keep=0.2)
+    for f in ('1', '2'):
+        straighten(gp, side, f)
+    spread(gp, side, '1', 11)
+    spread(gp, side, '2', -9)
+    for f in ('3', '4'):
+        for seg, a in (('', 80), ('1', 100), ('2', 70)):
+            curl_joint(gp, side, f'{f}{seg}', rad(a))
+    thumb_to(gp, side, 0.35, -0.85, 0.45, bend=(20, 25))
+
+
+def open_hand(gp, side='R'):
+    """An open hand for a wave: the fingers straight and together, a slight natural curl, the thumb beside the index."""
+    for f, deg in (('1', 4), ('2', 0), ('3', -3), ('4', -7)):
+        flatten(gp, side, f)
+        straighten(gp, side, f)
+        spread(gp, side, f, deg)
+    for f, a in (('1', 4), ('2', 4), ('3', 6), ('4', 8)):
+        curl_joint(gp, side, f, rad(a))
+    thumb_to(gp, side, 0.9, 0.35, 0.12, bend=(4, 4))
 
 
 def sheet_pose(rest):
@@ -166,24 +278,44 @@ def poses(base, spec):
     hc2 = hc.copy()
     hc2.rotate_world('Bip01_Head', X, rad(4))
     out['hand_to_chest'] = [(0.0, base), (0.7, hc), (1.8, hc2), (2.5, base)]
-    # two_fingers (right hand beside the face)
+    # two_fingers (the sheet's "V sign"): the right hand comes up in front of the body (the forearm rising first, so
+    # the arm never swings out to the side), and rests beside her cheek, fingertips at eye level, palm to the front,
+    # index and middle straight and apart, ring and little folded under the thumb; the head tilts toward it.
+    k = spec['height'] / 1.54
+    ua = W['Bip01_R_UpperArm'].translation
     tf = base.copy()
-    target = head + Vector((-0.13, 0.04, 0.05)) * (spec['height'] / 1.54)
-    tf.ik('Bip01_R_UpperArm', 'Bip01_R_Forearm', 'Bip01_R_Hand', target, head + Vector((-0.4, -0.35, -0.1)))
-    orient_hand(tf, 'R', (0.05, 1.0, 0.1), (0.0, 0.0, -1.0))
-    for f, a in (('1', 4), ('2', 4)):
-        curl(tf, 'R', f, rad(a))
-    gather_fingers(tf, 'R', keep=0.6)
-    for f in ('3', '4'):
-        for seg, a in (('', 70), ('1', 95), ('2', 60)):
-            curl_joint(tf, 'R', f'{f}{seg}', rad(a))
-    # the thumb across the folded fingers
-    thumb_in(tf, 'R', lift=20, across=45, bend=(25, 30))
-    tf.rotate_world('Bip01_Head', Z, rad(-8))
-    tf.rotate_world('Bip01_Head', Y, rad(-5))
+    v_hand(tf)
+    mid = tf.copy()
+    mid.ik('Bip01_R_UpperArm', 'Bip01_R_Forearm', 'Bip01_R_Hand', chest + Vector((-0.1, 0.06, 0.17)) * k, chest + Vector((-0.25, -0.3, 0.05)))
+    orient_hand(mid, 'R', (-0.1, 1.0, 0.25), (-0.15, -0.1, 1.0), twist=0.75)
+    tf.ik('Bip01_R_UpperArm', 'Bip01_R_Forearm', 'Bip01_R_Hand', head + Vector((-0.112, -0.045, 0.07)) * k, ua + Vector((-0.12, -0.3, 0.12)))
+    orient_hand(tf, 'R', (-0.28, 1.0, 0.05), (-0.2, 0.0, 1.0), twist=0.75)
+    tf.rotate_world('Bip01_Head', Z, rad(7))
+    tf.rotate_world('Bip01_Head', Y, rad(-6))
+    tf.rotate_world('Bip01_Spine2', Z, rad(2))
     tf2 = tf.copy()
-    tf2.rotate_world('Bip01_R_Hand', Z, rad(6))
-    out['two_fingers'] = [(0.0, base), (0.5, tf), (1.6, tf2), (2.2, base)]
+    tf2.rotate_world('Bip01_R_Hand', Z, rad(-7))
+    tf2.rotate_world('Bip01_Head', Z, rad(2))
+    out['two_fingers'] = [(0.0, base), (0.3, mid), (0.6, tf), (1.4, tf2), (2.0, tf), (2.3, mid), (2.7, base)]
+    # wave (replaces the shared one: the motion set's wave reads poorly): the forearm raised beside the head, the open
+    # hand with its fingers together and its palm to the front, four swings of the forearm about the elbow (in the
+    # body's plane, the way a wave reads from the front), eased in and out, from the idle and back to it.
+    wv = base.copy()
+    open_hand(wv, 'R')
+    wmid = wv.copy()
+    wmid.ik('Bip01_R_UpperArm', 'Bip01_R_Forearm', 'Bip01_R_Hand', chest + Vector((-0.17, 0.08, 0.14)) * k, ua + Vector((-0.3, -0.25, 0.05)))
+    orient_hand(wmid, 'R', (-0.1, 1.0, 0.3), (-0.1, 0.0, 1.0), twist=0.75)
+    wv.ik('Bip01_R_UpperArm', 'Bip01_R_Forearm', 'Bip01_R_Hand', ua + Vector((-0.19, 0.17, 0.15)) * k, ua + Vector((-0.35, -0.3, 0.02)))
+    orient_hand(wv, 'R', (-0.05, 1.0, 0.08), (-0.05, 0.0, 1.0), twist=0.75)
+    wv.rotate_world('Bip01_Head', Z, rad(4))
+
+    def swing(deg):
+        g = wv.copy()
+        g.rotate_world('Bip01_R_Forearm', Z, rad(deg))
+        g.rotate_world('Bip01_R_Hand', Z, rad(deg * 0.35))
+        return g
+    out['wave'] = [(0.0, base), (0.25, wmid), (0.5, swing(-6)), (0.75, swing(20)), (1.02, swing(-18)), (1.29, swing(20)),
+                   (1.56, swing(-18)), (1.83, swing(16)), (2.08, wv), (2.35, wmid), (2.7, base)]
     # run_stop: brake, lean back, arms forward, settle
     rs = base.copy()
     rs.rotate_world('Bip01_Spine', X, rad(-10))

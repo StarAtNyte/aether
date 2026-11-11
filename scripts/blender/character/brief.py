@@ -55,7 +55,7 @@ def spec_of(brief):
         'notes': brief.get('notes', ''),
         'install': bool(brief.get('install', False)),
         'expressions': brief.get('expressions', ['smile', 'sad', 'surprised', 'teary', 'blink', 'mouth_open', 'determined']),
-        'clips': brief.get('clips', ['look_up', 'hand_to_chest', 'run_stop', 'two_fingers']),
+        'clips': brief.get('clips', ['look_up', 'hand_to_chest', 'run_stop', 'two_fingers', 'wave']),
         'look': brief.get('look') or brief.get('notes', '')[:200] or brief.get('name'),
         'revision_notes': brief.get('revision_notes', ''),
     }

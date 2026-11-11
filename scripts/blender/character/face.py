@@ -303,15 +303,20 @@ def decal_layout(spec):
     ew = (0.044 if not male else 0.035) if spec['style'] == 'anime' else 0.026
     if old > 0.3:
         ew *= 0.9
+    # the cel face (face_style = painted, anime): the sheets' large eyes, a little wider apart, the brows higher
+    cel = spec['style'] == 'anime' and spec.get('face_style') == 'painted' and not male and old <= 0.3
+    brow_up = 0.0
+    if cel:
+        ew, ex, brow_up = 0.05, 0.037, 0.004
     ew *= spec.get('eye_scale', 1.0)
     out = []
     for side, sx in (('L', 1), ('R', -1)):
         out += [
             (f'eye_{side}', 'eye', (sx * ex, ez), (ew, ew), 0.0005, True, sx),
             (f'eyec_{side}', 'eye_closed', (sx * ex, ez - 0.004), (ew * 1.02, ew * 0.5), 0.0008, False, sx),
-            (f'brow_{side}', 'brow', (sx * (ex + 0.002), ez + 0.027 + 0.002 * male), (ew * 0.95, ew * 0.26 * (1.4 if old > 0.3 else 1)), 0.0005, True, sx),
-            (f'blush_{side}', 'blush', (sx * (ex + 0.012), ez - 0.024), (0.026, 0.013), 0.0004, False, sx),
-            (f'tear_{side}', 'tear', (sx * ex, ez - 0.013), (ew * 0.9, ew * 0.42), 0.0011, False, sx),
+            (f'brow_{side}', 'brow', (sx * (ex + 0.002), ez + 0.027 + brow_up + 0.002 * male), (ew * 0.95, ew * 0.26 * (1.4 if old > 0.3 else 1)), 0.0005, True, sx),
+            (f'blush_{side}', 'blush', (sx * (ex + 0.012), ez - 0.024 - 0.003 * cel), (0.026, 0.013), 0.0004, False, sx),
+            (f'tear_{side}', 'tear', (sx * ex, ez - 0.013 - 0.002 * cel), (ew * 0.9, ew * 0.42), 0.0011, False, sx),
         ]
     out += [
         ('nose', 'nose', (0, 0.067), (0.02, 0.02), 0.0004, True, 1),
@@ -323,7 +328,7 @@ def decal_layout(spec):
         ('mouth_set', 'mouth_set', (0, 0.041), (0.034, 0.0255), 0.0007, False, 1),
     ]
     if spec.get('beauty_mark'):
-        out.append(('mark', 'mark', (ex + 0.013, ez - 0.022), (0.0045, 0.0045), 0.0004, True, 1))
+        out.append(('mark', 'mark', (ex + 0.013, ez - 0.022 - 0.003 * cel), (0.0045, 0.0045), 0.0004, True, 1))
     if old > 0.3:
         out.append(('wrinkle', 'wrinkle', (0, 0.168), (0.05, 0.022), 0.0004, True, 1))
     return out
