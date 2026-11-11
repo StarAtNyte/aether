@@ -32,12 +32,12 @@ describe('the home Featured gallery', () => {
   });
 
   it('labels each world by what the player does with it', () => {
-    expect(featuredMode({ slug: 'cloudwatch-harbour', kind: 'story' })).toBe('Story film');
+    expect(featuredMode({ slug: 'cloudwatch-harbour', kind: 'story' })).toBe('Explore · story film');
     expect(featuredMode({ slug: 'dusk-lake-house', kind: 'architecture' })).toBe('Walkthrough · time of day');
     expect(featuredMode({ slug: 'lisbon-hills', kind: 'scene' })).toBe('City · drone tour');
     expect(featuredMode({ slug: 'kestrel-outpost', kind: 'game' })).toBe('Game');
     expect(featuredMode({ slug: 'sanctuary-falls', kind: 'scene' })).toBe('Scene · orbit');
-    expect(featuredVerb({ slug: 'cloudwatch-harbour', kind: 'story' })).toBe('Watch');
+    expect(featuredVerb({ slug: 'cloudwatch-harbour', kind: 'story' })).toBe('Explore');
   });
 
   it('renders one card per featured world: a link to the player and a Remix button outside it', () => {

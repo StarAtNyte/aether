@@ -265,14 +265,15 @@ const StoryGate = memo(function StoryGate({ story, title, onWatch, onExplore, on
         <h2>{story.title ?? title}</h2>
         <p>A short film, about {Math.round(story.shots.reduce((t, s) => t + s.duration, 0) / 10) * 10} seconds</p>
         <div className="pl-stack pl-stack--row">
-          <Button primary onClick={() => onWatch(true)} autoFocus testId="pl-story-watch">
+          {/* Explore leads: the world itself is the thing; the film is one click away. */}
+          <Button primary onClick={onExplore} autoFocus testId="pl-story-gate-explore">
+            Explore
+          </Button>
+          <Button onClick={() => onWatch(true)} testId="pl-story-watch">
             ▶ Watch (with sound)
           </Button>
           <Button onClick={() => onWatch(false)} testId="pl-story-watch-muted">
             Watch muted
-          </Button>
-          <Button onClick={onExplore} testId="pl-story-gate-explore">
-            Explore
           </Button>
           {canPlay && (
             <Button onClick={onPlay} testId="pl-story-gate-play">

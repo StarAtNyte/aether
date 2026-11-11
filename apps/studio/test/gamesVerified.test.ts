@@ -34,8 +34,10 @@ const OTHER_BOTS: Record<string, string> = {
   'skyline-penthouse': 'architecture: walked by the walkthrough bot',
   'dusk-lake-house': 'architecture: walked by the walkthrough bot',
   'casa-patio': 'architecture: walked by the walkthrough bot',
+  'linden-row': 'street of townhouses: a free walkthrough, no goal to finish',
   'cloudwatch-harbour': 'story film: no goal to win; the short film plays through, then P plays as the character',
   'sanctuary-falls': 'scene: an orbit showcase with no goal',
+  'sanctuary-terraces': 'scene: an orbit showcase with no goal',
   'lisbon-hills': 'city: a street-level hero view and a drone tour, no goal',
   'kestrel-outpost': 'shooter: packages/agent/test/kestrel-outpost.test.ts fights all five waves to an ending with the weapon',
 };

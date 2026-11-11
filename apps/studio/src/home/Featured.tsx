@@ -19,7 +19,7 @@ const LEAD_STILL: ReadonlySet<string> = new Set(['cloudwatch-harbour']);
 /** "Walkthrough · time of day", "Story film", "Game", "City · drone tour", "Scene · orbit": what the player does with the world. */
 export function featuredMode(t: Pick<WorldTemplate, 'slug' | 'kind'>): string {
   const p = templatePublish(t.slug, t.kind);
-  if (p.startMode === 'story') return 'Story film';
+  if (p.startMode === 'story') return 'Explore · story film';
   if (p.startMode === 'play') return p.profile === 'city' ? 'City · game' : 'Game';
   if (p.startMode === 'walkthrough') return TIME_OF_DAY.has(t.slug) ? 'Walkthrough · time of day' : 'Walkthrough';
   return p.profile === 'city' ? 'City · drone tour' : 'Scene · orbit';
@@ -28,7 +28,7 @@ export function featuredMode(t: Pick<WorldTemplate, 'slug' | 'kind'>): string {
 /** The verb on a card's button. */
 export function featuredVerb(t: Pick<WorldTemplate, 'slug' | 'kind'>): string {
   const p = templatePublish(t.slug, t.kind);
-  return p.startMode === 'story' ? 'Watch' : p.startMode === 'play' ? 'Play' : p.startMode === 'walkthrough' ? 'Walk through' : 'Explore';
+  return p.startMode === 'story' ? 'Explore' : p.startMode === 'play' ? 'Play' : p.startMode === 'walkthrough' ? 'Walk through' : 'Explore';
 }
 
 type Size = 'lead' | 'side' | 'tile';

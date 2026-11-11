@@ -59,8 +59,33 @@ export const TEMPLATE_GROUPS: readonly { id: TemplateGroup; label: string; title
   { id: 'photo', label: 'Photo to 3D', title: 'Photo to 3D', lead: 'Example rooms the agent reconstructed from a photograph (credited on each card). To rebuild your own, attach a photo in the chat.' },
 ]);
 
-/** Templates of one group, in display order (featured first, then the rest in manifest order). */
-export const templatesInGroup = (id: TemplateGroup): readonly WorldTemplate[] => TEMPLATES.filter((t) => templateGroup(t) === id);
+/**
+ * The strongest worlds of each group, best first: a group lists these ahead of the rest (which keep the order of
+ * {@link TEMPLATES}: featured, films, flagship, agent-made, photo), so the Templates page opens on the best, not on whatever
+ * the manifest happens to list next.
+ */
+export const BEST_FIRST: readonly string[] = Object.freeze([
+  // architecture
+  'dusk-lake-house', 'linden-row', 'skyline-penthouse', 'casa-patio', 'pool-house', 'starlight-cinema', 'evening-bistro', 'orion-cinema',
+  // games
+  'highland-trail', 'kestrel-outpost', 'lantern-isles', 'neon-rain-city', 'kart-canyon', 'hollow-gate', 'sakura-river', 'kepler-base',
+  // scenes
+  'sanctuary-falls', 'lisbon-hills', 'sanctuary-terraces', 'cliff-sanctuary', 'sanctuary-ascent', 'four-seasons-garden', 'painterly-meadow',
+  // stories and physics
+  'cloudwatch-harbour', 'kyoto-temple', 'chain-reaction',
+]);
+
+const bestRank = (slug: string): number => {
+  const i = BEST_FIRST.indexOf(slug);
+  return i < 0 ? BEST_FIRST.length : i;
+};
+
+/** Templates of one group, in display order: the group's {@link BEST_FIRST} worlds best first, then the rest in their usual order. */
+export const templatesInGroup = (id: TemplateGroup): readonly WorldTemplate[] =>
+  TEMPLATES.filter((t) => templateGroup(t) === id)
+    .map((t, i) => [t, i] as const)
+    .sort((a, b) => bestRank(a[0].slug) - bestRank(b[0].slug) || a[1] - b[1])
+    .map(([t]) => t);
 
 /** Template by slug, including hidden ones (old links keep working); undefined when unknown. */
 export function templateBySlug(slug: string): WorldTemplate | undefined {
