@@ -7,6 +7,9 @@
   "functions": {
     "api/cook-upload.ts": {
       "maxDuration": 60
+    },
+    "api/llm.ts": {
+      "maxDuration": 300
     }
   },
   "build": {
