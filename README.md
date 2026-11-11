@@ -237,6 +237,29 @@ npm run dev          # studio on http://localhost:5173, proxies /api (terminal 2
   <br><sub>The studio: agent panel, viewport and scene inspector, with a passed replay check.</sub>
 </p>
 
+## The Aether framework
+
+Aether is built on its own framework, not on a game engine. One set of TypeScript packages drives every kind of
+world: a house, a city, a shooter, a boat ride and an animated film use the same world format, renderer, physics and
+agent. The studio is one app on top of it.
+
+| Package | What it does |
+| --- | --- |
+| [`core`](packages/core) | The World IR: one validated JSON document per world, typed patches, undo history |
+| [`render`](packages/render) | three.js WebGPU/WebGL2 renderer: real-time sun and sky, soft shadows, characters, quality tiers |
+| [`physics`](packages/physics) | Rapier physics, character controller, headless forks that run far faster than real time |
+| [`logic`](packages/logic) | Game rules that read like sentences, behaviours, NPCs, weapons |
+| [`playtest`](packages/playtest) | A bot that plays each game to the win |
+| [`verifier`](packages/verifier) | Sealed replay proofs, re-simulated headless and checked |
+| [`agent`](packages/agent) | The AI's tools, prompts, and the plan → build → check → repair loop |
+| [`arch`](packages/arch) | Parametric buildings and interiors: walls, openings, roofs, stairs, furniture, floor plans |
+| [`procgen`](packages/procgen) | Sandboxed generators: code the AI writes to build meshes, materials and foliage (a lantern, a cliff, a tree) |
+| [`assets`](packages/assets) | Curated CC0 asset catalogue, glTF import and validation |
+| [`voxel`](packages/voxel) | Block worlds |
+
+Blender connects through a local bridge (see [docs/BLENDER-HARNESS.md](docs/BLENDER-HARNESS.md)): the AI models
+pieces there, checks them, and bakes them into the same world format.
+
 ## How it works
 
 ```mermaid
