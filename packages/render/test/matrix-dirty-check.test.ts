@@ -61,4 +61,19 @@ describe('matrix dirty check', () => {
     cam.updateMatrixWorld();
     expect(cam.matrixWorld.equals(shot)).toBe(true);
   });
+  it('keeps siblings in step after a parent chain was refreshed alone (a walking body\'s IK)', () => {
+    const root = new Group();
+    const body = new Group();
+    const armBone = new Object3D();
+    const legBone = new Object3D();
+    root.add(body);
+    body.add(armBone, legBone);
+    legBone.position.set(0, -1, 0);
+    root.updateMatrixWorld();
+    // The body walks; IK reads the arm's world position before the frame's traversal (refreshes the chain, not its children).
+    body.position.set(10, 0, 0);
+    armBone.getWorldPosition(new Vector3());
+    root.updateMatrixWorld();
+    expect(new Vector3().setFromMatrixPosition(legBone.matrixWorld).x).toBeCloseTo(10);
+  });
 });

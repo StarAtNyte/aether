@@ -29,6 +29,7 @@ interface Composed {
   matrixWorld: { copy(m: unknown): void; multiplyMatrices(a: unknown, b: unknown): void };
   updateMatrix(): void;
   updateMatrixWorld(force?: boolean): void;
+  updateWorldMatrix(updateParents: boolean, updateChildren: boolean, force?: boolean): void;
 }
 
 /** Recompose `o`'s local matrix if its transform changed since the last compose; true when it did. */
@@ -66,6 +67,29 @@ export function installMatrixDirtyCheck(): void {
     if (c === undefined) return;
     const p = this.position, q = this.quaternion, s = this.scale;
     c[0] = p.x; c[1] = p.y; c[2] = p.z; c[3] = q.x; c[4] = q.y; c[5] = q.z; c[6] = q.w; c[7] = s.x; c[8] = s.y; c[9] = s.z;
+  };
+  // `updateWorldMatrix(parents, false)` (IK, look-at, `getWorldPosition`) refreshes an object's world matrix and clears its
+  // dirty flag without touching its children. three's own traversal recomposes every frame, so the children catch up there;
+  // with the check above the cleared object looks unchanged and its subtree is never multiplied again. A walking body whose
+  // hand IK refreshed the root's chain kept every other bone at the world matrix of where it stood: limbs stretched back
+  // to the spawn point. So the children of an object refreshed that way are marked stale.
+  proto.updateWorldMatrix = function (this: Composed, updateParents: boolean, updateChildren: boolean, force = false): void {
+    const parent = this.parent;
+    if (updateParents === true && parent !== null) (parent as unknown as { updateWorldMatrix(a: boolean, b: boolean): void }).updateWorldMatrix(true, false);
+    if (this.matrixAutoUpdate) this.updateMatrix();
+    const children = this.children;
+    if (this.matrixWorldNeedsUpdate || force) {
+      if (this.matrixWorldAutoUpdate === true) {
+        if (parent === null) this.matrixWorld.copy(this.matrix);
+        else this.matrixWorld.multiplyMatrices(parent.matrixWorld, this.matrix);
+      }
+      this.matrixWorldNeedsUpdate = false;
+      force = true;
+      if (updateChildren !== true) for (let i = 0, l = children.length; i < l; i++) (children[i] as Composed).matrixWorldNeedsUpdate = true;
+    }
+    if (updateChildren === true) {
+      for (let i = 0, l = children.length; i < l; i++) (children[i] as unknown as { updateWorldMatrix(a: boolean, b: boolean, f: boolean): void }).updateWorldMatrix(false, true, force);
+    }
   };
   proto.updateMatrixWorld = function (this: Composed, force?: boolean): void {
     if (this.matrixAutoUpdate) composeIfChanged(this);

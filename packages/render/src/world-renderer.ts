@@ -3873,8 +3873,9 @@ export class WorldRenderer {
   }
 
   /** First-person look pitch in radians (negative looks down); the rig clamps it. Ignored in other camera modes. */
-  setLookPitch(pitch: number): void {
-    if (Number.isFinite(pitch)) this.rig.pitch = pitch;
+  setLookPitch(pitch: number): number {
+    if (Number.isFinite(pitch)) this.rig.pitch = this.rig.clampPitch(pitch);
+    return this.rig.pitch;
   }
 
   /**

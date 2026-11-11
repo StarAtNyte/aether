@@ -64,6 +64,14 @@ export const MIN_FOLLOW_DISTANCE = 1.2;
 const OCCLUSION_PADDING = 0.35;
 const FOLLOW_HEIGHT = 2.4;
 const LOOK_HEIGHT = 1.3;
+/** Chase boom length from the look point (m) and its default elevation (radians): the old fixed 5.5 m back, 2.4 m up. */
+const FOLLOW_BOOM = Math.hypot(FOLLOW_DISTANCE, FOLLOW_HEIGHT - LOOK_HEIGHT);
+const FOLLOW_ELEV = Math.atan2(FOLLOW_HEIGHT - LOOK_HEIGHT, FOLLOW_DISTANCE);
+/** Lowest boom elevation (the camera a little below the head, over the ground); looking further up tilts the view. */
+const FOLLOW_ELEV_MIN = -0.15;
+/** Look pitch range of the chase camera (radians): down to nearly overhead, up to a steep look at the sky. */
+const FOLLOW_PITCH_DOWN = 1.05;
+const FOLLOW_PITCH_UP = 1.1;
 const EYE_HEIGHT = 1.65;
 /** Over-the-shoulder camera: pivot height above the feet, offset to the right, boom length behind (m). */
 export const SHOULDER_HEIGHT = 1.62;
@@ -181,6 +189,12 @@ export class CameraRig {
   private focusDuration = 0.9;
   /** First-person pitch in radians (clamped ±85°). */
   pitch = 0;
+  /** The look pitch this camera mode can use (radians): the chase camera's orbit range, others as given. */
+  clampPitch(pitch: number): number {
+    return this.mode === 'follow' ? Math.max(-FOLLOW_PITCH_DOWN, Math.min(FOLLOW_PITCH_UP, pitch)) : pitch;
+  }
+  /** Upward view tilt of the chase camera past its lowest boom (radians). */
+  private followTilt = 0;
   /** Eye height above the player's feet in first person (lowered while sitting). */
   eyeHeight = EYE_HEIGHT;
   /** The subject crouches: every chase height and the first-person eye sink by this much (m). */
@@ -392,7 +406,13 @@ export class CameraRig {
       return true;
     }
     // Follow: chase from behind the target's heading.
-    _desired.set(_target.x + Math.sin(yaw) * FOLLOW_DISTANCE, _target.y + FOLLOW_HEIGHT - this.crouchDrop, _target.z + Math.cos(yaw) * FOLLOW_DISTANCE);
+    // The look pitch orbits the boom round the head (0: the default framing, behind and a little above). Looking up drops
+    // the camera toward the feet; past a little below head height it stops and the view itself tilts up (the sky, a tower).
+    this.pitch = Math.max(-FOLLOW_PITCH_DOWN, Math.min(FOLLOW_PITCH_UP, this.pitch));
+    const elev = Math.max(FOLLOW_ELEV_MIN, FOLLOW_ELEV - this.pitch);
+    this.followTilt = Math.max(0, FOLLOW_ELEV_MIN - (FOLLOW_ELEV - this.pitch));
+    const ce = Math.cos(elev) * FOLLOW_BOOM;
+    _desired.set(_target.x + Math.sin(yaw) * ce, _target.y + LOOK_HEIGHT + Math.sin(elev) * FOLLOW_BOOM - this.crouchDrop, _target.z + Math.cos(yaw) * ce);
     let rate = 6;
     const occludes = this.occlusion !== null || this.occlusionSink !== null;
     if (occludes) {
@@ -441,6 +461,7 @@ export class CameraRig {
     look.y += (_target.y + LOOK_HEIGHT - this.crouchDrop - look.y) * la;
     look.z += (_target.z - look.z) * la;
     this.camera.lookAt(this.look);
+    if (this.followTilt > 1e-4) this.camera.rotateX(this.followTilt);
     return true;
   }
 

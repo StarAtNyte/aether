@@ -1922,7 +1922,10 @@ export class Simulation {
     this.stepSeat(s, dt);
     this.pumpNpc(s);
     this.feedCharacters(s);
-    this.renderer.setLookPitch((this.input.pitchDeg * Math.PI) / 180);
+    // The chase camera orbits over a narrower range than the mouse can reach: keep the input inside it (no dead zone).
+    const lookPitch = (this.input.pitchDeg * Math.PI) / 180;
+    const usedPitch = this.renderer.setLookPitch(lookPitch);
+    if (Math.abs(usedPitch - lookPitch) > 1e-6) this.input.setPitch((usedPitch * 180) / Math.PI);
     this.interaction?.frame();
     pw.writeTransforms(this.table.packed, this.table.order);
     this.renderer.applyTransforms(this.table.packed, this.table.order);
