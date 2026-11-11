@@ -39,7 +39,8 @@ const ByokModelId = z.string().regex(BYOK_MODEL_RE).optional().catch(undefined);
 
 /** zod schema of {@link AiPrefs}. Unknown or invalid fields fall back to defaults. */
 export const AiPrefsSchema = z.object({
-  mode: z.enum(AI_MODES).catch('auto'),
+  // The hosted Claude model by default (the deployment's /api/llm; pick another connection in Settings → AI connection).
+  mode: z.enum(AI_MODES).catch('server'),
   backend: z.enum(['codex', 'claude-code']).catch('claude-code'),
   codexModel: ModelId.catch('gpt-6.1-sol'),
   claudeModel: ModelId.catch('opus'),

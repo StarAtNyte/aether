@@ -444,9 +444,8 @@ export class AiConnection {
       case 'offline':
         return { kind: 'offline', label: 'Offline planner', ready: true, vision: false };
       case 'server':
-        return s.server.state === 'live'
-          ? { kind: 'server', label: s.server.providers[0] ?? 'Server model', ready: true, vision: true }
-          : { kind: 'server', label: 'Server model', ready: false, reason: 'this server has no model configured', vision: false };
+        if (s.server.state === 'live') return { kind: 'server', label: s.server.providers[0] ?? 'Server model', ready: true, vision: true };
+        return { kind: 'server', label: 'Server model', ready: false, reason: 'this server has no model configured', vision: false };
       case 'bridge':
         return bridge();
       case 'local':
