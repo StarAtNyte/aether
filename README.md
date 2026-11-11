@@ -32,12 +32,27 @@
   <a href="#documentation"><b>Docs</b></a>
 </p>
 
-Aether is a browser studio that turns plain-language prompts into interactive
-3D: outdoor worlds, games you can win, physics machines, and architecture you
-can walk through. The worlds have working logic. Doors swing on physics joints,
-dominoes topple, coins count up and win screens trigger. Before a world reaches
-you, Aether runs its checks headless and a bot plays the game to the end. If
-something is broken, the agent repairs it.
+Aether is an AI world studio that runs in the browser. Describe a world in plain
+words and the AI builds it step by step: land, buildings, interiors. Or start
+from a photo and it rebuilds the room in 3D. Then you shape it, prove it works
+and share it with one link.
+
+- **Shape it.** Select and drag pieces with gizmos, swap materials, or edit by
+  chat ("make the sofa dark green"). Drag the sun to change the time of day;
+  nothing is re-baked. Cut a building open, explode its floors, or open the
+  floor plan with room areas.
+- **Prove it.** A bot plays the game to show it can be won. The world's own
+  tests run. Game rules read like sentences. If something is broken, the agent
+  repairs it.
+- **Share it.** One link carries the whole world and opens on a laptop or a
+  phone. Publish it as a game, a video, a picture, a 3D model or a floor plan.
+  Published worlds open in their own mode (third-person play, walkthrough, or a
+  drone tour over a city) and can be remixed into the editor.
+- **Range.** Architecture, interiors, cities, landscapes, games (shooter,
+  exploration, boat) and animated story films with a play-as-the-character mode.
+
+Underneath is a three.js WebGPU/WebGL2 renderer with real-time lighting, soft
+shadows and an offline film and footage pipeline.
 
 - **Hosted studio:** <https://aether-studio-lyart.vercel.app>. It runs offline
   or with your own API key. To use Codex or Claude Code there, see
@@ -659,7 +674,7 @@ were copied from them.
 
 ## Project status
 
-Aether is at **0.1.0, a pre-release**: the framework, studio, CLI, MCP server and bridge work end to end and are covered by
+Aether is at **0.1.0, a pre-release**: the studio, engine, CLI, MCP server and bridge work end to end and are covered by
 over 500 test files, a headless smoke run on every featured prompt and Playwright suites. The API surface (World IR,
 package exports, MCP tools) can still change before a stable release. The change history is in [CHANGELOG.md](CHANGELOG.md)
 and the measured detail in [docs/REVIEW_LOG.md](docs/REVIEW_LOG.md). The repository is private for now.

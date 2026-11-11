@@ -55,6 +55,18 @@ export function installMatrixDirtyCheck(): void {
   if (installed || (globalThis as { __AETHER_MATRIX_CHECK?: boolean }).__AETHER_MATRIX_CHECK === false) return;
   installed = true;
   const proto = Object3D.prototype as unknown as Composed;
+  // three composes the local matrix outside updateMatrixWorld too: `updateWorldMatrix` (called by `lookAt`,
+  // `getWorldPosition`, `getWorldDirection`, ...) calls `updateMatrix` directly. The record of the composed values must
+  // follow every compose, or a transform set back to the recorded values keeps a matrix composed from other ones: a camera
+  // that orbit controls turned and the capture then put back drew from the controls' view (a whole other picture).
+  const updateMatrix = proto.updateMatrix;
+  proto.updateMatrix = function (this: Composed): void {
+    updateMatrix.call(this);
+    const c = this.__trs;
+    if (c === undefined) return;
+    const p = this.position, q = this.quaternion, s = this.scale;
+    c[0] = p.x; c[1] = p.y; c[2] = p.z; c[3] = q.x; c[4] = q.y; c[5] = q.z; c[6] = q.w; c[7] = s.x; c[8] = s.y; c[9] = s.z;
+  };
   proto.updateMatrixWorld = function (this: Composed, force?: boolean): void {
     if (this.matrixAutoUpdate) composeIfChanged(this);
     if (this.matrixWorldNeedsUpdate || force) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Group, Mesh, Object3D } from 'three';
+import { Group, Mesh, Object3D, PerspectiveCamera, Vector3 } from 'three';
 import { installMatrixDirtyCheck } from '../src/gpu/matrix-dirty-check';
 
 installMatrixDirtyCheck();
@@ -44,5 +44,21 @@ describe('matrix dirty check', () => {
     o.updateMatrixWorld();
     o.updateMatrixWorld();
     expect(o.matrixWorldNeedsUpdate).toBe(false);
+  });
+  it('recomposes a transform set back after a compose outside updateMatrixWorld (lookAt by orbit controls)', () => {
+    // A capture sets the camera, orbit controls turn it (lookAt composes through updateWorldMatrix), the capture puts it back.
+    const cam = new PerspectiveCamera();
+    cam.position.set(15, 9, 14);
+    cam.lookAt(0, 0, 0);
+    cam.updateMatrixWorld();
+    const shot = cam.matrixWorld.clone();
+    const pos = cam.position.clone(), quat = cam.quaternion.clone();
+    cam.position.set(-20, 3, 5);
+    cam.lookAt(new Vector3(40, 0, -30));
+    cam.updateWorldMatrix(true, false);
+    cam.position.copy(pos);
+    cam.quaternion.copy(quat);
+    cam.updateMatrixWorld();
+    expect(cam.matrixWorld.equals(shot)).toBe(true);
   });
 });
