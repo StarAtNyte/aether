@@ -23,7 +23,7 @@
     "mcp",
     "typescript"
   ],
-  "author": "Aether contributors",
+  "author": "Nitiz Khanal",
   "license": "MIT",
   "type": "module",
   "bin": {

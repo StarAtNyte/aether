@@ -13,7 +13,7 @@ and `apps/studio/public/blocks/block-materials.json`, and re-checked against the
 source archives kept in the local asset cache where they are present (see each
 section).
 
-Aether's own code is [MIT](../LICENSE) (© 2026 Aether contributors). All 15
+Aether's own code is [MIT](../LICENSE) (© 2026 Nitiz Khanal). All 15
 workspace packages (`apps/bridge`, `apps/cli`, `apps/server`, `apps/studio` and
 `packages/agent`, `arch`, `assets`, `core`, `logic`, `physics`, `playtest`,
 `procgen`, `render`, `verifier`, `voxel`) are private and MIT-licensed.

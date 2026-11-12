@@ -29,7 +29,7 @@ worlds themselves (`apps/studio/public/templates/worlds/`) are the source.
 
 ## Licence
 
-MIT, the same as Aether (© 2026 Aether contributors). The packages contain only:
+MIT, the same as Aether (© 2026 Nitiz Khanal). The packages contain only:
 
 - geometry that Aether's own generators produce from the template worlds;
 - GLSL shader source that three.js (MIT) generates for those materials.

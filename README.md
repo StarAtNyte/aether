@@ -736,7 +736,7 @@ Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md]
 
 ## Licence, third parties and AI disclosure
 
-- **Licence:** [MIT](LICENSE), © 2026 Aether contributors.
+- **Licence:** [MIT](LICENSE), © 2026 Nitiz Khanal.
 - **Third parties:** every dependency and every bundled asset (Kenney, Poly
   Haven and ambientCG CC0 models, textures and HDRIs; Microsoft Rocketbox
   characters under MIT; Quaternius farm animals under CC0; the Khronos glTF
