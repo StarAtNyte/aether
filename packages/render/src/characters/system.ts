@@ -43,8 +43,27 @@ export function lensDetailScale(fov: number, zoom = 1): number {
   return Number.isFinite(t) && t > 0 ? Math.min(1, t / ref) : 1;
 }
 
+/**
+ * A moving body at least this tall on screen (px) keeps its walk (detail 1, posed every frame) at any distance: a lead
+ * walking across a wide shot on the mixer alone glides (a toon body's steps come from the procedural gait).
+ */
+export const WALK_DETAIL_PX = 36;
+/** Speed (m/s) above which a body counts as moving for {@link WALK_DETAIL_PX}. */
+const WALK_DETAIL_SPEED = 0.3;
+
 /** Most characters updated at full detail per frame. */
 export const MAX_FULL_DETAIL = 10;
+
+/**
+ * The pose detail of one body: 2 near (while fewer than {@link MAX_FULL_DETAIL} are), 1 to {@link LOD_MID}, 0 (the
+ * mixer alone) beyond, except a moving body at least {@link WALK_DETAIL_PX} tall on screen, which keeps its walk
+ * (`walker`; also capped at {@link MAX_FULL_DETAIL}). `dl` is the lens-scaled distance, `px` the screen height.
+ */
+export function poseDetail(dl: number, px: number, speed: number, full: number, walkers: number): { detail: 0 | 1 | 2; walker: boolean } {
+  const detail: 0 | 1 | 2 = dl < LOD_NEAR && full < MAX_FULL_DETAIL ? 2 : dl < LOD_MID ? 1 : 0;
+  if (detail === 0 && px >= WALK_DETAIL_PX && speed > WALK_DETAIL_SPEED && walkers < MAX_FULL_DETAIL) return { detail: 1, walker: true };
+  return { detail, walker: false };
+}
 /** Most characters in a scene; later ones are not mounted (a hostile world cannot ask for thousands). */
 export const MAX_CHARACTERS = 160;
 /** Toon bodies pose on twos: the skeleton steps at this rate (the body still moves smoothly with its entity). */
@@ -461,6 +480,7 @@ export class CharacterSystem {
       for (const e of list) e.dist = 0;
     }
     let full = 0;
+    let walkers = 0;
     let casting = 0;
     const lens = this.lensFactor();
     for (const e of sorted) {
@@ -468,17 +488,17 @@ export class CharacterSystem {
       // (the distance the pose's detail is chosen by: as near as the lens makes the body look, never farther)
       const dl = d * lens;
       const levels = e.rig.levels;
+      const px = this.screenHeight(e);
       if (levels) {
-        const px = this.screenHeight(e);
         // A cut (or the first frame) jumps to the right level at once; a body walking away fades.
         const jump = e.lastPx <= 0 || px > e.lastPx * 1.5 || px < e.lastPx / 1.5;
         if (jump) levels.snap(px < (LOD_FAR_PX + LOD_NEAR_PX) / 2 ? 1 : 0);
         else levels.update(px, dt);
         e.lastPx = Number.isFinite(px) ? px : 1e6;
       }
-      let detail: 0 | 1 | 2 = dl < LOD_NEAR && full < MAX_FULL_DETAIL ? 2 : dl < LOD_MID ? 1 : 0;
+      const { detail, walker } = poseDetail(dl, px, e.rig.speed, full, walkers);
       if (detail === 2) full++;
-      if (dl >= LOD_MID && list.length > MAX_FULL_DETAIL) detail = 0;
+      if (walker) walkers++;
       // Only the nearest few cast into the sun's shadow map: every part of every character is a draw call there.
       const shadows = d < this.shadowRange && casting < this.shadowBudget && this.opts.shadows !== false;
       if (shadows) casting++;
@@ -491,7 +511,7 @@ export class CharacterSystem {
         });
       }
       // Far characters step their mixer less often (accumulated time keeps their clips in step).
-      const every = dl < LOD_MID ? 1 : dl < LOD_FAR ? 2 : 4;
+      const every = dl < LOD_MID || walker ? 1 : dl < LOD_FAR ? 2 : 4;
       e.accumulated += dt;
       e.frame++;
       if (every > 1 && (e.frame + (e.id.length & 3)) % every !== 0) continue;
