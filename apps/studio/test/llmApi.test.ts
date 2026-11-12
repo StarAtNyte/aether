@@ -54,7 +54,7 @@ describe('api/llm', () => {
     const d = deps();
     const res = await handleLlm(req({ ...BODY, model: 'claude-fable-5-2' }), d);
     expect(res.status).toBe(200);
-    expect(d.calls[0]).toMatchObject({ model: 'claude-opus-5-5', max_tokens: LLM_CAPS.maxOutputTokens, thinking: { type: 'adaptive' } });
+    expect(d.calls[0]).toMatchObject({ model: 'claude-sonnet-5-5', max_tokens: LLM_CAPS.maxOutputTokens, thinking: { type: 'adaptive' } });
     expect(await res.json()).toEqual({
       content: [{ type: 'text', text: 'ok' }, { type: 'tool_use', id: 't1', name: 'apply_patch', input: { a: 1 } }],
       stopReason: 'tool_use',

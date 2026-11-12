@@ -17,7 +17,7 @@ import { RateLimiter } from './cook-upload.js';
 export const KEY_ENV = 'ANTHROPIC_API_KEY';
 
 /** Role → model allowlist (the only models this function calls). */
-export const ROLE_MODELS: Readonly<Record<CompletionRequest['role'], string>> = Object.freeze({ planner: 'claude-opus-5-5', coder: 'claude-opus-5-5', critic: 'claude-opus-5-5' });
+export const ROLE_MODELS: Readonly<Record<CompletionRequest['role'], string>> = Object.freeze({ planner: 'claude-sonnet-5-5', coder: 'claude-sonnet-5-5', critic: 'claude-sonnet-5-5' });
 /** Effort per role (as the agent's own Anthropic provider). */
 const ROLE_EFFORT: Readonly<Record<CompletionRequest['role'], 'medium' | 'high'>> = Object.freeze({ planner: 'medium', coder: 'high', critic: 'high' });
 

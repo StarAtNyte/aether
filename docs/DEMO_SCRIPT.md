@@ -7,7 +7,7 @@ High (so the performance governor cannot lower anything mid-take).
 
 ## Before recording
 
-- Fresh browser profile, the local app (`npx aether start --open`) with Codex selected as the AI. The hosted studio
+- Fresh browser profile, the local app (`npm run aether -- start --open`) with Codex selected as the AI. The hosted studio
   needs the bridge (`aether start --origin ...`) for Codex.
 - Warm the asset cache by opening each world once; keep the console closed.
 - Prompts are typed live, not pasted, at a readable pace. Cut waiting with a speed ramp, never with a jump cut that hides
@@ -39,7 +39,7 @@ photo example rooms (Templates, Photo to 3D), the game-feel burst (damage flash,
 
 ## Recording checklist
 
-1. Run `npm run smoke`, then `npx aether start --open` on the latest commit (`npx aether doctor` checks the build).
+1. Run `npm run smoke`, then `npm run aether -- start --open` on the latest commit (`npm run aether -- doctor` checks the build).
 2. Confirm the GPU is free (`nvidia-smi`); stop any other GPU job for the take.
 3. Record segments in order; keep raw footage under `~/Videos/aether-demo/` (outside the repo).
 4. Export H.264 1080p, under 3 minutes, captions burned in, music at -24 LUFS under the voice.

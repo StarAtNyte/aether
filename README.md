@@ -54,13 +54,24 @@ and share it with one link.
 Underneath is a three.js WebGPU/WebGL2 renderer with real-time lighting, soft
 shadows and an offline film and footage pipeline.
 
-- **Hosted studio:** <https://aether-studio-lyart.vercel.app>. It runs offline
-  or with your own API key. To use Codex or Claude Code there, see
-  [Connect an AI](#connect-an-ai).
-- **On your computer:** one command, and your own Codex or Claude Code login
-  ([Quick start](#quick-start)).
+> [!TIP]
+> **Run it on your computer with your Claude Code or Codex subscription.** It's free, and you don't need an API key.
+>
+> ```bash
+> curl -fsSL https://raw.githubusercontent.com/StarAtNyte/aether/main/scripts/get-aether.sh | bash
+> ```
+>
+> On Windows (PowerShell): `irm https://raw.githubusercontent.com/StarAtNyte/aether/main/scripts/get-aether.ps1 | iex`
+>
+> The installer downloads Aether into `~/aether`, installs it and opens the studio. The studio uses
+> your signed-in `claude` or `codex` CLI. See the [Quick start](#quick-start) for the manual steps.
+
+- **Hosted studio:** <https://aether-studio-lyart.vercel.app>. It includes a
+  small shared trial of the hosted model, and it also works offline or with
+  your own API key. You can also connect it to Claude Code or Codex on your
+  computer: see [Connect an AI](#connect-an-ai).
+- **On your computer:** one command (above), and your own Codex or Claude Code login.
 - **Demo video (2 minutes):** attached to the [v0.1.0 release](https://github.com/StarAtNyte/aether/releases/tag/v0.1.0).
-  The repository is private for now, so the video lives on the Releases page, not in the tree.
 
 ## What it does
 
@@ -207,16 +218,33 @@ worlds are re-validated and re-verified instead).
 You need **Node.js 24** (see `.nvmrc`), npm 10 or newer, and a WebGL2 browser.
 Chrome or Edge use WebGPU; Firefox and Safari use the WebGL2 path.
 
+The fastest way is the one-line installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/StarAtNyte/aether/main/scripts/get-aether.sh | bash   # macOS / Linux
+irm https://raw.githubusercontent.com/StarAtNyte/aether/main/scripts/get-aether.ps1 | iex          # Windows PowerShell
+```
+
+It checks for Node 24 and git, clones the repository into `~/aether` (or
+updates it; set `AETHER_DIR` to use another folder), runs `npm ci` and starts
+the studio. Running it again updates Aether. To do the same steps by hand:
+
 ```bash
 git clone https://github.com/StarAtNyte/aether && cd aether
 npm ci
-npx aether start --open        # builds the studio once, starts it in the background, opens http://127.0.0.1:4280
+npm run aether -- start --open   # builds the studio once, starts it in the background, opens http://127.0.0.1:4280
 ```
 
 On first open you choose **Sign in with ChatGPT (Codex)**, **Claude Code** (if
 its CLI is signed in on this computer) or **Continue offline**. No API key is
-needed. `npx aether stop` stops the server, and `npx aether doctor` checks
-Node, the build, the port and both CLIs.
+needed: prompts run on your own subscription. From the `aether` folder,
+`npm run aether -- stop` stops the server, and `npm run aether -- doctor`
+checks Node, the build, the port and both CLIs.
+
+> [!NOTE]
+> Run Aether's CLI as `npm run aether -- …` (or `npx aether …` inside the
+> cloned folder). Outside the repository, `npx aether` downloads an unrelated
+> npm package that happens to have the same name.
 
 Then type a prompt, for example *"a night forest adventure: collect 5 lanterns,
 avoid the wolves, reach the shrine to win"* or *"a two-storey modern house with
@@ -524,8 +552,9 @@ was tried and rejected, and how to measure safely on your own machine.
 | Option | Where | Cost per prompt |
 | --- | --- | --- |
 | **Codex on this computer** (ChatGPT login) | `aether start`: found automatically, or **Settings → AI connection → Sign in with ChatGPT** | your subscription |
-| **Claude Code on this computer** | `aether start` with a signed-in `claude` CLI, or `npx aether login --claude` | your subscription |
-| **Codex / Claude Code for the hosted studio** | `npx aether start --origin https://aether-studio-lyart.vercel.app`, then enter the pairing code in the hosted studio | your subscription |
+| **Claude Code on this computer** | `aether start` with a signed-in `claude` CLI, or `npm run aether -- login --claude` | your subscription |
+| **Codex / Claude Code for the hosted studio** | `curl -fsSL https://raw.githubusercontent.com/StarAtNyte/aether/main/scripts/get-aether.sh \| bash -s -- --origin https://aether-studio-lyart.vercel.app` (or `npm run aether -- start --origin …` from a clone), then enter the pairing code in the hosted studio | your subscription |
+| **Hosted model** (the live site only) | the default on <https://aether-studio-lyart.vercel.app>: a small shared trial, rate limited | free to you |
 | **Your own API key** (Anthropic, OpenAI, OpenRouter, Google Gemini) | **Settings → AI connection**. The browser calls the provider directly, and the key stays in the tab unless you choose to remember it | the provider's prices |
 | **On-device model** (WebLLM, experimental) | Settings, WebGPU only, opt-in download | none |
 | **Offline planner** (fallback, not the main path) | always available; reads English only and builds from a fixed vocabulary. The studio says when it is in use | none |

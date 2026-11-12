@@ -161,7 +161,7 @@ async function cmdStart(o: CliOptions, paths: StatePaths, warnings: readonly str
   if (accessToken) out('  Anyone on your network with this link can open the studio. Stop it with: aether stop');
   await signInHint();
   if (o.origins.length > 0) await printPairing(paths, port);
-  out(o.foreground ? '  Press Ctrl+C to stop.' : '  Stop with: aether stop · Logs: aether logs -f');
+  out(o.foreground ? '  Press Ctrl+C to stop.' : '  Stop with: npm run aether -- stop · Logs: npm run aether -- logs -f');
   out('');
   if (o.open) openBrowser(link);
   if (o.foreground) {

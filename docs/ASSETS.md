@@ -373,7 +373,7 @@ npm run assets:thumbs -- --only simready-range-cooker-lg ; npm run assets:ktx2
 
 When nothing in the library fits, the agent (tool [`import_asset`](AGENT_TOOLS.md#import_asset)) or a script can have the **local
 Aether server** import one model on demand. The conversion needs the Python USD tools, which cannot run in a browser, so it only
-works with `npx aether start` (or `npm run dev:server`); the hosted static site answers "importing needs the local server" and
+works with `npm run aether -- start` (or `npm run dev:server`); the hosted static site answers "importing needs the local server" and
 never errors.
 
 ```sh

@@ -53,7 +53,7 @@ used while rendering the captions (Lato, SIL Open Font Licence, not redistribute
 When a connected AI is available, start the local app and point the recorder at it:
 
 ```bash
-npx aether start --no-open                                  # connect Codex, Claude Code or an API key in Settings
+npm run aether -- start --no-open                                  # connect Codex, Claude Code or an API key in Settings
 AETHER_E2E_URL=http://127.0.0.1:<port> GEN_GPU=intel npm run demo:record -- --ai=live --scene=villa,game
 npm run demo:compose && npm run demo:verify
 ```

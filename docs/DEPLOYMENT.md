@@ -5,7 +5,7 @@ Aether ships in two shapes:
 | Shape | What it is | Who pays for AI |
 | --- | --- | --- |
 | **Static hosted copy** (recommended public address) | `apps/studio/dist` on a static host (`vercel.json`). No server, no `/api`. Offline planner, templates, the generator library, on-device WebLLM, bring-your-own-key and the visitor's own Codex / Claude Code through the local bridge. | Nobody but the visitor: their own key, their own login, or nothing (offline). Hosting is free-tier static. |
-| **Local app** (`npx aether start`) | The Node server plus the studio on the user's own computer, with local AI, deep builds and publishing. | The user's own Codex / Claude Code login or key. |
+| **Local app** (`npm run aether -- start`) | The Node server plus the studio on the user's own computer, with local AI, deep builds and publishing. | The user's own Codex / Claude Code login or key. |
 | **Self-hosted container** (optional) | The same server in Docker (`Dockerfile`, `docker-compose.yml`, `fly.toml`, `render.yaml`) for a team or a private machine. | Whoever sets a key on it (off by default: offline planner). |
 
 The container never runs anyone's Codex or Claude Code login: the image sets
@@ -60,7 +60,7 @@ no `/api`) with `npm run build && npm run e2e:hosted` (Chromium and Firefox).
 ## 2. Local app (one command)
 
 ```bash
-npx aether start            # or: npm ci && npm run aether:start
+npm run aether -- start            # or: npm ci && npm run aether:start
 ```
 
 It builds the studio when needed, starts the server detached on
