@@ -7,7 +7,7 @@
  * the physics version this writes into flat typed arrays (no per-instance
  * objects) so 200k instances lay out in a few milliseconds.
  */
-import { rng, type PrimitiveKind, type ScatterShape, type Vec3 } from '@aether/core';
+import { rng, scatterExcluded, type PrimitiveKind, type ScatterShape, type Vec3 } from '@aether/core';
 
 /** Hard per-entity cap (matches the schema). */
 export const MAX_SCATTER_INSTANCES = 1_000_000;
@@ -15,7 +15,7 @@ export const MAX_SCATTER_INSTANCES = 1_000_000;
 const MAX_SPACING_ATTEMPTS = 12;
 
 /** Placement inputs. */
-export type ScatterParams = Pick<ScatterShape, 'count' | 'area' | 'seed' | 'scaleRange' | 'randomYaw' | 'minSpacing'> & Partial<Pick<ScatterShape, 'points'>>;
+export type ScatterParams = Pick<ScatterShape, 'count' | 'area' | 'seed' | 'scaleRange' | 'randomYaw' | 'minSpacing'> & Partial<Pick<ScatterShape, 'points' | 'exclude'>>;
 
 /** Flat placement data in the scatter entity's local frame. */
 export interface ScatterPlacements {
@@ -93,7 +93,7 @@ function finiteOr(v: number | undefined, fallback: number): number {
  * candidates per instance).
  */
 export function scatterPlacements(shape: ScatterParams, maxCount = MAX_SCATTER_INSTANCES): ScatterPlacements {
-  if (shape.points) return pointPlacements(shape, shape.points, maxCount);
+  if (shape.points) return applyExclude(pointPlacements(shape, shape.points, maxCount), shape.exclude);
   const count = Math.max(0, Math.min(Math.floor(finiteOr(shape.count, 0)), Math.floor(maxCount), MAX_SCATTER_INSTANCES));
   const random = rng(shape.seed ?? 1);
   const w = Math.abs(finiteOr(shape.area?.[0], 0));
@@ -133,7 +133,30 @@ export function scatterPlacements(shape: ScatterParams, maxCount = MAX_SCATTER_I
     out.scale[i] = Math.max(1e-3, lo + (hi - lo) * random());
     out.yaw[i] = shape.randomYaw === false ? 0 : random() * 360 * (Math.PI / 180);
   }
-  return out;
+  return applyExclude(out, shape.exclude);
+}
+
+/**
+ * Drop instances inside `exclude` rectangles after the full layout is drawn,
+ * so survivors keep the exact positions, scales and yaws they have without
+ * the exclusion (same rule as physics).
+ */
+function applyExclude(p: ScatterPlacements, rects: ScatterParams['exclude']): ScatterPlacements {
+  if (!rects || rects.length === 0) return p;
+  let n = 0;
+  for (let i = 0; i < p.count; i++) {
+    if (scatterExcluded(rects, p.x[i] as number, p.z[i] as number)) continue;
+    if (n !== i) {
+      p.x[n] = p.x[i] as number;
+      p.z[n] = p.z[i] as number;
+      p.scale[n] = p.scale[i] as number;
+      p.yaw[n] = p.yaw[i] as number;
+      if (p.y) p.y[n] = p.y[i] as number;
+    }
+    n++;
+  }
+  if (n === p.count) return p;
+  return { count: n, x: p.x.slice(0, n), z: p.z.slice(0, n), scale: p.scale.slice(0, n), yaw: p.yaw.slice(0, n), y: p.y ? p.y.slice(0, n) : null };
 }
 
 /**

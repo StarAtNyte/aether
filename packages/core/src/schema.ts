@@ -260,6 +260,16 @@ export const ModelShape = z.object({
   fitSize: z.number().positive().optional(),
 });
 
+/**
+ * A keep-out rectangle for scatter placement, in the scatter entity's local
+ * XZ frame (the frame `area` and `points` use: relative to the entity
+ * position, before its rotation and scale).
+ */
+export const ScatterExcludeRect = z
+  .object({ x0: z.number().finite(), z0: z.number().finite(), x1: z.number().finite(), z1: z.number().finite() })
+  .refine((r) => r.x0 < r.x1 && r.z0 < r.z1, 'exclude rect needs x0 < x1 and z0 < z1');
+export type ScatterExcludeRect = z.infer<typeof ScatterExcludeRect>;
+
 export const ScatterShape = z.object({
   kind: z.literal('scatter'),
   /** The repeated thing. Rendered with GPU instancing. */
@@ -286,6 +296,13 @@ export const ScatterShape = z.object({
    * from `seed`. With `onSurface` the height is re-projected onto the surface.
    */
   points: z.array(Vec3).max(20_000).optional(),
+  /**
+   * Keep-out rectangles (local XZ, like `area`): instances falling inside one
+   * are dropped (random layout and `points` alike). Everything else keeps
+   * its place, so clearing a footprint never reshuffles the rest. Use it to
+   * keep vegetation off buildings, roads and plazas.
+   */
+  exclude: z.array(ScatterExcludeRect).max(64).optional(),
 });
 
 /** Mesh asset id (same syntax as entity ids). */

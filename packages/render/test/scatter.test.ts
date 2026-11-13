@@ -36,6 +36,34 @@ describe('scatterPlacements', () => {
     }
   });
 
+  it('exclude drops instances inside the rects, keeps the rest unchanged, and agrees with physics', () => {
+    const exclude = [{ x0: -5, z0: -4, x1: 6, z1: 3 }, { x0: 12, z0: -10, x1: 20, z1: -2 }];
+    const inside = (x: number, z: number): boolean => exclude.some((r) => x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1);
+    for (const shape of [base, { ...base, minSpacing: 1.5, count: 300 }, { ...base, count: 0, points: Array.from({ length: 60 }, (_, i) => [i - 30, 0.5, ((i * 7) % 20) - 10] as [number, number, number]) }]) {
+      const full = scatterPlacements(shape);
+      const cut = scatterPlacements({ ...shape, exclude });
+      const kept: number[] = [];
+      for (let i = 0; i < full.count; i++) if (!inside(full.x[i] as number, full.z[i] as number)) kept.push(i);
+      expect(kept.length).toBeLessThan(full.count);
+      expect(cut.count).toBe(kept.length);
+      kept.forEach((src, i) => {
+        expect(cut.x[i]).toBe(full.x[src]);
+        expect(cut.z[i]).toBe(full.z[src]);
+        expect(cut.scale[i]).toBe(full.scale[src]);
+        expect(cut.yaw[i]).toBe(full.yaw[src]);
+        if (full.y) expect(cut.y?.[i]).toBe(full.y[src]);
+      });
+      const theirs = scatterInstances({ ...shape, exclude });
+      expect(theirs.length).toBe(cut.count);
+      theirs.forEach((inst, i) => {
+        expect(inside(inst.position[0], inst.position[2])).toBe(false);
+        expect(cut.x[i]).toBeCloseTo(inst.position[0], 4);
+        expect(cut.z[i]).toBeCloseTo(inst.position[2], 4);
+        expect(cut.scale[i]).toBeCloseTo(inst.scale, 5);
+      });
+    }
+  });
+
   it('enforces minSpacing when the area allows it', () => {
     const p = scatterPlacements({ ...base, count: 100, area: [100, 100], minSpacing: 4 });
     let violations = 0;

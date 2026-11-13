@@ -56,6 +56,7 @@ export { stableStringify, deepEqual, hasOwn, isPlainObject } from './json';
 export { History, type HistoryEntryInfo, type HistorySource } from './history';
 
 export { rng, hashString } from './random';
+export { scatterExcluded } from './scatter-exclude';
 export { eulerDegToQuat, quatToEulerDeg, quatMultiply, rotateVec3, type Quat } from './math';
 export { slugify, uniqueId, isEntityId } from './ids';
 export { riverMeander, riverHalfWidth, canyonMeander, canyonHalfWidth, streamCourse } from './river';

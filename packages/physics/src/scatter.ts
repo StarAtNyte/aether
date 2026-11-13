@@ -3,7 +3,7 @@
  * renderer that wants instances exactly where their colliders are).
  */
 import type { ScatterShape, Vec3 } from '@aether/core';
-import { rng } from '@aether/core';
+import { rng, scatterExcluded } from '@aether/core';
 
 /** One scatter instance in the scatter entity's local frame. */
 export interface ScatterInstance {
@@ -24,7 +24,14 @@ const MAX_SPACING_ATTEMPTS = 12;
  * one farthest from its neighbors. Cost O(count) using a
  * spatial hash.
  */
-export function scatterInstances(shape: Pick<ScatterShape, 'count' | 'area' | 'seed' | 'scaleRange' | 'randomYaw' | 'minSpacing'> & Partial<Pick<ScatterShape, 'points'>>, maxCount = Infinity): ScatterInstance[] {
+export function scatterInstances(shape: Pick<ScatterShape, 'count' | 'area' | 'seed' | 'scaleRange' | 'randomYaw' | 'minSpacing'> & Partial<Pick<ScatterShape, 'points' | 'exclude'>>, maxCount = Infinity): ScatterInstance[] {
+  const all = layout(shape, maxCount);
+  const rects = shape.exclude;
+  // Exclusion runs after the full layout so survivors keep their exact transforms (same rule as render).
+  return rects && rects.length > 0 ? all.filter((inst) => !scatterExcluded(rects, inst.position[0], inst.position[2])) : all;
+}
+
+function layout(shape: Pick<ScatterShape, 'count' | 'area' | 'seed' | 'scaleRange' | 'randomYaw' | 'minSpacing'> & Partial<Pick<ScatterShape, 'points'>>, maxCount: number): ScatterInstance[] {
   if (shape.points) {
     // Hand-painted points: positions as stored; scale and yaw from the seeded stream (same as render).
     const random = rng(shape.seed ?? 1);
