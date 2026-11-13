@@ -65,14 +65,19 @@ async function openCardMenu(page: Page, name: string): Promise<void> {
 }
 
 async function homeFlow(page: Page, base: string): Promise<void> {
-  // 1. Home with templates and an empty state.
+  // 1. Home with the Featured gallery and an empty state; the See all button opens the Templates page.
   await page.goto(`${base}/?debug=1#/`);
-  await page.getByRole('heading', { name: 'Start from a template' }).waitFor({ timeout: 20_000 });
-  const templates = page.locator('.card--template');
-  check((await templates.count()) === FEATURED_TEMPLATES.length, `expected ${FEATURED_TEMPLATES.length} featured template cards, got ${await templates.count()}`);
-  await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>('.card--template img')].slice(0, 4).every((i) => i.complete && i.naturalWidth > 0), null, { timeout: 15_000 });
+  await page.getByRole('heading', { name: 'Featured worlds' }).waitFor({ timeout: 20_000 });
+  const featured = page.locator('.featured .fcard');
+  await featured.first().waitFor({ timeout: 20_000 });
+  check((await featured.count()) === FEATURED_TEMPLATES.length, `expected ${FEATURED_TEMPLATES.length} featured cards, got ${await featured.count()}`);
   await page.getByText('No projects yet').waitFor();
-  log(`  home: ${FEATURED_TEMPLATES.length} featured templates with thumbnails, empty state`);
+  await page.locator('.see-all__btn').click();
+  await page.waitForURL(/#\/templates$/, { timeout: 20_000 });
+  const templates = page.locator('.card--template');
+  await templates.first().waitFor({ timeout: 20_000 });
+  await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>('.card--template img')].slice(0, 4).every((i) => i.complete && i.naturalWidth > 0), null, { timeout: 15_000 });
+  log(`  home: ${FEATURED_TEMPLATES.length} featured cards, empty state; Templates page with thumbnails`);
 
   // 2. Template card → the player route; Remix → editor → built world → autosave.
   check((await templates.filter({ hasText: 'Lantern Isles' }).locator('a.card__hit').getAttribute('href')) === '/play#t=lantern-isles', 'template card does not open the player route');

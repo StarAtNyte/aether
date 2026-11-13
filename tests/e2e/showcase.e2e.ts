@@ -238,11 +238,11 @@ async function verifyIn(name: string, browser: Browser, url: string): Promise<vo
       if (m.type() === 'error' && !BENIGN_CONSOLE.some((re) => re.test(m.text()))) errors.push(`console: ${m.text().slice(0, 200)}`);
     });
 
-    // 1. Home row and Templates page.
+    // 1. Home Featured gallery and Templates page.
     await page.goto(`${url}/#/`, { waitUntil: 'domcontentloaded' });
-    const row = page.locator('.template-row .card--template');
+    const row = page.locator('.featured .fcard');
     await row.first().waitFor({ timeout: TIMEOUT });
-    check((await row.count()) === FEATURED_TEMPLATES.length, `${name}: home row has ${await row.count()} cards, expected ${FEATURED_TEMPLATES.length}`);
+    check((await row.count()) === FEATURED_TEMPLATES.length, `${name}: Featured has ${await row.count()} cards, expected ${FEATURED_TEMPLATES.length}`);
     await page.goto(`${url}/#/templates`, { waitUntil: 'domcontentloaded' });
     const grid = page.locator('.template-grid .card--template');
     await grid.first().waitFor({ timeout: TIMEOUT });
@@ -250,7 +250,7 @@ async function verifyIn(name: string, browser: Browser, url: string): Promise<vo
     // Every thumbnail decodes (scroll the lazy ones into view first).
     for (let i = 0; i < (await grid.count()); i++) await grid.nth(i).scrollIntoViewIfNeeded();
     await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>('.template-grid img')].every((img) => img.complete && img.naturalWidth > 0), null, { timeout: 30_000 });
-    log(`  ${name}: home row ${FEATURED_TEMPLATES.length}, Templates page ${TEMPLATES.length} (${MORE_TEMPLATES.length} more), thumbnails decode`);
+    log(`  ${name}: Featured ${FEATURED_TEMPLATES.length}, Templates page ${TEMPLATES.length} (${MORE_TEMPLATES.length} more), thumbnails decode`);
 
     // 2–3. Each featured template: saved world, chat, thumbnail, title card, play.
     for (const t of FEATURED_TEMPLATES) {

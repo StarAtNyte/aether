@@ -1,6 +1,6 @@
 /**
  * THE single place that lists the bundled default projects (the projects
- * home's Featured gallery and "Start from a template" row, the Templates page, the command
+ * home's Featured gallery, the Templates page, the command
  * palette and the agent's empty state all read it).
  *
  * Curate here:

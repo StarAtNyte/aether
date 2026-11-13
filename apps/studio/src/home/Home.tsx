@@ -53,9 +53,6 @@ const NAV: ReadonlyArray<{ id: HomeSection; label: string; icon: IconName }> = [
   { id: 'docs', label: 'Documentation', icon: 'book' },
 ];
 
-/** The "Start from a template" row: the shown templates that are not in the Featured section (or the first shown ones when none is featured). */
-const HOME_ROW = FEATURED_TEMPLATES.length > 0 ? TEMPLATES.filter((t) => t.curation !== 'featured').slice(0, 16) : TEMPLATES.slice(0, 8);
-
 /** Placeholder with the gallery's exact geometry (the grid CSS is in the entry stylesheet), so the lazy chunk never shifts the page. */
 function FeaturedSkeleton(): ReactElement {
   return (
@@ -451,28 +448,8 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
                 View all
               </a>
             </div>
-            <p className="featured__lead">Published worlds, ready to open. Click one to play or explore it; Remix opens a copy in the editor to change by chat.</p>
+            <p className="featured__lead">Worlds Aether built from a prompt, most in one or a few tries rather than refined by hand. Click one to play or explore it; Remix opens a copy in the editor to keep going by chat.</p>
             <FeaturedGallery onRemix={pickTemplate} />
-          </section>
-        )}
-        {showTemplates && (
-          <section className="home-section" aria-labelledby="h-templates">
-            <div className="section-head">
-              <h2 id="h-templates" className="section-head__title">
-                Start from a template
-              </h2>
-              <a className="link" href="#/templates">
-                View all
-              </a>
-            </div>
-            <div className="template-row" role="list">
-              {HOME_ROW.map((t) => (
-                <div key={t.slug} role="listitem" className="template-row__item">
-                  {/* Eager: ~10 KB each, and the cards at the faded edge of the row must never show a placeholder. */}
-                  <TemplateCard template={t} onPick={pickTemplate} eager />
-                </div>
-              ))}
-            </div>
             <div className="see-all">
               <a className="btn btn--primary see-all__btn" href="#/templates">
                 See all {TEMPLATES.length} templates

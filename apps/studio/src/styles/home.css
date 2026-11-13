@@ -459,45 +459,6 @@
   padding-top: var(--s-3);
 }
 
-/* Template row: one line of cards, scrolls horizontally, snaps */
-.template-row {
-  --cols: 4;
-  display: grid;
-  grid-auto-flow: column;
-  /* Columns line up with the project grid below (same count, same gap). */
-  grid-auto-columns: calc((100% - (var(--cols) - 1) * var(--s-4)) / var(--cols));
-  gap: var(--s-4);
-  margin: 0 calc(-1 * var(--s-6));
-  padding: 2px var(--s-6) var(--s-2);
-  overflow-x: auto;
-  overflow-y: hidden;
-  scroll-snap-type: x mandatory;
-  scroll-padding: 0 var(--s-6);
-  overscroll-behavior-x: contain;
-  scrollbar-width: none;
-  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--s-6), #000 calc(100% - var(--s-12)), transparent);
-  mask-image: linear-gradient(to right, transparent 0, #000 var(--s-6), #000 calc(100% - var(--s-12)), transparent);
-}
-
-.template-row::-webkit-scrollbar {
-  display: none;
-}
-
-@media (max-width: 1279px) {
-  .template-row {
-    --cols: 3;
-  }
-}
-
-.template-row__item {
-  scroll-snap-align: start;
-  min-width: 0;
-}
-
-.template-row__item .card {
-  height: 100%;
-}
-
 .template-grid,
 .project-grid {
   display: grid;
@@ -934,13 +895,6 @@
   .home__content {
     gap: var(--s-8);
     padding: var(--s-5) var(--s-4) var(--s-8);
-  }
-
-  .template-row {
-    grid-auto-columns: 72%;
-    margin: 0 calc(-1 * var(--s-4));
-    padding: 2px var(--s-4) var(--s-2);
-    scroll-padding: 0 var(--s-4);
   }
 
   .template-grid,
@@ -1443,7 +1397,7 @@
   transform: scale(1.1);
 }
 
-/* "See all templates": a large call to the full Templates page, under the home template row. */
+/* "See all templates": a large call to the full Templates page, under the home Featured gallery. */
 .see-all {
   display: flex;
   justify-content: center;

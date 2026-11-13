@@ -1,7 +1,7 @@
 /**
  * Built-in templates: the bundled default projects listed in
  * `../showcase/manifest.ts` (the single place to curate, hide and reorder
- * them). They seed the projects home ("Start from a template"), the agent's
+ * them). They seed the Templates page, the home Featured gallery, the agent's
  * empty state and the command palette. Each has a thumbnail in
  * `public/templates/<slug>.webp` and a saved world in
  * `public/templates/worlds/<slug>.json`, fetched only when it is opened.
