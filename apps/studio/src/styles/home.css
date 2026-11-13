@@ -1296,7 +1296,6 @@
 }
 
 .featured__lead {
-  max-width: 62ch;
   margin-top: calc(-1 * var(--s-2));
   color: var(--text-2);
   font-size: var(--fs-13);
