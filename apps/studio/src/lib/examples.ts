@@ -23,7 +23,15 @@ export type FilmTemplate = WorldTemplate & { film: FilmInfo };
 export const isFilm = (t: WorldTemplate): t is FilmTemplate => t.film !== undefined;
 
 /** The featured templates (home row, agent empty state), in manifest order. Films are never featured (the gallery cards open worlds). */
-export const FEATURED_TEMPLATES: readonly WorldTemplate[] = Object.freeze(SHOWCASE.filter((t) => t.curation === 'featured' && !isFilm(t)));
+/** The Featured gallery's first cards, in this order (lead, two sides, then the first small card); the rest follow in manifest order. */
+const FEATURED_FIRST: readonly string[] = ['cloudwatch-harbour', 'sanctuary-falls', 'linden-row', 'lisbon-hills'];
+const featuredRank = (slug: string): number => {
+  const i = FEATURED_FIRST.indexOf(slug);
+  return i < 0 ? FEATURED_FIRST.length : i;
+};
+export const FEATURED_TEMPLATES: readonly WorldTemplate[] = Object.freeze(
+  SHOWCASE.filter((t) => t.curation === 'featured' && !isFilm(t)).sort((a, b) => featuredRank(a.slug) - featuredRank(b.slug)),
+);
 
 /** Films (listed in Stories, right after the featured worlds), in manifest order. */
 export const FILM_TEMPLATES: readonly FilmTemplate[] = Object.freeze(SHOWCASE.filter((t): t is FilmTemplate => t.curation === 'candidate' && isFilm(t)));
@@ -68,7 +76,7 @@ export const BEST_FIRST: readonly string[] = Object.freeze([
   // architecture
   'dusk-lake-house', 'linden-row', 'skyline-penthouse', 'casa-patio', 'pool-house', 'starlight-cinema', 'evening-bistro', 'orion-cinema',
   // games
-  'highland-trail', 'kestrel-outpost', 'lantern-isles', 'neon-rain-city', 'kart-canyon', 'hollow-gate', 'sakura-river', 'kepler-base',
+  'highland-trail', 'kestrel-outpost', 'lantern-isles', 'neon-rain-city', 'hollow-gate', 'sakura-river', 'kepler-base',
   // scenes
   'sanctuary-falls', 'lisbon-hills', 'sanctuary-terraces', 'cliff-sanctuary', 'sanctuary-ascent', 'four-seasons-garden', 'painterly-meadow',
   // stories and physics

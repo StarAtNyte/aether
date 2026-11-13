@@ -34,6 +34,8 @@ const OTHER_BOTS: Record<string, string> = {
   'skyline-penthouse': 'architecture: walked by the walkthrough bot',
   'dusk-lake-house': 'architecture: walked by the walkthrough bot',
   'casa-patio': 'architecture: walked by the walkthrough bot',
+  'starlight-cinema': 'architecture: walked by the walkthrough bot',
+  'evening-bistro': 'architecture: walked by the walkthrough bot',
   'linden-row': 'street of townhouses: a free walkthrough, no goal to finish',
   'cloudwatch-harbour': 'story film: no goal to win; the short film plays through, then P plays as the character',
   'sanctuary-falls': 'scene: an orbit showcase with no goal',

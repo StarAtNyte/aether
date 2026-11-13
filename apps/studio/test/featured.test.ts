@@ -11,9 +11,9 @@ import { SHOWCASE } from '../src/showcase/manifest';
 const PUBLIC = resolve(__dirname, '../public/templates');
 
 describe('the home Featured gallery', () => {
-  it('features about 7 worlds, one lead first, with variety across kinds', () => {
+  it('features about 11 worlds, one lead first, with variety across kinds', () => {
     expect(FEATURED_TEMPLATES.length).toBeGreaterThanOrEqual(6);
-    expect(FEATURED_TEMPLATES.length).toBeLessThanOrEqual(8);
+    expect(FEATURED_TEMPLATES.length).toBeLessThanOrEqual(12);
     expect(FEATURED_TEMPLATES[0]!.slug).toBe('cloudwatch-harbour');
     const modes = new Set(FEATURED_TEMPLATES.map((t) => featuredMode(t).split(' · ')[0]));
     expect(modes.size).toBeGreaterThanOrEqual(4);

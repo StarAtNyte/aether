@@ -473,6 +473,12 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
                 </div>
               ))}
             </div>
+            <div className="see-all">
+              <a className="btn btn--primary see-all__btn" href="#/templates">
+                See all {TEMPLATES.length} templates
+                <span aria-hidden="true"> →</span>
+              </a>
+            </div>
           </section>
         )}
         {showTemplates && (
