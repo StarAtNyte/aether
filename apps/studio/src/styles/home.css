@@ -1397,16 +1397,16 @@
   transform: scale(1.1);
 }
 
-/* "See all templates": a large call to the full Templates page, under the home Featured gallery. */
+/* "See all templates": a compact call to the full Templates page, under the home Featured gallery. */
 .see-all {
   display: flex;
   justify-content: center;
-  margin-top: 20px;
+  margin-top: 16px;
 }
 .see-all__btn {
-  min-height: 48px;
-  padding-inline: 28px;
-  font-size: 1rem;
+  min-height: 36px;
+  padding-inline: 18px;
+  font-size: 0.875rem;
   font-weight: 600;
   border-radius: 999px;
   text-decoration: none;
