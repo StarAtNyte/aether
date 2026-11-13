@@ -448,7 +448,7 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
                 View all
               </a>
             </div>
-            <p className="featured__lead">Worlds Aether built from prompts, some in one try and some in a few, rather than refined by hand. Click one to play or explore it; Remix opens a copy in the editor to keep going by chat.</p>
+            <p className="featured__lead">Worlds Aether built from prompts, some in a single pass and some with a few refinement passes, none refined by hand. Click one to play or explore it; Remix opens a copy in the editor to keep going by chat.</p>
             <FeaturedGallery onRemix={pickTemplate} />
             <div className="see-all">
               <a className="btn btn--primary see-all__btn" href="#/templates">
