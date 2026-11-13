@@ -166,6 +166,52 @@ describe('AssetInstances', () => {
     expect(p.elements[12]).toBeCloseTo(100);
   });
 
+  it('packs shadow passes into a twin, never into the buffer the view drew from', () => {
+    const root = new Scene();
+    const hi = triangle();
+    const lo = triangle();
+    const mat = new MeshStandardMaterial();
+    const lods = [0, 100].map((x) => {
+      const lod = new LOD();
+      for (const [g, d] of [[hi, 0], [lo, 50]] as const) {
+        const m = new Mesh(g, mat);
+        m.castShadow = true;
+        lod.addLevel(m, d);
+      }
+      return model(`lamp-${x}`, x, lod, root);
+    });
+    root.updateMatrixWorld(true);
+    const ai = new AssetInstances(root);
+    ai.rebuild(lods);
+    const view = ai.meshes()[0]!;
+    const twin = ai.shadowMeshes()[0]!;
+    expect(view.castShadow).toBe(false);
+    expect(twin.castShadow).toBe(true);
+    const pass = (name: string, cam: { camera: PerspectiveCamera; frustum: Frustum }, mesh: Mesh): boolean => {
+      root.name = name;
+      root.onBeforeRender(null as never, root, cam.camera, null as never, null as never, null as never);
+      const drawn = mesh.intersectsFrustum(cam.frustum);
+      if (drawn) mesh.onBeforeRender(null as never, root, cam.camera, null as never, null as never, null as never);
+      return drawn;
+    };
+    // The view (near lamp at full detail) records its draw, then a shadow map is drawn from beside the far lamp.
+    const near = camera(0, 0);
+    const sun = camera(100, 100);
+    expect(pass('', near, view)).toBe(true);
+    const drawnFrom = Array.from(view.instanceMatrix.array.slice(0, 16));
+    expect(pass('Shadow Map [ sun-cascade-0 ]', sun, view)).toBe(false);
+    expect(pass('Shadow Map [ sun-cascade-0 ]', sun, twin)).toBe(true);
+    // The view's buffer and count are what the view drew; the twin holds the shadow camera's copy (the far lamp).
+    expect(view.count).toBe(1);
+    expect(Array.from(view.instanceMatrix.array.slice(0, 16))).toEqual(drawnFrom);
+    const p = new Matrix4();
+    twin.getMatrixAt(0, p);
+    p.premultiply(twin.matrixWorld);
+    expect(p.elements[12]).toBeCloseTo(100);
+    // Back in the view, the twin stays out.
+    expect(pass('', near, twin)).toBe(false);
+  });
+
   it('instances body paint tinted per entity with the colour per copy', () => {
     const root = new Scene();
     const g = triangle();

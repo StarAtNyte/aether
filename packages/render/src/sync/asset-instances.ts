@@ -6,9 +6,15 @@
  * Each instanced mesh packs, for the camera drawing it, the copies that camera sees: shown, at the level of detail three's
  * `LOD` would pick for that camera ({@link levelFor}; one instanced mesh per part of each level), and inside its frustum.
  * It packs twice per draw: when three tests it against the frustum during projection (nothing to draw: no draw call), and
- * right before the draw, for the camera of the draw (three draws shadow maps while it draws the view, so the projection's
- * packing may have been replaced by a shadow camera's). The view, the sun's depth pass and a capture's pose camera each draw
+ * right before the draw, for the camera of the draw. The view, the sun's depth pass and a capture's pose camera each draw
  * what three would have drawn for them, and each copy is still culled on its own.
+ *
+ * Shadows pack into a twin instanced mesh with its own instance buffer, never into the view's. On WebGPU three records
+ * the view pass and submits it at the end, while each shadow map is a render nested inside it that uploads and submits
+ * at once: had the shadow cameras repacked the view's buffer after the view recorded its draw, the view drew the shadow
+ * camera's copies at the shadow camera's level of detail (street lamps and trees that vanished and came back, frame to
+ * frame, while the camera moved). The view mesh casts no shadow and the twin is culled out of every pass but a shadow
+ * pass (three names the scene `Shadow Map [...]` while it draws one).
  *
  * Materials join by what they draw, not by instance ({@link materialSignature}): two loads of one model, or two models that
  * share a finish, give equal but distinct materials, and those instance together. The body paint of a model, which
@@ -143,16 +149,22 @@ interface Member {
   level: number;
 }
 
-interface Group {
-  key: string;
+/** An instanced mesh and the member drawn in each of its slots at its last pack (-1: none). */
+interface Packing {
   mesh: InstancedMesh;
+  slots: Int32Array;
+}
+
+/** The view's packing is the group itself; shadow passes pack {@link Group.shadow}. */
+interface Group extends Packing {
+  key: string;
   members: Member[];
   geometry: BufferGeometry;
   /** The group's own white copy of a paint (disposed with the group), else null. */
   ownMaterial: Material | null;
   tinted: boolean;
-  /** Member index drawn in each slot at the last pack (-1: none). */
-  slots: Int32Array;
+  /** The shadow casters' twin (its own instance buffer), or null when the copies cast no shadow. */
+  shadow: Packing | null;
 }
 
 const ATTACHED = 0;
@@ -206,6 +218,14 @@ const _projection = new Matrix4();
  * call (the view, each shadow map, a capture), so it is the projecting camera during the frustum tests.
  */
 let renderCamera: Camera | null = null;
+/** Whether the render in progress draws a shadow map (set with {@link renderCamera}). */
+let shadowPass = false;
+
+/** Whether a render of `scene` draws a shadow map: three's `ShadowNode` names the scene while it does. */
+export function isShadowPass(scene: Object3D): boolean {
+  return scene.name.startsWith('Shadow Map');
+}
+
 const hookedScenes = new WeakSet<Object3D>();
 
 function hookScene(root: Object3D): void {
@@ -216,6 +236,7 @@ function hookScene(root: Object3D): void {
   const before = top.onBeforeRender;
   top.onBeforeRender = function (this: Object3D, renderer, scene, camera, geometry, material, group) {
     renderCamera = camera;
+    shadowPass = isShadowPass(scene as Object3D);
     before.call(this, renderer, scene, camera, geometry, material, group);
   };
 }
@@ -316,6 +337,8 @@ export class AssetInstances {
     for (const m of g.members) if (!still.has(m.mesh) && m.mesh.layers.mask === 1 << BATCHED_LAYER && !this.taken(m.mesh)) m.mesh.layers.set(0);
     g.mesh.removeFromParent();
     g.mesh.dispose();
+    g.shadow?.mesh.removeFromParent();
+    g.shadow?.mesh.dispose();
     g.ownMaterial?.dispose();
   }
 
@@ -331,16 +354,6 @@ export class AssetInstances {
       (own as unknown as { color: Color }).color.setRGB(1, 1, 1);
       material = own;
     }
-    const mesh = new InstancedMesh(first.geometry, material, meshes.length);
-    mesh.name = 'aether:asset-instances';
-    mesh.instanceMatrix.setUsage(DynamicDrawUsage);
-    if (tinted) {
-      mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(meshes.length * 3), 3);
-      mesh.instanceColor.setUsage(DynamicDrawUsage);
-    }
-    mesh.castShadow = first.castShadow;
-    mesh.receiveShadow = first.receiveShadow;
-    mesh.raycast = () => undefined;
     // The group sits at the centre of its copies: instance matrices stay small numbers, and transparent parts sort by it.
     if (!first.geometry.boundingSphere) first.geometry.computeBoundingSphere();
     const bounds = new Sphere().makeEmpty();
@@ -348,25 +361,55 @@ export class AssetInstances {
       _sphere.copy(first.geometry.boundingSphere as Sphere).applyMatrix4(m.matrixWorld);
       bounds.union(_sphere);
     }
-    mesh.position.copy(bounds.center);
-    mesh.updateMatrixWorld(true);
-    mesh.matrixAutoUpdate = false;
-    mesh.boundingSphere = new Sphere(new Vector3(), bounds.radius * 1.05 + 0.01);
-    mesh.count = 0;
+    const instanced = (name: string, colours: boolean): InstancedMesh => {
+      const mesh = new InstancedMesh(first.geometry, material, meshes.length);
+      mesh.name = name;
+      mesh.instanceMatrix.setUsage(DynamicDrawUsage);
+      if (colours) {
+        mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(meshes.length * 3), 3);
+        mesh.instanceColor.setUsage(DynamicDrawUsage);
+      }
+      mesh.raycast = () => undefined;
+      mesh.position.copy(bounds.center);
+      mesh.updateMatrixWorld(true);
+      mesh.matrixAutoUpdate = false;
+      mesh.boundingSphere = new Sphere(new Vector3(), bounds.radius * 1.05 + 0.01);
+      mesh.count = 0;
+      return mesh;
+    };
+    // The view's mesh never casts: shadow passes draw the twin, so they never repack the buffer the view drew from.
+    const mesh = instanced('aether:asset-instances', tinted);
+    mesh.castShadow = false;
+    mesh.receiveShadow = first.receiveShadow;
+    let shadow: Packing | null = null;
+    if (first.castShadow) {
+      const twin = instanced('aether:asset-instances:shadow', false);
+      twin.castShadow = true;
+      twin.receiveShadow = false;
+      shadow = { mesh: twin, slots: new Int32Array(meshes.length).fill(-1) };
+    }
     for (const m of meshes) m.layers.set(BATCHED_LAYER);
     const members: Member[] = meshes.map((m) => ({ mesh: m, material: m.material as Material, ...lodOf(m) }));
-    const group: Group = { key, mesh, members, geometry: first.geometry, ownMaterial: own, tinted, slots: new Int32Array(meshes.length).fill(-1) };
-    // Culling: is a copy this camera draws with this mesh inside the frustum? (None: no draw call at all.)
-    mesh.intersectsFrustum = (frustum: Frustum) => this.pack(group, renderCamera, frustum) > 0;
+    const group: Group = { key, mesh, members, geometry: first.geometry, ownMaterial: own, tinted, slots: new Int32Array(meshes.length).fill(-1), shadow };
     // The draw: pack for the camera actually drawing.
-    mesh.onBeforeRender = (_renderer, _scene, camera) => {
+    const draw = (p: Packing) => (_renderer: unknown, _scene: unknown, camera: Camera): void => {
       let f: Frustum | null = null;
       if ((camera as { isArrayCamera?: boolean }).isArrayCamera !== true) {
         _projection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
         f = _frustum.setFromProjectionMatrix(_projection, camera.coordinateSystem, (camera as { reversedDepth?: boolean }).reversedDepth === true);
       }
-      this.pack(group, camera, f);
+      this.pack(group, p, camera, f);
     };
+    // Culling: is a copy this camera draws with this mesh inside the frustum? (None: no draw call at all.) Each mesh takes
+    // part only in its own kind of pass.
+    mesh.intersectsFrustum = (frustum: Frustum) => !shadowPass && this.pack(group, group, renderCamera, frustum) > 0;
+    mesh.onBeforeRender = draw(group);
+    if (shadow) {
+      const twin = shadow;
+      twin.mesh.intersectsFrustum = (frustum: Frustum) => shadowPass && this.pack(group, twin, renderCamera, frustum) > 0;
+      twin.mesh.onBeforeRender = draw(twin);
+      this.root.add(twin.mesh);
+    }
     this.root.add(mesh);
     this.groups.push(group);
   }
@@ -376,12 +419,12 @@ export class AssetInstances {
    * levels three picked last, null frustum: no culling) into its first slots; uploads only when the packing changed.
    * Returns the number packed.
    */
-  private pack(g: Group, camera: Camera | null, frustum: Frustum | null): number {
+  private pack(g: Group, p: Packing, camera: Camera | null, frustum: Frustum | null): number {
     if (!g.geometry.boundingSphere) g.geometry.computeBoundingSphere();
     const bs = g.geometry.boundingSphere as Sphere;
-    const arr = g.mesh.instanceMatrix.array as Float32Array;
-    const cols = g.tinted ? (g.mesh.instanceColor!.array as Float32Array) : null;
-    _origin.copy(g.mesh.matrixWorld).invert();
+    const arr = p.mesh.instanceMatrix.array as Float32Array;
+    const cols = g.tinted && p.mesh.instanceColor ? (p.mesh.instanceColor.array as Float32Array) : null;
+    _origin.copy(p.mesh.matrixWorld).invert();
     if (camera) _eye.setFromMatrixPosition(camera.matrixWorld);
     const zoom = (camera as { zoom?: number } | null)?.zoom ?? 1;
     let n = 0;
@@ -401,8 +444,8 @@ export class AssetInstances {
       const o = n * 16;
       _m.multiplyMatrices(_origin, m.matrixWorld);
       const e = _m.elements;
-      if (g.slots[n] !== i) {
-        g.slots[n] = i;
+      if (p.slots[n] !== i) {
+        p.slots[n] = i;
         changed = true;
       }
       for (let k = 0; k < 16; k++) {
@@ -424,18 +467,23 @@ export class AssetInstances {
       }
       n++;
     }
-    if (n !== g.mesh.count) {
-      for (let s = n; s < g.slots.length; s++) g.slots[s] = -1;
-      g.mesh.count = n;
+    if (n !== p.mesh.count) {
+      for (let s = n; s < p.slots.length; s++) p.slots[s] = -1;
+      p.mesh.count = n;
     }
-    if (changed) g.mesh.instanceMatrix.needsUpdate = true;
-    if (coloured) g.mesh.instanceColor!.needsUpdate = true;
+    if (changed) p.mesh.instanceMatrix.needsUpdate = true;
+    if (coloured) p.mesh.instanceColor!.needsUpdate = true;
     return n;
   }
 
   /** Pack every group for `camera` (tests; the renderer packs while it culls and draws). Returns the copies packed per group. */
   packAll(camera: Camera | null = null, frustum: Frustum | null = null): number[] {
-    return this.groups.map((g) => this.pack(g, camera, frustum));
+    return this.groups.map((g) => this.pack(g, g, camera, frustum));
+  }
+
+  /** The shadow casters' twins (tests, diagnostics). */
+  shadowMeshes(): InstancedMesh[] {
+    return this.groups.flatMap((g) => (g.shadow ? [g.shadow.mesh] : []));
   }
 
   /** Remove every instanced mesh and give the members back to the default layer. */
