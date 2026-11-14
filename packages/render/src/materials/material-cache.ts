@@ -238,10 +238,18 @@ function applyFinish(m: MeshStandardMaterial, r: ResolvedMaterial, finishes: Fin
  * Material cache keyed by the stable JSON of the resolved parameters, so two
  * specs that resolve identically share one GPU material (and one pipeline).
  */
+/** A material drawn by the water or falling-water shader (both read the water clock). */
+function isMovingWater(m: Material): boolean {
+  return m.userData[WATER_SHADER_KEY] !== undefined || m.userData['aetherWaterfall'] === true;
+}
+
 export class MaterialCache {
   private waterList: readonly Material[] = [];
   private waterListDirty = false;
+  /** Live materials whose look runs on the water clock (water shaders and falling water). */
+  private movingWater = 0;
   private readonly cache = new RefCache<Material>((m) => {
+    if (isMovingWater(m)) this.movingWater--;
     const shade = m.userData[SHADE_KEY] as string | undefined;
     if (shade !== undefined) {
       const n = (this.shadedPrograms.get(shade) ?? 1) - 1;
@@ -321,6 +329,14 @@ export class MaterialCache {
     return this.waterList;
   }
 
+  /**
+   * True while a live material animates on the water clock (a water shader or a falling-water sheet). The renderer
+   * advances the clock for these even when the world has no primitive water body (a river or fall drawn by a generator).
+   */
+  get hasMovingWater(): boolean {
+    return this.movingWater > 0;
+  }
+
   /** Re-derive every water shader's waves from the current wind (call after `setWind`). */
   retuneWater(): void {
     this.cache.forEach((m) => {
@@ -367,6 +383,7 @@ export class MaterialCache {
       if (shade) this.shade(m, resolved, shade);
       if (this.reflectiveWater && m.userData[WATER_KEY] === true) setWaterLook(m, true);
       if (m.userData[WATER_SHADER_KEY]) this.waterListDirty = true;
+      if (isMovingWater(m)) this.movingWater++;
       return m;
     });
     return { key, material, resolved };

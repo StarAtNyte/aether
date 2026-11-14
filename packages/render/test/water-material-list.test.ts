@@ -30,4 +30,24 @@ describe('cached water pass materials', () => {
     expect(disposed).toEqual([]);
     expect(cache.waterMaterials()).toBe(disposed);
   });
+
+  it('counts live water shaders and falls as moving water, so generator rivers and falls get a running clock', () => {
+    const cache = new MaterialCache();
+    cache.acquire({ preset: 'stone' });
+    const classic = cache.acquire({ preset: 'water', waterKind: 'fall' });
+    expect(cache.hasMovingWater).toBe(false); // no water tier: the classic look does not animate
+    cache.release(classic.key);
+    cache.waterTier = 'high';
+    const fall = cache.acquire({ preset: 'water', waterKind: 'fall', color: '#7fb8b0' });
+    expect(fall.material.userData['aetherWaterfall']).toBe(true);
+    expect(cache.hasMovingWater).toBe(true);
+    const river = cache.acquire({ preset: 'water', waterKind: 'river', waterFlow: [0, 1.6] });
+    cache.release(fall.key);
+    expect(cache.hasMovingWater).toBe(true);
+    cache.release(river.key);
+    expect(cache.hasMovingWater).toBe(false);
+    cache.acquire({ preset: 'water', waterKind: 'fall' });
+    cache.dispose();
+    expect(cache.hasMovingWater).toBe(false);
+  });
 });

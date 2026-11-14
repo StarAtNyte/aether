@@ -3312,6 +3312,11 @@ export class WorldRenderer {
     if (surfaces.length === 0) {
       if (this.env.isUnderwater) this.env.setUnderwater(null);
       reflectionOn.value = 0;
+      // A river or fall drawn by a generator is no primitive water body, but its shader still runs on the water clock.
+      if (animate && this.materials.hasMovingWater) {
+        advanceWater(dt);
+        this.frameInvalidation.animate();
+      }
       return;
     }
     if (animate) {
