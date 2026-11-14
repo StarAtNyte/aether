@@ -9,7 +9,7 @@
  */
 import { AnimationMixer, Group, LoopOnce, LoopRepeat, Material, MathUtils, Mesh, Object3D, Quaternion, Vector3, type AnimationAction, type AnimationClip, type Bone } from 'three';
 import type { CharacterHold } from '@aether/core';
-import { LocomotionMachine, type ActionName, type ActorInput, type ClipInfo, type Plan, type ResolvedLook } from '@aether/assets';
+import { faceMorphWeights, LocomotionMachine, type ActionName, type ActorInput, type ClipInfo, type Plan, type ResolvedLook } from '@aether/assets';
 import { applyLook, LookController, solveTwoBone, type LookState } from './ik';
 import { disposeModelInstance } from '../geometry/model-loader';
 import { buildProp, type Prop } from './props';
@@ -87,19 +87,27 @@ export class CharacterRig {
    * swing of each foot kept above its own ground. Absent: the feet stay where the clip puts them.
    */
   ground: ((x: number, z: number, y: number) => number | null) | null = null;
-  /** Facial expressions (morph targets by name): eased current and target weights. */
-  private readonly expressions = new Map<string, { cur: number; want: number }>();
+  /** Facial expressions (morph targets by name): eased current (and, for a tuned face, mid-stage) and target weights. */
+  private readonly expressions = new Map<string, { cur: number; mid: number; want: number }>();
   /** Meshes of the body that carry morph targets. */
   private morphMeshes: Mesh[] | null = null;
 
   /**
    * Ease a facial expression (a morph target of the body by name: `smile`, `sad`, `teary`…) to `weight` over about a
-   * fifth of a second. A body without that morph ignores it.
+   * fifth of a second. A body without that morph ignores it. A body with face tuning (`look.body.face`, the VRM bodies)
+   * shows it scaled to its caps, blended smoothly, and raising one of its exclusive emotions eases the others out.
    */
   setExpression(name: string, weight: number): void {
-    const e = this.expressions.get(name) ?? { cur: 0, want: 0 };
+    const e = this.expressions.get(name) ?? { cur: 0, mid: 0, want: 0 };
     e.want = Math.max(0, Math.min(1, weight));
     this.expressions.set(name, e);
+    const ex = this.look.body.face?.exclusive;
+    if (ex && e.want > 0 && ex.includes(name)) {
+      for (const other of ex) {
+        const o = other === name ? undefined : this.expressions.get(other);
+        if (o) o.want = 0;
+      }
+    }
   }
 
   private updateExpressions(dt: number): void {
@@ -111,16 +119,34 @@ export class CharacterRig {
         if (m.isMesh && m.morphTargetDictionary && m.morphTargetInfluences) this.morphMeshes!.push(m);
       });
     }
-    const k = 1 - Math.exp(-Math.max(0, dt) / 0.07);
-    for (const [name, e] of this.expressions) {
-      e.cur += (e.want - e.cur) * k;
-      const meshes: Mesh[] = this.morphMeshes;
+    const meshes: Mesh[] = this.morphMeshes;
+    const write = (name: string, w: number): void => {
       for (const mesh of meshes) {
         const slot: number | undefined = mesh.morphTargetDictionary?.[name];
         const inf: number[] | undefined = mesh.morphTargetInfluences;
-        if (slot !== undefined && inf) inf[slot] = e.cur;
+        if (slot !== undefined && inf) inf[slot] = w;
       }
+    };
+    const tuning = this.look.body.face;
+    if (!tuning) {
+      const k = 1 - Math.exp(-Math.max(0, dt) / 0.07);
+      for (const [name, e] of this.expressions) {
+        e.cur += (e.want - e.cur) * k;
+        write(name, e.cur);
+      }
+      return;
     }
+    // Two first-order stages in a row: the weight starts moving gently and settles without a snap.
+    const k = 1 - Math.exp(-Math.max(0, dt) / (tuning.ease ?? 0.12));
+    const asked: Record<string, number> = {};
+    for (const [name, e] of this.expressions) {
+      e.mid += (e.want - e.mid) * k;
+      e.cur += (e.mid - e.cur) * k;
+      asked[name] = e.cur;
+    }
+    const shown = faceMorphWeights(tuning, asked);
+    for (const name of Object.keys(asked)) if (!(name in shown)) shown[name] = 0;
+    for (const [name, w] of Object.entries(shown)) write(name, w);
   }
 
   /** A toon body's arms hang this far (radians) out from the clip's, so the hands clear a flared skirt. */

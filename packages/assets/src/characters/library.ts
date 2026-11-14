@@ -109,15 +109,68 @@ export const CAST_TRAITS: Readonly<Record<string, CastTraits>> = {
   kaho: { age: 'young', skin: 'light', wardrobes: ['casual', 'traveller'], words: ['anime', 'schoolgirl', 'uniform', 'ponytail', 'sailor'] },
 };
 
+/**
+ * How a body's face morphs are driven, kept by hand per cast id. A story asks for an expression at 0..1; the body shows
+ * `weight * caps[name]`. Bodies converted from VRM models carry the VRM presets as their morphs, and at full weight those
+ * are extreme anime poses (`happy` squeezes the eyes shut, `aa` and `surprised` open the mouth wide), so they are scaled
+ * down; stacking two of them (a smile on top of a held surprise) breaks the face, so the emotions are exclusive.
+ */
+export interface FaceTuning {
+  /** Largest weight each morph is shown at (a story weight of 1 maps to it); a morph left out shows as asked. */
+  caps: Readonly<Record<string, number>>;
+  /** An expression the body has no morph for, drawn with another morph at a weight scale (VRM has no `teary`: `sad`). */
+  alias?: Readonly<Record<string, { morph: string; scale: number }>>;
+  /** Raising one of these eases the others of the list back to 0 (the latest emotion wins, none stack). */
+  exclusive?: readonly string[];
+  /** Easing time constant (s) of the two-stage blend toward a new weight (smooth start and settle). */
+  ease?: number;
+}
+
+/** The caps of the VRM-converted bodies (VRM1_Constraint_Twist_Sample): subtle, film-friendly faces. */
+const VRM_FACE_TUNING: FaceTuning = {
+  caps: { smile: 0.5, blink: 1, mouth_open: 0.35, sad: 0.5, surprised: 0.45, determined: 0.5, teary: 0.5 },
+  alias: { teary: { morph: 'sad', scale: 0.6 } },
+  exclusive: ['smile', 'sad', 'surprised', 'teary', 'determined'],
+  ease: 0.12,
+};
+
+/** Face tuning by cast id; a body without an entry shows its morphs as asked. */
+export const CAST_FACES: Readonly<Record<string, FaceTuning>> = {
+  'kaho-vrm': VRM_FACE_TUNING,
+  'mio-vrm': VRM_FACE_TUNING,
+};
+
+/**
+ * The morph weights a tuned body shows for the asked expression weights (each 0..1): aliases resolved, each morph
+ * scaled by its cap and kept within it. Pure (the rig and the tests use it).
+ */
+export function faceMorphWeights(tuning: FaceTuning, asked: Readonly<Record<string, number>>): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [name, w0] of Object.entries(asked)) {
+    const w = Math.max(0, Math.min(1, w0));
+    const alias = tuning.alias?.[name];
+    const morph = alias ? alias.morph : name;
+    const cap = tuning.caps[morph] ?? 1;
+    const v = w * (alias ? alias.scale : 1) * cap;
+    out[morph] = Math.min(cap, (out[morph] ?? 0) + v);
+  }
+  return out;
+}
+
 /** A cast member with its traits. */
 export interface CastMember extends CastFile {
   traits: CastTraits;
+  /** How its face morphs are driven, when tuned (see {@link CAST_FACES}). */
+  face?: FaceTuning;
 }
 
 const FALLBACK_TRAITS: CastTraits = { age: 'adult', skin: 'light', wardrobes: ['casual'], words: [] };
 
 /** Every body of the library: the Rocketbox cast, then the project's own bodies. */
-export const CAST: readonly CastMember[] = [...GENERATED_LIBRARY.cast, ...ORIGINAL_CAST].map((c) => ({ ...c, traits: CAST_TRAITS[c.id] ?? FALLBACK_TRAITS }));
+export const CAST: readonly CastMember[] = [...GENERATED_LIBRARY.cast, ...ORIGINAL_CAST].map((c) => {
+  const face = CAST_FACES[c.id];
+  return face ? { ...c, traits: CAST_TRAITS[c.id] ?? FALLBACK_TRAITS, face } : { ...c, traits: CAST_TRAITS[c.id] ?? FALLBACK_TRAITS };
+});
 
 /** True for a body drawn in the toon style. */
 export function isToonBody(c: Pick<CastFile, 'style'>): boolean {

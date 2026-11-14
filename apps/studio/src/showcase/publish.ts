@@ -50,6 +50,7 @@ export const TEMPLATE_PUBLISH: Readonly<Record<string, TemplatePublish>> = Objec
   'kyoto-temple': GAME,
   'painterly-meadow': GAME,
   'cloudwatch-harbour': STORY,
+  'cloudwatch-harbour-vrm': STORY,
   'four-seasons-garden': GAME,
   'orbital-lab': GAME,
   'sakura-river': GAME,

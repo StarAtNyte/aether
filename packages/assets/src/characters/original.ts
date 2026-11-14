@@ -17,6 +17,30 @@ export const ORIGINAL_CAST: CastFile[] = [
  {
   "id": "kaho",
   "gender": "female",
+  "look": "anime girl, summer sailor uniform with a sky-blue collar and a teal neckerchief, chin-length chestnut bob with a thin braid and a seashell charm",
+  "file": "c/kaho.efc43f20.glb",
+  "height": 1.549,
+  "hip": 0.824,
+  "triangles": 61500,
+  "faces": 1,
+  "bytes": 1420788,
+  "style": "toon"
+ },
+ {
+  "id": "mio",
+  "gender": "female",
+  "look": "anime girl, pale mint short-sleeve cardigan over a white T-shirt, long light-beige pleated skirt, long straight black hair with a fringe and a white hairband",
+  "file": "c/mio.5d15c601.glb",
+  "height": 1.552,
+  "hip": 0.824,
+  "triangles": 66864,
+  "faces": 1,
+  "bytes": 1539812,
+  "style": "toon"
+ },
+ {
+  "id": "kaho-vrm",
+  "gender": "female",
   "look": "anime girl, long straight chestnut-brown hair, white short-sleeve blouse, black shorts, white sneakers",
   "file": "c/kaho.35bd9b28.glb",
   "height": 1.532,
@@ -31,11 +55,11 @@ export const ORIGINAL_CAST: CastFile[] = [
    "licence": "VRM Public License 1.0",
    "licenceUrl": "https://vrm.dev/licenses/1.0/",
    "url": "https://github.com/vrm-c/vrm-specification/tree/master/samples/VRM1_Constraint_Twist_Sample",
-   "line": "Kaho's body: VRM1_Constraint_Twist_Sample by pixiv Inc. (VRM Public License 1.0), converted for Aether"
+   "line": "Kaho's VRM body (test copy): VRM1_Constraint_Twist_Sample by pixiv Inc. (VRM Public License 1.0), converted for Aether"
   }
  },
  {
-  "id": "mio",
+  "id": "mio-vrm",
   "gender": "female",
   "look": "anime girl, long straight black hair, pale sage-mint short-sleeve top, light-beige shorts, white sneakers, dark grey-brown eyes",
   "file": "c/mio.6eb925cf.glb",
@@ -51,7 +75,7 @@ export const ORIGINAL_CAST: CastFile[] = [
    "licence": "VRM Public License 1.0",
    "licenceUrl": "https://vrm.dev/licenses/1.0/",
    "url": "https://github.com/vrm-c/vrm-specification/tree/master/samples/VRM1_Constraint_Twist_Sample",
-   "line": "Mio's body: VRM1_Constraint_Twist_Sample by pixiv Inc. (VRM Public License 1.0), recoloured and converted for Aether"
+   "line": "Mio's VRM body (test copy): VRM1_Constraint_Twist_Sample by pixiv Inc. (VRM Public License 1.0), recoloured and converted for Aether"
   }
  }
 ] as CastFile[];
@@ -64,11 +88,21 @@ export const ORIGINAL_LODS: Record<string, { file: string; triangles: number; by
   "bytes": 1053296
  },
  "kaho": {
+  "file": "c/kaho.lod1.e0904720.glb",
+  "triangles": 24600,
+  "bytes": 947260
+ },
+ "mio": {
+  "file": "c/mio.lod1.0759d1b3.glb",
+  "triangles": 26745,
+  "bytes": 1007096
+ },
+ "kaho-vrm": {
   "file": "c/kaho.lod1.2613189c.glb",
   "triangles": 14594,
   "bytes": 561712
  },
- "mio": {
+ "mio-vrm": {
   "file": "c/mio.lod1.7ee8127b.glb",
   "triangles": 14594,
   "bytes": 561400

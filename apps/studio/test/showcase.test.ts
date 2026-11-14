@@ -66,12 +66,13 @@ describe('showcase manifest', () => {
     const blender = SHOWCASE.filter((e) => e.origin === 'blender');
     expect(blender.length).toBeGreaterThanOrEqual(1);
     for (const e of blender) {
-      expect(existsSync(join(REPO, 'scripts/blender', e.slug.split('-')[0] ?? e.slug)), `${e.slug} scripts`).toBe(true);
+      const own = e.copyOf ?? e.slug;
+      expect(existsSync(join(REPO, 'scripts/blender', own.split('-')[0] ?? own)), `${e.slug} scripts`).toBe(true);
       const raw = JSON.parse(readFileSync(pub(`templates/worlds/${e.slug}.json`), 'utf8')) as { world: { entities: Record<string, { shape: { kind: string; url?: string } }> } };
       const urls = Object.values(raw.world.entities).flatMap((en) => (en.shape.kind === 'model' && en.shape.url ? [en.shape.url] : []));
       expect(urls.length, e.slug).toBeGreaterThan(0);
       for (const u of urls) {
-        expect(u.startsWith(`./templates/models/${e.slug}/`), u).toBe(true);
+        expect(u.startsWith(`./templates/models/${own}/`), u).toBe(true);
         expect(existsSync(pub(u.slice(2))), u).toBe(true);
       }
     }

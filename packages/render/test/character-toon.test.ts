@@ -144,13 +144,14 @@ describe('the toon cast', () => {
     expect(c.assets.join(' ')).toContain('motion set');
   });
 
-  it('credits the bodies of Kaho and Mio to the VRM model they are converted from, not to this project', () => {
-    const c = bodyCredits(['kaho', 'mio']);
+  it('credits the VRM test bodies of Kaho and Mio to the VRM model they are converted from; the live Kaho and Mio are this project\'s own', () => {
+    expect(bodyCredits(['kaho', 'mio'])).toHaveLength(0);
+    const c = bodyCredits(['kaho-vrm', 'mio-vrm']);
     expect(c).toHaveLength(1);
     expect(c[0]?.author).toContain('pixiv');
     expect(c[0]?.licence).toBe('VRM Public License 1.0');
     expect(c[0]?.licenceUrl).toBe('https://vrm.dev/licenses/1.0/');
-    expect(c[0]?.assets.join(' ')).toMatch(/kaho .*mio/);
-    expect(characterCredit(['kaho', 'mio']).assets.join(' ')).not.toContain("this project's own bodies");
+    expect(c[0]?.assets.join(' ')).toMatch(/kaho-vrm .*mio-vrm/);
+    expect(characterCredit(['kaho-vrm', 'mio-vrm']).assets.join(' ')).not.toContain("this project's own bodies");
   });
 });
