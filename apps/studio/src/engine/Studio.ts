@@ -1246,9 +1246,11 @@ export class Studio {
     }
     // The chosen assistant first, then the user's other signed-in assistants, then the offline planner.
     let fell: FallbackNotice | null = null;
+    // "No assets" mode (Settings, the home prompt or the composer): no library models for any connection, the offline planner included.
+    const noAssets = prefs.noAssets;
     const links: ChainLink[] = primary ? [{ label: resolved.label, provider: primary, vision: resolved.vision }, ...this.ai.alternates(prefs, resolved).map((a) => ({ label: a.resolved.label, provider: a.provider, vision: a.resolved.vision }))] : [];
     const chain = primary
-      ? createProviderChain(links, createOfflinePlanner(), ({ from, to, notice }) => {
+      ? createProviderChain(links, createOfflinePlanner({ noAssets }), ({ from, to, notice }) => {
           via = to ? to.label : 'Offline planner';
           if (!to) fell = notice;
           const s = this.store.getState();
@@ -1259,9 +1261,10 @@ export class Studio {
           this.reprobe(resolved.kind);
         })
       : null;
-    const provider: Provider = chain ?? createOfflinePlanner();
+    const provider: Provider = chain ?? createOfflinePlanner({ noAssets });
     const abort = new AbortController();
     this.abort = abort;
+    this.bridge.noAssets = noAssets;
     let status: 'done' | 'error' | 'aborted' = 'done';
     let session: string | undefined;
     const usage: RunUsage = { inputTokens: 0, outputTokens: 0, calls: 0, cachedInputTokens: 0, models: [] };
@@ -1269,7 +1272,7 @@ export class Studio {
       const repairs = Math.max(0, Math.min(MAX_REPAIRS_SETTING, Math.round(st.settings.repairs)));
       // Small on-device models get the condensed prompt that fits their ~4k-token context.
       const promptProfile: PromptProfile = primary && resolved.kind === 'webllm' ? 'compact' : 'full';
-      const buildAsset = primary && resolved.kind === 'local' && resolved.worker && prefs.deep ? this.deepBuilder(entryId, prefs) : undefined;
+      const buildAsset = primary && !noAssets && resolved.kind === 'local' && resolved.worker && prefs.deep ? this.deepBuilder(entryId, prefs) : undefined;
       // Review loop: the AI looks at every building it makes or edits and fixes it until it judges it right.
       // Subscription backends are not metered, so the loop has no round cap there (it stops when the model
       // approves or progress stalls); paid keys keep a high finite cap. Small on-device models skip it.
@@ -1285,7 +1288,7 @@ export class Studio {
       const aiState = this.ai.store.getState();
       const blender = promptProfile === 'full' && primary && aiState.server.local && aiState.local.blender === 'ready' ? await import('../blender/available').then((m) => m.blenderToolsFor(aiState, this.assets)).catch(() => null) : null;
       // The level tools serve the offline planner too: an "onto" move is set down on the surface measured under it.
-      const agent = new WorldAgent({ provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: Number.isFinite(repairs) ? repairs : MAX_REPAIRS, promptProfile, photo, presentation: promptProfile === 'full', ...(buildAsset ? { buildAsset } : {}), ...(promptProfile === 'full' && primary ? { importAsset: this.assetImporter(entryId), hubSearch: this.hubSearcher() } : {}), ...(promptProfile === 'full' ? { levelTools: levelToolsFor(() => this.simulation, () => this.sandbox), textures: { images: primary ? this.ai.imageGenerator() : null } } : {}), ...(promptProfile === 'full' && primary ? { brief: {} } : {}), ...(blender ? { blender } : {}), ...(review ? { review, maxTurns: REVIEW_MAX_TURNS, maxToolCalls: REVIEW_MAX_TOOL_CALLS } : {}) });
+      const agent = new WorldAgent({ provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: Number.isFinite(repairs) ? repairs : MAX_REPAIRS, promptProfile, photo, presentation: promptProfile === 'full', ...(noAssets ? { noAssets: true } : {}), ...(buildAsset ? { buildAsset } : {}), ...(promptProfile === 'full' && primary && !noAssets ? { importAsset: this.assetImporter(entryId), hubSearch: this.hubSearcher() } : {}), ...(promptProfile === 'full' ? { levelTools: levelToolsFor(() => this.simulation, () => this.sandbox), textures: { images: primary ? this.ai.imageGenerator() : null } } : {}), ...(promptProfile === 'full' && primary ? { brief: {} } : {}), ...(blender ? { blender } : {}), ...(review ? { review, maxTurns: REVIEW_MAX_TURNS, maxToolCalls: REVIEW_MAX_TOOL_CALLS } : {}) });
       session = primary && (resolved.kind === 'local' || resolved.kind === 'bridge') ? (projectSessionKey(this.projectId) ?? undefined) : undefined;
       // The untouched default glade is a placeholder, not something the user made: the first prompt builds a new world.
       const intent = opts.intent ?? (before === this.history.current && st.chat.length === 0 && !this.history.canUndo() && isPristineStarter(before) ? 'new' : 'auto');
@@ -1297,7 +1300,7 @@ export class Studio {
       if (status === 'done' && !abort.signal.aborted && this.history.current !== before && this.localEdit === null && agent.lastScope !== 'small') {
         // Quality loop: review the result and spend the refinement budget on its weakest points.
         const online = primary !== null && fell === null;
-        const result = hasBuilding(this.history.current) && primary !== null && promptProfile === 'full' ? 'done' : await this.refine({ entryId, prompt: text, provider, online, critic: online && (chain?.active()?.vision ?? false) && prefs.refine > 0 ? (chain?.active()?.provider ?? null) : null, budget: opts.offline ? 0 : prefs.refine, abort, usage, history, promptProfile, ...(session ? { session } : {}) });
+        const result = hasBuilding(this.history.current) && primary !== null && promptProfile === 'full' ? 'done' : await this.refine({ entryId, prompt: text, provider, online, critic: online && (chain?.active()?.vision ?? false) && prefs.refine > 0 ? (chain?.active()?.provider ?? null) : null, budget: opts.offline ? 0 : prefs.refine, abort, usage, history, promptProfile, noAssets, ...(session ? { session } : {}) });
         if (result === 'aborted') status = 'aborted';
       }
       if (abort.signal.aborted) status = 'aborted';
@@ -1331,9 +1334,10 @@ export class Studio {
       }
     } finally {
       if (this.abort === abort) this.abort = null;
+      this.bridge.noAssets = false;
       // Offline answers are not model usage: no fabricated call or token counts.
       const offlineOnly = usage.models.length > 0 && usage.models.every((m) => m === 'aether-mock');
-      push({ type: 'done', inputTokens: offlineOnly ? 0 : usage.inputTokens, outputTokens: offlineOnly ? 0 : usage.outputTokens, calls: offlineOnly ? 0 : usage.calls, ...(!offlineOnly && usage.cachedInputTokens > 0 ? { cachedInputTokens: usage.cachedInputTokens } : {}), ...(usage.models.length > 0 ? { models: [...usage.models] } : {}), ms: Math.round(performance.now() - startedAt), via });
+      push({ type: 'done', inputTokens: offlineOnly ? 0 : usage.inputTokens, outputTokens: offlineOnly ? 0 : usage.outputTokens, calls: offlineOnly ? 0 : usage.calls, ...(!offlineOnly && usage.cachedInputTokens > 0 ? { cachedInputTokens: usage.cachedInputTokens } : {}), ...(usage.models.length > 0 ? { models: [...usage.models] } : {}), ms: Math.round(performance.now() - startedAt), via, ...(noAssets ? { noAssets: true } : {}) });
       const s = this.store.getState();
       s.finishAssistant(entryId, status);
       s.setAgentBusy(false);
@@ -1548,6 +1552,8 @@ export class Studio {
     usage: RunUsage;
     history: ReturnType<typeof buildAgentHistory>;
     promptProfile: PromptProfile;
+    /** "No assets" mode: the refinement keeps to shapes and generators too. */
+    noAssets?: boolean;
     session?: string;
   }): Promise<'done' | 'aborted'> {
     let applied: string[] = [];
@@ -1569,7 +1575,7 @@ export class Studio {
       if (ctx.online) {
         this.store.getState().setAgentStep(`Refining (round ${round + 1} of ${ctx.budget})…`);
         // The same tools as the build (so the same system prompt): the refinement continues the build's conversation.
-        const agent = new WorldAgent({ provider: ctx.provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: 1, promptProfile: ctx.promptProfile, ...(ctx.promptProfile === 'full' ? { levelTools: levelToolsFor(() => this.simulation, () => this.sandbox) } : {}) });
+        const agent = new WorldAgent({ provider: ctx.provider, catalogs: agentCatalogs(), resolveGenerator: resolveLibraryGenerator, maxRepairs: 1, promptProfile: ctx.promptProfile, ...(ctx.noAssets ? { noAssets: true } : {}), ...(ctx.promptProfile === 'full' ? { levelTools: levelToolsFor(() => this.simulation, () => this.sandbox) } : {}) });
         const history = [...ctx.history, { role: 'user' as const, content: ctx.prompt }, { role: 'assistant' as const, content: 'Built the first version of the world.' }];
         const status = await this.streamRun(agent.run(refineInstruction(report), this.bridge, { signal: ctx.abort.signal, history, ...(ctx.session ? { session: ctx.session } : {}) }), ctx.entryId, ctx.abort, ctx.usage);
         if (status === 'aborted') return 'aborted';

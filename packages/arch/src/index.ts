@@ -50,3 +50,4 @@ export { exportWorldToIfc, type IfcExportOptions, type IfcExportResult } from '.
 export * from './scene/index';
 export { DesignRecord, DesignItem, DesignRelation, DesignProgramme, DesignCirculation, RELATION_TYPES, ItemHandle } from './design-record';
 // The room-from-photo modules (./photo) are large and loaded on demand: import them from '@aether/arch/photo'.
+export { setLibraryFurniture } from './furniture/assets';

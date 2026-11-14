@@ -458,6 +458,12 @@ export const AiConnectionPane = memo(function AiConnectionPane({ prefs, update, 
           checked={prefs.reviewPlan}
           onChange={(v) => update({ reviewPlan: v })}
         />
+        <Toggle
+          label="No assets"
+          hint="Build everything from scratch: shapes and generated code, no library models. Applies to every connection, the offline planner included. The same switch sits next to the prompt."
+          checked={prefs.noAssets}
+          onChange={(v) => update({ noAssets: v })}
+        />
         {repairs !== undefined && setRepairs && (
           <div className="setting-row">
             <span className="setting-row__text">

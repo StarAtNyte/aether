@@ -523,6 +523,8 @@ export const ChatEvent = memo(function ChatEvent({ event, live }: { event: ChatE
       );
     case 'done': {
       const parts: string[] = [];
+      // "No assets" mode: the world is made of shapes and generated code only (recorded with the turn, so it stays visible).
+      if (event.noAssets) parts.push('Built from scratch');
       if (event.via) parts.push(event.via);
       // The built-in planner is not a model: its internal name is not shown as one.
       const named = (event.models ?? []).filter((m) => m !== 'aether-mock');
@@ -530,7 +532,7 @@ export const ChatEvent = memo(function ChatEvent({ event, live }: { event: ChatE
       if (event.ms !== undefined) parts.push(formatElapsed(event.ms));
       // The offline planner estimates tokens from text length: those are not real model usage, never shown.
       if (event.calls > 0 && event.via !== 'Offline planner') parts.push(`${event.calls} model call${event.calls === 1 ? '' : 's'}`, `${compactCount(event.inputTokens)} in${event.cachedInputTokens ? ` (${compactCount(event.cachedInputTokens)} cached)` : ''} / ${compactCount(event.outputTokens)} out tokens`);
-      return parts.length > 0 ? <div className="ev ev--done">{parts.join(' · ')}</div> : null;
+      return parts.length > 0 ? <div className="ev ev--done" {...(event.noAssets ? { 'data-no-assets': '' } : {})}>{parts.join(' · ')}</div> : null;
     }
     // Steps are listed together (and folded) by the chat entry, not one by one.
     case 'step':

@@ -68,9 +68,40 @@ export function agentCatalogs(): AgentCatalogs {
 /** Definition of a generator-library object (lazy chunk; null when unknown). */
 export const resolveLibraryGenerator = (id: string): Promise<GeneratorDef | null> => loadLibraryGenerator(id);
 
-/** The offline planner, able to place generator-library objects by name. */
-export function createOfflinePlanner(): Provider {
-  return createMockProvider({ library: GENERATOR_LIBRARY });
+/**
+ * The offline planner, able to place generator-library objects by name. With `noAssets` ("No assets" mode) every library
+ * model it would place ({kind:"asset"} / {kind:"model"}) becomes its own procedural or primitive fallback, so the build
+ * stays within shapes and generators (the agent refuses asset shapes in that mode).
+ */
+export function createOfflinePlanner(opts: { noAssets?: boolean } = {}): Provider {
+  const mock = createMockProvider({ library: GENERATOR_LIBRARY });
+  if (!opts.noAssets) return mock;
+  return {
+    name: mock.name,
+    async complete(req, signal) {
+      const res = await mock.complete(req, signal);
+      return { ...res, content: res.content.map((b) => (b.type === 'tool_use' ? { ...b, input: withoutLibraryShapes(b.input) } : b)) };
+    },
+  };
+}
+
+/**
+ * "No assets" mode: a copy of `value` with every library-model shape ({kind:"asset"} or {kind:"model"}) replaced by its
+ * fallback (a primitive or procedural shape), or by a primitive box of the model's fit size when it has none. Pure.
+ */
+export function withoutLibraryShapes(value: unknown, depth = 0): unknown {
+  if (depth > 64 || typeof value !== 'object' || value === null) return value;
+  if (Array.isArray(value)) return value.map((v) => withoutLibraryShapes(v, depth + 1));
+  const o = value as Record<string, unknown>;
+  if (o['kind'] === 'asset' || o['kind'] === 'model') {
+    const fb = o['fallback'];
+    if (typeof fb === 'object' && fb !== null && ((fb as { kind?: unknown }).kind === 'primitive' || (fb as { kind?: unknown }).kind === 'procedural')) return withoutLibraryShapes(fb, depth + 1);
+    const fit = typeof o['fitSize'] === 'number' && Number.isFinite(o['fitSize']) && o['fitSize'] > 0 ? Math.min(o['fitSize'], 500) : 1;
+    return { kind: 'primitive', primitive: 'box', size: [fit, fit, fit] };
+  }
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(o)) out[k] = withoutLibraryShapes(v, depth + 1);
+  return out;
 }
 
 /** Parse an untrusted `/api/health` body. */
@@ -128,6 +159,12 @@ export class AgentBridge implements AgentHost {
     private readonly verifier: VerificationService | null = null,
   ) {}
 
+  /**
+   * "No assets" mode for the run under way (set by the studio around each build or edit): every library-model shape in
+   * the agent's patches is replaced by its procedural or primitive fallback before it is committed.
+   */
+  noAssets = false;
+
   /** Attach the simulation once the viewport exists (screenshots, collider reuse). */
   attach(sim: Simulation | null): void {
     this.simulation = sim;
@@ -173,7 +210,9 @@ export class AgentBridge implements AgentHost {
    */
   applyPatches(patches: unknown[], message: string): PatchResult {
     const before = this.history.current;
-    const screened = screenLocked(before, Array.isArray(patches) ? patches : []);
+    // "No assets" mode: tools that pick library models themselves (furnished rooms, for one) get their fallbacks instead.
+    const list = Array.isArray(patches) ? (this.noAssets ? (withoutLibraryShapes(patches) as unknown[]) : patches) : [];
+    const screened = screenLocked(before, list);
     const marks = this.userEdits();
     const r = this.history.commit(screened.allowed, message || 'Agent edit', 'agent');
     const errors = [...screened.refused, ...r.errors.map((e) => ({ ...e, index: e.index >= 0 ? (screened.indices[e.index] ?? e.index) : e.index }))].sort((a, b) => a.index - b.index);

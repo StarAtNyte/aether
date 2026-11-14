@@ -16,7 +16,7 @@ import { isPristineStarter } from '../lib/starterWorld';
 import { ChatEvent } from '../components/chat/ChatEvent';
 import { Icon } from '../components/Icon';
 import { Logomark } from '../components/Logo';
-import { DeepBuildToggle, ModelPicker, RefineMenu } from '../components/ai/ComposerControls';
+import { DeepBuildToggle, ModelPicker, NoAssetsToggle, RefineMenu } from '../components/ai/ComposerControls';
 import { formatElapsed } from '../components/chat/ChatEvent';
 import { Thumb } from '../home/cards';
 import { aiConnection } from '../ai/connection';
@@ -379,6 +379,7 @@ const Composer = memo(function Composer({ onSend, busy }: { onSend: (text: strin
         <ModelPicker />
         <RefineMenu />
         <DeepBuildToggle />
+        <NoAssetsToggle />
         {images.length > 0 && !busy && (
           <button type="button" className="chip chip--action" onClick={recreate} data-testid="recreate-image" data-tip="Rebuild the room in this photo: its walls, windows, furniture and colours">
             <Icon name="image" /> Recreate this image

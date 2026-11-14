@@ -157,6 +157,21 @@ export const DeepBuildToggle = memo(function DeepBuildToggle(): ReactElement | n
   );
 });
 
+/** Tooltip of the "No assets" switch (same words as on the home prompt). */
+const NO_ASSETS_TIP = 'Build everything from scratch: shapes and generated code, no library models';
+
+/** "No assets" switch: the next builds and edits use shapes and generated code only (the shared AI preference). */
+export const NoAssetsToggle = memo(function NoAssetsToggle(): ReactElement {
+  const studio = useStudio();
+  const on = useUI((s) => s.aiPrefs.noAssets);
+  return (
+    <button type="button" className={`composer__select composer__noassets${on ? ' is-on' : ''}`} aria-pressed={on} aria-label={`No assets: ${NO_ASSETS_TIP}`} data-tip={NO_ASSETS_TIP} data-testid="no-assets" onClick={() => studio.store.getState().setAiPrefs({ noAssets: !on })}>
+      <Icon name="shapes" />
+      <span>No assets</span>
+    </button>
+  );
+});
+
 /** Refinement rounds + automatic repair rounds. */
 export const RefineMenu = memo(function RefineMenu(): ReactElement {
   const studio = useStudio();

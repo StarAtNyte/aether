@@ -31,7 +31,18 @@ export const FURNITURE_ASSETS: Readonly<Record<string, ReadonlyArray<{ id: strin
  * The hand-picked list above goes first; then the interior finder chooses among the realistic models of that
  * type whose styles suit the building (kinds with doors and drawers keep their parametric part, which opens in play).
  */
+/** Whether layouts may use library models at all ("No assets" runs switch it off). */
+let libraryFurniture = true;
+
+/** Allow or forbid library models in furniture layouts; returns the previous setting (restore it afterwards). */
+export function setLibraryFurniture(on: boolean): boolean {
+  const was = libraryFurniture;
+  libraryFurniture = on;
+  return was;
+}
+
 export function furnitureAsset(kind: string, style: ArchStyle = 'modern', opts: { seed?: string; color?: string; size?: ReadonlyArray<number | undefined> } = {}): { id: string; size: [number, number, number] } | null {
+  if (!libraryFurniture) return null;
   const catalog = getCatalog();
   if (!catalog) return null;
   for (const opt of FURNITURE_ASSETS[kind] ?? []) {

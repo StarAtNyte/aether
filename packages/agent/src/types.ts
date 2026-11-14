@@ -343,6 +343,12 @@ export interface AgentCatalogs {
 /** Options for {@link WorldAgent}. */
 export interface AgentOptions {
   provider: Provider;
+  /**
+   * No assets (experimental, "No assets" mode): the library tools (LIBRARY_TOOL_NAMES) are withheld, the planner is told to
+   * build everything from primitives and procedural generators, the asset library is not loaded by the run, and
+   * apply_patches refuses `asset` / `model` shapes.
+   */
+  noAssets?: boolean;
   /** Automatic repair rounds after a failed verification (default 2). */
   maxRepairs?: number;
   /** Maximum model calls in the main loop (default 8). */

@@ -236,6 +236,14 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
   const [aiPrefs, setAiPrefs] = useState<AiPrefs>(() => loadAiPrefs(browserStorage()));
   // A first-run choice (already saved) updates the settings shown here.
   useAiPrefsEvent(() => setAiPrefs(loadAiPrefs(browserStorage())));
+  // One writer for the home page's AI prefs (Settings and the hero's "No assets" switch): saved as the global default.
+  const updateAiPrefs = useCallback((p: Partial<AiPrefs>): void => {
+    setAiPrefs((cur) => {
+      const next = parsePrefs({ ...cur, ...p });
+      saveAiPrefs(browserStorage(), next);
+      return next;
+    });
+  }, []);
   const [renaming, setRenaming] = useState<ProjectMeta | null>(null);
   const [deleting, setDeleting] = useState<ProjectMeta | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -437,7 +445,7 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
     const showTemplates = section === 'home' && !searching;
     content = (
       <>
-        {showTemplates && <Hero onPrompt={(p) => void actions.createFromPrompt(p)} onTemplate={pickTemplate} />}
+        {showTemplates && <Hero onPrompt={(p) => void actions.createFromPrompt(p)} onTemplate={pickTemplate} noAssets={aiPrefs.noAssets} onNoAssets={(on) => updateAiPrefs({ noAssets: on })} />}
         {showTemplates && FEATURED_TEMPLATES.length > 0 && (
           <section className="home-section featured" aria-labelledby="h-featured">
             <div className="section-head">
@@ -657,12 +665,7 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
         update={(p) => store.getState().updateSettings(p)}
         ai={{
           prefs: aiPrefs,
-          update: (p) =>
-            setAiPrefs((cur) => {
-              const next = parsePrefs({ ...cur, ...p });
-              saveAiPrefs(browserStorage(), next);
-              return next;
-            }),
+          update: updateAiPrefs,
         }}
       />
       <CommandPalette

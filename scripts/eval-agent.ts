@@ -10,6 +10,7 @@
  *   npx tsx scripts/eval-agent.ts --provider=codex --effort=low --limit=3
  *   npx tsx scripts/eval-agent.ts --provider=claude-code --model=haiku --limit=3
  *   options: --model=<id> --effort=low|medium|high --limit=N --max-calls=N --json=<file> "<prompt>"…
+ *            --no-assets ("No assets" mode, AgentOptions.noAssets) --world-out=<file> (last world JSON) --max-turns=N --max-tool-calls=N
  *
  * codex / claude-code use the CLIs you are signed in to (no API keys), with
  * the same locked-down backends as the bridge. --max-calls bounds the total
@@ -17,6 +18,7 @@
  */
 import { writeFile } from 'node:fs/promises';
 import { performance } from 'node:perf_hooks';
+import { setCatalog } from '@aether/assets';
 import { validateWorld } from '@aether/core';
 import { QUALITY_CRITERIA, WorldAgent, assessWorld, createMockProvider, type CompletionRequest, type Provider, type QualityCriterion } from '@aether/agent';
 import { initScripting } from '@aether/logic';
@@ -36,6 +38,10 @@ interface Args {
   limit: number;
   maxCalls: number;
   json: string | undefined;
+  noAssets: boolean;
+  worldOut: string | undefined;
+  maxTurns: number | undefined;
+  maxToolCalls: number | undefined;
   prompts: readonly string[];
 }
 
@@ -71,6 +77,10 @@ function parseArgs(argv: readonly string[]): Args {
     limit: Math.max(1, Number(get('limit') ?? 1000) || 1000),
     maxCalls: Math.max(1, Number(get('max-calls') ?? (provider === 'mock' ? 10_000 : provider === 'codex' || provider === 'claude-code' ? 300 : 40)) || 40),
     json: get('json'),
+    noAssets: argv.includes('--no-assets'),
+    worldOut: get('world-out'),
+    maxTurns: get('max-turns') ? Number(get('max-turns')) : undefined,
+    maxToolCalls: get('max-tool-calls') ? Number(get('max-tool-calls')) : undefined,
     prompts: positional.length > 0 ? positional : DEFAULT_PROMPTS,
   };
 }
@@ -84,9 +94,18 @@ function budgeted(inner: Provider, max: number): Provider & { calls: () => numbe
     async complete(req: CompletionRequest, signal?: AbortSignal) {
       if (n >= max) throw new Error(`call budget exhausted (${max})`);
       n++;
-      return inner.complete(req, signal);
+      const res = await inner.complete(req, signal);
+      // Which model really answered (Claude Code reports it in modelUsage).
+      console.log(`[call ${n}] role=${req.role ?? '?'} model=${res.model ?? 'unreported'}`);
+      return res;
     },
   };
+}
+
+/** "No assets": the prompt does not list the asset library. */
+function withoutAssetSummary(c: typeof CATALOGS): typeof CATALOGS {
+  const { assetSummary: _omit, ...rest } = c;
+  return rest;
 }
 
 const pct = (num: number, den: number): string => (den === 0 ? 'n/a' : `${((num / den) * 100).toFixed(1)}%`);
@@ -94,6 +113,8 @@ const pct = (num: number, den: number): string => (den === 0 ? 'n/a' : `${((num 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   await initPhysics();
+  // "No assets": no library catalog, so architecture furnishes with its parametric pieces only.
+  if (args.noAssets) setCatalog(null);
   await initScripting().catch(() => undefined);
   const base = args.provider === 'mock'
     ? createMockProvider({ library: GENERATOR_LIBRARY })
@@ -104,7 +125,7 @@ async function main(): Promise<void> {
   try {
     for (const prompt of args.prompts.slice(0, args.limit)) {
       const host = new NodeAgentHost(sandbox);
-      const agent = new WorldAgent({ provider, catalogs: CATALOGS, resolveGenerator: loadLibraryGenerator, maxRepairs: 2 });
+      const agent = new WorldAgent({ provider, catalogs: args.noAssets ? withoutAssetSummary(CATALOGS) : CATALOGS, resolveGenerator: loadLibraryGenerator, maxRepairs: 2, ...(args.noAssets ? { noAssets: true } : {}), ...(args.maxTurns ? { maxTurns: args.maxTurns } : {}), ...(args.maxToolCalls ? { maxToolCalls: args.maxToolCalls } : {}) });
       const before = provider.calls();
       const t0 = performance.now();
       let applied = 0;
@@ -120,6 +141,7 @@ async function main(): Promise<void> {
       }
       const ms = Math.round(performance.now() - t0);
       const world = host.getWorld();
+      if (args.worldOut) await writeFile(args.worldOut, `${JSON.stringify(world, null, 2)}\n`);
       const final = Object.keys(world.entities).length > 0 ? await runVerify(world) : { passed: false, summary: 'empty world' };
       const quality = assessWorld({ world, prompt, verifyPassed: final.passed });
       const criteria = Object.fromEntries(QUALITY_CRITERIA.map((c) => [c, quality.criteria[c].score])) as Record<QualityCriterion, number>;

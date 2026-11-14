@@ -39,7 +39,7 @@ export type ChatEventView =
   | { type: 'edit'; summary: string; lines: EditLineView[]; notes: string[]; ms: number; local: boolean; cosmetic: boolean; head?: number }
   | { type: 'clarify'; text: string; candidates: Array<{ id: string; label: string }> }
   | { type: 'error'; text: string }
-  | { type: 'done'; inputTokens: number; outputTokens: number; calls: number; cachedInputTokens?: number; ms?: number; via?: string; models?: string[] }
+  | { type: 'done'; inputTokens: number; outputTokens: number; calls: number; cachedInputTokens?: number; ms?: number; via?: string; models?: string[]; /** Built in "No assets" mode (shapes and generated code only). */ noAssets?: true }
   | { type: 'notice'; tone: 'info' | 'warning'; text: string; /** Offline planner could not map the request: show the connect-AI action and these examples. */ offline?: { examples: string[] } }
   | { type: 'review'; round: number; phase: 'checking' | 'found' | 'fixing' | 'approved' | 'stalled' | 'limit' | 'crosscheck'; text: string; score?: number; findings?: number; differences?: DifferenceEventView[] }
   /** One step the agent took ("Placing 4 items"); `thumbs` are small pictures of what it looked at (live only, never stored). */
@@ -579,6 +579,7 @@ export function reviveEvent(v: unknown): ChatEventView | null {
       if (typeof v['cachedInputTokens'] === 'number' && Number.isFinite(v['cachedInputTokens']) && v['cachedInputTokens'] > 0) d.cachedInputTokens = Math.min(num(v['cachedInputTokens']), d.inputTokens);
       if (typeof v['ms'] === 'number' && Number.isFinite(v['ms']) && v['ms'] >= 0) d.ms = Math.min(v['ms'], 3_600_000);
       if (typeof v['via'] === 'string') d.via = str(v['via'], 80);
+      if (v['noAssets'] === true) d.noAssets = true;
       if (Array.isArray(v['models'])) {
         const models = v['models'].filter((m): m is string => typeof m === 'string').slice(0, 6).map((m) => str(m, 64));
         if (models.length > 0) d.models = models;

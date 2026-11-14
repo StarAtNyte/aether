@@ -68,6 +68,11 @@ export const ARCH_OPS = [
 /** Upper bound of architecture ops per call (mirrors @aether/arch `MAX_ARCH_OPS`). */
 export const MAX_ARCH_OPS_PER_CALL = 40;
 
+/** "No assets" mode: the tools that look up or import library models (withheld from the planner; see `AgentOptions.noAssets`). */
+export const LIBRARY_TOOL_NAMES: ReadonlySet<string> = new Set(['search_assets', 'find_model', 'simready_search', 'import_asset', 'request_asset']);
+/** "No assets" mode: the instruction added to the planner's system prompt. */
+export const NO_ASSETS_INSTRUCTION = 'No assets: build every object from primitives and procedural generators; write a new generator when none fits; never use library models.';
+
 /** All tools available to the planner (stable order: part of the prompt-cache prefix). */
 export const AGENT_TOOLS: ToolDef[] = [
   {

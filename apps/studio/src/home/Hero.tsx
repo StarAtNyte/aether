@@ -119,8 +119,11 @@ const Stage = memo(function Stage({ onPick }: { onPick: (t: WorldTemplate) => vo
   );
 });
 
-/** The hero. */
-export const Hero = memo(function Hero({ onPrompt, onTemplate }: { onPrompt: (prompt: string) => void; onTemplate: (slug: string) => void }): ReactElement {
+/** Tooltip of the "No assets" switch (home prompt, editor composer). */
+export const NO_ASSETS_TIP = 'Build everything from scratch: shapes and generated code, no library models';
+
+/** The hero. `noAssets` / `onNoAssets`: the "No assets" AI preference (shared with the editor and Settings). */
+export const Hero = memo(function Hero({ onPrompt, onTemplate, noAssets = false, onNoAssets }: { onPrompt: (prompt: string) => void; onTemplate: (slug: string) => void; noAssets?: boolean; onNoAssets?: (on: boolean) => void }): ReactElement {
   const [draft, setDraft] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
   // Grow with the text (every browser; `field-sizing` is not universal).
@@ -170,6 +173,12 @@ export const Hero = memo(function Hero({ onPrompt, onTemplate }: { onPrompt: (pr
               }
             }}
           />
+          {onNoAssets && (
+            <button type="button" className={`chip hero-bar__noassets${noAssets ? ' is-on' : ''}`} aria-pressed={noAssets} data-tip={NO_ASSETS_TIP} aria-label={`No assets: ${NO_ASSETS_TIP}`} data-testid="hero-no-assets" onClick={() => onNoAssets(!noAssets)}>
+              <Icon name="shapes" />
+              <span className="hero-bar__noassets-label">No assets</span>
+            </button>
+          )}
           <button type="submit" className="btn btn--primary hero-bar__go" data-kbd="↵">
             Build <Icon name="arrowUp" className="hero-bar__go-icon" />
           </button>

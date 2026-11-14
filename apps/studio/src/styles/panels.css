@@ -597,6 +597,12 @@
   color: var(--text-3);
 }
 
+/* "No assets" switch in the composer: filled while on. */
+.composer__select.composer__noassets.is-on {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
 .send-btn {
   display: grid;
   place-items: center;
@@ -2455,7 +2461,8 @@ button.chip:disabled {
 
 @container composer (max-width: 300px) {
   .composer__select[data-testid='refine-menu'] > span,
-  .composer__select[data-testid='deep-build'] > span {
+  .composer__select[data-testid='deep-build'] > span,
+  .composer__select[data-testid='no-assets'] > span {
     display: none;
   }
 }

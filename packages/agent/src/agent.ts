@@ -24,9 +24,9 @@ import { EMPTY_MEMORY, sanitizeMemory, sanitizeSelection, type RefineMemory } fr
 import type { FineEditResult } from './refine/plan';
 import { buildCoderPrompt, buildCompactSystemPrompt, buildSystemPrompt } from './prompt';
 import { errorMessage, isAbortError } from './providers/errors';
-import { AGENT_TOOLS, COMPACT_TOOLS, LEVEL_TOOLS } from './tools';
+import { AGENT_TOOLS, COMPACT_TOOLS, LEVEL_TOOLS, LIBRARY_TOOL_NAMES, NO_ASSETS_INSTRUCTION } from './tools';
 import { MAKE_TEXTURE_TOOL } from './textures';
-import { findingKey, findingsText } from '@aether/arch';
+import { setLibraryFurniture, findingKey, findingsText } from '@aether/arch';
 import { autoRepairBuildings } from './auto-repair';
 import { lumaPercentiles, targetEvidenceText, type HardcoreRun, type LumaTargets } from './hardcore';
 import { isBlankFrame, lightEvidenceText, pictureStats, type PictureStats } from './picture-stats';
@@ -227,7 +227,9 @@ export class WorldAgent {
     this.localEdits = opts.localEdits ?? this.fineEdit;
     this.maxTokens = Math.min(clampInt(opts.maxTokens, DEFAULTS.maxTokens, 256, 64_000), this.compact ? COMPACT_LIMITS.maxTokens : Infinity);
     const extra = [...(opts.levelTools ? LEVEL_TOOLS : []), ...(opts.textures ? [MAKE_TEXTURE_TOOL] : []), ...(opts.blender ? opts.blender.tools : [])];
-    this.tools = this.compact ? COMPACT_TOOLS : extra.length > 0 ? [...AGENT_TOOLS, ...extra] : AGENT_TOOLS;
+    const tools = this.compact ? COMPACT_TOOLS : extra.length > 0 ? [...AGENT_TOOLS, ...extra] : AGENT_TOOLS;
+    // "No assets" mode: the library tools are withheld (the executor refuses them too).
+    this.tools = opts.noAssets ? tools.filter((t) => !LIBRARY_TOOL_NAMES.has(t.name)) : tools;
     const ids = new Set<string>();
     for (const g of opts.catalogs.generators) {
       if (typeof g === 'object' && g !== null && 'id' in g && typeof (g as { id: unknown }).id === 'string') ids.add((g as { id: string }).id);
@@ -242,7 +244,11 @@ export class WorldAgent {
 
   /** The (cached) planner system prompt. */
   get system(): string {
-    this.systemPrompt ??= this.compact ? buildCompactSystemPrompt(this.opts.catalogs) : buildSystemPrompt(this.opts.catalogs, { level: this.opts.levelTools !== undefined });
+    if (this.systemPrompt === undefined) {
+      const base = this.compact ? buildCompactSystemPrompt(this.opts.catalogs) : buildSystemPrompt(this.opts.catalogs, { level: this.opts.levelTools !== undefined });
+      // "No assets" mode: one instruction on top of the normal prompt.
+      this.systemPrompt = this.opts.noAssets ? `${base}\n\n## ${NO_ASSETS_INSTRUCTION}` : base;
+    }
     return this.systemPrompt;
   }
 
@@ -260,6 +266,8 @@ export class WorldAgent {
     let failed = false;
     let cancelled = false;
     this.seen = null;
+    // "No assets": rooms are furnished with the parametric pieces only, for the length of this run.
+    const libraryWas = this.opts.noAssets ? setLibraryFurniture(false) : null;
     try {
       for await (const ev of this.loop(prompt, host, opts, usage)) {
         if (ev.type === 'error') failed = true;
@@ -270,6 +278,8 @@ export class WorldAgent {
       const aborted = opts.signal?.aborted === true || isAbortError(e);
       cancelled = aborted;
       yield { type: 'error', text: aborted ? 'Cancelled.' : `Agent failed: ${errorMessage(e).slice(0, 500)}` };
+    } finally {
+      if (libraryWas !== null) setLibraryFurniture(libraryWas);
     }
     // The planner conversation of this run is continued by the next one; a failed run starts the next one afresh.
     if (session) {
@@ -384,10 +394,11 @@ export class WorldAgent {
       ...(this.opts.blender ? { blender: this.opts.blender } : {}),
       ...(signal ? { signal } : {}),
       realistic: realisticWorld(request, host.getWorld()),
+      ...(this.opts.noAssets ? { noAssets: true } : {}),
     };
 
-    // Library furniture and models are resolved by name: the catalog must be in before anything is planned.
-    await loadCatalog().catch(() => undefined);
+    // Library furniture and models are resolved by name: the catalog must be in before anything is planned ("No assets": never loaded).
+    if (!this.opts.noAssets) await loadCatalog().catch(() => undefined);
     // A picture of a room with a prompt about it: rebuild THAT room from the photo (never a preset room).
     const photoMode = opts.hardcore ? 'off' : (opts.photo ?? 'auto');
     // The room-from-photo pipeline is large and rarely used: loaded on demand so it stays out of the first-load bundle.

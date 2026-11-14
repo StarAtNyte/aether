@@ -26,7 +26,7 @@ import { lookPatches, type TuneLookInput } from './look-edit';
 import { settleFindings } from './settle';
 import { makeRealistic } from './providers/mock/realistic';
 import { errorMessage } from './providers/errors';
-import { TOOL_LIMITS, ToolInputs, isAgentTool, isLevelToolName } from './tools';
+import { LIBRARY_TOOL_NAMES, NO_ASSETS_INSTRUCTION, TOOL_LIMITS, ToolInputs, isAgentTool, isLevelToolName } from './tools';
 import { makeTextureTool } from './textures';
 import type { AgentEvent, AgentHost, AgentOptions, HubModelHit, Provider, UsageTotals } from './types';
 
@@ -75,6 +75,15 @@ export interface ExecutorContext {
    * flowers) for the realistic set and says so in its result.
    */
   realistic?: boolean;
+  /** "No assets" mode (see `AgentOptions.noAssets`): library tools and asset/model shapes are refused. */
+  noAssets?: boolean;
+}
+
+/** "No assets" mode: the first asset/model shape in a patch list (as a short description), or null. */
+function assetShapeIn(patches: readonly unknown[]): string | null {
+  const text = JSON.stringify(patches);
+  const m = /"kind"\s*:\s*"(asset|model)"/.exec(text);
+  return m ? `a shape of kind "${m[1]}"` : null;
 }
 
 const MAX_RESULT_CHARS = 20_000;
@@ -190,6 +199,10 @@ export function carryDependents(world: WorldDoc, raw: readonly unknown[]): { pat
 
 async function applyPatchesTool(ctx: ExecutorContext, input: z.infer<typeof ToolInputs.apply_patches>): Promise<ToolOutcome> {
   const message = input.message.trim().slice(0, 200) || 'Agent edit';
+  if (ctx.noAssets) {
+    const found = assetShapeIn(input.patches);
+    if (found) return fail(`No assets: this world is built without library models, and the patches contain ${found}. Use a primitive or a procedural shape (write_generator for a new object) instead.`);
+  }
   let exchanged = 0;
   if (ctx.realistic) {
     // The stylised low-poly nature parts read as toys next to everything else: build the realistic stand-ins instead.
@@ -782,6 +795,7 @@ async function executeToolRaw(ctx: ExecutorContext, name: string, rawInput: unkn
       return fail(`Tool "${name}" failed: ${errorMessage(e).slice(0, 500)}`);
     }
   }
+  if (ctx.noAssets && LIBRARY_TOOL_NAMES.has(name)) return fail(`No assets: "${name}" is not available in this world. ${NO_ASSETS_INSTRUCTION}`);
   if (!isAgentTool(name)) return fail(`Unknown tool "${name.slice(0, 64)}". Available: apply_patches, shape_land, tune_feel, tune_look, bake_light, sculpt, author_story, set_presentation, build_architecture, design_plan, place_items, edit_items, query_scene, query_level, place_level_items, write_generator, write_script, request_asset, search_assets, find_model, simready_search, import_asset, inspect, run_verification, finish.`);
   if (typeof rawInput === 'string') return fail('The tool arguments were not valid JSON. Resend the call with a valid JSON object.');
   if (inputSize(rawInput) > TOOL_LIMITS.MAX_INPUT_CHARS) return fail(`Tool input too large (max ${TOOL_LIMITS.MAX_INPUT_CHARS} characters). Split it into several calls.`);
