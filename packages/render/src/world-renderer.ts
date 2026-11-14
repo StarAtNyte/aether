@@ -443,6 +443,8 @@ export interface FrameContentOptions {
   duration?: number;
   /** Start from a wider, higher establishing shot and fly in (first load). */
   flyIn?: boolean;
+  /** Frame only the world's buildings when it has any (architecture's opening view). */
+  buildingsOnly?: boolean;
 }
 
 /** Framing of worlds with buildings: a higher, tighter three-quarter view (archviz axonometric feel). */
@@ -2462,7 +2464,13 @@ export class WorldRenderer {
       if (item.focus || (item.weight === undefined && (item.max[1] - item.min[1]) > f.radius * 0.08)) focus.push([(item.min[0] + item.max[0]) / 2, item.min[1] + (item.max[1] - item.min[1]) * 0.45, (item.min[2] + item.max[2]) / 2]);
     }
     const target = this.orbitTarget();
-    const keys = this.keysOffRim(tourKeys({ pos: [cam.x, cam.y, cam.z], target }, f.center, f.radius, focus, Math.max(0.5, this.rig.floorY)));
+    // A view is clear when nothing solid stands between the camera and most of the way to what it looks at.
+    const clear = (a: Vec3, b: Vec3): boolean => {
+      const d = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+      const hit = this.raycastWorld(a, [b[0] - a[0], b[1] - a[1], b[2] - a[2]], d);
+      return !hit || Math.hypot(hit.point[0] - b[0], hit.point[1] - b[1], hit.point[2] - b[2]) < d * 0.25;
+    };
+    const keys = this.keysOffRim(tourKeys({ pos: [cam.x, cam.y, cam.z], target }, f.center, f.radius, focus, Math.max(0.5, this.rig.floorY), clear));
     this.rig.startTour(new CameraTour(keys, seconds ?? TOUR_SECONDS));
     this.needsDraw = true;
     return true;
@@ -3948,7 +3956,7 @@ export class WorldRenderer {
    */
   frameContent(opts: FrameContentOptions = {}): boolean {
     if (this.disposed) return false;
-    const items = this.grow.withFullScale(() => collectFramingItems(this.sync, new Set(opts.focus ?? [])));
+    const items = this.grow.withFullScale(() => collectFramingItems(this.sync, new Set(opts.focus ?? []), { buildingsOnly: opts.buildingsOnly === true }));
     for (const p of opts.focusPoints ?? []) {
       if (p.every(Number.isFinite)) items.push({ min: [p[0] - 1.5, p[1], p[2] - 1.5], max: [p[0] + 1.5, p[1] + 2, p[2] + 1.5], focus: true });
     }

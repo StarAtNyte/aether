@@ -82,3 +82,14 @@ describe('drone tour of a large scene', () => {
     expect(tour.seconds).toBeCloseTo(times[times.length - 1]!, 6);
   });
 });
+
+describe('tourKeys with a backdrop', () => {
+  it('sweeps the clear arc instead of circling behind a wall', () => {
+    const from = { pos: [0, 8, 30] as [number, number, number], target: [0, 1, 0] as [number, number, number] };
+    // A wall along z = -5: any camera behind it (z < -5) has no clear view.
+    const keys = tourKeys(from, [0, 0, 0], 20, [], 0.5, (p) => p[2] > -5);
+    for (const k of keys) expect(k.pos[2]).toBeGreaterThan(-5);
+    // Without the check the loop goes all the way round.
+    expect(tourKeys(from, [0, 0, 0], 20).some((k) => k.pos[2] < -5)).toBe(true);
+  });
+});

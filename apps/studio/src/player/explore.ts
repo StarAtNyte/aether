@@ -225,6 +225,14 @@ export class ExploreController {
       else this.placeFromCamera();
       // The tour starts from the hero view (its stops may still be coming: see setStops).
       if (entry) this.schedule(HERO_HOLD_S, 'next', true);
+    } else if (entry && this.exp.kind === 'arch') {
+      // Architecture opens on the whole building from an elevated three-quarter view (its eye-level arrival is the
+      // first viewpoint, one Space away), not up against a wall.
+      r.setCameraMode('orbit');
+      this.set({ index: -1, view: 'orbit' });
+      // A small interior (one building, a flat or a room or two) opens cut away, so its rooms are what you see first.
+      if (this.exp.dollhouse && smallInterior(this.sim.syncedWorld ?? { entities: {} })) this.toggleDollhouse();
+      else void this.sim.frameWorld({ flyIn: !this.opts.reduceMotion, buildingsOnly: true });
     } else if (entry && hero) {
       if (this.exp.entry === 'fly-in' && !this.opts.reduceMotion) {
         // From high and far behind the hero view, a slow descent into it.
@@ -522,7 +530,7 @@ export class ExploreController {
     r.setArchView({ walls: 'cutaway' });
     r.setCameraMode('orbit');
     this.set({ view: 'dollhouse' });
-    void this.sim.frameWorld();
+    void this.sim.frameWorld({ buildingsOnly: true });
   }
 
   /** Floor plan (walls down, straight down) on or off, from the dollhouse. */
@@ -532,7 +540,7 @@ export class ExploreController {
     const r = this.sim.renderer;
     r.setArchView({ walls: on ? 'down' : 'cutaway' });
     if (on) this.sim.viewPreset('top');
-    else void this.sim.frameWorld();
+    else void this.sim.frameWorld({ buildingsOnly: true });
     this.set({ view: on ? 'plan' : 'dollhouse' });
   }
 
@@ -665,4 +673,23 @@ export class ExploreController {
     if (this.state.view === 'dollhouse' || this.state.view === 'plan') r.setArchView({ walls: 'up' });
     this.useLens(false);
   }
+}
+
+/** Total room area (m²) under which a single-building world opens as a dollhouse. */
+const SMALL_INTERIOR_M2 = 110;
+
+/** One building whose rooms add up to less than {@link SMALL_INTERIOR_M2}: an apartment, a room or two. */
+export function smallInterior(world: { entities: Record<string, { arch?: unknown }> }): boolean {
+  let buildings = 0;
+  let area = 0;
+  for (const e of Object.values(world.entities)) {
+    const plan = (e.arch as { plan?: { levels?: { rooms?: { rect?: readonly number[] }[] }[] } } | undefined)?.plan;
+    if (!plan) continue;
+    buildings++;
+    for (const level of plan.levels ?? []) for (const room of level.rooms ?? []) {
+      const r = room.rect;
+      if (r && r.length === 4) area += Math.abs((r[2]! - r[0]!) * (r[3]! - r[1]!));
+    }
+  }
+  return buildings === 1 && area > 0 && area < SMALL_INTERIOR_M2;
 }

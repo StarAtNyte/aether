@@ -34,7 +34,13 @@ const _box = new Box3();
 /** Tags of the sights a viewpoint looks for (see `FramingItem.landmark`). */
 const LANDMARK_TAGS: ReadonlySet<string> = new Set(['landmark', 'waterfall', 'temple', 'statue', 'monument', 'tower', 'lighthouse', 'castle', 'cathedral', 'church', 'shrine', 'pagoda', 'fountain', 'bridge']);
 
-export function collectFramingItems(sync: SceneSync, focus: ReadonlySet<EntityId> = new Set()): FramingItem[] {
+const _union = new Box3();
+const isUnder = (o: Object3D, root: Object3D): boolean => {
+  for (let p = o.parent; p; p = p.parent) if (p === root) return true;
+  return false;
+};
+
+export function collectFramingItems(sync: SceneSync, focus: ReadonlySet<EntityId> = new Set(), opts: { buildingsOnly?: boolean } = {}): FramingItem[] {
   const items: FramingItem[] = [];
   const scenery: FramingItem[] = [];
   sync.root.updateMatrixWorld(true);
@@ -51,6 +57,24 @@ export function collectFramingItems(sync: SceneSync, focus: ReadonlySet<EntityId
   for (const b of buildings) {
     _box.setFromObject(b);
     if (!_box.isEmpty()) items.push({ min: _box.min.toArray() as Vec3, max: _box.max.toArray() as Vec3, focus: true });
+  }
+  // Architecture's opening frames the buildings themselves: the valley or skyline around them would shrink them to a
+  // dot, and so would a building's own site (garden, terrain), which hangs under it.
+  if (opts.buildingsOnly && buildings.size > 0) {
+    const own: FramingItem[] = [];
+    for (const b of buildings) {
+      _union.makeEmpty();
+      sync.forEachNode((node) => {
+        if (node.transient || !node.object.visible) return;
+        if (node.object !== b && !isUnder(node.object, b)) return;
+        const role = node.entity.arch?.role;
+        if (role === 'site' || node.entity.tags.includes('terrain')) return;
+        _box.setFromObject(node.content);
+        if (!_box.isEmpty()) _union.union(_box);
+      });
+      if (!_union.isEmpty()) own.push({ min: _union.min.toArray() as Vec3, max: _union.max.toArray() as Vec3, focus: true });
+    }
+    if (own.length > 0) return own;
   }
   sync.forEachNode((node) => {
     if (node.transient || node.entity.template || !node.object.visible) return;

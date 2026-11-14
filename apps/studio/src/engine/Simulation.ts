@@ -781,7 +781,7 @@ export class Simulation {
    * for the renderer to catch up. This is the overview; worlds open on
    * {@link openWorld}.
    */
-  async frameWorld(opts: { flyIn?: boolean } = {}): Promise<void> {
+  async frameWorld(opts: { flyIn?: boolean; buildingsOnly?: boolean } = {}): Promise<void> {
     await this.whenSynced();
     if (this.disposed || this.session) return;
     this.overviewReturn = null;
@@ -802,7 +802,7 @@ export class Simulation {
     const spawnFocus = p.mode !== 'orbit' && !findAvatar(world) && !hasBuilding(world);
     await this.renderer.prepareFraming();
     if (this.disposed || this.session || this.history.current !== world) return;
-    if (this.renderer.frameContent({ focusPoints: spawnFocus ? [p.spawn] : [], ...(opts.flyIn ? { flyIn: true } : {}) })) return;
+    if (this.renderer.frameContent({ focusPoints: spawnFocus ? [p.spawn] : [], ...(opts.flyIn ? { flyIn: true } : {}), ...(opts.buildingsOnly ? { buildingsOnly: true } : {}) })) return;
     // Nothing rendered yet (e.g. every entity failed to build): fall back to document positions.
     if (spawnFocus) {
       this.renderer.frameSphere(p.spawn, PLAYER_FRAME_RADIUS, FRAME_OFFSET, FRAME_DURATION);

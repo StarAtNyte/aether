@@ -25,22 +25,48 @@ export const TOUR_SECONDS = 26;
  * ending at the current camera pose. `focus` points (statues, set-pieces)
  * become look targets of the low passes. Never below `floorY`.
  */
-export function tourKeys(from: TourKey, center: Vec3, radius: number, focus: readonly Vec3[] = [], floorY = 0.5): TourKey[] {
+export function tourKeys(from: TourKey, center: Vec3, radius: number, focus: readonly Vec3[] = [], floorY = 0.5, clear?: (pos: Vec3, target: Vec3) => boolean): TourKey[] {
   const r = Math.max(2, Number.isFinite(radius) ? radius : 10);
   const start = Math.atan2(from.pos[0] - center[0], from.pos[2] - center[2]);
-  const keys: TourKey[] = [from];
-  const stops = 6;
-  for (let i = 1; i <= stops; i++) {
-    const a = start + (i / (stops + 1)) * Math.PI * 2;
+  const key = (a: number, i: number): TourKey => {
     const low = i % 2 === 1;
     const dist = r * (low ? 0.75 : 1.55);
     const height = Math.max(floorY, center[1] + r * (low ? 0.12 : 0.65));
     const f = focus.length > 0 ? focus[(i - 1) % focus.length] : undefined;
     const target: Vec3 = low && f ? [f[0], f[1], f[2]] : [center[0], center[1] + r * (low ? 0.05 : 0.1), center[2]];
-    keys.push({ pos: [center[0] + Math.sin(a) * dist, height, center[2] + Math.cos(a) * dist], target });
+    return { pos: [center[0] + Math.sin(a) * dist, height, center[2] + Math.cos(a) * dist], target };
+  };
+  const stops = 6;
+  // A scene with a solid backdrop (a stage wall, a cliff) is not circled: the tour sweeps the arc that sees it.
+  const arc = clear ? clearArc(start, (a) => clear(key(a, 2).pos, key(a, 2).target) && clear(key(a, 1).pos, key(a, 1).target)) : null;
+  const keys: TourKey[] = [from];
+  for (let i = 1; i <= stops; i++) {
+    const t = i / (stops + 1);
+    // Full circle; or out to one end of the clear arc, across to the other and back.
+    const a = arc ? start + (t < 0.5 ? arc[1] * Math.sin(t * Math.PI * 2) : arc[0] * Math.sin((t - 0.5) * Math.PI * 2)) : start + t * Math.PI * 2;
+    keys.push(key(a, i));
   }
   keys.push({ pos: [...from.pos], target: [...from.target] });
   return keys;
+}
+
+/**
+ * The arc around `start` (offsets in radians, [negative, positive]) whose views are all clear, sampled every 15°;
+ * null when the whole circle is clear (or nothing beside the start is).
+ */
+function clearArc(start: number, isClear: (a: number) => boolean): [number, number] | null {
+  const step = Math.PI / 12;
+  const n = 24;
+  const ok: boolean[] = [];
+  for (let i = 0; i < n; i++) ok.push(isClear(start + i * step));
+  if (ok.every(Boolean)) return null;
+  let hi = 0;
+  while (hi + 1 < n && ok[hi + 1]) hi++;
+  let lo = 0;
+  while (lo + 1 < n && ok[(n - (lo + 1)) % n]) lo++;
+  if (hi === 0 && lo === 0) return null;
+  // Stay a little inside the clear samples.
+  return [-Math.max(0, lo - 0.5) * step, Math.max(0, hi - 0.5) * step];
 }
 
 const _look = new Vector3();
