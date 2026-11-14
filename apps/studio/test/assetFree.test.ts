@@ -19,7 +19,7 @@ describe('"Asset-free" worlds', () => {
   const marked = SHOWCASE.filter((e) => e.assetFree);
 
   it('marks the worlds built from scratch', () => {
-    expect(marked.map((e) => e.slug)).toEqual(expect.arrayContaining(['desert-citadel', 'evening-bistro', 'starlight-cinema']));
+    expect(marked.map((e) => e.slug)).toEqual(expect.arrayContaining(['desert-citadel', 'himalayan-valley', 'evening-bistro', 'starlight-cinema']));
   });
 
   for (const e of marked) {

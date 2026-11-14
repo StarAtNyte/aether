@@ -144,7 +144,7 @@ crafted parts: venues, streets, harbours, seven regional house types, gyms, clin
 
 ## Gallery
 
-Eleven featured projects ship with the studio and open from the home page.
+Twelve featured projects ship with the studio and open from the home page.
 Each was built from the prompt on its card. Each passes its physics checks,
 and the bot plays the games to their win screens in the test suite. Blockfall
 and Sakura River are the exceptions: they use their own game loops, which the
@@ -160,17 +160,17 @@ furnished interiors, waterfalls and whole towns, smooth on a laptop's integrated
   <tr>
     <td width="33%" valign="top"><img src="docs/screenshots/showcase/lisbon-hills.webp" width="100%" alt="Lisbon Hills"><br><b>Lisbon Hills</b><br><sub>A terraced Lisbon hillside to walk: pastel townhouses, cobbled streets and stairs up to a castle, a tram line, a red suspension bridge</sub></td>
     <td width="33%" valign="top"><img src="docs/screenshots/showcase/desert-citadel.webp" width="100%" alt="Desert Citadel"><br><b>Desert Citadel</b> · <i>asset-free</i><br><sub>A walled oasis town at golden hour, built from scratch by the agent on Opus 5.5: no library models, every piece shapes and code it wrote</sub></td>
-    <td width="33%" valign="top"><img src="docs/screenshots/showcase/dusk-lake-house.webp" width="100%" alt="Dusk House by the Lake"><br><b>Dusk House by the Lake</b><br><sub>Explode it, cut it, walk to the jetty</sub></td>
+    <td width="33%" valign="top"><img src="docs/screenshots/showcase/himalayan-valley.webp" width="100%" alt="Himalayan Valley"><br><b>Himalayan Valley</b> · <i>asset-free</i><br><sub>A Himalayan river valley at sunrise, built from scratch by the agent on Opus 5.5: a stone village with prayer flags, barley terraces, a waterfall and a monastery on a crag, every piece code it wrote</sub></td>
   </tr>
   <tr>
+    <td width="33%" valign="top"><img src="docs/screenshots/showcase/dusk-lake-house.webp" width="100%" alt="Dusk House by the Lake"><br><b>Dusk House by the Lake</b><br><sub>Explode it, cut it, walk to the jetty</sub></td>
     <td width="33%" valign="top"><img src="docs/screenshots/showcase/kestrel-outpost.webp" width="100%" alt="Kestrel Outpost"><br><b>Kestrel Outpost</b><br><sub>A third-person shooter: hold a cliff-ringed relay against five waves</sub></td>
     <td width="33%" valign="top"><img src="docs/screenshots/showcase/casa-patio.webp" width="100%" alt="Casa del Patio"><br><b>Casa del Patio</b><br><sub>A courtyard house above Sintra, every drawer opens</sub></td>
-    <td width="33%" valign="top"><img src="docs/screenshots/showcase/skyline-penthouse.webp" width="100%" alt="Skyline Penthouse"><br><b>Skyline Penthouse</b><br><sub>Walk it, switch the lights, change the hour</sub></td>
   </tr>
   <tr>
+    <td width="33%" valign="top"><img src="docs/screenshots/showcase/skyline-penthouse.webp" width="100%" alt="Skyline Penthouse"><br><b>Skyline Penthouse</b><br><sub>Walk it, switch the lights, change the hour</sub></td>
     <td width="33%" valign="top"><img src="docs/screenshots/showcase/starlight-cinema.webp" width="100%" alt="Starlight Cinema"><br><b>Starlight Cinema</b> · <i>asset-free</i><br><sub>A brick cinema with raked red seating, a screen and stage, a projection booth and a lit lobby</sub></td>
     <td width="33%" valign="top"><img src="docs/screenshots/showcase/evening-bistro.webp" width="100%" alt="Evening Bistro"><br><b>Evening Bistro</b> · <i>asset-free</i><br><sub>A brick bistro with laid tables, pendant lamps, a bar and a kitchen, lit for the evening</sub></td>
-    <td width="33%" valign="top"></td>
   </tr>
 </table>
 

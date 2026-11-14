@@ -41,6 +41,7 @@ const OTHER_BOTS: Record<string, string> = {
   'sanctuary-falls': 'scene: an orbit showcase with no goal',
   'sanctuary-terraces': 'scene: an orbit showcase with no goal',
   'desert-citadel': 'scene: an orbit showcase with no goal',
+  'himalayan-valley': 'scene: an orbit showcase with no goal',
   'lisbon-hills': 'city: a street-level hero view and a drone tour, no goal',
   'kestrel-outpost': 'shooter: packages/agent/test/kestrel-outpost.test.ts fights all five waves to an ending with the weapon',
 };

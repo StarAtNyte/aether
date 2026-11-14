@@ -24,7 +24,7 @@ export const isFilm = (t: WorldTemplate): t is FilmTemplate => t.film !== undefi
 
 /** The featured templates (home row, agent empty state), in manifest order. Films are never featured (the gallery cards open worlds). */
 /** The Featured gallery's first cards, in this order (lead, two sides, then the first small card); the rest follow in manifest order. */
-const FEATURED_FIRST: readonly string[] = ['cloudwatch-harbour', 'sanctuary-falls', 'linden-row', 'lisbon-hills', 'desert-citadel'];
+const FEATURED_FIRST: readonly string[] = ['cloudwatch-harbour', 'sanctuary-falls', 'linden-row', 'lisbon-hills', 'desert-citadel', 'himalayan-valley'];
 const featuredRank = (slug: string): number => {
   const i = FEATURED_FIRST.indexOf(slug);
   return i < 0 ? FEATURED_FIRST.length : i;
@@ -78,7 +78,7 @@ export const BEST_FIRST: readonly string[] = Object.freeze([
   // games
   'highland-trail', 'kestrel-outpost', 'lantern-isles', 'neon-rain-city', 'hollow-gate', 'sakura-river', 'kepler-base',
   // scenes
-  'sanctuary-falls', 'lisbon-hills', 'desert-citadel', 'sanctuary-terraces', 'cliff-sanctuary', 'sanctuary-ascent', 'four-seasons-garden', 'painterly-meadow',
+  'sanctuary-falls', 'lisbon-hills', 'desert-citadel', 'himalayan-valley', 'sanctuary-terraces', 'cliff-sanctuary', 'sanctuary-ascent', 'four-seasons-garden', 'painterly-meadow',
   // stories and physics
   'cloudwatch-harbour', 'kyoto-temple', 'chain-reaction',
 ]);
