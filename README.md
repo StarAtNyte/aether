@@ -48,6 +48,10 @@ and share it with one link.
   phone. Publish it as a game, a video, a picture, a 3D model or a floor plan.
   Published worlds open in their own mode (third-person play, walkthrough, or a
   drone tour over a city) and can be remixed into the editor.
+- **Build from scratch.** Switch on **No assets** and the AI makes every object
+  itself: shapes and generators it writes, no library models, so nothing needs
+  a licence or a credit. [Desert Citadel](#gallery) was built this way; worlds
+  made so carry an **Asset-free** mark on their cards.
 - **Range.** Architecture, interiors, cities, landscapes, games (shooter,
   exploration, boat) and animated story films with a play-as-the-character mode.
 
@@ -164,7 +168,7 @@ furnished interiors, waterfalls and whole towns, smooth on a laptop's integrated
   </tr>
   <tr>
     <td width="33%" valign="top"><img src="docs/screenshots/showcase/chain-reaction.webp" width="100%" alt="Chain Reaction"><br><b>Chain Reaction</b><br><sub>Five Rube Goldberg machines, every bounce checked</sub></td>
-    <td width="33%" valign="top"><img src="docs/screenshots/showcase/kart-canyon.webp" width="100%" alt="Kart Canyon"><br><b>Kart Canyon</b><br><sub>Three laps, checkpoints, boost pads, two rivals</sub></td>
+    <td width="33%" valign="top"><img src="docs/screenshots/showcase/desert-citadel.webp" width="100%" alt="Desert Citadel"><br><b>Desert Citadel</b> · <i>asset-free</i><br><sub>A walled oasis town at golden hour, built from scratch by the agent on Opus 5.5: no library models, every piece shapes and code it wrote</sub></td>
     <td width="33%" valign="top"><img src="docs/screenshots/showcase/lantern-isles.webp" width="100%" alt="Lantern Isles"><br><b>Lantern Isles</b><br><sub>Find twelve lanterns across floating islands</sub></td>
   </tr>
   <tr>
@@ -558,6 +562,10 @@ was tried and rejected, and how to measure safely on your own machine.
 | **Your own API key** (Anthropic, OpenAI, OpenRouter, Google Gemini) | **Settings → AI connection**. The browser calls the provider directly, and the key stays in the tab unless you choose to remember it | the provider's prices |
 | **On-device model** (WebLLM, experimental) | Settings, WebGPU only, opt-in download | none |
 | **Offline planner** (fallback, not the main path) | always available; reads English only and builds from a fixed vocabulary. The studio says when it is in use | none |
+
+**No assets** (the switch by the prompt box, in the editor's composer and in **Settings → AI connection**) works with any
+of these: the agent gets no library tools, is told to write a generator for anything it needs, cannot place a library
+model, and furnishes rooms with the parametric pieces only. The run summary says **Built from scratch**.
 
 <details>
 <summary><b>How local logins are sandboxed, and driving Aether from your agent (MCP)</b></summary>
