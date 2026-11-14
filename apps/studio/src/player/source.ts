@@ -6,6 +6,8 @@
  * self-hosted build. All are untrusted and fully validated; a failure becomes
  * a readable message, never a crash.
  */
+import type { WorldDoc } from '@aether/core';
+import { registerBundledTextureSets } from '@aether/assets';
 import { decodeShare, shareValueFromHash } from '../publish/share';
 import { defaultControls, IMPORT_PATH, MAX_GAME_JSON_BYTES, parseGameManifest, type GameManifest } from '../publish/manifest';
 
@@ -299,4 +301,13 @@ export async function registerBundledImports(game: GameManifest, fetchFn: typeof
     }
   }
   return loaded;
+}
+
+/**
+ * Register the texture sets a world names that are served as static files (records with a `base` folder, as the bundled
+ * templates carry), as the studio's texture controller does when it opens a world. `root` is the site root the `base` is
+ * relative to (the player's document base). Returns how many sets were registered.
+ */
+export function registerWorldTextures(world: Pick<WorldDoc, 'textures'>, root: string): number {
+  return registerBundledTextureSets(world.textures, root.endsWith('/') ? root : `${root}/`);
 }

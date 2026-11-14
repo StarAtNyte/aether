@@ -70,3 +70,30 @@ describe('texture controller', () => {
     c.dispose();
   });
 });
+
+describe('player world textures', () => {
+  it('the /play player registers the textures of bundled templates (Lisbon Hills), served from the site', async () => {
+    const { readFileSync, existsSync } = await import('node:fs');
+    const { registerWorldTextures } = await import('../src/player/source');
+    const root = new URL('../public/', import.meta.url);
+    for (const slug of ['lisbon-hills']) {
+      clearTextureSets();
+      const world = (JSON.parse(readFileSync(new URL(`templates/worlds/${slug}.json`, root), 'utf8')) as { world: { textures?: Record<string, TextureSetDef> } }).world;
+      const ids = Object.keys(world.textures ?? {});
+      expect(ids.length).toBeGreaterThan(0);
+      expect(registerWorldTextures(world, '/')).toBe(ids.length);
+      for (const id of ids) {
+        const set = textureSet(id);
+        expect(set, `${slug}: ${id}`).toBeTruthy();
+        for (const tier of Object.values(set!.tiers)) {
+          for (const url of [tier.albedo, tier.orm, tier.normal]) {
+            expect(url.startsWith('/templates/textures/')).toBe(true);
+            expect(existsSync(new URL(url.slice(1), root)), url).toBe(true);
+          }
+        }
+      }
+    }
+    // The player calls it on boot, before the world is built.
+    expect(readFileSync(new URL('../src/player/PlayerApp.tsx', import.meta.url), 'utf8')).toMatch(/registerWorldTextures\(world,/);
+  });
+});

@@ -32,7 +32,7 @@ import type { InteractPrompt } from '../engine/interaction';
 import { playMusic, musicSeed, type MusicPlayer } from '../publish/video/music';
 import type { GameManifest } from '../publish/manifest';
 import { ProofBadge } from './ProofBadge';
-import { loadGame, loadSave, registerBundledImports, templateRoute, type GameSource } from './source';
+import { loadGame, loadSave, registerBundledImports, registerWorldTextures, templateRoute, type GameSource } from './source';
 import { browserSettingsStorage, defaultSettings, loadSettings, qualityPlan, QUALITIES, saveSettings, type PlayerSettings, type Quality } from './settings';
 import { experienceFor, keyAction, keyHint, type Experience, type PlayerPhase } from './experience';
 import type { ExploreController, ExploreState } from './explore';
@@ -851,6 +851,8 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
     window.__aetherCook = cookHandle;
     void (async () => {
       try {
+        // The world's own texture sets (static maps next to the site, `base` folder): the studio registers them on open.
+        registerWorldTextures(world, new URL('./', document.baseURI).pathname);
         const [cooked] = await Promise.all([openCooked(game, world, cookHandle), relativeLibrary(game).then(() => registerBundledImports(game))]);
         if (route?.cook === 'record') cookHandle.record = { irHash: await worldIrHash(world), genVersion: DDC_CODE_VERSION, world };
         // The view the cook opened on, where the IR has none of its own (the renderer then skips choosing one).
