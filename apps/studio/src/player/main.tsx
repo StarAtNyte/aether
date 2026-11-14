@@ -7,6 +7,10 @@
 // Evaluated first: core configures zod (jitless) before any schema is defined.
 import '@aether/core';
 import { registerOfflineCache } from './offline';
+import { installStaleDeployReload } from '../components/ErrorBoundary';
+
+// A deploy that replaced the files under an open page: reload once into the new build.
+installStaleDeployReload();
 
 const root = document.getElementById('player');
 if (root) {

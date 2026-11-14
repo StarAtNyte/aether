@@ -29,6 +29,10 @@ import { applyTheme, themeFromSetting } from './lib/theme';
 import { installTooltips } from './components/ui/tooltips';
 import { extractBridgeLink } from './ai/deepLink';
 import { installGlobalErrorReporting, serverErrorReporter, type GlobalErrorTarget } from './lib/globalErrors';
+import { installStaleDeployReload } from './components/ErrorBoundary';
+
+// A deploy that replaced the files under an open page: reload once into the new build.
+installStaleDeployReload();
 
 // A bridge pairing deep link is removed from the address bar before anything else reads it.
 const bridgeLink = extractBridgeLink(location.href);

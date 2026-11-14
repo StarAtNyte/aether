@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { ErrorBoundary, classifyFailure, failureCopy } from '../src/components/ErrorBoundary';
+import { ErrorBoundary, classifyFailure, failureCopy, reloadForStaleDeploy } from '../src/components/ErrorBoundary';
 
 describe('error boundary', () => {
   it('classifies chunk-load failures by connectivity', () => {
@@ -40,5 +40,20 @@ describe('error boundary', () => {
     const html = renderToStaticMarkup(b.render() as ReturnType<typeof createElement>);
     expect(html).toContain('Try again');
     expect(html).not.toContain('Back to projects');
+  });
+});
+
+describe('stale deploy', () => {
+  it('reloads once when a dynamic import of a replaced build fails, never in a loop, never for a crash', () => {
+    const m = new Map<string, string>();
+    const store = { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v) };
+    let reloads = 0;
+    const reload = (): void => void reloads++;
+    const stale = new TypeError('Failed to fetch dynamically imported module: https://x/assets/PlayerApp-abc.js');
+    expect(reloadForStaleDeploy(new Error('boom'), store, reload, 1_000)).toBe(false);
+    expect(reloadForStaleDeploy(stale, store, reload, 1_000)).toBe(true);
+    expect(reloadForStaleDeploy(stale, store, reload, 30_000)).toBe(false);
+    expect(reloadForStaleDeploy(stale, store, reload, 120_000)).toBe(true);
+    expect(reloads).toBe(2);
   });
 });

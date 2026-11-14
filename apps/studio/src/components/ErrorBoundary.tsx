@@ -16,6 +16,42 @@ export function classifyFailure(error: unknown, online: boolean = typeof navigat
   return 'crash';
 }
 
+const STALE_KEY = 'aether:stale-reload';
+
+/**
+ * A deploy replaced the app's files while this page was open: its dynamic imports now 404. Reload once to pick up the
+ * new build (not again within a minute, so a real outage shows the error instead of a reload loop). Returns whether it
+ * reloads.
+ */
+export function reloadForStaleDeploy(error: unknown, store: Pick<Storage, 'getItem' | 'setItem'> | null = safeSession(), reload: () => void = () => location.reload(), now: number = Date.now()): boolean {
+  const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+  if (offline || classifyFailure(error, true) !== 'chunk' || !store) return false;
+  const last = store.getItem(STALE_KEY);
+  if (last !== null && now - Number(last) < 60_000) return false;
+  store.setItem(STALE_KEY, String(now));
+  reload();
+  return true;
+}
+
+function safeSession(): Storage | null {
+  try {
+    return typeof sessionStorage === 'undefined' ? null : sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+/** Page-wide: a failed preload or dynamic import outside a boundary (engine code, workers' loaders) reloads once too. */
+export function installStaleDeployReload(): void {
+  if (typeof window === 'undefined') return;
+  window.addEventListener('vite:preloadError', (e) => {
+    if (reloadForStaleDeploy((e as Event & { payload?: unknown }).payload ?? new Error('Failed to fetch dynamically imported module'))) e.preventDefault();
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    if (reloadForStaleDeploy(e.reason)) e.preventDefault();
+  });
+}
+
 /** Title and text shown for a failure. Pure. */
 export function failureCopy(kind: FailureKind, what: string): { title: string; text: string } {
   if (kind === 'offline') return { title: 'You appear to be offline', text: `The ${what} could not load. Check your connection and try again; your projects are safe on this device.` };
@@ -51,6 +87,8 @@ export class ErrorBoundary extends Component<BoundaryProps, BoundaryState> {
   override componentDidCatch(error: unknown, info: ErrorInfo): void {
     this.props.onError?.(error);
     console.error('[aether] a screen failed', error, info.componentStack ?? '');
+    // A deploy replaced the files under an open page: reload once into the new build rather than show the error.
+    reloadForStaleDeploy(error);
   }
 
   private readonly retry = (): void => {
