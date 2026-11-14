@@ -27,6 +27,9 @@ export const COVER_CAMERAS: Readonly<Record<string, CoverCamera>> = Object.freez
   'sakura-river': { pos: [31, 5.5, 229], target: [19, 2.2, 182] },
   'casa-patio': { pos: [-22, 11, -26], target: [0, 1, 0], arch: { walls: 'cutaway' } },
   'skyline-penthouse': { pos: [-20, 9, -25], target: [2, 2, 2], arch: { walls: 'cutaway' } },
+  // Inside: the auditorium from the back rows to the screen, and the dining room from the door to the counter.
+  'starlight-cinema': { pos: [-4, 4.4, -5], target: [1, 2.4, -22] },
+  'evening-bistro': { pos: [11.2, 2.3, 11.2], target: [4, 0.6, 5] },
   'dusk-lake-house': { pos: [30, 13, 38], target: [6, 4.5, 4], arch: { walls: 'cutaway', levelMode: 'stacked' } },
   'villa-pool': { pos: [14, 5.5, 19], target: [5, 2.2, 3], arch: { walls: 'up' } },
   'sanctuary-falls': { pos: [0, 6, 30], target: [0, 26, -50] },
