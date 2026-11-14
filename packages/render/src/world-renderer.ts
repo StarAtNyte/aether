@@ -5650,12 +5650,14 @@ export class WorldRenderer {
       this.trimStillAt = t;
       this.trimQuiet = 0;
     }
-    if (t - this.trimStillAt < 400) return why('eye moving');
+    // A room not yet learned is read sooner and more often (see trimIdleDue).
+    const fresh = !this.roomTrim.has(this.roomPick.id);
+    if (t - this.trimStillAt < (fresh ? 200 : 400)) return why('eye moving');
     if (typeof createImageBitmap !== 'function' || this.captureActive) return why('no bitmap or capture running');
     if (this.warming || this.grow.active || this.preparation.pending > 0 || this.programs.pending > 0) return why(`busy: warming ${String(this.warming)} grow ${String(this.grow.active)} prep ${this.preparation.pending} programs ${this.programs.pending}`);
-    if (Math.abs((this.roomTrim.get(this.roomPick.id) ?? 0) - this.trimNow) > 0.02) return why('trim still easing');
+    if (Math.abs(this.trimFor(this.roomPick.id) - this.trimNow) > 0.02) return why('trim still easing');
     // A picture that stopped changing the trim is looked at only now and then (an animated world draws every frame).
-    if (t - this.trimAt < (this.trimQuiet >= 3 ? 5000 : 700)) return;
+    if (t - this.trimAt < (this.trimQuiet >= 3 ? 5000 : fresh ? 350 : 700)) return;
     this.trimAt = t;
     this.trimRoom = this.roomPick.id;
     this.sampleViewAsync(true);
@@ -5665,14 +5667,17 @@ export class WorldRenderer {
 
   /**
    * An idle view (nothing else asks for a frame) inside a building whose trim is still being learned: it draws one more frame every
-   * 0.7 s, at most three reads in a row that leave the trim as it was (the counter starts again when the eye moves), so a view
+   * 0.7 s (0.35 s in a room not yet learned), at most three reads in a row that leave the trim as it was (the counter starts again when the eye moves), so a view
    * that comes to rest reaches its exposure without waiting for something to animate.
    */
   private trimIdleDue(): boolean {
     if ((globalThis as { __NOTRIM?: boolean }).__NOTRIM || this.sampling || !this.lightVolume.ready || !this.roomPick) return false;
     if (this.trimQuiet >= 3 || this.captureActive) return false;
     const t = now();
-    return t - this.trimStillAt >= 400 && t - this.trimAt >= 700;
+    // A room seen for the first time is read sooner and more often, so it does not open washed (or crushed) for seconds;
+    // a room that has learned its trim keeps the calm pace.
+    const fresh = !this.roomTrim.has(this.roomPick.id);
+    return t - this.trimStillAt >= (fresh ? 200 : 400) && t - this.trimAt >= (fresh ? 350 : 700);
   }
 
   /** The author's lighting intent and the exposure they set by eye (a bias): what the trim steers the picture toward. */
@@ -5722,7 +5727,7 @@ export class WorldRenderer {
         );
         if (!s) return;
       }
-      const cur = this.roomTrim.get(room) ?? 0;
+      const cur = this.trimFor(room);
       const next = nextTrim(cur, { mean: s.mean, high: s.high ?? 0, low: s.low ?? 0 }, this.trimIntent());
       if (debug) console.warn(`[trim] async ${!this.asyncCaptureFailed} room ${room} pass ${i} mean ${s.mean.toFixed(0)} high ${(s.high ?? 0).toFixed(3)} trim ${cur.toFixed(2)} -> ${next.toFixed(2)}`);
       if (next === cur) return;
@@ -5734,7 +5739,7 @@ export class WorldRenderer {
     const room = this.trimRoom;
     this.trimRoom = null;
     if (!s || s.high === undefined || room === null || this.disposed || this.roomPick?.id !== room) return;
-    const cur = this.roomTrim.get(room) ?? 0;
+    const cur = this.trimFor(room);
     const next = nextTrim(cur, { mean: s.mean, high: s.high, low: s.low ?? 0 }, this.trimIntent());
     if ((globalThis as { __TRIMLOG?: boolean }).__TRIMLOG) console.warn(`[trim] live room ${room} mean ${s.mean.toFixed(0)} high ${s.high.toFixed(3)} trim ${cur.toFixed(2)} -> ${next.toFixed(2)}`);
     if (next === cur) {
@@ -6377,6 +6382,19 @@ export class WorldRenderer {
   private eyeBalance = 0;
   /** Exposure trim (stops) learned per room from the picture at rest, the room it is learned for, and the value now shown. */
   private readonly roomTrim = new Map<string, number>();
+  /**
+   * The trim of a room: its own once learned; until then the mean of the rooms already learned in this scene. The
+   * prediction's error is much the same from room to room of one building (its paint, its lightmap), so a room seen for
+   * the first time starts near its right exposure instead of opening washed or crushed and easing over seconds.
+   */
+  private trimFor(room: string): number {
+    const own = this.roomTrim.get(room);
+    if (own !== undefined) return own;
+    if (this.roomTrim.size === 0) return 0;
+    let sum = 0;
+    for (const v of this.roomTrim.values()) sum += v;
+    return sum / this.roomTrim.size;
+  }
   private trimNow = 0;
   private trimAt = 0;
   private trimStillAt = 0;
@@ -6521,7 +6539,7 @@ export class WorldRenderer {
       // The first small still of a pose is a warm-up (the first frame of a session is not the converged picture): not read.
       if (i < 0) continue;
       const s = measurePixels(tiny.data, tiny.width, tiny.height);
-      const cur = this.roomTrim.get(room) ?? 0;
+      const cur = this.trimFor(room);
       const next = nextTrim(cur, { mean: s.mean, high: s.high ?? 0, low: s.low ?? 0 }, this.trimIntent());
       if (debug) console.warn(`[trim] still room ${room} pass ${i} mean ${s.mean.toFixed(0)} high ${(s.high ?? 0).toFixed(3)} trim ${cur.toFixed(2)} -> ${next.toFixed(2)}`);
       if (next === cur) return;
@@ -6602,7 +6620,7 @@ export class WorldRenderer {
     // A camera that jumped (a cut, a teleport, a capture pose) sees with adapted eyes at once.
     const jumped = this.lastEye.distanceToSquared(p) > 2.25;
     this.lastEye.copy(p);
-    const trimTarget = this.roomPick ? (this.roomTrim.get(this.roomPick.id) ?? 0) : 0;
+    const trimTarget = this.roomPick ? this.trimFor(this.roomPick.id) : 0;
     const trimDone = Math.abs(trimTarget - this.trimNow) < 0.01;
     if (Math.abs(target - this.eyeFactor) < 0.002 && Math.abs(targetEv - this.eyeEv) < 0.01 && Math.abs(targetBalance - this.eyeBalance) < 0.005 && trimDone) return;
     this.trimNow = jumped ? trimTarget : adaptStep(this.trimNow, trimTarget, step);

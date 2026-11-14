@@ -16,8 +16,8 @@
  */
 import { VOLUME_ADAPT_SHARE, interiorBalance } from './eye-adapt';
 
-/** Largest exposure boost (stops) of a room. A photographer shoots a daylit interior two to three stops over the garden. */
-export const ROOM_MAX_EV = 3;
+/** Largest exposure boost (stops) of a room. A photographer shoots a daylit interior two to three stops over the garden; the prediction stays at the low end and the closed-loop trim (exposure-trim.ts) lifts a room that reads dark, since a room that opens washed and dims over a second looks worse than one that opens a little dark (Linden Row's pale rooms all sat at +3 and opened white). */
+export const ROOM_MAX_EV = 2.3;
 /** Largest exposure cut (stops) of a room: lamps at dusk. */
 export const ROOM_MIN_EV = -1.5;
 /** Points per side of the grid a room is sampled on. */

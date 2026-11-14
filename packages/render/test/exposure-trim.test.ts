@@ -6,7 +6,10 @@ const s = (mean: number, high = 0, low = 0): TrimSample => ({ mean, high, low })
 describe('exposure trim', () => {
   it('leaves a well exposed picture alone', () => {
     expect(nextTrim(0, s(120))).toBe(0);
-    expect(nextTrim(0.4, s(140, 0.05))).toBe(0.4);
+    expect(nextTrim(0.4, s(115, 0.05))).toBe(0.4);
+  });
+  it('counts a pale daylit room at 140/255 as washed (Linden Row read white)', () => {
+    expect(nextTrim(0, s(140))).toBeLessThan(-0.1);
   });
   it('takes light away from a washed room and adds to a crushed one', () => {
     expect(nextTrim(0, s(220))).toBeLessThan(-0.1);

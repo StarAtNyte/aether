@@ -33,7 +33,7 @@ export const TRIM_DEADBAND_EV = 0.06;
  */
 export const TRIM_BANDS: Record<LightKey, { lo: number; hi: number }> = {
   dim: { lo: 0.15, hi: 0.38 },
-  moderate: { lo: 0.26, hi: 0.58 },
+  moderate: { lo: 0.26, hi: 0.5 },
   bright: { lo: 0.4, hi: 0.68 },
 };
 /** Mean luminance of a moderate picture too bright (washed), kept for callers that need one number. */
