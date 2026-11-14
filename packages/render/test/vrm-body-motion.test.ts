@@ -8,7 +8,7 @@
  * stay upright (the thighs below the neck), the legs are never longer than the rest pose's (no stretched or torn leg)
  * nor folded flat, and the skinned mesh keeps a person's size; and every body clip's rotation keys are unit quaternions.
  */
-import { Quaternion, QuaternionKeyframeTrack, Vector3 } from 'three';
+import { Quaternion, QuaternionKeyframeTrack, Vector3, type SkinnedMesh } from 'three';
 import { describe, expect, it } from 'vitest';
 import { loadBodyRig } from './support/rig-fixture';
 import { runScenario, SCENARIOS, type Scenario } from './support/gait-scenarios';
@@ -23,6 +23,107 @@ function gesture(clip: string, seconds = 3): Scenario {
 }
 
 const pos = (rig: CharacterRig, n: string, out = new Vector3()): Vector3 => rig.root.getObjectByName(n)!.getWorldPosition(out);
+
+/** The skinned (non-outline) meshes of a rig. */
+function skinned(rig: CharacterRig): SkinnedMesh[] {
+  const out: SkinnedMesh[] = [];
+  rig.root.traverse((o) => { const m = o as SkinnedMesh; if (m.isSkinnedMesh && !/outline/i.test(o.name)) out.push(m); });
+  return out;
+}
+
+/** The mouth: the posed centre of the vertices the open-mouth morph moves (the lips). */
+function mouthPoint(rig: CharacterRig): Vector3 {
+  const v = new Vector3(), d = new Vector3(), sum = new Vector3();
+  let n = 0;
+  for (const m of skinned(rig)) {
+    const slot = m.morphTargetDictionary?.['mouth_open'];
+    const md = slot === undefined ? undefined : m.geometry.morphAttributes['position']?.[slot];
+    if (!md) continue;
+    let max = 0;
+    for (let i = 0; i < md.count; i++) max = Math.max(max, d.fromBufferAttribute(md, i).length());
+    if (max === 0) continue;
+    m.updateMatrixWorld(true);
+    m.skeleton.update();
+    for (let i = 0; i < md.count; i++) {
+      if (d.fromBufferAttribute(md, i).length() < 0.3 * max) continue;
+      m.getVertexPosition(i, v);
+      sum.add(v.applyMatrix4(m.matrixWorld));
+      n++;
+    }
+  }
+  return sum.multiplyScalar(1 / n);
+}
+
+/** A finger's tip: the posed vertex bound to its last phalanx farthest from the phalanx's joint. */
+function fingertip(rig: CharacterRig, bone: string): Vector3 {
+  const joint = pos(rig, bone);
+  const v = new Vector3(), best = new Vector3();
+  let far = -1;
+  for (const m of skinned(rig)) {
+    const bi = m.skeleton.bones.findIndex((b) => b.name === bone);
+    if (bi < 0) continue;
+    const si = m.geometry.attributes['skinIndex']!, sw = m.geometry.attributes['skinWeight']!;
+    m.skeleton.update();
+    for (let i = 0; i < si.count; i++) {
+      let w = 0;
+      for (let k = 0; k < 4; k++) if (si.getComponent(i, k) === bi) w += sw.getComponent(i, k);
+      if (w < 0.5) continue;
+      m.getVertexPosition(i, v).applyMatrix4(m.matrixWorld);
+      const dd = v.distanceTo(joint);
+      if (dd > far) { far = dd; best.copy(v); }
+    }
+  }
+  return best;
+}
+
+describe.each(['kaho-vrm', 'mio-vrm'])('%s: the gesture hands meet the body', (id) => {
+  it('two_fingers: the index fingertip touches the mouth through the hold', async () => {
+    const { rig } = await loadBodyRig(id);
+    const far: string[] = [];
+    let worst = 0;
+    runScenario(rig, gesture('two_fingers', 2.2), (r, t) => {
+      // (the hold: the clip's pose keys at 0.6, 1.4 and 2.0 s)
+      if (t < 0.7 || t > 1.9) return;
+      const d = fingertip(r, 'Bip01_R_Finger12').distanceTo(mouthPoint(r));
+      worst = Math.max(worst, d);
+      if (d > 0.03) far.push(`t=${t.toFixed(2)}: index tip ${(d * 100).toFixed(1)} cm from the mouth`);
+    });
+    console.log(`${id} two_fingers: worst index tip to mouth ${(worst * 100).toFixed(1)} cm`);
+    expect(far.slice(0, 6)).toEqual([]);
+  }, 60_000);
+
+  it('hand_to_chest: the palm lies on the chest, not on the shoulder', async () => {
+    const { rig } = await loadBodyRig(id);
+    const bad: string[] = [];
+    let worst = 0;
+    runScenario(rig, gesture('hand_to_chest', 2.5), (r, t) => {
+      // (the hold: the clip's pose keys at 0.7 and 1.8 s)
+      if (t < 0.75 || t > 1.75) return;
+      const palm = pos(r, 'Bip01_R_Hand').add(pos(r, 'Bip01_R_Finger2')).multiplyScalar(0.5);
+      // the nearest torso vertex (not the right arm's own skin)
+      const v = new Vector3();
+      let near = Infinity;
+      for (const m of skinned(r)) {
+        const si = m.geometry.attributes['skinIndex']!, sw = m.geometry.attributes['skinWeight']!;
+        const arm = new Set(m.skeleton.bones.flatMap((b, i) => (/_R_(UpperArm|Forearm|Hand|Finger)/.test(b.name) ? [i] : [])));
+        m.skeleton.update();
+        for (let i = 0; i < si.count; i++) {
+          let w = 0;
+          for (let k = 0; k < 4; k++) if (arm.has(si.getComponent(i, k))) w += sw.getComponent(i, k);
+          if (w > 0.2) continue;
+          near = Math.min(near, m.getVertexPosition(i, v).applyMatrix4(m.matrixWorld).distanceTo(palm));
+        }
+      }
+      const chest = pos(r, 'Bip01_Spine2');
+      worst = Math.max(worst, near);
+      if (near > 0.04) bad.push(`t=${t.toFixed(2)}: palm ${(near * 100).toFixed(1)} cm off the body`);
+      // (she stands at the origin facing +z: x is across her)
+      if (Math.abs(palm.x - chest.x) > 0.12) bad.push(`t=${t.toFixed(2)}: palm ${(Math.abs(palm.x - chest.x) * 100).toFixed(1)} cm to the side of the breastbone`);
+    });
+    console.log(`${id} hand_to_chest: palm within ${(worst * 100).toFixed(1)} cm of the body`);
+    expect(bad.slice(0, 6)).toEqual([]);
+  }, 60_000);
+});
 
 describe.each(BODIES)('%s stays whole in the film\'s motions', (id) => {
   it('every body clip rotation key is a unit quaternion', async () => {

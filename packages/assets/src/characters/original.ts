@@ -42,12 +42,12 @@ export const ORIGINAL_CAST: CastFile[] = [
   "id": "kaho-vrm",
   "gender": "female",
   "look": "anime girl, long straight chestnut-brown hair, white short-sleeve blouse, black shorts, white sneakers",
-  "file": "c/kaho-vrm.d7fd0e9f.glb",
+  "file": "c/kaho-vrm.1de68dd6.glb",
   "height": 1.532,
   "hip": 0.825,
   "triangles": 36470,
   "faces": 1,
-  "bytes": 1092832,
+  "bytes": 1093144,
   "style": "toon",
   "credit": {
    "source": "VRM1_Constraint_Twist_Sample (VRM 1.0 sample model)",
@@ -62,12 +62,12 @@ export const ORIGINAL_CAST: CastFile[] = [
   "id": "mio-vrm",
   "gender": "female",
   "look": "anime girl, long straight black hair, pale sage-mint short-sleeve top, light-beige shorts, white sneakers, dark grey-brown eyes",
-  "file": "c/mio-vrm.f71fcb5c.glb",
+  "file": "c/mio-vrm.8523be2e.glb",
   "height": 1.532,
   "hip": 0.825,
   "triangles": 36470,
   "faces": 1,
-  "bytes": 1092520,
+  "bytes": 1092832,
   "style": "toon",
   "credit": {
    "source": "VRM1_Constraint_Twist_Sample (VRM 1.0 sample model), recoloured",
@@ -93,9 +93,9 @@ export const ORIGINAL_LODS: Record<string, { file: string; triangles: number; by
   "bytes": 947260
  },
  "kaho-vrm": {
-  "file": "c/kaho-vrm.lod1.d89c8764.glb",
+  "file": "c/kaho-vrm.lod1.b2687b68.glb",
   "triangles": 14594,
-  "bytes": 572824
+  "bytes": 573136
  },
  "mio": {
   "file": "c/mio.lod1.0759d1b3.glb",
@@ -103,8 +103,8 @@ export const ORIGINAL_LODS: Record<string, { file: string; triangles: number; by
   "bytes": 1007096
  },
  "mio-vrm": {
-  "file": "c/mio-vrm.lod1.43caf352.glb",
+  "file": "c/mio-vrm.lod1.d9c36735.glb",
   "triangles": 14594,
-  "bytes": 572512
+  "bytes": 572824
  }
 };

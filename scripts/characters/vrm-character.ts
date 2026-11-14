@@ -12,7 +12,9 @@
  * by two vectors so the palm turns too), baked, and bound to a Biped skeleton whose rest rotations are exactly the rest
  * template's (scripts/characters/vrm/biped-rest.glb: the Blender Kaho's Biped and her five extra clips, from
  * scripts/blender/character/build.py), only the joint positions being the VRM's, scaled so the legs are as long as the
- * template's. Every Biped clip, the procedural gait, IK and look-at then drive it unchanged. Bones outside the humanoid
+ * template's. Every Biped clip, the procedural gait, IK and look-at then drive it unchanged, except the gestures where the
+ * hand meets the body (two_fingers at the lips, hand_to_chest on the chest): their right arm is solved again per key for
+ * this body's proportions (see "the hand gestures, retargeted"). Bones outside the humanoid
  * table (hair, skirt, twist helpers, eyes) ride along under their nearest mapped ancestor; aim-constrained helpers ride
  * with the limb that drives them; the hair chains become toon springs. The VRM preset expressions are written as the
  * cast's face morphs (smile = happy, blink, surprised, sad, determined = angry, mouth_open = aa; teary has none and stays
@@ -438,6 +440,226 @@ for (const ka of kdoc.getRoot().listAnimations()) {
     a.addSampler(smp).addChannel(doc.createAnimationChannel().setTargetNode(target).setTargetPath(ch.getTargetPath()!).setSampler(smp));
   }
   clips++;
+}
+
+// --- the hand gestures, retargeted to this body ----------------------------------------------
+// The clips are Kaho's bone rotations. On this body's head, chest and arm lengths a hand that should meet the body
+// misses it: two_fingers ends beside and below the head, hand_to_chest on the far shoulder. Through those clips' holds
+// the right arm is solved again per key (two-bone, upper arm and forearm, then the hand's own turn) so that a point of
+// the hand meets a point measured on this body's mesh; before and after the hold the solve eases back into the clip.
+// - two_fingers: the index and middle fingertips meet the lips (the centre of what the open-mouth morph moves), the
+//   hand turned palm to the face, the fingers rising back to the mouth, the elbow down and out (a two-finger whistle).
+// - hand_to_chest: the palm lies on the chest, left of the breastbone, the hand turned as in the clip.
+// wave and look_up need nothing (the wave is about the raised forearm, look_up does not move the arms).
+{
+  type Pose = Map<string, { p: Vector3; q: Quaternion }>;
+  type Sampler = ReturnType<Document['createAnimationSampler']>;
+  const jointOf = (name: string): number => jointIndex.get(bipNode.get(name)!)!;
+  const restW = (name: string): Matrix4 => newWorld.get(bipNode.get(name)!)!;
+  const restQ = (name: string): Quaternion => new Quaternion().setFromRotationMatrix(restW(name));
+  const restP = (name: string): Vector3 => new Vector3().setFromMatrixPosition(restW(name));
+  const local = (name: string, p: Vector3): Vector3 => p.clone().applyMatrix4(restW(name).clone().invert());
+  const vertsOf = (mesh: typeof bodyMesh, each: (v: Vector3, joints: ArrayLike<number>, weights: ArrayLike<number>, k: number, p: Primitive) => void): void => {
+    for (const p of mesh.listPrimitives()) {
+      const P = p.getAttribute('POSITION')!.getArray()!, J = p.getAttribute('JOINTS_0')!.getArray()!, Wt = p.getAttribute('WEIGHTS_0')!.getArray()!;
+      for (let k = 0; k < P.length / 3; k++) each(new Vector3(P[k * 3]!, P[k * 3 + 1]!, P[k * 3 + 2]!), J.subarray(k * 4, k * 4 + 4) as ArrayLike<number>, Wt.subarray(k * 4, k * 4 + 4) as ArrayLike<number>, k, p);
+    }
+  };
+  const weightOn = (j: number, joints: ArrayLike<number>, weights: ArrayLike<number>): number => { let w = 0; for (let c = 0; c < 4; c++) if (joints[c] === j) w += weights[c]!; return w; };
+
+  // the mouth: the centre of the vertices the open-mouth morph moves (the lips), in the head's frame
+  const mouth = new Vector3();
+  let nm = 0;
+  const slot = FACE_MORPHS.indexOf('mouth_open');
+  for (const p of faceMesh.listPrimitives()) {
+    const P = p.getAttribute('POSITION')!.getArray()!, D = p.listTargets()[slot]!.getAttribute('POSITION')!.getArray()!;
+    let max = 0;
+    for (let k = 0; k < D.length; k += 3) max = Math.max(max, Math.hypot(D[k]!, D[k + 1]!, D[k + 2]!));
+    if (max === 0) continue;
+    for (let k = 0; k < D.length; k += 3) if (Math.hypot(D[k]!, D[k + 1]!, D[k + 2]!) >= 0.3 * max) { mouth.add(new Vector3(P[k]!, P[k + 1]!, P[k + 2]!)); nm++; }
+  }
+  if (nm === 0) throw new Error('no mouth: the open-mouth morph moves no vertex');
+  const mouthHead = local('Bip01_Head', mouth.multiplyScalar(1 / nm));
+  // a fingertip: the vertex bound to the last phalanx farthest from its joint, in the phalanx's frame
+  const tipOf = (name: string): Vector3 => {
+    const j = jointOf(name), at = restP(name);
+    let far = -1;
+    const best = new Vector3();
+    vertsOf(bodyMesh, (v, J, Wt) => { if (weightOn(j, J, Wt) >= 0.5 && v.distanceTo(at) > far) { far = v.distanceTo(at); best.copy(v); } });
+    if (far < 0) throw new Error(`no vertex bound to ${name}`);
+    return local(name, best);
+  };
+  const tips = { index: tipOf('Bip01_R_Finger12'), middle: tipOf('Bip01_R_Finger22') };
+  // the body's rest frame (glTF: she faces +z when her left is +x)
+  const left = restP('Bip01_L_Thigh').sub(restP('Bip01_R_Thigh')).setY(0).normalize();
+  const up = new Vector3(0, 1, 0);
+  const fwd = new Vector3().crossVectors(left, up).normalize();
+  // the chest: the front of the torso a little left of the breastbone and above the chest joint (where Kaho's clip lays
+  // the palm), in the chest bone's frame
+  const chestAt = restP('Bip01_Spine2').addScaledVector(left, 0.055).addScaledVector(up, 0.025);
+  const armJoints = new Set(kOrder.filter((n) => /_R_(UpperArm|Forearm|Hand|Finger)/.test(n)).map(jointOf));
+  let front = -Infinity;
+  vertsOf(bodyMesh, (v, J, Wt) => {
+    let arm = 0;
+    for (let c = 0; c < 4; c++) if (armJoints.has(J[c]!)) arm += Wt[c]!;
+    if (arm > 0.2) return;
+    const off = v.clone().sub(chestAt);
+    if (Math.abs(off.dot(left)) < 0.025 && Math.abs(off.y) < 0.025) front = Math.max(front, off.dot(fwd));
+  });
+  if (!Number.isFinite(front)) throw new Error('no chest surface found');
+  const chestSpine = local('Bip01_Spine2', chestAt.clone().addScaledVector(fwd, front + 0.008));
+
+  const smooth = (x: number): number => { const c = Math.min(1, Math.max(0, x)); return c * c * (3 - 2 * c); };
+  const at = (w: Pose, name: string, off?: Vector3): Vector3 => (off ? off.clone().applyQuaternion(w.get(name)!.q).add(w.get(name)!.p) : w.get(name)!.p.clone());
+  /** A hand's frame (as the clip builder's hand_frame): x to the middle knuckle, y across toward the index, z = x × y (the back of the right hand). */
+  const handBasis = (x: Vector3, across: Vector3): Quaternion => {
+    const xx = x.clone().normalize();
+    const y = across.clone().sub(xx.clone().multiplyScalar(across.dot(xx))).normalize();
+    return new Quaternion().setFromRotationMatrix(new Matrix4().makeBasis(xx, y, new Vector3().crossVectors(xx, y)));
+  };
+  const clipHandBasis = (W: Pose): Quaternion => handBasis(at(W, 'Bip01_R_Finger2').sub(at(W, 'Bip01_R_Hand')), at(W, 'Bip01_R_Finger1').sub(at(W, 'Bip01_R_Finger4')));
+  /** The body's frame turned as a bone is turned from its rest. */
+  const frameOf = (W: Pose, bone: string): { F: Vector3; U: Vector3; L: Vector3 } => {
+    const d = W.get(bone)!.q.clone().multiply(restQ(bone).invert());
+    return { F: fwd.clone().applyQuaternion(d), U: up.clone().applyQuaternion(d), L: left.clone().applyQuaternion(d) };
+  };
+  const palmOf = (W: Pose): Vector3 => {
+    const z = new Vector3(0, 0, 1).applyQuaternion(clipHandBasis(W));
+    return at(W, 'Bip01_R_Hand').add(at(W, 'Bip01_R_Finger2')).multiplyScalar(0.5).addScaledVector(z, -0.012);
+  };
+
+  interface Retarget {
+    /** 0 = the clip's own arm, 1 = the solve. */
+    weight: (t: number) => number;
+    /** The point of the hand that is placed (world, in the pose given). */
+    effector: (W: Pose) => Vector3;
+    /** Where it goes. */
+    goal: (W: Pose) => Vector3;
+    /** The hand's world rotation at full weight. */
+    hand: (W: Pose) => Quaternion;
+    /** The elbow's pole at full weight. */
+    pole: (W: Pose) => Vector3;
+  }
+  const retarget = (clip: string, r: Retarget): number => {
+    const anim = doc.getRoot().listAnimations().find((a) => a.getName() === clip);
+    if (!anim) throw new Error(`the rest template has no ${clip} clip`);
+    const chan = new Map<string, { rotation?: Sampler; translation?: Sampler }>();
+    for (const ch of anim.listChannels()) {
+      const e = chan.get(ch.getTargetNode()!.getName()) ?? {};
+      if (ch.getTargetPath() === 'rotation') e.rotation = ch.getSampler()!;
+      else if (ch.getTargetPath() === 'translation') e.translation = ch.getSampler()!;
+      chan.set(ch.getTargetNode()!.getName(), e);
+    }
+    const sampleAt = (s: Sampler, t: number, k: 3 | 4): number[] => {
+      if (s.getInterpolation() !== 'LINEAR') throw new Error(`${clip}: ${s.getInterpolation()} keys`);
+      const T = s.getInput()!.getArray()!, V = s.getOutput()!.getArray()! as Float32Array;
+      let i = 0;
+      while (i < T.length - 2 && T[i + 1]! <= t) i++;
+      const j = Math.min(i + 1, T.length - 1);
+      const f = j === i ? 0 : Math.min(1, Math.max(0, (t - T[i]!) / (T[j]! - T[i]!)));
+      if (k === 4) { const o = [0, 0, 0, 1]; Quaternion.slerpFlat(o, 0, V as unknown as number[], i * 4, V as unknown as number[], j * 4, f); return o; }
+      return [0, 1, 2].map((c) => V[i * 3 + c]! * (1 - f) + V[j * 3 + c]! * f);
+    };
+    // forward kinematics of the Biped at a time of the clip
+    const fk = (t: number): Pose => {
+      const w: Pose = new Map();
+      for (const name of kOrder) {
+        const n = bipNode.get(name)!, c = chan.get(name);
+        const lp = new Vector3().fromArray(c?.translation ? sampleAt(c.translation, t, 3) : n.getTranslation());
+        const lq = new Quaternion().fromArray(c?.rotation ? sampleAt(c.rotation, t, 4) : n.getRotation());
+        const par = kb.get(name)!.parent;
+        const pw = par ? w.get(par)! : { p: new Vector3(), q: new Quaternion() };
+        w.set(name, { p: lp.applyQuaternion(pw.q).add(pw.p), q: pw.q.clone().multiply(lq) });
+      }
+      return w;
+    };
+    const arm = ['Bip01_R_UpperArm', 'Bip01_R_Forearm', 'Bip01_R_Hand'] as const;
+    const out = arm.map((n) => {
+      const s = chan.get(n)?.rotation;
+      if (!s) throw new Error(`${clip} has no ${n} rotation`);
+      return s;
+    });
+    const times = out[0]!.getInput()!.getArray()!;
+    for (const s of out) {
+      const T = s.getInput()!.getArray()!;
+      if (T.length !== times.length || T.some((x, i) => Math.abs(x - times[i]!) > 1e-5)) throw new Error(`${clip}: the arm channels have different keys`);
+    }
+    const vals = out.map((s) => s.getOutput()!.getArray()! as Float32Array);
+    const forearmAxis = new Vector3().fromArray(bipNode.get('Bip01_R_Hand')!.getTranslation()).normalize();
+    for (let k = 0; k < times.length; k++) {
+      const t = times[k]!, wgt = r.weight(t);
+      if (wgt <= 0) continue;
+      const W = fk(t);
+      const hq0 = W.get('Bip01_R_Hand')!.q, hp = at(W, 'Bip01_R_Hand');
+      const hq = hq0.clone().slerp(r.hand(W), wgt);
+      const eff0 = r.effector(W);
+      const effInHand = eff0.clone().sub(hp).applyQuaternion(hq0.clone().invert());
+      const wrist = eff0.clone().lerp(r.goal(W), wgt).sub(effInHand.applyQuaternion(hq));
+      // two-bone solve: the elbow in the plane of the shoulder, the wrist and the pole
+      const S = at(W, arm[0]), E0 = at(W, arm[1]), H0 = at(W, arm[2]);
+      const L1 = E0.distanceTo(S), L2 = H0.distanceTo(E0);
+      const pole = E0.clone().lerp(r.pole(W), wgt);
+      const toT = wrist.clone().sub(S);
+      const d = Math.min(L1 + L2 - 1e-4, Math.max(Math.abs(L1 - L2) + 1e-4, toT.length()));
+      const u = toT.normalize();
+      const v = pole.clone().sub(S);
+      v.sub(u.clone().multiplyScalar(v.dot(u))).normalize();
+      const a = (L1 * L1 - L2 * L2 + d * d) / (2 * d);
+      const E = S.clone().addScaledVector(u, a).addScaledVector(v, Math.sqrt(Math.max(0, L1 * L1 - a * a)));
+      const qa = new Quaternion().setFromUnitVectors(E0.clone().sub(S).normalize(), E.clone().sub(S).normalize());
+      const uq = qa.clone().multiply(W.get(arm[0])!.q);
+      const qb = new Quaternion().setFromUnitVectors(H0.clone().sub(E0).applyQuaternion(qa).normalize(), S.clone().addScaledVector(u, d).sub(E).normalize());
+      let fq = qb.multiply(qa).multiply(W.get(arm[1])!.q);
+      // three quarters of the hand's twist about the forearm taken by the forearm (as the clip builder's orient_hand)
+      let hl = fq.clone().invert().multiply(hq);
+      const proj = forearmAxis.clone().multiplyScalar(forearmAxis.dot(new Vector3(hl.x, hl.y, hl.z)));
+      fq = fq.multiply(new Quaternion().slerp(new Quaternion(proj.x, proj.y, proj.z, hl.w).normalize(), 0.75));
+      hl = fq.clone().invert().multiply(hq);
+      const ul = W.get('Bip01_R_Clavicle')!.q.clone().invert().multiply(uq), fl = uq.clone().invert().multiply(fq);
+      for (const [i, q] of [ul, fl, hl].entries()) {
+        const o = vals[i]!;
+        q.normalize();
+        if (new Quaternion().fromArray(o, k * 4).dot(q) < 0) q.set(-q.x, -q.y, -q.z, -q.w);
+        q.toArray(o, k * 4);
+      }
+    }
+    // the solve as the rewritten keys play it: the effector's worst miss through the hold
+    let worst = 0;
+    for (let k = 0; k < times.length; k++) {
+      if (r.weight(times[k]!) < 1) continue;
+      const W = fk(times[k]!);
+      worst = Math.max(worst, r.effector(W).distanceTo(r.goal(W)));
+    }
+    return worst;
+  };
+
+  const tipMid = (W: Pose): Vector3 => at(W, 'Bip01_R_Finger12', tips.index).add(at(W, 'Bip01_R_Finger22', tips.middle)).multiplyScalar(0.5);
+  // two_fingers' keys: 0.3 mid, 0.6 at the cheek, 2.0 at the cheek, 2.3 mid, 2.7 rest; eased in over the rise and out
+  // over the fall, so the hand goes to the lips and back down without passing beside the cheek
+  const lipsMiss = retarget('two_fingers', {
+    weight: (t) => Math.min(smooth((t - 0.15) / 0.45), smooth((2.5 - t) / 0.5)),
+    effector: tipMid,
+    goal: (W) => at(W, 'Bip01_Head', mouthHead),
+    hand: (W) => {
+      const { F, U, L } = frameOf(W, 'Bip01_Head');
+      const fx = U.clone().multiplyScalar(0.62).addScaledVector(F, -0.62).addScaledVector(L, 0.3).normalize();
+      const back = F.clone().sub(fx.clone().multiplyScalar(F.dot(fx))).normalize(); // the back of the hand faces forward
+      return handBasis(fx, new Vector3().crossVectors(back, fx)).multiply(clipHandBasis(W).invert()).multiply(W.get('Bip01_R_Hand')!.q);
+    },
+    pole: (W) => {
+      const { F, U, L } = frameOf(W, 'Bip01_Spine2');
+      return at(W, 'Bip01_R_UpperArm').addScaledVector(U, -0.3).addScaledVector(L, -0.22).addScaledVector(F, 0.12);
+    },
+  });
+  // hand_to_chest's keys: 0 rest, 0.7 on the chest, 1.8 on the chest, 2.5 rest
+  const chestMiss = retarget('hand_to_chest', {
+    weight: (t) => Math.min(smooth(t / 0.7), smooth((2.5 - t) / 0.7)),
+    effector: palmOf,
+    goal: (W) => at(W, 'Bip01_Spine2', chestSpine),
+    hand: (W) => W.get('Bip01_R_Hand')!.q.clone(),
+    pole: (W) => at(W, 'Bip01_R_Forearm'),
+  });
+  console.log(`gestures retargeted: two_fingers fingertips to the lips within ${(lipsMiss * 100).toFixed(1)} cm, hand_to_chest palm to the chest within ${(chestMiss * 100).toFixed(1)} cm, through the holds`);
 }
 
 // --- outputs ------------------------------------------------------------------------
