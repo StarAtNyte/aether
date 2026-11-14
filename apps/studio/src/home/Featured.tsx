@@ -56,13 +56,11 @@ const FeaturedCard = memo(function FeaturedCard({ t, size, onRemix }: { t: World
           Asset-free
         </span>
       )}
+      {/* The whole card (picture included) is the link; the text above it lets clicks through. */}
+      <a className="fcard__link" href={templatePlayUrl(t.slug)} aria-label={`${featuredVerb(t)} ${t.title}: ${featuredMode(t)}`} />
       <div className="fcard__body">
         <span className="fcard__mode">{featuredMode(t)}</span>
-        <h3 className="fcard__title">
-          <a className="fcard__link" href={templatePlayUrl(t.slug)} aria-label={`${featuredVerb(t)} ${t.title}: ${featuredMode(t)}`}>
-            {t.title}
-          </a>
-        </h3>
+        <h3 className="fcard__title">{t.title}</h3>
         {lead && <p className="fcard__desc">{t.description}</p>}
         {lead && (
           <span className="fcard__cta" aria-hidden="true">

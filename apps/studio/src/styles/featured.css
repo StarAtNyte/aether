@@ -57,18 +57,18 @@
   text-shadow: 0 1px 8px oklch(10% 0.02 260 / 0.5);
 }
 
+/* The whole card is the link: a layer over the picture, under the text (which lets clicks through) and Remix. */
 .fcard__link {
-  color: inherit;
-  text-decoration: none;
-}
-
-/* The whole card is the link. */
-.fcard__link::after {
-  content: '';
   position: absolute;
   inset: 0;
   z-index: 1;
   border-radius: inherit;
+  cursor: pointer;
+}
+
+.fcard__body {
+  z-index: 1;
+  pointer-events: none;
 }
 
 .fcard__link:focus-visible {
