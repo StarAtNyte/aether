@@ -504,6 +504,12 @@ export class ExploreController {
       this.saved = null;
       this.fadeTo(() => {
         r.setArchView({ walls: 'up' });
+        if (this.exp.explore !== 'walk') {
+          // An orbit or drone world: back to its own camera around the whole building.
+          this.set({ view: this.exp.explore });
+          void this.sim.frameWorld();
+          return;
+        }
         this.set({ view: 'walk' });
         if (back) this.placeWalk(back);
         else this.placeFromCamera();

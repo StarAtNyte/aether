@@ -79,7 +79,7 @@ export const TEMPLATE_PUBLISH: Readonly<Record<string, TemplatePublish>> = Objec
   'pool-house': WALK,
   'cosy-apartment': WALK,
   'scandi-living-room': WALK,
-  'linden-row': WALK,
+  'linden-row': CITY,
   'kepler-base': GAME,
   'starlight-cinema': WALK,
   'orion-cinema': WALK,

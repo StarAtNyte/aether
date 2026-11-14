@@ -48,7 +48,8 @@ export function experienceFor(startMode: StartModeLike, profile: ProfileLike, ha
     const explore: ExploreStyle = profile === 'city' ? 'drone' : profile === 'walkthrough' ? 'walk' : 'orbit';
     return { kind: 'game', entry: 'title', explore, dollhouse: explore === 'walk' && hasBuilding, photo: true, stopsLabel: profile === 'city' ? 'Districts' : 'Viewpoints' };
   }
-  if (startMode === 'walkthrough' || profile === 'walkthrough') return { kind: 'arch', entry: 'hero-tour', explore: 'walk', dollhouse: hasBuilding, photo: true, stopsLabel: 'Tour' };
+  // Architecture opens like a scene (a fly-in to the outside, viewpoints, the cut-away dollhouse); you walk it only from Play.
+  if (startMode === 'walkthrough' || profile === 'walkthrough') return { kind: 'arch', entry: 'fly-in', explore: 'orbit', dollhouse: hasBuilding, photo: true, stopsLabel: 'Viewpoints' };
   if (profile === 'city') return { kind: 'city', entry: 'street-drone', explore: 'drone', dollhouse: false, photo: true, stopsLabel: 'Districts' };
   return { kind: 'showcase', entry: 'fly-in', explore: 'orbit', dollhouse: false, photo: true, stopsLabel: 'Viewpoints' };
 }

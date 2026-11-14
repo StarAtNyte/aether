@@ -14,8 +14,8 @@ describe('experience by kind', () => {
       return experienceFor(p.startMode, p.profile, building);
     };
     expect(of('kestrel-outpost')).toMatchObject({ kind: 'game', entry: 'title', explore: 'orbit' });
-    expect(of('casa-patio', true)).toMatchObject({ kind: 'arch', entry: 'hero-tour', explore: 'walk', dollhouse: true, stopsLabel: 'Tour' });
-    expect(of('photo-hotel-bedroom', false)).toMatchObject({ kind: 'arch', explore: 'walk', dollhouse: false });
+    expect(of('casa-patio', true)).toMatchObject({ kind: 'arch', entry: 'fly-in', explore: 'orbit', dollhouse: true, stopsLabel: 'Viewpoints' });
+    expect(of('photo-hotel-bedroom', false)).toMatchObject({ kind: 'arch', explore: 'orbit', dollhouse: false });
     expect(of('cliff-sanctuary')).toMatchObject({ kind: 'showcase', entry: 'fly-in', explore: 'orbit', photo: true });
     expect(of('lisbon-hills')).toMatchObject({ kind: 'city', entry: 'street-drone', explore: 'drone' });
     // A city with a game goal is played from its title card and explored as a city.
@@ -81,9 +81,9 @@ describe('player keys', () => {
   });
 
   it('shows a short hint per phase', () => {
-    expect(keyHint('exploring', arch)).toMatch(/Click the floor.*P play.*Esc/);
+    expect(keyHint('exploring', arch)).toMatch(/Drag to orbit.*P play/);
     expect(keyHint('exploring', show)).toMatch(/Drag to orbit.*P play/);
-    expect(keyHint('exploring', arch, true)).toMatch(/Tap the floor/);
+    expect(keyHint('exploring', arch, true)).toMatch(/Drag to look around/);
     expect(keyHint('playing', game)).toBe('Tab explore · Esc pause');
     expect(keyHint('title', game)).toBe('P play · Tab explore');
     expect(keyHint('paused', game)).toBe('');

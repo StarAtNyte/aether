@@ -94,7 +94,8 @@ describe('template publish settings', () => {
       expect(['game', 'walkthrough', 'showcase', 'city', 'vr', 'story']).toContain(p.profile);
       // Games start as games; a city with a game goal keeps its city profile for its explore mode.
       if (e.kind === 'game') expect(p, e.slug).toEqual({ startMode: 'play', profile: e.slug === 'neon-rain-city' ? 'city' : 'game' });
-      if (e.kind === 'architecture') expect(p, e.slug).toEqual({ startMode: 'walkthrough', profile: 'walkthrough' });
+      // Architecture walks through; Linden Row, a whole neighbourhood, is shown as a city (street view, drone, districts).
+      if (e.kind === 'architecture') expect(p, e.slug).toEqual(e.slug === 'linden-row' ? { startMode: 'orbit', profile: 'city' } : { startMode: 'walkthrough', profile: 'walkthrough' });
     }
     expect(templatePublish('lisbon-hills')).toEqual({ startMode: 'orbit', profile: 'city' });
     expect(templatePublish('neon-rain-city')).toEqual({ startMode: 'play', profile: 'city' });
