@@ -55,7 +55,7 @@ export const ORIGINAL_CAST: CastFile[] = [
    "licence": "VRM Public License 1.0",
    "licenceUrl": "https://vrm.dev/licenses/1.0/",
    "url": "https://github.com/vrm-c/vrm-specification/tree/master/samples/VRM1_Constraint_Twist_Sample",
-   "line": "Kaho's VRM body (test copy): VRM1_Constraint_Twist_Sample by pixiv Inc. (VRM Public License 1.0), converted for Aether"
+   "line": "Kaho's VRM body (Cloudwatch Harbour cast): VRM1_Constraint_Twist_Sample by pixiv Inc. (VRM Public License 1.0), converted for Aether"
   }
  },
  {
@@ -75,7 +75,7 @@ export const ORIGINAL_CAST: CastFile[] = [
    "licence": "VRM Public License 1.0",
    "licenceUrl": "https://vrm.dev/licenses/1.0/",
    "url": "https://github.com/vrm-c/vrm-specification/tree/master/samples/VRM1_Constraint_Twist_Sample",
-   "line": "Mio's VRM body (test copy): VRM1_Constraint_Twist_Sample by pixiv Inc. (VRM Public License 1.0), recoloured and converted for Aether"
+   "line": "Mio's VRM body (Cloudwatch Harbour cast): VRM1_Constraint_Twist_Sample by pixiv Inc. (VRM Public License 1.0), recoloured and converted for Aether"
   }
  }
 ] as CastFile[];

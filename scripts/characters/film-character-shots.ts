@@ -6,7 +6,7 @@
  *   STATIC_DIR=<dist> npx tsx scripts/characters/film-character-shots.ts --out=<dir> --tag=kaho [--entity=cw-kaho]
  *       [--body=kaho] [--glb=<body.glb>] [--scan=90] [--t=3.5,74] [--close=63]
  *
- * --world=<template id> (default cloudwatch-harbour, e.g. cloudwatch-harbour-vrm).
+ * --world=<template id> (default cloudwatch-harbour).
  * --scan=<s>: print the character's state every half second of film up to <s>. --t: story stills (the film's own camera)
  * plus a full-body front and three-quarter framing. --close=<t>: face (neutral, smile, blink, surprised) and hand
  * close-ups at <t>. --faceat=<t,..>: a face close-up at each time with the film's own expressions (nothing forced). The software renderer (CHROME_ARGS) is used unless GEN_GPU says otherwise; the player is waited

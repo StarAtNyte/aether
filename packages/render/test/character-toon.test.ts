@@ -144,7 +144,7 @@ describe('the toon cast', () => {
     expect(c.assets.join(' ')).toContain('motion set');
   });
 
-  it('credits the VRM test bodies of Kaho and Mio to the VRM model they are converted from; the live Kaho and Mio are this project\'s own', () => {
+  it('credits the VRM bodies of Kaho and Mio (the Cloudwatch Harbour cast) to the VRM model they are converted from; the live Kaho and Mio are this project\'s own', () => {
     expect(bodyCredits(['kaho', 'mio'])).toHaveLength(0);
     const c = bodyCredits(['kaho-vrm', 'mio-vrm']);
     expect(c).toHaveLength(1);
