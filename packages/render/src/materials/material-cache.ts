@@ -152,6 +152,13 @@ export function createMaterial(r: ResolvedMaterial, variant: MaterialVariant, su
     m.roughness = 1;
     applySplat(m, (id) => finishes.get(id), finishes.stack(SPLAT_LAYERS), groundDetail);
   }
+  if (r.splat) {
+    // Terrain, like the ground plane, yields in depth to what lies in its plane (a paving slab or a path laid on a flattened
+    // pad): without the bias the two fight and the paving's texture flickers in and out as the camera moves.
+    m.polygonOffset = true;
+    m.polygonOffsetFactor = 1;
+    m.polygonOffsetUnits = 1;
+  }
   if (variant === 'foliage') applyWind(m);
   if (!ghostLike && r.surface === 'water' && r.water?.kind === 'fall' && waterTier) {
     // Falling water: advected streaks, aeration, ragged edges (see `waterfall.ts`).

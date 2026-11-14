@@ -138,4 +138,47 @@ describe('CharacterController spawn settling', () => {
     expect(cc.position[1]).toBeGreaterThan(0.9);
     expect(cc.position[1]).toBeLessThan(1.1);
   });
+
+  // An architecture world's spawn at 0.1 m with its floor slab's top at 0.22 m: the capsule started inside the slab and ground
+  // in place under forward input until a jump lifted it out.
+  it('lifts a spawn embedded a little under a floor slab onto its top, and it walks without a jump', async () => {
+    const slab = box('slab', [0, 0.11, 0], [12, 0.22, 12], { body: 'static' });
+    const { pw, cc } = await make(0.1, [slab]);
+    expect(cc.position[1]).toBeGreaterThan(0.22);
+    expect(cc.position[1]).toBeLessThan(0.26);
+    const x0 = cc.position;
+    frames(pw, cc, 60, { forward: 1, right: 0, jump: false, yawDeg: 0 });
+    expect(x0[2] - cc.position[2]).toBeGreaterThan(3);
+    expect(cc.grounded).toBe(true);
+  });
+
+  it('settles a spot handed over later (Play from a walk or a film) the same way, ignoring its own capsule', async () => {
+    const slab = box('slab', [0, 0.11, 0], [12, 0.22, 12], { body: 'static' });
+    const { pw, cc } = await make(0.3, [slab]);
+    frames(pw, cc, 10, IDLE);
+    const at = cc.settle([2, 0.1, 2]);
+    expect(at[1]).toBeGreaterThan(0.22);
+    expect(at[1]).toBeLessThan(0.26);
+    expect(cc.settle(cc.position)[1]).toBeCloseTo(cc.position[1], 2);
+  });
+
+  it('does not lift a spawn standing under a low table onto it', async () => {
+    const { cc } = await make(0, [box('table', [0, 0.45, 0], [1, 0.06, 1], { body: 'static' })]);
+    expect(cc.position[1]).toBeLessThan(0.05);
+  });
+
+  it('moves a spawn inside furniture (a bed) to the nearest free floor beside it', async () => {
+    const slab = box('slab', [0, 0.075, 0], [12, 0.15, 12], { body: 'static' });
+    const bed = box('bed', [0, 0.4, 0], [1.6, 0.6, 2.1], { body: 'static' });
+    const { pw, cc } = await make(0.1, [slab, bed]);
+    const p = cc.position;
+    expect(Math.abs(p[0]) > 0.8 + 0.3 || Math.abs(p[2]) > 1.05 + 0.3).toBe(true);
+    expect(Math.hypot(p[0], p[2])).toBeLessThan(2.1);
+    expect(p[1]).toBeGreaterThan(0.15);
+    expect(p[1]).toBeLessThan(0.2);
+    const x0 = cc.position;
+    const away = (Math.atan2(-p[0], -p[2]) * 180) / Math.PI;
+    frames(pw, cc, 60, { forward: 1, right: 0, jump: false, yawDeg: away });
+    expect(Math.hypot(cc.position[0] - x0[0], cc.position[2] - x0[2])).toBeGreaterThan(2);
+  });
 });

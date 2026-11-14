@@ -626,6 +626,8 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
         onBlank={(k) => void actions.createBlank(k)}
         onTemplate={pickTemplate}
         onImport={() => fileRef.current?.click()}
+        noAssets={aiPrefs.noAssets}
+        onNoAssets={(on) => updateAiPrefs({ noAssets: on })}
       />
       <RenameDialog
         open={renaming !== null}

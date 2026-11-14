@@ -602,6 +602,21 @@ Considered and not shipped in this pass, with the reason (see also the vetting w
 | 10 adult bodies: marcus (Male_Adult_03), dario (Male_Adult_04), tomas (Male_Adult_05), felix (Male_Adult_06), kofi (Male_Adult_12), walter (Male_Adult_14), sophie (Female_Adult_02), edith (Female_Adult_04), rosa (Female_Adult_11), juno (Female_Adult_17) | [Microsoft Rocketbox](https://github.com/microsoft/Microsoft-Rocketbox), commit `0943055db6ec570bcef9f2c8b41c9e5467c808f9`, `Assets/Avatars/Adults/<name>/Export/<name>.fbx` | MIT, © 2020 Microsoft | Repository `LICENSE.md` (SHA-256 `17474e386e0b9e1a700cc3d06b2b0882a2c376d9c6b49c7f8274409b8f8d2352`), shipped unchanged as `assets/characters-LICENSE.md` (same SHA-256) |
 | 57 motion clips per gender (idles, walks, jog, run, sprint, crouch, talk and gesture, sit, turn, door, phone and similar), baked into `motions-male.81d7d7b9.glb` and `motions-female.7eae0659.glb` | Same repository, `Assets/Animations/all_animations_max_motextr_{static,xy,xyz}/` | MIT, © 2020 Microsoft | Same |
 | 10 clips per gender: jump_start, jump_air, fall, land, hit, attack, throw, pickup, death, crouch_walk | Keyframed for Aether on the Biped skeleton (`scripts/characters/authored.ts`) | MIT (this project) | Rocketbox has no such clips |
+| Toon bodies `kaho` and `mio` (`assets/lib/c/kaho.*.glb`, `mio.*.glb` and their `.lod1`) | [VRM1_Constraint_Twist_Sample](https://github.com/vrm-c/vrm-specification/tree/master/samples/VRM1_Constraint_Twist_Sample) by pixiv Inc. (VRM 1.0 sample model, `vrm/VRM1_Constraint_Twist_Sample.vrm`, SHA-256 `12c2b97e95e700783a6a550dc0eee2d7880aeedccef9ae67bc4c5a2f0f2631a2`); converted by this project (`scripts/characters/vrm-character.ts`), Mio also recoloured | [VRM Public License 1.0](https://vrm.dev/licenses/1.0/), (c) 2022 pixiv Inc. | The file's own `VRMC_vrm.meta`: `allowRedistribution: true`, `modification: allowModificationRedistribution`, `commercialUsage: corporation`, `avatarPermission: everyone`, `creditNotation: unnecessary`, `allowAntisocialOrHateUsage: false`; checked by the converter on every run |
+
+VRM Public License 1.0 in short (full text at https://vrm.dev/licenses/1.0/): the model stays the work of its author
+(pixiv Inc.); the licence flags in the model file decide what is allowed, and for this model they allow use as an avatar
+by anyone, commercial use by individuals and corporations, modification and redistribution of the original and the
+modified model; credit is not required, and the model must not be used for antisocial or hateful expression. Kaho's
+and Mio's bodies are therefore **not** this project's MIT work: the in-app credits (`bodyCredits` in
+`packages/assets/src/characters/credits.ts`, in the credits panel, the end screen and `CREDITS.txt`) name pixiv Inc. and
+the licence for any world that uses them, with the line *"Kaho's body: VRM1_Constraint_Twist_Sample by pixiv Inc. (VRM
+Public License 1.0), converted for Aether"* (and the same for Mio, "recoloured and converted"). Their skeleton rest pose
+and five extra clips come from this project's earlier Blender Kaho (`scripts/characters/vrm/biped-rest.glb`, MIT); the
+shared motion set is Rocketbox's (MIT, below).
+
+Considered and not used: Seed-san (VirtualCast, Inc., VRM Public License 1.0; flags allow redistribution, modification
+and commercial use, credit required): she carries a robot arm, a backpack and sci-fi gear, not the plain girl Mio is.
 
 Credit line (in-app, `packages/assets/src/characters/credits.ts`, added to
 every world that has a person in it): *"Microsoft Rocketbox avatars and

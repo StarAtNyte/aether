@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { Story, storyDuration, validateWorld, type StoryInput } from '@aether/core';
 import { worldIrHash } from '@aether/render';
-import { actorPoses, alongPath, blendGrade, ease, END_HANDOVER_SECONDS, END_HOLD_SECONDS, pathLengths, shotAt, shotStarts, splineAt, storyCast, storyFrame } from '../src/player/story';
+import { actorPoses, alongPath, blendGrade, ease, END_HANDOVER_SECONDS, END_HOLD_SECONDS, pathLengths, shotAt, shotStarts, splineAt, storyCast, storyFrame, walkersOf } from '../src/player/story';
 import { FeetGround, groundPath, TriangleGround } from '../src/player/story-runner';
 import { experienceFor, keyAction, keyHint } from '../src/player/experience';
 import { templatePublish } from '../src/showcase/publish';
@@ -139,6 +139,22 @@ describe('story timeline', () => {
   });
 });
 
+describe('walkersOf', () => {
+  const mv = (entity: string, path: number[][], ground = true) => ({ entity, path, ground, start: 0, end: 1, ease: 'linear', orient: true });
+  it('names the people a shot walks on the ground, not riders or people standing still', () => {
+    const shot = {
+      moves: [
+        mv('climber', [[0, 6, 4], [0, 6, -5.5], [0, 8.6, -8.4]]),
+        mv('stander', [[1, 0, 1]]),
+        mv('shuffler', [[2, 0, 2], [2, 0, 2.01]]),
+        mv('rider', [[0, 7, 0], [-30, 7, 0]], false),
+        mv('lift', [[3, 0, 3], [3, 4, 3]]),
+      ],
+    } as never;
+    expect([...walkersOf(shot)]).toEqual(['climber']);
+  });
+});
+
 describe('story start mode', () => {
   it('opens a story world on its film, and falls back to a showcase without one', () => {
     expect(experienceFor('story', 'showcase', false, true)).toMatchObject({ kind: 'story', entry: 'story', explore: 'orbit' });
@@ -178,6 +194,19 @@ describe('Cloudwatch Harbour', () => {
     expect(d).toBeLessThanOrEqual(120);
     for (const s of w.story!.shots) for (const m of s.moves) expect(Object.hasOwn(w.entities, m.entity) || m.entity === 'cw-train' || m.entity === 'cw-mio').toBe(true);
     expect(w.entities['cw-kaho']?.character?.body).toBe('kaho');
+  });
+
+  it('lets go of a held clip when a later shot walks the person (Kaho steps up the stair after the look up)', () => {
+    if (!v.ok) return;
+    const shots = v.world.story!.shots;
+    const look = shots.findIndex((s) => (s.actions ?? []).some((a) => a.entity === 'cw-kaho' && a.clip === 'look_up'));
+    expect(look).toBeGreaterThanOrEqual(0);
+    // Every later shot that moves her up the stair walks her: the clip is let go at its cut.
+    const climbs = shots.slice(look + 1).filter((s) => s.moves.some((m) => m.entity === 'cw-kaho' && m.path.length > 1 && Math.abs((m.path[m.path.length - 1] as number[])[1]! - (m.path[0] as number[])[1]!) > 1));
+    expect(climbs.length).toBeGreaterThan(0);
+    for (const s of climbs) expect(walkersOf(s).has('cw-kaho')).toBe(true);
+    // Mio rides the train (a path kept off the ground): her gestures at the window hold.
+    for (const s of shots) expect(walkersOf(s).has('cw-mio') && s.moves.some((m) => m.entity === 'cw-mio' && m.ground === false)).toBe(false);
   });
 
   it('gives play solid ground: static triangle meshes under the spawn and the lookout', () => {

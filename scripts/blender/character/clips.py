@@ -47,7 +47,7 @@ def curl(gp, side, finger, angle):
             continue
         W = gp.world()
         x, y, z = hand_frame(W, side)
-        axis = y if finger != '0' else x
+        axis = _bend_axis(W, side, n, x, y, z) if finger != '0' else x
         sgn = (1 if side == 'L' else -1) * (1 if finger == '0' else -1)
         gp.rotate_world(n, axis * sgn, angle)
 
@@ -92,7 +92,7 @@ def thumb_in(gp, side, lift=-18.0, across=0.0, bend=(10.0, 16.0)):
 def relax_hand(gp, side, amount=1.0):
     """The hand at ease: fingers together and softly curled, more toward the little finger (base, middle and tip
     joints each bending a little more than the one before), the thumb beside the index and bent a little."""
-    gather_fingers(gp, side)
+    gather_fingers(gp, side, keep=0.15)
     for f, k in (('1', 0.75), ('2', 0.9), ('3', 1.05), ('4', 1.2)):
         for seg, a in (('', 14), ('1', 24), ('2', 14)):
             curl_joint(gp, side, f'{f}{seg}', rad(a * k * amount))
@@ -103,7 +103,27 @@ def curl_joint(gp, side, joint, angle):
     """Bend one finger joint (Finger1, Finger21, ...) toward the palm."""
     W = gp.world()
     x, y, z = hand_frame(W, side)
-    gp.rotate_world(f'Bip01_{side}_Finger{joint}', y * (-1 if side == 'L' else 1), angle)
+    n = f'Bip01_{side}_Finger{joint}'
+    axis = _bend_axis(W, side, n, x, y, z) if not joint.startswith('0') else y
+    gp.rotate_world(n, axis * (-1 if side == 'L' else 1), angle)
+
+
+def _bend_axis(W, side, n, x, y, z):
+    """The hinge of a finger joint: across the finger's own line in the hand's plane (the hand's across axis only for
+    the middle finger). Bending every finger about the hand's across axis turned the fanned ring and little fingers
+    sideways as they curled, into hooks."""
+    base, rest = n.split('Finger')
+    base += 'Finger'
+    child = base + rest + '1' if len(rest) == 1 else base + rest[0] + '2' if rest[1] == '1' else None
+    if child and child in W:
+        d = W[child].translation - W[n].translation
+    else:
+        d = W[n].translation - W[base + rest[0] + '1'].translation
+    d = d - z * d.dot(z)
+    if d.length < 1e-6:
+        return y
+    a = z.cross(d.normalized())
+    return a if a.dot(y) >= 0 else -a
 
 
 def orient_hand(gp, side, fingers_to, back_to, twist=0.0):
@@ -270,8 +290,12 @@ def poses(base, spec):
     target = chest + Vector((0.02, 0.01, front))
     hc.ik('Bip01_R_UpperArm', 'Bip01_R_Forearm', 'Bip01_R_Hand', target, chest + Vector((-0.3, -0.25, 0.0)))
     orient_hand(hc, 'R', (0.85, 0.35, 0.1), (0.15, 0.0, 1.0))
-    gather_fingers(hc, 'R', keep=0.4)
-    for f, a in (('1', 12), ('2', 12), ('3', 14), ('4', 16), ('0', 8)):
+    # flat on the chest: the idle's curl taken out first (curled further, its ring and little fingers stood off as hooks)
+    for f in ('1', '2', '3', '4'):
+        flatten(hc, 'R', f)
+        straighten(hc, 'R', f)
+    gather_fingers(hc, 'R', keep=0.25)
+    for f, a in (('1', 7), ('2', 8), ('3', 10), ('4', 12), ('0', 8)):
         curl(hc, 'R', f, rad(a))
     hc.rotate_world('Bip01_Head', X, rad(8))
     hc.rotate_world('Bip01_Spine2', X, rad(3))

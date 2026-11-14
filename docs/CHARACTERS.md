@@ -12,7 +12,7 @@ reads a source file: it loads glTF files built offline by
 | 10 adult bodies | [Microsoft Rocketbox](https://github.com/microsoft/Microsoft-Rocketbox), commit `0943055db6ec570bcef9f2c8b41c9e5467c808f9`, `Assets/Avatars/Adults/<name>/Export/<name>.fbx` | MIT, © 2020 Microsoft |
 | 57 motion clips per gender | Same repository, `Assets/Animations/all_animations_max_motextr_{static,xy,xyz}/` | MIT, © 2020 Microsoft |
 | 10 clips per gender | Keyframed in `scripts/characters/authored.ts` | MIT (this project) |
-| Toon bodies `kaho`, `mio` | Built by the Blender character pipeline `scripts/blender/character/` (mesh, painted face, hair, clothes and every colour generated there; only the Biped's rest transforms are read from `juno`) | MIT (this project) |
+| Toon bodies `kaho`, `mio` | Converted from [VRM1_Constraint_Twist_Sample](https://github.com/vrm-c/vrm-specification/tree/master/samples/VRM1_Constraint_Twist_Sample) by pixiv Inc. (Mio recoloured) with `scripts/characters/vrm-character.ts`; not this project's work. Skeleton rest and five extra clips from the Blender Kaho (`scripts/characters/vrm/biped-rest.glb`) | [VRM Public License 1.0](https://vrm.dev/licenses/1.0/), (c) 2022 pixiv Inc. (redistribution, modification and commercial use allowed; credit not required, given anyway) |
 
 The repository's `LICENSE.md` is copied unchanged to
 `assets/characters-LICENSE.md` by the build. The in-app credit line and the
@@ -132,6 +132,17 @@ result is an ordinary base colour texture; variants share materials by key
   data (`GENERATED_LIBRARY`). Generated; do not edit.
 
 ## Kaho, Mio and the character pipeline
+
+**Since 2026-11-14 the shipped `kaho` and `mio` are VRM conversions, not the Blender bodies described below.** Both are
+pixiv's VRM1_Constraint_Twist_Sample (VRM Public License 1.0), converted by `scripts/characters/vrm-character.ts` from
+the briefs in `scripts/characters/vrm/` (Mio: black hair, sage-mint top, beige shorts, grey-brown eyes by per-material
+texture recolours): posed into the Biped rest, bound to the Biped with the Blender Kaho's rest rotations so every clip
+plays unchanged, VRM expressions as the face morphs, MToon materials as the toon pair, hair chains as springs; WebP
+textures, meshopt, a `.lod1`; 1.53 m, 36.5 k triangles, 1.08 MB (lod1 14.6 k, 0.56 MB). Credited by `bodyCredits` in
+`packages/assets/src/characters/credits.ts`. Known gaps: rigid twist helpers (wrists can pinch), no spring colliders,
+no skirt (the model wears shorts; the skirt gate skips them), `teary` is empty, and the slow walk's foot slide is 8.5 %
+against the 8 % gate. Stills: `scripts/characters/film-character-shots.ts`. The Blender pipeline below is kept and can
+rebuild the earlier bodies.
 
 `kaho` (`style: 'toon'`, 1.54 m, 6.45 heads, 57.4 k triangles, 945 KB) and `mio` (1.54 m, 59.6 k triangles, 1,000 KB)
 are built by the Blender character pipeline (`scripts/blender/character/build.py`; docs/BLENDER-HARNESS.md,

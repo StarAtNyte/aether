@@ -17,7 +17,7 @@ import { compileFacade } from './facade';
 import { wallNetwork, type NetworkWall } from './wall-network';
 import { solveWallJoins } from './wall-joins';
 import { compassNormal, compassOf, edgePoint, exteriorSpans, outlineLoops, offsetPolygon, roomEdges, roomPolygon, sharedSpans, type EdgeSpan, type RoomEdge } from './rooms';
-import { bounds, centroid, interiorPoint, isAxisRectangle, pointInPolygon, pointSegmentDistance, positive, rotateYaw, simplifyPolygon, yawOf, type P2 } from './math2';
+import { bounds, centroid, interiorPoint, isAxisRectangle, pointInPolygon, pointSegmentDistance, positive, rect, rotateYaw, simplifyPolygon, yawOf, type P2 } from './math2';
 import { furnishRoom } from './recipes';
 import { type Placed, type RoomContext, type RoomDoor, type RoomWindow } from './layout';
 import { stairFootprint, stairGuardPieces, stairLayout } from './stair';
@@ -934,7 +934,11 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
         const poly = polys.get(r.id) as P2[];
         const c = interiorPoint(poly);
         if (abovePolys.some((p) => pointInPolygon(c[0], c[1], p))) continue;
-        add({ id: `${lid}-terr${k++}`, parent: lid, name: 'Roof terrace', transform: { position: [0, round(height), 0] }, shape: { kind: 'procedural', generator: 'arch-slab', params: { polygon: offsetPolygon(positive(poly), 0.02).map((p) => [round(p[0]), round(p[1])]), thickness: FLOOR_THICKNESS, finish: { finish: 'decking' }, edge: { finish: 'plaster', color: '#ece9e3' }, bottom: false } as unknown as Record<string, Json> }, physics: { body: 'static', collider: 'auto' }, arch: { role: 'roof', kind: 'terrace' }, tags: ['arch', 'roof'] });
+        // A room partly under the level above: the terrace is only the uncovered part (the full plate would lie in the
+        // plane of the floor above and fight it where they overlap).
+        for (const piece of uncoveredPieces(positive(poly), abovePolys)) {
+          add({ id: `${lid}-terr${k++}`, parent: lid, name: 'Roof terrace', transform: { position: [0, round(height), 0] }, shape: { kind: 'procedural', generator: 'arch-slab', params: { polygon: offsetPolygon(piece, 0.02).map((p) => [round(p[0]), round(p[1])]), thickness: FLOOR_THICKNESS, finish: { finish: 'decking' }, edge: { finish: 'plaster', color: '#ece9e3' }, bottom: false } as unknown as Record<string, Json> }, physics: { body: 'static', collider: 'auto' }, arch: { role: 'roof', kind: 'terrace' }, tags: ['arch', 'roof'] });
+        }
       }
     }
     elevation += height;
@@ -1116,6 +1120,8 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
     spots.forEach((spot, k) => add(residentEntity(spot, k, bid, plan.origin, plan.rotation, seed + hashId(bid), routines[k] ?? [])));
   }
   const sw = rotateYaw(sp[0], sp[1], plan.rotation);
+  // A little over the ground. Indoors this is under the plinth's top; the live game lifts the character onto the floor
+  // when it settles the spawn (CharacterController settleSpawn), so the saved spawn stays where the playtest bot expects it.
   const spawn: [number, number, number] = [round(plan.origin[0] + sw[0]), 0.1, round(plan.origin[1] + sw[1])];
   const corners = [
     rotateYaw(minX, minZ, plan.rotation),
@@ -1151,6 +1157,40 @@ export function compileBuilding(input: BuildingPlanInput | BuildingPlan, opts: {
     exterior,
   };
 
+}
+
+/**
+ * The parts of a roof plate `poly` not under any of `covers` (the rooms of the level above). Axis-aligned rectangles are cut
+ * exactly (each cover leaves up to four rectangles); any other shape is kept whole (its centre is already uncovered).
+ */
+export function uncoveredPieces(poly: readonly P2[], covers: ReadonlyArray<readonly P2[]>): P2[][] {
+  if (!isAxisRectangle(poly)) return [[...poly]];
+  type R4 = [number, number, number, number];
+  let pieces: R4[] = [bounds(poly)];
+  for (const cover of covers) {
+    const [cx0, cz0, cx1, cz1] = bounds(cover);
+    const overlaps = (q: R4): boolean => Math.min(q[2], cx1) - Math.max(q[0], cx0) > 1e-3 && Math.min(q[3], cz1) - Math.max(q[1], cz0) > 1e-3;
+    if (!pieces.some(overlaps)) continue;
+    if (!isAxisRectangle(cover)) return [[...poly]];
+    const next: R4[] = [];
+    for (const q of pieces) {
+      if (!overlaps(q)) {
+        next.push(q);
+        continue;
+      }
+      const [x0, z0, x1, z1] = q;
+      const ix0 = Math.max(x0, cx0);
+      const ix1 = Math.min(x1, cx1);
+      if (cz0 > z0) next.push([x0, z0, x1, cz0]);
+      if (cz1 < z1) next.push([x0, cz1, x1, z1]);
+      const mz0 = Math.max(z0, cz0);
+      const mz1 = Math.min(z1, cz1);
+      if (ix0 > x0) next.push([x0, mz0, ix0, mz1]);
+      if (ix1 < x1) next.push([ix1, mz0, x1, mz1]);
+    }
+    pieces = next.filter((q) => q[2] - q[0] > 0.05 && q[3] - q[1] > 0.05);
+  }
+  return pieces.map((q) => rect(q[0], q[1], q[2], q[3]));
 }
 
 /**

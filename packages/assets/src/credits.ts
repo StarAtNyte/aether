@@ -11,7 +11,7 @@ import { TEXTURE_PROVENANCE_LABEL } from './texture-sets';
 import { getCatalog } from './registry';
 import { ABO_CREDIT, ABO_PACK, ABO_PACK_ID } from './abo';
 import type { Catalog, CatalogPack } from './schema';
-import { characterCredit } from './characters/credits';
+import { bodyCredits, characterCredit } from './characters/credits';
 import { castById } from './characters/library';
 
 /** One credit line. */
@@ -76,6 +76,7 @@ export function creditsFor(world: Pick<WorldDoc, 'entities' | 'environment'> & {
   }
   const out = [...groups.values()];
   if (anyPerson) out.push(characterCredit(people.size > 0 ? [...people] : undefined));
+  if (people.size > 0) out.push(...bodyCredits([...people]));
   for (const g of out) g.assets = [...new Set(g.assets)].sort();
   return out.sort((a, b) => ((a.source === 'Your imports' ? 1 : 0) - (b.source === 'Your imports' ? 1 : 0) || a.source.localeCompare(b.source) || a.author.localeCompare(b.author)));
 }

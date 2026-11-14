@@ -7,6 +7,7 @@ import type { BlankKind } from '../projects/create';
 import { Icon, type IconName } from '../components/Icon';
 import { Dialog } from '../components/ui/Dialog';
 import { Thumb } from './cards';
+import { NO_ASSETS_TIP } from './Hero';
 
 const BLANKS: ReadonlyArray<{ kind: BlankKind; title: string; hint: string; icon: IconName }> = [
   { kind: 'empty', title: 'Empty scene', hint: 'Ground and sky only', icon: 'square' },
@@ -21,6 +22,8 @@ export const NewProjectDialog = memo(function NewProjectDialog({
   onBlank,
   onTemplate,
   onImport,
+  noAssets = false,
+  onNoAssets,
 }: {
   open: boolean;
   onClose: () => void;
@@ -28,6 +31,9 @@ export const NewProjectDialog = memo(function NewProjectDialog({
   onBlank: (kind: BlankKind) => void;
   onTemplate: (slug: string) => void;
   onImport: () => void;
+  /** The "No assets" AI preference (shared with the hero, the editor and Settings). */
+  noAssets?: boolean;
+  onNoAssets?: (on: boolean) => void;
 }): ReactElement {
   const [prompt, setPrompt] = useState('');
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -92,6 +98,12 @@ export const NewProjectDialog = memo(function NewProjectDialog({
         />
         <div className="prompt-box__bar">
           <span className="prompt-box__hint">The agent builds it, checks the physics and opens the editor.</span>
+          {onNoAssets && (
+            <button type="button" className={`chip hero-bar__noassets${noAssets ? ' is-on' : ''}`} aria-pressed={noAssets} data-tip={NO_ASSETS_TIP} aria-label={`No assets: ${NO_ASSETS_TIP}`} data-testid="new-project-no-assets" onClick={() => onNoAssets(!noAssets)}>
+              <Icon name="shapes" />
+              <span className="hero-bar__noassets-label">No assets</span>
+            </button>
+          )}
           <button type="submit" className="btn btn--primary" disabled={prompt.trim() === ''}>
             Create
           </button>

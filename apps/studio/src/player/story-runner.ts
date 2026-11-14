@@ -7,7 +7,7 @@
  */
 import type { Environment, Story, StoryGrade, StoryMove, WorldDoc } from '@aether/core';
 import type { WorldRenderer } from '@aether/render';
-import { actorPoses, END_HANDOVER_SECONDS, END_HOLD_SECONDS, pathLengths, shotStarts, storyFrame, type ActorPose, type StoryFrame } from './story';
+import { actorPoses, END_HANDOVER_SECONDS, END_HOLD_SECONDS, pathLengths, shotStarts, storyFrame, walkersOf, type ActorPose, type StoryFrame } from './story';
 import type { StorySoundSink } from './story-audio';
 
 type V3 = [number, number, number];
@@ -271,7 +271,7 @@ export class StoryRunner {
   private aim: V3 | null = null;
   /** Seconds into the current shot at the last frame (one-shot sounds and clips fire as it passes them). */
   private lastLocal = 0;
-  /** Clips playing on people (stopped when the film ends or a later clip replaces them). */
+  /** Clips playing on people (stopped when the film ends, a later clip replaces them or a later shot walks them). */
   private readonly clipped = new Set<string>();
   /** People whose face a shot set (their expressions are let go when the film ends). */
   private readonly expressed = new Set<string>();
@@ -529,6 +529,14 @@ export class StoryRunner {
     }
     const shot = this.laid.shots[frame.index];
     if (!shot) return;
+    // A clip held from an earlier shot ends for the people this shot walks: their legs go back to the gait (a held
+    // clip keeps the body off locomotion, and a person walked with one glides).
+    if (cut && this.clipped.size > 0) {
+      for (const id of walkersOf(shot)) {
+        if (!this.clipped.delete(id)) continue;
+        this.renderer.characterRig?.(id)?.stopClip();
+      }
+    }
     // Entering a shot mid-way (a seek) fires only what is still ahead of it, except at its very start.
     const lo = cut ? Math.min(frame.local, 0.25) - 1e-6 : from;
     for (const s of shot.sounds ?? []) if (s.at > lo && s.at <= frame.local) audio?.sound(s.sound, s.gain, s.seconds);

@@ -39,6 +39,11 @@ export interface CastFile {
   style?: 'toon';
   /** The far level of detail (the same skeleton, clips and materials, fewer triangles, no morphs), when one was built. */
   lod1?: LodFile;
+  /**
+   * A body converted from someone else's model (`scripts/characters/vrm-character.ts`): where it came from and under
+   * which licence; the credits list it as theirs. Absent = this project's own body (MIT) or a Rocketbox one.
+   */
+  credit?: { source: string; author: string; licence: string; licenceUrl: string; url: string; line?: string };
 }
 
 /** A reduced level of detail of a body, under the library base. */

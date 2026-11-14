@@ -145,6 +145,7 @@ def build(spec, P, out):
     lab, tp = BODY.labels(body, J)
     W, unweighted = RIG.body_weights(body, main_bones)
     W = RIG.fix_body_weights(body, W, lab)
+    W = RIG.finger_weights(body, W, lab, J)
     log('face')
     head, ears, form, chin = FACE.build_head(J, spec)
     decals = FACE.build_decals(head, chin, form.u, atlas, spec)

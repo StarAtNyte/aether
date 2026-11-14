@@ -318,6 +318,21 @@ export function storyFrame(story: Story, starts: readonly number[], t: number, a
   };
 }
 
+/**
+ * The entities a shot walks: a move on the ground (not a rider's, `ground: false`) whose path goes somewhere (more than
+ * 5 cm across). A clip held over from an earlier shot (a gesture, a look up) is let go for them at the cut: a held clip
+ * takes the body from locomotion, so a person walked up a stair while holding it glides with still legs.
+ */
+export function walkersOf(shot: Pick<StoryShot, 'moves'>): Set<string> {
+  const out = new Set<string>();
+  for (const m of shot.moves) {
+    if (m.ground === false || m.path.length < 2) continue;
+    const a = m.path[0] as readonly number[];
+    if (m.path.some((p) => Math.hypot((p[0] as number) - (a[0] as number), (p[2] as number) - (a[2] as number)) > 0.05)) out.add(m.entity);
+  }
+  return out;
+}
+
 /** The people a story moves (entities with a `character`): they step aside while the visitor plays. */
 /**
  * Where the visitor stands when they play after the film: the story's own `playFrom`; else, when the last shot follows a

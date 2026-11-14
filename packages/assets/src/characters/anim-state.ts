@@ -217,6 +217,14 @@ export class LocomotionMachine {
     return true;
   }
 
+  /**
+   * End a requested one-shot action (wave, nod ...) now: locomotion takes over on the next update. A hit or an attack
+   * plays out. (A film lets go of a gesture when a later shot walks the person: a long wave would hold the legs still.)
+   */
+  cancelAction(): void {
+    if (this.oneShot && this.oneShot.state === 'action') this.oneShot = null;
+  }
+
   /** Pick the gait clip for a speed (hysteresis keeps the choice from flickering at boundaries). */
   private pickGait(speed: number, mood: CharacterMood, sprinting: boolean): { clip: string; stride: number } | null {
     if (this.ladder.length === 0) return null;

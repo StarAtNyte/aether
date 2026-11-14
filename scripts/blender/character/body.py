@@ -117,7 +117,7 @@ def build_body(J, spec):
 
 FINGER_JOINTS = ('0', '01', '02', '1', '11', '12', '2', '21', '22', '3', '31', '32', '4', '41', '42')
 # per finger: radius (m at 1.54 m) and the tip's length as a share of the middle phalanx
-FINGERS = {'1': (0.0078, 0.82), '2': (0.008, 0.85), '3': (0.0076, 0.82), '4': (0.0066, 0.8)}
+FINGERS = {'1': (0.0078, 0.74), '2': (0.008, 0.76), '3': (0.0076, 0.74), '4': (0.0068, 0.72)}
 
 
 def finger_tip(f, k):
@@ -145,13 +145,16 @@ def build_hand(G, J, side, wrist, f, hand_s, male):
         r *= hand_s * (1.08 if male else 1.0)
         a, b, c = f[k], f[k + '1'], f[k + '2']
         tip = finger_tip(f, k)
+        # an anime finger tapers evenly from the knuckle to a soft tip: the joints only a hair fuller than the shafts
+        # (a swell at each joint over a thinner shaft read as a string of beads under the outline)
         G.chain(knuck[k], [
-            (lerp(a, b, 0.5), r * 0.94, r * 0.86),
-            (b, r * 1.0, r * 0.92),            # the middle knuckle
-            (lerp(b, c, 0.5), r * 0.86, r * 0.8),
-            (c, r * 0.9, r * 0.84),             # the last knuckle
-            (lerp(c, tip, 0.55), r * 0.84, r * 0.76),
-            (tip, r * 0.5, r * 0.45),
+            (lerp(a, b, 0.5), r * 0.98, r * 0.88),
+            (b, r * 0.94, r * 0.86),            # the middle knuckle
+            (lerp(b, c, 0.5), r * 0.86, r * 0.79),
+            (c, r * 0.82, r * 0.76),            # the last knuckle
+            (lerp(c, tip, 0.5), r * 0.76, r * 0.7),
+            (lerp(c, tip, 0.85), r * 0.62, r * 0.56),
+            (tip, r * 0.36, r * 0.32),
         ])
     a, b, c = f['0'], f['01'], f['02']
     tip = finger_tip(f, '0')
@@ -182,8 +185,15 @@ def hand_frame(J, side):
 
 
 def shape_palm(ob, J, side, spec):
-    """Flatten the palm (the skin graph makes it round): wider across, thinner back to front, fading to the wrist."""
+    """Flatten the palm (the skin graph makes it round): wider across, thinner back to front, fading to the wrist and
+    out before the lowest knuckle. The fingers and the thumb are left round: widened with the palm, the index and little
+    fingers' first phalanges and the thumb were pushed out sideways from their bones, so a straightened hand drew them
+    as flat spurs with the finger hooked up at the end."""
     o, x, y, z, L = hand_frame(J, side)
+    u_knuckle = min((J[f'Bip01_{side}_Finger{k}'] - o).dot(x) / L for k in '1234')
+    thumb = [J[f'Bip01_{side}_Finger0{s}'] for s in ('1', '2')]
+    thumb.append(thumb[1] + (thumb[1] - thumb[0]) * 0.62)
+    r_thumb = 0.016 * spec['height'] / 1.54
     for v in ob.data.vertices:
         d = v.co - o
         u = d.dot(x) / L
@@ -193,10 +203,21 @@ def shape_palm(ob, J, side, spec):
         c = d.dot(z)
         if abs(a) > 0.06 or abs(c) > 0.05:
             continue
-        w = smoothstep(-0.15, 0.3, u) * (1 - smoothstep(0.92, 1.12, u))
-        a2 = a * (1 + 0.45 * w)
+        w = smoothstep(-0.15, 0.3, u) * (1 - smoothstep(u_knuckle - 0.12, u_knuckle + 0.02, u))
+        if w <= 0:
+            continue
+        # off the thumb past its knuckle
+        dt = min(_seg_dist(v.co, thumb[i], thumb[i + 1]) for i in range(2))
+        w *= smoothstep(0.6 * r_thumb, 1.3 * r_thumb, dt)
+        a2 = a * (1 + 0.4 * w)
         c2 = c * (1 - 0.4 * w)
         v.co = o + x * d.dot(x) + y * a2 + z * c2
+
+
+def _seg_dist(p, a, b):
+    d = b - a
+    t = max(0.0, min(1.0, (p - a).dot(d) / max(1e-12, d.dot(d))))
+    return (p - (a + d * t)).length
 
 
 def shape_body(ob, J, spec):

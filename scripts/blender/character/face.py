@@ -39,13 +39,17 @@ class HeadForm:
         self.cran_r = np.array([0.078 + 0.004 * male, 0.097, 0.095]) * u
         jaw_w = 0.06 + 0.008 * male + 0.004 * old - (0.004 if anime and not male else 0)
         self.jaw_a = np.array([0, -0.012, 0.086]) * u
-        self.jaw_b = np.array([0, -(0.044 if anime and not male else 0.05) - 0.004 * male, 0.019 + 0.004 * male + (0.016 if anime and not male else 0)]) * u
+        # (an anime girl's chin sits back under the mouth and a little high: pushed forward, the jaw read in three
+        # quarters as a long straight wedge from the ear)
+        self.jaw_b = np.array([0, -(0.039 if anime and not male else 0.05) - 0.004 * male, 0.019 + 0.004 * male + (0.019 if anime and not male else 0)]) * u
         self.jaw_ra = jaw_w * u
         # the chin: soft and round for an anime girl, squarer for men
         # (an anime girl's chin is a short, round curve under the mouth, not a point: a wider end of the jaw's cone)
         self.jaw_rb = (0.018 + 0.012 * male + (0.014 if anime and not male else 0)) * u
-        self.cheek_c = np.array([(0.034 if anime and not male else 0.037) + 0.004 * male, -0.036, 0.07]) * u
-        self.cheek_r = (0.023 if anime and not male else 0.026) * u
+        # full, low cheeks for an anime girl: the line from the ear to the chin bows out (a soft round lower face in
+        # three quarters, not a straight jaw)
+        self.cheek_c = np.array([(0.037 if anime and not male else 0.037) + 0.004 * male, -0.033 if anime and not male else -0.036, 0.064 if anime and not male else 0.07]) * u
+        self.cheek_r = (0.0275 if anime and not male else 0.026) * u
         self.k = 0.03 * u
         self.chin_c = np.array([0, -0.04, 0.03]) * u
         self.brow_c = np.array([0, -0.018, 0.148]) * u

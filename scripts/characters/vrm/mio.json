@@ -1,0 +1,22 @@
+{
+ "id": "mio",
+ "gender": "female",
+ "look": "anime girl, long straight black hair, pale sage-mint short-sleeve top, light-beige shorts, white sneakers, dark grey-brown eyes",
+ "sha256": "12c2b97e95e700783a6a550dc0eee2d7880aeedccef9ae67bc4c5a2f0f2631a2",
+ "credit": {
+  "source": "VRM1_Constraint_Twist_Sample (VRM 1.0 sample model), recoloured",
+  "author": "pixiv Inc., (c) 2022 pixiv Inc.",
+  "licence": "VRM Public License 1.0",
+  "licenceUrl": "https://vrm.dev/licenses/1.0/",
+  "url": "https://github.com/vrm-c/vrm-specification/tree/master/samples/VRM1_Constraint_Twist_Sample",
+  "line": "Mio's body: VRM1_Constraint_Twist_Sample by pixiv Inc. (VRM Public License 1.0), recoloured and converted for Aether"
+ },
+ "recolour": [
+  { "match": "Hair", "op": "lum", "colour": "#2a2630" },
+  { "match": "Tops", "op": "mul", "colour": "#c8dcc4" },
+  { "match": "Bottoms", "op": "lift", "colour": "#e6d6c3" },
+  { "match": "EyeIris", "op": "lum", "colour": "#4a3e3a" }
+ ],
+ "textureMax": 512,
+ "textureMaxBy": [{ "match": "Tops|Face_00_SKIN", "max": 1024 }]
+}

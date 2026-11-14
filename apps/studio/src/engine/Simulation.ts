@@ -1114,7 +1114,8 @@ export class Simulation {
   placePlayer(feet: Vec3, yawDeg: number, pitchDeg = 0): boolean {
     const c = this.session?.character;
     if (!c || !Number.isFinite(yawDeg + pitchDeg + feet[0] + feet[1] + feet[2])) return false;
-    c.teleport(feet);
+    // A spot handed over from a walk or a film may be sunk a few centimetres in a floor slab: stand on its top.
+    c.teleport(c.settle(feet));
     this.input.setYaw(yawDeg);
     this.input.setPitch(pitchDeg);
     return true;

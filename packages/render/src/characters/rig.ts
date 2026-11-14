@@ -648,8 +648,9 @@ export class CharacterRig {
     return true;
   }
 
-  /** End a clip started with {@link playClip}: locomotion takes over again. */
+  /** End a clip started with {@link playClip} (or a one-shot action it started through the state machine): locomotion takes over again. */
   stopClip(): void {
+    this.machine.cancelAction();
     this.forced = null;
     this.plan = null;
     this.forceReplan = true;

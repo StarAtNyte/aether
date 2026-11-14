@@ -11,15 +11,16 @@
  *   npx tsx scripts/eval-agent.ts --provider=claude-code --model=haiku --limit=3
  *   options: --model=<id> --effort=low|medium|high --limit=N --max-calls=N --json=<file> "<prompt>"…
  *            --no-assets ("No assets" mode, AgentOptions.noAssets) --world-out=<file> (last world JSON) --max-turns=N --max-tool-calls=N
+ *            --world-in=<file> (start from a saved world: the prompt refines it)
  *
  * codex / claude-code use the CLIs you are signed in to (no API keys), with
  * the same locked-down backends as the bridge. --max-calls bounds the total
  * number of model calls (default 40 for headless providers).
  */
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { performance } from 'node:perf_hooks';
 import { setCatalog } from '@aether/assets';
-import { validateWorld } from '@aether/core';
+import { validateWorld, type WorldDoc } from '@aether/core';
 import { QUALITY_CRITERIA, WorldAgent, assessWorld, createMockProvider, type CompletionRequest, type Provider, type QualityCriterion } from '@aether/agent';
 import { initScripting } from '@aether/logic';
 import { initPhysics } from '@aether/physics';
@@ -40,6 +41,7 @@ interface Args {
   json: string | undefined;
   noAssets: boolean;
   worldOut: string | undefined;
+  worldIn: string | undefined;
   maxTurns: number | undefined;
   maxToolCalls: number | undefined;
   prompts: readonly string[];
@@ -79,6 +81,7 @@ function parseArgs(argv: readonly string[]): Args {
     json: get('json'),
     noAssets: argv.includes('--no-assets'),
     worldOut: get('world-out'),
+    worldIn: get('world-in'),
     maxTurns: get('max-turns') ? Number(get('max-turns')) : undefined,
     maxToolCalls: get('max-tool-calls') ? Number(get('max-tool-calls')) : undefined,
     prompts: positional.length > 0 ? positional : DEFAULT_PROMPTS,
@@ -122,9 +125,10 @@ async function main(): Promise<void> {
   const provider = budgeted(base, args.maxCalls);
   const sandbox = createNodeSandbox({ timeoutMs: GENERATOR_DRY_RUN_MS });
   const rows: EvalRow[] = [];
+  const initial = args.worldIn ? (JSON.parse(await readFile(args.worldIn, 'utf8')) as WorldDoc) : undefined;
   try {
     for (const prompt of args.prompts.slice(0, args.limit)) {
-      const host = new NodeAgentHost(sandbox);
+      const host = new NodeAgentHost(sandbox, initial);
       const agent = new WorldAgent({ provider, catalogs: args.noAssets ? withoutAssetSummary(CATALOGS) : CATALOGS, resolveGenerator: loadLibraryGenerator, maxRepairs: 2, ...(args.noAssets ? { noAssets: true } : {}), ...(args.maxTurns ? { maxTurns: args.maxTurns } : {}), ...(args.maxToolCalls ? { maxToolCalls: args.maxToolCalls } : {}) });
       const before = provider.calls();
       const t0 = performance.now();
@@ -132,7 +136,7 @@ async function main(): Promise<void> {
       let rejected = 0;
       let repairs = 0;
       let error: string | undefined;
-      for await (const ev of agent.run(prompt, host)) {
+      for await (const ev of agent.run(prompt, host, initial ? { intent: 'refine' } : {})) {
         if (ev.type === 'patches') {
           applied += ev.result.applied;
           rejected += ev.result.errors.length;

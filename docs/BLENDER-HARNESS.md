@@ -131,10 +131,11 @@ line). Colours are words or hex, the hex winning. Missing fields default from st
    (hair locks, braid, skirt panels, tie tails) get an identity world rest rotation, as the springs expect.
 2. **Body** (`body.py`). One continuous quad mesh: a skin-modifier graph on the joints (torso from crotch to neck; legs
    with thigh, knee, calf and ankle profiles; feet with heel and ball; arms; hands, `build_hand`: a palm and a knuckle
-   bar, four fingers in three phalanges with a slight swell at each joint and a thinner shaft between, so the knuckles
-   read, and rounded tips, a little shorter than before; the thumb's first bone lies in the palm's flesh, the ball of the
+   bar, four fingers in three phalanges tapering evenly from the knuckle to a soft, rounded tip (the joints a hair
+   fuller than the shafts; a swell at each joint read as beads), the tips a little shorter; the thumb's first bone lies in the palm's flesh, the ball of the
    thumb, so it leaves the palm at its knuckle and not at the wrist, with a shorter tip), subdivided twice, then shaped
-   (buttocks, chest, the palm flattened in the hand's frame).
+   (buttocks, chest, the palm flattened and widened in the hand's frame, fading out before the lowest knuckle and
+   off the thumb: widened with the palm, the outer fingers' first phalanges and the thumb stood off their bones as flat spurs).
    Each vertex is labelled by its nearest limb segment: the regions garments and weights use.
 3. **Face** (`face.py`). A quad sphere ray-marched onto a smooth union of forms (cranium, forehead, the face's cone to a
    soft chin, cheeks), subdivided and projected again, a nose bridge and tip pushed out, small ears. For anime the front
@@ -178,7 +179,8 @@ line). Colours are words or hex, the hex winning. Missing fields default from st
    sneakers and boots (lofted shells with soles, the loafer's strap), a watch on the back of the wrist, a bag strap
    across the body and its bag. Body faces under tight garments are removed (farther than 2-3.5 cm from an opening).
 6. **Rig** (`rig.py`). Bone heat on a helper armature whose bones point at their child joints, two smoothing passes,
-   hands, feet and neck kept to their own chains, at most four influences, normalized; garments keep the body's weights,
+   hands, feet and neck kept to their own chains, each finger past its knuckle on its own chain only (`finger_weights`: a
+   phalanx rigid on its bone, blended across each joint; heat had spread a finger onto its neighbour), at most four influences, normalized; garments keep the body's weights,
    other parts take them from the nearest trunk surface. The skirt blends from the pelvis into its 16 panels and below
    the hips is carried by the panels alone, two neighbours per vertex. It no longer follows the thighs: a front blended
    between the two thighs left its middle between the legs, where a knee lifted by the foot IK on a stair came through

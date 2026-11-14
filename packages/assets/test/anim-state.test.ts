@@ -107,3 +107,20 @@ describe('gaits and the crouch', () => {
     expect(plan.state).toBe('loco');
   });
 });
+
+describe('cancelling an action', () => {
+  it('ends a requested wave at once so the walk takes over, but lets a hit play out', () => {
+    const m = new LocomotionMachine(clipTable('female'));
+    const input = base();
+    run(m, input, 0.2);
+    expect(m.trigger('wave')).toBe(true);
+    input.speed = 1.4;
+    expect(m.update(1 / 60, input).state).toBe('action');
+    m.cancelAction();
+    run(m, input, 0.3);
+    expect(m.update(1 / 60, input).state).toBe('loco');
+    m.trigger('hit');
+    m.cancelAction();
+    expect(m.update(1 / 60, input).state).toBe('hit');
+  });
+});

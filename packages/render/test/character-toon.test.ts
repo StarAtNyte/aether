@@ -2,7 +2,7 @@
  * Toon bodies: the spring chains swing back toward the pose and stay out of their colliders, the pose steps on twos,
  * and the cast entry `kaho` resolves only when named.
  */
-import { castById, characterCredit, isToonBody, lookFromText, resolveLook } from '@aether/assets';
+import { bodyCredits, castById, characterCredit, isToonBody, lookFromText, resolveLook } from '@aether/assets';
 import { Bone, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { closestOnSegment, rateAt, SpringSystem } from '../src/characters/springs';
@@ -128,7 +128,7 @@ describe('pose on twos', () => {
 });
 
 describe('the toon cast', () => {
-  it('kaho is a toon female body of the project, used only when named', () => {
+  it('kaho is a toon female body of the original cast, used only when named', () => {
     const k = castById('kaho');
     expect(k?.gender).toBe('female');
     expect(k && isToonBody(k)).toBe(true);
@@ -141,6 +141,16 @@ describe('the toon cast', () => {
     const c = characterCredit(['kaho']);
     expect(c.assets.some((a) => a.startsWith('kaho ('))).toBe(false);
     expect(c.assets.join(' ')).toContain('kaho');
-    expect(c.assets.join(' ')).toContain('MIT');
+    expect(c.assets.join(' ')).toContain('motion set');
+  });
+
+  it('credits the bodies of Kaho and Mio to the VRM model they are converted from, not to this project', () => {
+    const c = bodyCredits(['kaho', 'mio']);
+    expect(c).toHaveLength(1);
+    expect(c[0]?.author).toContain('pixiv');
+    expect(c[0]?.licence).toBe('VRM Public License 1.0');
+    expect(c[0]?.licenceUrl).toBe('https://vrm.dev/licenses/1.0/');
+    expect(c[0]?.assets.join(' ')).toMatch(/kaho .*mio/);
+    expect(characterCredit(['kaho', 'mio']).assets.join(' ')).not.toContain("this project's own bodies");
   });
 });

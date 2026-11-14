@@ -85,6 +85,76 @@ def fix_body_weights(body, W, lab):
     return W
 
 
+def finger_weights(body, W, lab, J):
+    """Each finger on its own chain: bone heat (and the smoothing after it) spreads a finger's weights onto the finger
+    beside it, so a curl dragged the neighbour's tip along and a straight hand drew its ring and little fingers hooked.
+    Every hand vertex past a knuckle goes to the nearest finger only, each phalanx rigid on its bone and blended across
+    the joint over a fifth of the phalanx on either side; at the knuckle it blends from the hand, and the thumb's first
+    bone (lying in the palm's flesh, the ball of the thumb) takes over from the hand along its length. The palm keeps
+    the heat weights."""
+    from body import FINGER_JOINTS, finger_tip
+    co = np.array([v.co[:] for v in body.data.vertices])
+    sm = lambda e0, e1, x: (lambda t: t * t * (3 - 2 * t))(np.clip((x - e0) / (e1 - e0), 0, 1))  # noqa: E731
+    for side in ('L', 'R'):
+        idx = np.array([i for i, l in enumerate(lab) if l.startswith('hand') and l.endswith(side)])
+        if len(idx) == 0:
+            continue
+        P = co[idx]
+        f = {k: np.array(J[f'Bip01_{side}_Finger{k}'][:]) for k in FINGER_JOINTS}
+        best = np.full(len(idx), 1e9)
+        out = [None] * len(idx)
+        # farther from every finger's axis than this is the palm or the back of the hand
+        cap = 0.55 * float(np.linalg.norm(f['21'] - f['2']))
+        for k in ('0', '1', '2', '3', '4'):
+            pts = [f[k], f[k + '1'], f[k + '2'], np.array(finger_tip(_vec(f), k)[:])]
+            bones = [f'Bip01_{side}_Finger{k}', f'Bip01_{side}_Finger{k}1', f'Bip01_{side}_Finger{k}2']
+            for s_i in range(3):
+                A, B = pts[s_i], pts[s_i + 1]
+                d = B - A
+                L2 = max(1e-12, d @ d)
+                traw = ((P - A) @ d) / L2
+                t = np.clip(traw, 0, 1)
+                dist = np.linalg.norm(P - (A + np.outer(t, d)), axis=1)
+                if s_i == 0 and k != '0':
+                    # before the knuckle is the palm: not a finger's
+                    dist = np.where(traw < -0.05, 1e9, dist)
+                if s_i == 2:
+                    dist = np.where(traw > 1.6, 1e9, dist)
+                dist = np.where(dist > cap, 1e9, dist)
+                m = dist < best
+                best[m] = dist[m]
+                for j in np.nonzero(m)[0]:
+                    out[j] = (k, s_i, float(traw[j]), bones)
+        for j, i in enumerate(idx):
+            if out[j] is None:
+                continue
+            k, s_i, t, bones = out[j]
+            w = {}
+            if s_i == 0 and k == '0':
+                # the ball of the thumb: from the hand to the thumb's first bone along it
+                a = float(sm(0.2, 1.0, t))  # most of the ball stays with the palm as the thumb crosses it
+                w = {f'Bip01_{side}_Hand': 1 - a, bones[0]: a}
+                b = float(sm(0.85, 1.15, t))
+                if b > 0:
+                    w = {f'Bip01_{side}_Hand': (1 - a) * (1 - b), bones[0]: a * (1 - b) + 0.5 * b, bones[1]: 0.5 * b}
+            elif s_i == 0:
+                a = float(sm(-0.05, 0.2, t))
+                b = float(sm(0.8, 1.2, t))
+                w = {f'Bip01_{side}_Hand': 1 - a, bones[0]: a * (1 - 0.5 * b), bones[1]: a * 0.5 * b}
+            else:
+                lo = float(sm(-0.2, 0.2, t))   # across the joint at the segment's start
+                hi = float(sm(0.8, 1.2, t)) if s_i == 1 else 0.0
+                w = {bones[s_i - 1]: 0.5 * (1 - lo), bones[s_i]: 0.5 + 0.5 * lo - 0.5 * hi}
+                if hi > 0:
+                    w[bones[2]] = 0.5 * hi
+            W[i] = top4({b: x for b, x in w.items() if x > 1e-3})
+    return W
+
+
+def _vec(f):
+    return {k: Vector(v.tolist()) for k, v in f.items()}
+
+
 def top4(w):
     items = sorted(w.items(), key=lambda kv: -kv[1])[:4]
     s = sum(x for _, x in items) or 1

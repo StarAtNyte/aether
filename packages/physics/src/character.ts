@@ -26,8 +26,10 @@ export interface CharacterOptions {
   /** Highest step climbed automatically in meters (default 0.35). */
   stepHeight?: number;
   /**
-   * Stand the spawn point on the floor under it when it hangs up to 1.5 m above (the live game sets this so play does not open with a
-   * visible drop; headless runs keep the exact document spawn so recorded proofs replay unchanged). Default false.
+   * Stand the spawn point on the floor under it when it hangs up to 1.5 m above, lift it onto the floor's top when it starts
+   * embedded a little under it, and move it to the nearest free place when it starts inside furniture or a wall (see
+   * {@link settledSpawn}). The live game sets this so play does not open with a visible drop or stuck in geometry; headless runs
+   * keep the exact document spawn so recorded proofs replay unchanged. Default false.
    */
   settleSpawn?: boolean;
   /** Ground snapping distance in meters (default 0.3). */
@@ -101,6 +103,75 @@ const MIN_GROUND_NORMAL_Y = 0.5;
 /** Collisions in one controller move from which it is judged to be looping on a contact. */
 const LOOPING_COLLISIONS = 8;
 
+/** Highest lift out of a floor a spawn point is embedded in (m): a spawn under a slab's top by up to a step stands on it. */
+export const SPAWN_LIFT_MAX = 0.6;
+/** Bottom band of the capsule that may touch the floor when the spawn is tested for embedding (m). */
+const EMBED_TOLERANCE = 0.005;
+
+/**
+ * Feet height a spawn stands at (see {@link CharacterOptions.settleSpawn}). A spawn whose capsule starts inside a floor (a point
+ * a few centimetres under a slab's top: the controller then grinds in place until a jump frees it) rises onto the lowest top
+ * surface within {@link SPAWN_LIFT_MAX} above it where the capsule is free; one hanging a little above the floor drops onto it.
+ */
+export function settledSpawnY(pw: PhysicsWorld, spawn: Readonly<Vec3>, radius: number, height: number): number {
+  const [x, y, z] = spawn;
+  if (!pw.capsuleFree([x, y, z], radius, height, EMBED_TOLERANCE)) {
+    const t = freeTop(pw, x, y, z, radius, height);
+    if (t !== null) return t;
+  }
+  const down = pw.raycast([x, y + SPAWN_PROBE_UP, z], [0, -1, 0], SPAWN_PROBE_UP + SPAWN_SNAP_MAX);
+  if (down && down.point[1] <= y + SKIN && y - down.point[1] <= SPAWN_SNAP_MAX) return down.point[1] + SKIN;
+  return y;
+}
+
+/** Deepest drop below the spawn height a nudged spawn may land on (m). */
+const STEP_NUDGE_DROP = 0.4;
+
+/** Horizontal reach (m) of the search for a free place when a spawn stands inside something (a bed, a counter, a wall). */
+export const SPAWN_NUDGE_MAX = 2;
+
+/**
+ * Where a character spawning at `spawn` starts (feet). As {@link settledSpawnY}; a spawn whose capsule is still inside something
+ * after that (furniture or a wall: no free top within a step) moves to the nearest free place on a floor within
+ * {@link SPAWN_NUDGE_MAX} around it, at about its own height, so play never opens stuck in geometry.
+ */
+export function settledSpawn(pw: PhysicsWorld, spawn: Readonly<Vec3>, radius: number, height: number): Vec3 {
+  const y = settledSpawnY(pw, spawn, radius, height);
+  if (pw.capsuleFree([spawn[0], y, spawn[2]], radius, height, EMBED_TOLERANCE)) return [spawn[0], y, spawn[2]];
+  for (let d = 0.25; d <= SPAWN_NUDGE_MAX + 1e-9; d += 0.25) {
+    const n = Math.max(8, Math.round((2 * Math.PI * d) / 0.25));
+    for (let k = 0; k < n; k++) {
+      const a = (2 * Math.PI * k) / n;
+      const cx = spawn[0] + Math.sin(a) * d;
+      const cz = spawn[2] + Math.cos(a) * d;
+      const t = freeTop(pw, cx, spawn[1], cz, radius, height, STEP_NUDGE_DROP);
+      if (t !== null) return [cx, t, cz];
+    }
+  }
+  return [spawn[0], y, spawn[2]];
+}
+
+/**
+ * Feet height on the lowest upward surface under (x, z) from `y + SPAWN_LIFT_MAX` down to `y - drop` where the capsule is free.
+ * A surface above `y` counts only when the feet are inside its solid (its underside is below them: a floor slab the spawn is
+ * sunk in), never a table top or a shelf over them.
+ */
+function freeTop(pw: PhysicsWorld, x: number, y: number, z: number, radius: number, height: number, drop = SPAWN_SNAP_MAX): number | null {
+  const below = new Set(
+    pw
+      .raycastAll([x, y - drop, z], [0, 1, 0], drop + SPAWN_LIFT_MAX, 32)
+      .filter((h) => h.point[1] <= y + SKIN)
+      .map((h) => h.id),
+  );
+  const tops = pw
+    .raycastAll([x, y + SPAWN_LIFT_MAX, z], [0, -1, 0], SPAWN_LIFT_MAX + drop, 32)
+    .filter((h) => h.distance > 1e-6 && h.normal[1] > MIN_GROUND_NORMAL_Y && (h.point[1] <= y + SKIN || below.has(h.id)))
+    .map((h) => h.point[1])
+    .sort((a, b) => a - b);
+  for (const t of tops) if (pw.capsuleFree([x, t + SKIN, z], radius, height, EMBED_TOLERANCE)) return t + SKIN;
+  return null;
+}
+
 function clampUnit(v: number): number {
   return Number.isFinite(v) ? Math.max(-1, Math.min(1, v)) : 0;
 }
@@ -113,6 +184,7 @@ export class CharacterController {
   private readonly collider: Collider;
   private readonly controller: KinematicCharacterController;
   private readonly halfTotal: number;
+  private readonly radius: number;
   private readonly pos: Vec3;
   private vy = 0;
   private vx = 0;
@@ -131,12 +203,17 @@ export class CharacterController {
     const radius = Number.isFinite(opts.radius) ? Math.min(5, Math.max(0.05, opts.radius)) : 0.35;
     const height = Number.isFinite(opts.height) ? Math.max(opts.height, radius * 2 + 0.01) : 1.8;
     this.halfTotal = height / 2;
+    this.radius = radius;
     this.feel = opts.feel ? { ...opts.feel } : null;
     const spawn: Vec3 = isFiniteVec(opts.spawn) ? [opts.spawn[0], opts.spawn[1], opts.spawn[2]] : [0, 1, 0];
     // A spawn point a little above the floor would open the game with a visible drop, and the airborne pose throws the arms out
     // sideways (a T-pose from the chase camera, long on a slow frame rate). Stand on the floor instead; a deliberate higher drop is kept.
-    const down = opts.settleSpawn !== true ? null : pw.raycast([spawn[0], spawn[1] + SPAWN_PROBE_UP, spawn[2]], [0, -1, 0], SPAWN_PROBE_UP + SPAWN_SNAP_MAX);
-    if (down && down.point[1] <= spawn[1] + SKIN && spawn[1] - down.point[1] <= SPAWN_SNAP_MAX) spawn[1] = down.point[1] + SKIN;
+    if (opts.settleSpawn === true) {
+      const at = settledSpawn(pw, spawn, radius, height);
+      spawn[0] = at[0];
+      spawn[1] = at[1];
+      spawn[2] = at[2];
+    }
     this.pos = spawn;
     this.body = this.world.createRigidBody(R.RigidBodyDesc.kinematicPositionBased().setTranslation(spawn[0], spawn[1], spawn[2]));
     this.collider = this.world.createCollider(
@@ -299,6 +376,22 @@ export class CharacterController {
     const grounded = this.controller.computedGrounded();
     this.collider.setTranslation({ x: this.pos[0], y: this.pos[1] + this.halfTotal, z: this.pos[2] });
     return { m: { x: sx + down.x, y: sy + down.y, z: sz + down.z }, grounded };
+  }
+
+  /**
+   * Where a character placed at `p` would stand, settled as a spawn is (see {@link settledSpawn}): on the floor's top when `p`
+   * is sunk a little in it, beside furniture it is inside. The character's own capsule is left out of the test.
+   */
+  settle(p: Vec3): Vec3 {
+    if (this.disposed || this.pw.isDisposed || !isFiniteVec(p)) return [p[0], p[1], p[2]];
+    const keep = this.collider.translation();
+    // Out of the way of its own queries (the exact shape test uses the collider's current pose).
+    this.collider.setTranslation({ x: keep.x, y: keep.y - 1e5, z: keep.z });
+    try {
+      return settledSpawn(this.pw, p, this.radius, this.halfTotal * 2);
+    } finally {
+      this.collider.setTranslation(keep);
+    }
   }
 
   /** Move instantly and reset vertical speed. */

@@ -1,5 +1,6 @@
 /**
- * Attribution for the people: Microsoft Rocketbox (MIT). The MIT licence
+ * Attribution for the people: Microsoft Rocketbox (MIT), and the third-party models some cast bodies are converted
+ * from (`CastFile.credit`: VRM avatars under the VRM Public License, `bodyCredits`). The MIT licence
  * asks that the copyright and permission notice travel with the assets, so
  * the notice text is shipped here and shown by the credits panel and the
  * exported package credits.
@@ -23,6 +24,7 @@ export function characterCredit(ids?: readonly string[]): Credit {
   const used = ids && ids.length > 0 ? CAST.filter((c) => ids.includes(c.id)) : CAST;
   // The project's own bodies are not Rocketbox work; they move with Rocketbox's motion set, which is credited here.
   const own = used.filter((c) => c.style === 'toon');
+  const ownWork = own.filter((c) => !c.credit);
   const rocketbox = used.filter((c) => c.style !== 'toon');
   return {
     source: 'Microsoft Rocketbox avatars and animations',
@@ -30,6 +32,30 @@ export function characterCredit(ids?: readonly string[]): Credit {
     licence: 'MIT',
     licenceUrl: 'https://github.com/microsoft/Microsoft-Rocketbox/blob/master/LICENSE.md',
     url: 'https://github.com/microsoft/Microsoft-Rocketbox',
-    assets: [...rocketbox.map((c) => `${c.id} (${c.look})`), ...(own.length > 0 ? [`${own[0]?.gender ?? 'female'} motion set (animating ${own.map((c) => c.id).join(', ')}, this project's own bodies, MIT)`] : [])].sort(),
+    assets: [...rocketbox.map((c) => `${c.id} (${c.look})`), ...(own.length > 0 ? [`${own[0]?.gender ?? 'female'} motion set (animating ${own.map((c) => c.id).join(', ')}${ownWork.length === own.length ? ", this project's own bodies, MIT" : ''})`] : [])].sort(),
   };
+}
+
+/** What the VRM Public License 1.0 grants, as the converted models' licence flags set it (full text at the URL). */
+export const VRM_LICENCE_SUMMARY =
+  'VRM Public License 1.0 (https://vrm.dev/licenses/1.0/): the model\'s own licence flags allow redistribution, modification and redistribution of the modified model, and commercial use by individuals and corporations; avatar use by everyone. The model stays the work of its author.';
+
+/**
+ * Credits for cast bodies converted from someone else's model (`CastFile.credit`), one per source and author, naming the
+ * bodies made from it. `ids` are the cast ids a world uses (all when omitted).
+ */
+export function bodyCredits(ids?: readonly string[]): Credit[] {
+  const used = ids && ids.length > 0 ? CAST.filter((c) => ids.includes(c.id)) : CAST;
+  const groups = new Map<string, Credit>();
+  for (const c of used) {
+    if (!c.credit) continue;
+    const base = c.credit.source.replace(/, recoloured$/, '');
+    const key = `${base}|${c.credit.author}`;
+    const g = groups.get(key) ?? { source: base, author: c.credit.author, licence: c.credit.licence, licenceUrl: c.credit.licenceUrl, url: c.credit.url, assets: [] };
+    g.assets.push(`${c.id} (${c.credit.source === base ? 'converted' : 'recoloured and converted'} by this project: ${c.look})`);
+    if (c.credit.line) g.line = g.line ? `${g.line}; ${c.credit.line}` : c.credit.line;
+    groups.set(key, g);
+  }
+  for (const g of groups.values()) if (/^VRM Public License/.test(g.licence)) g.line = `${g.line ?? g.source}. ${VRM_LICENCE_SUMMARY}`;
+  return [...groups.values()];
 }

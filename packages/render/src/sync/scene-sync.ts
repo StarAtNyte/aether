@@ -88,6 +88,7 @@ import { areaLightsReady, chooseForwardLights, createEntityLight, disposeEntityL
 import { createEntityNode, ENTITY_ID_KEY, type EntityNode, type MeshBinding } from './entity-node';
 import { renderableIds } from './renderable';
 import { TERRAIN_RENDER_ORDER } from '../gpu/render-order';
+import { coplanarLifts } from './coplanar';
 import { quantizeOnGpu } from '../gpu/quantized-geometry';
 import { withWaterKind } from './water-surfaces';
 import { COVER_MAX_INSTANCES, COVER_MIN_HEIGHT, OccluderGrid, partBounds, posesFromMatrices } from '../view/occluders';
@@ -306,6 +307,8 @@ export class SceneSync {
   private readonly assetInstances: AssetInstances | null;
   /** Content changed since the batches were grouped. */
   private batchesStale = true;
+  /** Drawing lifts in effect (see {@link applyCoplanarLifts}). */
+  private coplanarLifted = new Map<EntityId, number>();
   /** Merged building geometry (null when batching is disabled). */
   private readonly merges: StaticMerges | null;
   /** Static shadow casters merged per grid cell (null when disabled). */
@@ -860,6 +863,7 @@ export class SceneSync {
       const node = this.nodes.get(id);
       if (node) this.attach(node);
     }
+    if (!diff || !prev || [...diff.added, ...diff.removed, ...diff.changed].some((id) => prev.entities[id]?.shape.kind === 'primitive' || world.entities[id]?.shape.kind === 'primitive')) this.applyCoplanarLifts(world);
     this.batching = true;
     try {
       for (const id of rebuild) {
@@ -1341,6 +1345,21 @@ export class SceneSync {
       }
     }
     if (node.object.parent !== target) target.add(node.object);
+  }
+
+  /** Draw coplanar overlapping flat surfaces apart (see `coplanar.ts`): the drawn content of each is lifted, the entity is not. */
+  private applyCoplanarLifts(world: WorldDoc): void {
+    const lifts = coplanarLifts(world);
+    const ids = new Set<EntityId>([...this.coplanarLifted.keys(), ...lifts.keys()]);
+    for (const id of ids) {
+      const node = this.nodes.get(id);
+      const lift = lifts.get(id) ?? 0;
+      if (!node || node.content.position.y === lift) continue;
+      node.content.position.y = lift;
+      node.content.updateMatrix();
+      node.content.updateMatrixWorld(true);
+    }
+    this.coplanarLifted = lifts;
   }
 
   private applyTransform(node: EntityNode): void {

@@ -317,7 +317,7 @@ export class ProceduralGait {
     const h01 = -2 * w3 + 3 * w2;
     const h11 = w3 - w2;
     out.f = h00 * a0.f + h10 * Tsw * m0f + h01 * a1.f + h11 * Tsw * m1f;
-    const clear = lerp(0.05, 0.13, shape.run) * (body.legLength / 0.86) * (0.7 + 0.3 * this.style.vigor);
+    const clear = lerp(0.05, 0.13, shape.run) * Math.max(1, body.legLength / 0.86) * (0.7 + 0.3 * this.style.vigor);
     const bump = Math.pow(Math.sin(Math.PI * Math.pow(w, 0.85)), 1.2);
     out.y = h00 * a0.y + h10 * Tsw * m0y + h01 * a1.y + h11 * Tsw * m1y + clear * bump;
     // the toe-off pitch eases to a level foot mid swing; the toes lift for the strike
