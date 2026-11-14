@@ -18,11 +18,12 @@
 
 <p align="center">
   <a href="https://github.com/StarAtNyte/aether/releases/tag/v0.1.0">
-    <img src="docs/screenshots/tour-sanctuary-terraces.gif" width="100%" alt="A cinematic tour of Sanctuary Terraces, rendered in real time in the browser">
+    <img src="docs/screenshots/tour-sanctuary-falls.gif" width="100%" alt="A cinematic tour of Sanctuary Falls, rendered in real time in the browser on an NVIDIA RTX 4090">
   </a>
   <br>
-  <sub>Sanctuary Terraces, built by the agent (Claude Code): the studio's cinematic tour, recorded in real time on an
-  Intel integrated GPU at ultra quality. Click for the two-minute demo video.</sub>
+  <sub>Sanctuary Falls, built by the agent (Claude Code): the studio's cinematic tour (first 11 s), screen-recorded in
+  headless Chrome (WebGL2 over ANGLE) on an NVIDIA RTX 4090 at ultra quality, then cut to a 6 fps GIF. Click for the
+  two-minute demo video.</sub>
 </p>
 
 <p align="center">
@@ -143,22 +144,45 @@ crafted parts: venues, streets, harbours, seven regional house types, gyms, clin
 
 ## Gallery
 
-Fifteen featured projects ship with the studio and open from the home page.
+Eleven featured projects ship with the studio and open from the home page.
 Each was built from the prompt on its card. Each passes its physics checks,
 and the bot plays the games to their win screens in the test suite. Blockfall
 and Sakura River are the exceptions: they use their own game loops, which the
-general bot does not drive. Five larger **big worlds** show the renderer at scale: hundreds to thousands of objects,
+general bot does not drive. Several larger **big worlds** show the renderer at scale: hundreds to thousands of objects,
 furnished interiors, waterfalls and whole towns, smooth on a laptop's integrated GPU.
 
 <table>
   <tr>
-    <td width="33%" valign="top"><img src="docs/screenshots/showcase/sanctuary-terraces.webp" width="100%" alt="Sanctuary Terraces"><br><b>Sanctuary Terraces</b><br><sub>A hill town on limestone terraces, waterfalls into a lagoon, a gilded temple</sub></td>
+    <td width="33%" valign="top"><img src="docs/screenshots/showcase/cloudwatch-harbour.webp" width="100%" alt="Cloudwatch Harbour"><br><b>Cloudwatch Harbour</b><br><sub>An anime short: a harbour town at summer dusk, painted. Watch the film, then step in and play as the character</sub></td>
     <td width="33%" valign="top"><img src="docs/screenshots/showcase/sanctuary-falls.webp" width="100%" alt="Sanctuary Falls"><br><b>Sanctuary Falls</b><br><sub>A marble stair between three waterfalls to a Doric temple</sub></td>
-    <td width="33%" valign="top"><img src="docs/screenshots/showcase/sanctuary-ascent.webp" width="100%" alt="Sanctuary Ascent"><br><b>Sanctuary Ascent</b><br><sub>A zigzag stair up a crag to a colossal Athena, built end to end in hardcore mode</sub></td>
+    <td width="33%" valign="top"><img src="docs/screenshots/showcase/linden-row.webp" width="100%" alt="Linden Row"><br><b>Linden Row</b><br><sub>Ten real family houses round a village green, every room furnished, lit and walkable</sub></td>
   </tr>
   <tr>
-    <td width="33%" valign="top"><img src="docs/screenshots/showcase/linden-row.webp" width="100%" alt="Linden Row"><br><b>Linden Row</b><br><sub>Ten real family houses round a village green, every room furnished, lit and walkable</sub></td>
+    <td width="33%" valign="top"><img src="docs/screenshots/showcase/lisbon-hills.webp" width="100%" alt="Lisbon Hills"><br><b>Lisbon Hills</b><br><sub>A terraced Lisbon hillside to walk: pastel townhouses, cobbled streets and stairs up to a castle, a tram line, a red suspension bridge</sub></td>
+    <td width="33%" valign="top"><img src="docs/screenshots/showcase/desert-citadel.webp" width="100%" alt="Desert Citadel"><br><b>Desert Citadel</b> · <i>asset-free</i><br><sub>A walled oasis town at golden hour, built from scratch by the agent on Opus 5.5: no library models, every piece shapes and code it wrote</sub></td>
+    <td width="33%" valign="top"><img src="docs/screenshots/showcase/dusk-lake-house.webp" width="100%" alt="Dusk House by the Lake"><br><b>Dusk House by the Lake</b><br><sub>Explode it, cut it, walk to the jetty</sub></td>
+  </tr>
+  <tr>
     <td width="33%" valign="top"><img src="docs/screenshots/showcase/kestrel-outpost.webp" width="100%" alt="Kestrel Outpost"><br><b>Kestrel Outpost</b><br><sub>A third-person shooter: hold a cliff-ringed relay against five waves</sub></td>
+    <td width="33%" valign="top"><img src="docs/screenshots/showcase/casa-patio.webp" width="100%" alt="Casa del Patio"><br><b>Casa del Patio</b><br><sub>A courtyard house above Sintra, every drawer opens</sub></td>
+    <td width="33%" valign="top"><img src="docs/screenshots/showcase/skyline-penthouse.webp" width="100%" alt="Skyline Penthouse"><br><b>Skyline Penthouse</b><br><sub>Walk it, switch the lights, change the hour</sub></td>
+  </tr>
+  <tr>
+    <td width="33%" valign="top"><img src="docs/screenshots/showcase/starlight-cinema.webp" width="100%" alt="Starlight Cinema"><br><b>Starlight Cinema</b> · <i>asset-free</i><br><sub>A brick cinema with raked red seating, a screen and stage, a projection booth and a lit lobby</sub></td>
+    <td width="33%" valign="top"><img src="docs/screenshots/showcase/evening-bistro.webp" width="100%" alt="Evening Bistro"><br><b>Evening Bistro</b> · <i>asset-free</i><br><sub>A brick bistro with laid tables, pendant lamps, a bar and a kitchen, lit for the evening</sub></td>
+    <td width="33%" valign="top"></td>
+  </tr>
+</table>
+
+<details>
+<summary><b>Thirteen more worlds, the photo rooms and the agent-generated worlds</b></summary>
+
+<br>
+
+<table>
+  <tr>
+    <td width="33%" valign="top"><img src="docs/screenshots/showcase/sanctuary-terraces.webp" width="100%" alt="Sanctuary Terraces"><br><b>Sanctuary Terraces</b><br><sub>A hill town on limestone terraces, waterfalls into a lagoon, a gilded temple</sub></td>
+    <td width="33%" valign="top"><img src="docs/screenshots/showcase/sanctuary-ascent.webp" width="100%" alt="Sanctuary Ascent"><br><b>Sanctuary Ascent</b><br><sub>A zigzag stair up a crag to a colossal Athena, built end to end in hardcore mode</sub></td>
     <td width="33%" valign="top"><img src="docs/screenshots/showcase/neon-rain-city.webp" width="100%" alt="Neon Rain City"><br><b>Neon Rain City</b><br><sub>A wet downtown at night, find five neon cats</sub></td>
   </tr>
   <tr>
@@ -168,30 +192,17 @@ furnished interiors, waterfalls and whole towns, smooth on a laptop's integrated
   </tr>
   <tr>
     <td width="33%" valign="top"><img src="docs/screenshots/showcase/chain-reaction.webp" width="100%" alt="Chain Reaction"><br><b>Chain Reaction</b><br><sub>Five Rube Goldberg machines, every bounce checked</sub></td>
-    <td width="33%" valign="top"><img src="docs/screenshots/showcase/desert-citadel.webp" width="100%" alt="Desert Citadel"><br><b>Desert Citadel</b> · <i>asset-free</i><br><sub>A walled oasis town at golden hour, built from scratch by the agent on Opus 5.5: no library models, every piece shapes and code it wrote</sub></td>
     <td width="33%" valign="top"><img src="docs/screenshots/showcase/lantern-isles.webp" width="100%" alt="Lantern Isles"><br><b>Lantern Isles</b><br><sub>Find twelve lanterns across floating islands</sub></td>
-  </tr>
-  <tr>
-    <td width="33%" valign="top"><img src="docs/screenshots/showcase/casa-patio.webp" width="100%" alt="Casa del Patio"><br><b>Casa del Patio</b><br><sub>A courtyard house above Sintra, every drawer opens</sub></td>
-    <td width="33%" valign="top"><img src="docs/screenshots/showcase/skyline-penthouse.webp" width="100%" alt="Skyline Penthouse"><br><b>Skyline Penthouse</b><br><sub>Walk it, switch the lights, change the hour</sub></td>
-    <td width="33%" valign="top"><img src="docs/screenshots/showcase/dusk-lake-house.webp" width="100%" alt="Dusk House by the Lake"><br><b>Dusk House by the Lake</b><br><sub>Explode it, cut it, walk to the jetty</sub></td>
-  </tr>
-</table>
-
-<details>
-<summary><b>Five more featured worlds, the photo rooms and the agent-generated worlds</b></summary>
-
-<br>
-
-<table>
-  <tr>
     <td width="33%" valign="top"><img src="docs/screenshots/showcase/hollow-gate.webp" width="100%" alt="The Hollow Gate"><br><b>The Hollow Gate</b><br><sub>Buy the key, slip past the guard, outwit the wolves</sub></td>
+  </tr>
+  <tr>
     <td width="33%" valign="top"><img src="docs/screenshots/showcase/blockfall.webp" width="100%" alt="Blockfall"><br><b>Blockfall</b><br><sub>Mine, craft and survive the night in a block world</sub></td>
     <td width="33%" valign="top"><img src="docs/screenshots/showcase/orbital-lab.webp" width="100%" alt="Orbital Lab"><br><b>Orbital Lab</b><br><sub>Low gravity, five power cells, restart the reactor</sub></td>
+    <td width="33%" valign="top"><img src="docs/screenshots/showcase/painterly-meadow.webp" width="100%" alt="Painterly Meadow"><br><b>Painterly Meadow</b><br><sub>A steam train in a wildflower valley</sub></td>
   </tr>
   <tr>
-    <td width="33%" valign="top"><img src="docs/screenshots/showcase/painterly-meadow.webp" width="100%" alt="Painterly Meadow"><br><b>Painterly Meadow</b><br><sub>A steam train in a wildflower valley</sub></td>
     <td width="33%" valign="top"><img src="docs/screenshots/showcase/four-seasons-garden.webp" width="100%" alt="Four-Seasons Garden"><br><b>Four-Seasons Garden</b><br><sub>Switch seasons with the 1 to 5 keys</sub></td>
+    <td width="33%" valign="top"></td>
     <td width="33%" valign="top"></td>
   </tr>
 </table>
@@ -201,11 +212,11 @@ listed on the Templates page under **Photo to 3D**: a hotel bedroom, a twin room
 bedroom and a vaulted bedroom. The photo credit is on each card. They are saved runs of the photo flow
 (`npm run showcase:photo-rooms`).
 
-Nine worlds the agent generated from a prompt are listed under **Generated by
+Seven more worlds the agent generated from a prompt are listed under **Generated by
 the agent**: a forest lantern hunt, a medieval market village, a modern pool
 house, a two-bedroom apartment and a Scandinavian living room (built by the
-offline planner), and four buildings from live runs: Starlight Cinema (Codex),
-Orion Cinema, Evening Bistro and City Museum (Claude Code). Each card says how
+offline planner), and two buildings from live runs: Orion Cinema and
+City Museum (Claude Code). Starlight Cinema (Codex) and Evening Bistro are featured above. Each card says how
 the world was made and shows its prompt. They are saved exactly as generated,
 open like any template and can be changed by chat.
 
