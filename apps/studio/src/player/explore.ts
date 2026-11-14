@@ -35,6 +35,8 @@ const WALK_LENS = 70;
 const FADE_MS = 280;
 /** Drag look speed (radians per pixel). */
 const LOOK_RATE = 0.0042;
+/** Below this height above the ground (m) an orbit or drone view is at street level: a drag turns the view in place. */
+const STREET_LEVEL = 4;
 
 /** Camera of explore mode now. */
 export type ExploreView = 'walk' | 'orbit' | 'drone' | 'dollhouse' | 'plan';
@@ -140,6 +142,10 @@ export class ExploreController {
     this.indexRooms();
     const canvas = sim.renderer.domElement;
     canvas.addEventListener('pointerdown', this.onPointerDown);
+    window.addEventListener('pointerdown', this.onLookDown, { capture: true });
+    window.addEventListener('pointermove', this.onLookMove);
+    window.addEventListener('pointerup', this.onLookUp);
+    window.addEventListener('pointercancel', this.onLookUp);
     window.addEventListener('pointermove', this.onPointerMove);
     window.addEventListener('pointerup', this.onPointerUp);
     window.addEventListener('pointercancel', this.onPointerUp);
@@ -368,9 +374,49 @@ export class ExploreController {
 
   private readonly onPointerDown = (e: PointerEvent): void => {
     this.onUserInput();
-    if (this.state.view !== 'walk' || (e.pointerType === 'mouse' && e.button !== 0)) return;
-    this.drag = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: false };
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (this.state.view === 'walk') {
+      this.drag = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: false };
+    }
   };
+
+  /**
+   * Orbit and drone views standing at street level (a city's hero view, a viewpoint at eye height): a left drag turns the
+   * view where it stands instead of swinging the camera round a point far down the street, through the houses beside it.
+   * Runs in the capture phase so the orbit controls never start their own rotation for this drag.
+   */
+  private readonly onLookDown = (e: PointerEvent): void => {
+    if (e.target !== this.sim.renderer.domElement || (e.pointerType === 'mouse' && e.button !== 0) || !e.isPrimary) return;
+    if (this.state.view !== 'orbit' && this.state.view !== 'drone') return;
+    const r = this.sim.renderer;
+    if (r.cameraHeightAboveGround() > STREET_LEVEL) {
+      r.endLookAround();
+      return;
+    }
+    r.setLeftDragNavigation(false);
+    this.look = { id: e.pointerId, x: e.clientX, y: e.clientY };
+  };
+
+  private readonly onLookMove = (e: PointerEvent): void => {
+    const l = this.look;
+    if (!l || e.pointerId !== l.id) return;
+    const dx = e.clientX - l.x;
+    const dy = e.clientY - l.y;
+    l.x = e.clientX;
+    l.y = e.clientY;
+    // Grab the view, as in the walk: dragging right turns left.
+    this.sim.renderer.lookAround(dx * LOOK_RATE, dy * LOOK_RATE);
+    this.sim.touch();
+  };
+
+  private readonly onLookUp = (e: PointerEvent): void => {
+    if (!this.look || e.pointerId !== this.look.id) return;
+    this.look = null;
+    this.sim.renderer.setLeftDragNavigation(true);
+  };
+
+  /** A street-level look-around drag in an orbit or drone view. */
+  private look: { id: number; x: number; y: number } | null = null;
 
   private readonly onPointerMove = (e: PointerEvent): void => {
     const d = this.drag;
@@ -661,6 +707,11 @@ export class ExploreController {
     const r = this.sim.renderer;
     const canvas = r.domElement;
     canvas.removeEventListener('pointerdown', this.onPointerDown);
+    window.removeEventListener('pointerdown', this.onLookDown, { capture: true });
+    window.removeEventListener('pointermove', this.onLookMove);
+    window.removeEventListener('pointerup', this.onLookUp);
+    window.removeEventListener('pointercancel', this.onLookUp);
+    if (this.look) r.setLeftDragNavigation(true);
     window.removeEventListener('pointermove', this.onPointerMove);
     window.removeEventListener('pointerup', this.onPointerUp);
     window.removeEventListener('pointercancel', this.onPointerUp);

@@ -546,6 +546,11 @@ const _savedCamUp = new Vector3();
 const _hits: Intersection[] = [];
 const _pos = new Vector3();
 const _dir = new Vector3();
+const _look = new Vector3();
+/** The orbit stays just above its target's level (never under the ground)... */
+const ORBIT_MAX_POLAR = Math.PI * 0.495;
+/** ...but a street-level look-around may raise its eyes about 20° (the peaks, a tower). */
+const LOOK_MAX_PITCH = 0.35;
 const _quat = new Quaternion();
 const _scl = new Vector3();
 /** Metres a room lamp's clip box reaches past the room's footprint (its wall centrelines). */
@@ -1405,7 +1410,7 @@ export class WorldRenderer {
       const { OrbitControls } = await import('three/addons/controls/OrbitControls.js');
       const c = new OrbitControls(camera, canvas);
       c.target.set(0, 1, 0);
-      c.maxPolarAngle = Math.PI * 0.495;
+      c.maxPolarAngle = ORBIT_MAX_POLAR;
       c.minDistance = 0.5;
       c.maxDistance = SKY_RADIUS * 0.8;
       controls = c;
@@ -2538,6 +2543,43 @@ export class WorldRenderer {
   /** Stop a running tour (the camera stays where it is). */
   stopTour(): void {
     this.rig.stopTour();
+  }
+
+  /**
+   * Turn the orbit camera where it stands (a look-around, not an orbit): the target swings round the eye at its own
+   * distance, so the wheel still zooms toward what is in front. Yaw as in {@link setCameraPose} (positive turns left),
+   * pitch positive looks up, from 69° down to 20° up. Ends a fly-through. {@link endLookAround} restores the orbit's limit.
+   */
+  lookAround(dYaw: number, dPitch: number): void {
+    const c = this.orbit;
+    if (!c || this.disposed || !Number.isFinite(dYaw) || !Number.isFinite(dPitch)) return;
+    if (this.rig.touring) this.rig.stopTour();
+    const eye = this.perspective.position;
+    const off = _look.copy(c.target).sub(eye);
+    const dist = off.length();
+    if (dist < 1e-4) return;
+    const yaw = Math.atan2(-off.x, -off.z) + dYaw;
+    // The orbit's own limit would lift the camera to keep it from looking up: widen it while looking around.
+    c.maxPolarAngle = Math.PI / 2 + LOOK_MAX_PITCH + 0.01;
+    const pitch = Math.max(-1.2, Math.min(LOOK_MAX_PITCH, Math.asin(Math.max(-1, Math.min(1, off.y / dist))) + dPitch));
+    const h = Math.cos(pitch) * dist;
+    c.target.set(eye.x - Math.sin(yaw) * h, eye.y + Math.sin(pitch) * dist, eye.z - Math.cos(yaw) * h);
+    this.perspective.lookAt(c.target);
+    c.update();
+    this.needsDraw = true;
+  }
+
+  /** Back to orbiting (a drag above street level): the orbit keeps above its target's level again. */
+  endLookAround(): void {
+    const c = this.orbit;
+    if (c && c.maxPolarAngle !== undefined && c.maxPolarAngle !== ORBIT_MAX_POLAR) c.maxPolarAngle = ORBIT_MAX_POLAR;
+  }
+
+  /** Height of the camera above the ground (or whatever is under it) within 60 m; Infinity when nothing is. */
+  cameraHeightAboveGround(): number {
+    const e = this.perspective.position;
+    const hit = this.raycastWorld([e.x, e.y, e.z], [0, -1, 0], 60);
+    return hit ? e.y - hit.point[1] : Infinity;
   }
 
   /** The main perspective camera. */

@@ -14,6 +14,8 @@ export interface OrbitControlsLike {
   enableDamping: boolean;
   dampingFactor: number;
   readonly target: Vector3;
+  /** Lowest the camera may go round its target (radians from straight up; three's OrbitControls). */
+  maxPolarAngle?: number;
   /** Mouse button → action map (three's OrbitControls); a missing action disables that button. */
   mouseButtons?: { LEFT?: number | null; MIDDLE?: number | null; RIGHT?: number | null };
   /** Touch gesture → action map (three's OrbitControls). */
