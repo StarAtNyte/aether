@@ -206,3 +206,25 @@
     transform: none;
   }
 }
+
+/* "Asset-free": a world built from scratch (shapes and generated code, no library models). */
+.fcard__free {
+  position: absolute;
+  top: var(--s-3);
+  left: var(--s-3);
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 var(--s-3);
+  border: 1px solid oklch(100% 0 0 / 0.28);
+  border-radius: 999px;
+  background: oklch(14% 0.02 260 / 0.55);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  color: #fff;
+  font-size: var(--fs-11);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+}

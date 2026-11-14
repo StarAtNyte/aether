@@ -51,6 +51,11 @@ const FeaturedCard = memo(function FeaturedCard({ t, size, onRemix }: { t: World
         draggable={false}
         {...(lead ? { fetchPriority: 'high' as const } : {})}
       />
+      {t.assetFree && (
+        <span className="fcard__free" title="Built from scratch: every object is shapes and generated code, no library models">
+          Asset-free
+        </span>
+      )}
       <div className="fcard__body">
         <span className="fcard__mode">{featuredMode(t)}</span>
         <h3 className="fcard__title">

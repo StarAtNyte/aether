@@ -78,7 +78,7 @@ export const BEST_FIRST: readonly string[] = Object.freeze([
   // games
   'highland-trail', 'kestrel-outpost', 'lantern-isles', 'neon-rain-city', 'hollow-gate', 'sakura-river', 'kepler-base',
   // scenes
-  'sanctuary-falls', 'lisbon-hills', 'sanctuary-terraces', 'cliff-sanctuary', 'sanctuary-ascent', 'four-seasons-garden', 'painterly-meadow',
+  'sanctuary-falls', 'lisbon-hills', 'desert-citadel', 'sanctuary-terraces', 'cliff-sanctuary', 'sanctuary-ascent', 'four-seasons-garden', 'painterly-meadow',
   // stories and physics
   'cloudwatch-harbour', 'kyoto-temple', 'chain-reaction',
 ]);

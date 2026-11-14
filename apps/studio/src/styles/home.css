@@ -1059,6 +1059,33 @@
   transform: rotate(90deg);
 }
 
+/* "No assets" switch: a quiet chip in the bar, filled while on. */
+.hero-bar__noassets {
+  height: 28px;
+  padding: 0 var(--s-2);
+  border-color: var(--border);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.hero-bar__noassets .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.hero-bar__noassets.is-on {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+@media (max-width: 480px) {
+  .hero-bar__noassets-label {
+    display: none;
+  }
+}
+
 .hero__examples {
   display: flex;
   flex-wrap: wrap;
@@ -1409,4 +1436,26 @@
   font-weight: 600;
   border-radius: 999px;
   text-decoration: none;
+}
+
+/* The template card's picture, with the "Asset-free" mark over its corner. */
+.card__media {
+  position: relative;
+  display: block;
+}
+.card__free {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: oklch(14% 0.02 260 / 0.62);
+  color: #fff;
+  font-size: var(--fs-11);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  pointer-events: none;
 }

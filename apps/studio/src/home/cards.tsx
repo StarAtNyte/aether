@@ -71,7 +71,14 @@ export const TemplateCard = memo(function TemplateCard({ template, onPick, eager
   return (
     <div className="card card--template">
       <a className="card__hit" href={templatePlayUrl(template.slug)} aria-label={`Play ${template.title}`}>
-        <Thumb src={templateThumbnail(template.slug)} srcSet={templateThumbnailSrcSet(template.slug)} alt="" eager={eager} />
+        <span className="card__media">
+          <Thumb src={templateThumbnail(template.slug)} srcSet={templateThumbnailSrcSet(template.slug)} alt="" eager={eager} />
+          {template.assetFree && (
+            <span className="card__free" title="Built from scratch: every object is shapes and generated code, no library models">
+              Asset-free
+            </span>
+          )}
+        </span>
         <span className="card__body">
           <span className="card__title-row">
             <span className="card__title">{template.title}</span>
