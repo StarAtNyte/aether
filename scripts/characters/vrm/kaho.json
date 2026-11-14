@@ -1,5 +1,5 @@
 {
- "id": "kaho",
+ "id": "kaho-vrm",
  "gender": "female",
  "look": "anime girl, long straight chestnut-brown hair, white short-sleeve blouse, black shorts, white sneakers",
  "sha256": "12c2b97e95e700783a6a550dc0eee2d7880aeedccef9ae67bc4c5a2f0f2631a2",
@@ -9,7 +9,7 @@
   "licence": "VRM Public License 1.0",
   "licenceUrl": "https://vrm.dev/licenses/1.0/",
   "url": "https://github.com/vrm-c/vrm-specification/tree/master/samples/VRM1_Constraint_Twist_Sample",
-  "line": "Kaho's body: VRM1_Constraint_Twist_Sample by pixiv Inc. (VRM Public License 1.0), converted for Aether"
+  "line": "Kaho's VRM body (test copy): VRM1_Constraint_Twist_Sample by pixiv Inc. (VRM Public License 1.0), converted for Aether"
  },
  "textureMax": 512,
  "textureMaxBy": [{ "match": "Tops|Face_00_SKIN", "max": 1024 }]

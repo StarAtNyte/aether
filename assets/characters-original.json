@@ -61,12 +61,12 @@
    "id": "kaho-vrm",
    "gender": "female",
    "look": "anime girl, long straight chestnut-brown hair, white short-sleeve blouse, black shorts, white sneakers",
-   "file": "c/kaho.35bd9b28.glb",
+   "file": "c/kaho-vrm.d7fd0e9f.glb",
    "height": 1.532,
    "hip": 0.825,
    "triangles": 36470,
    "faces": 1,
-   "bytes": 1081704,
+   "bytes": 1092832,
    "style": "toon",
    "credit": {
     "source": "VRM1_Constraint_Twist_Sample (VRM 1.0 sample model)",
@@ -76,23 +76,23 @@
     "url": "https://github.com/vrm-c/vrm-specification/tree/master/samples/VRM1_Constraint_Twist_Sample",
     "line": "Kaho's VRM body (test copy): VRM1_Constraint_Twist_Sample by pixiv Inc. (VRM Public License 1.0), converted for Aether"
    },
-   "sha256": "35bd9b28dfd01bb4c885fa9cfb9bac92cba3018961184c32a56240618c77c54f",
+   "sha256": "d7fd0e9f43897ec5019b727be7257ac99ef8b221ebc441f7d90f0025fd54ca68",
    "lod1": {
-    "file": "c/kaho.lod1.2613189c.glb",
+    "file": "c/kaho-vrm.lod1.d89c8764.glb",
     "triangles": 14594,
-    "bytes": 561712
+    "bytes": 572824
    }
   },
   {
    "id": "mio-vrm",
    "gender": "female",
    "look": "anime girl, long straight black hair, pale sage-mint short-sleeve top, light-beige shorts, white sneakers, dark grey-brown eyes",
-   "file": "c/mio.6eb925cf.glb",
+   "file": "c/mio-vrm.f71fcb5c.glb",
    "height": 1.532,
    "hip": 0.825,
    "triangles": 36470,
    "faces": 1,
-   "bytes": 1081388,
+   "bytes": 1092520,
    "style": "toon",
    "credit": {
     "source": "VRM1_Constraint_Twist_Sample (VRM 1.0 sample model), recoloured",
@@ -102,11 +102,11 @@
     "url": "https://github.com/vrm-c/vrm-specification/tree/master/samples/VRM1_Constraint_Twist_Sample",
     "line": "Mio's VRM body (test copy): VRM1_Constraint_Twist_Sample by pixiv Inc. (VRM Public License 1.0), recoloured and converted for Aether"
    },
-   "sha256": "6eb925cfce7afdf69863224b77daa173b12322cbb971451fcd5d8b232c7b0fac",
+   "sha256": "f71fcb5cc492b62f6cd156eddc4bdb1cbb579f1b6a31892082cf1ec8f1373b2a",
    "lod1": {
-    "file": "c/mio.lod1.7ee8127b.glb",
+    "file": "c/mio-vrm.lod1.43caf352.glb",
     "triangles": 14594,
-    "bytes": 561400
+    "bytes": 572512
    }
   }
  ]

@@ -392,6 +392,21 @@ const bodyNode = doc.createNode(bodyMesh.getName()).setMesh(bodyMesh).setSkin(sk
 const faceNode = doc.createNode(faceMesh.getName()).setMesh(faceMesh).setSkin(skin);
 scene.addChild(bodyNode).addChild(faceNode);
 
+/**
+ * An accessor's values as floats. A compressed file stores clip rotations as normalized int16 (EXT_meshopt_compression,
+ * KHR_mesh_quantization): `getArray()` gives the raw integers (15653 for 0.4777), so copying it into a Float32Array
+ * turns every keyframe into a huge non-unit quaternion that the writer then re-quantizes into an arbitrary rotation
+ * (the clips flipped the body upside down). `getElement` denormalizes.
+ */
+function floatsOf(a: Accessor): Float32Array {
+  if (!a.getNormalized() && a.getComponentType() === 5126) return new Float32Array(a.getArray()!);
+  const k = a.getElementSize();
+  const out = new Float32Array(a.getCount() * k);
+  const e: number[] = [];
+  for (let i = 0; i < a.getCount(); i++) { a.getElement(i, e); for (let c = 0; c < k; c++) out[i * k + c] = e[c]!; }
+  return out;
+}
+
 // --- springs (hair chains) and the rest template's clips -----------------------------------
 const springs: unknown[] = [];
 for (const sp of raw.extensions?.VRMC_springBone?.springs ?? []) {
@@ -411,8 +426,15 @@ for (const ka of kdoc.getRoot().listAnimations()) {
     if (!target) continue;
     const s = ch.getSampler()!;
     const smp = doc.createAnimationSampler().setInterpolation(s.getInterpolation())
-      .setInput(acc('SCALAR', new Float32Array(s.getInput()!.getArray()!)))
-      .setOutput(doc.createAccessor().setType(s.getOutput()!.getType()).setArray(new Float32Array(s.getOutput()!.getArray()!)).setBuffer(buffer));
+      .setInput(acc('SCALAR', floatsOf(s.getInput()!)))
+      .setOutput(doc.createAccessor().setType(s.getOutput()!.getType()).setArray(new Float32Array(floatsOf(s.getOutput()!))).setBuffer(buffer));
+    if (ch.getTargetPath() === 'rotation') {
+      const q = smp.getOutput()!.getArray()!;
+      for (let i = 0; i < q.length; i += 4) {
+        const n = Math.hypot(q[i]!, q[i + 1]!, q[i + 2]!, q[i + 3]!);
+        if (Math.abs(n - 1) > 0.01) throw new Error(`clip ${ka.getName()}: ${target.getName()} rotation key ${i / 4} is not a unit quaternion (|q| ${n.toFixed(3)})`);
+      }
+    }
     a.addSampler(smp).addChannel(doc.createAnimationChannel().setTargetNode(target).setTargetPath(ch.getTargetPath()!).setSampler(smp));
   }
   clips++;
