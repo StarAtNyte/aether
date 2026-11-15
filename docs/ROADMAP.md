@@ -11,6 +11,7 @@ Status: **in progress**, **planned**, **open** (known defect).
 | # | Item | Status | Notes |
 |---|---|---|---|
 | 1 | **Shared visits** (multiplayer co-presence) | in progress: first version on Himalayan Valley (local app and self-hosted server) | Open a shared link and see who else is there as a VRM avatar, with names and chat. Position and pose only; the world itself stays the same for everyone. Done: versioned wire format, WebSocket relay in the server (16 per room), tab-to-tab transport for tests, Invite, names, chat, name tags (docs/USER_GUIDE.md section 9, docs/CONTRACTS.md "Shared visits"). Next: a hosted transport on Supabase Realtime so the static site gets it, more worlds, showing your chosen look on your own player. |
+| 1b | **Spatial voice in shared visits** | planned (next after avatar tints and the hosted transport) | Peer-to-peer WebRTC audio, signalled over the shared-visit transport. Positional: voices come from the avatar and fade with distance. Mic off by default, push-to-talk or open mic, mute per person. Rooms of up to about 8 people; bigger rooms would need an audio server (SFU). |
 | 2 | **VR (WebXR)** | planned | Stand inside the hero worlds on a Quest headset: an XR session on the existing renderer, teleport movement, comfort vignette. |
 | 3 | **Public gallery** | planned | A feed of worlds people made, creator pages, likes, remix counts and "remixed from" links. |
 
