@@ -1,11 +1,11 @@
 /**
  * The shared-visit controls of the player (worlds with `sharedVisits`, loaded lazily): Invite (copies this link with
- * `room=<id>` and joins it), the number of visitors here, this visitor's name and body, a short chat, and the name
+ * `room=<id>` and joins it), the number of visitors here, this visitor's name, body and outfit colour, a short chat, and the name
  * tags over the others. A link with `room=` joins that room on open. When no relay answers (a static host), nothing
  * is shown.
  */
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactElement } from 'react';
-import { COPRESENCE_CHAT_MAX, COPRESENCE_NAME_MAX, newRoomId, type PresenceBody } from '@aether/core/copresence';
+import { COPRESENCE_CHAT_MAX, COPRESENCE_NAME_MAX, PRESENCE_HUES, newRoomId, presenceColours, type PresenceBody } from '@aether/core/copresence';
 import type { Simulation } from '../../engine/Simulation';
 import { BroadcastTransport } from './broadcast';
 import { CopresenceController } from './controller';
@@ -18,6 +18,9 @@ const BODIES: ReadonlyArray<{ id: PresenceBody; label: string }> = [
   { id: 'kaho-vrm', label: 'Kaho' },
   { id: 'mio-vrm', label: 'Mio' },
 ];
+
+/** Names of the {@link PRESENCE_HUES} swatches (screen readers and tooltips). */
+const HUE_NAMES: Readonly<Record<number, string>> = { 0: 'red', 30: 'orange', 55: 'yellow', 140: 'green', 180: 'teal', 210: 'blue', 260: 'violet', 310: 'pink' };
 
 const STATUS_TEXT: Partial<Record<SessionSnapshot['status'], string>> = {
   connecting: 'Joining…',
@@ -116,13 +119,13 @@ export function CopresencePanel({ sim, world, hidden }: { sim: Simulation; world
     const next = { ...identity, name };
     setIdentity(next);
     saveIdentity(next);
-    ctrlRef.current?.session.setIdentity(next.name, next.body);
+    ctrlRef.current?.session.setIdentity(next.name, next.body, next.tint);
   };
-  const chooseBody = (body: PresenceBody): void => {
-    const next = { ...identity, body };
+  const chooseLook = (change: Partial<Pick<Identity, 'body' | 'tint'>>): void => {
+    const next = { ...identity, ...change };
     setIdentity(next);
     saveIdentity(next);
-    ctrlRef.current?.session.setIdentity(next.name, next.body);
+    ctrlRef.current?.session.setIdentity(next.name, next.body, next.tint);
   };
   const send = (e: FormEvent): void => {
     e.preventDefault();
@@ -191,10 +194,33 @@ export function CopresencePanel({ sim, world, hidden }: { sim: Simulation; world
                 <span id="pl-cbody">Your look</span>
                 <div className="pl-seg" role="group" aria-labelledby="pl-cbody">
                   {BODIES.map((b) => (
-                    <button key={b.id} type="button" className={`pl-seg__item${identity.body === b.id ? ' is-on' : ''}`} aria-pressed={identity.body === b.id} onClick={() => chooseBody(b.id)}>
+                    <button key={b.id} type="button" className={`pl-seg__item${identity.body === b.id ? ' is-on' : ''}`} aria-pressed={identity.body === b.id} onClick={() => chooseLook({ body: b.id })}>
                       {b.label}
                     </button>
                   ))}
+                </div>
+              </div>
+              <div className="pl-cfield">
+                <span id="pl-ctint">Your colours</span>
+                <div className="pl-cswatches" role="group" aria-labelledby="pl-ctint" data-testid="pl-copresence-tint">
+                  <button type="button" className={`pl-cswatch pl-cswatch--auto${identity.tint === null ? ' is-on' : ''}`} aria-pressed={identity.tint === null} title="Automatic: a colour of its own for each visit" onClick={() => chooseLook({ tint: null })}>
+                    Auto
+                  </button>
+                  {PRESENCE_HUES.map((h) => {
+                    const c = presenceColours(h);
+                    return (
+                      <button
+                        key={h}
+                        type="button"
+                        className={`pl-cswatch${identity.tint === h ? ' is-on' : ''}`}
+                        style={{ background: `linear-gradient(135deg, ${c.top} 0 55%, ${c.bottom} 55% 100%)` }}
+                        aria-pressed={identity.tint === h}
+                        aria-label={`Colour ${HUE_NAMES[h] ?? h}`}
+                        title={HUE_NAMES[h]}
+                        onClick={() => chooseLook({ tint: h })}
+                      />
+                    );
+                  })}
                 </div>
               </div>
               <ol className="pl-cchat" ref={logRef} role="log" aria-label="Chat" aria-live="polite">

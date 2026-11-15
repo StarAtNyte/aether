@@ -3,12 +3,12 @@
  * BroadcastChannel transport (Node has BroadcastChannel).
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { quantiseState, type PresenceMessage, type PresenceState } from '@aether/core/copresence';
+import { peerHue, quantiseState, type PresenceMessage, type PresenceState } from '@aether/core/copresence';
 import { PoseBuffer, angleDelta, SNAP_M } from '../src/player/copresence/interpolate';
 import { CopresenceSession, type SessionSnapshot } from '../src/player/copresence/session';
 import { BroadcastTransport } from '../src/player/copresence/broadcast';
 import { Listeners, type CopresenceTransport } from '../src/player/copresence/transport';
-import { randomName, roomFromHash, withRoom } from '../src/player/copresence/identity';
+import { loadIdentity, randomName, roomFromHash, withRoom } from '../src/player/copresence/identity';
 
 const st = (x: number, ts: number, yaw = 0): PresenceState => quantiseState({ position: [x, 0, 0], yawDeg: yaw, motion: 'walk' }, ts);
 
@@ -121,7 +121,8 @@ describe('CopresenceSession', () => {
     expect(s.say('  hello  ')).toBe(true);
     const last = snaps.at(-1) as SessionSnapshot;
     expect(last.count).toBe(2);
-    expect(last.peers).toEqual([{ id: 'peerbbbb01', name: 'Bea', body: 'mio-vrm' }]);
+    // No tint in her hello: she is drawn in the hue her id gives.
+    expect(last.peers).toEqual([{ id: 'peerbbbb01', name: 'Bea', body: 'mio-vrm', hue: peerHue('peerbbbb01') }]);
     expect(last.chat.map((c) => [c.name, c.text, c.self])).toEqual([
       ['Bea', 'hi', false],
       ['Ada', 'hello', true],
@@ -130,6 +131,37 @@ describe('CopresenceSession', () => {
     // Silent too long: dropped.
     now = 60_000;
     expect(s.remotes(now)).toEqual([]);
+  });
+});
+
+describe('outfit colour', () => {
+  it('sends a picked hue in hello and none when automatic; a peer is drawn in its pick, else in its id\'s hue', async () => {
+    const t = new LoopTransport();
+    const snaps: SessionSnapshot[] = [];
+    const s = new CopresenceSession({ transport: t, name: 'Ada', body: 'kaho-vrm', tint: 210, now: () => 0, onChange: (x) => snaps.push(x) });
+    await s.join('room0001');
+    expect(t.sent[0]).toEqual({ v: 1, t: 'hello', name: 'Ada', body: 'kaho-vrm', tint: 210 });
+    s.setIdentity('Ada', 'kaho-vrm', null);
+    expect(t.sent.at(-1)).toEqual({ v: 1, t: 'hello', name: 'Ada', body: 'kaho-vrm' });
+    t.msg.emit('peerbbbb01', { v: 1, t: 'hello', name: 'Bea', body: 'kaho-vrm', tint: 140 });
+    t.msg.emit('peercccc01', { v: 1, t: 'hello', name: 'Cy', body: 'kaho-vrm' });
+    expect(snaps.at(-1)?.peers.map((p) => [p.id, p.hue])).toEqual([
+      ['peerbbbb01', 140],
+      ['peercccc01', peerHue('peercccc01')],
+    ]);
+    // She switches to automatic: her id's hue.
+    t.msg.emit('peerbbbb01', { v: 1, t: 'hello', name: 'Bea', body: 'kaho-vrm' });
+    expect(snaps.at(-1)?.peers[0]?.hue).toBe(peerHue('peerbbbb01'));
+  });
+
+  it('remembers a picked swatch and ignores a stored hue that is not one', () => {
+    const mem = new Map<string, string>();
+    const store = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v) };
+    expect(loadIdentity(store).tint).toBeNull();
+    mem.set('aether.player.copresence.v1', JSON.stringify({ name: 'Ada', body: 'mio-vrm', tint: 260 }));
+    expect(loadIdentity(store)).toEqual({ name: 'Ada', body: 'mio-vrm', tint: 260 });
+    mem.set('aether.player.copresence.v1', JSON.stringify({ name: 'Ada', body: 'mio-vrm', tint: 123 }));
+    expect(loadIdentity(store).tint).toBeNull();
   });
 });
 

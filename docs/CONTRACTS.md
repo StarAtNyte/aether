@@ -2697,11 +2697,21 @@ beyond the rules.
 
 Additive and optional. `CharacterSpec` (`packages/core/src/character-schema.ts`):
 `body` (cast id slug), `gender`, `age` (`young|adult|old`), `wardrobe`, `top`/`bottom`/`hair`
-(`#rrggbb` tints), `scale` (0.85 to 1.15, default 1), `mood`, `hold`, `words` (<= 6 of <= 24 chars).
+(`#rrggbb` tints; on a cast body by its outfit masks, on a toon body whose parts are separate materials, the VRM bodies,
+by a tinted toon pair: see below), `scale` (0.85 to 1.15, default 1), `mood`, `hold`, `words` (<= 6 of <= 24 chars).
 Visual only: the entity's shape stays the collider, animation is a pure function of published
 simulation state, so physics, NPC navigation, the playtest bot and proofs are unchanged
 (`hashWorld` is not affected by animation). Variant resolution is deterministic per entity id
 (`resolveLook` in `@aether/assets`). The cast and motion sets are listed in `assets/characters.json`.
+
+Toon bodies (`style: 'toon'`) have no outfit masks. On those whose parts are separate materials (`kaho-vrm`,
+`mio-vrm`: `…Tops_NN_CLOTH`, `…Bottoms_NN_CLOTH`, `…Hair_NN_HAIR`, `…HairBack_NN_HAIR`; `toonPartOf` in
+`packages/render/src/characters/toon.ts`) `top` / `bottom` / `hair` swap those parts' shared toon pair for a tinted
+copy: the texel's linear luminance times the colour, lifted by 0.18 so a black garment is a dark shade of it
+(`colour * (0.18 + 0.82 * lum)`). Skin, face, eyes, brows, mouth and shoes keep the shared pair; the atlas textures
+are never copied or changed. Tinted pairs are keyed `<atlas>|<colour>`, shared by everyone of that body in that colour
+and disposed with the last of them (`ToonShading.apply` returns the keys, `release` gives them back); the colour is a
+uniform, so all tinted pairs share two programs. Single-atlas toon bodies (`kaho`, `mio`) ignore the tints.
 
 
 ## The AI is the brain: design tools, review loop, replay (additive, backward compatible)
@@ -3542,7 +3552,7 @@ world on both backends; `KEYDEBUG=1 TRACE=1` prints the hash of every input arra
 ## Shared visits (co-presence)
 
 Visitors of one shared link see each other in the player. Only presence is shared (position, heading, stand / walk /
-run, body, display name, chat); the world is never synced. On per world through `sharedVisits: true` in
+run, body and its colour, display name, chat); the world is never synced. On per world through `sharedVisits: true` in
 `apps/studio/src/showcase/publish.ts` (`TEMPLATE_PUBLISH`), today only `himalayan-valley`; the player's
 `GameManifest.sharedVisits = { world: <slug> }` is set from it for `#t=<slug>` links and is never read from a
 `game.json`.
@@ -3553,7 +3563,7 @@ What a visitor sends (`PresenceMessage`, strict objects, every receiver validate
 
 | `t` | Fields | When |
 |---|---|---|
-| `hello` | `v: 1`, `name` (1-24 chars, no control / bidi / zero-width characters, single spaces, trimmed), `body: 'kaho-vrm' \| 'mio-vrm'` | on joining, when name or body change, and again whenever someone joins |
+| `hello` | `v: 1`, `name` (1-24 chars, no control / bidi / zero-width characters, single spaces, trimmed), `body: 'kaho-vrm' \| 'mio-vrm'`, optional `tint` (outfit hue, whole degrees 0-359; the player offers `PRESENCE_HUES`, absent means automatic) | on joining, when name, body or colour change, and again whenever someone joins |
 | `state` | `v: 1`, `ts` (sender clock, ms mod 2^31), `p: [x, y, z]` feet position in whole centimetres (±10^7), `h` heading in 1/1024 turns (0 faces -Z, increasing toward -X: three.js yaw), `m` 0 idle / 1 walk / 2 run | at most 10 Hz and only when the quantised pose changed, plus a keepalive every 5 s |
 | `chat` | `v: 1`, `text` (1-200 chars, cleaned like a name) | on Send |
 | `bye` | `v: 1` | on leaving |
@@ -3563,7 +3573,14 @@ What a relay sends (`RelayFrame`): `{ k: 'welcome', v: 1, id, peers: id[] }` (th
 relay, so no one can speak for another) and `{ k: 'error', code: 'full' | 'bad-room' | 'bad-message' | 'rate' |
 'version' | 'idle' | 'closing' }`. Peer ids are 6-16 lowercase hex / alphanumerics. Frames are at most 1024 bytes. Room
 ids are `[a-z0-9]{6,24}` (the `room=` of a link); a room holds 16 visitors. Helpers: `quantiseState`,
-`dequantiseState`, `sameState`, `parsePresence`, `parseRelayFrame`, `cleanPresenceText`, `newRoomId`.
+`dequantiseState`, `sameState`, `parsePresence`, `parseRelayFrame`, `cleanPresenceText`, `newRoomId`, `peerHue`,
+`presenceColours`.
+
+Colour: a visitor is drawn in its hello's `tint`, else in `peerHue(peerId)` (FNV-1a of the id, spread by the golden
+angle: every receiver gets the same hue for the same visitor, and a few visitors rarely look alike).
+`presenceColours(hue)` turns the hue into the body's `top` (HSL h, 62 %, 62 %), `bottom` (h, 45 %, 46 %) and `hair`
+(h + 25, 50 %, 50 %) as `#rrggbb`. (`tint` was added before shared visits were first deployed, so version 1 carries it;
+a strict v1 receiver without it would drop such a hello.)
 
 ### Relay (`apps/server/src/copresence/`, `routes/copresence.ts`)
 
@@ -3591,12 +3608,13 @@ ids are `[a-z0-9]{6,24}` (the `room=` of a link); a room holds 16 visitors. Help
 - `session.ts` (`CopresenceSession`): hello, rate- and change-limited state, peers, chat (last 60 lines).
 - `interpolate.ts` (`PoseBuffer`): sender clock mapped by the smallest delay seen, drawn 100 ms behind, linear
   position and shortest-arc heading, holds the newest sample, never slides through a jump over 12 m.
-- `avatars.ts` (`RemoteAvatars`): one transient entity per visitor (`copresence-<id>`, `character: { body }`, not in the
-  document), moved with `renderer.applyTransforms`, so the character system animates it by its speed with its own
+- `avatars.ts` (`RemoteAvatars`): one transient entity per visitor (`copresence-<id>`, `character: { body, top,
+  bottom, hair }` from `presenceColours`, not in the document; a colour change re-adds it), moved with
+  `renderer.applyTransforms`, so the character system animates it by its speed with its own
   levels of detail; hidden beyond 160 m; DOM name tags (and chat bubbles for 6 s) within 70 m.
 - `controller.ts`: this visitor's pose ten times a second (playing: the player's feet, facing the way it walks;
   otherwise the ground under the camera at street level, else under the orbit point, facing the camera's way).
   `window.__aetherCopresence` exposes `status`, `id`, `count`, `local` and `remotes()` for probes.
 - `CopresenceUI.tsx`: Invite (sets `room=` with `history.replaceState` and copies the link, or shows it when the
-  clipboard is refused), the visitor count, name and body (`aether.player.copresence.v1`, a random two-word default),
-  chat, Leave. A link with `room=` joins on open.
+  clipboard is refused), the visitor count, name, body and colour (Auto or one of eight swatches; saved with the name in
+  `aether.player.copresence.v1` as `tint: number | null`, a random two-word default name), chat, Leave. A link with `room=` joins on open.

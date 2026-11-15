@@ -1,12 +1,14 @@
 /**
  * Draws the other visitors of a shared visit: one runtime-only person per visitor (a transient entity with the chosen
  * VRM body, `character: { body }`, so the renderer's character system walks, runs and idles it by its speed, with its
- * own levels of detail), moved every frame from the interpolated pose, and a name tag over its head (a DOM label in
+ * own levels of detail) in the visitor's colours (`top` / `bottom` / `hair` from its hue, {@link presenceColours}: the
+ * renderer draws a VRM body's clothes and hair with a tinted copy of its shared toon materials, skin, face and eyes
+ * untouched), moved every frame from the interpolated pose, and a name tag over its head (a DOM label in
  * `layer`). Visitors beyond {@link FAR_M} are hidden (body and tag): sixteen people cost little more than the few in
  * view. Nothing here touches the world document.
  */
 import type { WorldRenderer } from '@aether/render';
-import type { PresenceBody, PresencePose } from '@aether/core/copresence';
+import { presenceColours, type PresenceBody, type PresencePose } from '@aether/core/copresence';
 import { Vector3 } from 'three';
 
 /** Visitors farther than this from the camera are not drawn. */
@@ -23,6 +25,7 @@ export const avatarId = (peer: string): string => `copresence-${peer}`;
 
 interface Drawn {
   body: PresenceBody;
+  hue: number;
   visible: boolean;
   tag: HTMLDivElement;
   label: HTMLSpanElement;
@@ -56,7 +59,7 @@ export class RemoteAvatars {
   }
 
   /** Draw `peers` (others leave). Call once per frame. */
-  update(peers: ReadonlyArray<{ id: string; name: string; body: PresenceBody; pose: PresencePose | null }>, nowMs: number): void {
+  update(peers: ReadonlyArray<{ id: string; name: string; body: PresenceBody; hue: number; pose: PresencePose | null }>, nowMs: number): void {
     const r = this.renderer;
     const cam = r.camera;
     const live = new Set<string>();
@@ -68,13 +71,13 @@ export class RemoteAvatars {
       if (!p.pose) continue;
       live.add(p.id);
       let d = this.drawn.get(p.id);
-      if (d && d.body !== p.body) {
+      if (d && (d.body !== p.body || d.hue !== p.hue)) {
         this.remove(p.id);
         d = undefined;
       }
       const [x, y, z] = p.pose.position;
       const yaw = (p.pose.yawDeg * Math.PI) / 180;
-      if (!d) d = this.add(p.id, p.name, p.body, p.pose);
+      if (!d) d = this.add(p.id, p.name, p.body, p.hue, p.pose);
       if (d.name !== p.name) {
         d.name = p.name;
         d.label.textContent = p.name || 'Visitor';
@@ -117,7 +120,7 @@ export class RemoteAvatars {
     for (const id of [...this.drawn.keys()]) this.remove(id);
   }
 
-  private add(peer: string, name: string, body: PresenceBody, pose: PresencePose): Drawn {
+  private add(peer: string, name: string, body: PresenceBody, hue: number, pose: PresencePose): Drawn {
     this.renderer.addTransient({
       id: avatarId(peer),
       name: name || 'Visitor',
@@ -126,7 +129,7 @@ export class RemoteAvatars {
       transform: { position: [...pose.position], rotation: [0, pose.yawDeg, 0], scale: [1, 1, 1] },
       shape: { kind: 'none' },
       behaviors: [],
-      character: { body, scale: 1 },
+      character: { body, scale: 1, ...presenceColours(hue) },
     } as unknown as Parameters<WorldRenderer['addTransient']>[0]);
     const tag = document.createElement('div');
     tag.className = 'pl-ctag';
@@ -139,7 +142,7 @@ export class RemoteAvatars {
     label.textContent = name || 'Visitor';
     tag.append(bubble, label);
     this.layer.append(tag);
-    const d: Drawn = { body, visible: true, tag, label, bubble, bubbleUntil: 0, name };
+    const d: Drawn = { body, hue, visible: true, tag, label, bubble, bubbleUntil: 0, name };
     this.drawn.set(peer, d);
     return d;
   }

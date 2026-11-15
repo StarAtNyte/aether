@@ -101,6 +101,8 @@ interface Entry {
   shadowsOn: boolean;
   dist: number;
   tintKey: string | null;
+  /** Tinted toon pairs the body wears (given back on removal). */
+  toonTints: string[];
   /** Pose rate (0: every frame; toon bodies pose on twos). */
   poseFps: number;
   /** The far level's file (released with the body) and its cloned scene (its meshes live in the body's), or null. */
@@ -219,7 +221,7 @@ export class CharacterSystem {
       const tint = tintOf(look);
       let tintKeyStr: string | null = null;
       const toon = isToonScene(bodySrc);
-      // Toon bodies keep their painted colours (no outfit masks).
+      // Toon bodies have no outfit masks: their part materials take a tinted toon pair instead (toon.ts).
       if (hasTint(tint) && !toon) {
         tintKeyStr = `${look.body.id}|${tintKey(tint)}`;
         const set = this.acquireTint(tintKeyStr, look.body, bodySrc, tint, base);
@@ -247,7 +249,7 @@ export class CharacterSystem {
         }
       }
       if (tintKeyStr) this.applyTint(scene, tintKeyStr);
-      if (toon) this.toon.apply(scene);
+      const toonTints = toon ? this.toon.apply(scene, hasTint(tint) ? tint : undefined) : [];
       const toonData = toon ? (scene.userData['toon'] as { springs?: SpringChainDef[]; colliders?: ColliderDef[] }) : null;
       const castShadow = (opts.castShadow ?? true) && this.opts.shadows !== false;
       const rig = new CharacterRig({
@@ -277,7 +279,7 @@ export class CharacterSystem {
       rig.autoMotion = opts.autoMotion ?? true;
       if (opts.track !== undefined) rig.track(opts.track ?? null);
       parent.add(rig.root);
-      const entry: Entry = { id, rig, key, bodyUrl, motionUrl, body: look.body, accumulated: 0, frame: 0, shadowsOn: castShadow, dist: 0, tintKey: tintKeyStr, poseFps: toon ? TOON_POSE_FPS : 0, lodUrl, lodScene, lastPx: 0 };
+      const entry: Entry = { id, rig, key, bodyUrl, motionUrl, body: look.body, accumulated: 0, frame: 0, shadowsOn: castShadow, dist: 0, tintKey: tintKeyStr, toonTints, poseFps: toon ? TOON_POSE_FPS : 0, lodUrl, lodScene, lastPx: 0 };
       if (!this.farLevels) rig.levels?.setEnabled(false);
       this.entries.set(id, entry);
       this.list.push(entry);
@@ -310,6 +312,7 @@ export class CharacterSystem {
     if (e.lodScene) disposeModelInstance(e.lodScene);
     for (const m of new Set(own)) m.skeleton?.dispose();
     this.releaseTintKey(e.tintKey);
+    this.toon.release(e.toonTints);
     this.opts.models.release(e.bodyUrl);
     this.opts.models.release(e.motionUrl);
     if (e.lodUrl) this.opts.models.release(e.lodUrl);

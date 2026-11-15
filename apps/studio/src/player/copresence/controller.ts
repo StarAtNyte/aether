@@ -24,8 +24,8 @@ export interface CopresenceHandle {
   readonly status: SessionSnapshot['status'];
   readonly id: string | null;
   readonly count: number;
-  /** The other visitors as drawn now: id, name, body, feet position. */
-  remotes(): Array<{ id: string; name: string; body: string; position: [number, number, number] | null; visible: boolean }>;
+  /** The other visitors as drawn now: id, name, body, outfit hue, feet position. */
+  remotes(): Array<{ id: string; name: string; body: string; hue: number; position: [number, number, number] | null; visible: boolean }>;
   /** This visitor's last pose sent. */
   readonly local: PresencePose | null;
 }
@@ -49,7 +49,7 @@ export class CopresenceController {
     private readonly sim: Simulation,
     transport: CopresenceTransport,
     layer: HTMLElement,
-    identity: { name: string; body: PresenceBody },
+    identity: { name: string; body: PresenceBody; tint: number | null },
     onChange: (s: SessionSnapshot) => void,
   ) {
     this.avatars = new RemoteAvatars(sim.renderer, layer);
@@ -57,6 +57,7 @@ export class CopresenceController {
       transport,
       name: identity.name,
       body: identity.body,
+      tint: identity.tint,
       onChange: (s) => {
         // New chat lines from others also show over their heads.
         for (const line of s.chat) {
@@ -86,6 +87,7 @@ export class CopresenceController {
           id: peer.id,
           name: peer.name,
           body: peer.body,
+          hue: peer.hue,
           position: pose ? [pose.position[0], pose.position[1], pose.position[2]] : null,
           visible: pose !== null,
         })),
@@ -121,7 +123,7 @@ export class CopresenceController {
           this.session.setPose(pose);
         }
       }
-      const peers = this.session.remotes(t).map(({ peer, pose }) => ({ id: peer.id, name: peer.name, body: peer.body, pose }));
+      const peers = this.session.remotes(t).map(({ peer, pose }) => ({ id: peer.id, name: peer.name, body: peer.body, hue: peer.hue, pose }));
       this.avatars.update(peers, t);
       if (peers.length > 0) this.sim.renderer.requestRender();
     } catch (err) {

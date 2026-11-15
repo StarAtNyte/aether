@@ -3,11 +3,12 @@
  * and the cast entry `kaho` resolves only when named.
  */
 import { bodyCredits, castById, characterCredit, isToonBody, lookFromText, resolveLook } from '@aether/assets';
-import { Bone, Vector3 } from 'three';
+import { Bone, BufferGeometry, Group, Mesh, MeshStandardMaterial, Texture, Vector3, type Material } from 'three';
 import { describe, expect, it } from 'vitest';
 import { closestOnSegment, rateAt, SpringSystem } from '../src/characters/springs';
 import { clothClearCpu } from '../src/characters/cloth-clear';
 import { poseStep, TOON_POSE_FPS } from '../src/characters/system';
+import { toonPartOf, ToonShading } from '../src/characters/toon';
 
 function chain(): { root: Bone; a: Bone; b: Bone } {
   const root = new Bone();
@@ -153,5 +154,65 @@ describe('the toon cast', () => {
     expect(c[0]?.licenceUrl).toBe('https://vrm.dev/licenses/1.0/');
     expect(c[0]?.assets.join(' ')).toMatch(/kaho-vrm .*mio-vrm/);
     expect(characterCredit(['kaho-vrm', 'mio-vrm']).assets.join(' ')).not.toContain("this project's own bodies");
+  });
+});
+
+describe('toon outfit tints', () => {
+  it('tints only the clothes and hair of a VRM body, never skin, face, eyes or shoes', () => {
+    for (const n of ['kaho-vrm-Tops_01_CLOTH', 'mio-vrm-Tops_01_CLOTH-outline']) expect(toonPartOf(n), n).toBe('top');
+    expect(toonPartOf('kaho-vrm-Bottoms_01_CLOTH')).toBe('bottom');
+    for (const n of ['kaho-vrm-Hair_00_HAIR', 'kaho-vrm-HairBack_00_HAIR', 'kaho-vrm-HairBack_00_HAIR-outline']) expect(toonPartOf(n), n).toBe('hair');
+    for (const n of ['kaho-vrm-Body_00_SKIN', 'kaho-vrm-Face_00_SKIN', 'kaho-vrm-EyeIris_00_EYE', 'kaho-vrm-EyeWhite_00_EYE', 'kaho-vrm-FaceBrow_00_FACE', 'kaho-vrm-Shoes_01_CLOTH', 'kaho-toon', ''])
+      expect(toonPartOf(n), n).toBeNull();
+  });
+
+  it('gives tinted parts a shared tinted pair per colour, leaves the source materials alone and frees a pair with its last wearer', () => {
+    const atlas = (name: string): Texture => Object.assign(new Texture(), { name });
+    const maps = { top: atlas('top'), skin: atlas('skin'), hair: atlas('hair') };
+    const body = (): { scene: Group; sources: MeshStandardMaterial[] } => {
+      const scene = new Group();
+      const sources: MeshStandardMaterial[] = [];
+      for (const [part, map] of [['Tops_01_CLOTH', maps.top], ['Body_00_SKIN', maps.skin], ['Hair_00_HAIR', maps.hair]] as const)
+        for (const kind of ['body', 'outline'] as const) {
+          const m = new MeshStandardMaterial({ map });
+          m.name = `kaho-vrm-${part}${kind === 'outline' ? '-outline' : ''}`;
+          m.userData['toon'] = kind;
+          sources.push(m);
+          scene.add(new Mesh(new BufferGeometry(), m));
+        }
+      return { scene, sources };
+    };
+    const toon = new ToonShading();
+    const plain = body();
+    expect(toon.apply(plain.scene)).toEqual([]);
+    const a = body();
+    const b = body();
+    const c = body();
+    const red = { top: '#e08a8a', hair: '#a05050' };
+    const ka = toon.apply(a.scene, red);
+    const kb = toon.apply(b.scene, red);
+    const kc = toon.apply(c.scene, { top: '#8ab4e0' });
+    // Top and hair, body and outline each: two tinted pairs for red, one for blue.
+    expect(ka).toHaveLength(4);
+    expect(kc).toHaveLength(2);
+    expect(toon.tintedCount).toBe(3);
+    const mat = (s: Group, i: number): Material => (s.children[i] as Mesh).material as Material;
+    // The same colour shares materials; another colour has its own; skin is the plain shared pair everywhere.
+    expect(mat(a.scene, 0)).toBe(mat(b.scene, 0));
+    expect(mat(a.scene, 0)).not.toBe(mat(c.scene, 0));
+    expect(mat(a.scene, 0)).not.toBe(mat(plain.scene, 0));
+    expect(mat(a.scene, 0).name).toBe('toon-body-tint');
+    expect(mat(a.scene, 1).name).toBe('toon-outline-tint');
+    for (const s of [a, b, c]) expect(mat(s.scene, 2)).toBe(mat(plain.scene, 2));
+    expect(mat(c.scene, 4)).toBe(mat(plain.scene, 4));
+    // The loaded materials and atlases are untouched (no colour change, no new textures).
+    for (const s of [a, b, c]) for (const m of s.sources) expect(m.color.getHex()).toBe(0xffffff);
+    toon.release(ka);
+    expect(toon.tintedCount).toBe(3);
+    toon.release(kb);
+    expect(toon.tintedCount).toBe(1);
+    toon.release(kc);
+    expect(toon.tintedCount).toBe(0);
+    toon.dispose();
   });
 });

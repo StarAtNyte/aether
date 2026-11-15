@@ -2,7 +2,7 @@
  * Shared visits (co-presence): the wire format visitors of one published world exchange through a relay.
  *
  * Only presence is shared: where each visitor stands, which way they face, whether they stand, walk or run, the body
- * they chose, their display name and short chat lines. The world itself is never synced.
+ * they chose and its colour, their display name and short chat lines. The world itself is never synced.
  *
  * Two layers:
  * - {@link PresenceMessage}: what a visitor sends (`hello`, `state`, `chat`, `bye`), versioned by `v`. Every receiver
@@ -78,6 +78,8 @@ export const PresenceHello = z.strictObject({
   t: z.literal('hello'),
   name: CleanText(COPRESENCE_NAME_MAX),
   body: z.enum(PRESENCE_BODIES),
+  /** Optional: the hue (degrees) the visitor picked for their outfit and hair; absent, receivers derive one from the peer id ({@link peerHue}). */
+  tint: Int(0, 359).optional(),
 });
 export const PresenceState = z.strictObject({
   v: z.literal(COPRESENCE_VERSION),
@@ -187,4 +189,40 @@ export function newRoomId(random: () => number = Math.random): string {
   let s = '';
   for (let i = 0; i < 10; i++) s += abc[Math.floor(random() * abc.length) % abc.length];
   return s;
+}
+
+/** The outfit hues a visitor can pick (degrees): eight well-spaced swatches. */
+export const PRESENCE_HUES = [0, 30, 55, 140, 180, 210, 260, 310] as const;
+
+/**
+ * The hue (0..359) a visitor without a picked one is drawn in: stable for a peer id (every visitor sees the same), and
+ * spread by the golden angle so a handful of ids rarely look alike. Pure.
+ */
+export function peerHue(peerId: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < peerId.length; i++) {
+    h ^= peerId.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return Math.round(((h >>> 0) % 1024) * 137.508) % 360;
+}
+
+/** sRGB `#rrggbb` of an HSL colour (h degrees, s and l 0..1). */
+function hslHex(h: number, s: number, l: number): string {
+  const k = (n: number): number => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const c = (n: number): string =>
+    Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1))))
+      .toString(16)
+      .padStart(2, '0');
+  return `#${c(0)}${c(8)}${c(4)}`;
+}
+
+/**
+ * The colours a hue gives a visitor's body (`character` `top` / `bottom` / `hair`): a light top, a deeper bottom in the
+ * same hue and hair a little round the wheel, less saturated (dyed, not neon). Skin, face, eyes and shoes keep theirs.
+ */
+export function presenceColours(hue: number): { top: string; bottom: string; hair: string } {
+  const h = ((Math.round(Number.isFinite(hue) ? hue : 0) % 360) + 360) % 360;
+  return { top: hslHex(h, 0.62, 0.62), bottom: hslHex(h, 0.45, 0.46), hair: hslHex((h + 25) % 360, 0.5, 0.5) };
 }

@@ -1,8 +1,9 @@
 /**
- * This viewer's identity in shared visits: a display name (a random two-word default) and a body, remembered in this
+ * This viewer's identity in shared visits: a display name (a random two-word default), a body and an optional outfit
+ * hue (null: the one the peer id gives, see `peerHue`), remembered in this
  * browser. Storage may be missing (private windows): everything still works, only nothing is remembered.
  */
-import { COPRESENCE_NAME_MAX, PRESENCE_BODIES, ROOM_ID_RE, cleanPresenceText, type PresenceBody } from '@aether/core/copresence';
+import { COPRESENCE_NAME_MAX, PRESENCE_BODIES, PRESENCE_HUES, ROOM_ID_RE, cleanPresenceText, type PresenceBody } from '@aether/core/copresence';
 
 const KEY = 'aether.player.copresence.v1';
 
@@ -12,6 +13,8 @@ const SECOND = ['Yak', 'Crane', 'Fox', 'Heron', 'Ibex', 'Lynx', 'Marmot', 'Otter
 export interface Identity {
   name: string;
   body: PresenceBody;
+  /** One of {@link PRESENCE_HUES}, or null (automatic). */
+  tint: number | null;
 }
 
 /** A random default name ("Misty Ibex"). */
@@ -25,15 +28,16 @@ export function loadIdentity(storage: Pick<Storage, 'getItem' | 'setItem'> | nul
   try {
     const raw = storage?.getItem(KEY);
     if (raw) {
-      const v = JSON.parse(raw) as { name?: unknown; body?: unknown };
+      const v = JSON.parse(raw) as { name?: unknown; body?: unknown; tint?: unknown };
       const name = typeof v.name === 'string' ? cleanPresenceText(v.name, COPRESENCE_NAME_MAX) : '';
       const body = (PRESENCE_BODIES as readonly unknown[]).includes(v.body) ? (v.body as PresenceBody) : 'kaho-vrm';
-      if (name) return { name, body };
+      const tint = (PRESENCE_HUES as readonly unknown[]).includes(v.tint) ? (v.tint as number) : null;
+      if (name) return { name, body, tint };
     }
   } catch {
     // unreadable: start fresh
   }
-  const id: Identity = { name: randomName(), body: Math.random() < 0.5 ? 'kaho-vrm' : 'mio-vrm' };
+  const id: Identity = { name: randomName(), body: Math.random() < 0.5 ? 'kaho-vrm' : 'mio-vrm', tint: null };
   saveIdentity(id, storage);
   return id;
 }

@@ -272,8 +272,11 @@ joins you. Up to 16 people share a room.
   over their head. When you play (P) you are where your character is; while
   you look around, you stand on the ground under the camera.
 - Press **N here** to open the panel: change your name (a random one is chosen
-  the first time and remembered in this browser), pick a look (Kaho or Mio),
-  and chat. A message also shows over your head for a few seconds. Esc leaves
+  the first time and remembered in this browser), pick a look (Kaho or Mio)
+  and your colours, and chat. **Your colours** recolours your clothes and
+  hair as others see you (skin, face and eyes stay as they are): pick one of
+  the swatches, or leave it on **Auto** and you get a colour of your own for
+  each visit, so two people with the same look are still easy to tell apart. A message also shows over your head for a few seconds. Esc leaves
   the text field. **Leave visit** disconnects.
 - Only where people are and what they say is shared. The world itself is not:
   doors, the time of day or anything else you change stay on your screen.

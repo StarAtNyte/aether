@@ -12,6 +12,7 @@ import {
   COPRESENCE_STATE_HZ,
   COPRESENCE_VERSION,
   cleanPresenceText,
+  peerHue,
   quantiseState,
   sameState,
   type PresenceBody,
@@ -31,6 +32,10 @@ export interface RemotePeer {
   /** Empty until its hello arrives. */
   name: string;
   body: PresenceBody;
+  /** The hue it picked (its hello's `tint`), else undefined: drawn in {@link RemotePeer.hue}. */
+  tint: number | undefined;
+  /** The hue it is drawn in: its pick, or the one its id gives. */
+  hue: number;
   buffer: PoseBuffer;
   lastSeen: number;
 }
@@ -50,7 +55,7 @@ export interface SessionSnapshot {
   status: 'connecting' | 'live' | 'full' | 'lost' | 'unreachable' | 'closed';
   /** Visitors here, this one included. */
   count: number;
-  peers: Array<{ id: string; name: string; body: PresenceBody }>;
+  peers: Array<{ id: string; name: string; body: PresenceBody; hue: number }>;
   chat: ChatLine[];
 }
 
@@ -58,6 +63,8 @@ export interface SessionOptions {
   transport: CopresenceTransport;
   name: string;
   body: PresenceBody;
+  /** The outfit hue picked (degrees), or null to be drawn in the one the peer id gives. */
+  tint?: number | null;
   /** Monotonic clock in ms (default `performance.now`). */
   now?: () => number;
   /** Called when the snapshot changes (peers, names, chat, status), not on every pose. */
@@ -73,6 +80,7 @@ export class CopresenceSession {
   private status: SessionSnapshot['status'] = 'closed';
   private name: string;
   private body: PresenceBody;
+  private tint: number | null;
   private selfId: string | null = null;
   private lastSent: PresenceState | null = null;
   private lastSentAt = Number.NEGATIVE_INFINITY;
@@ -83,6 +91,7 @@ export class CopresenceSession {
     this.now = opts.now ?? (() => performance.now());
     this.name = cleanPresenceText(opts.name, COPRESENCE_NAME_MAX) || 'Visitor';
     this.body = opts.body;
+    this.tint = opts.tint ?? null;
     this.transport.onMessage((from, m) => this.receive(from, m));
     this.transport.onPeerJoin((id) => {
       this.peer(id);
@@ -141,10 +150,11 @@ export class CopresenceSession {
     this.lastSentAt = t;
   }
 
-  /** Change this visitor's name or body (sent at once). */
-  setIdentity(name: string, body: PresenceBody): void {
+  /** Change this visitor's name, body or outfit hue (null: the one the peer id gives); sent at once. */
+  setIdentity(name: string, body: PresenceBody, tint: number | null = this.tint): void {
     this.name = cleanPresenceText(name, COPRESENCE_NAME_MAX) || this.name;
     this.body = body;
+    this.tint = tint;
     this.sendHello();
   }
 
@@ -177,7 +187,7 @@ export class CopresenceSession {
     return {
       status: this.status,
       count: this.status === 'live' ? this.peers.size + 1 : 0,
-      peers: [...this.peers.values()].map((p) => ({ id: p.id, name: p.name || 'Visitor', body: p.body })),
+      peers: [...this.peers.values()].map((p) => ({ id: p.id, name: p.name || 'Visitor', body: p.body, hue: p.hue })),
       chat: this.chat,
     };
   }
@@ -196,13 +206,14 @@ export class CopresenceSession {
   }
 
   private sendHello(): void {
-    if (this.status === 'live') this.transport.send({ v: COPRESENCE_VERSION, t: 'hello', name: this.name, body: this.body });
+    if (this.status !== 'live') return;
+    this.transport.send(this.tint === null ? { v: COPRESENCE_VERSION, t: 'hello', name: this.name, body: this.body } : { v: COPRESENCE_VERSION, t: 'hello', name: this.name, body: this.body, tint: this.tint });
   }
 
   private peer(id: string): RemotePeer {
     let p = this.peers.get(id);
     if (!p) {
-      p = { id, name: '', body: 'kaho-vrm', buffer: new PoseBuffer(), lastSeen: this.now() };
+      p = { id, name: '', body: 'kaho-vrm', tint: undefined, hue: peerHue(id), buffer: new PoseBuffer(), lastSeen: this.now() };
       this.peers.set(id, p);
     }
     return p;
@@ -221,9 +232,11 @@ export class CopresenceSession {
       p.buffer.push(m, this.now());
       if (!known) this.changed();
     } else if (m.t === 'hello') {
-      if (p.name !== m.name || p.body !== m.body || !known) {
+      if (p.name !== m.name || p.body !== m.body || p.tint !== m.tint || !known) {
         p.name = m.name;
         p.body = m.body;
+        p.tint = m.tint;
+        p.hue = m.tint ?? peerHue(from);
         this.changed();
       }
     } else if (m.t === 'chat') {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   COPRESENCE_MAX_FRAME_BYTES,
   HEADING_STEPS,
+  PRESENCE_HUES,
   ROOM_ID_RE,
   cleanPresenceText,
   dequantiseState,
@@ -9,6 +10,8 @@ import {
   newRoomId,
   parsePresence,
   parseRelayFrame,
+  peerHue,
+  presenceColours,
   quantiseState,
   sameState,
 } from '../src/copresence';
@@ -45,6 +48,9 @@ describe('shared visits protocol', () => {
 
   it('accepts the four messages and nothing else', () => {
     expect(parsePresence({ v: 1, t: 'hello', name: 'Misty Ibex', body: 'mio-vrm' })).not.toBeNull();
+    // An optional outfit hue in whole degrees.
+    expect(parsePresence({ v: 1, t: 'hello', name: 'Misty Ibex', body: 'mio-vrm', tint: 0 })).not.toBeNull();
+    expect(parsePresence({ v: 1, t: 'hello', name: 'Misty Ibex', body: 'mio-vrm', tint: 359 })).toEqual({ v: 1, t: 'hello', name: 'Misty Ibex', body: 'mio-vrm', tint: 359 });
     expect(parsePresence({ v: 1, t: 'chat', text: 'namaste' })).not.toBeNull();
     expect(parsePresence({ v: 1, t: 'bye' })).not.toBeNull();
     for (const bad of [
@@ -58,6 +64,10 @@ describe('shared visits protocol', () => {
       { v: 1, t: 'hello', name: ' padded ', body: 'kaho-vrm' },
       { v: 1, t: 'hello', name: 'evil‮', body: 'kaho-vrm' },
       { v: 1, t: 'hello', name: 'x'.repeat(25), body: 'kaho-vrm' },
+      { v: 1, t: 'hello', name: 'Ada', body: 'kaho-vrm', tint: 360 },
+      { v: 1, t: 'hello', name: 'Ada', body: 'kaho-vrm', tint: -1 },
+      { v: 1, t: 'hello', name: 'Ada', body: 'kaho-vrm', tint: 12.5 },
+      { v: 1, t: 'hello', name: 'Ada', body: 'kaho-vrm', tint: '210' },
       { v: 1, t: 'chat', text: 'x'.repeat(201) },
       { v: 1, t: 'state', ts: 1, p: [0.5, 0, 0], h: 0, m: 0 },
       { v: 1, t: 'state', ts: 1, p: [0, 0, 0], h: 1024, m: 0 },
@@ -83,5 +93,44 @@ describe('shared visits protocol', () => {
     let seed = 1;
     const rnd = (): number => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
     for (let i = 0; i < 50; i++) expect(newRoomId(rnd)).toMatch(ROOM_ID_RE);
+  });
+
+  it('gives every peer id a stable hue, spread round the wheel', () => {
+    const ids = Array.from({ length: 200 }, (_, i) => newRoomId(((seed) => () => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31))(i + 1)).slice(0, 8));
+    for (const id of ids) {
+      const h = peerHue(id);
+      expect(Number.isInteger(h)).toBe(true);
+      expect(h).toBeGreaterThanOrEqual(0);
+      expect(h).toBeLessThan(360);
+      expect(peerHue(id)).toBe(h);
+    }
+    // Spread: every 60-degree sector of the wheel gets some of 200 ids, none more than a third.
+    const sectors = new Array(6).fill(0) as number[];
+    for (const id of ids) sectors[Math.floor(peerHue(id) / 60)]!++;
+    for (const n of sectors) {
+      expect(n).toBeGreaterThan(10);
+      expect(n).toBeLessThan(70);
+    }
+    expect(peerHue('abcdef01')).not.toBe(peerHue('abcdef02'));
+  });
+
+  it('turns a hue into top, bottom and hair colours of that hue', () => {
+    const hex = /^#[0-9a-f]{6}$/;
+    const rgb = (h: string): number[] => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+    for (const h of [...PRESENCE_HUES, 359, 720, -30]) {
+      const c = presenceColours(h);
+      expect(c.top).toMatch(hex);
+      expect(c.bottom).toMatch(hex);
+      expect(c.hair).toMatch(hex);
+      // The top is lighter than the bottom.
+      expect(rgb(c.top).reduce((a, b) => a + b)).toBeGreaterThan(rgb(c.bottom).reduce((a, b) => a + b));
+    }
+    expect(presenceColours(0).top).toBe('#da6262');
+    const [r, g, b] = rgb(presenceColours(210).top);
+    expect(b).toBeGreaterThan(r!);
+    expect(b).toBeGreaterThan(g!);
+    expect(presenceColours(720)).toEqual(presenceColours(0));
+    expect(presenceColours(-30)).toEqual(presenceColours(330));
+    expect(presenceColours(Number.NaN)).toEqual(presenceColours(0));
   });
 });

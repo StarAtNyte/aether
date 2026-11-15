@@ -15,6 +15,13 @@
  * that grows only with the square root of the distance, so on screen lines
  * thin out with distance; its colour is a darker, more saturated shade of the
  * part under it.
+ *
+ * Outfit and hair colours ({@link ToonTint}, the `top` / `bottom` / `hair` of a character): bodies whose parts are
+ * separate materials (the VRM bodies: `…Tops_…_CLOTH`, `…Bottoms_…_CLOTH`, `…Hair_…_HAIR`, see {@link toonPartOf})
+ * draw those parts with a tinted copy of the pair, which takes the texel's luminance times the target colour
+ * ({@link TOON_TINT_LIFT} keeps a black garment a dark shade of it). Skin, face, eyes and shoes keep the shared pair.
+ * Tinted pairs are shared by every person of the same body and colour, and freed with the last of them; the atlas
+ * textures are never copied.
  */
 import { BackSide, Color, FrontSide, Mesh, Vector3, type Material, type MeshStandardMaterial, type Object3D, type Texture } from 'three';
 import { MeshBasicNodeMaterial, type Node } from 'three/webgpu';
@@ -54,6 +61,32 @@ export function isToonScene(scene: Object3D): boolean {
   return typeof scene.userData['toon'] === 'object' && scene.userData['toon'] !== null;
 }
 
+/** Recolour request for a toon body: sRGB `#rrggbb` per part; omitted parts keep their painted colours. */
+export interface ToonTint {
+  top?: string;
+  bottom?: string;
+  hair?: string;
+}
+
+/** A tinted texel is `colour * (lift + (1 - lift) * luminance)`: shading kept, and a black garment still shows the hue. */
+export const TOON_TINT_LIFT = 0.18;
+
+/**
+ * The recolourable part a toon material draws, by its name: VRM part materials end in `Tops_NN_CLOTH`,
+ * `Bottoms_NN_CLOTH` or `Hair_NN_HAIR` / `HairBack_NN_HAIR` (an outline twin adds `-outline`). Skin, face, eyes,
+ * shoes and single-atlas bodies are null: they are never tinted.
+ */
+export function toonPartOf(name: string): keyof ToonTint | null {
+  if (/(?:^|[-_])Tops_\d+_CLOTH(?:-outline)?$/.test(name)) return 'top';
+  if (/(?:^|[-_])Bottoms_\d+_CLOTH(?:-outline)?$/.test(name)) return 'bottom';
+  if (/(?:^|[-_])Hair(?:Back)?_\d+_HAIR(?:-outline)?$/.test(name)) return 'hair';
+  return null;
+}
+
+const TINT_HEX = /^#[0-9a-fA-F]{6}$/;
+
+type ToonPair = { body: MeshBasicNodeMaterial; outline: MeshBasicNodeMaterial };
+
 /** Owns the shared toon materials of one renderer. */
 export class ToonShading {
   private readonly u: ToonUniforms = {
@@ -65,7 +98,9 @@ export class ToonShading {
     width: uniform(TOON_STYLE.outline) as unknown as { value: number },
   };
   /** Body and outline materials by atlas texture (one pair per toon body file). */
-  private readonly pairs = new Map<Texture, { body: MeshBasicNodeMaterial; outline: MeshBasicNodeMaterial }>();
+  private readonly pairs = new Map<Texture, ToonPair>();
+  /** Tinted pairs by `<atlas uuid>|<hex>`, with how many people wear them. */
+  private readonly tinted = new Map<string, { pair: ToonPair; users: number }>();
 
   /**
    * Set the light: `dir` points toward the sun (world), `color` its linear colour (any intensity: only the hue is used).
@@ -95,15 +130,27 @@ export class ToonShading {
     this.u.exposure.value = v;
   }
 
-  /** Swap a toon body scene's materials for the shared toon pair (by the source material's `toon` extras). */
-  apply(scene: Object3D): void {
+  /**
+   * Swap a toon body scene's materials for the shared toon pair (by the source material's `toon` extras); parts
+   * `tint` recolours take a tinted pair instead. Returns the tinted pairs taken: hand them to {@link release} when the
+   * person goes.
+   */
+  apply(scene: Object3D, tint?: ToonTint): string[] {
+    const taken: string[] = [];
     scene.traverse((o) => {
       if (!(o instanceof Mesh)) return;
       const src = o.material as Material;
       const kind = (src.userData as { toon?: string }).toon;
       const map = (src as MeshStandardMaterial).map;
       if (!map || (kind !== 'body' && kind !== 'outline')) return;
-      const pair = this.pairFor(map);
+      const part = tint ? toonPartOf(src.name) : null;
+      const hex = part ? tint?.[part] : undefined;
+      let pair: ToonPair;
+      if (hex && TINT_HEX.test(hex)) {
+        const key = `${map.uuid}|${hex.toLowerCase()}`;
+        pair = this.tintedPair(key, map, hex);
+        taken.push(key);
+      } else pair = this.pairFor(map);
       o.material = kind === 'body' ? pair.body : pair.outline;
       if (kind === 'outline') {
         o.castShadow = false;
@@ -111,9 +158,43 @@ export class ToonShading {
         o.userData['toonOutline'] = true;
       }
     });
+    return taken;
   }
 
-  private pairFor(map: Texture): { body: MeshBasicNodeMaterial; outline: MeshBasicNodeMaterial } {
+  /** Give back tinted pairs {@link apply} returned; a pair no one wears any more is freed. */
+  release(keys: readonly string[]): void {
+    for (const key of keys) {
+      const t = this.tinted.get(key);
+      if (!t) continue;
+      t.users--;
+      if (t.users > 0) continue;
+      t.pair.body.dispose();
+      t.pair.outline.dispose();
+      this.tinted.delete(key);
+    }
+  }
+
+  /** Tinted pairs alive (diagnostics, tests). */
+  get tintedCount(): number {
+    return this.tinted.size;
+  }
+
+  private tintedPair(key: string, map: Texture, hex: string): ToonPair {
+    let t = this.tinted.get(key);
+    if (!t) {
+      map.anisotropy = Math.max(map.anisotropy, 8);
+      // (the colour is a uniform: every tinted pair of a renderer has the same graph, so they share two programs)
+      const colour = uniform(new Color(hex)) as unknown as Node<'color'>;
+      t = { pair: { body: this.bodyMaterial(map, colour), outline: this.outlineMaterial(map, colour) }, users: 0 };
+      t.pair.body.name = 'toon-body-tint';
+      t.pair.outline.name = 'toon-outline-tint';
+      this.tinted.set(key, t);
+    }
+    t.users++;
+    return t.pair;
+  }
+
+  private pairFor(map: Texture): ToonPair {
     let pair = this.pairs.get(map);
     if (!pair) {
       // Oblique faces (a three-quarter view of the eyes) keep their lines through the mips.
@@ -124,13 +205,13 @@ export class ToonShading {
     return pair;
   }
 
-  private bodyMaterial(map: Texture): MeshBasicNodeMaterial {
+  private bodyMaterial(map: Texture, tint?: Node<'color'>): MeshBasicNodeMaterial {
     const u = this.u;
     const m = new MeshBasicNodeMaterial();
     m.name = 'toon-body';
     m.side = FrontSide;
     const tex = texture(map, uv());
-    const base = tex.rgb;
+    const base = tint ? tinted(tex.rgb, tint) : tex.rgb;
     const code = tex.a;
     // Painted hair cards and strands are alpha-cut: code 0 is a hole (the shapes of the tips are in the texture).
     const keep = code.greaterThan(CUT_CODE);
@@ -170,7 +251,7 @@ export class ToonShading {
     return m;
   }
 
-  private outlineMaterial(map: Texture): MeshBasicNodeMaterial {
+  private outlineMaterial(map: Texture, tint?: Node<'color'>): MeshBasicNodeMaterial {
     const u = this.u;
     const m = new MeshBasicNodeMaterial();
     m.name = 'toon-outline';
@@ -183,7 +264,7 @@ export class ToonShading {
     const width = (u.width as unknown as Node<'float'>).mul(info.x).mul(clamp(sqrt(dist.div(2.5)), 0.45, 2.2));
     m.positionNode = pl.add(normalize(normalLocal).mul(width)) as unknown as Node;
     const tx = texture(map, uv());
-    const base = tx.rgb;
+    const base = tint ? tinted(tx.rgb, tint) : tx.rgb;
     const line = vec3(TOON_STYLE.line.r, TOON_STYLE.line.g, TOON_STYLE.line.b);
     const col = pow(base, vec3(1.35, 1.35, 1.35)).mul(line).mul(u.litTint as unknown as Node<'color'>);
     m.colorNode = vec4(col.mul(u.exposure as unknown as Node<"float">), 1) as unknown as Node<"vec4">;
@@ -194,7 +275,7 @@ export class ToonShading {
 
   /** The shared materials (diagnostics: program count, tests). */
   get materials(): Material[] {
-    return [...this.pairs.values()].flatMap((p) => [p.body, p.outline]);
+    return [...this.pairs.values(), ...[...this.tinted.values()].map((t) => t.pair)].flatMap((p) => [p.body, p.outline]);
   }
 
   dispose(): void {
@@ -203,5 +284,16 @@ export class ToonShading {
       p.outline.dispose();
     }
     this.pairs.clear();
+    for (const t of this.tinted.values()) {
+      t.pair.body.dispose();
+      t.pair.outline.dispose();
+    }
+    this.tinted.clear();
   }
+}
+
+/** A texel recoloured to `colour`, keeping its shading: `colour * (lift + (1 - lift) * luminance)` (linear). */
+function tinted(rgb: Node<'vec3'>, colour: Node<'color'>): Node<'vec3'> {
+  const lum = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
+  return colour.mul(float(TOON_TINT_LIFT).add(lum.mul(1 - TOON_TINT_LIFT))) as unknown as Node<'vec3'>;
 }
