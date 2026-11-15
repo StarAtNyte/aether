@@ -49,6 +49,11 @@ and share it with one link.
   phone. Publish it as a game, a video, a picture, a 3D model or a floor plan.
   Published worlds open in their own mode (third-person play, walkthrough, or a
   drone tour over a city) and can be remixed into the editor.
+- **Visit together.** Worlds published as **Multiplayer** (Himalayan Valley
+  first) let everyone on the same link walk around together: VRM avatars in
+  colours of their own, name tags and chat. Press **Invite** and send the link.
+  It works on the hosted site (over Supabase Realtime), in the local app and on a
+  self-hosted server; multiplayer worlds carry a **Multiplayer** mark on their cards.
 - **Build from scratch.** Switch on **No assets** and the AI makes every object
   itself: shapes and generators it writes, no library models, so nothing needs
   a licence or a credit. [Desert Citadel](#gallery) was built this way; worlds
@@ -741,6 +746,7 @@ were copied from them.
 | [ASSETS.md](docs/ASSETS.md) · [THIRD_PARTY.md](docs/THIRD_PARTY.md) | Asset library, licences, credits, AI disclosure |
 | [REVIEW_LOG.md](docs/REVIEW_LOG.md) | Engineering log: every stage with measurements and open issues |
 | [PERFORMANCE.md](docs/PERFORMANCE.md) | Big worlds on a laptop: targets, measurements, every optimization, how to measure safely |
+| [ROADMAP.md](docs/ROADMAP.md) | What comes next: shared visits and voice, VR, a public gallery, soundscapes and more |
 | [DESIGN.md](docs/DESIGN.md) · [WEBGPU.md](docs/WEBGPU.md) · [RESEARCH_LOG.md](docs/RESEARCH_LOG.md) | UI design, renderer notes, engine experiments |
 
 ## Project status
@@ -748,7 +754,8 @@ were copied from them.
 Aether is at **0.1.0, a pre-release**: the studio, engine, CLI, MCP server and bridge work end to end and are covered by
 over 500 test files, a headless smoke run on every featured prompt and Playwright suites. The API surface (World IR,
 package exports, MCP tools) can still change before a stable release. The change history is in [CHANGELOG.md](CHANGELOG.md)
-and the measured detail in [docs/REVIEW_LOG.md](docs/REVIEW_LOG.md). The repository is private for now.
+and the measured detail in [docs/REVIEW_LOG.md](docs/REVIEW_LOG.md); what comes next is in [docs/ROADMAP.md](docs/ROADMAP.md).
+The repository is private for now.
 
 Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) and the
 [code of conduct](CODE_OF_CONDUCT.md). What the non-`main` branches are: [docs/BRANCHES.md](docs/BRANCHES.md).
