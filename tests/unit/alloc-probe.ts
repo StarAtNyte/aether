@@ -37,23 +37,29 @@ export async function probeAllocations(fn: () => void, opts: { iterations: numbe
   // A one-off allocation (a lazy module evaluating, a JIT tier-up, a GC on a loaded machine) lands in one
   // measurement window and not the next; real per-frame garbage is in every window. Take the minimum of
   // several short windows so the probe flags only steady garbage.
-  const rounds = Math.max(1, opts.rounds ?? 3);
+  // Later windows wait longer first: on a loaded machine (CI, the full suite) the optimizing compiler's background
+  // jobs queue up, and until they land the hot loop runs mid-tier (Maglev) code, which boxes doubles and inlines
+  // three.js internals that the optimized code keeps allocation-free.
+  const rounds = Math.max(1, opts.rounds ?? 4);
   let best: AllocationReport | null = null;
   for (let i = 0; i < rounds; i++) {
-    const r = await measureOnce(fn, opts, i === 0);
+    const r = await measureOnce(fn, opts, i);
     if (!best || r.bytesPerIteration < best.bytesPerIteration) best = r;
     if (best.bytesPerIteration < 8) break;
   }
   return best!;
 }
 
-async function measureOnce(fn: () => void, opts: { iterations: number; warmup?: number; match: RegExp; samplingInterval?: number }, first: boolean): Promise<AllocationReport> {
+/** Pause before each measurement window (ms), by round. */
+const SETTLE_MS = [50, 250, 600, 1200];
+
+async function measureOnce(fn: () => void, opts: { iterations: number; warmup?: number; match: RegExp; samplingInterval?: number }, round: number): Promise<AllocationReport> {
   // Warm up long enough for the optimizing compiler: baseline code boxes doubles that optimized code keeps unboxed.
-  const warmup = first ? (opts.warmup ?? 20_000) : 200;
+  const warmup = round === 0 ? (opts.warmup ?? 20_000) : 1000;
   for (let i = 0; i < warmup; i++) fn();
   // Optimisation runs on a background thread: on a busy machine it may not have finished yet. Give it
   // time, then warm again so the installed optimized code (not baseline code) is what gets measured.
-  await new Promise((r) => setTimeout(r, 50));
+  await new Promise((r) => setTimeout(r, SETTLE_MS[Math.min(round, SETTLE_MS.length - 1)]));
   for (let i = 0; i < Math.ceil(warmup / 4); i++) fn();
   const session = new Session();
   session.connect();

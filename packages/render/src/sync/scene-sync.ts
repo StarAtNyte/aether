@@ -517,22 +517,50 @@ export class SceneSync {
   /** Quiet time after a content change before the shadow casters are grouped again (ms). */
   private static readonly CELL_REGROUP_MS = 300;
 
+  /**
+   * The quiet time is kept by a timer, not by reading the clock each frame: under Node 24's V8 a performance.now() call
+   * in this per-frame path allocated about 85 bytes per frame for the whole wait (a capture still reads the clock).
+   */
+  private cellRegroupDue = true;
+  private cellRegroupTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Shadow casters changed: regroup them once nothing has changed for {@link CELL_REGROUP_MS}. */
+  private markCellShadowsStale(): void {
+    this.cellShadowsStale = true;
+    this.cellShadowsAt = performance.now();
+    this.cellRegroupDue = false;
+    if (this.cellRegroupTimer === null && !this.disposed) this.armCellRegroup(SceneSync.CELL_REGROUP_MS);
+  }
+
+  private armCellRegroup(ms: number): void {
+    const timer = setTimeout(this.cellRegroupTick, ms);
+    (timer as { unref?: () => void }).unref?.();
+    this.cellRegroupTimer = timer;
+  }
+
+  /** One timer for the whole quiet spell: a change since it was armed pushes it back by the time left. */
+  private readonly cellRegroupTick = (): void => {
+    this.cellRegroupTimer = null;
+    if (this.disposed) return;
+    const left = SceneSync.CELL_REGROUP_MS - (performance.now() - this.cellShadowsAt);
+    if (left > 1) this.armCellRegroup(left);
+    else this.cellRegroupDue = true;
+  };
+
   /** Evict changed shadow-batch members, regroup after content changes, build due cells. True when a frame is needed. */
   private updateCellShadows(contentChanged: boolean): boolean {
     const cs = this.cellShadows;
     if (!cs) return false;
-    const t = performance.now();
     const vb = this.virtualBatches;
     if (contentChanged || cs.rescanNeeded || vb?.rescanNeeded) {
       cs.rescanNeeded = false;
       if (vb) vb.rescanNeeded = false;
-      this.cellShadowsStale = true;
-      this.cellShadowsAt = t;
+      this.markCellShadowsStale();
     }
     let changed = cs.update(contentChanged || this.cellShadowsFull > 0);
     if (vb?.verify()) changed = true;
     // Not while merges are suspended (content growing in) or members still prepare in the background.
-    if (this.cellShadowsStale && !this.mergesSuspended && (this.merges?.pending ?? 0) === 0 && t - this.cellShadowsAt >= SceneSync.CELL_REGROUP_MS) {
+    if (this.cellShadowsStale && !this.mergesSuspended && (this.merges?.pending ?? 0) === 0 && (this.cellRegroupDue || (this.cellShadowsFull > 0 && performance.now() - this.cellShadowsAt >= SceneSync.CELL_REGROUP_MS))) {
       this.cellShadowsStale = false;
       cs.rebuild(this.shadowCandidates());
       const grid = cs.grid;
@@ -1221,6 +1249,8 @@ export class SceneSync {
   dispose(): void {
     if (this.disposed) return;
     this.clear();
+    if (this.cellRegroupTimer !== null) clearTimeout(this.cellRegroupTimer);
+    this.cellRegroupTimer = null;
     this.merges?.dispose();
     this.cellShadows?.dispose();
     this.virtualBatches?.dispose();
@@ -2415,8 +2445,7 @@ export class SceneSync {
 
   /** Virtual stand-ins and other late meshes changed what casts: group the shadow casters again after a quiet spell. */
   private shadowCastersChanged(): void {
-    this.cellShadowsStale = true;
-    this.cellShadowsAt = performance.now();
+    this.markCellShadowsStale();
   }
 
   private contentChanged(node: EntityNode): void {

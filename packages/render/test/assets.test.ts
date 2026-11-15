@@ -231,7 +231,9 @@ describe('asset animation', () => {
     expect(sync.gaitOf('a')).toBe('idle');
   });
 
-  it('the animator frame allocates nothing (20 walkers)', async () => {
+  // Retried: under load the measured code can still be mid-tier (Maglev, which boxes doubles and inlines three.js's mixer);
+  // the retry runs on the optimized code the first attempt left behind. Real per-frame garbage fails every attempt.
+  it('the animator frame allocates nothing (20 walkers)', { retry: 2 }, async () => {
     const animator = new AssetAnimator();
     const roots: Object3D[] = [];
     for (let i = 0; i < 20; i++) {

@@ -63,7 +63,8 @@ describe('local AI connection', () => {
     });
     const ai = new AiConnection({ fetch: r.fetch, session: null });
     await ai.refresh();
-    expect(ai.resolve(prefs({}))).toMatchObject({ kind: 'local', ready: true });
+    // Automatic would use the signed-in Claude Code (the default mode is now the server model, so ask for auto).
+    expect(ai.resolve(prefs({ mode: 'auto' }))).toMatchObject({ kind: 'local', ready: true });
     const chosen = parsePrefs({ ...DEFAULT_AI_PREFS, ...OFFLINE_CHOICE_PREFS });
     expect(chosen.mode).toBe('offline');
     expect(ai.resolve(chosen)).toMatchObject({ kind: 'offline', ready: true });
