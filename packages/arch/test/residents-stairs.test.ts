@@ -55,5 +55,5 @@ describe('residents and stairs', () => {
       }
     }
     expect(people).toBeGreaterThan(30);
-  });
+  }, 120_000); // compiles 30 houses: about 18 s alone, over 30 s on a 2-worker CI runner
 });
