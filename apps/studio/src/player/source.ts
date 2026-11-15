@@ -9,7 +9,7 @@
 import type { WorldDoc } from '@aether/core';
 import { registerBundledTextureSets } from '@aether/assets';
 import { decodeShare, shareValueFromHash } from '../publish/share';
-import { defaultControls, IMPORT_PATH, MAX_GAME_JSON_BYTES, parseGameManifest, type GameManifest } from '../publish/manifest';
+import { defaultControls, IMPORT_PATH, MAX_GAME_JSON_BYTES, parseGameManifest, publishedWorldKey, type GameManifest } from '../publish/manifest';
 
 /** Outcome of {@link loadGame}. */
 export type GameSource = { kind: 'game'; game: GameManifest; from: 'link' | 'build' | 'template' } | { kind: 'none' } | { kind: 'error'; message: string };
@@ -167,6 +167,7 @@ export async function loadPublished(route: NonNullable<ReturnType<typeof sharedC
         startMode,
         profile,
         cook: url,
+        ...(meta.sharedVisits ? { sharedVisits: { world: publishedWorldKey(world) } } : {}),
       },
     };
   } finally {
@@ -197,6 +198,7 @@ export async function loadGame(hash: string, fetchFn: typeof fetch = fetch, path
         ...(startMode ? { startMode } : {}),
         ...(world.profile ? { profile: world.profile } : {}),
         ...(cooked ? { cook: sharedCookUrl(cooked.anon, cooked.world) } : {}),
+        ...(meta.sharedVisits ? { sharedVisits: { world: publishedWorldKey(world) } } : {}),
       },
     };
   }

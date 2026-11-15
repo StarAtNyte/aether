@@ -26,8 +26,8 @@ export interface TemplatePublish {
   startMode: TemplateStartMode;
   profile: TemplateProfile;
   /**
-   * Shared visits (player `copresence/`): visitors of one link see each other as avatars with names and chat. On per
-   * world while the feature is new.
+   * Shared visits (player `copresence/`): visitors of one link see each other as avatars with names and chat. One line
+   * per built-in world (published worlds have the Publish dialog's Multiplayer switch, `game.json` `sharedVisits`).
    */
   sharedVisits?: true;
 }

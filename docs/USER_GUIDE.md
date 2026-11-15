@@ -263,7 +263,13 @@ screen and in the exported `CREDITS.txt`.
 
 ### Shared visits
 
-Some published worlds can be visited together (for now **Himalayan Valley**).
+Some worlds can be visited together: among the examples **Himalayan Valley**,
+and any world you publish with
+**Multiplayer (shared visits)** turned on. The switch is under the title-screen
+fields of **Game** and **Share** in the Publish dialog, off by default; it goes
+into the downloaded game (`game.json`), the share link and the published copy.
+It only lets visitors see each other and chat; nothing else about your world
+changes.
 Open it in the player and press **Invite** (top right): the link to this world
 with a room in it (`…&room=<id>`) is copied, and anyone who opens that link
 joins you. Up to 16 people share a room.

@@ -4,7 +4,8 @@ import { deadZone, GamepadPoller, type PadLike } from '../src/engine/gamepad';
 import { defaultSettings, loadSettings, qualityPlan, saveSettings, type SettingsStorage } from '../src/player/settings';
 import { loadGame } from '../src/player/source';
 import { encodeShare } from '../src/publish/share';
-import { gameJson } from '../src/publish/manifest';
+import { gameJson, parseGameManifest, publishedWorldKey } from '../src/publish/manifest';
+import { WORLD_KEY_RE } from '@aether/core/copresence';
 
 function pad(axes: number[], pressed: number[] = []): PadLike {
   return { connected: true, mapping: 'standard', axes, buttons: Array.from({ length: 17 }, (_, i) => ({ pressed: pressed.includes(i), value: pressed.includes(i) ? 1 : 0 })) };
@@ -109,5 +110,33 @@ describe('player sources', () => {
     const route = await loadGame('', async () => (fetched++, new Response(json, { headers: { 'content-type': 'application/json' } })), '/play');
     expect(route.kind).toBe('none');
     expect(fetched).toBe(0);
+  });
+
+  it('multiplayer: a published world turns on shared visits with `true` only; the player names its rooms', async () => {
+    const key = publishedWorldKey(world);
+    expect(key).toMatch(WORLD_KEY_RE);
+    expect(key).toMatch(/^w-[0-9a-f]{16}$/);
+    expect(publishedWorldKey(world)).toBe(key);
+    expect(publishedWorldKey({ ...world, name: 'Other arena' })).not.toBe(key);
+    // game.json: written and read back as `sharedVisits: true`; the world key comes from the world, not the file.
+    const on = gameJson({ title: 'Arena', description: '', author: '', controls: '', music: null, world, sharedVisits: { world: 'himalayan-valley' } });
+    expect(JSON.parse(on).sharedVisits).toBe(true);
+    const built = await loadGame('', async () => new Response(on, { headers: { 'content-type': 'application/json' } }));
+    expect(built.kind === 'game' && built.game.sharedVisits).toEqual({ world: key });
+    const off = parseGameManifest(JSON.parse(gameJson({ title: 'Arena', description: '', author: '', controls: '', music: null, world })));
+    expect(off.ok && off.game.sharedVisits).toBeUndefined();
+    // Anything but `true` is not a game.json (the envelope is strict): no world key, relay, host or limits from the author.
+    for (const v of [{ world: 'himalayan-valley' }, 'yes', 1, false, { relay: 'wss://evil.example' }]) {
+      const r = parseGameManifest({ ...JSON.parse(on), sharedVisits: v });
+      expect(r.ok, JSON.stringify(v)).toBe(false);
+    }
+    expect(parseGameManifest({ ...JSON.parse(on), relay: 'wss://evil.example' }).ok).toBe(false);
+    // Links (and the cooked package, which carries the same meta): `sharedVisits: true` in the meta.
+    const link = await encodeShare(world, { title: 'Arena', sharedVisits: true });
+    const r = await loadGame(`#w=${link.value}&room=abcdef1234`, async () => new Response('{}'));
+    expect(r.kind === 'game' && r.game.sharedVisits).toEqual({ world: key });
+    const plain = await encodeShare(world, { title: 'Arena' });
+    const p = await loadGame(`#w=${plain.value}`, async () => new Response('{}'));
+    expect(p.kind === 'game' && p.game.sharedVisits).toBeUndefined();
   });
 });

@@ -26,7 +26,7 @@ import { ABO_PACK_ID, CAST, attributionLines, catalogEntry, creditsFor, creditsT
 import { safeEntryName, writeZip, type ZipEntry } from '@aether/assets/zip';
 import { exportFileName, exportWorld } from '../lib/worldIO';
 import { escapeXml } from './floorplan';
-import { gameJson, type GameManifest } from './manifest';
+import { gameJson, publishedWorldKey, type GameManifest } from './manifest';
 import { serviceWorkerSource } from '../player/offline';
 import type { Mood } from './video/music';
 
@@ -63,6 +63,8 @@ export interface GameBuildInput {
   author: string;
   controls: string;
   music: Mood | null;
+  /** Multiplayer (shared visits): visitors of one link see each other and chat (`game.json` `sharedVisits: true`). */
+  sharedVisits?: boolean;
   /** Cover image (PNG/JPEG data URL or blob) of the world; icons and covers are cut from it. */
   cover: Blob | null;
   /** A block-world save to ship (optional). */
@@ -429,6 +431,7 @@ export async function buildGame(input: GameBuildInput): Promise<GameBuild> {
     ...(imports.length > 0 ? { imports } : {}),
     ...(attribution.length > 0 ? { attribution } : {}),
     ...(streamed ? { packs: ['abo' as const] } : {}),
+    ...(input.sharedVisits ? { sharedVisits: { world: publishedWorldKey(world) } } : {}),
     world,
   };
   const gameText = gameJson(game);

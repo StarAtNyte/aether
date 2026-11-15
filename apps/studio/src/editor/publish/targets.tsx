@@ -57,35 +57,39 @@ const MetaFields = memo(function MetaFields({ compact }: { compact?: boolean }):
   const studio = useStudio();
   const meta = useStore(studio.publish.state, (s) => s.meta);
   const music = useStore(studio.publish.state, (s) => s.music);
+  const multiplayer = useStore(studio.publish.state, (s) => s.multiplayer);
   return (
-    <div className="pub-grid">
-      <Field label="Title" wide>
-        <input className="input" value={meta.title} maxLength={80} onChange={(e) => studio.publish.setMeta({ title: e.target.value })} data-testid="publish-title" />
-      </Field>
-      {!compact && (
-        <Field label="Author">
-          <input className="input" value={meta.author} maxLength={60} placeholder="Your name" onChange={(e) => studio.publish.setMeta({ author: e.target.value })} />
+    <>
+      <div className="pub-grid">
+        <Field label="Title" wide>
+          <input className="input" value={meta.title} maxLength={80} onChange={(e) => studio.publish.setMeta({ title: e.target.value })} data-testid="publish-title" />
         </Field>
-      )}
-      <Field label="Music" wide={compact === true}>
-        <select className="select" value={music ?? ''} onChange={(e) => studio.publish.setMusic(e.target.value ? (e.target.value as Mood) : null)}>
-          <option value="">None</option>
-          {MOODS.map((m) => (
-            <option key={m} value={m}>
-              {MOOD_LABELS[m]}
-            </option>
-          ))}
-        </select>
-      </Field>
-      <Field label="Description" wide>
-        <textarea className="input pub-textarea" rows={compact ? 2 : 3} maxLength={600} value={meta.description} placeholder="What is it, and what is the goal?" onChange={(e) => studio.publish.setMeta({ description: e.target.value })} />
-      </Field>
-      {!compact && (
-        <Field label="Controls" wide>
-          <input className="input" value={meta.controls} maxLength={300} onChange={(e) => studio.publish.setMeta({ controls: e.target.value })} />
+        {!compact && (
+          <Field label="Author">
+            <input className="input" value={meta.author} maxLength={60} placeholder="Your name" onChange={(e) => studio.publish.setMeta({ author: e.target.value })} />
+          </Field>
+        )}
+        <Field label="Music" wide={compact === true}>
+          <select className="select" value={music ?? ''} onChange={(e) => studio.publish.setMusic(e.target.value ? (e.target.value as Mood) : null)}>
+            <option value="">None</option>
+            {MOODS.map((m) => (
+              <option key={m} value={m}>
+                {MOOD_LABELS[m]}
+              </option>
+            ))}
+          </select>
         </Field>
-      )}
-    </div>
+        <Field label="Description" wide>
+          <textarea className="input pub-textarea" rows={compact ? 2 : 3} maxLength={600} value={meta.description} placeholder="What is it, and what is the goal?" onChange={(e) => studio.publish.setMeta({ description: e.target.value })} />
+        </Field>
+        {!compact && (
+          <Field label="Controls" wide>
+            <input className="input" value={meta.controls} maxLength={300} onChange={(e) => studio.publish.setMeta({ controls: e.target.value })} />
+          </Field>
+        )}
+      </div>
+      <Toggle label="Multiplayer (shared visits)" hint="Visitors of one invite link see each other walking around, with names and chat. Only that is shared: the world stays the same for everyone" checked={multiplayer} onChange={(v) => studio.publish.setMultiplayer(v)} />
+    </>
   );
 });
 

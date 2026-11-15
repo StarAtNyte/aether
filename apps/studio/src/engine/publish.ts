@@ -113,6 +113,8 @@ export interface PublishState {
   directNote: string | null;
   meta: { title: string; description: string; author: string; controls: string };
   music: Mood | null;
+  /** Multiplayer (shared visits) for the published world: visitors of one link see each other and chat. */
+  multiplayer: boolean;
   video: { preset: VideoPresetId; fps: 24 | 30 | 60; format: VideoFormat; quality: 1 | 2 | 4; titles: TitleSpec; music: Mood | null; volume: number };
   still: { preset: StillPresetId | 'custom'; width: number; height: number; format: 'png' | 'jpeg' | 'webp'; photoreal: boolean; /** Final render: depth of field, a long refinement and 2× supersampling on top of photoreal. */ final: boolean; /** Path-traced render (global illumination, soft area lights, real glass; converges over many samples). */ pathTraced: boolean; /** Samples per pixel of a path-traced render. */ samples: number; source: 'view' | 'shot' };
   model: { binary: boolean };
@@ -201,6 +203,7 @@ function initialState(world: WorldDoc): PublishState {
     directNote: null,
     meta: { title: defaultTitle(world), description: defaultDescription(world), author: '', controls: defaultControls(world) },
     music: null,
+    multiplayer: false,
     video: { preset: '1080p', fps: 30, format: 'auto', quality: 1, titles: defaultTitles(defaultTitle(world)), music: 'cinematic', volume: 0.7 },
     still: { preset: 'hd', width: 1920, height: 1080, format: 'png', photoreal: false, final: false, pathTraced: false, samples: 256, source: 'view' },
     model: { binary: true },
@@ -372,6 +375,11 @@ export class PublishController {
 
   setMusic(mood: Mood | null): void {
     this.set({ music: mood, share: { ...this.state.getState().share, value: null, qr: null } });
+  }
+
+  /** Turn multiplayer (shared visits) on or off for what is published next (the share link is remade). */
+  setMultiplayer(on: boolean): void {
+    this.set({ multiplayer: on, share: { ...this.state.getState().share, value: null, qr: null } });
   }
 
   setVideo(patch: Partial<PublishState['video']>): void {
@@ -1053,7 +1061,7 @@ export class PublishController {
     const world = this.host.history.current;
     try {
       const [{ cleanMeta, encodeShare, LONG_LINK_CHARS, shareUrl }, { encodeQr, qrPath }] = await Promise.all([import('../publish/share'), import('../publish/qr')]);
-      const meta = cleanMeta({ title: st.meta.title || world.name, description: st.meta.description, author: st.meta.author, controls: st.meta.controls, ...(st.music ? { music: st.music } : {}) });
+      const meta = cleanMeta({ title: st.meta.title || world.name, description: st.meta.description, author: st.meta.author, controls: st.meta.controls, ...(st.music ? { music: st.music } : {}), ...(st.multiplayer ? { sharedVisits: true as const } : {}) });
       const proof = await this.sealCurrent();
       if (this.host.history.current !== world) return;
       const enc = await encodeShare(world, meta, proof);
@@ -1135,7 +1143,7 @@ export class PublishController {
       }
       const st = this.state.getState();
       const [{ cookAndPublish }, { cleanMeta }, { localLightmapBake }] = await Promise.all([import('../publish/cook-publish'), import('../publish/share'), import('../publish/local-bake')]);
-      const meta = cleanMeta({ title: st.meta.title || world.name, description: st.meta.description, author: st.meta.author, controls: st.meta.controls, ...(st.music ? { music: st.music } : {}) });
+      const meta = cleanMeta({ title: st.meta.title || world.name, description: st.meta.description, author: st.meta.author, controls: st.meta.controls, ...(st.music ? { music: st.music } : {}), ...(st.multiplayer ? { sharedVisits: true as const } : {}) });
       const proof = await this.sealCurrent();
       if (ctrl.signal.aborted || this.host.history.current !== current) return;
       const localBake = await localLightmapBake();
@@ -1225,6 +1233,7 @@ export class PublishController {
       author: st.meta.author,
       controls: st.meta.controls || defaultControls(world),
       music: st.music,
+      sharedVisits: st.multiplayer,
       cover,
       save,
       imports,

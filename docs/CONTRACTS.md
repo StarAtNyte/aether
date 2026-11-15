@@ -3552,10 +3552,25 @@ world on both backends; `KEYDEBUG=1 TRACE=1` prints the hash of every input arra
 ## Shared visits (co-presence)
 
 Visitors of one shared link see each other in the player. Only presence is shared (position, heading, stand / walk /
-run, body and its colour, display name, chat); the world is never synced. On per world through `sharedVisits: true` in
-`apps/studio/src/showcase/publish.ts` (`TEMPLATE_PUBLISH`), today only `himalayan-valley`; the player's
-`GameManifest.sharedVisits = { world: <slug> }` is set from it for `#t=<slug>` links and is never read from a
-`game.json`.
+run, body and its colour, display name, chat); the world is never synced. On per world:
+
+- Built-in worlds: `sharedVisits: true` in `apps/studio/src/showcase/publish.ts` (`TEMPLATE_PUBLISH`, one line per
+  world; today `himalayan-valley`). The world key is the template slug.
+- Published worlds: the Publish dialog's **Multiplayer (shared visits)** toggle (`PublishState.multiplayer`, under the
+  title-screen fields of Game and Share) writes `sharedVisits: true` into `game.json` (`publish/manifest.ts` envelope)
+  and into the meta of share links and cooked packages (`publish/share.ts` `ShareMeta`, which a cooked package's world
+  file carries too). Both schemas accept the literal `true` or nothing: the game.json envelope is strict, so any other
+  value or any extra field makes the file invalid; a link's meta drops unknown fields. The world key is
+  `publishedWorldKey(world)`: `w-` and 16 hex digits of a 64-bit FNV-1a hash of the world's JSON (every copy of a world
+  shares rooms, different worlds and templates never do; a template slug never has that form).
+- The player sets `GameManifest.sharedVisits = { world: <key> }` itself from either; nothing in a file names a key.
+
+Abuse: the switch is a boolean. A published world can only turn on presence and chat for its own rooms: it cannot name
+the world key or a room, choose or point to a relay or host (the player picks the transport: the page's own server,
+else the deployment's Supabase project, which CSP pins), change the limits (16 people, 1 KB, message and chat rates are
+constants in the player and the relay), reach other visitors' worlds or state, or run anything. What visitors send is
+the presence wire format below and nothing else, validated on arrival. Visitors' names and chat are their own text,
+cleaned (no control, direction or zero-width characters) and shown as text, never as HTML.
 
 ### Wire format (`@aether/core/copresence`, version 1)
 

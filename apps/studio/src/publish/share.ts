@@ -44,6 +44,8 @@ export const ShareMeta = z.object({
   controls: z.string().max(300).optional(),
   /** Background music of the player. */
   music: z.enum(MOODS).optional(),
+  /** Multiplayer (shared visits) on: `true` or absent (publish/manifest.ts `publishedWorldKey` names its rooms). */
+  sharedVisits: z.literal(true).optional(),
 });
 export type ShareMeta = z.infer<typeof ShareMeta>;
 
@@ -177,6 +179,7 @@ export function cleanMeta(meta: ShareMeta): ShareMeta {
   if (author) out.author = author;
   if (controls) out.controls = controls;
   if (meta.music && (MOODS as readonly string[]).includes(meta.music)) out.music = meta.music;
+  if (meta.sharedVisits === true) out.sharedVisits = true;
   return out;
 }
 

@@ -46,6 +46,11 @@ const Envelope = z
     attribution: z.array(z.string().max(300)).max(MAX_ATTRIBUTION).default([]),
     /** Streamed asset packs whose files the build carries next to the player (`abo`: Amazon Berkeley Objects under assets/lib/). */
     packs: z.array(z.enum(BUNDLED_PACKS)).max(BUNDLED_PACKS.length).default([]),
+    /**
+     * Multiplayer (shared visits): `true` or absent, nothing else. It only lets visitors see each other and chat; the
+     * player derives the room namespace ({@link publishedWorldKey}) and picks the transport itself.
+     */
+    sharedVisits: z.literal(true).optional(),
     world: z.unknown(),
   })
   .strict();
@@ -77,8 +82,10 @@ export interface GameManifest {
   /** How the player presents it (the IR's `profile`, else the template's or the cook's; absent: from `startMode`). */
   profile?: 'game' | 'walkthrough' | 'showcase' | 'city' | 'vr' | 'story';
   /**
-   * Shared visits are on for this world (bundled templates only, from showcase/publish.ts; never read from a
-   * `game.json`). The player then offers Invite and joins the `room=` of its link (player/copresence/).
+   * Shared visits are on for this world: the world key its rooms live under. Set by the player, never read as such: a
+   * bundled template's from showcase/publish.ts (its slug), a published world's from the `sharedVisits: true` of its
+   * `game.json` or link ({@link publishedWorldKey}). The player then offers Invite and joins the `room=` of its link
+   * (player/copresence/).
    */
   sharedVisits?: { world: string };
   world: WorldDoc;
@@ -108,9 +115,29 @@ export function parseGameManifest(value: unknown): GameParseResult {
       ...(e.proof !== undefined && proofFits(e.proof) ? { proof: e.proof } : {}),
       ...(e.attribution.length > 0 ? { attribution: e.attribution.flatMap((a) => cleanLine(a, 300) ?? []).filter(Boolean) } : {}),
       ...(e.packs.length > 0 ? { packs: [...new Set(e.packs)] } : {}),
+      ...(e.sharedVisits ? { sharedVisits: { world: publishedWorldKey(w.world) } } : {}),
       world: w.world,
     },
   };
+}
+
+/**
+ * The world key (`@aether/core/copresence` `WORLD_KEY_RE`) the shared-visit rooms of a published world live under:
+ * `w-` and 16 hex digits of a hash of the world, so every copy of the same world (link, cooked link, build) shares
+ * rooms and different worlds never do. Template slugs never take this form. Not a secret and not a security boundary
+ * (a room also needs its random `room=` id); it keeps people of different worlds apart.
+ */
+export function publishedWorldKey(world: WorldDoc): string {
+  const s = JSON.stringify(world);
+  // Two FNV-1a passes with different offsets: 64 bits.
+  let a = 0x811c9dc5;
+  let b = 0x01000193 ^ 0x5bd1e995;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    a = Math.imul(a ^ c, 0x01000193);
+    b = Math.imul(b ^ c, 0x01000193) ^ (b >>> 15);
+  }
+  return `w-${(a >>> 0).toString(16).padStart(8, '0')}${(b >>> 0).toString(16).padStart(8, '0')}`;
 }
 
 /** Largest proof (JSON characters) a game or link carries; larger ones are dropped, never trusted. */
@@ -141,6 +168,7 @@ export function gameJson(game: GameManifest): string {
     ...(game.proof !== undefined ? { proof: game.proof } : {}),
     ...(game.attribution && game.attribution.length > 0 ? { attribution: game.attribution } : {}),
     ...(game.packs && game.packs.length > 0 ? { packs: game.packs } : {}),
+    ...(game.sharedVisits ? { sharedVisits: true } : {}),
     world: game.world,
   });
 }
