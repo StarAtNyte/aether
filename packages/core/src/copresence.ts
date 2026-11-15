@@ -5,13 +5,20 @@
  * they chose and its colour, their display name and short chat lines. The world itself is never synced.
  *
  * Two layers:
- * - {@link PresenceMessage}: what a visitor sends (`hello`, `state`, `chat`, `bye`), versioned by `v`. Every receiver
- *   validates it ({@link parsePresence}): a peer is untrusted.
+ * - {@link PresenceMessage}: what a visitor sends (`hello`, `state`, `chat`, `bye`, and for spatial voice `voice` and
+ *   `rtc`), versioned by `v`. Every receiver validates it ({@link parsePresence}): a peer is untrusted. `voice` and
+ *   `rtc` were added within version 1: a receiver that predates them drops them as invalid and nothing else changes,
+ *   so older and newer visitors still meet (they just do not hear each other).
  * - {@link RelayFrame}: what a relay (apps/server `copresence/`) sends back: `welcome` (your id and who is here), `join`,
  *   `leave`, `msg` (a peer's message stamped with its id, so no one can speak for another) and `error`.
  *
  * `state` is quantised: position in whole centimetres, heading in 1/1024 of a turn, motion as 0 / 1 / 2, plus the
  * sender's clock in ms so receivers can space the samples ({@link quantiseState}, {@link dequantiseState}).
+ *
+ * `rtc` carries WebRTC signalling (an offer, an answer, an ICE candidate, `busy`, `end`) addressed to one peer (`to`):
+ * the relay forwards it to that peer only; transports without a relay deliver it to the room and every receiver drops
+ * an `rtc` that is not for it. Only `rtc` may be larger than {@link COPRESENCE_MAX_FRAME_BYTES}, up to
+ * {@link COPRESENCE_MAX_SIGNAL_BYTES} (a session description), and it is rate limited on a bucket of its own.
  * See docs/CONTRACTS.md, "Shared visits".
  */
 import './zod-config';
@@ -31,6 +38,19 @@ export const COPRESENCE_KEEPALIVE_MS = 5000;
 export const COPRESENCE_IDLE_MS = 20_000;
 /** Remote avatars are drawn this far behind the newest sample (interpolation buffer). */
 export const COPRESENCE_DELAY_MS = 100;
+/** Largest `rtc` message (bytes of UTF-8 JSON): an audio-only session description is 1.5 to 4 KB. */
+export const COPRESENCE_MAX_SIGNAL_BYTES = 8192;
+/** Longest session description in an `rtc` offer or answer, and longest ICE candidate line (characters). */
+export const VOICE_SDP_MAX = 6000;
+export const VOICE_CANDIDATE_MAX = 512;
+/** Most visitors in voice at once (a full mesh: each sends its voice to every other). Text works for all 16. */
+export const VOICE_MAX_TALKERS = 8;
+/**
+ * `rtc` messages per visitor: sustained per second and burst, on a bucket of their own (not the 20/s of the rest).
+ * Joining a voice of seven sends seven descriptions and a few candidates for each.
+ */
+export const COPRESENCE_SIGNAL_PER_SEC = 20;
+export const COPRESENCE_SIGNAL_BURST = 80;
 /** Longest display name and chat line (characters). */
 export const COPRESENCE_NAME_MAX = 24;
 export const COPRESENCE_CHAT_MAX = 200;
@@ -100,14 +120,47 @@ export const PresenceChat = z.strictObject({
 });
 export const PresenceBye = z.strictObject({ v: z.literal(COPRESENCE_VERSION), t: z.literal('bye') });
 
+const PeerId = z.string().regex(PEER_ID_RE);
+
+/** In voice (`on`) or not: sent to the room on joining and leaving voice, and again whenever someone joins. */
+export const PresenceVoice = z.strictObject({ v: z.literal(COPRESENCE_VERSION), t: z.literal('voice'), on: z.boolean() });
+
+// A session description: printable ASCII lines only (no control characters but CR / LF), starting `v=0`.
+const Sdp = z
+  .string()
+  .max(VOICE_SDP_MAX)
+  .regex(/^v=0\r?\n[\x20-\x7e\r\n]*$/);
+const RtcBase = { v: z.literal(COPRESENCE_VERSION), t: z.literal('rtc'), to: PeerId };
+/**
+ * WebRTC signalling for one peer (`to`): `offer` / `answer` (a session description), `ice` (one trickled candidate:
+ * the `candidate:` line, its media id and m-line index), `busy` (the receiver of an offer is in voice with as many as
+ * it takes) and `end` (this connection is closed).
+ */
+export const PresenceRtc = z.discriminatedUnion('k', [
+  z.strictObject({ ...RtcBase, k: z.literal('offer'), sdp: Sdp }),
+  z.strictObject({ ...RtcBase, k: z.literal('answer'), sdp: Sdp }),
+  z.strictObject({
+    ...RtcBase,
+    k: z.literal('ice'),
+    c: z
+      .string()
+      .max(VOICE_CANDIDATE_MAX)
+      .regex(/^candidate:[\x20-\x7e]+$/),
+    mid: z.string().regex(/^[A-Za-z0-9_-]{0,32}$/),
+    i: Int(0, 63),
+  }),
+  z.strictObject({ ...RtcBase, k: z.literal('busy') }),
+  z.strictObject({ ...RtcBase, k: z.literal('end') }),
+]);
+
 /** A message one visitor sends to the others. */
-export const PresenceMessage = z.discriminatedUnion('t', [PresenceHello, PresenceState, PresenceChat, PresenceBye]);
+export const PresenceMessage = z.discriminatedUnion('t', [PresenceHello, PresenceState, PresenceChat, PresenceBye, PresenceVoice, PresenceRtc]);
 export type PresenceMessage = z.infer<typeof PresenceMessage>;
 export type PresenceHello = z.infer<typeof PresenceHello>;
 export type PresenceState = z.infer<typeof PresenceState>;
 export type PresenceChat = z.infer<typeof PresenceChat>;
-
-const PeerId = z.string().regex(PEER_ID_RE);
+export type PresenceVoice = z.infer<typeof PresenceVoice>;
+export type PresenceRtc = z.infer<typeof PresenceRtc>;
 
 /** What a relay sends to a visitor. */
 export const RelayFrame = z.discriminatedUnion('k', [
@@ -119,11 +172,35 @@ export const RelayFrame = z.discriminatedUnion('k', [
 ]);
 export type RelayFrame = z.infer<typeof RelayFrame>;
 
-/** Parse an untrusted message (a JSON string or a value); null when it is not one. Never throws. */
+/** Bytes of UTF-8 of a string. */
+export function utf8Length(s: string): number {
+  let n = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c < 0x80) n += 1;
+    else if (c < 0x800) n += 2;
+    else if (c >= 0xd800 && c <= 0xdbff && i + 1 < s.length) {
+      n += 4;
+      i++;
+    } else n += 3;
+  }
+  return n;
+}
+
+/**
+ * Largest a message of kind `t` may be (bytes of UTF-8 JSON): {@link COPRESENCE_MAX_SIGNAL_BYTES} for `rtc`,
+ * {@link COPRESENCE_MAX_FRAME_BYTES} for everything else.
+ */
+export const maxMessageBytes = (t: PresenceMessage['t']): number => (t === 'rtc' ? COPRESENCE_MAX_SIGNAL_BYTES : COPRESENCE_MAX_FRAME_BYTES);
+
+/**
+ * Parse an untrusted message (a JSON string or a value); null when it is not one. Never throws. A string is held to
+ * the size of its kind ({@link maxMessageBytes}).
+ */
 export function parsePresence(raw: unknown): PresenceMessage | null {
   let value = raw;
   if (typeof raw === 'string') {
-    if (raw.length > COPRESENCE_MAX_FRAME_BYTES) return null;
+    if (raw.length > COPRESENCE_MAX_SIGNAL_BYTES) return null;
     try {
       value = JSON.parse(raw);
     } catch {
@@ -131,12 +208,14 @@ export function parsePresence(raw: unknown): PresenceMessage | null {
     }
   }
   const r = PresenceMessage.safeParse(value);
-  return r.success ? r.data : null;
+  if (!r.success) return null;
+  if (typeof raw === 'string' && raw.length > COPRESENCE_MAX_FRAME_BYTES && utf8Length(raw) > maxMessageBytes(r.data.t)) return null;
+  return r.data;
 }
 
 /** Parse an untrusted relay frame; null when it is not one. Never throws. */
 export function parseRelayFrame(raw: string): RelayFrame | null {
-  if (raw.length > COPRESENCE_MAX_FRAME_BYTES + 64) return null;
+  if (raw.length > COPRESENCE_MAX_SIGNAL_BYTES + 64) return null;
   try {
     const r = RelayFrame.safeParse(JSON.parse(raw));
     return r.success ? r.data : null;

@@ -58,6 +58,7 @@ describe('PoseBuffer', () => {
 /** A transport that records what is sent. */
 class LoopTransport implements CopresenceTransport {
   readonly kind = 'loop';
+  readonly voice = true;
   sent: PresenceMessage[] = [];
   readonly msg = new Listeners<[string, PresenceMessage]>();
   readonly joinL = new Listeners<[string]>();
@@ -122,7 +123,7 @@ describe('CopresenceSession', () => {
     const last = snaps.at(-1) as SessionSnapshot;
     expect(last.count).toBe(2);
     // No tint in her hello: she is drawn in the hue her id gives.
-    expect(last.peers).toEqual([{ id: 'peerbbbb01', name: 'Bea', body: 'mio-vrm', hue: peerHue('peerbbbb01') }]);
+    expect(last.peers).toEqual([{ id: 'peerbbbb01', name: 'Bea', body: 'mio-vrm', hue: peerHue('peerbbbb01'), voice: false }]);
     expect(last.chat.map((c) => [c.name, c.text, c.self])).toEqual([
       ['Bea', 'hi', false],
       ['Ada', 'hello', true],

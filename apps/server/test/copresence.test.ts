@@ -6,13 +6,16 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { serve } from '@hono/node-server';
-import { COPRESENCE_MAX_PEERS, parseRelayFrame, type RelayFrame } from '@aether/core/copresence';
+import { COPRESENCE_MAX_PEERS, COPRESENCE_MAX_SIGNAL_BYTES, VOICE_MAX_TALKERS, parseRelayFrame, type RelayFrame } from '@aether/core/copresence';
 import { RoomRegistry, type RelayPeer } from '../src/copresence/rooms';
 import { attachCopresence, type CopresenceRelay } from '../src/copresence/relay';
 import { acceptKey } from '../src/copresence/ws';
 import { cleanupDirs, makeApp, makeConfig } from './helpers';
 
 const hello = (name: string): string => JSON.stringify({ v: 1, t: 'hello', name, body: 'kaho-vrm' });
+/** An audio-only offer the size Chrome makes (about 3 KB, over the 1 KB of other messages). */
+const SDP = `v=0\r\no=- 4611731400430051336 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\n${'a=extmap:1 urn:ietf:params:rtp-hdrext:ssrc-audio-level\r\n'.repeat(55)}`;
+const rtc = (to: string, k: 'offer' | 'answer' = 'offer'): string => JSON.stringify({ v: 1, t: 'rtc', to, k, sdp: SDP });
 const state = (x: number): string => JSON.stringify({ v: 1, t: 'state', ts: 1, p: [x, 0, 0], h: 0, m: 1 });
 
 interface FakePeer extends RelayPeer {
@@ -119,6 +122,50 @@ describe('RoomRegistry', () => {
     expect(r.size).toEqual({ rooms: 1, peers: 1 });
   });
 
+  it('forwards voice signalling to the one visitor it names, in the same room only', () => {
+    const r = make();
+    const [a, b, c, elsewhere] = [fakePeer(), fakePeer(), fakePeer(), fakePeer()];
+    const ja = r.join('w/room01', a) as { id: string };
+    const jb = r.join('w/room01', b) as { id: string };
+    r.join('w/room01', c);
+    const je = r.join('w/room02', elsewhere) as { id: string };
+    expect(rtc(jb.id).length).toBeGreaterThan(2000);
+    r.receive(ja.id, rtc(jb.id));
+    r.receive(ja.id, JSON.stringify({ v: 1, t: 'rtc', to: jb.id, k: 'ice', c: 'candidate:1 1 udp 2122260223 abc.local 54321 typ host', mid: '0', i: 0 }));
+    // To a visitor of another room, to itself, to no one here: dropped (quietly: a peer may just have left).
+    r.receive(ja.id, rtc(je.id));
+    r.receive(ja.id, rtc(ja.id));
+    r.receive(ja.id, rtc('peer9999'));
+    const toB = b.frames.filter((f) => f.k === 'msg');
+    expect(toB.map((f) => f.k === 'msg' && f.m.t === 'rtc' && f.m.k)).toEqual(['offer', 'ice']);
+    expect(toB.every((f) => f.k === 'msg' && f.from === ja.id)).toBe(true);
+    for (const p of [a, c, elsewhere]) expect(p.frames.filter((f) => f.k === 'msg')).toEqual([]);
+    expect(a.frames.some((f) => f.k === 'error')).toBe(false);
+    // `voice` goes to the room like any other message.
+    r.receive(jb.id, JSON.stringify({ v: 1, t: 'voice', on: true }));
+    expect(c.frames.at(-1)).toEqual({ k: 'msg', from: jb.id, m: { v: 1, t: 'voice', on: true } });
+  });
+
+  it('holds signalling to 8 KB, everything else to 1 KB, and rate limits it on its own bucket', () => {
+    const r = make({ signalBurst: 3, messageBurst: 5 });
+    const a = fakePeer();
+    const b = fakePeer();
+    const ja = r.join('w/room01', a) as { id: string };
+    const jb = r.join('w/room01', b) as { id: string };
+    // A chat-sized message padded past 1 KB is refused even though an rtc may be that big.
+    r.receive(ja.id, JSON.stringify({ v: 1, t: 'voice', on: true, pad: 'x'.repeat(1100) }));
+    r.receive(ja.id, `{"v":1,"t":"voice","on":true}${' '.repeat(1100)}`);
+    r.receive(ja.id, JSON.stringify({ v: 1, t: 'rtc', to: jb.id, k: 'offer', sdp: `v=0\r\n${'a'.repeat(COPRESENCE_MAX_SIGNAL_BYTES)}` }));
+    expect(b.frames.filter((f) => f.k === 'msg')).toEqual([]);
+    expect(a.frames).toContainEqual({ k: 'error', code: 'bad-message' });
+    // Signalling does not eat the state budget (three junk messages took three of its five) and is capped by its own.
+    for (let i = 0; i < 5; i++) r.receive(ja.id, rtc(jb.id));
+    expect(b.frames.filter((f) => f.k === 'msg')).toHaveLength(3);
+    r.receive(ja.id, state(1));
+    r.receive(ja.id, state(2));
+    expect(b.frames.filter((f) => f.k === 'msg')).toHaveLength(5);
+  });
+
   it('drops idle visitors, says bye, and forgets empty rooms', () => {
     const r = make({ idleMs: 1000 });
     const a = fakePeer();
@@ -173,7 +220,7 @@ describe('relay over WebSocket', () => {
 
   it('answers the availability check and refuses plain requests to the socket path', async () => {
     const health = await fetch(`http://${base}/api/copresence`);
-    expect(await health.json()).toEqual({ ok: true, v: 1, maxPeers: COPRESENCE_MAX_PEERS });
+    expect(await health.json()).toEqual({ ok: true, v: 1, maxPeers: COPRESENCE_MAX_PEERS, voice: true, maxTalkers: VOICE_MAX_TALKERS });
     expect((await fetch(`http://${base}/api/copresence/ws?world=himalayan-valley&room=abcdef12`)).status).toBe(426);
   });
 
@@ -188,6 +235,9 @@ describe('relay over WebSocket', () => {
     b.ws.send(hello('Bea'));
     await until(() => a.frames.some((f) => f.k === 'msg'));
     expect(a.frames.find((f) => f.k === 'msg')).toEqual({ k: 'msg', from: wb.id, m: { v: 1, t: 'hello', name: 'Bea', body: 'kaho-vrm' } });
+    // A session description (over 1 KB) passes the socket's frame cap and reaches the one it is for.
+    b.ws.send(rtc(wa.id));
+    await until(() => a.frames.some((f) => f.k === 'msg' && f.m.t === 'rtc'));
     b.ws.close();
     await until(() => a.frames.some((f) => f.k === 'leave'));
     a.ws.close();
@@ -197,7 +247,7 @@ describe('relay over WebSocket', () => {
     await expect(open('world=himalayan-valley&room=abcdef12', 'https://evil.example')).rejects.toThrow();
     await expect(open('world=himalayan-valley&room=BAD')).rejects.toThrow();
     const a = await open('world=himalayan-valley&room=abcdef13');
-    a.ws.send('x'.repeat(5000));
+    a.ws.send('x'.repeat(COPRESENCE_MAX_SIGNAL_BYTES + 100));
     expect(await a.closed).toBe(1009);
   });
 

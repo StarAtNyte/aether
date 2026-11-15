@@ -4,7 +4,7 @@
  * own levels of detail) in the visitor's colours (`top` / `bottom` / `hair` from its hue, {@link presenceColours}: the
  * renderer draws a VRM body's clothes and hair with a tinted copy of its shared toon materials, skin, face and eyes
  * untouched), moved every frame from the interpolated pose, and a name tag over its head (a DOM label in
- * `layer`). Visitors beyond {@link FAR_M} are hidden (body and tag): sixteen people cost little more than the few in
+ * `layer`; it lights up while the visitor speaks in voice, {@link RemoteAvatars.setSpeaking}). Visitors beyond {@link FAR_M} are hidden (body and tag): sixteen people cost little more than the few in
  * view. Nothing here touches the world document.
  */
 import type { WorldRenderer } from '@aether/render';
@@ -32,6 +32,7 @@ interface Drawn {
   bubble: HTMLSpanElement;
   bubbleUntil: number;
   name: string;
+  speaking: boolean;
 }
 
 const _v = new Vector3();
@@ -56,6 +57,16 @@ export class RemoteAvatars {
     if (!d) return;
     d.bubble.textContent = text.length > 80 ? `${text.slice(0, 79)}…` : text;
     d.bubbleUntil = nowMs + BUBBLE_MS;
+  }
+
+  /** Light the name tags of the visitors speaking now (null or empty: none). Cheap to call every frame. */
+  setSpeaking(ids: ReadonlySet<string> | null): void {
+    for (const [id, d] of this.drawn) {
+      const on = !!ids?.has(id);
+      if (on === d.speaking) continue;
+      d.speaking = on;
+      d.tag.classList.toggle('is-speaking', on);
+    }
   }
 
   /** Draw `peers` (others leave). Call once per frame. */
@@ -140,9 +151,16 @@ export class RemoteAvatars {
     const label = document.createElement('span');
     label.className = 'pl-ctag__name';
     label.textContent = name || 'Visitor';
-    tag.append(bubble, label);
+    // Speaking light: three bars before the name, shown while the visitor speaks (CSS `.is-speaking`).
+    const wave = document.createElement('span');
+    wave.className = 'pl-ctag__wave';
+    wave.append(document.createElement('i'), document.createElement('i'), document.createElement('i'));
+    const row = document.createElement('span');
+    row.className = 'pl-ctag__row';
+    row.append(wave, label);
+    tag.append(bubble, row);
     this.layer.append(tag);
-    const d: Drawn = { body, hue, visible: true, tag, label, bubble, bubbleUntil: 0, name };
+    const d: Drawn = { body, hue, visible: true, tag, label, bubble, bubbleUntil: 0, name, speaking: false };
     this.drawn.set(peer, d);
     return d;
   }

@@ -221,6 +221,11 @@ export const PLAY_CSP =
  */
 export const BUILD_PLAY_CSP =
   "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors *";
+/** Permissions-Policy of pages: only the microphone, for this origin (shared-visit voice); the rest off. */
+export const PERMISSIONS_POLICY = Object.freeze({ camera: [] as string[], microphone: ['self'], geolocation: [] as string[], payment: [] as string[], usb: [] as string[] });
+/** The same as the header text (vercel.json's page and player rules carry exactly this). */
+export const PERMISSIONS_POLICY_HEADER = 'camera=(), microphone=(self), geolocation=(), payment=(), usb=()';
+
 /** Paths of the player page (the static `play.html` and its clean URL). */
 export const PLAY_PATH = /^\/play(\.html)?$/;
 /** Paths of builds in the local library of published games (`/published/<id>/…`). */
@@ -237,7 +242,9 @@ export function securityHeaders(production: boolean): MiddlewareHandler<AppEnv> 
     xContentTypeOptions: 'nosniff',
     xFrameOptions: 'DENY',
     strictTransportSecurity: production ? 'max-age=31536000; includeSubDomains' : false,
-    permissionsPolicy: { camera: [], microphone: [], geolocation: [], payment: [], usb: [] },
+    // Microphone for this origin only: spatial voice in shared visits (player copresence/voice.ts) asks for it on the
+    // mic button's click. No frame of another site gets it (an embedded player cannot talk). Equal in vercel.json.
+    permissionsPolicy: PERMISSIONS_POLICY,
   });
   return async (c, next) => {
     await base(c, next);

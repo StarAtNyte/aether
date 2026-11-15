@@ -3552,7 +3552,7 @@ world on both backends; `KEYDEBUG=1 TRACE=1` prints the hash of every input arra
 ## Shared visits (co-presence)
 
 Visitors of one shared link see each other in the player. Only presence is shared (position, heading, stand / walk /
-run, body and its colour, display name, chat); the world is never synced. On per world:
+run, body and its colour, display name, chat, and voice for those who turn it on); the world is never synced. On per world:
 
 - Built-in worlds: `multiplayer: true` on the world's row of `apps/studio/src/showcase/manifest.ts` (`SHOWCASE`, one
   flag per world; today `himalayan-valley`). The world key is the template slug. The same flag puts a **Multiplayer**
@@ -3572,7 +3572,10 @@ the world key or a room, choose or point to a relay or host (the player picks th
 else the deployment's Supabase project, which CSP pins), change the limits (16 people, 1 KB, message and chat rates are
 constants in the player and the relay), reach other visitors' worlds or state, or run anything. What visitors send is
 the presence wire format below and nothing else, validated on arrival. Visitors' names and chat are their own text,
-cleaned (no control, direction or zero-width characters) and shown as text, never as HTML.
+cleaned (no control, direction or zero-width characters) and shown as text, never as HTML. Voice is never on by
+default and no world can turn it on: only the visitor's own click on the mic button asks for the microphone, and
+audio goes browser to browser. Joining voice connects directly to the others in voice, so they can learn this
+visitor's public IP address (host addresses stay hidden behind mDNS names); visitors not in voice expose nothing.
 
 ### Wire format (`@aether/core/copresence`, version 1)
 
@@ -3584,14 +3587,27 @@ What a visitor sends (`PresenceMessage`, strict objects, every receiver validate
 | `state` | `v: 1`, `ts` (sender clock, ms mod 2^31), `p: [x, y, z]` feet position in whole centimetres (±10^7), `h` heading in 1/1024 turns (0 faces -Z, increasing toward -X: three.js yaw), `m` 0 idle / 1 walk / 2 run | at most 10 Hz and only when the quantised pose changed, plus a keepalive every 5 s |
 | `chat` | `v: 1`, `text` (1-200 chars, cleaned like a name) | on Send |
 | `bye` | `v: 1` | on leaving |
+| `voice` | `v: 1`, `on: boolean` | on joining or leaving voice, and again (`on: true`) whenever someone joins the room |
+| `rtc` | `v: 1`, `to` (a peer id), `k`: `offer` / `answer` with `sdp` (a session description: printable ASCII and CR / LF, starts `v=0`, at most 6000 chars), `ice` with `c` (a `candidate:` line, at most 512 chars), `mid` (`[A-Za-z0-9_-]{0,32}`) and `i` (0-63), `busy` or `end` (no other fields) | voice signalling for one peer (below) |
+
+`voice` and `rtc` were added within version 1: a receiver that predates them drops them as invalid and nothing else
+changes (old and new visitors still meet; they do not hear each other), so `v` stays 1. A relay that forwards voice
+says so in its availability answer (`voice: true`), and the player offers voice over the server relay only then.
+Sizes: every message is at most 1024 bytes of UTF-8 JSON except `rtc`, which may be up to 8192
+(`COPRESENCE_MAX_SIGNAL_BYTES`; `maxMessageBytes(t)`, enforced by `parsePresence` on a string, the relay and the
+Supabase transport). Rates: `rtc` has a bucket of its own, 20 a second with a burst of 80 (`COPRESENCE_SIGNAL_PER_SEC`,
+`COPRESENCE_SIGNAL_BURST`; joining a voice of seven sends seven descriptions and a few candidates for each) and does not
+use the 20/s of the other messages.
 
 What a relay sends (`RelayFrame`): `{ k: 'welcome', v: 1, id, peers: id[] }` (this visitor's id and who is here),
 `{ k: 'join', id }`, `{ k: 'leave', id }`, `{ k: 'msg', from: id, m: PresenceMessage }` (the sender is stamped by the
 relay, so no one can speak for another) and `{ k: 'error', code: 'full' | 'bad-room' | 'bad-message' | 'rate' |
 'version' | 'idle' | 'closing' }`. Peer ids are 6-16 lowercase hex / alphanumerics. Frames are at most 1024 bytes. Room
-ids are `[a-z0-9]{6,24}` (the `room=` of a link); a room holds 16 visitors. Helpers: `quantiseState`,
+ids are `[a-z0-9]{6,24}` (the `room=` of a link); a room holds 16 visitors. A relay frame carrying an `rtc` may be up to
+8192 + 64 bytes. Helpers: `quantiseState`,
 `dequantiseState`, `sameState`, `parsePresence`, `parseRelayFrame`, `cleanPresenceText`, `newRoomId`, `peerHue`,
-`presenceColours`.
+`presenceColours`, `maxMessageBytes`, `utf8Length`; constants `VOICE_MAX_TALKERS` (8), `VOICE_SDP_MAX`,
+`VOICE_CANDIDATE_MAX`.
 
 Colour: a visitor is drawn in its hello's `tint`, else in `peerHue(peerId)` (FNV-1a of the id, spread by the golden
 angle: every receiver gets the same hue for the same visitor, and a few visitors rarely look alike).
@@ -3601,7 +3617,7 @@ a strict v1 receiver without it would drop such a hello.)
 
 ### Relay (`apps/server/src/copresence/`, `routes/copresence.ts`)
 
-- `GET /api/copresence` → `{ ok: true, v: 1, maxPeers: 16 }`; the player asks it first, and a host without it (the
+- `GET /api/copresence` → `{ ok: true, v: 1, maxPeers: 16, voice: true, maxTalkers: 8 }`; the player asks it first, and a host without it (the
   static Vercel site) uses Supabase Realtime when the build has a project, else shows no shared-visit controls.
 - `GET /api/copresence/ws?world=<slug>&room=<id>` with `Upgrade: websocket` on the server's own port (`main.ts`
   `attachCopresence`, so `aether start` serves it and the player's `connect-src 'self'` covers it; Vite dev and
@@ -3609,11 +3625,13 @@ a strict v1 receiver without it would drop such a hello.)
   the LAN access token and the per-client API rate limit; the route then requires an `Origin` equal to the server's
   own host or in `ALLOWED_ORIGINS` (403 otherwise), validates the query (400), and answers 426 to a plain request.
 - Rooms (`rooms.ts`, `RoomRegistry`): in memory, keyed `<world>/<room>`, 16 visitors each (the 17th gets `error`
-  `full` and close 4001), at most 256 rooms; each message is validated and relayed to the others only; per visitor
-  20 messages/s (burst 40) and 20 chat lines/min (burst 5), over-limit and invalid messages are dropped and 200 of them
+  `full` and close 4001), at most 256 rooms; each message is validated and relayed to the others only, except `rtc`,
+  which goes to the one visitor its `to` names when that visitor is in the same room (else it is dropped quietly: the
+  peer may just have left); per visitor 20 messages/s (burst 40), 20 chat lines/min (burst 5) and `rtc` 20/s (burst
+  80, its own bucket); an invalid message also takes from the message bucket; over-limit and invalid messages are dropped and 200 of them
   close the socket (4003); a visitor silent for 20 s is dropped (4002). Nothing is stored.
 - WebSocket (`ws.ts`): a dependency-free RFC 6455 server side (text frames only, client frames must be masked, no
-  fragmentation, 1024-byte cap → close 1009). `AETHER_COPRESENCE=off` turns the relay and its routes off.
+  fragmentation, 8192-byte cap → close 1009; the rooms hold every message but `rtc` to 1024). `AETHER_COPRESENCE=off` turns the relay and its routes off.
 
 ### Player (`apps/studio/src/player/copresence/`, loaded lazily)
 
@@ -3639,7 +3657,36 @@ a strict v1 receiver without it would drop such a hello.)
   `f` (no server stamps the sender), and Supabase's own project quotas apply. CSP: the studio's and the player's
   `connect-src` allow exactly the project's `https:` and `wss:` origin (`SUPABASE_HOSTS` in apps/server
   `middleware.ts`, equal in vercel.json; `apps/server/test/csp.test.ts`); published builds (`BUILD_PLAY_CSP`) do not.
-- `session.ts` (`CopresenceSession`): hello, rate- and change-limited state, peers, chat (last 60 lines).
+- `session.ts` (`CopresenceSession`): hello, rate- and change-limited state, peers, chat (last 60 lines); who is in
+  voice (`voice`, announced again to each newcomer while on), `setVoice`, `sendRtc(to, body)` (only to a peer that is
+  here), and a `VoiceSink` that gets `rtc` addressed to this visitor; an `rtc` with another `to` is dropped here
+  whatever the transport did (the tab and Supabase transports reach the whole room; Supabase also drops it on arrival
+  after counting it against its sender). `CopresenceTransport.voice` says whether signalling gets through
+  (`WebSocketTransport` from the relay's `voice`, `relayInfo()`; tabs and Supabase always).
+- `voice.ts` (`VoiceMesh`, a lazy chunk loaded on the first click of the mic button; nothing of it is in the player
+  shell): peer-to-peer WebRTC audio, a full mesh of at most 8 (`VOICE_MAX_TALKERS`).
+  - Joining: the microphone is asked for only then (`getUserMedia` with echo cancellation, noise suppression and
+    auto gain). A visitor who finds 7 others in voice does not join (`full`; no prompt, no announcement). Statuses:
+    `off`, `starting`, `on`, `denied`, `full`, `unsupported`, `error`.
+  - Pairs: the smaller peer id offers (`shouldOffer`), so two visitors never offer to each other; if both did, the
+    smaller id's offer stands. One audio transceiver both ways; mute and push-to-talk only enable the local track,
+    so nothing is renegotiated. Trickled ICE (candidates before the description is applied wait, 64 at most). A
+    visitor with 7 connections answers a further offer `busy`, and the newcomer leaves voice as `full`. An offer to a
+    visitor not in voice is answered `end`; leaving voice sends `end` to each peer.
+  - ICE: public STUN only (`stun:stun.l.google.com:19302`, `stun1`), no TURN. A connection not up in 20 s
+    (`CONNECT_TIMEOUT_MS`) or that fails is `failed`; the UI says "Voice couldn't connect to <name>". No retry (without
+    TURN it would fail again): leave and join voice to try again.
+  - Audio: each remote stream also plays in a muted `<audio>` (Chrome feeds a remote WebRTC stream to Web Audio only
+    then), then source → `AnalyserNode` (speaking light: RMS on at 0.02, off below 0.01 after 300 ms) and source →
+    volume / mute gain → distance fade (1 to 0 between 30 and 40 m) → `PannerNode` (HRTF, `inverse`, refDistance 2,
+    maxDistance 40, rolloff 1) → destination. Every frame (`controller.ts`) the panner goes to the avatar's feet + 1.6 m
+    and the `AudioListener` to the camera (the player's head while playing), facing the camera.
+  - Debug: `window.__aetherCopresence.voice()` (status, audio context state, listener, per peer state, offerer,
+    track, level, speaking, panner, fade, ICE state) and `voiceStats()` (WebRTC inbound bytes and the candidate pair).
+- Permissions-Policy: `microphone=(self)` on the studio and `/play` pages (server `PERMISSIONS_POLICY`, equal in
+  vercel.json, `apps/server/test/csp.test.ts`); workers keep `microphone=()`. No frame of another site gets the
+  microphone, so a player embedded in an `<iframe>` elsewhere has no voice. CSP needs nothing new: a stream on
+  `srcObject` is not a URL load, and STUN is not a `connect-src` fetch.
 - `interpolate.ts` (`PoseBuffer`): sender clock mapped by the smallest delay seen, drawn 100 ms behind, linear
   position and shortest-arc heading, holds the newest sample, never slides through a jump over 12 m.
 - `avatars.ts` (`RemoteAvatars`): one transient entity per visitor (`copresence-<id>`, `character: { body, top,
@@ -3652,3 +3699,9 @@ a strict v1 receiver without it would drop such a hello.)
 - `CopresenceUI.tsx`: Invite (sets `room=` with `history.replaceState` and copies the link, or shows it when the
   clipboard is refused), the visitor count, name, body and colour (Auto or one of eight swatches; saved with the name in
   `aether.player.copresence.v1` as `tint: number | null`, a random two-word default name), chat, Leave. A link with `room=` joins on open.
+  Voice (when the transport carries it): the mic button (`data-testid=pl-voice`; **Voice** → **Mic on** / **Muted** on
+  open mic, **Hold V** / **Talking** on push-to-talk, which also works by holding the button or Space / Enter on it;
+  a green ring while this visitor speaks), and in the panel Open mic / Push to talk, Leave voice and **People here**
+  (each visitor's colour, name, voice state, and when connected a mute button and a 0-100 % volume). V is ignored
+  while typing; window blur lets go; while push-to-talk is on the walkthrough's own V (camera view) steps aside
+  (`data-aether-ptt` on the root element). Name tags light (`.is-speaking`: three bars, still under reduced motion).

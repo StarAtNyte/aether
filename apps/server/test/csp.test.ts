@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { BYOK_ORIGINS } from '../../studio/src/ai/byokCatalog';
-import { BUILD_PLAY_CSP, BYOK_API_HOSTS, COOKED_HOSTS, CSP_DIRECTIVES, HUB_IMAGE_HOSTS, DAG_WORKER_CSP, DAG_WORKER_PATH, PLAY_CSP, SANDBOX_WORKER_CSP, SUPABASE_HOSTS, SANDBOX_WORKER_PATH, TRANSCODER_WORKER_CSP, TRANSCODER_WORKER_PATH, VERIFY_WORKER_CSP, VERIFY_WORKER_PATH } from '../src/middleware';
+import { BUILD_PLAY_CSP, BYOK_API_HOSTS, PERMISSIONS_POLICY_HEADER, COOKED_HOSTS, CSP_DIRECTIVES, HUB_IMAGE_HOSTS, DAG_WORKER_CSP, DAG_WORKER_PATH, PLAY_CSP, SANDBOX_WORKER_CSP, SUPABASE_HOSTS, SANDBOX_WORKER_PATH, TRANSCODER_WORKER_CSP, TRANSCODER_WORKER_PATH, VERIFY_WORKER_CSP, VERIFY_WORKER_PATH } from '../src/middleware';
 import { cleanupDirs, makeApp, makeConfig } from './helpers';
 
 type Policy = Map<string, string[]>;
@@ -248,5 +248,22 @@ describe('asset hub (Hugging Face dataset)', () => {
     expect(parsePolicy(BUILD_PLAY_CSP).get('connect-src')).toEqual(["'self'", 'blob:', 'data:'].sort());
     expect(parsePolicy(PLAY_CSP).get('img-src')).toEqual(["'self'", 'data:', 'blob:'].sort());
     expect(readFileSync(fileURLToPath(new URL('../../studio/src/publish/gameBuild.ts', import.meta.url)), 'utf8')).not.toMatch(/Content-Security-Policy[^\n]*huggingface/i);
+  });
+});
+
+describe('Permissions-Policy (spatial voice)', () => {
+  it('allows the microphone to this origin only, on the studio and the player, the same on both servers; nothing else', async () => {
+    expect(PERMISSIONS_POLICY_HEADER).toBe('camera=(), microphone=(self), geolocation=(), payment=(), usb=()');
+    const file = fileURLToPath(new URL('../../../vercel.json', import.meta.url));
+    const config = JSON.parse(readFileSync(file, 'utf8')) as { headers: Array<{ source: string; headers: Array<{ key: string; value: string }> }> };
+    const policy = (source: (s: string) => boolean): string | undefined => config.headers.find((h) => source(h.source))?.headers.find((x) => x.key === 'Permissions-Policy')?.value;
+    expect(policy((s) => s.startsWith('/((?!'))).toBe(PERMISSIONS_POLICY_HEADER);
+    expect(policy((s) => s === '/play(\\.html)?')).toBe(PERMISSIONS_POLICY_HEADER);
+    // Worker scripts keep everything off.
+    for (const h of config.headers.filter((x) => x.source.startsWith('/assets/') || x.source.startsWith('/basis/ktx2')))
+      for (const x of h.headers.filter((y) => y.key === 'Permissions-Policy')) expect(x.value, h.source).toBe('camera=(), microphone=(), geolocation=(), payment=(), usb=()');
+    const app = makeApp(makeConfig());
+    for (const path of ['/play', '/api/health']) expect((await app.request(path)).headers.get('permissions-policy'), path).toBe(PERMISSIONS_POLICY_HEADER);
+    cleanupDirs();
   });
 });

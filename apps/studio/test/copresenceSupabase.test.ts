@@ -244,6 +244,31 @@ describe('SupabaseTransport', () => {
     expect(ch.sent).toHaveLength(1);
   });
 
+  it('voice signalling: broadcast reaches the room, only the one it names gets it; 8 KB and its own rate', async () => {
+    const hub = new Hub();
+    const clock = { t: 0 };
+    const a = visitor(hub, clock);
+    const b = visitor(hub, clock);
+    const c = visitor(hub, clock);
+    const ida = await a.t.connect('room123456');
+    const idb = await b.t.connect('room123456');
+    await c.t.connect('room123456');
+    await tick();
+    const sdp = `v=0\r\n${'a=extmap:1 urn:ietf:params:rtp-hdrext:ssrc-audio-level\r\n'.repeat(55)}`;
+    const offer = { v: 1, t: 'rtc', to: idb, k: 'offer', sdp } as PresenceMessage;
+    a.t.send(offer);
+    await tick();
+    expect(b.got).toEqual([[ida, offer]]);
+    expect(c.got).toEqual([]);
+    // Over 8 KB is not sent; 80 in a burst go, then its own bucket is empty (state still goes).
+    a.t.send({ v: 1, t: 'rtc', to: idb, k: 'offer', sdp: `v=0\r\n${'a'.repeat(8200)}` } as PresenceMessage);
+    for (let i = 0; i < 100; i++) a.t.send({ v: 1, t: 'rtc', to: idb, k: 'ice', c: `candidate:${i} 1 udp 1 x.local 9 typ host`, mid: '0', i: 0 } as PresenceMessage);
+    a.t.send({ v: 1, t: 'state', ts: 1, p: [0, 0, 0], h: 0, m: 0 });
+    await tick();
+    expect(b.got.filter(([, m]) => m.t === 'rtc')).toHaveLength(80);
+    expect(b.got.at(-1)?.[1].t).toBe('state');
+  });
+
   it('Bucket refills over time', () => {
     const b = new Bucket(2, 2, 0);
     expect([b.take(0), b.take(0), b.take(0)]).toEqual([true, true, false]);

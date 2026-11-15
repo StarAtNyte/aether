@@ -21,6 +21,7 @@ function randomPeerId(): string {
 
 export class BroadcastTransport implements CopresenceTransport {
   readonly kind = 'broadcast';
+  readonly voice = true;
   private channel: BroadcastChannel | null = null;
   private readonly id = randomPeerId();
   private readonly peers = new Map<string, number>();

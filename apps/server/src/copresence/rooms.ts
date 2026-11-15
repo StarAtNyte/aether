@@ -4,13 +4,14 @@
  * frame and closed, so tests drive it directly.
  *
  * What it enforces: every message a visitor sends is validated (`@aether/core/copresence`) and relayed to the others
- * stamped with the sender's id (a visitor cannot speak for another); per-visitor rate limits (all messages, and chat
- * on its own tighter bucket; a visitor far over them is dropped); a cap on rooms; visitors silent for
+ * stamped with the sender's id (a visitor cannot speak for another); voice signalling (`rtc`) goes to the one visitor
+ * it names (`to`) in the same room, never to the rest; per-visitor rate limits (all messages, chat on its own tighter
+ * bucket, signalling on a bucket of its own; a visitor far over them is dropped); a cap on rooms; visitors silent for
  * {@link COPRESENCE_IDLE_MS} are dropped by {@link RoomRegistry.sweep}. Nothing is stored: a room disappears with its
  * last visitor.
  */
 import { randomBytes } from 'node:crypto';
-import { COPRESENCE_IDLE_MS, COPRESENCE_MAX_FRAME_BYTES, COPRESENCE_MAX_PEERS, COPRESENCE_VERSION, parsePresence, type RelayFrame } from '@aether/core/copresence';
+import { COPRESENCE_IDLE_MS, COPRESENCE_MAX_PEERS, COPRESENCE_MAX_SIGNAL_BYTES, COPRESENCE_SIGNAL_BURST, COPRESENCE_SIGNAL_PER_SEC, COPRESENCE_VERSION, maxMessageBytes, parsePresence, type RelayFrame } from '@aether/core/copresence';
 import { TokenBucketLimiter } from '../rate-limit';
 
 /** One connected visitor, as the registry sees it. */
@@ -30,6 +31,9 @@ export interface RoomLimits {
   /** Chat lines per visitor per minute, and burst. */
   chatPerMinute: number;
   chatBurst: number;
+  /** Voice signalling (`rtc`) per visitor: sustained per second and burst (instead of the message bucket). */
+  signalPerSecond: number;
+  signalBurst: number;
   /** Dropped (over-limit or invalid) messages after which the visitor is disconnected. */
   maxStrikes: number;
 }
@@ -42,6 +46,8 @@ export const DEFAULT_ROOM_LIMITS: RoomLimits = Object.freeze({
   messageBurst: 40,
   chatPerMinute: 20,
   chatBurst: 5,
+  signalPerSecond: COPRESENCE_SIGNAL_PER_SEC,
+  signalBurst: COPRESENCE_SIGNAL_BURST,
   maxStrikes: 200,
 });
 
@@ -66,6 +72,7 @@ export class RoomRegistry {
   private readonly now: () => number;
   private readonly messages: TokenBucketLimiter;
   private readonly chat: TokenBucketLimiter;
+  private readonly signal: TokenBucketLimiter;
   private readonly newId: () => string;
 
   constructor(opts: { limits?: Partial<RoomLimits>; now?: () => number; newId?: () => string } = {}) {
@@ -74,6 +81,7 @@ export class RoomRegistry {
     this.newId = opts.newId ?? (() => randomBytes(6).toString('hex'));
     this.messages = new TokenBucketLimiter({ perMinute: this.limits.messagesPerSecond * 60, burst: this.limits.messageBurst, now: this.now });
     this.chat = new TokenBucketLimiter({ perMinute: this.limits.chatPerMinute, burst: this.limits.chatBurst, now: this.now });
+    this.signal = new TokenBucketLimiter({ perMinute: this.limits.signalPerSecond * 60, burst: this.limits.signalBurst, now: this.now });
   }
 
   /** Number of open rooms and connected visitors. */
@@ -120,18 +128,31 @@ export class RoomRegistry {
     return { id };
   }
 
-  /** A text message from visitor `id`: validated, rate limited, relayed to the rest of its room. */
+  /**
+   * A text message from visitor `id`: validated, rate limited, relayed to the rest of its room (an `rtc` to the one
+   * visitor it names, when that visitor is in the room; else it is dropped quietly: it may just have left).
+   */
   receive(id: string, text: string): void {
     const e = this.peers.get(id);
     if (!e) return;
     e.lastSeen = this.now();
-    if (Buffer.byteLength(text, 'utf8') > COPRESENCE_MAX_FRAME_BYTES) return this.strike(e, 'bad-message');
-    if (!this.messages.take(id).allowed) return this.strike(e, 'rate');
+    const bytes = Buffer.byteLength(text, 'utf8');
+    if (bytes > COPRESENCE_MAX_SIGNAL_BYTES) return this.strike(e, 'bad-message');
     const m = parsePresence(text);
-    if (!m) return this.strike(e, 'bad-message');
+    if (!m || bytes > maxMessageBytes(m.t)) {
+      // Count it against the sender's message budget too (a flood of junk is still a flood).
+      this.messages.take(id);
+      return this.strike(e, 'bad-message');
+    }
+    if (!(m.t === 'rtc' ? this.signal : this.messages).take(id).allowed) return this.strike(e, 'rate');
     if (m.t === 'chat' && !this.chat.take(id).allowed) return this.strike(e, 'rate');
     const r = this.rooms.get(e.room);
-    if (r) this.broadcast(r, id, frame({ k: 'msg', from: id, m }));
+    if (!r) return;
+    if (m.t === 'rtc') {
+      if (m.to !== id) r.get(m.to)?.peer.send(frame({ k: 'msg', from: id, m }));
+      return;
+    }
+    this.broadcast(r, id, frame({ k: 'msg', from: id, m }));
     if (m.t === 'bye') this.leave(id, 1000, 'bye');
   }
 

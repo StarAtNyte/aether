@@ -7,23 +7,35 @@ import { COPRESENCE_VERSION, parseRelayFrame, type PresenceMessage } from '@aeth
 import { Listeners, TransportError, type CopresenceTransport, type TransportEnd } from './transport';
 
 const CONNECT_TIMEOUT_MS = 6000;
-/** Messages are dropped while this much is still waiting to be sent (a stalled connection). */
-const MAX_BUFFERED = 16 * 1024;
+/** Messages are dropped while this much is still waiting to be sent (a stalled connection; two session descriptions fit). */
+const MAX_BUFFERED = 24 * 1024;
 
-/** True when this page's server runs the relay (`GET /api/copresence`), within `timeoutMs`. */
-export async function relayAvailable(fetchFn: typeof fetch = fetch, base: string = location.href, timeoutMs = 3000): Promise<boolean> {
+/** What this page's server relays: nothing (no relay), presence only, or presence and voice signalling. */
+export interface RelayInfo {
+  ok: boolean;
+  voice: boolean;
+}
+
+/** Ask this page's server for its relay (`GET /api/copresence`), within `timeoutMs`. */
+export async function relayInfo(fetchFn: typeof fetch = fetch, base: string = location.href, timeoutMs = 3000): Promise<RelayInfo> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const res = await fetchFn(new URL('/api/copresence', base).href, { cache: 'no-store', credentials: 'same-origin', signal: ctrl.signal });
-    if (!res.ok || !/json/i.test(res.headers.get('content-type') ?? '')) return false;
-    const body = (await res.json()) as { ok?: unknown; v?: unknown };
-    return body.ok === true && body.v === COPRESENCE_VERSION;
+    if (!res.ok || !/json/i.test(res.headers.get('content-type') ?? '')) return { ok: false, voice: false };
+    const body = (await res.json()) as { ok?: unknown; v?: unknown; voice?: unknown };
+    const ok = body.ok === true && body.v === COPRESENCE_VERSION;
+    return { ok, voice: ok && body.voice === true };
   } catch {
-    return false;
+    return { ok: false, voice: false };
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** True when this page's server runs the relay (`GET /api/copresence`), within `timeoutMs`. */
+export async function relayAvailable(fetchFn: typeof fetch = fetch, base: string = location.href, timeoutMs = 3000): Promise<boolean> {
+  return (await relayInfo(fetchFn, base, timeoutMs)).ok;
 }
 
 /** The relay's socket URL for `world` / `room` on the page's origin. */
@@ -46,6 +58,8 @@ export class WebSocketTransport implements CopresenceTransport {
   constructor(
     private readonly world: string,
     private readonly base: string = location.href,
+    /** The relay forwards voice signalling (its `GET /api/copresence` said `voice: true`). */
+    readonly voice: boolean = false,
   ) {}
 
   connect(roomId: string): Promise<string> {

@@ -6,8 +6,11 @@
  * There is no relay of ours in between, so this side enforces what the relay enforces (apps/server `copresence/rooms.ts`):
  * - 16 visitors: a visitor who finds the room full does not join (`full`), and never lists more than 15 others;
  * - the sender of a message is the presence key it came with, and only a key that is present counts; the message body
- *   never names anyone, and every message still goes through `parsePresence` (1024 bytes at most);
- * - rate: at most 20 messages a second (burst 40) and 20 chat lines a minute (burst 5), both ways. Over the limit,
+ *   never names a sender, and every message still goes through `parsePresence` (1024 bytes at most; voice signalling,
+ *   `rtc`, 8 KB). Broadcast reaches the whole room, so an `rtc` (addressed by `to`) for another visitor is dropped on
+ *   arrival, though it still counts against its sender's limits;
+ * - rate: at most 20 messages a second (burst 40) and 20 chat lines a minute (burst 5), and `rtc` on a bucket of its
+ *   own (20 a second, burst 80), both ways. Over the limit,
  *   this visitor's messages are dropped before sending; a peer's are dropped on arrival, and a peer that keeps flooding
  *   (200 dropped) is ignored until it leaves.
  * Without a server a crafted client can still claim another present visitor's key on a broadcast; the relay of the
@@ -16,7 +19,7 @@
  * `@supabase/realtime-js` is imported here only, and this module is loaded lazily by `CopresenceUI.tsx` when the page
  * has no relay and the build carries `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
  */
-import { COPRESENCE_MAX_FRAME_BYTES, COPRESENCE_MAX_PEERS, PEER_ID_RE, parsePresence, type PresenceMessage } from '@aether/core/copresence';
+import { COPRESENCE_MAX_PEERS, COPRESENCE_MAX_SIGNAL_BYTES, COPRESENCE_SIGNAL_BURST, COPRESENCE_SIGNAL_PER_SEC, PEER_ID_RE, maxMessageBytes, parsePresence, type PresenceMessage } from '@aether/core/copresence';
 import { Listeners, TransportError, type CopresenceTransport, type TransportEnd } from './transport';
 
 const CONNECT_TIMEOUT_MS = 8000;
@@ -33,7 +36,7 @@ const EARLY_PER_KEY = 6;
 const EARLY_KEYS = 32;
 
 /** Per visitor message limits (as the relay's `rooms.ts`). */
-export const SUPABASE_LIMITS = Object.freeze({ msgPerSec: 20, msgBurst: 40, chatPerMin: 20, chatBurst: 5, floodDrops: 200 });
+export const SUPABASE_LIMITS = Object.freeze({ msgPerSec: 20, msgBurst: 40, chatPerMin: 20, chatBurst: 5, signalPerSec: COPRESENCE_SIGNAL_PER_SEC, signalBurst: COPRESENCE_SIGNAL_BURST, floodDrops: 200 });
 
 /** The build's Supabase project, or null when the build has none (then this transport is not offered). */
 export interface SupabaseConfig {
@@ -78,17 +81,19 @@ export class Bucket {
   }
 }
 
-/** The message and chat buckets of one visitor. */
+/** The message, chat and signalling buckets of one visitor. */
 export class Limiter {
   private readonly msg: Bucket;
   private readonly chat: Bucket;
+  private readonly signal: Bucket;
   dropped = 0;
   constructor(now: number) {
     this.msg = new Bucket(SUPABASE_LIMITS.msgPerSec, SUPABASE_LIMITS.msgBurst, now);
     this.chat = new Bucket(SUPABASE_LIMITS.chatPerMin / 60, SUPABASE_LIMITS.chatBurst, now);
+    this.signal = new Bucket(SUPABASE_LIMITS.signalPerSec, SUPABASE_LIMITS.signalBurst, now);
   }
   allow(m: PresenceMessage, now: number): boolean {
-    const ok = this.msg.take(now) && (m.t !== 'chat' || this.chat.take(now));
+    const ok = m.t === 'rtc' ? this.signal.take(now) : this.msg.take(now) && (m.t !== 'chat' || this.chat.take(now));
     if (!ok) this.dropped++;
     return ok;
   }
@@ -126,6 +131,7 @@ async function realtimeClient(cfg: SupabaseConfig): Promise<RealtimeClientLike> 
 
 export class SupabaseTransport implements CopresenceTransport {
   readonly kind = 'supabase';
+  readonly voice = true;
   private client: RealtimeClientLike | null = null;
   private channel: RealtimeChannelLike | null = null;
   private readonly id = randomPeerId();
@@ -207,7 +213,7 @@ export class SupabaseTransport implements CopresenceTransport {
     const ch = this.channel;
     if (!ch || !this.live) return;
     const m = JSON.stringify(msg);
-    if (utf8Bytes(m) > COPRESENCE_MAX_FRAME_BYTES) return;
+    if (utf8Bytes(m) > maxMessageBytes(msg.t)) return;
     if (!this.own.allow(msg, this.now())) return;
     void ch.send({ type: 'broadcast', event: EVENT, payload: { f: this.id, m } }).catch(() => undefined);
   }
@@ -266,7 +272,7 @@ export class SupabaseTransport implements CopresenceTransport {
     if (!this.live || !payload || typeof payload !== 'object') return;
     const { f, m } = payload as { f?: unknown; m?: unknown };
     // The sender is a listed presence key, never a field of the message itself.
-    if (typeof f !== 'string' || f === this.id || typeof m !== 'string' || utf8Bytes(m) > COPRESENCE_MAX_FRAME_BYTES) return;
+    if (typeof f !== 'string' || f === this.id || typeof m !== 'string' || utf8Bytes(m) > COPRESENCE_MAX_SIGNAL_BYTES) return;
     if (!this.peers.has(f)) return this.hold(f, m);
     this.deliver(f, m);
   }
@@ -282,6 +288,8 @@ export class SupabaseTransport implements CopresenceTransport {
       }
       return;
     }
+    // Signalling for another visitor: counted against its sender above, not delivered.
+    if (msg.t === 'rtc' && msg.to !== this.id) return;
     this.message.emit(f, msg);
     if (msg.t === 'bye') {
       // Gone until its presence goes too (no ghost rejoin in between).

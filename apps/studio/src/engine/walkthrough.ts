@@ -196,7 +196,8 @@ export class Walkthrough {
     }
     if (key === 'l') this.toggleLights(null, 'All lights');
     else if (key === 'r') this.swapNearby();
-    else if (key === 'v') {
+    // Push-to-talk in a shared visit's voice holds V (player copresence/voice.ts sets the marker).
+    else if (key === 'v' && !document.documentElement.hasAttribute('data-aether-ptt')) {
       const next = st.cameraView === 'firstPerson' ? 'follow' : 'firstPerson';
       this.host.setCameraView(next);
       st.toast(next === 'firstPerson' ? 'First person' : 'Third person', 'game', 1.2);

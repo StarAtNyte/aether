@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   COPRESENCE_MAX_FRAME_BYTES,
+  COPRESENCE_MAX_SIGNAL_BYTES,
   HEADING_STEPS,
+  VOICE_MAX_TALKERS,
+  VOICE_SDP_MAX,
+  maxMessageBytes,
+  utf8Length,
   PRESENCE_HUES,
   ROOM_ID_RE,
   cleanPresenceText,
@@ -75,6 +80,44 @@ describe('shared visits protocol', () => {
       'x'.repeat(COPRESENCE_MAX_FRAME_BYTES + 1),
     ])
       expect(parsePresence(bad), JSON.stringify(bad)?.slice(0, 60)).toBeNull();
+  });
+
+  it('accepts voice signalling addressed to one peer, strictly, and lets only it be larger than 1 KB', () => {
+    const sdp = `v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\n${'a=extmap:1 urn:ietf:params:rtp-hdrext:ssrc-audio-level\r\n'.repeat(55)}`;
+    const offer = { v: 1, t: 'rtc', to: 'peerbbbb01', k: 'offer', sdp };
+    expect(JSON.stringify(offer).length).toBeGreaterThan(COPRESENCE_MAX_FRAME_BYTES);
+    expect(parsePresence(JSON.stringify(offer))).toEqual(offer);
+    expect(parsePresence({ ...offer, k: 'answer' })).not.toBeNull();
+    expect(parsePresence({ v: 1, t: 'rtc', to: 'peerbbbb01', k: 'ice', c: 'candidate:842163049 1 udp 1677729535 1.2.3.4 61003 typ srflx raddr 0.0.0.0 rport 0', mid: '0', i: 0 })).not.toBeNull();
+    expect(parsePresence({ v: 1, t: 'rtc', to: 'peerbbbb01', k: 'busy' })).not.toBeNull();
+    expect(parsePresence({ v: 1, t: 'rtc', to: 'peerbbbb01', k: 'end' })).not.toBeNull();
+    expect(parsePresence({ v: 1, t: 'voice', on: true })).not.toBeNull();
+    for (const bad of [
+      { v: 1, t: 'rtc', k: 'offer', sdp }, // no addressee
+      { v: 1, t: 'rtc', to: 'NOT A PEER', k: 'offer', sdp },
+      { ...offer, from: 'peeraaaa01' },
+      { ...offer, k: 'pranswer' },
+      { ...offer, sdp: 'hello' }, // not a description
+      { ...offer, sdp: 'v=0\r\n<script>\u0000' },
+      { ...offer, sdp: `v=0\r\n${'a'.repeat(VOICE_SDP_MAX)}` },
+      { v: 1, t: 'rtc', to: 'peerbbbb01', k: 'ice', c: 'not a candidate', mid: '0', i: 0 },
+      { v: 1, t: 'rtc', to: 'peerbbbb01', k: 'ice', c: `candidate:${'x'.repeat(600)}`, mid: '0', i: 0 },
+      { v: 1, t: 'rtc', to: 'peerbbbb01', k: 'ice', c: 'candidate:1', mid: 'a b', i: 0 },
+      { v: 1, t: 'rtc', to: 'peerbbbb01', k: 'ice', c: 'candidate:1', mid: '0', i: 64 },
+      { v: 1, t: 'rtc', to: 'peerbbbb01', k: 'busy', sdp },
+      { v: 1, t: 'voice', on: 'yes' },
+      { v: 1, t: 'voice' },
+    ])
+      expect(parsePresence(bad), JSON.stringify(bad).slice(0, 80)).toBeNull();
+    // Size by kind: only rtc may pass 1 KB, and nothing passes 8 KB.
+    expect(maxMessageBytes('rtc')).toBe(COPRESENCE_MAX_SIGNAL_BYTES);
+    expect(maxMessageBytes('chat')).toBe(COPRESENCE_MAX_FRAME_BYTES);
+    expect(parsePresence(`{"v":1,"t":"voice","on":true}${' '.repeat(COPRESENCE_MAX_FRAME_BYTES)}`)).toBeNull();
+    expect(parsePresence(JSON.stringify(offer).padEnd(COPRESENCE_MAX_SIGNAL_BYTES + 1, ' '))).toBeNull();
+    expect(utf8Length('aü€😀')).toBe(1 + 2 + 3 + 4);
+    // A relay frame carrying an offer parses.
+    expect(parseRelayFrame(JSON.stringify({ k: 'msg', from: 'peeraaaa01', m: offer }))).not.toBeNull();
+    expect(VOICE_MAX_TALKERS).toBe(8);
   });
 
   it('cleans names and chat lines', () => {

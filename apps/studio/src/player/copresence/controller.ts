@@ -4,6 +4,9 @@
  *
  * This visitor's pose: playing (P), the player's feet and the way they walk; otherwise where the camera is: at street
  * level the ground under it, higher up the ground under the point it orbits, facing the way the camera looks.
+ *
+ * Voice (`voice.ts`) is loaded by {@link CopresenceController.startVoice}, on the first click of the mic button; each
+ * frame then places every voice at its avatar's head and the listener at the camera (the player's head while playing).
  */
 import { COPRESENCE_STATE_HZ, type PresenceBody, type PresenceMotion, type PresencePose } from '@aether/core/copresence';
 import { Vector3 } from 'three';
@@ -11,8 +14,12 @@ import type { Simulation } from '../../engine/Simulation';
 import { RemoteAvatars } from './avatars';
 import { CopresenceSession, type SessionSnapshot } from './session';
 import type { CopresenceTransport } from './transport';
+import type { VoiceMesh, VoiceSnapshot, VoiceStatus } from './voice';
 
 const _dir = new Vector3();
+const _up = new Vector3();
+/** Height of a voice above an avatar's feet, and of the listener above this visitor's feet while playing. */
+const HEAD_M = 1.6;
 
 /** Camera height under which the visitor stands under the camera (else under the orbit point). */
 const STREET_M = 6;
@@ -28,6 +35,10 @@ export interface CopresenceHandle {
   remotes(): Array<{ id: string; name: string; body: string; hue: number; position: [number, number, number] | null; visible: boolean }>;
   /** This visitor's last pose sent. */
   readonly local: PresencePose | null;
+  /** Voice: status, the listener and, per peer, its connection, level and panner position (null before voice loads). */
+  voice(): ReturnType<VoiceMesh['debug']> | null;
+  /** Voice: what WebRTC reports per peer (inbound audio level and bytes, the candidate pair in use). */
+  voiceStats(): Promise<Awaited<ReturnType<VoiceMesh['stats']>> | null>;
 }
 
 declare global {
@@ -44,10 +55,16 @@ export class CopresenceController {
   private last: { pos: [number, number, number]; at: number; yaw: number } | null = null;
   private local: PresencePose | null = null;
   private seenChat = 0;
+  private voiceMesh: VoiceMesh | null = null;
+  private voiceLoading: Promise<VoiceMesh | null> | null = null;
+  private readonly heads = new Map<string, [number, number, number]>();
+  /** Voice changed (status, links, speaking); a connection to a peer failed. */
+  onVoice: (v: VoiceSnapshot) => void = () => undefined;
+  onVoiceFailed: (peer: string, name: string) => void = () => undefined;
 
   constructor(
     private readonly sim: Simulation,
-    transport: CopresenceTransport,
+    private readonly transport: CopresenceTransport,
     layer: HTMLElement,
     identity: { name: string; body: PresenceBody; tint: number | null },
     onChange: (s: SessionSnapshot) => void,
@@ -82,6 +99,8 @@ export class CopresenceController {
       get local() {
         return self.local;
       },
+      voice: () => self.voiceMesh?.debug() ?? null,
+      voiceStats: async () => (self.voiceMesh ? self.voiceMesh.stats() : null),
       remotes: () =>
         this.session.remotes().map(({ peer, pose }) => ({
           id: peer.id,
@@ -100,9 +119,47 @@ export class CopresenceController {
     return ok;
   }
 
+  /** The voice mesh, loaded on first use (null where WebRTC is missing). */
+  get voice(): VoiceMesh | null {
+    return this.voiceMesh;
+  }
+
+  /** Join voice (loads `voice.ts` the first time; the microphone is asked for now). */
+  async startVoice(): Promise<VoiceStatus> {
+    if (!this.transport.voice) return 'unsupported';
+    this.voiceLoading ??= import('./voice').then(({ VoiceMesh }) => {
+      const session = this.session;
+      const mesh = new VoiceMesh(
+        {
+          get selfId() {
+            return session.id;
+          },
+          sendRtc: (to, body) => session.sendRtc(to, body),
+          setVoice: (on) => session.setVoice(on),
+          voicePeers: () => session.snapshot().peers.filter((p) => p.voice).map((p) => p.id),
+        },
+        undefined,
+        (v) => this.onVoice(v),
+        (peer) => this.onVoiceFailed(peer, session.peerById(peer)?.name || 'Visitor'),
+      );
+      this.voiceMesh = mesh;
+      session.setVoiceSink(mesh);
+      return mesh;
+    });
+    const mesh = await this.voiceLoading;
+    if (!mesh) return 'unsupported';
+    if (this.session.snapshot().status !== 'live') return 'off';
+    return mesh.start();
+  }
+
+  stopVoice(): void {
+    this.voiceMesh?.stop();
+  }
+
   leave(): void {
     if (this.raf !== 0) cancelAnimationFrame(this.raf);
     this.raf = 0;
+    this.voiceMesh?.stop();
     this.session.close();
     this.avatars.dispose();
   }
@@ -126,10 +183,26 @@ export class CopresenceController {
       const peers = this.session.remotes(t).map(({ peer, pose }) => ({ id: peer.id, name: peer.name, body: peer.body, hue: peer.hue, pose }));
       this.avatars.update(peers, t);
       if (peers.length > 0) this.sim.renderer.requestRender();
+      const voice = this.voiceMesh;
+      if (voice?.active) {
+        this.heads.clear();
+        for (const p of peers) if (p.pose) this.heads.set(p.id, [p.pose.position[0], p.pose.position[1] + HEAD_M, p.pose.position[2]]);
+        this.avatars.setSpeaking(voice.update(this.listener(), this.heads, t));
+      } else this.avatars.setSpeaking(null);
     } catch (err) {
       console.warn('[copresence] frame failed', err);
     }
   };
+
+  /** Where this visitor hears from: the camera, or the player's head while playing; facing the camera's way. */
+  private listener(): { position: [number, number, number]; forward: [number, number, number]; up: [number, number, number] } {
+    const cam = this.sim.renderer.camera;
+    const f = cam.getWorldDirection(_dir);
+    const u = _up.set(0, 1, 0).applyQuaternion(cam.quaternion);
+    const feet = this.sim.mode === 'play' ? this.sim.playerPosition : null;
+    const position: [number, number, number] = feet ? [feet[0], feet[1] + HEAD_M, feet[2]] : [cam.position.x, cam.position.y, cam.position.z];
+    return { position, forward: [f.x, f.y, f.z], up: [u.x, u.y, u.z] };
+  }
 
   /** This visitor's pose now (null when it cannot be told, e.g. nothing under the camera). */
   private readPose(t: number): PresencePose | null {

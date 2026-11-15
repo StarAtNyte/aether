@@ -6,11 +6,11 @@
  * access token, the per-client rate limit, and the route's own Origin check (a WebSocket is not covered by CORS, so
  * a page on another site must not open one) and query validation. Only a 204 from that route completes the
  * handshake; anything else is written back as a plain HTTP answer. Frames are capped at
- * {@link COPRESENCE_MAX_FRAME_BYTES}; the rooms (`rooms.ts`) validate, rate limit and relay them.
+ * {@link COPRESENCE_MAX_SIGNAL_BYTES} (a voice session description; the rooms hold every other message to 1024 bytes); the rooms (`rooms.ts`) validate, rate limit and relay them.
  */
 import type { IncomingMessage, Server } from 'node:http';
 import type { Duplex } from 'node:stream';
-import { COPRESENCE_MAX_FRAME_BYTES } from '@aether/core/copresence';
+import { COPRESENCE_MAX_SIGNAL_BYTES } from '@aether/core/copresence';
 import type { Logger } from '../logger';
 import { acceptUpgrade, isUpgradeRequest, refuseUpgrade } from './ws';
 import { RoomRegistry } from './rooms';
@@ -62,7 +62,7 @@ export function attachCopresence(server: Server, guard: GuardFetch, opts: { logg
       const room = res.headers.get(COPRESENCE_ROOM_HEADER);
       if (res.status !== 204 || !room) return refuseUpgrade(socket, res.status === 204 ? 400 : res.status, await res.text().catch(() => ''));
       if (socket.destroyed) return;
-      const ws = acceptUpgrade(req, socket, head, { maxFrameBytes: COPRESENCE_MAX_FRAME_BYTES });
+      const ws = acceptUpgrade(req, socket, head, { maxFrameBytes: COPRESENCE_MAX_SIGNAL_BYTES });
       const joined = rooms.join(room, { send: (t) => ws.send(t), close: (code, reason) => ws.close(code, reason) });
       if (!('id' in joined)) return;
       const id = joined.id;

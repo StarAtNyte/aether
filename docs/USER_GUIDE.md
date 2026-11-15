@@ -285,6 +285,22 @@ joins you. Up to 16 people share a room.
   the swatches, or leave it on **Auto** and you get a colour of your own for
   each visit, so two people with the same look are still easy to tell apart. A message also shows over your head for a few seconds. Esc leaves
   the text field. **Leave visit** disconnects.
+- **Voice:** press the **Voice** button (microphone icon, next to **N here**)
+  to talk. It is off until you press it; your browser asks for the microphone
+  then, not before. Everyone in voice hears you from where your character
+  stands, and you hear them from theirs: a voice is full up to 2 m away,
+  quieter further off, and silent from about 40 m. Up to 8 people can be in
+  voice at once; when it is full the button says so and chat still works.
+  - **Open mic** (the default): the button reads **Mic on**; press it to mute
+    yourself (**Muted**) and again to unmute. **Push to talk**: hold **V** (or
+    hold the button) while you speak. Switch between the two in the panel.
+  - In the panel, **People here** lists everyone, whether they are in voice,
+    a mute button and a volume slider for each person, and **Leave voice**.
+    A name tag shows small green bars while that person speaks.
+  - Voice connects directly between browsers (no audio passes through a
+    server). Some networks (strict company or hotel firewalls) block that;
+    you then see "Voice couldn't connect to <name>" and can still chat.
+    Use headphones on open mic, or the others may hear themselves echo.
 - Only where people are and what they say is shared. The world itself is not:
   doors, the time of day or anything else you change stay on your screen.
 - Shared visits go through the Aether server when there is one (the local
