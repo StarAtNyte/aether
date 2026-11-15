@@ -51,7 +51,8 @@ and share it with one link.
   drone tour over a city) and can be remixed into the editor.
 - **Visit together.** Worlds published as **Multiplayer** (Himalayan Valley
   first) let everyone on the same link walk around together: VRM avatars in
-  colours of their own, name tags and chat. Press **Invite** and send the link.
+  colours of their own, name tags, chat and spatial voice (voices come from where
+  people stand). Press **Invite** and send the link.
   It works on the hosted site (over Supabase Realtime), in the local app and on a
   self-hosted server; multiplayer worlds carry a **Multiplayer** mark on their cards.
 - **Build from scratch.** Switch on **No assets** and the AI makes every object
