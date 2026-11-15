@@ -492,6 +492,8 @@ export function kestrelOutpost(): MockPlan {
         pickup: { hitStop: 0 },
       },
     },
+    // The opening view, checked in a render.
+    opening: { position: [25.18, 3.05, -3.39], target: [-27.8, -3.06, 24.78] },
     plan: `Plan: Kestrel Outpost — a cliff-ringed relay outpost at golden hour, a carbine, ${WAVES.length} waves of raiders through three passes, drops, a relay to defend.`,
     message: `Built Kestrel Outpost: hold the relay against ${WAVES.length} waves of raiders. Aim with the mouse, click to fire, R to reload; raiders drop ammunition and medkits.`,
   });

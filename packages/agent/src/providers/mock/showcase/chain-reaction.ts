@@ -237,8 +237,8 @@ export function chainReaction(): MockPlan {
 
   // Workshop dressing: a brick back wall with factory windows, steel roof girders, pendant lamps over every machine and a bench with tools.
   const STEEL = { preset: 'metal' as const, color: '#2b3340', roughness: 0.42, metalness: 0.7 };
-  b.prim('workshop-wall', 'box', [86, 9.5, 0.5], [0, r2(S + 4.75), -8.95], { name: 'Workshop wall', material: { preset: 'brick', finish: 'brick', color: '#a05f4a' }, physics: 'static' });
-  b.prim('wall-plinth', 'box', [86, 0.9, 0.7], [0, r2(S + 0.45), -8.8], { material: { preset: 'concrete', finish: 'concrete', color: '#8f8a80' }, physics: 'static' });
+  b.prim('workshop-wall', 'box', [86, 9.5, 0.5], [0, r2(S + 4.75), -8.95], { name: 'Workshop wall', material: { preset: 'brick', finish: 'brick', color: '#a05f4a' }, physics: 'static', tags: ['backdrop'] });
+  b.prim('wall-plinth', 'box', [86, 0.9, 0.7], [0, r2(S + 0.45), -8.8], { material: { preset: 'concrete', finish: 'concrete', color: '#8f8a80' }, physics: 'static', tags: ['backdrop'] });
   for (const sx of [-1, 1]) b.prim('workshop-end', 'box', [0.5, 9.5, 17], [sx * 43, r2(S + 4.75), -0.5], { material: { preset: 'brick', finish: 'brick', color: '#a05f4a' }, physics: 'static' });
   XS.forEach((x, i) => {
     b.light(b.empty('machine-light', [x, 7.5, 2]), [0, 0, 0], '#fff1dc', 2.2, 16);

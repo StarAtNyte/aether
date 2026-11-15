@@ -16,7 +16,7 @@
  * World generators run in-process, unsandboxed: use it on trusted worlds only.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
-import { eulerDegToQuat, rotateVec3, type ScatterExcludeRect, type Vec3 } from '@aether/core';
+import { eulerDegToQuat, rotateVec3, stableStringify, type ScatterExcludeRect, type Vec3 } from '@aether/core';
 import { ARCH_GENERATOR_IDS, createGeneratorApi, DEFAULT_SEED, generateBuiltinSync, getBuiltinGenerator, resolveParams, type GeneratorOutput } from '@aether/procgen';
 import { scatterInstances } from '@aether/physics';
 
@@ -220,7 +220,8 @@ async function main(): Promise<void> {
     const left = after.filter(onStructure).length;
     if (before > 0 || left > 0) console.log(`${id.padEnd(24)} ${String(rects.length).padStart(2)} rects  on structures ${String(before).padStart(4)} -> ${left}  (kept ${after.length}/${total})`);
   }
-  if (!dry) writeFileSync(path, JSON.stringify(doc));
+  // Canonical form (sorted keys, one trailing newline), as `showcase:bake --check` requires of a stored world.
+  if (!dry) writeFileSync(path, `${stableStringify(doc)}\n`);
 }
 
 void main().catch((err) => {

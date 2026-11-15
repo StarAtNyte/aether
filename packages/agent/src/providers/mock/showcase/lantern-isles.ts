@@ -264,6 +264,8 @@ export function lanternIsles(): MockPlan {
       controls: ['WASD — move', 'Space — jump', 'Mouse — look', 'R — restart', 'Esc — editor'],
       accent: '#ffb35c',
     },
+    // The opening view, checked in a render.
+    opening: { position: [16.13, 22.57, -14.25], target: [1.5, 18.58, 3.5] },
     plan: 'Plan: seven floating islands (grass cap, soil, rock cone) linked by rope bridges and rune lifts, a guide NPC, 12 lantern pickups, waystone checkpoints, an updraft respawn, the Great Lantern goal unlocked by a rule, golden-hour sky over a sea of clouds.',
     message: 'Built Lantern Isles: seven floating islands at golden hour linked by rope bridges and rune lifts. Talk to Mira, find the 12 paper lanterns, then touch the Great Lantern on the summit. WASD to move, Space to jump.',
   });

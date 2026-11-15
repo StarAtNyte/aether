@@ -34,6 +34,8 @@ export interface FlagshipFinish {
   arch?: { ops: unknown[]; message: string };
   /** Game feel of the world (`world.feel`). */
   feel?: FeelSpecInput;
+  /** Opening view (`world.opening`), picked in a render; without one the studio computes it. */
+  opening?: { position: V3; target: V3 };
 }
 
 /**
@@ -54,6 +56,7 @@ export function finish(b: Builder, f: FlagshipFinish): MockPlan {
     patches.push({ op: 'setMeta', intro: intro as WorldIntro });
   }
   if (f.feel) patches.push({ op: 'setMeta', feel: f.feel as NonNullable<Extract<PatchInput, { op: 'setMeta' }>['feel']> });
+  if (f.opening) patches.push({ op: 'setMeta', opening: { position: [...f.opening.position], target: [...f.opening.target] } });
   return { plan: f.plan, patches, message: f.message, ...(f.arch ? { arch: f.arch } : {}) };
 }
 

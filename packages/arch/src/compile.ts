@@ -180,13 +180,14 @@ export function bestYaw(at: P2, inward: P2, walls: readonly WallRec[]): number {
 
 /**
  * A walkthrough start that is not inside a piece of furniture: `at` when it is clear (0.5 m from every floor piece, 1.3 m
- * from the door so the leaf swings free), else the nearest spot that is, inside the entrance room. Null when there is none.
+ * from the door so the leaf swings free, and the first metre walked away from the door free for the character's capsule),
+ * else the nearest spot that is, inside the entrance room. Null when there is none.
  */
 export function clearStart(at: P2, room: Pick<ResidentRoom, 'polygon' | 'blockers'>, door: P2): P2 | null {
   const inner = offsetPolygon(room.polygon, -0.4);
   if (inner.length < 3) return null;
-  const clear = (p: P2): boolean => {
-    if (!pointInPolygon(p[0], p[1], inner) || Math.hypot(p[0] - door[0], p[1] - door[1]) < 1.3) return false;
+  /** True when `p` is at least `margin` from every floor piece (and not inside one). */
+  const offBlockers = (p: P2, margin: number): boolean => {
     for (const b of room.blockers) {
       if (pointInPolygon(p[0], p[1], b)) return false;
       for (let i = 0; i < b.length; i++) {
@@ -196,9 +197,19 @@ export function clearStart(at: P2, room: Pick<ResidentRoom, 'polygon' | 'blocker
         const dz = c[1] - a[1];
         const l2 = dx * dx + dz * dz;
         const t = l2 < 1e-12 ? 0 : Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dz) / l2));
-        if (Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dz) < 0.5) return false;
+        if (Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dz) < margin) return false;
       }
     }
+    return true;
+  };
+  // Away from the door: the way a walkthrough faces when it opens. A spot clear itself can still have a table's corner
+  // a step ahead, where the capsule (0.35 m) catches and grinds in place.
+  const len = Math.hypot(at[0] - door[0], at[1] - door[1]);
+  const ahead: P2 = len > 1e-9 ? [(at[0] - door[0]) / len, (at[1] - door[1]) / len] : [0, 0];
+  const clear = (p: P2): boolean => {
+    if (!pointInPolygon(p[0], p[1], inner) || Math.hypot(p[0] - door[0], p[1] - door[1]) < 1.3) return false;
+    if (!offBlockers(p, 0.5)) return false;
+    for (let d = 0.25; d <= 1 + 1e-9; d += 0.25) if (!offBlockers([p[0] + ahead[0] * d, p[1] + ahead[1] * d], 0.4)) return false;
     return true;
   };
   if (clear(at)) return at;

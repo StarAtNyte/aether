@@ -105,7 +105,9 @@ export function casaPatio(): MockPlan {
   // Gravel forecourt and drive down to the lane, edged with dry-stone walls.
   const [dx, dz0] = at(3, 15.2);
   b.keepClearRect(dx - 6.5, dz0 - 1, dx + 6.5, dz0 + 36);
-  b.prim('drive', 'box', [4.2, 0.08, 34], [dx, 0.04, r2(dz0 + 17)], { name: 'Gravel drive', material: { finish: 'gravel', color: '#b9ad94' }, physics: 'static', castShadow: false, tags: ['site'] });
+  // The drive starts at the forecourt's far edge (dz0 + 6.25), not under it: two coplanar slabs fought in depth.
+  const driveFrom = 6.25;
+  b.prim('drive', 'box', [4.2, 0.08, r2(34 - driveFrom)], [dx, 0.04, r2(dz0 + (driveFrom + 34) / 2)], { name: 'Gravel drive', material: { finish: 'gravel', color: '#b9ad94' }, physics: 'static', castShadow: false, tags: ['site'] });
   b.prim('forecourt', 'box', [11, 0.08, 6.5], [r2(dx + 0.5), 0.04, r2(dz0 + 3)], { name: 'Forecourt', material: { finish: 'stone', color: '#cdc2ad' }, physics: 'static', castShadow: false, tags: ['site'] });
   for (const side of [-1, 1] as const) {
     const [wx] = at(3 + side * 6.2, 0);

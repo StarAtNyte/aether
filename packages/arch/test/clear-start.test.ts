@@ -8,9 +8,23 @@ describe('a walkthrough start that is not inside furniture', () => {
   const room = { polygon: [[0, 0], [6, 0], [6, 4], [0, 4]] as P[], blockers: [[[2.6, 1.6], [3.4, 1.6], [3.4, 2.4], [2.6, 2.4]] as P[]] };
 
   it('keeps a start that is clear', () => {
-    expect(clearStart([1.5, 2], room, [0, 2])).toEqual([1.5, 2]);
+    expect(clearStart([1.5, 0.9], room, [0, 0.9])).toEqual([1.5, 0.9]);
     // Too near the door (its leaf swings there): moved off it.
-    expect(clearStart([1, 2], room, [0, 2])).not.toEqual([1, 2]);
+    expect(clearStart([1, 0.9], room, [0, 0.9])).not.toEqual([1, 0.9]);
+  });
+
+  it('moves a start whose first steps away from the door run into furniture', () => {
+    // Clear itself (1.1 m from the chair), but the walk in from the door meets the chair within a metre.
+    const free = clearStart([1.5, 2], room, [0, 2]);
+    expect(free).not.toBeNull();
+    expect(free).not.toEqual([1.5, 2]);
+    const [x, z] = free as P;
+    // The first metre walked in (+x) stays more than the capsule's radius off the chair (x 2.6..3.4, z 1.6..2.4).
+    for (let d = 0; d <= 1; d += 0.05) {
+      const px = x + d;
+      const gap = Math.hypot(Math.max(2.6 - px, 0, px - 3.4), Math.max(1.6 - z, 0, z - 2.4));
+      expect(gap).toBeGreaterThanOrEqual(0.4 - 1e-9);
+    }
   });
 
   it('moves a start that is inside a chair to the nearest clear spot, off the door and the walls', () => {

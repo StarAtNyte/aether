@@ -18,10 +18,12 @@ import { performance } from 'node:perf_hooks';
 import { stableStringify, validateWorld, type WorldDoc } from '@aether/core';
 import { createMockProvider, WorldAgent } from '@aether/agent';
 import { initScripting } from '@aether/logic';
-import { initPhysics } from '@aether/physics';
-import { GENERATOR_LIBRARY, loadLibraryGenerator } from '@aether/procgen';
+import { initPhysics, PhysicsWorld, settledSpawnY } from '@aether/physics';
+import { PLAYER_CAPSULE } from '@aether/playtest';
+import { GENERATOR_LIBRARY, loadLibraryGenerator, worldColliderProvider } from '@aether/procgen';
 import { createNodeSandbox } from '@aether/procgen/node';
 import { SHOWCASE, type ShowcaseEntry } from '../../apps/studio/src/showcase/manifest';
+import { TEMPLATE_PUBLISH } from '../../apps/studio/src/showcase/publish';
 import { CATALOGS, GENERATOR_DRY_RUN_MS, NodeAgentHost, runVerify } from '../lib/headless-world';
 
 const REPO_ROOT = join(import.meta.dirname, '..', '..');
@@ -86,6 +88,24 @@ export function withStoredSkins(world: WorldDoc, slug: string): WorldDoc {
   return added > 0 ? { ...world, skins, textures } : world;
 }
 
+/**
+ * A walkthrough template's spawn stands on the floor. The arch compiler puts an indoor spawn at y = 0.1, under the ground
+ * floor's top (the plinth), where the playtest bot of a freshly compiled house expects it and the live game lifts the character
+ * out (CharacterController settleSpawn). A shipped world file is read as is by headless runs and must start out of the slab
+ * (apps/studio/test/walkthroughSpawn.test.ts), so the bake stores the height the live game would settle to.
+ */
+async function withSettledSpawn(world: WorldDoc, slug: string, sandbox: ReturnType<typeof createNodeSandbox>): Promise<WorldDoc> {
+  if (TEMPLATE_PUBLISH[slug]?.profile !== 'walkthrough') return world;
+  const pw = await PhysicsWorld.create(world, { colliders: await worldColliderProvider(world, sandbox) });
+  try {
+    const spawn = world.player.spawn;
+    const y = Math.round(settledSpawnY(pw, spawn, PLAYER_CAPSULE.radius, PLAYER_CAPSULE.height) * 100) / 100;
+    return y === spawn[1] ? world : { ...world, player: { ...world.player, spawn: [spawn[0], y, spawn[2]] } };
+  } finally {
+    pw.dispose();
+  }
+}
+
 async function bake(entry: ShowcaseEntry, sandbox: ReturnType<typeof createNodeSandbox>): Promise<{ text: string; entities: number; ms: number; stored?: true }> {
   if (entry.origin === 'photo' || entry.origin === 'agent' || entry.origin === 'blender') return bakePhoto(entry);
   const t0 = performance.now();
@@ -96,7 +116,7 @@ async function bake(entry: ShowcaseEntry, sandbox: ReturnType<typeof createNodeS
     if (ev.type === 'error') problems.push(`agent error: ${ev.text}`);
     else if (ev.type === 'patches' && ev.result.errors.length > 0) problems.push(`${ev.result.errors.length} rejected patch(es): ${ev.result.errors.slice(0, 6).map((e) => e.message).join(" | ")}`);
   }
-  const world = withStoredSkins(host.getWorld(), entry.slug);
+  const world = await withSettledSpawn(withStoredSkins(host.getWorld(), entry.slug), entry.slug, sandbox);
   const valid = validateWorld(world);
   if (!valid.ok) problems.push(`invalid world: ${valid.issues.slice(0, 3).map((i) => `${i.path}: ${i.message}`).join('; ')}`);
   const verdict = await runVerify(world);
