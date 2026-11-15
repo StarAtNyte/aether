@@ -78,6 +78,7 @@ export const TemplateCard = memo(function TemplateCard({ template, onPick, eager
               Asset-free
             </span>
           )}
+          {template.multiplayer && <span className="card__free card__mp">Multiplayer</span>}
         </span>
         <span className="card__body">
           <span className="card__title-row">

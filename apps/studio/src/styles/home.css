@@ -1459,3 +1459,16 @@
   letter-spacing: 0.04em;
   pointer-events: none;
 }
+/* "Multiplayer" (shared visits), in the same style; under "Asset-free" when a card has both. */
+.card__free + .card__mp {
+  top: 36px;
+}
+.card__mp::before,
+.fcard__mp::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: #4ade80;
+}

@@ -7,6 +7,10 @@ import { FEATURED_TEMPLATES, TEMPLATES } from '../src/lib/examples';
 import Featured, { featuredMode, featuredVerb } from '../src/home/Featured';
 import { TEMPLATE_PUBLISH } from '../src/showcase/publish';
 import { SHOWCASE } from '../src/showcase/manifest';
+import { TemplateCard } from '../src/home/cards';
+import { loadGame } from '../src/player/source';
+import { WORLD_KEY_RE } from '@aether/core/copresence';
+import { readFileSync } from 'node:fs';
 
 const PUBLIC = resolve(__dirname, '../public/templates');
 
@@ -58,5 +62,24 @@ describe('the home Featured gallery', () => {
     expect(TEMPLATES.slice(0, FEATURED_TEMPLATES.length)).toEqual([...FEATURED_TEMPLATES]);
     for (const e of SHOWCASE.filter((x) => !x.film)) expect(TEMPLATE_PUBLISH[e.slug], e.slug).toBeDefined();
     for (const e of SHOWCASE.filter((x) => x.film)) expect(TEMPLATE_PUBLISH[e.slug], `${e.slug}: a film has no publish row`).toBeUndefined();
+  });
+
+  it('marks multiplayer worlds on Featured and Templates cards, and only those open shared visits (keyed by slug)', async () => {
+    const multi = SHOWCASE.filter((e) => e.multiplayer);
+    expect(multi.map((e) => e.slug)).toEqual(['himalayan-valley']);
+    for (const e of multi) expect(e.slug).toMatch(WORLD_KEY_RE);
+    const featured = renderToStaticMarkup(createElement(Featured, { onRemix: () => undefined }));
+    expect(featured.match(/>Multiplayer</g)?.length).toBe(FEATURED_TEMPLATES.filter((t) => t.multiplayer).length);
+    for (const t of TEMPLATES.filter((x) => !x.film)) {
+      const html = renderToStaticMarkup(createElement(TemplateCard, { template: t, onPick: () => undefined }));
+      expect(html.includes('class="card__free card__mp"'), t.slug).toBe(t.multiplayer === true);
+    }
+    const json = readFileSync(resolve(PUBLIC, 'worlds', 'himalayan-valley.json'), 'utf8');
+    const serve = (async () => new Response(json, { headers: { 'content-type': 'application/json' } })) as unknown as typeof fetch;
+    const on = await loadGame('#t=himalayan-valley&cook=0', serve, '/play.html');
+    expect(on.kind === 'game' && on.game.sharedVisits).toEqual({ world: 'himalayan-valley' });
+    const desert = readFileSync(resolve(PUBLIC, 'worlds', 'desert-citadel.json'), 'utf8');
+    const off = await loadGame('#t=desert-citadel&cook=0', (async () => new Response(desert, { headers: { 'content-type': 'application/json' } })) as unknown as typeof fetch, '/play.html');
+    expect(off.kind === 'game' && off.game.sharedVisits).toBeUndefined();
   });
 });

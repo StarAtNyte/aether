@@ -263,8 +263,9 @@ screen and in the exported `CREDITS.txt`.
 
 ### Shared visits
 
-Some worlds can be visited together: among the examples **Himalayan Valley**,
-and any world you publish with
+Some worlds can be visited together: among the examples **Himalayan Valley**
+(marked **Multiplayer** on its card in Featured and Templates), and any world
+you publish with
 **Multiplayer (shared visits)** turned on. The switch is under the title-screen
 fields of **Game** and **Share** in the Publish dialog, off by default; it goes
 into the downloaded game (`game.json`), the share link and the published copy.

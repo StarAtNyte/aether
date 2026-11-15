@@ -56,6 +56,7 @@ const FeaturedCard = memo(function FeaturedCard({ t, size, onRemix }: { t: World
           Asset-free
         </span>
       )}
+      {t.multiplayer && <span className="fcard__free fcard__mp">Multiplayer</span>}
       {/* The whole card (picture included) is the link; the text above it lets clicks through. */}
       <a className="fcard__link" href={templatePlayUrl(t.slug)} aria-label={`${featuredVerb(t)} ${t.title}: ${featuredMode(t)}`} />
       <div className="fcard__body">

@@ -3554,8 +3554,10 @@ world on both backends; `KEYDEBUG=1 TRACE=1` prints the hash of every input arra
 Visitors of one shared link see each other in the player. Only presence is shared (position, heading, stand / walk /
 run, body and its colour, display name, chat); the world is never synced. On per world:
 
-- Built-in worlds: `sharedVisits: true` in `apps/studio/src/showcase/publish.ts` (`TEMPLATE_PUBLISH`, one line per
-  world; today `himalayan-valley`). The world key is the template slug.
+- Built-in worlds: `multiplayer: true` on the world's row of `apps/studio/src/showcase/manifest.ts` (`SHOWCASE`, one
+  flag per world; today `himalayan-valley`). The world key is the template slug. The same flag puts a **Multiplayer**
+  mark on its Featured card (`home/Featured.tsx`, `.fcard__mp`) and its Templates card (`home/cards.tsx`,
+  `.card__mp`), styled as the Asset-free mark and stacked under it when a card has both (`test/featured.test.ts`).
 - Published worlds: the Publish dialog's **Multiplayer (shared visits)** toggle (`PublishState.multiplayer`, under the
   title-screen fields of Game and Share) writes `sharedVisits: true` into `game.json` (`publish/manifest.ts` envelope)
   and into the meta of share links and cooked packages (`publish/share.ts` `ShareMeta`, which a cooked package's world

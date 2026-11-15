@@ -83,7 +83,7 @@ export interface GameManifest {
   profile?: 'game' | 'walkthrough' | 'showcase' | 'city' | 'vr' | 'story';
   /**
    * Shared visits are on for this world: the world key its rooms live under. Set by the player, never read as such: a
-   * bundled template's from showcase/publish.ts (its slug), a published world's from the `sharedVisits: true` of its
+   * bundled template's from its showcase/manifest.ts `multiplayer` (its slug), a published world's from the `sharedVisits: true` of its
    * `game.json` or link ({@link publishedWorldKey}). The player then offers Invite and joins the `room=` of its link
    * (player/copresence/).
    */

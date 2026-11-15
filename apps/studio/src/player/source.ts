@@ -224,7 +224,7 @@ export async function loadGame(hash: string, fetchFn: typeof fetch = fetch, path
         world,
         startMode: world.startMode ?? settings.startMode,
         profile: world.profile ?? settings.profile,
-        ...(settings.sharedVisits ? { sharedVisits: { world: template.slug } } : {}),
+        ...(entry?.multiplayer ? { sharedVisits: { world: template.slug } } : {}),
         ...(template.cook === 'use' ? { cook: templateCookUrl(template.slug) } : template.cook === 'local' ? { cook: templateCookUrl(template.slug, LOCAL_COOKED_BASE) } : {}),
       },
     };
