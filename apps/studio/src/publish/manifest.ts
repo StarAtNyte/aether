@@ -76,6 +76,11 @@ export interface GameManifest {
   startMode?: 'play' | 'walkthrough' | 'orbit' | 'story';
   /** How the player presents it (the IR's `profile`, else the template's or the cook's; absent: from `startMode`). */
   profile?: 'game' | 'walkthrough' | 'showcase' | 'city' | 'vr' | 'story';
+  /**
+   * Shared visits are on for this world (bundled templates only, from showcase/publish.ts; never read from a
+   * `game.json`). The player then offers Invite and joins the `room=` of its link (player/copresence/).
+   */
+  sharedVisits?: { world: string };
   world: WorldDoc;
 }
 

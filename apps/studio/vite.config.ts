@@ -26,7 +26,8 @@ const API_TARGET = process.env.AETHER_API_TARGET ?? 'http://localhost:8787';
 const ALLOWED_HOSTS = (process.env.AETHER_DEV_ALLOWED_HOSTS ?? '').split(',').map(h => h.trim()).filter(Boolean);
 
 const apiProxy = {
-  '/api': { target: API_TARGET, changeOrigin: true },
+  // `ws`: the shared-visit relay (`/api/copresence/ws`) is a WebSocket on the same server.
+  '/api': { target: API_TARGET, changeOrigin: true, ws: true },
 };
 
 /** The standalone player: `play.html` (published games, share links at `/play#w=…`). */

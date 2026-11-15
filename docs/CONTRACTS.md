@@ -3538,3 +3538,65 @@ emission is a map) and the ghost / proof variants are untouched; the bloom pass 
 (`VOLUME_BAKE_VERSION` and the grid are in the key; the volume is a function of the trace and the light): WebGPU and WebGL2 build the same room a
 fraction of a millimetre apart (a chair's box 0.5 mm lower), and a bundled file must match on both. `tests/e2e/lightmap-open.e2e.ts` opens every bundled
 world on both backends; `KEYDEBUG=1 TRACE=1` prints the hash of every input array (`WorldRenderer.lightmapKeyInputs`) to find what differs.
+
+## Shared visits (co-presence)
+
+Visitors of one shared link see each other in the player. Only presence is shared (position, heading, stand / walk /
+run, body, display name, chat); the world is never synced. On per world through `sharedVisits: true` in
+`apps/studio/src/showcase/publish.ts` (`TEMPLATE_PUBLISH`), today only `himalayan-valley`; the player's
+`GameManifest.sharedVisits = { world: <slug> }` is set from it for `#t=<slug>` links and is never read from a
+`game.json`.
+
+### Wire format (`@aether/core/copresence`, version 1)
+
+What a visitor sends (`PresenceMessage`, strict objects, every receiver validates):
+
+| `t` | Fields | When |
+|---|---|---|
+| `hello` | `v: 1`, `name` (1-24 chars, no control / bidi / zero-width characters, single spaces, trimmed), `body: 'kaho-vrm' \| 'mio-vrm'` | on joining, when name or body change, and again whenever someone joins |
+| `state` | `v: 1`, `ts` (sender clock, ms mod 2^31), `p: [x, y, z]` feet position in whole centimetres (±10^7), `h` heading in 1/1024 turns (0 faces -Z, increasing toward -X: three.js yaw), `m` 0 idle / 1 walk / 2 run | at most 10 Hz and only when the quantised pose changed, plus a keepalive every 5 s |
+| `chat` | `v: 1`, `text` (1-200 chars, cleaned like a name) | on Send |
+| `bye` | `v: 1` | on leaving |
+
+What a relay sends (`RelayFrame`): `{ k: 'welcome', v: 1, id, peers: id[] }` (this visitor's id and who is here),
+`{ k: 'join', id }`, `{ k: 'leave', id }`, `{ k: 'msg', from: id, m: PresenceMessage }` (the sender is stamped by the
+relay, so no one can speak for another) and `{ k: 'error', code: 'full' | 'bad-room' | 'bad-message' | 'rate' |
+'version' | 'idle' | 'closing' }`. Peer ids are 6-16 lowercase hex / alphanumerics. Frames are at most 1024 bytes. Room
+ids are `[a-z0-9]{6,24}` (the `room=` of a link); a room holds 16 visitors. Helpers: `quantiseState`,
+`dequantiseState`, `sameState`, `parsePresence`, `parseRelayFrame`, `cleanPresenceText`, `newRoomId`.
+
+### Relay (`apps/server/src/copresence/`, `routes/copresence.ts`)
+
+- `GET /api/copresence` → `{ ok: true, v: 1, maxPeers: 16 }`; the player asks it first, and a host without it (the
+  static Vercel site) shows no shared-visit controls.
+- `GET /api/copresence/ws?world=<slug>&room=<id>` with `Upgrade: websocket` on the server's own port (`main.ts`
+  `attachCopresence`, so `aether start` serves it and the player's `connect-src 'self'` covers it; Vite dev and
+  preview proxy it with `ws: true`). The upgrade request first runs through the Hono app, so it passes the Host guard,
+  the LAN access token and the per-client API rate limit; the route then requires an `Origin` equal to the server's
+  own host or in `ALLOWED_ORIGINS` (403 otherwise), validates the query (400), and answers 426 to a plain request.
+- Rooms (`rooms.ts`, `RoomRegistry`): in memory, keyed `<world>/<room>`, 16 visitors each (the 17th gets `error`
+  `full` and close 4001), at most 256 rooms; each message is validated and relayed to the others only; per visitor
+  20 messages/s (burst 40) and 20 chat lines/min (burst 5), over-limit and invalid messages are dropped and 200 of them
+  close the socket (4003); a visitor silent for 20 s is dropped (4002). Nothing is stored.
+- WebSocket (`ws.ts`): a dependency-free RFC 6455 server side (text frames only, client frames must be masked, no
+  fragmentation, 1024-byte cap → close 1009). `AETHER_COPRESENCE=off` turns the relay and its routes off.
+
+### Player (`apps/studio/src/player/copresence/`, loaded lazily)
+
+- `transport.ts`: `CopresenceTransport` (`connect(roomId)` → own peer id, `send`, `onMessage`, `onPeerJoin`,
+  `onPeerLeave`, `onEnd`, `close`). `websocket.ts`: the server relay (`relayAvailable`, `relayUrl`). `broadcast.ts`:
+  tabs of one browser over `BroadcastChannel` (`#…&room=<id>&relay=tabs`; tests and local demos; join / here / beat
+  every 2 s / leave, a tab silent 7 s is gone). A hosted relay (Supabase Realtime broadcast + presence) is to implement
+  the same interface; there is none yet.
+- `session.ts` (`CopresenceSession`): hello, rate- and change-limited state, peers, chat (last 60 lines).
+- `interpolate.ts` (`PoseBuffer`): sender clock mapped by the smallest delay seen, drawn 100 ms behind, linear
+  position and shortest-arc heading, holds the newest sample, never slides through a jump over 12 m.
+- `avatars.ts` (`RemoteAvatars`): one transient entity per visitor (`copresence-<id>`, `character: { body }`, not in the
+  document), moved with `renderer.applyTransforms`, so the character system animates it by its speed with its own
+  levels of detail; hidden beyond 160 m; DOM name tags (and chat bubbles for 6 s) within 70 m.
+- `controller.ts`: this visitor's pose ten times a second (playing: the player's feet, facing the way it walks;
+  otherwise the ground under the camera at street level, else under the orbit point, facing the camera's way).
+  `window.__aetherCopresence` exposes `status`, `id`, `count`, `local` and `remotes()` for probes.
+- `CopresenceUI.tsx`: Invite (sets `room=` with `history.replaceState` and copies the link, or shows it when the
+  clipboard is refused), the visitor count, name and body (`aether.player.copresence.v1`, a random two-word default),
+  chat, Leave. A link with `room=` joins on open.

@@ -209,6 +209,7 @@ export async function loadGame(hash: string, fetchFn: typeof fetch = fetch, path
     if (!r.ok) return { kind: 'error', message: r.error };
     const entry = SHOWCASE.find((e) => e.slug === template.slug);
     const world = r.world;
+    const settings = templatePublish(template.slug, entry?.kind);
     return {
       kind: 'game',
       from: 'template',
@@ -219,8 +220,9 @@ export async function loadGame(hash: string, fetchFn: typeof fetch = fetch, path
         controls: defaultControls(world),
         music: null,
         world,
-        startMode: world.startMode ?? templatePublish(template.slug, entry?.kind).startMode,
-        profile: world.profile ?? templatePublish(template.slug, entry?.kind).profile,
+        startMode: world.startMode ?? settings.startMode,
+        profile: world.profile ?? settings.profile,
+        ...(settings.sharedVisits ? { sharedVisits: { world: template.slug } } : {}),
         ...(template.cook === 'use' ? { cook: templateCookUrl(template.slug) } : template.cook === 'local' ? { cook: templateCookUrl(template.slug, LOCAL_COOKED_BASE) } : {}),
       },
     };

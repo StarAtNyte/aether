@@ -261,6 +261,26 @@ re-run it on the visitor's device.
 Every bundled asset's credit appears in the credits panel, on the end-of-game
 screen and in the exported `CREDITS.txt`.
 
+### Shared visits
+
+Some published worlds can be visited together (for now **Himalayan Valley**).
+Open it in the player and press **Invite** (top right): the link to this world
+with a room in it (`…&room=<id>`) is copied, and anyone who opens that link
+joins you. Up to 16 people share a room.
+
+- Everyone else appears as a person walking where they are, with their name
+  over their head. When you play (P) you are where your character is; while
+  you look around, you stand on the ground under the camera.
+- Press **N here** to open the panel: change your name (a random one is chosen
+  the first time and remembered in this browser), pick a look (Kaho or Mio),
+  and chat. A message also shows over your head for a few seconds. Esc leaves
+  the text field. **Leave visit** disconnects.
+- Only where people are and what they say is shared. The world itself is not:
+  doors, the time of day or anything else you change stay on your screen.
+- Shared visits need the Aether server (the local app, `npm run aether --
+  start`, or a self-hosted server). On the static hosted site the Invite button
+  does not appear yet.
+
 ## 10. Projects and recovery
 
 Projects live in your browser (IndexedDB) with thumbnails, search, sort,

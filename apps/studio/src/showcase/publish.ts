@@ -25,6 +25,11 @@ export type TemplateProfile = 'game' | 'walkthrough' | 'showcase' | 'city' | 'vr
 export interface TemplatePublish {
   startMode: TemplateStartMode;
   profile: TemplateProfile;
+  /**
+   * Shared visits (player `copresence/`): visitors of one link see each other as avatars with names and chat. On per
+   * world while the feature is new.
+   */
+  sharedVisits?: true;
 }
 
 const GAME: TemplatePublish = Object.freeze({ startMode: 'play', profile: 'game' });
@@ -33,6 +38,8 @@ const SHOW: TemplatePublish = Object.freeze({ startMode: 'orbit', profile: 'show
 const CITY: TemplatePublish = Object.freeze({ startMode: 'orbit', profile: 'city' });
 /** A world with a short film (`world.story`): the film first, then explore (orbit) or play. */
 const STORY: TemplatePublish = Object.freeze({ startMode: 'story', profile: 'story' });
+/** A showcase open to shared visits (see {@link TemplatePublish.sharedVisits}). */
+const SHOW_SHARED: TemplatePublish = Object.freeze({ ...SHOW, sharedVisits: true });
 /** A city with a game goal: played from its title card, explored as a city. */
 const CITY_GAME: TemplatePublish = Object.freeze({ startMode: 'play', profile: 'city' });
 
@@ -90,7 +97,7 @@ export const TEMPLATE_PUBLISH: Readonly<Record<string, TemplatePublish>> = Objec
   'sanctuary-terraces': SHOW,
   'sanctuary-ascent': SHOW,
   'desert-citadel': SHOW,
-  'himalayan-valley': SHOW,
+  'himalayan-valley': SHOW_SHARED,
   // Rooms rebuilt from a photograph
   'photo-hotel-bedroom': WALK,
   'photo-twin-room': WALK,

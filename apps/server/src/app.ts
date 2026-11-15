@@ -32,6 +32,7 @@ import { registerLocalRoutes, type LocalRouteDeps } from './routes/local';
 import type { LocalAi } from '@aether/bridge';
 import { registerWorldRoutes, WORLD_ID_RE } from './routes/worlds';
 import { registerPublishRoutes } from './routes/publish';
+import { registerCopresenceRoutes } from './routes/copresence';
 import { createPublishServices, MAX_BUILD_UPLOAD_BYTES, type PublishServiceOptions, type PublishServices } from './publish/services';
 import { registerStatic } from './static';
 import { DailyTokenBudget } from './token-budget';
@@ -216,6 +217,8 @@ export function createApp(config: ServerConfig, deps: AppDeps = {}): Hono<AppEnv
   });
   registerGeneratorRoutes(app, { store: generatorStore, validator: deps.generatorValidator ?? null, logger });
   registerWorldRoutes(app, { store: worldStore, maxWorldBytes: config.storage.maxWorldBytes });
+  // Shared visits: the relay's guard step and its availability check (main.ts serves the WebSocket itself).
+  if (config.copresence) registerCopresenceRoutes(app, { allowedOrigins: config.allowedOrigins });
   if (config.imageTo3d) {
     const provider = deps.imageTo3d ?? createTrellisProvider(config.imageTo3d);
     registerImageTo3dRoutes(app, { provider, logger, ...(deps.shutdownSignal ? { shutdownSignal: deps.shutdownSignal } : {}) });

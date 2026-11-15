@@ -510,6 +510,11 @@ export class Simulation {
     return this.session?.character?.position ?? null;
   }
 
+  /** Facing of the built-in player in degrees (0 faces -Z; the avatar's yaw), null outside play. */
+  get playerYawDeg(): number | null {
+    return this.session?.character ? this.input.yawDeg : null;
+  }
+
   /** Colliders for physics: procedural outputs the renderer already generated (physics falls back to its defaults). */
   readonly colliders: ColliderProvider = (entity: Entity) =>
     entity.shape.kind === 'model' && entity.physics?.collider === 'trimesh'

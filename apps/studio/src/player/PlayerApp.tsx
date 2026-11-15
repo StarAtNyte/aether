@@ -50,6 +50,8 @@ const TIME_PRESETS_BY_DIGIT: Readonly<Record<string, number>> = Object.freeze(Ob
 type Phase = PlayerPhase;
 /** The lazily loaded explore module (controller and bar). */
 type ExploreModule = typeof import('./ExploreUI');
+/** The lazily loaded shared-visit controls. */
+type CopresenceModule = typeof import('./copresence/CopresenceUI');
 
 /** The world shows a building (architecture: the dollhouse applies). */
 function hasBuilding(world: WorldDoc): boolean {
@@ -387,6 +389,8 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
   const exp = useMemo(() => experienceFor(game.startMode, game.profile, hasBuilding(world), !!world.story), [game.startMode, game.profile, world]);
   const [explore, setExplore] = useState<ExploreState | null>(null);
   const [exploreMod, setExploreMod] = useState<ExploreModule | null>(null);
+  /** The shared-visit controls (worlds with `sharedVisits`), loaded once the world is up. */
+  const [copresenceMod, setCopresenceMod] = useState<CopresenceModule | null>(null);
   const exploreRef = useRef<ExploreController | null>(null);
   /** Stops of the cooked package (computed by the cook); the world's own `views` win. */
   const cookedViews = useRef<CookView[] | undefined>(undefined);
@@ -980,6 +984,14 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
         if (exp.kind === 'game' || route?.cook === 'record') go('title');
         cookHandle.ready = true;
         void attract();
+        // Shared visits: the controls load only for worlds that have them (and show only when a relay answers).
+        if (game.sharedVisits && route?.cook !== 'record')
+          void import('./copresence/CopresenceUI').then(
+            (m) => {
+              if (!disposed) setCopresenceMod(m);
+            },
+            () => undefined,
+          );
       } catch (err) {
         if (disposed) return;
         setFatal(`This browser could not start WebGPU or WebGL2 (${err instanceof Error ? err.message.slice(0, 160) : 'error'}).`);
@@ -1281,6 +1293,9 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
         <button type="button" className="pl-pausebtn" aria-label="Pause" onClick={() => pause(true)}>
           ❚❚
         </button>
+      )}
+      {copresenceMod && sim && game.sharedVisits && phase !== 'booting' && phase !== 'failed' && (
+        <copresenceMod.CopresencePanel sim={sim} world={game.sharedVisits.world} hidden={phase === 'story' || (phase === 'exploring' && !!explore?.photo)} />
       )}
       <div className="pl-toasts" aria-live="polite">
         {toasts.map((t) => (

@@ -16,6 +16,7 @@ import { planProviders } from './llm/provider-plan';
 import { createRotatingSink } from './log-file';
 import { createLogger, scrub } from './logger';
 import { applyHttpTimeouts } from './server-timeouts';
+import { attachCopresence, type CopresenceRelay } from './copresence/relay';
 import type { LiveLlm } from './routes/llm';
 import type { LocalBridgeInfo } from './routes/local';
 import { bridgePublish, createPublishServices } from './publish/services';
@@ -84,6 +85,8 @@ async function main(): Promise<void> {
   logger.debug('config', { config: JSON.stringify(redactConfig(config)) });
   // Outlive proxy idle timeouts (no 502 races on reused connections) and bound slow request uploads.
   if (server instanceof HttpServer) applyHttpTimeouts(server);
+  // Shared visits: WebSocket rooms on the same port (same origin for the player's `connect-src 'self'`).
+  const relay: CopresenceRelay | null = config.copresence && server instanceof HttpServer ? attachCopresence(server, (req, env) => app.fetch(req, env), { logger }) : null;
 
   let stopping = false;
   /** Drain and exit. `exitCode` 1 marks a crash so the supervisor (Docker, Fly, Render) restarts us. */
@@ -93,6 +96,7 @@ async function main(): Promise<void> {
     if (exitCode !== 0) process.exitCode = exitCode;
     logger.info('shutting down', { signal });
     shutdown.abort();
+    relay?.close();
     void generatorValidator?.dispose();
     void bridge?.close();
     void publish?.dispose();
