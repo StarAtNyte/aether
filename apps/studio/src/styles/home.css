@@ -462,15 +462,8 @@
 .template-grid,
 .project-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--s-4);
-}
-
-@media (max-width: 1279px) {
-  .template-grid,
-  .project-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
 }
 
 /* List view */
@@ -1338,7 +1331,7 @@
 .featured__item {
   position: relative;
   min-width: 0;
-  grid-column: span 3;
+  grid-column: span 4;
   aspect-ratio: 16 / 10;
 }
 
