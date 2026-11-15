@@ -1,8 +1,8 @@
 /**
  * The shared-visit controls of the player (worlds with `sharedVisits`, loaded lazily): Invite (copies this link with
  * `room=<id>` and joins it), the number of visitors here, this visitor's name, body and outfit colour, a short chat, and the name
- * tags over the others. A link with `room=` joins that room on open. When no relay answers (a static host), nothing
- * is shown.
+ * tags over the others. A link with `room=` joins that room on open. The server's relay is the first choice; a static
+ * host uses the build's Supabase project (`supabase.ts`); with neither, nothing is shown.
  */
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactElement } from 'react';
 import { COPRESENCE_CHAT_MAX, COPRESENCE_NAME_MAX, PRESENCE_HUES, newRoomId, presenceColours, type PresenceBody } from '@aether/core/copresence';
@@ -42,14 +42,19 @@ export function CopresencePanel({ sim, world, hidden }: { sim: Simulation; world
   const [draft, setDraft] = useState('');
   const logRef = useRef<HTMLOListElement>(null);
 
-  // Pick the transport: tabs of this browser (`relay=tabs`), else the server's relay when it answers.
+  // Pick the transport: tabs of this browser (`relay=tabs`), else the server's relay when it answers, else the build's
+  // Supabase project (a static host), loaded only then.
   useEffect(() => {
     let alive = true;
     const { relay } = roomFromHash(location.hash);
     if (relay === 'tabs') setTransport(new BroadcastTransport(world));
     else
-      void relayAvailable().then((ok) => {
-        if (alive && ok) setTransport(new WebSocketTransport(world));
+      void relayAvailable().then(async (ok) => {
+        if (ok) return alive && setTransport(new WebSocketTransport(world));
+        if (!import.meta.env.VITE_SUPABASE_URL) return;
+        const { SupabaseTransport, supabaseConfig } = await import('./supabase');
+        const cfg = supabaseConfig();
+        if (alive && cfg) setTransport(new SupabaseTransport(world, cfg));
       });
     return () => {
       alive = false;

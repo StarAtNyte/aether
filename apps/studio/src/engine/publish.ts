@@ -1463,7 +1463,13 @@ function initialPlayerBase(): string {
   } catch {
     /* storage blocked */
   }
-  const env = (import.meta as { env?: Record<string, unknown> }).env?.['VITE_AETHER_PLAYER_URL'];
+  let env: unknown;
+  try {
+    // Named, not `import.meta.env?.[…]`: that would put every build variable in the chunk. Throws outside Vite.
+    env = import.meta.env.VITE_AETHER_PLAYER_URL;
+  } catch {
+    env = undefined;
+  }
   const fromEnv = typeof env === 'string' ? normalizePlayerBase(env) : null;
   return fromEnv ?? (typeof location !== 'undefined' ? `${location.origin}/play` : 'http://localhost/play');
 }

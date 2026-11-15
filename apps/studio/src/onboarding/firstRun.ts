@@ -149,7 +149,7 @@ export function finishFirstRun(storage: StorageLike | null, choice: FirstRunChoi
 /** True for the build flag that forces the hosted variant. */
 export function hostedBuildFlag(): boolean {
   try {
-    return import.meta.env?.['VITE_AETHER_HOSTED'] === '1';
+    return import.meta.env.VITE_AETHER_HOSTED === '1';
   } catch {
     return false;
   }

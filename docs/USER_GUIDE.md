@@ -280,9 +280,11 @@ joins you. Up to 16 people share a room.
   the text field. **Leave visit** disconnects.
 - Only where people are and what they say is shared. The world itself is not:
   doors, the time of day or anything else you change stay on your screen.
-- Shared visits need the Aether server (the local app, `npm run aether --
-  start`, or a self-hosted server). On the static hosted site the Invite button
-  does not appear yet.
+- Shared visits go through the Aether server when there is one (the local
+  app, `npm run aether -- start`, or a self-hosted server). The static hosted
+  site has no server: there they go through the site's Supabase Realtime
+  project instead, with the same rules (16 people a room, message and chat
+  limits). Where neither is available the Invite button does not appear.
 
 ## 10. Projects and recovery
 

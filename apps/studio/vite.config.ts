@@ -58,6 +58,9 @@ export default defineConfig(async ({ command }) => {
   // __AETHER_COOKED_BASE__: where the player reads templates' cooked packages (player/source.ts): AETHER_COOKED_BASE, else the
   // hosted dataset for builds and the dev server's own cooked/ folder in dev.
   define: { __AETHER_LIB_LEAN__: JSON.stringify(libCdn !== undefined), __AETHER_GEN_VERSION__: JSON.stringify(await generationCodeVersion()), __AETHER_COOKED_BASE__: JSON.stringify(process.env['AETHER_COOKED_BASE'] ?? (command === 'build' ? HOSTED_COOKED_BASE : './cooked/')) },
+  // `.env*` files are read from the repository root (only `VITE_*` variables reach the bundle: the public Supabase URL and key
+  // of shared visits on a static host, player copresence/supabase.ts).
+  envDir: fileURLToPath(new URL('../..', import.meta.url)),
   // Rapier's wasm ships as a cached `.wasm` file (streaming compile) instead of a 4 MB base64 string.
   plugins: [react(), rapierWasm({ warn: (m) => console.warn(m) }), assetLibrary(LIBRARY_DIR, libCdn), playRoute(), hubProxy(hubConfig.dataset), playerManifest(), siteMeta(), editorPrefetch()],
   experimental: {
@@ -122,6 +125,8 @@ export default defineConfig(async ({ command }) => {
             // QuickJS loads only when a world runs or validates a script: keep it out of the eager vendor chunk.
             { name: 'quickjs', test: /[\\/]node_modules[\\/](quickjs-emscripten-core|@jitl)[\\/]/, priority: 30 },
             // The opt-in on-device model runtime (multi-MB): only loaded from Settings → AI connection.
+            // Supabase Realtime (shared visits on a static host): loaded only by the player's copresence/supabase.ts.
+            { name: 'realtime', test: /[\\/]node_modules[\\/](@supabase|tslib)[\\/]/, priority: 30 },
             { name: 'webllm', test: /[\\/]node_modules[\\/](@mlc-ai|loglevel)[\\/]/, priority: 30 },
             // onnxruntime-web (the photo depth/perception model runtime, ~300 kB) is only imported dynamically: keep it out of the eager vendor chunk.
             { name: 'ort', test: /[\\/]node_modules[\\/]onnxruntime-(web|common)[\\/]/, priority: 30 },

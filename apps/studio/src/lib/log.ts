@@ -9,7 +9,7 @@ const ORDER: Record<Level, number> = { debug: 10, info: 20, warn: 30, error: 40 
 
 function detectDebug(): boolean {
   try {
-    if (import.meta.env?.DEV) return true;
+    if (import.meta.env.DEV) return true;
     return typeof location !== 'undefined' && new URLSearchParams(location.search).get('debug') === '1';
   } catch {
     return false;

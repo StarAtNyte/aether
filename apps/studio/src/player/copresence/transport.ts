@@ -2,9 +2,9 @@
  * How visitors of one shared link reach each other. A transport joins one room, broadcasts this visitor's messages
  * to everyone else in it and reports who joins and leaves; it carries {@link PresenceMessage}s and nothing else.
  *
- * Implementations: `broadcast.ts` (tabs of one browser; tests and local demos) and `websocket.ts` (the relay of the
- * Aether server, `/api/copresence/ws`). A hosted relay (Supabase Realtime) is meant to implement the same interface.
- * When none is reachable the player shows no shared-visit controls at all.
+ * Implementations: `broadcast.ts` (tabs of one browser; tests and local demos), `websocket.ts` (the relay of the
+ * Aether server, `/api/copresence/ws`, the first choice) and `supabase.ts` (Supabase Realtime, for the static hosted
+ * site). When none is reachable the player shows no shared-visit controls at all.
  */
 import type { PresenceMessage } from '@aether/core/copresence';
 
@@ -12,7 +12,7 @@ import type { PresenceMessage } from '@aether/core/copresence';
 export type TransportEnd = 'full' | 'lost' | 'closed';
 
 export interface CopresenceTransport {
-  /** 'websocket' or 'broadcast'. */
+  /** 'websocket', 'supabase' or 'broadcast'. */
   readonly kind: string;
   /** Join `roomId`; resolves with this visitor's peer id, rejects when the room cannot be joined (`full`, unreachable). */
   connect(roomId: string): Promise<string>;

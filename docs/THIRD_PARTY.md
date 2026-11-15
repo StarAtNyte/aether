@@ -56,6 +56,7 @@ bridge.
 | [react-dom](https://github.com/facebook/react) | 19.3.0 | MIT | `apps/studio` | UI | © Meta Platforms, Inc. and affiliates |
 | [zustand](https://github.com/pmndrs/zustand) | 5.0.15 | MIT | `apps/studio` | State | © 2019 Paul Henschel |
 | [@mlc-ai/web-llm](https://github.com/mlc-ai/web-llm) | 0.2.86 | Apache-2.0 | `apps/studio` | Opt-in on-device model, lazy chunk loaded only after the user opts in | © MLC contributors |
+| [@supabase/realtime-js](https://github.com/supabase/supabase-js/tree/master/packages/core/realtime-js) | 2.119.0 | MIT | `apps/studio` (player) | Shared visits on the hosted site (Supabase Realtime broadcast and presence); lazy chunk loaded only when a shared visit starts without a server relay | © Supabase, Inc. |
 | [hono](https://github.com/honojs/hono) | 4.13.13 | MIT | `apps/server` | HTTP server | © 2021–present Yusuke Wada and Hono contributors |
 | [@hono/node-server](https://github.com/honojs/node-server) | 2.1.4 | MIT | `apps/server` | Node adapter | © 2022–present Yusuke Wada and Hono contributors |
 | [tsx](https://github.com/privatenumber/tsx) | 4.23.15 | MIT | `apps/server`, `apps/cli`, `apps/bridge`, `packages/verifier` | TypeScript loader at run time; `smoke` and `e2e` scripts | © Hiroki Osame |
@@ -88,6 +89,8 @@ package is installed; each carries the licence of its parent package.
 | standardwebhooks | 1.1.1 | MIT | @anthropic-ai/sdk (webhook signature checks; unused by Aether) |
 | @stablelib/base64 | 1.0.1 | MIT | standardwebhooks |
 | fast-sha256 | 1.3.0 | Unlicense | standardwebhooks |
+| @supabase/phoenix | 0.4.5 | MIT | @supabase/realtime-js (the Phoenix channels client) |
+| tslib | 2.8.1 | 0BSD | @supabase/realtime-js |
 | @opentelemetry/api | 1.10.0 | Apache-2.0 | @anthropic-ai/sdk (optional tracing hooks; also vitest, dev) |
 
 Pulled in by `@modelcontextprotocol/sdk` (used by `apps/cli` and `apps/bridge` only; the stdio
@@ -1063,6 +1066,7 @@ Not used: Depth Anything V2 Base, Large and Giant (CC-BY-NC-4.0, non-commercial)
 | Claude Code CLI with the user's own sign-in (through the local bridge) | Optional AI connection | The user's installed `claude` binary is spawned; `@anthropic-ai/claude-agent-sdk` is **not** bundled (its licence is not open source) |
 | Netlify CLI, Vercel CLI, GitHub CLI (`gh`), itch.io `butler`, the user's own installs and logins | Optional "publish to your own hosting" from the local app | Spawned on the user's computer with the user's accounts and under each service's terms; Aether ships none of them, passes them no credentials and never deploys to an account of its own |
 | Blender with the [MCP for Blender](https://pypi.org/project/mcp-for-blender/) add-on and server (`mcp-for-blender` 2.2.7, MIT), the user's own installs | Optional Blender actions from the local app (scene info, viewport picture, Python with confirmation, GLB export, Cycles render and bake) | Off by default. Blender (GPL) runs as the user's own separate program; the server is started with `uvx mcp-for-blender==2.2.7` over stdio with telemetry off and talks to the add-on on `127.0.0.1` only. Aether ships neither; only three of its tools are callable (`get_scene_info`, `look`, `execute_blender_code`) |
+| [Supabase Realtime](https://supabase.com/terms) (the deployment's own project) | Shared visits on the hosted (static) site: broadcast and presence on one channel per world and room | Only when the build has `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (public, row-level security keeps the database closed) and the page has no server relay. Carries presence messages only (position, heading, body, colour, name, chat); nothing is stored |
 | Hugging Face and MLC model hosts (`huggingface.co` and its CDN hosts, `raw.githubusercontent.com`) | On-device model download, only after explicit opt-in | Only permissively licensed weights are offered: Qwen2.5 1.5B Instruct (Apache-2.0), Phi-3.5 mini Instruct (MIT), SmolLM2 1.7B Instruct (Apache-2.0). The visitor's browser downloads them directly from the host; Aether does not redistribute them |
 
 Model ids are configuration, not code. No model weights are bundled. With no

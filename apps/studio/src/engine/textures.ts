@@ -14,7 +14,14 @@ import type { History } from '@aether/core';
 const log = createLogger('textures');
 
 /** Where bundled worlds serve their texture maps from (the site root, honouring Vite's base). */
-const SITE_ROOT = (typeof import.meta !== 'undefined' && (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL) || '/';
+const SITE_ROOT = ((): string => {
+  try {
+    // Named, not `import.meta.env?.…`: that would put every build variable in the chunk. Throws outside Vite.
+    return import.meta.env.BASE_URL || '/';
+  } catch {
+    return '/';
+  }
+})();
 
 /** Browser WebP encoder for the texture maps (canvas); falls back to PNG when WebP encoding is unavailable. */
 export const webpEncoder: MapEncoder = async (rgba, size, _map, quality) => {

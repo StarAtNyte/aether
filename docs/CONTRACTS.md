@@ -3585,7 +3585,7 @@ a strict v1 receiver without it would drop such a hello.)
 ### Relay (`apps/server/src/copresence/`, `routes/copresence.ts`)
 
 - `GET /api/copresence` → `{ ok: true, v: 1, maxPeers: 16 }`; the player asks it first, and a host without it (the
-  static Vercel site) shows no shared-visit controls.
+  static Vercel site) uses Supabase Realtime when the build has a project, else shows no shared-visit controls.
 - `GET /api/copresence/ws?world=<slug>&room=<id>` with `Upgrade: websocket` on the server's own port (`main.ts`
   `attachCopresence`, so `aether start` serves it and the player's `connect-src 'self'` covers it; Vite dev and
   preview proxy it with `ws: true`). The upgrade request first runs through the Hono app, so it passes the Host guard,
@@ -3603,8 +3603,25 @@ a strict v1 receiver without it would drop such a hello.)
 - `transport.ts`: `CopresenceTransport` (`connect(roomId)` → own peer id, `send`, `onMessage`, `onPeerJoin`,
   `onPeerLeave`, `onEnd`, `close`). `websocket.ts`: the server relay (`relayAvailable`, `relayUrl`). `broadcast.ts`:
   tabs of one browser over `BroadcastChannel` (`#…&room=<id>&relay=tabs`; tests and local demos; join / here / beat
-  every 2 s / leave, a tab silent 7 s is gone). A hosted relay (Supabase Realtime broadcast + presence) is to implement
-  the same interface; there is none yet.
+  every 2 s / leave, a tab silent 7 s is gone). `supabase.ts`: Supabase Realtime for the static hosted site (below).
+- Choice (`CopresenceUI.tsx`): `relay=tabs` → tabs; else the server relay when `GET /api/copresence` answers; else
+  Supabase when the build has `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (or `VITE_SUPABASE_PUBLISHABLE_KEY`;
+  public values, read from the repository root's `.env*` locally and from the project's environment on Vercel); else no
+  shared-visit controls. `supabase.ts` and `@supabase/realtime-js` are a lazy chunk (`realtime` in vite.config.ts)
+  fetched only in that last case.
+- Supabase transport (`SupabaseTransport`): one public channel `aether-copresence:<world>/<room>` per world and room;
+  each visitor tracks an empty presence under its own random peer id as the presence key, and sends broadcast event
+  `m` with payload `{ f: <its presence key>, m: <PresenceMessage as a JSON string> }`. With no server in between the
+  client enforces the relay's rules: it counts the room from the first presence sync and refuses to join a full one
+  (16, `full`), and lists at most 15 others; the sender of a message is `f` only when `f` is a present key held by one
+  connection (a key claimed twice counts for no one), and the message itself is still run through `parsePresence`
+  (1024 bytes of UTF-8 at most, both ways); 20 messages/s (burst 40) and 20 chat lines/min (burst 5) per visitor, applied
+  to its own sending and to each peer on arrival; a peer with 200 dropped messages, or that said `bye`, is ignored until
+  its presence goes. A message from a key whose presence has not arrived yet is held up to 4 s (6 per key, 32 keys)
+  and delivered once it is present. Limits of this: a crafted client can still put another present visitor's key in
+  `f` (no server stamps the sender), and Supabase's own project quotas apply. CSP: the studio's and the player's
+  `connect-src` allow exactly the project's `https:` and `wss:` origin (`SUPABASE_HOSTS` in apps/server
+  `middleware.ts`, equal in vercel.json; `apps/server/test/csp.test.ts`); published builds (`BUILD_PLAY_CSP`) do not.
 - `session.ts` (`CopresenceSession`): hello, rate- and change-limited state, peers, chat (last 60 lines).
 - `interpolate.ts` (`PoseBuffer`): sender clock mapped by the smallest delay seen, drawn 100 ms behind, linear
   position and shortest-arc heading, holds the newest sample, never slides through a jump over 12 m.

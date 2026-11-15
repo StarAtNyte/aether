@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { BYOK_ORIGINS } from '../../studio/src/ai/byokCatalog';
-import { BUILD_PLAY_CSP, BYOK_API_HOSTS, COOKED_HOSTS, CSP_DIRECTIVES, HUB_IMAGE_HOSTS, DAG_WORKER_CSP, DAG_WORKER_PATH, PLAY_CSP, SANDBOX_WORKER_CSP, SANDBOX_WORKER_PATH, TRANSCODER_WORKER_CSP, TRANSCODER_WORKER_PATH, VERIFY_WORKER_CSP, VERIFY_WORKER_PATH } from '../src/middleware';
+import { BUILD_PLAY_CSP, BYOK_API_HOSTS, COOKED_HOSTS, CSP_DIRECTIVES, HUB_IMAGE_HOSTS, DAG_WORKER_CSP, DAG_WORKER_PATH, PLAY_CSP, SANDBOX_WORKER_CSP, SUPABASE_HOSTS, SANDBOX_WORKER_PATH, TRANSCODER_WORKER_CSP, TRANSCODER_WORKER_PATH, VERIFY_WORKER_CSP, VERIFY_WORKER_PATH } from '../src/middleware';
 import { cleanupDirs, makeApp, makeConfig } from './helpers';
 
 type Policy = Map<string, string[]>;
@@ -170,7 +170,7 @@ describe('player page policy (/play, published builds)', () => {
   it('is strict, reads only the cooked-package hosts and may be embedded', () => {
     const p = parsePolicy(PLAY_CSP);
     expect(p.get('script-src')).toEqual(["'self'", "'wasm-unsafe-eval'"].sort());
-    expect(p.get('connect-src')).toEqual(["'self'", 'blob:', 'data:', ...COOKED_HOSTS].sort());
+    expect(p.get('connect-src')).toEqual(["'self'", 'blob:', 'data:', ...COOKED_HOSTS, ...SUPABASE_HOSTS].sort());
     // The dataset's resolve URLs, and the CDN host its packs redirect to (checked against the live dataset).
     expect([...COOKED_HOSTS].sort()).toEqual(['https://cdn-lfs-us-1.hf.co', 'https://cdn-lfs.hf.co', 'https://huggingface.co', 'https://us.aws.cdn.hf.co']);
     expect(p.get('object-src')).toEqual(["'none'"]);
@@ -178,12 +178,12 @@ describe('player page policy (/play, published builds)', () => {
     for (const [name, sources] of p) {
       expect(sources, name).not.toContain("'unsafe-eval'");
       if (name !== 'style-src') expect(sources, name).not.toContain("'unsafe-inline'");
-      if (name !== 'frame-ancestors' && name !== 'connect-src') for (const s of sources) expect(s, `${name} ${s}`).not.toMatch(/^https?:|\*/);
+      if (name !== 'frame-ancestors' && name !== 'connect-src') for (const s of sources) expect(s, `${name} ${s}`).not.toMatch(/^(https?|wss?):|\*/);
     }
     // The generation lanes fetch the packs from their worker, which is served under /assets/ with the studio policy.
     for (const h of COOKED_HOSTS) expect(serverPolicy().get('connect-src'), h).toContain(h);
     // A published build's page is the same policy without any third-party host.
-    expect(BUILD_PLAY_CSP).toBe(PLAY_CSP.replace(` ${COOKED_HOSTS.join(' ')}`, ''));
+    expect(BUILD_PLAY_CSP).toBe(PLAY_CSP.replace(` ${[...COOKED_HOSTS, ...SUPABASE_HOSTS].join(' ')}`, ''));
   });
 
   it('is the same on the static deployment and the Node server, which also serves /play', async () => {
@@ -209,6 +209,23 @@ describe('player page policy (/play, published builds)', () => {
     const studio = await app.request('/api/health');
     expect(studio.headers.get('x-frame-options')).toBe('DENY');
     cleanupDirs();
+  });
+});
+
+describe('shared visits on the hosted site (Supabase Realtime)', () => {
+  it('lets the studio and the player reach exactly one Supabase project, over https: and wss:, for connections only', () => {
+    expect(SUPABASE_HOSTS).toHaveLength(2);
+    const [https, wss] = SUPABASE_HOSTS.map((h) => new URL(h));
+    expect(https?.protocol).toBe('https:');
+    expect(wss?.protocol).toBe('wss:');
+    expect(https?.host).toBe(wss?.host);
+    expect(https?.host).toMatch(/^[a-z0-9]{20}\.supabase\.co$/);
+    for (const h of SUPABASE_HOSTS) expect(new URL(h).pathname, h).toBe('/');
+    for (const policy of [serverPolicy(), parsePolicy(PLAY_CSP)]) {
+      expect(policy.get('connect-src')?.filter((s) => s.includes('supabase')).sort()).toEqual([...SUPABASE_HOSTS].sort());
+      for (const [name, sources] of policy) if (name !== 'connect-src') expect(sources.filter((s) => s.includes('supabase')), name).toEqual([]);
+    }
+    expect(BUILD_PLAY_CSP).not.toMatch(/supabase/);
   });
 });
 

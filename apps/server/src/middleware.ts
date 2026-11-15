@@ -129,6 +129,13 @@ export const LIBRARY_CDN_HOSTS: readonly string[] = Object.freeze(['https://cdn.
  */
 export const BYOK_API_HOSTS: readonly string[] = Object.freeze(['https://api.anthropic.com', 'https://api.openai.com', 'https://openrouter.ai', 'https://generativelanguage.googleapis.com']);
 
+/**
+ * The deployment's Supabase project (its `VITE_SUPABASE_URL`): shared visits on the hosted, static site go through its
+ * Realtime service (player `copresence/supabase.ts`) over `wss:`; `https:` for its REST fallback. Exactly this one
+ * project, no wildcard. Published builds (`BUILD_PLAY_CSP`) do not get it.
+ */
+export const SUPABASE_HOSTS: readonly string[] = Object.freeze(['https://xzmbpsrcdikqmfxhthpt.supabase.co', 'wss://xzmbpsrcdikqmfxhthpt.supabase.co']);
+
 /** Content-Security-Policy directives for the studio and API responses. */
 export const CSP_DIRECTIVES = Object.freeze({
   defaultSrc: ["'self'"],
@@ -141,7 +148,7 @@ export const CSP_DIRECTIVES = Object.freeze({
   // Loopback (any port): the visitor's own Aether Bridge (token-paired, see apps/bridge) — the only wildcard.
   // The explicit hosts serve the opt-in on-device model (WebLLM weights and model libraries)
   // and the model APIs a user's own key is sent to (never to Aether's server).
-  connectSrc: ["'self'", 'blob:', 'data:', 'http://127.0.0.1:*', 'http://localhost:*', ...BYOK_API_HOSTS, ...WEBLLM_HOSTS, ...HF_CDN_HOSTS, ...LIBRARY_CDN_HOSTS],
+  connectSrc: ["'self'", 'blob:', 'data:', 'http://127.0.0.1:*', 'http://localhost:*', ...BYOK_API_HOSTS, ...WEBLLM_HOSTS, ...HF_CDN_HOSTS, ...LIBRARY_CDN_HOSTS, ...SUPABASE_HOSTS],
   styleSrc: ["'self'", "'unsafe-inline'"],
   fontSrc: ["'self'", 'data:'],
   objectSrc: ["'none'"],
@@ -200,13 +207,13 @@ export const COOKED_HOSTS: readonly string[] = Object.freeze(['https://huggingfa
 /**
  * Content-Security-Policy of the standalone player (`/play`): the same strict
  * script policy as the studio, no AI host and no bridge (the player talks to
- * neither), only the cooked-package hosts above in `connect-src`, and
+ * neither), only the cooked-package hosts and the Supabase project (shared visits) above in `connect-src`, and
  * embeddable in other sites (`frame-ancestors *`), so a published game can be
  * put in an `<iframe>`. It runs no editor and holds no keys. A downloaded
  * build (publish/gameBuild.ts) keeps its own policy with no third-party host.
  */
 export const PLAY_CSP =
-  "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob: data: https://huggingface.co https://us.aws.cdn.hf.co https://cdn-lfs.hf.co https://cdn-lfs-us-1.hf.co; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors *";
+  "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob: data: https://huggingface.co https://us.aws.cdn.hf.co https://cdn-lfs.hf.co https://cdn-lfs-us-1.hf.co https://xzmbpsrcdikqmfxhthpt.supabase.co wss://xzmbpsrcdikqmfxhthpt.supabase.co; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors *";
 /**
  * Content-Security-Policy of a published build (the local library's `/published/<id>/…`, a build served on the LAN): the
  * player's policy with no third-party host at all, as a downloaded build's own (publish/gameBuild.ts). A build ships its
