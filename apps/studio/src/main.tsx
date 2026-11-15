@@ -29,7 +29,7 @@ import { applyTheme, themeFromSetting } from './lib/theme';
 import { installTooltips } from './components/ui/tooltips';
 import { extractBridgeLink } from './ai/deepLink';
 import { installGlobalErrorReporting, serverErrorReporter, type GlobalErrorTarget } from './lib/globalErrors';
-import { installStaleDeployReload } from './components/ErrorBoundary';
+import { installStaleDeployReload } from './components/staleDeploy';
 
 // A deploy that replaced the files under an open page: reload once into the new build.
 installStaleDeployReload();

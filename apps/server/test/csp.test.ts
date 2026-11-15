@@ -193,8 +193,10 @@ describe('player page policy (/play, published builds)', () => {
     expect(rule?.headers.find((x) => x.key === 'Content-Security-Policy')?.value).toBe(PLAY_CSP);
     expect(rule?.headers.some((x) => x.key === 'X-Frame-Options')).toBe(false);
     expect(config.rewrites[0]).toEqual({ source: '/play', destination: '/play.html' });
-    // The page rule does not also apply to /play (two CSP headers would combine).
-    const main = new RegExp(`^${config.headers[0]?.source}$`);
+    // The page rule (the catch-all that carries the studio policy) does not also apply to /play (two CSP headers would combine).
+    const pageRule = config.headers.find((h) => h.source.startsWith('/((?!'));
+    expect(pageRule?.headers.some((x) => x.key === 'Content-Security-Policy')).toBe(true);
+    const main = new RegExp(`^${pageRule?.source}$`);
     expect(main.test('/play')).toBe(false);
     expect(main.test('/play.html')).toBe(false);
     expect(main.test('/playground')).toBe(true);

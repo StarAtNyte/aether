@@ -11,7 +11,7 @@ import { axisDirections, MAX_LABELS, projectPoint } from '../src/engine/viewOver
 import { shortcut, isApplePlatform } from '../src/lib/keys';
 import { humanize } from '../src/components/fields';
 import { InputController } from '../src/engine/input';
-import { TEMPLATES, templateBySlug, templateThumbnail, SUGGESTION_CHIPS } from '../src/lib/examples';
+import { TEMPLATES, templateBySlug, templateThumbnail, templateImage, SUGGESTION_CHIPS } from '../src/lib/examples';
 import { MAX_THUMBNAIL_BYTES } from '../src/projects/model';
 
 function emptyWorld(): WorldDoc {
@@ -65,9 +65,12 @@ describe('thumbnails', () => {
     expect(fitThumbnail(new Blob([]))).toBe(false);
     expect(fitThumbnail(new Blob([new Uint8Array(MAX_THUMBNAIL_BYTES + 1)]))).toBe(false);
   });
-  it('ships one template thumbnail path per template', () => {
+  it('ships one card image per template (a film shows its poster, a world its thumbnail)', () => {
     expect(TEMPLATES.length).toBeGreaterThanOrEqual(9);
-    for (const t of TEMPLATES) expect(existsSync(fileURLToPath(new URL(`../public${templateThumbnail(t.slug)}`, import.meta.url))), t.slug).toBe(true);
+    for (const t of TEMPLATES) {
+      expect(templateImage(t), t.slug).toBe(t.film ? t.film.poster : templateThumbnail(t.slug));
+      expect(existsSync(fileURLToPath(new URL(`../public${templateImage(t)}`, import.meta.url))), t.slug).toBe(true);
+    }
     expect(templateThumbnail('coin-island')).toBe('/templates/coin-island.webp');
     expect(templateBySlug('domino-run')?.title).toBe('Domino run');
     expect(templateBySlug('../etc')).toBeUndefined();

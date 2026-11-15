@@ -63,6 +63,7 @@ bridge.
 | [@gltf-transform/core](https://github.com/donmccurdy/glTF-Transform) | 4.5.1 | MIT | `apps/cli` (runtime); root (dev, asset build scripts) | Headless glTF writing in `aether mcp`; asset and character build scripts | © 2024 Don McCurdy |
 | [@openai/codex-sdk](https://github.com/openai/codex) | 0.162.1 | Apache-2.0 | `apps/bridge` | Local Aether Bridge only; never in the browser bundle or the hosted server | © OpenAI |
 | [esbuild](https://github.com/evanw/esbuild) | 0.28.2 | MIT | `apps/bridge` (also pulled in by tsx and vite) | Bundles the asset checker (`check.mjs`) handed to the local coding agent; TypeScript transform inside tsx | © 2020 Evan Wallace |
+| [@anthropic-ai/sdk](https://github.com/anthropics/anthropic-sdk-typescript) | 1.3.0 | Apache-2.0 | root (`api/_lib/llm.ts`) | The deployment's `/api/llm` function calls Claude with the deployment's key; server side only, never in the studio bundle | © Anthropic, PBC |
 
 ## Code dependencies: transitive runtime
 
@@ -81,6 +82,13 @@ package is installed; each carries the licence of its parent package.
 | @openai/codex | 0.162.1 | Apache-2.0 (package.json; the npm package ships no LICENCE file) | @openai/codex-sdk. The Codex CLI; runs only on the user's machine inside the bridge |
 | @openai/codex-&lt;platform&gt; (for example `@openai/codex-linux-x64`) | 0.162.1 | Apache-2.0 (no LICENCE file in the package) | @openai/codex; native binary |
 | fsevents | 2.3.3 | MIT | tsx, vite; optional, macOS only, not installed on Linux |
+| json-schema-to-ts | 3.1.1 | MIT | @anthropic-ai/sdk (types for tool input schemas) |
+| ts-algebra | 2.0.0 | MIT | json-schema-to-ts |
+| @babel/runtime | 7.29.13 | MIT | json-schema-to-ts |
+| standardwebhooks | 1.1.1 | MIT | @anthropic-ai/sdk (webhook signature checks; unused by Aether) |
+| @stablelib/base64 | 1.0.1 | MIT | standardwebhooks |
+| fast-sha256 | 1.3.0 | Unlicense | standardwebhooks |
+| @opentelemetry/api | 1.10.0 | Apache-2.0 | @anthropic-ai/sdk (optional tracing hooks; also vitest, dev) |
 
 Pulled in by `@modelcontextprotocol/sdk` (used by `apps/cli` and `apps/bridge` only; the stdio
 server never starts the HTTP transports, so Express is loaded but not served):

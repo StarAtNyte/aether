@@ -193,7 +193,7 @@ describe('Cloudwatch Harbour', () => {
     expect(d).toBeGreaterThanOrEqual(60);
     expect(d).toBeLessThanOrEqual(120);
     for (const s of w.story!.shots) for (const m of s.moves) expect(Object.hasOwn(w.entities, m.entity) || m.entity === 'cw-train' || m.entity === 'cw-mio').toBe(true);
-    expect(w.entities['cw-kaho']?.character?.body).toBe('kaho');
+    expect(w.entities['cw-kaho']?.character?.body).toBe('kaho-vrm');
   });
 
   it('lets go of a held clip when a later shot walks the person (Kaho steps up the stair after the look up)', () => {

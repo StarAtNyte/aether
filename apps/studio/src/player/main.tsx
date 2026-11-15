@@ -4,10 +4,12 @@
  * logic, the block game and the player UI; no editor and no agent code.
  */
 // The page paints its own loading screen (play.html); the engine, renderer and player UI load after it.
-// Evaluated first: core configures zod (jitless) before any schema is defined.
-import '@aether/core';
+// Evaluated first: zod is configured (jitless, no `new Function` under the CSP) before any schema is defined. Only the
+// configuration, not the whole of core: core's schemas are shared with the player chunk, so a bare `import '@aether/core'`
+// here put every one of them (about 43 kB gzip) in the shell's first download.
+import '@aether/core/zod-config';
 import { registerOfflineCache } from './offline';
-import { installStaleDeployReload } from '../components/ErrorBoundary';
+import { installStaleDeployReload } from '../components/staleDeploy';
 
 // A deploy that replaced the files under an open page: reload once into the new build.
 installStaleDeployReload();
