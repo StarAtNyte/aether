@@ -100,6 +100,8 @@ export const CompletionRequestSchema = z
     tools: z.array(ToolDefSchema).max(LLM_LIMITS.MAX_TOOLS).optional(),
     maxTokens: z.number().int().min(1).max(1_000_000).optional(),
     temperature: z.number().min(0).max(2).optional(),
+    // Sent by the agent's review cross-check and photo judges (packages/agent/src/wire.ts); providers that cannot use it ignore it.
+    seed: z.number().int().min(0).max(2_147_483_647).optional(),
   })
   .strict()
   .superRefine((req, ctx) => {

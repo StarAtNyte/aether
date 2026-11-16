@@ -31,6 +31,14 @@ describe('POST /api/llm — validation', () => {
     expect(await res.json()).toMatchObject({ content: [{ type: 'text', text: 'hello' }], stopReason: 'end' });
   });
 
+  it('accepts the seed the agent sends with its judges and review cross-check', async () => {
+    const res = await app().request('/api/llm', post(completionBody({ temperature: 0, seed: 7 })));
+    expect(res.status).toBe(200);
+  });
+  it('rejects a negative or fractional seed', async () => {
+    await expectInvalid(completionBody({ seed: -1 }));
+    await expectInvalid(completionBody({ seed: 1.5 }));
+  });
   it('rejects a bad role', () => expectInvalid(completionBody({ role: 'admin' })));
   it('rejects unknown keys', () => expectInvalid(completionBody({ apiKey: 'x' })));
   it('rejects an oversized system prompt', () => expectInvalid(completionBody({ system: 'x'.repeat(LLM_LIMITS.MAX_SYSTEM_CHARS + 1) })));
