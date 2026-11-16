@@ -91,6 +91,7 @@ export const TEMPLATE_PUBLISH: Readonly<Record<string, TemplatePublish>> = Objec
   'sanctuary-ascent': SHOW,
   'desert-citadel': SHOW,
   'himalayan-valley': SHOW,
+  'rug-exhibition-hall': WALK,
   // Rooms rebuilt from a photograph
   'photo-hotel-bedroom': WALK,
   'photo-twin-room': WALK,

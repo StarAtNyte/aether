@@ -66,7 +66,7 @@ describe('the home Featured gallery', () => {
 
   it('marks multiplayer worlds on Featured and Templates cards, and only those open shared visits (keyed by slug)', async () => {
     const multi = SHOWCASE.filter((e) => e.multiplayer);
-    expect(multi.map((e) => e.slug)).toEqual(['himalayan-valley']);
+    expect(multi.map((e) => e.slug)).toEqual(['himalayan-valley', 'rug-exhibition-hall']);
     for (const e of multi) expect(e.slug).toMatch(WORLD_KEY_RE);
     const featured = renderToStaticMarkup(createElement(Featured, { onRemix: () => undefined }));
     expect(featured.match(/>Multiplayer</g)?.length).toBe(FEATURED_TEMPLATES.filter((t) => t.multiplayer).length);

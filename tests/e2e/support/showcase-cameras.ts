@@ -30,6 +30,8 @@ export const COVER_CAMERAS: Readonly<Record<string, CoverCamera>> = Object.freez
   // Inside: the auditorium from the back rows to the screen, and the dining room from the door to the counter.
   'starlight-cinema': { pos: [-4, 4.4, -5], target: [1, 2.4, -22] },
   'evening-bistro': { pos: [11.2, 2.3, 11.2], target: [4, 0.6, 5] },
+  // From the east end at eye level: the roped-off plinths of rugs down the hall, the hung rugs along the walls.
+  'rug-exhibition-hall': { pos: [27.5, 1.9, 7.2], target: [5, 0.4, 5.5] },
   // Over the east-bank village up the valley: battered whitewashed houses and poplars by the river, the waterfall in its rock
   // amphitheatre on the left, the monastery on its crag and the peaks at the head of the valley.
   'himalayan-valley': { pos: [52, 22, 80], target: [-15, 9, -35] },
