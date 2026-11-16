@@ -27,7 +27,7 @@ export const LLM_CAPS = Object.freeze({
   /** Output tokens per call (non-streaming). */
   maxOutputTokens: 16_000,
   /** Calls per client IP per window. */
-  perIp: 40,
+  perIp: 150,
   perIpWindowMs: 10 * 60_000,
   /** Calls per instance per hour (all visitors). */
   global: 1500,
