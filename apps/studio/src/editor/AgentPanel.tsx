@@ -320,10 +320,11 @@ const Composer = memo(function Composer({ onSend, busy }: { onSend: (text: strin
     >
       {queued.length > 0 && (
         <ul className="composer__queue" aria-label="Queued messages" data-testid="queued-messages">
+          <li className="composer__queue-head" aria-hidden="true">Queued, sent when the current step finishes</li>
           {queued.map((q, i) => (
             <li key={`${i}-${q.slice(0, 12)}`} className="composer__queued">
               <span className="composer__queued-text" title={q}>{q}</span>
-              <button type="button" className="composer__image-x" aria-label={`Remove queued message ${i + 1}`} onClick={() => studio.store.getState().removeQueued(i)}>
+              <button type="button" className="composer__queued-x" aria-label={`Remove queued message ${i + 1}`} onClick={() => studio.store.getState().removeQueued(i)}>
                 <Icon name="x" />
               </button>
             </li>
