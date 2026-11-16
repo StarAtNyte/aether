@@ -190,7 +190,7 @@ export interface PublishHost {
 function initialState(world: WorldDoc): PublishState {
   return {
     open: false,
-    target: 'game',
+    target: 'share',
     job: null,
     result: null,
     previewCanvas: null,
@@ -1079,11 +1079,11 @@ export class PublishController {
       const imports = world.entities ? Object.values(world.entities).filter((e) => e.shape.kind === 'asset' && /^user-/.test((e.shape as { id?: string }).id ?? '')).length : 0;
       const notes: string[] = [];
       if (published) notes.push('Short link: the world and its cooked copy are on the public dataset.');
-      else if (!enc.fits) notes.push('This world is too large for a link (over 1.5 MB). Publish a cooked copy below for a short link, download the game or publish it to your hosting.');
-      else if (enc.chars > 1_000_000) notes.push('Firefox opens links up to about 1 MB and this one is larger: for Firefox players, download the game or publish it to your hosting.');
-      else if (enc.chars > LONG_LINK_CHARS) notes.push('This is a long link: it works in browsers, but some chat apps cut long links. A downloaded or hosted game always works.');
+      else if (!enc.fits) notes.push('This world is too large for a link (over 1.5 MB). Make a short link below, download the website or put it on your own hosting.');
+      else if (enc.chars > 1_000_000) notes.push('Firefox opens links up to about 1 MB and this one is larger: for Firefox players, download the website or put it on your own hosting.');
+      else if (enc.chars > LONG_LINK_CHARS) notes.push('This is a long link: it works in browsers, but some chat apps cut long links. A short link, or a downloaded or hosted website, always works.');
       if (!qr && (enc.fits || published)) notes.push('Too long for a QR code: share the link itself.');
-      if (proof && !enc.sealed && !published) notes.push('The replay seal is too large for a link: publish the game to include it.');
+      if (proof && !enc.sealed && !published) notes.push('The replay proof is too large for a link: download the website to include it.');
       if (imports > 0) notes.push(`${imports} imported file${imports > 1 ? 's' : ''} cannot travel in a link and show as stand-ins. Publish the game to include them.`);
       this.set({ share: { value: enc.fits ? enc.value : null, chars: enc.chars, fits: enc.fits, qr, qrSize, note: notes.join(' ') || null } });
     } catch (e) {
@@ -1247,7 +1247,7 @@ export class PublishController {
   /** Build the game and download it as a zip. */
   async downloadGame(): Promise<void> {
     if (!this.ensureEditMode()) return;
-    const signal = this.begin('game', 'Building the game…');
+    const signal = this.begin('game', 'Building the website…');
     if (!signal) return;
     try {
       const b = await this.buildGameZip(signal);
@@ -1256,9 +1256,9 @@ export class PublishController {
       this.finish(this.resultFor('game', blob, b.fileName, detail));
       downloadBlob(blob, b.fileName);
       void this.record('game', blob, { fileName: b.fileName, mime: 'application/zip', detail, title: this.state.getState().meta.title || this.host.history.current.name, ...(await this.thumbOpt()) });
-      void this.snapshot('Published as a game');
+      void this.snapshot('Published as a website');
     } catch (e) {
-      this.finish(null, isAbort(e) ? 'Cancelled.' : `The game could not be built: ${errorMessage(e)}`);
+      this.finish(null, isAbort(e) ? 'Cancelled.' : `The website could not be built: ${errorMessage(e)}`);
     }
   }
 
@@ -1309,7 +1309,7 @@ export class PublishController {
   /** Deploy the game to the user's own hosting through their CLI. */
   async deploy(target: HostId, opts: { name?: string; itch?: string }): Promise<void> {
     if (!this.ensureEditMode()) return;
-    const signal = this.begin('game', 'Building the game…');
+    const signal = this.begin('game', 'Building the website…');
     if (!signal) return;
     const hosting = (): PublishState['hosting'] => this.state.getState().hosting;
     this.set({ hosting: { ...hosting(), deploying: target, log: [] } });
@@ -1357,7 +1357,7 @@ export class PublishController {
       return;
     }
     if (!this.ensureEditMode()) return;
-    const signal = this.begin('game', 'Building the game…');
+    const signal = this.begin('game', 'Building the website…');
     if (!signal) return;
     try {
       const build = await this.ensureLibraryBuild(signal);

@@ -5,6 +5,13 @@ and `docs/REVIEW_LOG.md` carries the measured detail. Workspace packages share t
 
 ## Unreleased
 
+- Publish is reorganised around the world: **How it opens** comes first, as cards (Walk through, Play, Showcase, City
+  tour, Short film, VR) with the fitting one marked Suggested, instead of two dropdowns under a tab called Game. The
+  tabs are grouped into **Share the world** (Link, opened by default; Website, formerly Game) and **Export a file**
+  (Video, Picture, 3D model, Floor plan). On Link the link comes first, with **Make a short link** (formerly
+  "Fast-loading link") right under it; the replay proof (formerly "Replay seal") and the player address are under More
+  options.
+
 - Added: shared visits (multiplayer co-presence). A world published with the new **Multiplayer (shared visits)** switch, and the built-in Himalayan Valley, lets everyone on one link see each other as VRM avatars with name tags, chat and an outfit colour of their own (eight swatches or one derived from the visitor's id). **Invite** copies a link with a room. Only presence and chat are shared, never the world. It runs over a WebSocket relay in the server (local app, self-hosted; 16 per room, origin, rate and size limits) or, on the static hosted site, over Supabase Realtime with the same limits enforced in the client; `AETHER_COPRESENCE=off` disables the relay. Multiplayer worlds carry a **Multiplayer** mark on Featured and Templates cards. See docs/USER_GUIDE.md section 9 and docs/CONTRACTS.md "Shared visits".
 - Added: spatial voice in shared visits. Browser-to-browser audio (WebRTC, public STUN, up to 8 talkers per room) signalled over the shared-visit transport; each voice is placed at its avatar's head (full to 2 m, silent by 40 m). Mic off by default, open mic or push-to-talk (hold V), per-person mute and volume, a speaking indicator on name tags. `Permissions-Policy` allows the microphone on the studio and player pages only.
 - Added: docs/ROADMAP.md.

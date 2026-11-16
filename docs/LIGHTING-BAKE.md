@@ -106,7 +106,7 @@ refresh (`scripts/cook-upload.ts`) counts a building template whose package has 
 
 ### From the editor
 
-A world published from the editor (Publish → Fast-loading link, `apps/studio/src/publish/cook-publish.ts`) gets the same
+A world published from the editor (Publish → Link → Make a short link, `apps/studio/src/publish/cook-publish.ts`) gets the same
 baked light, made in the publisher's browser: `WorldRenderer.publishLightBake` waits for the light volume on screen, takes the
 page's bake job (`LightmapController.bakeJob`, high: 1024², 256 rays, or the world's `lightBake`) and bakes it
 

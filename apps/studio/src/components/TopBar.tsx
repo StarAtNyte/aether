@@ -320,7 +320,7 @@ export const TopBar = memo(function TopBar({ layout }: { layout: LayoutMode }): 
               <Icon name="share" />
               <span className="btn__label">Share</span>
             </button>
-            <button type="button" className="btn btn--sm btn--primary" onClick={() => studio.publish.open()} disabled={playing} data-tip="Game, video, render, 3D model, floor plan or link" data-testid="topbar-publish">
+            <button type="button" className="btn btn--sm btn--primary" onClick={() => studio.publish.open()} disabled={playing} data-tip="Link, website, video, picture, 3D model or floor plan" data-testid="topbar-publish">
               <Icon name="rocket" />
               <span className="btn__label">Publish</span>
             </button>

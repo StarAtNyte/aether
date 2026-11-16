@@ -238,20 +238,35 @@ read-only viewer with Play, Export and **Remix**, which copies the world into
 your own projects. The link also carries the sealed proof, and the viewer can
 re-run it on the visitor's device.
 
-**Publish** opens one hub with presets, a preview, progress and Cancel:
+**Publish** opens one hub with presets, a preview, progress and Cancel. It
+starts with **How it opens**: cards for **Walk through** (a guided tour of the
+rooms at eye level), **Play** (a game with a title screen), **Showcase** (fly
+in, then orbit), **City tour**, **Short film** and **VR**. The card that fits the
+world is marked **Suggested** and already chosen; pick another to change it.
+The start view, the short film and the quality check sit under the cards.
+Then choose where it goes:
 
-- **Game:** a standalone web build (player only: renderer, physics, logic, no
+- **Link:** a link anyone can open. By default the world travels inside it
+  (nothing uploaded); **Make a short link** uploads a ready-to-draw copy instead,
+  so the link is short and opens fast; after an update that changes how worlds
+  are built it opens the slower way until you publish it again. QR code,
+  remix link and embed code are on the same tab; the replay proof and the
+  player address are under **More options**.
+- **Website:** a standalone web build (player only: renderer, physics, logic, no
   editor) with a title screen, pause menu, settings, credits, touch and
   controller support. Download it as a zip for itch.io, GitHub Pages,
   Netlify or any static host. In the local app you can also deploy it to
   **your own** Netlify, Vercel, GitHub Pages or itch.io account through the
   CLIs you are signed in to, or share it on your local network behind a
   random token.
+
+Or export a file:
+
 - **Video:** a keyframe camera timeline, presets (orbit, fly-through, dolly,
   crane, reveal…), and a director that turns words into shots ("slow dolly
   through the living room then rise above the roof"). Frames are rendered
   offline and encoded in the browser (MP4 or WebM).
-- **Render:** stills up to 4K (PNG, JPEG or WebP), rendered in tiles. A
+- **Picture:** stills up to 4K (PNG, JPEG or WebP), rendered in tiles. A
   path-traced still is available for architecture.
 - **3D model:** GLB or glTF with PBR materials. **Floor plan:** SVG or PDF at
   1:50 or 1:100.
@@ -267,8 +282,8 @@ Some worlds can be visited together: among the examples **Himalayan Valley**
 (marked **Multiplayer** on its card in Featured and Templates), and any world
 you publish with
 **Multiplayer (shared visits)** turned on. The switch is under the title-screen
-fields of **Game** and **Share** in the Publish dialog, off by default; it goes
-into the downloaded game (`game.json`), the share link and the published copy.
+fields of **Link** and **Website** in the Publish dialog, off by default; it goes
+into the downloaded website (`game.json`), the share link and the published copy.
 It only lets visitors see each other and chat; nothing else about your world
 changes.
 Open it in the player and press **Invite** (top right): the link to this world

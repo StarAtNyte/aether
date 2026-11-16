@@ -17,7 +17,7 @@ it.
 |---|---|
 | After every AI turn that changed the world (the studio, `Studio.send`) | The data checks and their fixes |
 | After a turn that built a new world | The data checks, then the visual review judged by the AI |
-| When the publish dialog opens on a world version not yet checked | The full pass. Results and what is left show in the Presentation section |
+| When the publish dialog opens on a world version not yet checked | The full pass. Results and what is left show in the How it opens section |
 | On demand | The **Quality pass** button in the publish dialog |
 
 Without a model (offline), the visual review falls back to measurements (dark, blown out or flat frames, and the

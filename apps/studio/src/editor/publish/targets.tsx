@@ -47,6 +47,14 @@ const Primary = ({ icon, children, onClick, disabled, testId, hint }: { icon: Ic
   </div>
 );
 
+/** Settings most people leave alone, folded away. */
+const MoreOptions = ({ children }: { children: ReactNode }): ReactElement => (
+  <details className="pub-more">
+    <summary>More options</summary>
+    {children}
+  </details>
+);
+
 function useBusy(): boolean {
   const studio = useStudio();
   return useStore(studio.publish.state, (s) => s.job?.running === true);
@@ -80,7 +88,7 @@ const MetaFields = memo(function MetaFields({ compact }: { compact?: boolean }):
           </select>
         </Field>
         <Field label="Description" wide>
-          <textarea className="input pub-textarea" rows={compact ? 2 : 3} maxLength={600} value={meta.description} placeholder="What is it, and what is the goal?" onChange={(e) => studio.publish.setMeta({ description: e.target.value })} />
+          <textarea className="input pub-textarea" rows={compact ? 2 : 3} maxLength={600} value={meta.description} placeholder="What is it? For a game, what is the goal?" onChange={(e) => studio.publish.setMeta({ description: e.target.value })} />
         </Field>
         {!compact && (
           <Field label="Controls" wide>
@@ -156,7 +164,7 @@ const Hosting = memo(function Hosting(): ReactElement {
       <div className="pub-note">
         <Icon name="info" />
         <span>
-          Publishing to your own Netlify, Vercel, GitHub Pages or itch.io account, and sharing on your local network, run in the Aether app on your computer — with the logins of your own command-line tools, never ours. Start it with <Cmd text="npx aether start --open" />, or keep using this page: run <Cmd text={`npx aether start --origin ${location.origin}`} /> and pair it in Settings → AI connection. Downloading the game works everywhere.
+          Publishing to your own Netlify, Vercel, GitHub Pages or itch.io account, and sharing on your local network, run in the Aether app on your computer — with the logins of your own command-line tools, never ours. Start it with <Cmd text="npx aether start --open" />, or keep using this page: run <Cmd text={`npx aether start --origin ${location.origin}`} /> and pair it in Settings → AI connection. Downloading the website works everywhere.
         </span>
       </div>
     );
@@ -214,8 +222,8 @@ export const SealSection = memo(function SealSection(): ReactElement {
   const studio = useStudio();
   const seal = useStore(studio.publish.state, (s) => s.seal);
   return (
-    <Section title="Replay seal" hint="Re-simulates your world's physics and rules headless and ships the result with it, so anyone can re-run the check on their own device. It is a deterministic replay check, not a formal proof.">
-      <Toggle label="Seal this world when publishing" hint="Adds a verifiable replay proof to the game and to share links" checked={seal.on} onChange={(v) => studio.publish.setSeal({ on: v })} />
+    <Section title="Replay proof" hint="Replays your world's physics and rules without a screen and ships the result with it, so anyone can re-run the check on their own device. It is a deterministic replay check, not a formal proof.">
+      <Toggle label="Add a replay proof" hint="To the website and to links" checked={seal.on} onChange={(v) => studio.publish.setSeal({ on: v })} />
       {seal.on && <Toggle label="Sign with this browser's key" hint="Shows later seals come from the same browser. It does not prove who you are" checked={seal.sign} onChange={(v) => studio.publish.setSeal({ sign: v })} />}
       {seal.on && seal.note && (
         <p className={`pub-muted${seal.status === 'failed' ? ' field-error' : ''}`} role="status" data-testid="publish-seal-note">
@@ -228,7 +236,7 @@ export const SealSection = memo(function SealSection(): ReactElement {
   );
 });
 
-/** Game: download, your own hosting, your network. */
+/** Website: download, your own hosting, your network. */
 export const GameTarget = memo(function GameTarget(): ReactElement {
   const studio = useStudio();
   const world = useWorld();
@@ -236,17 +244,19 @@ export const GameTarget = memo(function GameTarget(): ReactElement {
   const includeSave = useStore(studio.publish.state, (s) => s.game.includeSave);
   return (
     <>
-      <Section title="Title screen" hint="Shown before play, with a slow fly-through of your world behind it. The published game also has a pause menu, settings, credits, touch and controller support.">
+      <Section title="Title screen" hint="Shown first, with a slow fly-through of your world behind it. The website also has a pause menu, settings, credits, touch and controller support.">
         <MetaFields />
         {world.voxel && <Toggle label="Include my block-world save" hint="Players start from the world as you left it in play mode" checked={includeSave} onChange={(v) => studio.publish.setGame({ includeSave: v })} />}
       </Section>
-      <SealSection />
       <Primary icon="download" onClick={() => void studio.publish.downloadGame()} disabled={busy} testId="publish-game-download" hint="A complete static website: index.html, the player, your world and its assets. Upload it to itch.io (HTML game), GitHub Pages, Netlify or any static host. Plays offline and installs as an app.">
-        Download game (.zip)
+        Download website (.zip)
       </Primary>
-      <Section title="Publish to your own hosting">
+      <Section title="Put it online with your own account" hint="Netlify, Vercel, GitHub Pages or itch.io, signed in with your own command-line tools.">
         <Hosting />
       </Section>
+      <MoreOptions>
+        <SealSection />
+      </MoreOptions>
     </>
   );
 });
@@ -556,7 +566,7 @@ const CookedSection = memo(function CookedSection(): ReactElement {
   const cooked = useStore(studio.publish.state, (s) => s.cooked);
   const working = cooked.status === 'working';
   return (
-    <Section title="Fast-loading link" hint="Stores the world, its geometry, its shaders and a building's baked light (baked here, on this computer's cores) on a public dataset (Hugging Face), under an anonymous id kept in this browser: the link becomes short and opens without generating the world again, and a world too large for a link can be shared. Anyone with the link can download them. If the cooked copy goes stale, the link loads the world live.">
+    <Section title="Short link that opens fast" hint="Uploads your world, ready to draw (with its baked light), to a public dataset (Hugging Face) under an anonymous id kept in this browser. The link becomes short and opens without building the world again, even a world too large for a link. Anyone with the link can download it. After an Aether update that changes how worlds are built, it opens the slower way until you publish it again.">
       <div className="pub-link">
         {working ? (
           <button type="button" className="btn btn--sm" onClick={() => studio.publish.cancelCooked()} data-testid="publish-cooked-cancel">
@@ -564,7 +574,7 @@ const CookedSection = memo(function CookedSection(): ReactElement {
           </button>
         ) : (
           <button type="button" className="btn btn--primary btn--sm" onClick={() => void studio.publish.publishCooked()} data-testid="publish-cooked">
-            <Icon name="globe" /> {cooked.status === 'done' ? 'Publish again' : 'Publish cooked copy'}
+            <Icon name="globe" /> {cooked.status === 'done' ? 'Update the short link' : 'Make a short link'}
           </button>
         )}
       </div>
@@ -576,7 +586,7 @@ const CookedSection = memo(function CookedSection(): ReactElement {
       {cooked.label && (
         <p className="pub-muted" data-testid="publish-cooked-status">
           {cooked.label}
-          {cooked.status === 'done' ? ' The link above is now short and opens the cooked copy.' : ''}
+          {cooked.status === 'done' ? ' The link above is now the short one.' : ''}
         </p>
       )}
       {cooked.warnings && cooked.warnings.length > 0 && (
@@ -608,14 +618,9 @@ export const ShareTarget = memo(function ShareTarget(): ReactElement {
   const fill = Math.min(1, share.chars / MAX_FRAGMENT_CHARS);
   return (
     <>
-      <Section title="Title screen">
-        <MetaFields compact />
-      </Section>
-      <PlayerAddress />
-      <SealSection />
-      <Section title="Link" hint="The whole world travels inside the link, after the #. Browsers never send that part to a server, so nothing is uploaded or stored anywhere — the link is the game.">
+      <Section title="Link" hint={short ? 'A short link to the copy you uploaded. It opens fast for anyone.' : 'The whole world travels inside this link, after the #, so nothing is uploaded. Long links open slower and some chat apps cut them: make a short link below.'}>
         <div className="pub-link">
-          <input className="input input--mono" readOnly value={link ?? (share.fits ? 'Making the link…' : 'Too large for a link: publish a cooked copy below')} aria-label="Share link" data-testid="publish-share-link" onFocus={(e) => e.target.select()} />
+          <input className="input input--mono" readOnly value={link ?? (share.fits ? 'Making the link…' : 'Too large for a link: make a short link below')} aria-label="Share link" data-testid="publish-share-link" onFocus={(e) => e.target.select()} />
           <button type="button" className="btn btn--primary btn--sm" disabled={!link} onClick={() => void studio.publish.copyShareLink()} data-testid="publish-share-copy">
             <Icon name="copy" /> Copy
           </button>
@@ -640,7 +645,10 @@ export const ShareTarget = memo(function ShareTarget(): ReactElement {
         )}
       </Section>
       <CookedSection />
-      <Section title="Remix link" hint="Opens this world read-only in the studio; visitors can play it or press Remix to get their own editable copy. Like the player link, the world travels in the link.">
+      <Section title="Title screen">
+        <MetaFields compact />
+      </Section>
+      <Section title="Remix link" hint="Opens this world read-only in the studio; visitors can play it or press Remix to get their own editable copy. The world travels inside this link too.">
         <button type="button" className="btn btn--sm" onClick={() => void studio.share()} data-testid="publish-share-remix">
           <Icon name="copy" /> Copy remix link
         </button>
@@ -653,6 +661,10 @@ export const ShareTarget = memo(function ShareTarget(): ReactElement {
           </button>
         </Section>
       )}
+      <MoreOptions>
+        <PlayerAddress />
+        <SealSection />
+      </MoreOptions>
     </>
   );
 });

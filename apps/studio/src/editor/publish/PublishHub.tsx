@@ -1,6 +1,7 @@
 /**
- * The Publish hub: one panel for every way out of the editor — a playable
- * game (download, your own hosting, your local network), a video along a
+ * The Publish hub: one panel for every way out of the editor — how the world
+ * opens (walk through, play, showcase, city tour, film, VR), then a link or a
+ * website (download, your own hosting, your local network), or a video along a
  * cinematic camera path, a still render up to 4K, a 3D model, a floor plan
  * and a share link — each with presets, a preview, progress with Cancel,
  * and the publish history. Non-modal: the viewport stays live beside it
@@ -16,13 +17,18 @@ import { PresentSection } from './PresentSection';
 import { GameTarget, HistoryTarget, ModelTarget, PlanTarget, RenderTarget, ShareTarget, VideoTarget } from './targets';
 import '../../styles/publish.css';
 
-const TARGETS: ReadonlyArray<{ id: Exclude<PublishTarget, 'history'>; icon: IconName; label: string; hint: string }> = [
-  { id: 'game', icon: 'gamepad', label: 'Game', hint: 'Web build' },
+type Tile = { id: Exclude<PublishTarget, 'history'>; icon: IconName; label: string; hint: string };
+/** Ways to share the world itself: these open as chosen under "How it opens". */
+const SHARE: ReadonlyArray<Tile> = [
+  { id: 'share', icon: 'link', label: 'Link', hint: 'Opens for anyone' },
+  { id: 'game', icon: 'globe', label: 'Website', hint: 'Download or host it' },
+];
+/** Files made from the world. */
+const EXPORTS: ReadonlyArray<Tile> = [
   { id: 'video', icon: 'film', label: 'Video', hint: 'Camera path' },
-  { id: 'render', icon: 'image', label: 'Render', hint: 'Up to 4K' },
+  { id: 'render', icon: 'image', label: 'Picture', hint: 'Up to 4K' },
   { id: 'model', icon: 'box3d', label: '3D model', hint: 'glTF / GLB' },
   { id: 'plan', icon: 'plan', label: 'Floor plan', hint: 'SVG / PDF' },
-  { id: 'share', icon: 'link', label: 'Share link', hint: 'No upload' },
 ];
 
 /** Live preview of a running video export (the composited canvas). */
@@ -104,6 +110,20 @@ const JobFooter = memo(function JobFooter(): ReactElement | null {
   );
 });
 
+/** One tile of the target picker. */
+const TargetTile = memo(function TargetTile({ t, active }: { t: Tile; active: boolean }): ReactElement {
+  const studio = useStudio();
+  return (
+    <button type="button" className={`pub-target${active ? ' is-active' : ''}`} onClick={() => studio.publish.setTarget(t.id)} aria-pressed={active} data-testid={`publish-target-${t.id}`}>
+      <span className="pub-target__icon">
+        <Icon name={t.icon} size={20} />
+      </span>
+      <span className="pub-target__label">{t.label}</span>
+      <span className="pub-target__hint">{t.hint}</span>
+    </button>
+  );
+});
+
 /** The hub panel. */
 export const PublishHub = memo(function PublishHub(): ReactElement {
   const studio = useStudio();
@@ -128,7 +148,7 @@ export const PublishHub = memo(function PublishHub(): ReactElement {
           <h2 className="pub__title">
             <Icon name="rocket" size={20} /> Publish
           </h2>
-          <p className="pub__sub">Share what you made — as a game, a film, a picture or a link.</p>
+          <p className="pub__sub">Choose how your world opens, then share it as a link or a website, or export a file.</p>
         </div>
         <button type="button" className={`btn btn--ghost btn--sm${target === 'history' ? ' is-active' : ''}`} onClick={() => studio.publish.setTarget('history')} aria-pressed={target === 'history'} data-tip="Everything published from this project">
           <Icon name="history" /> History{historyCount > 0 ? ` · ${historyCount}` : ''}
@@ -138,15 +158,18 @@ export const PublishHub = memo(function PublishHub(): ReactElement {
         </button>
       </header>
       <nav className="pub__targets" aria-label="What to publish">
-        {TARGETS.map((t) => (
-          <button key={t.id} type="button" className={`pub-target${target === t.id ? ' is-active' : ''}`} onClick={() => studio.publish.setTarget(t.id)} aria-pressed={target === t.id} data-testid={`publish-target-${t.id}`}>
-            <span className="pub-target__icon">
-              <Icon name={t.icon} size={20} />
-            </span>
-            <span className="pub-target__label">{t.label}</span>
-            <span className="pub-target__hint">{t.hint}</span>
-          </button>
-        ))}
+        <span className="pub__group">Share the world</span>
+        <div className="pub__tiles pub__tiles--share">
+          {SHARE.map((t) => (
+            <TargetTile key={t.id} t={t} active={target === t.id} />
+          ))}
+        </div>
+        <span className="pub__group">Export a file</span>
+        <div className="pub__tiles pub__tiles--export">
+          {EXPORTS.map((t) => (
+            <TargetTile key={t.id} t={t} active={target === t.id} />
+          ))}
+        </div>
       </nav>
       <div className="pub__body">
         {(target === 'game' || target === 'share') && <PresentSection />}

@@ -748,7 +748,7 @@ The low and high sets reach the set cap (`SET_CAP` 64 / 128), so some programs o
 - **Gallery**: a template card links to `/play#t=<slug>` (cooked where a package exists, live otherwise). Its Remix
   button makes a project of the template and opens it in the editor.
 
-**Publishing from the editor** (Publish hub, Share, "Fast-loading link"; `apps/studio/src/publish/cook-publish.ts`, loaded
+**Publishing from the editor** (Publish hub, Link, "Make a short link"; `apps/studio/src/publish/cook-publish.ts`, loaded
 with the hub; `api/cook-upload.ts`):
 - **Cooked in the publisher's browser.** The package covers the whole world:
   - the world: the share payload (world, title screen, replay seal when small) as gzipped JSON, `<id>/world.json.gz`, named

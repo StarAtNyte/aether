@@ -6,18 +6,20 @@
  */
 import { memo, useEffect, type ReactElement } from 'react';
 import { useStore } from 'zustand';
-import type { PresentKind, PresentStart } from '@aether/agent';
+import type { WorldDoc } from '@aether/core';
+import { defaultPresentation, type PresentKind, type PresentStart } from '@aether/agent';
 import { useStudio, useWorld } from '../../app/context';
-import { Icon } from '../../components/Icon';
+import { Icon, type IconName } from '../../components/Icon';
 import '../../styles/present.css';
 
-const KINDS: ReadonlyArray<[PresentKind, string]> = [
-  ['game', 'Game'],
-  ['walkthrough', 'Walkthrough'],
-  ['showcase', 'Showcase'],
-  ['city', 'City'],
-  ['story', 'Story'],
-  ['vr', 'VR'],
+/** The ways a published world can open, in the order shown (`world.profile`). */
+const KINDS: ReadonlyArray<{ id: PresentKind; label: string; line: string; icon: IconName }> = [
+  { id: 'walkthrough', label: 'Walk through', line: 'Rooms at eye level', icon: 'walk' },
+  { id: 'game', label: 'Play', line: 'With a title screen', icon: 'gamepad' },
+  { id: 'showcase', label: 'Showcase', line: 'Fly in, then orbit', icon: 'rotate' },
+  { id: 'city', label: 'City tour', line: 'Street, then a drone', icon: 'grid' },
+  { id: 'story', label: 'Short film', line: 'A film, then explore', icon: 'film' },
+  { id: 'vr', label: 'VR', line: 'On a headset', icon: 'eye' },
 ];
 const STARTS: ReadonlyArray<[PresentStart, string]> = [
   ['play', 'Play'],
@@ -25,6 +27,17 @@ const STARTS: ReadonlyArray<[PresentStart, string]> = [
   ['orbit', 'Orbit camera'],
   ['story', 'Short film (P plays, Tab explores)'],
 ];
+
+/** The start that goes with a kind picked on its card: the rule's when it picked the same kind (a city with a goal starts in play), else the kind's own. */
+function startFor(kind: PresentKind, world: WorldDoc): PresentStart {
+  const rule = defaultPresentation(world);
+  if (rule.profile === kind) return rule.startMode;
+  if (kind === 'game') return 'play';
+  if (kind === 'story') return 'story';
+  if (kind === 'showcase') return world.story ? 'story' : 'orbit';
+  if (kind === 'city') return 'orbit';
+  return 'walkthrough';
+}
 
 export const PresentSection = memo(function PresentSection(): ReactElement {
   const studio = useStudio();
@@ -41,41 +54,35 @@ export const PresentSection = memo(function PresentSection(): ReactElement {
   }, [cur.stored, st.busy, world, studio]);
   const busy = st.busy !== null;
   const review = st.review;
+  // The card marked Suggested: the AI's or the rule's pick.
+  const suggested = st.suggestion?.profile ?? defaultPresentation(world).profile;
   return (
-    <section className="pub-sec present" aria-label="Presentation" data-testid="present-section">
+    <section className="pub-sec present" aria-label="How it opens" data-testid="present-section">
       <header className="pub-sec__head">
-        <h3 className="pub-sec__title">Presentation</h3>
+        <h3 className="pub-sec__title">How it opens</h3>
         {busy && (
           <button type="button" className="btn btn--sm" onClick={() => studio.presentation.cancel()} data-testid="present-cancel">
             Stop
           </button>
         )}
       </header>
-      <div className="pub-grid">
-        <label className="pub-field">
-          <span className="pub-field__label">Kind</span>
-          <select className="select" value={cur.profile} disabled={busy} onChange={(e) => studio.presentation.choose(e.target.value as PresentKind, cur.startMode)} data-testid="present-kind">
-            {KINDS.map(([v, l]) => (
-              <option key={v} value={v}>
-                {l}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="pub-field">
-          <span className="pub-field__label">Starts in</span>
-          <select className="select" value={cur.startMode} disabled={busy} onChange={(e) => studio.presentation.choose(cur.profile, e.target.value as PresentStart)} data-testid="present-start">
-            {STARTS.map(([v, l]) => (
-              <option key={v} value={v}>
-                {l}
-              </option>
-            ))}
-          </select>
-        </label>
+      <div className="present-kinds" role="radiogroup" aria-label="How it opens" data-testid="present-kind">
+        {KINDS.map((k) => (
+          <button key={k.id} type="button" role="radio" aria-checked={cur.profile === k.id} className={`present-kind${cur.profile === k.id ? ' is-active' : ''}`} disabled={st.busy === 'suggest'} onClick={() => studio.presentation.choose(k.id, startFor(k.id, world))} data-testid={`present-kind-${k.id}`}>
+            <span className="present-kind__icon">
+              <Icon name={k.icon} size={18} />
+            </span>
+            <span className="present-kind__label">
+              {k.label}
+              {suggested === k.id && <span className="present-kind__tag">Suggested</span>}
+            </span>
+            <span className="present-kind__line">{k.line}</span>
+          </button>
+        ))}
       </div>
       {!st.suggestion && cur.stored && (
         <p className="pub-muted" data-testid="present-reason">
-          Chosen for this world when it was built. Change it here, or ask for a fresh suggestion.
+          Chosen for this world when it was built. Pick another to change it.
         </p>
       )}
       {st.suggestion && (
@@ -84,17 +91,32 @@ export const PresentSection = memo(function PresentSection(): ReactElement {
           {st.suggestion.reason}
         </p>
       )}
-      <div className="pub-row">
-        <button type="button" className="btn btn--sm" disabled={busy} onClick={() => void studio.presentation.suggest(true)} data-testid="present-suggest">
-          <Icon name="sparkles" /> Suggest again
-        </button>
-        <button type="button" className="btn btn--sm" disabled={busy} onClick={() => void studio.presentation.writeStory()} data-testid="present-story">
-          <Icon name="film" /> {world.story ? 'Rewrite the film' : 'Write a short film'}
-        </button>
-        <button type="button" className="btn btn--primary btn--sm" disabled={busy} onClick={() => void studio.presentation.quality()} data-testid="present-review">
-          <Icon name="eye" /> Quality pass
-        </button>
-      </div>
+      <details className="present-options">
+        <summary>Start view, short film and quality check</summary>
+        <div className="pub-grid">
+          <label className="pub-field">
+            <span className="pub-field__label">Starts in</span>
+            <select className="select" value={cur.startMode} disabled={busy} onChange={(e) => studio.presentation.choose(cur.profile, e.target.value as PresentStart)} data-testid="present-start">
+              {STARTS.map(([v, l]) => (
+                <option key={v} value={v}>
+                  {l}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="pub-row">
+          <button type="button" className="btn btn--sm" disabled={busy} onClick={() => void studio.presentation.suggest(true)} data-testid="present-suggest">
+            <Icon name="sparkles" /> Suggest again
+          </button>
+          <button type="button" className="btn btn--sm" disabled={busy} onClick={() => void studio.presentation.writeStory()} data-testid="present-story">
+            <Icon name="film" /> {world.story ? 'Rewrite the film' : 'Write a short film'}
+          </button>
+          <button type="button" className="btn btn--sm" disabled={busy} onClick={() => void studio.presentation.quality()} data-testid="present-review">
+            <Icon name="eye" /> Quality check
+          </button>
+        </div>
+      </details>
       {st.status && (
         <p className="pub-muted" aria-live="polite" data-testid="present-status">
           {st.status}

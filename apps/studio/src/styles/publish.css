@@ -65,10 +65,49 @@
 
 .pub__targets {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--s-2);
+  gap: 6px;
   padding: 0 var(--s-4) var(--s-3);
   border-bottom: 1px solid var(--border);
+}
+
+.pub__group {
+  color: var(--text-3);
+  font-size: var(--fs-11);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.pub__tiles {
+  display: grid;
+  gap: var(--s-2);
+}
+
+.pub__tiles--share {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 4px;
+}
+
+/* Exports: smaller tiles, icon over label, four in a row. */
+.pub__tiles--export {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.pub__tiles--export .pub-target {
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+  row-gap: 2px;
+  padding: 6px 4px;
+  text-align: center;
+}
+
+.pub__tiles--export .pub-target__icon {
+  grid-row: auto;
+  width: 26px;
+  height: 26px;
+}
+
+.pub__tiles--export .pub-target__hint {
+  display: none;
 }
 
 .pub-target {
@@ -882,4 +921,23 @@
   .pub-job .progress.is-indeterminate .progress__fill {
     animation-duration: 3s;
   }
+}
+
+/* "More options": settings most people leave alone (replay proof, player address). */
+.pub-more {
+  padding: var(--s-3) 0;
+}
+
+.pub-more > summary {
+  cursor: pointer;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+
+.pub-more[open] > summary {
+  margin-bottom: var(--s-1);
+}
+
+.pub-more .pub-sec:last-child {
+  border-bottom: 0;
 }
