@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { INTEGRATED_INTERIOR_REACH, interiorDrawDistance as idd, capTier, cutsAt, forwardLightBudget, GOVERNOR_DEFAULTS, LOW_TIER_LIGHTS, hardwareTierCap, interiorContent, interiorDrawDistance, HEAVY_WORLD, lodHeightScale, PERFORMANCE_STEPS, PerformanceGovernor, readHardware, startLevel, sunMapSoftRefreshFrames, weakHardware } from '../src/gpu/performance';
+import { geckoStartLevel } from '../src/gpu/gecko-safe';
 
 describe('hardware hints', () => {
   it('reads what the browser tells and ignores the rest', () => {
@@ -215,6 +216,19 @@ describe('PerformanceGovernor', () => {
       k.start(3, true);
       expect(feed(k, 60, 1 / 30, 1)).toBe(0);
       expect(k.level).toBe(3);
+    });
+    it('a full-quality start (Firefox, discrete GPU, cooked baked light) still steps down when frames really are slow', () => {
+      const g = new PerformanceGovernor();
+      const level = geckoStartLevel('discrete', { cookedLight: true });
+      expect(level).toBe(0);
+      g.start(level, true);
+      expect(g.cautious).toBe(false);
+      // Fast frames: nothing to give up, nothing to climb.
+      expect(feed(g, 30, 1 / 60, 1)).toBe(0);
+      expect(g.level).toBe(0);
+      // A terrible frame rate gives the baked volume up first, then the cascades.
+      expect(feed(g, 16, 1 / 8, 1)).toBeGreaterThanOrEqual(2);
+      expect(cutsAt(g.level).lightVolume).toBe(false);
     });
     it('keeps the up threshold well above the down threshold', () => {
       expect(GOVERNOR_DEFAULTS.upFps).toBeGreaterThan(GOVERNOR_DEFAULTS.lowFps * 2);

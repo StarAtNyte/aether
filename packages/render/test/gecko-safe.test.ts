@@ -32,6 +32,21 @@ describe('Firefox on WebGL2 path', () => {
     expect(cutsAt(geckoStartLevel('discrete')).tierCap).toBe('medium');
     expect(geckoStartLevel('integrated')).toBe(GECKO_START_LEVEL);
     expect(geckoStartLevel('unknown')).toBe(GECKO_START_LEVEL);
+    expect(geckoStartLevel('discrete', { cookedLight: false })).toBe(GECKO_DISCRETE_START_LEVEL);
+  });
+  it('starts a discrete GPU opening a cooked package with baked light at full quality, the baked volume on', () => {
+    const level = geckoStartLevel('discrete', { cookedLight: true });
+    expect(level).toBe(0);
+    const c = cutsAt(level);
+    expect(c.lightVolume).toBe(true);
+    expect(c.cascades).toBe(true);
+    expect(c.tierCap).toBeNull();
+    expect(c.effects).toBe(1);
+  });
+  it('keeps the cautious start for integrated and unknown GPUs, baked light or not', () => {
+    expect(geckoStartLevel('integrated', { cookedLight: true })).toBe(GECKO_START_LEVEL);
+    expect(geckoStartLevel('unknown', { cookedLight: true })).toBe(GECKO_START_LEVEL);
+    expect(geckoStartLevel('software', { cookedLight: true })).toBe(GECKO_START_LEVEL);
   });
 
   it('uses the shader filter on the low tier when the map is compared with NEAREST, never on software', () => {

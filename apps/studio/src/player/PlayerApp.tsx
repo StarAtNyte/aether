@@ -52,6 +52,9 @@ type Phase = PlayerPhase;
 type ExploreModule = typeof import('./ExploreUI');
 /** The lazily loaded shared-visit controls. */
 type CopresenceModule = typeof import('./copresence/CopresenceUI');
+/** Longest (ms) a guided showroom's loading screen waits for its guide's body once the world is loaded. */
+const GUIDE_WAIT_MS = 20_000;
+
 /** The lazily loaded showroom guide (worlds with `guide`). */
 type GuideModule = typeof import('./guide/GuideUI');
 
@@ -394,6 +397,19 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
   /** The shared-visit controls (worlds with `sharedVisits`), loaded once the world is up. */
   const [copresenceMod, setCopresenceMod] = useState<CopresenceModule | null>(null);
   const [guideMod, setGuideMod] = useState<GuideModule | null>(null);
+  /**
+   * The guide's person is mounted (from the moment the world is synced, behind the loading screen, so her body loads and
+   * prepares with the world), and the loading screen covers the view while the player waits for her (see GUIDE_WAIT_MS).
+   */
+  const [guideMount, setGuideMount] = useState(false);
+  const [guideWait, setGuideWait] = useState(false);
+  const guideReady = useRef<{ promise: Promise<void>; resolve: () => void } | null>(null);
+  if (!guideReady.current) {
+    let resolve = (): void => undefined;
+    const promise = new Promise<void>((r) => (resolve = r));
+    guideReady.current = { promise, resolve };
+  }
+  const onGuideReady = useCallback(() => guideReady.current?.resolve(), []);
   const exploreRef = useRef<ExploreController | null>(null);
   /** Stops of the cooked package (computed by the cook); the world's own `views` win. */
   const cookedViews = useRef<CookView[] | undefined>(undefined);
@@ -857,6 +873,9 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
     const route = templateRoute(location.hash);
     const cookHandle: CookHandle = { path: 'live', reason: null, startMode: game.startMode ?? null, ready: false };
     window.__aetherCook = cookHandle;
+    // The showroom guide loads only for worlds that have one: fetched with the world, mounted once it is synced.
+    const guided = !!world.guide && route?.cook !== 'record';
+    if (guided) void import('./guide/GuideUI').then((m) => !disposed && setGuideMod(m), () => guideReady.current?.resolve());
     void (async () => {
       try {
         // The world's own texture sets (static maps next to the site, `base` folder): the studio registers them on open.
@@ -956,6 +975,9 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
         sim.onDuck((depth, seconds) => musicRef.current?.duck?.(depth, seconds));
         setLoading('Building the world…');
         await sim.whenSynced();
+        // The guide's person joins the world now, behind the loading screen: her body loads and her programs link with
+        // everything else (the wait below tracks it), so she is there, drawn, when the view opens.
+        if (guided) setGuideMount(true);
         // The title card (and with it Start) waits for the world to be complete: no hitches or pop-in once playing.
         await sim.whenFullyLoaded(150_000, (stage) => {
           if (!disposed) setLoading(stage === 'materials' ? 'Loading models and textures…' : stage === 'scene' ? 'Building the world…' : 'Preparing shaders and geometry…');
@@ -985,6 +1007,15 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
         const catalog = await loadCatalog();
         setCredits(creditsFor(world, catalog));
         if (disposed) return;
+        // A guided showroom opens with its guide there: the loading screen stays (covering the view) until her body is in
+        // and prepared, at most GUIDE_WAIT_MS (a failed download never keeps the visitor out).
+        if (guided) {
+          setLoading(`${world.guide?.name || 'Your guide'} is getting ready…`);
+          setGuideWait(true);
+          await Promise.race([guideReady.current?.promise, new Promise<void>((done) => setTimeout(done, GUIDE_WAIT_MS))]);
+          // The cover stays until explore mode takes over (the loading screen goes with the booting phase).
+          if (disposed) return;
+        }
         if (exp.kind === 'game' || route?.cook === 'record') go('title');
         cookHandle.ready = true;
         void attract();
@@ -993,8 +1024,6 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
           void import('./products/mount').then((m) => {
             if (!disposed) unmountProducts = m.mountProducts(sim, world, host);
           }, () => undefined);
-        // The showroom guide loads only for worlds that have one.
-        if (world.guide && route?.cook !== 'record') void import('./guide/GuideUI').then((m) => !disposed && setGuideMod(m), () => undefined);
         // Shared visits: the controls load only for worlds that have them (and show only when a relay answers).
         if (game.sharedVisits && route?.cook !== 'record')
           void import('./copresence/CopresenceUI').then(
@@ -1204,7 +1233,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
   return (
     <div className={`pl-root is-${phase}${explore?.photo && phase === 'exploring' ? ' is-photo' : ''}`} ref={hostRef}>
       {phase === 'booting' && (
-        <div className="pl-loading" role="status">
+        <div className={`pl-loading${guideWait ? ' is-cover' : ''}`} role="status">
           <span className="pl-spinner" aria-hidden="true" />
           <span>{loading}</span>
         </div>
@@ -1309,8 +1338,8 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
       {copresenceMod && sim && game.sharedVisits && phase !== 'booting' && phase !== 'failed' && (
         <copresenceMod.CopresencePanel sim={sim} world={game.sharedVisits.world} hidden={phase === 'story' || (phase === 'exploring' && !!explore?.photo)} />
       )}
-      {guideMod && sim && world.guide && phase !== 'booting' && phase !== 'failed' && (
-        <guideMod.GuidePanel sim={sim} world={world} guide={world.guide} explore={() => exploreRef.current} show={phase === 'story' ? 'none' : phase === 'exploring' && !explore?.photo ? 'all' : 'person'} />
+      {guideMod && sim && world.guide && guideMount && phase !== 'failed' && (
+        <guideMod.GuidePanel sim={sim} world={world} guide={world.guide} explore={() => exploreRef.current} show={phase === 'story' ? 'none' : phase === 'exploring' && !explore?.photo ? 'all' : 'person'} onReady={onGuideReady} />
       )}
       <div className="pl-toasts" aria-live="polite">
         {toasts.map((t) => (

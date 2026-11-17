@@ -44,19 +44,34 @@ import {
   type Turn,
 } from './brain';
 import { GUIDE_ID, GuidePerson } from './person';
-import { floorAt, openings, viewpoint, walkPath, type Viewpoint } from './place';
+import { floorAt, framePiece, openings, viewpoint, walkPath, type ScreenArea, type Viewpoint } from './place';
 import { GuideVoice } from './voice';
 
 /** The visitor nearer than this (m) is greeted. */
 export const GREET_M = 6;
 /** Otherwise the greeting comes this long (s) after the guide is in view. */
 const GREET_AFTER_S = 4;
+/** Longest (ms) the guide waits for her body before saying she is ready anyway (a failed or stalled download). */
+export const BODY_WAIT_MS = 20_000;
 /** Opening the guide as `aether:ask-guide` names a product. */
 export const ASK_EVENT = 'aether:ask-guide';
 export const SHOW_EVENT = 'aether:show-product';
 const PICK_EVENT = 'aether:pick-entity';
 /** The following view keeps this far (m, along her way) behind the guide. */
 export const FOLLOW_BACK_M = 2.3;
+/** Height (m over her feet) of the guide's head, which the following view keeps in sight. */
+const GUIDE_HEAD_M = 1.5;
+/**
+ * The product card's place at the right of a wide screen (`products.css`, mirrored here to frame pieces left of it):
+ * its right margin and width (narrower on mid widths).
+ */
+const PROD_CARD_RIGHT = 20;
+export const productCardWidth = (w: number): number => Math.min(w <= 1180 ? 300 : 360, w - 40);
+/** Height kept above the tour bar for the caption (px), and below the top edge for the title. */
+const CAPTION_RESERVE_PX = 100;
+const FREE_TOP_PX = 84;
+/** Farthest (m) the view steps back from a viewpoint to fit a piece in the free screen. */
+const MAX_STEP_BACK = 2.5;
 /** The view turns to frame the piece when the guide has this little (m) left to walk. */
 const FRAME_AT_M = 1.8;
 
@@ -240,6 +255,7 @@ export class GuideController {
   /** Scratch vectors of the per-frame code (nothing is allocated per frame). */
   private readonly _eye: Vec3 = [0, 0, 0];
   private readonly _back: Vec3 = [0, 0, 0];
+  private readonly _head: Vec3 = [0, 0, 0];
   /** Each stop's viewpoint, found once (in idle time ahead of the tour, else on the way), by stop index. */
   private readonly views = new Map<number, Viewpoint | null>();
   /** The guide's way between two stops (`from>to`, stand to stand), found once: a revisit or Back sets off at once. */
@@ -257,6 +273,11 @@ export class GuideController {
   private abort: AbortController | null = null;
   private lastTrip: GuideHandle['lastTrip'] = null;
   private readonly voice: GuideVoice | null;
+  /** The visitor sees the world (the loading screen is gone): only then does she greet. */
+  private revealed = false;
+  /** Her body is loaded and drawn ready ({@link onReady} called), and since when (ms) it has been waited for. */
+  private ready = false;
+  private readySince = 0;
 
   constructor(
     private readonly sim: Simulation,
@@ -265,6 +286,8 @@ export class GuideController {
     layer: HTMLElement,
     private readonly explore: () => ExploreController | null,
     private readonly onChange: (s: GuideSnapshot) => void,
+    /** Her body has loaded (or will not: it failed) and the scene around her is prepared; the player may reveal the world. */
+    private readonly onReady?: () => void,
   ) {
     const name = spec.name || 'Ava';
     this.list = products(world);
@@ -406,6 +429,37 @@ export class GuideController {
     if (on === this.typing) return;
     this.typing = on;
     this.emitTour();
+  }
+
+  /** The world is shown to the visitor (the loading screen gone): the greeting may come. */
+  setRevealed(on: boolean): void {
+    if (on && !this.revealed) this.shownFor = 0;
+    this.revealed = on;
+  }
+
+  /**
+   * Her body ready: the renderer has her rig and nothing is left to prepare (her programs linked with the rest), or the
+   * load gave up on it (the rig never came within {@link BODY_WAIT_MS}). Stands her on the floor, then tells the player.
+   */
+  private checkReady(now: number): void {
+    if (this.ready) return;
+    if (this.readySince === 0) this.readySince = now;
+    const r = this.sim.renderer;
+    const body = !!r.characterRig(GUIDE_ID);
+    const idle = r.processingStage === null;
+    if (!(body && idle) && now - this.readySince < BODY_WAIT_MS) return;
+    this.ready = true;
+    if (idle && !this.person.walking) this.standOnFloor();
+    this.onReady?.();
+  }
+
+  /** Put her feet on the floor under her (the start pose's height is the spawn's, not always the floor's). */
+  private standOnFloor(): void {
+    const f = floorAt(this.sim.renderer, this.person.pos[0], this.person.pos[2], this.person.pos[1] + 1.2, this.skip);
+    if (!f || Math.abs(f.y - this.person.pos[1]) >= 1.2 || Math.abs(f.y - this.person.pos[1]) < 1e-3) return;
+    this.person.pos[1] = f.y;
+    // Her way starts from where she stands now.
+    if (!this.person.walking) this.trail.reset(this.person.pos);
   }
 
   /** Hide the person and stop greeting (a story playing). */
@@ -590,7 +644,10 @@ export class GuideController {
     // The way is searched over a few frames; the guide sets off once it is known.
     let searched = false;
     this.person.walk([]);
-    const following = o.follow && !!vp && !!ctrl && ctrl.follow((out) => !stale() && this.followAim(vp, searched, out), arrive, this.skip);
+    // The pose that frames the piece in the screen the interface leaves free, found once the view turns to it.
+    let shot: { eye: Vec3; look: Vec3 } | null = null;
+    const frame = (): { eye: Vec3; look: Vec3 } => (shot ??= vp ? this.framed(vp, b, o.card) : { eye: eyeNow, look: centre });
+    const following = o.follow && !!vp && !!ctrl && ctrl.follow((out) => !stale() && this.followAim(frame, searched, out), arrive, this.skip, vp ? frame() : undefined);
     // The way between two stops is kept: from the spot she stands on it is known at once.
     const key = fromStop !== null && o.stop !== undefined ? `${fromStop}>${o.stop}` : null;
     const spot = fromStop !== null ? this.views.get(fromStop)?.stand : undefined;
@@ -622,17 +679,66 @@ export class GuideController {
   }
 
   /**
+   * The part of the screen the interface leaves free for the piece (normalised device coordinates), or null on a narrow
+   * screen (the card is a bottom sheet there, and the view keeps the plain viewpoint). Left of the product card when one
+   * opens (`card`), above the caption and the tour bar, below the title.
+   */
+  private freeArea(card: boolean): ScreenArea | null {
+    const el = this.sim.renderer.domElement;
+    const w = el.clientWidth;
+    const h = el.clientHeight;
+    if (w <= 640 || h < 320) return null;
+    const box = el.getBoundingClientRect();
+    const right = card ? w - PROD_CARD_RIGHT - productCardWidth(w) - 16 : w - 16;
+    const bar = document.querySelector('.pl-gbar')?.getBoundingClientRect();
+    const bottom = Math.max(h * 0.4, (bar && bar.height > 0 ? bar.top - box.top : h * 0.66) - CAPTION_RESERVE_PX);
+    const top = Math.min(FREE_TOP_PX, h * 0.15);
+    if (right - 16 < w * 0.3 || bottom - top < h * 0.2) return null;
+    return { x0: -1 + (2 * 16) / w, x1: -1 + (2 * right) / w, y0: 1 - (2 * bottom) / h, y1: 1 - (2 * top) / h };
+  }
+
+  /** The viewpoint `vp` turned (and stepped back, room allowing) to frame the piece of `bounds` in the free screen. */
+  private framed(vp: Viewpoint, bounds: { min: Vec3; max: Vec3 }, card: boolean): { eye: Vec3; look: Vec3 } {
+    const plain = { eye: [...vp.eye] as Vec3, look: [...vp.target] as Vec3 };
+    const free = this.freeArea(card);
+    if (!free) return plain;
+    const r = this.sim.renderer;
+    const cam = r.camera as { fov: number; aspect: number };
+    // Room behind the eye (away from the piece, in plan), kept clear of walls by half a metre.
+    const bx = vp.eye[0] - vp.target[0];
+    const bz = vp.eye[2] - vp.target[2];
+    const bl = Math.hypot(bx, bz);
+    let room = 0;
+    if (bl > 1e-3) {
+      const hit = r.raycastWorld(vp.eye, [bx / bl, 0, bz / bl], MAX_STEP_BACK + 0.5, this.skip);
+      room = Math.max(0, (hit ? Math.hypot(hit.point[0] - vp.eye[0], hit.point[2] - vp.eye[2]) : MAX_STEP_BACK + 0.5) - 0.5);
+    }
+    const vfov = ((cam.fov || 70) * Math.PI) / 180;
+    const aspect = cam.aspect || 16 / 9;
+    let shot = framePiece(vp.eye, vp.target, bounds, free, vfov, aspect, room);
+    if (Math.hypot(shot.eye[0] - vp.eye[0], shot.eye[2] - vp.eye[2]) > 0.05) {
+      // The floor there must be the viewpoint's (not a step down, not a table): else turn only.
+      const f = floorAt(r, shot.eye[0], shot.eye[2], shot.eye[1] + 0.3, this.skip);
+      if (!f || Math.abs(f.y - (vp.eye[1] - WALK_EYE)) > 0.35) shot = framePiece(vp.eye, vp.target, bounds, free, vfov, aspect, 0);
+    }
+    return shot;
+  }
+
+  /**
    * Where the following view wants to be: a couple of metres behind the guide on the way she walked, looking ahead of her
    * (at her while she is close); once she nears her spot (or before her way is known and she stands), the viewpoint of
    * the piece.
    */
-  private followAim(vp: Viewpoint, searched: boolean, out: FollowAim): boolean {
+  private followAim(view: () => { eye: Vec3; look: Vec3 }, searched: boolean, out: FollowAim): boolean {
     const g = this.person.pos;
     const { eye, look } = out;
+    // Whatever the view does, it never goes through her (nor waits where she walks through it).
+    out.avoid = g;
     if (searched && (!this.person.walking || this.person.remaining < FRAME_AT_M)) {
+      const v = view();
       for (let i = 0; i < 3; i++) {
-        eye[i] = vp.eye[i] as number;
-        look[i] = vp.target[i] as number;
+        eye[i] = v.eye[i] as number;
+        look[i] = v.look[i] as number;
       }
       out.final = true;
       return true;
@@ -646,6 +752,13 @@ export class GuideController {
       eye[0] = back[0];
       eye[1] = back[1] + WALK_EYE;
       eye[2] = back[2];
+      // Behind her on her way: kept in sight of her head (a corner of her way, a wall, the hall's shell between are not
+      // followed into; see the explore controller's safeFollowEye).
+      const head = this._head;
+      head[0] = g[0];
+      head[1] = g[1] + GUIDE_HEAD_M;
+      head[2] = g[2];
+      out.subject = head;
     } else {
       eye[0] = cam[0];
       eye[1] = cam[1];
@@ -900,17 +1013,16 @@ export class GuideController {
     this.last = now;
     try {
       const eye = this.eye(this._eye);
-      // The floor under the guide once the scene is built (the first seconds), while it stands.
-      if (this.settle < 12 && !this.person.walking) {
+      this.checkReady(now);
+      // The floor under the guide once the scene is built (the first seconds after it is; not while it loads), while it
+      // stands.
+      if (this.settle < 12 && !this.person.walking && this.sim.renderer.processingStage === null) {
         this.settle += dt;
-        if (Math.floor(this.settle) !== Math.floor(this.settle - dt)) {
-          const f = floorAt(this.sim.renderer, this.person.pos[0], this.person.pos[2], this.person.pos[1] + 1.2, this.skip);
-          if (f && Math.abs(f.y - this.person.pos[1]) < 1.2) this.person.pos[1] = f.y;
-        }
+        if (Math.floor(this.settle) !== Math.floor(this.settle - dt)) this.standOnFloor();
       }
       this.person.update(dt, now, eye);
       if (this.person.walking) this.trail.push(this.person.pos);
-      if (!this.hidden && !this.greeted && this.sim.mode !== 'play') {
+      if (this.revealed && !this.hidden && !this.greeted && this.sim.mode !== 'play') {
         if (this.shownFor === 0) this.shownFor = now;
         const d = Math.hypot(eye[0] - this.person.pos[0], eye[2] - this.person.pos[2]);
         if (d < GREET_M || now - this.shownFor > GREET_AFTER_S * 1000) this.greet();

@@ -172,6 +172,17 @@ kbd {
   font-size: 14px;
 }
 
+/* A guided showroom waiting for its guide: the world is drawn already, but not shown before she is there. */
+.pl-loading.is-cover {
+  z-index: var(--z-overlay);
+  background: var(--bg);
+}
+
+/* Name tags of people loading behind the loading screen stay hidden until the world is shown. */
+.pl-root.is-booting .pl-ctags {
+  visibility: hidden;
+}
+
 .pl-spinner {
   width: 28px;
   height: 28px;

@@ -9,7 +9,8 @@
  * - samples the sun's shadow map with NEAREST comparison and filters it in the shader,
  * - uploads typed-array textures with the rows already in GL order and no pixel-store flags,
  * - clears every render target a material samples before the first frame,
- * - starts on the light end of the performance ladder and climbs while frames stay comfortably fast.
+ * - starts on the light end of the performance ladder and climbs while frames stay comfortably fast, except a recognised
+ *   discrete GPU opening a cooked package with baked light, which starts at full quality (see {@link geckoStartLevel}).
  */
 import { classifyGpu, type GpuTier } from './budget';
 import type { BackendKind } from './backend';
@@ -38,12 +39,24 @@ export const GECKO_START_LEVEL = 4;
 /** Ladder level a safe path starts at on a recognised discrete GPU: the same cuts, but the medium tier at most, never low. */
 export const GECKO_DISCRETE_START_LEVEL = 3;
 
+/** What the world being opened brings that the start depends on. */
+export interface GeckoStartWorld {
+  /** Opened from a cooked package that ships baked light (lightmap and volume): nothing is baked or linked twice. */
+  cookedLight?: boolean;
+}
+
 /**
  * Where the cautious start of a GPU class begins. A discrete GPU (an RTX 3050 on Firefox) started on the low tier and, in an
  * editor whose view mostly rests, rarely drew the continuous frames the climb needs: it stayed on low. It starts on medium.
+ *
+ * A discrete GPU opening a cooked package with baked light starts at level 0 (full quality, the baked volume on): the
+ * climb from medium needs sustained fast continuous frames, which a walkthrough rarely draws, so a showroom stayed dim
+ * (no volume), jagged (no cascades) and soft (medium tier) on Firefox, and every step of the climb mid-tour rebuilt the lit
+ * materials. The governor still steps down when frames really are slow. Integrated and unknown GPUs keep the cautious start.
  */
-export function geckoStartLevel(gpu: GpuTier): number {
-  return gpu === 'discrete' ? GECKO_DISCRETE_START_LEVEL : GECKO_START_LEVEL;
+export function geckoStartLevel(gpu: GpuTier, world: GeckoStartWorld = {}): number {
+  if (gpu === 'discrete') return world.cookedLight ? 0 : GECKO_DISCRETE_START_LEVEL;
+  return GECKO_START_LEVEL;
 }
 
 /**

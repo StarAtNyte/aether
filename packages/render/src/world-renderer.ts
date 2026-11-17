@@ -6141,8 +6141,15 @@ export class WorldRenderer {
     if (!this.geckoSafe) return;
     primeTarget(this.renderer as unknown as Parameters<typeof primeTarget>[0], this.materials.backdrop.target);
     primeTarget(this.renderer as unknown as Parameters<typeof primeTarget>[0], this.materials.mirror.mirror.target);
-    // A discrete GPU starts on medium at the lowest (an RTX 3050 on Firefox started on low and stayed there).
-    const level = geckoStartLevel(this.gpu.tier);
+    // A discrete GPU starts on medium at the lowest (an RTX 3050 on Firefox started on low and stayed there), or at full
+    // quality when it opens a cooked package with baked light (see geckoStartLevel).
+    const level = geckoStartLevel(this.gpu.tier, { cookedLight: this.cookedLight && this.bakedLightRole === 'viewer' });
+    if (level === 0) {
+      // Nothing given up: the ladder starts as on any other browser (the driver workarounds above stay), and steps down
+      // only when frames really are slow.
+      log.info(`performance: full-quality start (Firefox on WebGL2, ${this.gpu.tier} GPU, cooked baked light)`);
+      return;
+    }
     // On a discrete GPU the start is a guess, not a measurement: the climb back is quick there.
     this.governor.start(level, this.gpu.tier === 'discrete');
     this.ladderStart = 'gecko';

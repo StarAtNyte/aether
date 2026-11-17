@@ -20,7 +20,7 @@ const manifest = JSON.parse(readFileSync(join(ROOT, 'assets', 'manifest.json'), 
 describe('asset catalog', () => {
   it('validates and is a curated, sizeable library', () => {
     expect(catalog.entries.length).toBeGreaterThanOrEqual(150);
-    expect(catalog.entries.length).toBeLessThanOrEqual(700);
+    expect(catalog.entries.length).toBeLessThanOrEqual(760);
     const ids = catalog.entries.map((e) => e.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
@@ -31,7 +31,7 @@ describe('asset catalog', () => {
   });
 
   it('ships only CC0 / CC-BY third-party packs (first-party forge originals are MIT) and every pack is referenced', () => {
-    for (const p of catalog.packs) expect(p.id === 'aether-forge' || p.id === 'aether-vehicles' || p.id === 'aether-creatures' ? ['MIT'] : ['CC0-1.0', 'CC-BY-4.0']).toContain(p.licence);
+    for (const p of catalog.packs) expect(p.id === 'aether-forge' || p.id === 'aether-vehicles' || p.id === 'aether-creatures' || p.id === 'aether-rugs' ? ['MIT'] : ['CC0-1.0', 'CC-BY-4.0']).toContain(p.licence);
     const packs = new Set(catalog.packs.map((p) => p.id));
     for (const e of catalog.entries) expect(packs.has(e.pack), `${e.id} pack ${e.pack}`).toBe(true);
   });
@@ -50,8 +50,8 @@ describe('asset catalog', () => {
         expect(f.split('.').at(-2), f).toBe(hash);
       }
     }
-    // Disk budget of the library (target ≤ 200 MB).
-    expect(total).toBeLessThan(200 * 1024 * 1024);
+    // Disk budget of the library (target ≤ 230 MB; the 4096 px rugs of pack aether-rugs take about 42 MB of it).
+    expect(total).toBeLessThan(230 * 1024 * 1024);
   });
 
   it('has a thumbnail for every model, sky, surface and forge original', () => {
@@ -94,11 +94,11 @@ describe('asset catalog', () => {
         continue;
       }
       expect(m, e.id).toBeTruthy();
-      // Code-authored vehicles are MIT; the fox is a CC0 model with a CC-BY rig and animation.
-      expect(e.pack === 'aether-vehicles' || e.pack === 'aether-creatures' ? ['MIT'] : ['CC0-1.0', 'CC-BY-4.0', 'CC0-1.0 AND CC-BY-4.0']).toContain(m!.licence);
+      // Code-authored vehicles, creatures and rugs are MIT; the fox is a CC0 model with a CC-BY rig and animation.
+      expect(e.pack === 'aether-vehicles' || e.pack === 'aether-creatures' || e.pack === 'aether-rugs' ? ['MIT'] : ['CC0-1.0', 'CC-BY-4.0', 'CC0-1.0 AND CC-BY-4.0']).toContain(m!.licence);
       expect(m!.files.some((f) => f.path === e.file)).toBe(true);
     }
-    for (const s of manifest.sources) expect(s.id === 'aether-vehicles' || s.id === 'aether-creatures' ? ['MIT'] : ['CC0-1.0', 'CC-BY-4.0']).toContain(s.licence);
+    for (const s of manifest.sources) expect(s.id === 'aether-vehicles' || s.id === 'aether-creatures' || s.id === 'aether-rugs' ? ['MIT'] : ['CC0-1.0', 'CC-BY-4.0']).toContain(s.licence);
   });
 
   it('keeps real-world sizes and the facing convention', () => {

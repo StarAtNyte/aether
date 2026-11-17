@@ -2639,6 +2639,81 @@
     "after": 349552
    }
   },
+  "m/display-plinth-oak.7ea7d556.glb": {
+   "file": "k/display-plinth-oak.ea6a47d4.glb",
+   "sha256": "ea6a47d4266467ccec5847a2294265ba777b2cab02d9573ffe0a130047e6a6e6",
+   "bytes": 769656,
+   "source": {
+    "sha256": "7ea7d55642821c395fb8dcf721e82ee03806a4a2ac4eed066b10192af644a58a",
+    "bytes": 354952
+   },
+   "textures": [
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 1024,
+     "ssim": 0.9859
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 1024,
+     "height": 2048,
+     "ssim": 0.9857
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 1024,
+     "height": 2048,
+     "ssim": 0.986
+    }
+   ],
+   "gpu": {
+    "before": 25165828,
+    "after": 6291568
+   }
+  },
+  "m/display-table-oak.608fed35.glb": {
+   "file": "k/display-table-oak.762ada8b.glb",
+   "sha256": "762ada8b18e878ac41182efd1edf53ca6d24a2ff9ca0948de37a4c3c8b3a14dc",
+   "bytes": 516228,
+   "source": {
+    "sha256": "608fed35b76081e65e27b34f75141adc70b5126a4265adde0a7d5c9c0724367b",
+    "bytes": 249728
+   },
+   "textures": [
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 1024,
+     "ssim": 0.9859
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 1024,
+     "height": 2048,
+     "ssim": 0.9857
+    }
+   ],
+   "gpu": {
+    "before": 13981016,
+    "after": 3495328
+   }
+  },
   "m/dock.41ecf2ae.glb": {
    "file": "k/dock.738619ad.glb",
    "sha256": "738619ad833bed34c4bbc70ad4dd1ecea902dc8a7e7fd739021b5b7124ed78a8",
@@ -5304,6 +5379,507 @@
    "gpu": {
     "before": 1398100,
     "after": 349552
+   }
+  },
+  "m/rug-farmhouse-border.acfadd5f.glb": {
+   "file": "k/rug-farmhouse-border.4c893432.glb",
+   "sha256": "4c89343295098c5c439ba357f6610fee1ec8dd8f68802a85dd7f96d259288cf1",
+   "bytes": 2558916,
+   "source": {
+    "sha256": "acfadd5fe8d2a69a86019b24175120679ec4c8f651654981d1e80349c7560247",
+    "bytes": 2791820
+   },
+   "textures": [
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9712
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 3072,
+     "height": 4096,
+     "ssim": 0.9935
+    }
+   ],
+   "gpu": {
+    "before": 68506960,
+    "after": 17126816
+   }
+  },
+  "m/rug-farmhouse-stripe.ec9f909f.glb": {
+   "file": "k/rug-farmhouse-stripe.77aa1da2.glb",
+   "sha256": "77aa1da2fd1db8d8ab5ebfedb628a7d13236bd88a4b55d92e57c8f7b7aabbeb4",
+   "bytes": 2646628,
+   "source": {
+    "sha256": "ec9f909f25c5d9a49e36531330a9714a625e4b16f190026da16c09abf82d5f96",
+    "bytes": 2854236
+   },
+   "textures": [
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9711
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 3072,
+     "height": 4096,
+     "ssim": 0.9937
+    }
+   ],
+   "gpu": {
+    "before": 68506960,
+    "after": 17126816
+   }
+  },
+  "m/rug-heriz-runner.c13e1862.glb": {
+   "file": "k/rug-heriz-runner.7e104009.glb",
+   "sha256": "7e10400922c216b28f2de07c9962a2def494a75992dabf130e94e053ec2d3c17",
+   "bytes": 1423808,
+   "source": {
+    "sha256": "c13e1862651f5bd3625c0b16770db7c9b66291f490c576f16f1d51324f782a87",
+    "bytes": 1221644
+   },
+   "textures": [
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9786
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 1096,
+     "height": 4096,
+     "ssim": 0.9639
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 192,
+     "ssim": 0.9778
+    }
+   ],
+   "gpu": {
+    "before": 25864108,
+    "after": 6470224
+   }
+  },
+  "m/rug-isfahan-wall.58b3f966.glb": {
+   "file": "k/rug-isfahan-wall.242a2906.glb",
+   "sha256": "242a29067d4ba1474e6abad37f1b9faeca1c25b5a311ca9fd2a1a2efdba257cf",
+   "bytes": 3672824,
+   "source": {
+    "sha256": "58b3f966de49065ade9d4bb8c7fb550087936ed102a7ed81b462429e0ca79d2d",
+    "bytes": 4208004
+   },
+   "textures": [
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.984
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 3072,
+     "height": 4096,
+     "ssim": 0.9907
+    },
+    {
+     "slots": [
+      "metallicRoughnessTexture"
+     ],
+     "codec": "uastc",
+     "width": 768,
+     "height": 1024,
+     "ssim": 0.9735
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 192,
+     "ssim": 0.9814
+    }
+   ],
+   "gpu": {
+    "before": 73225544,
+    "after": 18306592
+   }
+  },
+  "m/rug-kashan-heirloom.2975c9f1.glb": {
+   "file": "k/rug-kashan-heirloom.0584a644.glb",
+   "sha256": "0584a6441a9abae41c5137d6c13b101b32e7c22d86b45901e6e34cb8fbf3fd9b",
+   "bytes": 3009796,
+   "source": {
+    "sha256": "2975c9f142a89b2de3176b7bdaf6817d1ae119aa8049ad179272bdb492743ed5",
+    "bytes": 3357724
+   },
+   "textures": [
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9841
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 3072,
+     "height": 4096,
+     "ssim": 0.9939
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 192,
+     "ssim": 0.9783
+    }
+   ],
+   "gpu": {
+    "before": 69031244,
+    "after": 17257968
+   }
+  },
+  "m/rug-mahal-wall.7dc9b027.glb": {
+   "file": "k/rug-mahal-wall.a9f59141.glb",
+   "sha256": "a9f5914163a84954d3fafa28e85ed44eeb2ac562dfb8b2c0570d192966be3eaa",
+   "bytes": 2885744,
+   "source": {
+    "sha256": "7dc9b027c8435e4626e65826e0be98d6a5c6dad234d63be32a53f332d921669c",
+    "bytes": 3323220
+   },
+   "textures": [
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9841
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 3072,
+     "height": 4096,
+     "ssim": 0.9928
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 192,
+     "ssim": 0.9799
+    }
+   ],
+   "gpu": {
+    "before": 69031244,
+    "after": 17257968
+   }
+  },
+  "m/rug-motion-denim.a0af963a.glb": {
+   "file": "k/rug-motion-denim.b8b0ff96.glb",
+   "sha256": "b8b0ff9674e9b1a6ba5d4ac8fabfa253bde0f632c12e415b52fd84c3a9146348",
+   "bytes": 3008764,
+   "source": {
+    "sha256": "a0af963a119bb8e744d7d08292e6ede71737ab5c5c374d2883eba565c86ffe36",
+    "bytes": 4156316
+   },
+   "textures": [
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9698
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 3072,
+     "height": 4096,
+     "ssim": 0.9768
+    }
+   ],
+   "gpu": {
+    "before": 68506960,
+    "after": 17126816
+   }
+  },
+  "m/rug-motion-marine.02fe7ad3.glb": {
+   "file": "k/rug-motion-marine.aabbe271.glb",
+   "sha256": "aabbe2716d09ac94a972c8ac3e7cb423f39de50f57708551780dc4d22609d7a4",
+   "bytes": 2829396,
+   "source": {
+    "sha256": "02fe7ad3ff8eb1c227a0b97f462daf3fa35aa6825128db793bf0b660268c9749",
+    "bytes": 3189532
+   },
+   "textures": [
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9699
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 3072,
+     "height": 4096,
+     "ssim": 0.9863
+    }
+   ],
+   "gpu": {
+    "before": 68506960,
+    "after": 17126816
+   }
+  },
+  "m/rug-motion-wall-denim.39edfb37.glb": {
+   "file": "k/rug-motion-wall-denim.81ccae5b.glb",
+   "sha256": "81ccae5b12c6493824cebb3be515870c90906f10b44426c0261270e8abb55fca",
+   "bytes": 2950524,
+   "source": {
+    "sha256": "39edfb37e3b0244a4a68129245b50751603ef217fe315dfe1b9d1dab80441e18",
+    "bytes": 4104440
+   },
+   "textures": [
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9698
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 3072,
+     "height": 4096,
+     "ssim": 0.9765
+    }
+   ],
+   "gpu": {
+    "before": 68506960,
+    "after": 17126816
+   }
+  },
+  "m/rug-motion-wall-marine.8f9bebe1.glb": {
+   "file": "k/rug-motion-wall-marine.8ef45877.glb",
+   "sha256": "8ef45877a4c7892c3849cd3f8cdf59824b97602bd229ad9498b51f2f2aee8015",
+   "bytes": 2539840,
+   "source": {
+    "sha256": "8f9bebe1aeab675d641a791d212286e9cb862856de8f762b3553f23288f5450b",
+    "bytes": 2475468
+   },
+   "textures": [
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9698
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 3072,
+     "height": 4096,
+     "ssim": 0.9938
+    }
+   ],
+   "gpu": {
+    "before": 68506960,
+    "after": 17126816
+   }
+  },
+  "m/rug-tabriz-runner.1fd7bec5.glb": {
+   "file": "k/rug-tabriz-runner.799d7e31.glb",
+   "sha256": "799d7e317cef467ab6c011adbc7fdbaa4d0a709b2badfc6ff031096d1a4fa387",
+   "bytes": 1635032,
+   "source": {
+    "sha256": "1fd7bec51872a2497f17cb473b58ba48b3e8e8f917a12d342c4a18308222491d",
+    "bytes": 2030044
+   },
+   "textures": [
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9841
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 1312,
+     "height": 4096,
+     "ssim": 0.9851
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 192,
+     "ssim": 0.9802
+    }
+   ],
+   "gpu": {
+    "before": 30583276,
+    "after": 7646992
+   }
+  },
+  "m/rug-vinton-rust.b0ec1c5c.glb": {
+   "file": "k/rug-vinton-rust.2ccaf061.glb",
+   "sha256": "2ccaf0612bc0ec3dd68f6b58748c13f97e5d6d46cfc2e2eac4deb59cb916810c",
+   "bytes": 3088552,
+   "source": {
+    "sha256": "b0ec1c5c5f2f30fc54b7ce0e27a46e9c74bc9fe350bcaa62b3ecd73188e72065",
+    "bytes": 3525324
+   },
+   "textures": [
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9841
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 3072,
+     "height": 4096,
+     "ssim": 0.9938
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 192,
+     "ssim": 0.9771
+    }
+   ],
+   "gpu": {
+    "before": 69031244,
+    "after": 17257968
+   }
+  },
+  "m/rug-vinton-teal.36268ecd.glb": {
+   "file": "k/rug-vinton-teal.474f88da.glb",
+   "sha256": "474f88da03a075561c97e3539482558937166b2c1e6fdf5751a4ce355ee3ab06",
+   "bytes": 3122268,
+   "source": {
+    "sha256": "36268ecd1e7850858d25700fd4b594a4e71d90bd00347233898acb33f82ccb7d",
+    "bytes": 3825548
+   },
+   "textures": [
+    {
+     "slots": [
+      "normalTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 512,
+     "ssim": 0.9841
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "etc1s",
+     "width": 3072,
+     "height": 4096,
+     "ssim": 0.9907
+    },
+    {
+     "slots": [
+      "baseColorTexture"
+     ],
+     "codec": "uastc",
+     "width": 512,
+     "height": 192,
+     "ssim": 0.98
+    }
+   ],
+   "gpu": {
+    "before": 69031244,
+    "after": 17257968
    }
   },
   "m/sailing-ship.93a09e0e.glb": {

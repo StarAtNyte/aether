@@ -1753,6 +1753,19 @@ export class Simulation {
     catch (error) { log.warn('processing feedback failed', error); }
   }
 
+  /** Reasons the quality ladder and the automatic tier keep still now (see {@link setQualityHold}). */
+  private readonly qualityHolds = new Set<string>();
+
+  /**
+   * Keep the quality ladder and the automatic tier still while `reason` holds (a guided camera move: a step rebuilds every
+   * lit material, and the moving view meanwhile showed partial pictures, the sky alone or black, until the rebuild was done).
+   * Steps wait for the view to rest. Resolution still adapts.
+   */
+  setQualityHold(reason: string, on: boolean): void {
+    if (on) this.qualityHolds.add(reason);
+    else this.qualityHolds.delete(reason);
+  }
+
   private readonly onAnimationFrame = (t: number): void => {
     if (this.disposed) return;
     this.raf = requestAnimationFrame(this.onAnimationFrame);
@@ -1765,7 +1778,7 @@ export class Simulation {
     this.emitQuality();
     // While a game (a world with a title card) is being played the quality tier keeps still (a tier step rebuilds every lit material, and the view
     // holds its last complete picture for the seconds that takes: a freeze in play); it moves at the title card, while paused and between sessions.
-    this.renderer.holdQuality(!!s && !!s.world.intro && !s.ended && !this.paused && !this.held);
+    this.renderer.holdQuality((!!s && !!s.world.intro && !s.ended && !this.paused && !this.held) || this.qualityHolds.size > 0);
     try {
       if (s && !this.paused) {
         this.pollGamepad(dt);

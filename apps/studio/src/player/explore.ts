@@ -118,7 +118,75 @@ export interface FollowAim {
   look: Vec3;
   /** The pose to end on: reaching it ends the follow. */
   final: boolean;
+  /**
+   * What the view keeps a clear line to (the guide's head; null: nothing, the eye stays where it is). The eye is pulled
+   * toward it until nothing stands between them, at eye height over a walkable floor ({@link safeFollowEye}).
+   */
+  subject: Vec3 | null;
+  /**
+   * Feet of someone the eye keeps clear of (the guide: null, nobody), at least {@link FOLLOW_CLEAR_M} away in plan. An eye
+   * gliding through her, or her walking through a view that waits, put the camera inside her head: her hair and jacket
+   * filled the view, black.
+   */
+  avoid: Vec3 | null;
 }
+
+/** What {@link safeFollowEye} asks of the scene: free distance along a ray (the subject skipped) and the floor under a point. */
+export interface FollowProbe {
+  free(from: Readonly<Vec3>, dir: Readonly<Vec3>, max: number): number;
+  floor(x: number, z: number, fromY: number): number | null;
+}
+
+/** A following eye stays this far (m) short of a wall between it and its subject. */
+export const FOLLOW_WALL_M = 0.35;
+/** Nearest (m) a following eye comes to its subject's head: closer, it has no room there. */
+export const FOLLOW_MIN_M = 0.9;
+/** Nearest (m, in plan) a following eye comes to the person it keeps clear of ({@link FollowAim.avoid}). */
+export const FOLLOW_CLEAR_M = 1;
+/** Most a following eye's floor may differ (m) from the floor it is meant to stand on (a step, a rug; not a table top). */
+const FOLLOW_FLOOR_M = 0.35;
+
+const finite3 = (v: Readonly<Vec3>): boolean => Number.isFinite(v[0]) && Number.isFinite(v[1]) && Number.isFinite(v[2]);
+
+/**
+ * Where a following eye may stand, wanting `want`: pulled toward `subject` until the line between them is clear (a ray
+ * from the subject meets the front face of a wall between them, or of the wall or shell the eye would be inside or
+ * behind: rays from inside a wall leave it unseen), then put at eye height over the walkable floor there. Writes `out`
+ * and returns the distance from the subject it allows (Infinity: the line is clear). Returns -1 when there is no such
+ * spot (the subject is right against the wall, there is no floor, or the floor is not the one meant: a table, a hole):
+ * the caller holds the view or glides instead. No allocation.
+ */
+export function safeFollowEye(want: Readonly<Vec3>, subject: Readonly<Vec3>, probe: FollowProbe, out: Vec3): number {
+  if (!finite3(want) || !finite3(subject)) return -1;
+  const dx = want[0] - subject[0];
+  const dy = want[1] - subject[1];
+  const dz = want[2] - subject[2];
+  const d = Math.hypot(dx, dy, dz);
+  let reach = Number.POSITIVE_INFINITY;
+  out[0] = want[0];
+  out[1] = want[1];
+  out[2] = want[2];
+  if (d > 1e-3) {
+    _fd[0] = dx / d;
+    _fd[1] = dy / d;
+    _fd[2] = dz / d;
+    const free = probe.free(subject, _fd, d);
+    if (free < d - 0.05) {
+      reach = free - FOLLOW_WALL_M;
+      if (reach < FOLLOW_MIN_M) return -1;
+      out[0] = subject[0] + _fd[0] * reach;
+      out[1] = subject[1] + _fd[1] * reach;
+      out[2] = subject[2] + _fd[2] * reach;
+    }
+  }
+  // The floor meant: the one under the eye it wanted.
+  const meant = want[1] - WALK_EYE;
+  const f = probe.floor(out[0], out[2], Math.max(out[1], want[1]) + 0.3);
+  if (f === null || !Number.isFinite(f) || Math.abs(f - meant) > FOLLOW_FLOOR_M) return -1;
+  out[1] = f + WALK_EYE;
+  return reach;
+}
+const _fd: Vec3 = [0, 0, 0];
 
 const _sd: [number, number] = [0, 0];
 
@@ -142,6 +210,15 @@ export function smoothDamp(x: number, v: number, to: number, smooth: number, dt:
 const FOLLOW_EYE_S = 0.55;
 const FOLLOW_LOOK_S = 0.5;
 const FOLLOW_FINAL_S = 0.85;
+/** Seconds between the follow's checks of its eye against the scene ({@link safeFollowEye}). */
+const FOLLOW_SAFE_S = 0.15;
+/**
+ * A follow crosses a wall by a fade at most once in this many seconds: needing another so soon, it gives up and glides to
+ * where it is going instead (a fade every quarter second, as an aim kept behind a wall asked for, is a black view).
+ */
+export const FOLLOW_REFADE_S = 3;
+/** Longest (ms) a fade may cover the view, whatever happens to its swap. */
+export const FADE_MAX_MS = 1600;
 
 /** A pose in the walk's terms. */
 interface WalkPose {
@@ -157,7 +234,40 @@ export class ExploreController {
   private pose: WalkPose | null = null;
   private glide: { from: WalkPose; to: WalkPose; t: number; seconds: number; then?: () => void } | null = null;
   /** The view following a moving subject (see {@link follow}): its eye and look point, each with a velocity. */
-  private fol: { aim: (out: FollowAim) => boolean; done?: () => void; skip?: ReadonlySet<string>; out: FollowAim; eye: Vec3; ev: Vec3; look: Vec3; lv: Vec3; dir: Vec3; check: number; final: number; arrived: boolean } | null = null;
+  private fol: {
+    aim: (out: FollowAim) => boolean;
+    done?: () => void;
+    skip?: ReadonlySet<string>;
+    /** Where to glide when the follow cannot go on (the end pose). */
+    fallback?: { eye: Vec3; look: Vec3 };
+    out: FollowAim;
+    eye: Vec3;
+    ev: Vec3;
+    look: Vec3;
+    lv: Vec3;
+    dir: Vec3;
+    check: number;
+    final: number;
+    arrived: boolean;
+    /** Seconds since the follow began, and when it last faded. */
+    clock: number;
+    fadedAt: number;
+    /** The safety check: seconds to the next, the distance from the subject it allows (-1: no spot, hold), the floor. */
+    safeIn: number;
+    reach: number;
+    floorY: number | null;
+    safe: Vec3;
+  } | null = null;
+  private fadeSeq = 0;
+  /** The scene as a following eye sees it (rays skip the follow's subject). */
+  private readonly followProbe: FollowProbe & { skip: ReadonlySet<string> | undefined } = {
+    skip: undefined,
+    free: (from, dir, max) => {
+      const hit = this.sim.renderer.raycastWorld([from[0], from[1], from[2]], [dir[0], dir[1], dir[2]], max, this.followProbe.skip);
+      return hit ? Math.hypot(hit.point[0] - from[0], hit.point[1] - from[1], hit.point[2] - from[2]) : max;
+    },
+    floor: (x, z, fromY) => this.probe.floor(x, z, fromY),
+  };
   private readonly keys = new Set<string>();
   private raf: number | null = null;
   private last = 0;
@@ -399,15 +509,22 @@ export class ExploreController {
   }
 
   private fadeTo(swap: () => void): void {
+    const seq = ++this.fadeSeq;
     this.set({ fading: true });
+    const clear = (): void => {
+      // A newer fade owns the cover now: it clears it itself.
+      if (seq === this.fadeSeq && this.state.fading) this.set({ fading: false });
+    };
     this.later(FADE_MS, () => {
       try {
         swap();
       } finally {
         // Whatever the swap does, the view comes back.
-        this.later(60, () => this.set({ fading: false }));
+        this.later(60, clear);
       }
     });
+    // And never later than this, whatever happens to the timers above.
+    this.later(FADE_MAX_MS, clear);
   }
 
   private onClick(ndcX: number, ndcY: number): boolean {
@@ -629,9 +746,12 @@ export class ExploreController {
    * centimetres) and ends the follow when reached; `aim()` returning false ends it without.
    * Nothing is allocated per frame; the wall check's ray runs a few times a second.
    * Any input of the visitor (or another move) ends it too. `skip`: entities the wall check looks through (the subject).
+   * The eye never goes where it would lose its subject ({@link FollowAim.subject}: pulled toward it until the line between
+   * them is clear, at eye height over the floor; held where it is when there is no such spot). A wall to cross a second
+   * time within {@link FOLLOW_REFADE_S} ends the follow with a glide to `fallback` (the end pose) instead of another fade.
    * Walk view only, never with reduced motion: false when it cannot follow (the caller moves the view another way).
    */
-  follow(aim: (out: FollowAim) => boolean, done?: () => void, skip?: ReadonlySet<string>): boolean {
+  follow(aim: (out: FollowAim) => boolean, done?: () => void, skip?: ReadonlySet<string>, fallback?: { eye: Vec3; look: Vec3 }): boolean {
     if (this.disposed || this.opts.reduceMotion || this.state.view !== 'walk' || !this.pose || this.state.fading) return false;
     this.onUserInput();
     this.sim.renderer.stopTour();
@@ -640,7 +760,27 @@ export class ExploreController {
     const p = this.pose;
     const [fx, fz] = forwardOf(p.yaw);
     const c = Math.cos(p.pitch) * 3;
-    this.fol = { aim, ...(done ? { done } : {}), ...(skip ? { skip } : {}), out: { eye: [0, 0, 0], look: [0, 0, 0], final: false }, eye: [...p.eye] as Vec3, ev: [0, 0, 0], look: [p.eye[0] + fx * c, p.eye[1] + Math.sin(p.pitch) * 3, p.eye[2] + fz * c], lv: [0, 0, 0], dir: [0, 0, 0], check: 0, final: 0, arrived: false };
+    this.fol = {
+      aim,
+      ...(done ? { done } : {}),
+      ...(skip ? { skip } : {}),
+      ...(fallback ? { fallback } : {}),
+      out: { eye: [0, 0, 0], look: [0, 0, 0], final: false, subject: null, avoid: null },
+      eye: [...p.eye] as Vec3,
+      ev: [0, 0, 0],
+      look: [p.eye[0] + fx * c, p.eye[1] + Math.sin(p.pitch) * 3, p.eye[2] + fz * c],
+      lv: [0, 0, 0],
+      dir: [0, 0, 0],
+      check: 0,
+      final: 0,
+      arrived: false,
+      clock: 0,
+      fadedAt: Number.NEGATIVE_INFINITY,
+      safeIn: 0,
+      reach: Number.POSITIVE_INFINITY,
+      floorY: null,
+      safe: [0, 0, 0],
+    };
     return true;
   }
 
@@ -659,10 +799,16 @@ export class ExploreController {
     const f = this.fol;
     if (!f) return;
     const a = f.out;
+    a.subject = null;
+    a.avoid = null;
     if (!f.aim(a)) {
       this.fol = null;
       return;
     }
+    f.clock += dt;
+    // A broken aim (a NaN from the scene) is not followed: the view holds this frame.
+    if (!finite3(a.eye) || !finite3(a.look)) return;
+    this.keepSafe(f, a, dt);
     const r = this.sim.renderer;
     // A wall between the view and where it wants to be, checked a few times a second: fade across instead of through.
     f.check -= dt;
@@ -676,9 +822,19 @@ export class ExploreController {
         blocked = !!hit && Math.hypot(hit.point[0] - f.eye[0], hit.point[1] - f.eye[1], hit.point[2] - f.eye[2]) < gap - 0.25;
       }
       if (blocked) {
+        // A second wall so soon: no fade after fade (a black view). The follow ends in a glide.
+        if (f.clock - f.fadedAt < FOLLOW_REFADE_S) {
+          this.abandonFollow(f);
+          return;
+        }
+        f.fadedAt = f.clock;
         this.fadeTo(() => {
           if (this.fol !== f) return;
-          f.aim(a);
+          a.subject = null;
+          a.avoid = null;
+          if (!f.aim(a) || !finite3(a.eye) || !finite3(a.look)) return;
+          f.safeIn = 0;
+          this.keepSafe(f, a, 0);
           for (let i = 0; i < 3; i++) {
             f.eye[i] = a.eye[i] as number;
             f.look[i] = a.look[i] as number;
@@ -700,6 +856,21 @@ export class ExploreController {
       f.look[i] = l[0];
       f.lv[i] = l[1];
     }
+    if (!finite3(f.eye) || !finite3(f.look)) {
+      // The spring broke (a NaN came in): start it again where the view stands.
+      const p = this.pose;
+      if (!p || !finite3(p.eye)) {
+        this.fol = null;
+        return;
+      }
+      for (let i = 0; i < 3; i++) {
+        f.eye[i] = p.eye[i] as number;
+        f.look[i] = a.look[i] as number;
+        f.ev[i] = 0;
+        f.lv[i] = 0;
+      }
+    }
+    if (a.avoid && finite3(a.avoid)) this.keepClear(f, a.avoid);
     this.applyFollow(f);
     if (!a.final) {
       f.final = 0;
@@ -722,6 +893,107 @@ export class ExploreController {
       this.applyFollow(f);
       this.fol = null;
     }
+  }
+
+  /**
+   * Keep the aim's eye where the view can stand ({@link safeFollowEye}): checked against the scene every
+   * {@link FOLLOW_SAFE_S} seconds, the reach and floor it found applied to the aim every frame in between (no allocation).
+   * Where there is no safe spot the eye holds where it is.
+   */
+  private keepSafe(f: NonNullable<ExploreController['fol']>, a: FollowAim, dt: number): void {
+    const s = a.subject;
+    if (!s || !finite3(s)) {
+      f.reach = Number.POSITIVE_INFINITY;
+      f.floorY = null;
+      return;
+    }
+    f.safeIn -= dt;
+    if (f.safeIn <= 0) {
+      f.safeIn = FOLLOW_SAFE_S;
+      this.followProbe.skip = f.skip;
+      f.reach = safeFollowEye(a.eye, s, this.followProbe, f.safe);
+      f.floorY = f.reach < 0 ? null : f.safe[1] - WALK_EYE;
+    }
+    if (f.reach < 0) {
+      // No spot in reach: hold the view where it is (still turning to look).
+      a.eye[0] = f.eye[0];
+      a.eye[1] = f.eye[1];
+      a.eye[2] = f.eye[2];
+      return;
+    }
+    const dx = a.eye[0] - s[0];
+    const dy = a.eye[1] - s[1];
+    const dz = a.eye[2] - s[2];
+    const d = Math.hypot(dx, dy, dz);
+    if (d > f.reach && d > 1e-3) {
+      const k = f.reach / d;
+      a.eye[0] = s[0] + dx * k;
+      a.eye[1] = s[1] + dy * k;
+      a.eye[2] = s[2] + dz * k;
+    }
+    if (f.floorY !== null) a.eye[1] = f.floorY + WALK_EYE;
+  }
+
+  /**
+   * Keep the eased eye {@link FOLLOW_CLEAR_M} clear of `feet` in plan: an eye closer than that steps out of the way (as far
+   * as the room allows: a ray from her at eye height), its inward speed dropped, so it slides round her instead of
+   * through her. No allocation.
+   */
+  private keepClear(f: NonNullable<ExploreController['fol']>, feet: Readonly<Vec3>): void {
+    let ux = f.eye[0] - feet[0];
+    let uz = f.eye[2] - feet[2];
+    const d = Math.hypot(ux, uz);
+    if (d >= FOLLOW_CLEAR_M) return;
+    if (d > 1e-3) {
+      ux /= d;
+      uz /= d;
+    } else {
+      // Right on her: back away from what the view looks at.
+      const lx = f.eye[0] - f.look[0];
+      const lz = f.eye[2] - f.look[2];
+      const l = Math.hypot(lx, lz) || 1;
+      ux = lx / l;
+      uz = lz / l;
+    }
+    const from = this._clearFrom;
+    from[0] = feet[0];
+    from[1] = f.eye[1];
+    from[2] = feet[2];
+    const dir = this._clearDir;
+    dir[0] = ux;
+    dir[1] = 0;
+    dir[2] = uz;
+    this.followProbe.skip = f.skip;
+    const room = this.followProbe.free(from, dir, FOLLOW_CLEAR_M + FOLLOW_WALL_M) - FOLLOW_WALL_M;
+    const to = Math.min(FOLLOW_CLEAR_M, room);
+    if (!(to > d)) return;
+    f.eye[0] = feet[0] + ux * to;
+    f.eye[2] = feet[2] + uz * to;
+    // No speed toward her.
+    const inward = f.ev[0] * ux + f.ev[2] * uz;
+    if (inward < 0) {
+      f.ev[0] -= inward * ux;
+      f.ev[2] -= inward * uz;
+    }
+  }
+  private readonly _clearFrom: Vec3 = [0, 0, 0];
+  private readonly _clearDir: Vec3 = [0, 0, 0];
+
+  /** The follow cannot go on (walls one after another): end it with a glide (or one fade) to its end pose, and arrive. */
+  private abandonFollow(f: NonNullable<ExploreController['fol']>): void {
+    this.fol = null;
+    const arrive = (): void => {
+      if (f.arrived) return;
+      f.arrived = true;
+      f.done?.();
+    };
+    const to = f.fallback;
+    if (!to || !finite3(to.eye) || !finite3(to.look)) {
+      arrive();
+      return;
+    }
+    const { yaw, pitch } = yawPitch(to.eye, to.look);
+    this.moveWalk({ eye: [to.eye[0], to.eye[1], to.eye[2]], yaw, pitch }, 1.2, arrive);
   }
 
   /** Put the walk's pose (updated in place) and the camera where the follow is. */
@@ -863,7 +1135,22 @@ export class ExploreController {
     this.raf = requestAnimationFrame(tick);
   }
 
+  /** The quality ladder is held while the view moves on its own (see {@link holdWhileMoving}). */
+  private holding = false;
+
+  /**
+   * A glide or a follow holds the quality ladder still (Simulation.setQualityHold): a ladder step rebuilds every lit
+   * material, and a view moving meanwhile showed partial pictures (the sky alone, a white wash in the lobby) for seconds.
+   * The ladder steps once the view rests at a stop.
+   */
+  private holdWhileMoving(on: boolean): void {
+    if (on === this.holding) return;
+    this.holding = on;
+    (this.sim as { setQualityHold?: (reason: string, on: boolean) => void }).setQualityHold?.('explore-move', on);
+  }
+
   private step(dt: number): void {
+    this.holdWhileMoving(!this.disposed && (this.glide !== null || this.fol !== null || this.state.fading));
     if (this.state.fading) return;
     if (this.hold !== null) {
       this.hold -= dt;
@@ -930,6 +1217,7 @@ export class ExploreController {
 
   dispose(): void {
     if (this.disposed) return;
+    this.holdWhileMoving(false);
     this.disposed = true;
     if (this.raf !== null) cancelAnimationFrame(this.raf);
     this.raf = null;

@@ -357,6 +357,13 @@
 }
 
 /* Captions: the line being said, as a subtitle. */
+/* Behind @supports: Firefox does not parse `text-wrap: pretty` and logs a CSS error for the bare declaration. */
+@supports (text-wrap: pretty) {
+  .pl-gcap {
+    text-wrap: pretty;
+  }
+}
+
 .pl-gcap {
   max-width: 100%;
   margin: 0;
@@ -367,7 +374,6 @@
   font-size: 15.5px;
   line-height: 1.45;
   text-align: center;
-  text-wrap: pretty;
   text-shadow: 0 1px 2px rgb(0 0 0 / 0.5);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);

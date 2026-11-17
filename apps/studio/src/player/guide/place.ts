@@ -13,6 +13,8 @@ type Renderer = Simulation['renderer'];
 
 /** Distance (m) of the viewpoint from a product that fits in view at it. */
 export const VIEW_M = 2.2;
+/** A surface met this close (m) before an eye, on the way out from the piece, has the eye inside (or just behind) a wall. */
+const INSIDE_WALL_M = 0.8;
 
 /** The walkable floor under (x, z) within reach below `fromY`, or null. */
 export function floorAt(r: Renderer, x: number, z: number, fromY: number, skip: ReadonlySet<string>): { y: number; id: string } | null {
@@ -166,7 +168,9 @@ export function viewpoint(r: Renderer, id: string, bounds: { min: Vec3; max: Vec
   const toEye = [eyeNow[0] - c[0], eyeNow[2] - c[2]];
   const toLen = Math.hypot(toEye[0] as number, toEye[1] as number) || 1;
   const fromY = floorY + WALK_EYE;
-  const found: Array<{ eye: Vec3; dx: number; dz: number; d: number; score: number }> = [];
+  const pieceSkip = new Set([...skip, id]);
+  const found: Array<{ eye: Vec3; dx: number; dz: number; d: number; score: number; seen: boolean }> = [];
+  let best: { vp: Viewpoint; rank: number } | null = null;
   for (const k of [1, 0.75, 1.3]) {
     const d = base * k + (upright ? 0 : Math.max(sx, sz) * 0.35);
     for (let i = 0; i < 12; i++) {
@@ -185,39 +189,236 @@ export function viewpoint(r: Renderer, id: string, bounds: { min: Vec3; max: Vec
       const dist = Math.hypot(c[0] - eye[0], c[1] - eye[1], c[2] - eye[2]);
       const hit = r.raycastWorld(eye, [c[0] - eye[0], c[1] - eye[1], c[2] - eye[2]], dist, skip);
       if (hit && hit.id !== id && Math.hypot(hit.point[0] - eye[0], hit.point[1] - eye[1], hit.point[2] - eye[2]) < dist - 0.2) continue;
+      // Seen for certain: the ray meets the piece itself first (a ray that meets nothing may have passed a model the
+      // scene's rays do not test; such a side is kept only when no side is seen for certain).
+      const seen = !!hit && hit.id === id;
+      // Not inside a wall either: a ray from the eye starting inside one leaves it unseen (its back faces), but one from the
+      // piece out to the eye meets the wall's face just short of the eye.
+      const out = r.raycastWorld(c, [eye[0] - c[0], eye[1] - c[1], eye[2] - c[2]], dist, pieceSkip);
+      if (out && out.id !== id) {
+        const at = Math.hypot(out.point[0] - c[0], out.point[1] - c[1], out.point[2] - c[2]);
+        if (at > dist - INSIDE_WALL_M && at < dist - 0.02) continue;
+      }
       // Not inside a wall: room round the eye.
       if ((([[1, 0], [-1, 0], [0, 1], [0, -1]] as const).some(([ox, oz]) => free(r, eye, [eye[0] + ox * 0.35, eye[1], eye[2] + oz * 0.35], skip) < 0.34))) continue;
       let score = ((dx * (toEye[0] as number) + dz * (toEye[1] as number)) / toLen) * 0.6;
       if (faceAxis) score += Math.abs(dx * faceAxis[0] + dz * faceAxis[1]) * 3;
-      found.push({ eye, dx, dz, d, score });
+      if (seen) score += 2;
+      found.push({ eye, dx, dz, d, score, seen });
     }
-    // The best clear side with room for the guide beside the piece.
+    // The best clear side with room for the guide beside the piece, out of the visitor's view of it.
     found.sort((p, q) => q.score - p.score);
-    for (const f of found.slice(0, 4)) {
-      const stand = standBeside(r, id, c, f.eye, f.dx, f.dz, f.d, skip);
+    for (const f of found.slice(0, 5)) {
+      const stand = standBeside(r, id, c, f.eye, f.dx, f.dz, f.d, skip, bounds);
+      if (!stand) continue;
       // Look a little below the middle of a hanging piece, at the middle of a floor piece.
-      if (stand) return { eye: f.eye, target: [c[0], upright ? c[1] - 0.1 : c[1], c[2]], stand };
+      const vp: Viewpoint = { eye: f.eye, target: [c[0], upright ? c[1] - 0.1 : c[1], c[2]], stand: stand.feet };
+      if (stand.clear && f.seen) return vp;
+      const rank = (stand.clear ? 1 : 0) + (f.seen ? 2 : 0);
+      if (!best || rank > best.rank) best = { vp, rank };
     }
     found.length = 0;
   }
-  return null;
+  return best?.vp ?? null;
 }
 
-/** A spot for the guide beside the piece, to one side of the visitor's line of sight and in view from `eye`. */
-function standBeside(r: Renderer, id: string, c: Vec3, eye: Vec3, dx: number, dz: number, d: number, skip: ReadonlySet<string>): Vec3 | null {
+/** Half her width (m) as the visitor's view meets her. */
+export const PERSON_HALF_M = 0.35;
+/** Least gap (m, in plan) between where the guide stands and the piece's footprint. */
+export const STAND_CLEAR_M = 0.6;
+/** Widest angle (rad) off the line to the piece she may stand at and still be in view beside it. */
+const STAND_IN_VIEW = 0.75;
+
+/** Signed angle (rad) of the direction (`x`, `z`) from the heading (`fx`, `fz`), positive to the visitor's right. */
+function angleOff(fx: number, fz: number, x: number, z: number): number {
+  // Right of a heading (fx, fz) is (-fz, fx) (the walk's convention: yaw 0 looks down -z, its right is +x).
+  return Math.atan2(x * -fz + z * fx, x * fx + z * fz);
+}
+
+/**
+ * The visitor's view of the piece from `eye`, in plan: the angles (rad, positive right) its footprint's corners span about
+ * the line to its centre, and the heading of that line.
+ */
+export function viewCone(eye: Readonly<Vec3>, bounds: { min: Vec3; max: Vec3 }): { fx: number; fz: number; min: number; max: number } {
+  const cx = (bounds.min[0] + bounds.max[0]) / 2 - eye[0];
+  const cz = (bounds.min[2] + bounds.max[2]) / 2 - eye[2];
+  const l = Math.hypot(cx, cz) || 1;
+  const fx = cx / l;
+  const fz = cz / l;
+  let min = 0;
+  let max = 0;
+  for (const x of [bounds.min[0], bounds.max[0]])
+    for (const z of [bounds.min[2], bounds.max[2]]) {
+      const a = angleOff(fx, fz, x - eye[0], z - eye[2]);
+      min = Math.min(min, a);
+      max = Math.max(max, a);
+    }
+  return { fx, fz, min, max };
+}
+
+/**
+ * The guide at `feet` leaves the visitor's view of the piece free: outside the cone its footprint spans from `eye` (her own
+ * width included, a little to spare), at least {@link STAND_CLEAR_M} from its footprint, and still in view beside it.
+ */
+export function clearOfView(eye: Readonly<Vec3>, bounds: { min: Vec3; max: Vec3 }, feet: Readonly<Vec3>): boolean {
+  const ox = Math.max(bounds.min[0] - feet[0], 0, feet[0] - bounds.max[0]);
+  const oz = Math.max(bounds.min[2] - feet[2], 0, feet[2] - bounds.max[2]);
+  if (Math.hypot(ox, oz) < STAND_CLEAR_M) return false;
+  const cone = viewCone(eye, bounds);
+  const px = feet[0] - eye[0];
+  const pz = feet[2] - eye[2];
+  const dist = Math.hypot(px, pz);
+  if (dist < 0.5) return false;
+  const a = angleOff(cone.fx, cone.fz, px, pz);
+  const half = Math.atan2(PERSON_HALF_M, dist) + 0.03;
+  if (Math.abs(a) > STAND_IN_VIEW) return false;
+  return a - half > cone.max || a + half < cone.min;
+}
+
+/**
+ * A spot for the guide beside the piece, to one side of the visitor's view of it (clear of the cone its footprint spans:
+ * {@link clearOfView}) and in view from `eye`; on the visitor's left first (the product card docks right). Near the piece
+ * first. When no such spot has a floor and a clear walk, the first spot that has (the guide still beside it).
+ */
+function standBeside(r: Renderer, id: string, c: Vec3, eye: Vec3, dx: number, dz: number, d: number, skip: ReadonlySet<string>, bounds: { min: Vec3; max: Vec3 }): { feet: Vec3; clear: boolean } | null {
+  const feetEye: Vec3 = [eye[0], eye[1] - WALK_EYE, eye[2]];
+  const spots = standSpots(c, eye, dx, dz, d, bounds);
+  let fallback: Vec3 | null = null;
+  for (const [x, z, clear] of spots) {
+    const f = floorAt(r, x, z, eye[1] + 0.3, skip);
+    if (!f || f.id === id || Math.abs(f.y - (eye[1] - WALK_EYE)) > 0.35) continue;
+    const feet: Vec3 = [x, f.y, z];
+    if (!clear && fallback) continue;
+    if (!clearWalk(r, feetEye, feet, skip)) continue;
+    if (clear) return { feet, clear: true };
+    fallback ??= feet;
+  }
+  return fallback ? { feet: fallback, clear: false } : null;
+}
+
+/**
+ * Candidate spots for the guide (x, z, clear of the view), best first: clear ones, on the visitor's left, near the piece,
+ * close to the line of sight. Pure (exported for tests).
+ */
+export function standSpots(c: Readonly<Vec3>, eye: Readonly<Vec3>, dx: number, dz: number, d: number, bounds: { min: Vec3; max: Vec3 }): Array<[number, number, boolean]> {
+  // The piece's half width across the line of sight.
+  const cone = viewCone(eye, bounds);
+  const across = Math.max(Math.abs(Math.tan(cone.min)), Math.abs(Math.tan(cone.max))) * d;
   const px = dz;
   const pz = -dx;
-  // Near the piece and to one side, so the visitor sees both.
-  for (const along of [0.32, 0.5, 0.7]) {
-    for (const side of [1.1, -1.1, 1.6, -1.6]) {
-      const x = c[0] + dx * d * along + px * side;
-      const z = c[2] + dz * d * along + pz * side;
-      const f = floorAt(r, x, z, eye[1] + 0.3, skip);
-      if (!f || f.id === id || Math.abs(f.y - (eye[1] - WALK_EYE)) > 0.35) continue;
-      const feet: Vec3 = [x, f.y, z];
-      if (!clearWalk(r, [eye[0], eye[1] - WALK_EYE, eye[2]], feet, skip)) continue;
-      return feet;
-    }
+  const out: Array<{ x: number; z: number; clear: boolean; score: number }> = [];
+  for (const along of [0.32, 0.5, 0.7, 0.2])
+    for (const mag of [1.1, 1.6, across + PERSON_HALF_M + STAND_CLEAR_M, across + 1.3, 2.2])
+      for (const sign of [1, -1]) {
+        const side = mag * sign;
+        const x = c[0] + dx * d * along + px * side;
+        const z = c[2] + dz * d * along + pz * side;
+        const clear = clearOfView(eye, bounds, [x, 0, z]);
+        // The visitor's left: the far side from the product card.
+        const left = angleOff(-dx, -dz, x - eye[0], z - eye[2]) < 0;
+        out.push({ x, z, clear, score: (clear ? 0 : 100) + (left ? 0 : 1.5) + mag + along });
+      }
+  out.sort((a, b) => a.score - b.score);
+  return out.map((o) => [o.x, o.z, o.clear]);
+}
+
+/** A part of the screen in normalised device coordinates (x and y from -1 to 1, y up). */
+export interface ScreenArea {
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
+}
+
+/** Share of the free area the piece may fill (a margin round it). */
+const FRAME_FILL = 0.86;
+
+/**
+ * Frame a piece in the part of the screen the interface leaves free (`free`: left of the product card, above the caption
+ * and the tour bar), seen from `eye` looking at `target`: the view turns so the piece's middle sits in the middle of the
+ * free area, and steps back along its line (up to `maxBack` metres, the room behind the eye) until the piece fits it. The
+ * lens: vertical field `vfov` (radians) and `aspect`. Pure; returns the new eye and the point it looks at.
+ */
+export function framePiece(eye: Readonly<Vec3>, target: Readonly<Vec3>, bounds: { min: Vec3; max: Vec3 }, free: ScreenArea, vfov: number, aspect: number, maxBack: number): { eye: Vec3; look: Vec3 } {
+  const tanV = Math.tan(vfov / 2);
+  const tanH = tanV * aspect;
+  const dx = target[0] - eye[0];
+  const dy = target[1] - eye[1];
+  const dz = target[2] - eye[2];
+  const dist = Math.hypot(dx, dy, dz);
+  if (!(dist > 1e-3) || !(tanV > 0) || !(aspect > 0)) return { eye: [eye[0], eye[1], eye[2]], look: [target[0], target[1], target[2]] };
+  const yaw = Math.atan2(-dx, -dz);
+  // The piece's extent in the view (tangent units), from its box's corners.
+  const f: Vec3 = [dx / dist, dy / dist, dz / dist];
+  const right: Vec3 = [Math.cos(yaw), 0, -Math.sin(yaw)];
+  const up: Vec3 = [f[1] * right[2] - f[2] * right[1], f[2] * right[0] - f[0] * right[2], f[0] * right[1] - f[1] * right[0]];
+  let wx = 0;
+  let wy = 0;
+  for (const x of [bounds.min[0], bounds.max[0]])
+    for (const y of [bounds.min[1], bounds.max[1]])
+      for (const z of [bounds.min[2], bounds.max[2]]) {
+        const px = x - target[0];
+        const py = y - target[1];
+        const pz = z - target[2];
+        const depth = Math.max(0.3, dist + px * f[0] + py * f[1] + pz * f[2]);
+        wx = Math.max(wx, Math.abs(px * right[0] + py * right[1] + pz * right[2]) / depth);
+        wy = Math.max(wy, Math.abs(px * up[0] + py * up[1] + pz * up[2]) / depth);
+      }
+  const fx = ((free.x1 - free.x0) / 2) * tanH * FRAME_FILL;
+  const fy = ((free.y1 - free.y0) / 2) * tanV * FRAME_FILL;
+  // Step back until it fits (its size in the view goes as one over the distance; the tilt adds a little, checked below).
+  const k = Math.max(1, fx > 0 ? wx / fx : 1, fy > 0 ? wy / fy : 1);
+  const room = Math.max(0, maxBack);
+  let back = Math.min(room, dist * (k - 1));
+  let shot = aimAt(eye, target, f, back, free, tanH, tanV);
+  for (let i = 0; i < 6 && back < room && !fits(shot, bounds, free, tanH, tanV); i++) {
+    back = Math.min(room, back + Math.max(0.15, (dist + back) * 0.12));
+    shot = aimAt(eye, target, f, back, free, tanH, tanV);
   }
-  return null;
+  return shot;
+}
+
+/** The eye `back` metres behind `eye` along the plan of `f`, turned so `target` lands in the middle of `free`. */
+function aimAt(eye: Readonly<Vec3>, target: Readonly<Vec3>, f: Readonly<Vec3>, back: number, free: ScreenArea, tanH: number, tanV: number): { eye: Vec3; look: Vec3 } {
+  const fl = Math.hypot(f[0], f[2]) || 1;
+  const e: Vec3 = [eye[0] - (f[0] / fl) * back, eye[1], eye[2] - (f[2] / fl) * back];
+  const yaw = Math.atan2(-(target[0] - e[0]), -(target[2] - e[2]));
+  // Keep the eye's height: step back in plan, and look again at the piece from there.
+  const nd = Math.hypot(target[0] - e[0], target[1] - e[1], target[2] - e[2]);
+  const nflat = Math.hypot(target[0] - e[0], target[2] - e[2]) || 1e-9;
+  const nPitch = Math.atan2(target[1] - e[1], nflat);
+  // Turn so the piece's middle lands on the free area's middle: a free area to the left puts the piece left of the
+  // view's middle (the view turns right of it), one high up tilts the view down.
+  const cx = (free.x0 + free.x1) / 2;
+  const cy = (free.y0 + free.y1) / 2;
+  const turnYaw = yaw + Math.atan(cx * tanH);
+  const turnPitch = Math.max(-1.2, Math.min(1, nPitch - Math.atan(cy * tanV)));
+  const look: Vec3 = [e[0] - Math.sin(turnYaw) * Math.cos(turnPitch) * nd, e[1] + Math.sin(turnPitch) * nd, e[2] - Math.cos(turnYaw) * Math.cos(turnPitch) * nd];
+  return { eye: e, look };
+}
+
+/** Every corner of `bounds` lands inside `free` (a little margin) seen from the shot. */
+function fits(shot: { eye: Vec3; look: Vec3 }, bounds: { min: Vec3; max: Vec3 }, free: ScreenArea, tanH: number, tanV: number): boolean {
+  const { eye, look } = shot;
+  const fx = look[0] - eye[0];
+  const fy = look[1] - eye[1];
+  const fz = look[2] - eye[2];
+  const fl = Math.hypot(fx, fy, fz) || 1;
+  const f = [fx / fl, fy / fl, fz / fl] as const;
+  const yaw = Math.atan2(-f[0], -f[2]);
+  const r = [Math.cos(yaw), 0, -Math.sin(yaw)] as const;
+  const u = [r[1] * f[2] - r[2] * f[1], r[2] * f[0] - r[0] * f[2], r[0] * f[1] - r[1] * f[0]] as const;
+  for (const x of [bounds.min[0], bounds.max[0]])
+    for (const y of [bounds.min[1], bounds.max[1]])
+      for (const z of [bounds.min[2], bounds.max[2]]) {
+        const dx = x - eye[0];
+        const dy = y - eye[1];
+        const dz = z - eye[2];
+        const depth = dx * f[0] + dy * f[1] + dz * f[2];
+        if (depth <= 0.05) return false;
+        const sx = (dx * r[0] + dy * r[1] + dz * r[2]) / depth / tanH;
+        const sy = (dx * u[0] + dy * u[1] + dz * u[2]) / depth / tanV;
+        if (sx < free.x0 || sx > free.x1 || sy < free.y0 || sy > free.y1) return false;
+      }
+  return true;
 }

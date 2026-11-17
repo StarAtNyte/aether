@@ -55,8 +55,9 @@ describe('KTX2 twins of the library', () => {
       for (const t of v.textures) if (t.codec !== 'kept') expect(t.ssim ?? 1, `${v.file} ${t.slots.join('+')}`).toBeGreaterThan(0.9);
     }
     expect(after).toBeLessThan(before * 0.6);
-    // The twins ship next to the originals: keep them bounded (the library itself is ≤ 150 MB).
-    expect(bytes).toBeLessThan(110 * 1024 * 1024);
+    // The twins ship next to the originals: keep them bounded (the library itself is ≤ 230 MB). The thirteen 4096 px
+    // rugs of the Rug Exhibition Hall (pack aether-rugs) take about 34 MB of it, loaded only by worlds that show them.
+    expect(bytes).toBeLessThan(125 * 1024 * 1024);
   });
 
   it('use UASTC for normal and data maps, and encode every texture of the cast (hair cards with alpha as UASTC)', () => {

@@ -73,7 +73,8 @@ describe('place_items with library models', () => {
   });
 
   it('places the parametric part, and says so, when auto finds nothing for the kind', () => {
-    const r = place(shell(), [{ kind: 'rug', model: 'auto', room: 'living', at: [2.5, 2], id: 'ward' }]);
+    // (A rug no longer serves: the library has the Rug Exhibition Hall's modern rugs.)
+    const r = place(shell(), [{ kind: 'cane-chair', model: 'auto', room: 'living', at: [2.5, 2], id: 'ward' }]);
     expect(r.ok, r.text).toBe(true);
     const w = pieces(r.world).find((e) => e.id.endsWith('ward'))!;
     expect(w.shape.kind).toBe('procedural');

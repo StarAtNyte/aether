@@ -49,13 +49,19 @@ export function GuidePanel({
   guide,
   explore,
   show,
+  onReady,
 }: {
   sim: Simulation;
   world: WorldDoc;
   guide: GuideSpec;
   explore: () => ExploreController | null;
-  /** `all`: person and controls; `person`: the person only (playing); `none`: nothing (a story). */
+  /**
+   * `all`: person and controls (the world is shown: she may greet); `person`: the person only (playing, or loading behind
+   * the loading screen); `none`: nothing (a story).
+   */
   show: 'all' | 'person' | 'none';
+  /** Her body is loaded and prepared (or the wait for it gave up): the player may lift its loading screen. */
+  onReady?: () => void;
 }): ReactElement {
   const layerRef = useRef<HTMLDivElement>(null);
   const ctrlRef = useRef<GuideController | null>(null);
@@ -67,11 +73,13 @@ export function GuidePanel({
   const inputRef = useRef<HTMLInputElement>(null);
   const exploreRef = useRef(explore);
   exploreRef.current = explore;
+  const readyRef = useRef(onReady);
+  readyRef.current = onReady;
 
   useEffect(() => {
     const layer = layerRef.current;
     if (!layer) return;
-    const ctrl = new GuideController(sim, world, guide, layer, () => exploreRef.current(), setSnap);
+    const ctrl = new GuideController(sim, world, guide, layer, () => exploreRef.current(), setSnap, () => readyRef.current?.());
     ctrlRef.current = ctrl;
     setSnap(ctrl.snapshot);
     return () => {
@@ -81,6 +89,7 @@ export function GuidePanel({
   }, [sim, world, guide]);
 
   useEffect(() => ctrlRef.current?.setHidden(show === 'none'), [show]);
+  useEffect(() => ctrlRef.current?.setRevealed(show === 'all'), [show]);
   useEffect(() => ctrlRef.current?.setTyping(focused || draft.trim().length > 0), [focused, draft]);
   // The guide asks for the panel (Ask the guide, a click on the person, an answer coming).
   const openSeq = snap?.openSeq ?? 0;

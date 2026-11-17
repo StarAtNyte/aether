@@ -166,6 +166,53 @@
   }
 }
 
+/*
+ * Mid widths (a laptop window): a narrower card docked high on the right, so the piece it describes keeps the rest of the
+ * screen (the showroom guide frames pieces left of it: guide.ts productCardWidth mirrors the width). The details are cut
+ * to three lines (the guide says them anyway) and the shop note goes.
+ */
+@media (min-width: 641px) and (max-width: 1180px) {
+  .pl-prod {
+    top: 84px;
+    width: min(300px, calc(100% - 40px));
+    max-height: calc(100% - 260px);
+    padding: 18px 18px 16px;
+    transform: none;
+    animation-name: pl-prod-in-mid;
+  }
+
+  .pl-prod__name {
+    font-size: 18px;
+  }
+
+  .pl-prod__details {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    font-size: 13px;
+  }
+
+  .pl-prod__actions {
+    margin-top: 14px;
+  }
+
+  .pl-prod__note {
+    display: none;
+  }
+}
+
+@keyframes pl-prod-in-mid {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 @media (max-width: 640px) {
   .pl-prod {
     top: auto;

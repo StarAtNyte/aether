@@ -592,6 +592,36 @@ npm run assets:simready -- bulk --reprocess=front     # convert again only the m
 See [IMAGE_TO_3D.md](IMAGE_TO_3D.md) for the off-by-default TRELLIS.2
 provider (your own machine or cloud account).
 
+## Rugs and display furniture
+
+Thirteen rugs and two pieces of display furniture are made procedurally (pack `aether-rugs`, MIT), for the Rug
+Exhibition Hall and any shop, home or gallery world (`find_model "persian rug"`, `"runner"`, `"display plinth"`):
+
+```sh
+npx tsx scripts/assets/rugs/build.ts           # textures (Python) + models and thumbnails (Blender, CPU), library + catalog
+npm run assets:ktx2 -- --only=models           # their KTX2 twins (the hosted build ships the twins)
+npx tsx scripts/assets/rugs/hall-layout.ts     # place them in the Rug Exhibition Hall (idempotent)
+```
+
+- **Designs** (`designs.py`, `rugkit.py`; numpy, Pillow, scipy): each rug is painted knot by knot on a palette canvas:
+  Persian ones with a field (scrolling vines and blossoms, a herati lattice or Mahal's open palmettes), a lobed medallion
+  with pendants, spandrels, a main border of alternating rosettes and palmettes on a meandering vine between guard
+  stripes, four-fold mirror symmetry, abrash (dye-batch bands), wear for the antique ones and a flatwoven end band;
+  the Heriz is geometric (stepped medallions with latch hooks, a turtle border); the Motion rugs are tufted dry-brush
+  bands and flowing waves; the Farmhouse rugs are heathered flatweaves with a border or stripe groups and whipped edges.
+- **Textures**: colour at 4096 px on the long edge with the pile's micro structure (knot domes about 2-6 mm, tufts or
+  weft ribs); a 512 px tiling normal map of the same structure repeated knot for knot (`KHR_texture_transform`);
+  roughness 0.9 (the Isfahan's silk 0.42 through a roughness map); alpha-card fringes. WebP in the GLB, about 1.2-4 MB a
+  rug; the KTX2 twins keep the colour as ETC1S (SSIM about 0.98) at 1.2-2.9 MB; 512 px `lite` copies for the low tiers.
+- **Geometry** (`blender_build.py`, Blender 4.2 headless on the CPU): a grid slab at the real pile thickness (4 mm
+  flatweaves to 13 mm tufted) with softly bevelled edges, floor rugs with a gentle undulation and corners lifting a few
+  mm, 830-6,900 triangles. Width along X, length along Z, base on y = 0, the top of the design towards -Z; hung with local
+  +Z pointing down a rug reads upright (wall rugs carry their fringe at the bottom only).
+- **Furniture**: `display-table-oak` (3.3 x 1.0 m, top at 0.75 m, tapered legs, apron) and `display-plinth-oak`
+  (3.1 x 2.4 m, 0.4 m high: oak top, smoked-oak body, recessed toe kick), procedural oak at 1024 x 2048 px.
+- **Review**: `blender_render.py` (contact sheet, close-ups, thumbnails, hall views from `world-dump.ts`) and
+  `check_layout.py` (every rug, plinth and table placement against the generated geometry, numerically).
+
 ## Vehicles and animals
 
 - **Vehicles** (`scripts/assets/vehicles.ts`, `vehicle-geo.ts`; `npm run` is not needed: `npx tsx scripts/assets/vehicles.ts`)
