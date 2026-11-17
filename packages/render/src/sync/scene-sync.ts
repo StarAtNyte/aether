@@ -67,6 +67,7 @@ import { disposeModelInstance, instantiateAsset, instantiateModel, type ModelCac
 import { createPoster, shareMaterials, type TextureCache } from '../geometry/poster';
 import type { AssetAnimator } from './asset-animator';
 import { isVehicleModel, VehicleRig } from './vehicle-rig';
+import { ModelUpgrades } from './model-upgrades';
 import type { CharacterSystem } from '../characters/system';
 import { resolveLook } from '@aether/assets';
 import { assetInfo, effectiveAssetId, fitScale, loadCatalog, lodDistances, type AssetInfo } from '@aether/assets';
@@ -134,6 +135,13 @@ export interface SceneSyncOptions {
   textures?: TextureCache;
   /** Asked when a library model mounts: true loads its light copy (256 px textures) instead of the full file, for the low tiers. */
   liteModels?: () => boolean;
+  /**
+   * Progressive library models (see model-upgrades.ts): a model whose file is at least {@link PROGRESSIVE_MIN_BYTES} and
+   * that has a light copy mounts the copy first and swaps the full file in later, when `allowed` (the host's load screen
+   * is down), nearest first. `prepare` readies the full content's programs and textures before the swap (the light copy
+   * stays on screen meanwhile). Omitted: library models mount their full file at once.
+   */
+  modelUpgrades?: { allowed: () => boolean; resting?: () => boolean; prepare?: (content: Object3D) => Promise<void> };
   /** 'ghost' renders translucent previews: no lights, no shadows. */
   variant?: MaterialVariant;
   /** Total instance budget (default {@link DEFAULT_MAX_INSTANCES}). */
@@ -209,6 +217,8 @@ export const MESH_TRIANGLES_KEY = 'aetherTriangles';
 
 /** Mounting generated content runs in slices of about this long before yielding to the page (ms). */
 const MOUNT_SLICE_MS = 12;
+/** Library models smaller than this (bytes of the main file) mount their full file at once: the light copy saves little. */
+export const PROGRESSIVE_MIN_BYTES = 200_000;
 
 let meshKeySeq = 0;
 const meshKeys = new WeakMap<object, string>();
@@ -344,6 +354,8 @@ export class SceneSync {
   private readonly vehicles = new VehicleRig();
   /** Per-entity clones of the "paint" materials of tinted vehicles (disposed with the content). */
   private readonly paintClones = new Map<string, Material[]>();
+  /** Light copies of library models waiting for their full file (null: progressive models off). */
+  private readonly upgrades: ModelUpgrades | null;
 
   private loadAnimator(): Promise<AssetAnimator> {
     this.animatorLoad ??= import('./asset-animator').then((m) => (this.animatorRef = new m.AssetAnimator()));
@@ -388,6 +400,21 @@ export class SceneSync {
     const virtual = this.variant === 'standard' && opts.virtual !== false ? (opts.virtual ?? { triangles: DEFAULT_VIRTUAL_TRIANGLES }) : null;
     this.dags = virtual ? new DagClient(virtual.dag) : null;
     this.virtualTriangles = virtual ? Math.max(3, virtual.triangles) : 0;
+    const up = this.variant === 'standard' ? opts.modelUpgrades : undefined;
+    this.upgrades = up ? new ModelUpgrades({ allowed: up.allowed, ...(up.resting ? { resting: up.resting } : {}) }) : null;
+  }
+
+  /**
+   * Start the full-file upgrades of light library models that may start now, nearest to `camera` first (call once a
+   * frame; cheap when none wait).
+   */
+  updateUpgrades(camera: PerspectiveCamera | null): void {
+    this.upgrades?.update(camera);
+  }
+
+  /** Light library models waiting for, or loading, their full file. */
+  get upgradesPending(): number {
+    return this.upgrades ? this.upgrades.waiting + this.upgrades.active : 0;
   }
 
   /** Whether a scatter field needs a view update even if the camera did not move. */
@@ -1254,6 +1281,7 @@ export class SceneSync {
     this.merges?.dispose();
     this.cellShadows?.dispose();
     this.virtualBatches?.dispose();
+    this.upgrades?.dispose();
     this.disposed = true;
     this.dags?.dispose();
     this.placeholderGeometry.dispose();
@@ -1724,29 +1752,50 @@ export class SceneSync {
   private async mountModelAsset(node: EntityNode, shape: AssetShape, info: AssetInfo, scale: number, token: number): Promise<void> {
     const models = this.opts.models;
     if (!models || !info.url) throw new Error('model loading is not available');
-    // The low tiers load the light copy (small textures, one level) of models that have one.
-    const lite = info.liteUrl && this.variant === 'standard' && this.opts.liteModels?.() === true;
-    const url = lite ? info.liteUrl! : info.url;
-    const lodUrls = this.variant === 'standard' && !lite ? info.lodUrls : [];
-    const urls = [url, ...lodUrls];
-    // One reference per URL, held until the content is torn down (or released at once on failure / staleness).
-    const loads = urls.map((u) => models.acquire(u));
-    const release = (): void => {
-      for (const u of urls) models.release(u);
-    };
-    let sources: Object3D[];
-    try {
-      sources = await Promise.all(loads);
-    } catch (e) {
-      release();
-      throw e;
-    }
+    const standard = this.variant === 'standard';
+    // The low tiers load the light copy (small textures, one level) of models that have one, and keep it.
+    const lite = !!info.liteUrl && standard && this.opts.liteModels?.() === true;
+    // Elsewhere a large model with a light copy shows the copy first and upgrades to the full file later (model-upgrades.ts).
+    const progressive = !lite && !!info.liteUrl && this.upgrades !== null && (info.entry?.bytes ?? 0) >= PROGRESSIVE_MIN_BYTES;
+    const urls = lite || progressive ? [info.liteUrl!] : [info.url, ...(standard ? info.lodUrls : [])];
+    const sources = await this.acquireModels(urls);
     if (!this.isCurrent(node, token)) {
-      release();
+      for (const u of urls) models.release(u);
       return;
     }
     this.clearPlaceholder(node);
-    node.releases.push(release);
+    await this.mountModelSources(node, shape, info, scale, token, urls, sources);
+    if (progressive && this.isCurrent(node, token)) this.requestUpgrade(node, shape, info, scale, token);
+  }
+
+  /** Retain and load `urls` (one reference each); on failure the references are given back and the error rethrown. */
+  private async acquireModels(urls: readonly string[]): Promise<Object3D[]> {
+    const models = this.opts.models!;
+    const loads = urls.map((u) => models.acquire(u));
+    try {
+      return await Promise.all(loads);
+    } catch (e) {
+      for (const u of urls) models.release(u);
+      throw e;
+    }
+  }
+
+  /**
+   * Build the content of loaded model `sources` (the main file, then its levels) and mount it under the node. The node
+   * holds the references to `urls` from here on (released on teardown).
+   */
+  private async mountModelSources(node: EntityNode, shape: AssetShape, info: AssetInfo, scale: number, token: number, urls: readonly string[], sources: Object3D[]): Promise<void> {
+    const models = this.opts.models!;
+    node.releases.push(() => {
+      for (const u of urls) models.release(u);
+    });
+    const { content, main } = this.modelContent(node, info, scale, sources);
+    node.content.add(content);
+    await this.registerModelContent(node, shape, info, token, content, main);
+  }
+
+  /** The drawable content of loaded model sources: the main file's instance, or a LOD of it and its levels. */
+  private modelContent(node: EntityNode, info: AssetInfo, scale: number, sources: Object3D[]): { content: Object3D; main: Object3D } {
     const main = instantiateAsset(sources[0] as Object3D, scale);
     let content: Object3D = main;
     if (sources.length > 1 && info.entry) {
@@ -1768,8 +1817,13 @@ export class SceneSync {
         o.receiveShadow = standard && node.entity.receiveShadow;
       }
     });
-    node.content.add(content);
+    return { content, main };
+  }
+
+  /** Paint, vehicle rig and animation of mounted model content (with their releases). */
+  private async registerModelContent(node: EntityNode, shape: AssetShape, info: AssetInfo, token: number, content: Object3D, main: Object3D): Promise<void> {
     node.releases.push(() => disposeModelInstance(content));
+    const standard = this.variant === 'standard';
     if (standard) {
       this.paintAsset(node);
       if (isVehicleModel(main)) {
@@ -1788,6 +1842,81 @@ export class SceneSync {
       animator.add(node.id, clipRoot, node.object, info.anims, shape.animation);
       node.releases.push(() => animator.remove(node.id));
     }
+  }
+
+  /** Queue the swap of a node's light copy for its full file (and levels); see model-upgrades.ts. */
+  private requestUpgrade(node: EntityNode, shape: AssetShape, info: AssetInfo, scale: number, token: number): void {
+    const upgrades = this.upgrades;
+    if (!upgrades || !info.url) return;
+    const urls = [info.url, ...info.lodUrls];
+    upgrades.request(info.url, {
+      live: () => this.isCurrent(node, token),
+      bounds: (out) => {
+        const box = this.entityBounds(node.id, _upgradeBox);
+        return box.isEmpty() ? null : box.getBoundingSphere(out);
+      },
+      load: () =>
+        this.loadUpgrade(node, shape, info, scale, token, urls).catch((e: unknown) => {
+          // The light copy stays: it is a complete model, only its textures are smaller.
+          log.warn(`${node.id}: full model did not load, keeping the light copy: ${errorMessage(e)}`);
+          return null;
+        }),
+    });
+  }
+
+  /**
+   * Load a node's full file, build its content off the scene and let the host prepare its programs and textures (the
+   * light copy stays on screen meanwhile). Resolves to the swap: synchronous, same transform and scale, no frame without
+   * either copy.
+   */
+  private async loadUpgrade(node: EntityNode, shape: AssetShape, info: AssetInfo, scale: number, token: number, urls: readonly string[]): Promise<(() => void) | null> {
+    const models = this.opts.models;
+    if (!models || !this.isCurrent(node, token)) return null;
+    const sources = await this.acquireModels(urls);
+    const release = (): void => {
+      for (const u of urls) models.release(u);
+    };
+    if (!this.isCurrent(node, token)) {
+      release();
+      return null;
+    }
+    const { content, main } = this.modelContent(node, info, scale, sources);
+    const prepare = this.opts.modelUpgrades?.prepare;
+    if (prepare) {
+      try {
+        await prepare(content);
+      } catch (e) {
+        log.warn(`${node.id}: preparing the full model failed (it prepares on first draw): ${errorMessage(e)}`);
+      }
+    }
+    let done = false;
+    const drop = (): void => {
+      if (done) return;
+      done = true;
+      disposeModelInstance(content);
+      release();
+    };
+    if (!this.isCurrent(node, token)) {
+      drop();
+      return null;
+    }
+    return () => {
+      if (done) return;
+      if (!this.isCurrent(node, token)) return drop();
+      done = true;
+      // The light copy's releases (its model reference, instance, paint, rig, animation) go first, then the full content
+      // mounts in its place and registers the same way.
+      const old = node.releases;
+      node.releases = [];
+      node.content.clear();
+      for (const r of old) r();
+      for (const m of this.paintClones.get(node.id) ?? []) m.dispose();
+      this.paintClones.delete(node.id);
+      node.releases.push(release);
+      node.content.add(content);
+      this.contentChanged(node);
+      void this.registerModelContent(node, shape, info, token, content, main);
+    };
   }
 
   private async mountPosterAsset(node: EntityNode, info: AssetInfo, scale: number, token: number): Promise<void> {
@@ -2547,3 +2676,4 @@ function staticCaster(node: Readonly<EntityNode>): boolean {
 }
 
 const _cellSphere = new Sphere();
+const _upgradeBox = new Box3();

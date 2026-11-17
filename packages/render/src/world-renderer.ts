@@ -733,6 +733,8 @@ export const LIVE_ENVIRONMENT_SETTLE_MS = 250;
 export const RELIGHT_LIVE_MS = 100;
 /** The view must have been still this long before idle program priming links anything (ms). */
 const IDLE_PRIME_MS = 2_000;
+/** Longest the preparation of a full library model holds its swap (ms). */
+const UPGRADE_PREPARE_MAX_MS = 4_000;
 /** Period of the CPU-copy sweep between frames (ms, see gpu/cpu-release.ts). */
 const CPU_RELEASE_MS = 250;
 /**
@@ -1326,6 +1328,13 @@ export class WorldRenderer {
     this.sync = new SceneSync({
       ...common,
       liteModels: () => this.lowMemory || this.gpu.tier === 'software' || this.autoTierNow() === 'low',
+      // Large library models show their light copy first; the full files load once the first picture is up (see
+      // holdModelUpgrades), nearest first, and are prepared before they replace the copy.
+      modelUpgrades: {
+        allowed: () => !this.disposed && !this.lost && !this.loadingScreen && !this.upgradesHeld && this.framesDrawn > 0,
+        resting: () => now() - this.viewMovedAt > IDLE_PRIME_MS,
+        prepare: (content) => this.prepareUpgrade(content),
+      },
       characters: this.characters,
       maxInstances: opts.maxInstances ?? this.budget.maxInstances,
       staticBatching: opts.staticBatching !== false,
@@ -1467,6 +1476,47 @@ export class WorldRenderer {
     }
     opts.onProgress?.(`Renderer ready (${backend}, ${wr.gpu.tier} GPU)`);
     return wr;
+  }
+
+  /**
+   * Hold (true) or release the full-file upgrades of light library models (scene-sync `modelUpgrades`): a host whose
+   * cover stays up after the world is loaded (a guide getting ready) holds them so the full files do not compete with
+   * what the first view still needs. They are held while the load screen is up anyway.
+   */
+  holdModelUpgrades(on: boolean): void {
+    this.upgradesHeld = on;
+  }
+
+  /** Light library models waiting for, or loading, their full file. */
+  get modelUpgradesPending(): number {
+    return this.sync.upgradesPending;
+  }
+
+  /**
+   * Prepare a full library model before it replaces its light copy: its programs link and its textures upload in the
+   * scene pass, off the scene graph (every mesh, in view or not), so the first frame that draws it does not wait for it.
+   * Bounded: a compile that never settles lets the swap go ahead after {@link UPGRADE_PREPARE_MAX_MS}.
+   */
+  private prepareUpgrade(content: Object3D): Promise<void> {
+    if (this.disposed || this.lost) return Promise.resolve();
+    const culled: Object3D[] = [];
+    content.traverse((o) => {
+      if (o.frustumCulled) {
+        o.frustumCulled = false;
+        culled.push(o);
+      }
+    });
+    content.updateMatrixWorld(true);
+    let compiling: Promise<unknown>;
+    try {
+      compiling = Promise.resolve(this.compileInScenePass(() => this.renderer.compileAsync(content, this.perspective, this.scene)));
+    } catch (e) {
+      compiling = Promise.reject(e);
+    } finally {
+      for (const o of culled) o.frustumCulled = true;
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    return Promise.race([compiling.then(() => undefined), new Promise<void>((resolve) => (timer = setTimeout(resolve, UPGRADE_PREPARE_MAX_MS)))]).finally(() => clearTimeout(timer));
   }
 
   /** The load screen is up (true) or gone: while up, preparation runs in long slices. */
@@ -5050,6 +5100,8 @@ export class WorldRenderer {
     this.cullFarAnimals();
     this.cullFarInteriors();
     this.cullSmallMeshes();
+    // Light library models whose full file may load now start it (nearest first); the swap redraws.
+    this.sync.updateUpgrades(this.perspective);
     const step = Number.isFinite(dt) ? Math.min(Math.max(dt, 0), 0.1) : 0;
     // In immersive VR the headset moves the view every frame (three's XR manager poses the camera inside render()).
     const cameraMoved = this.xrPresenting || this.rig.update(step);
@@ -6980,6 +7032,8 @@ export class WorldRenderer {
   private matricesFresh = false;
   /** The studio's load screen covers the view (see setLoading). */
   private loadingScreen = false;
+  /** The host holds the upgrades of light library models (see holdModelUpgrades). */
+  private upgradesHeld = false;
   /** An immersive VR session draws the frames (see {@link setXRPresenting}). */
   private xrPresenting = false;
   /** Main-thread budget of background work per frame (preparation, sliced uploads). */

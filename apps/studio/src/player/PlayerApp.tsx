@@ -969,6 +969,9 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
           return;
         }
         simRef.current = sim;
+        // Large library models open as their light copies; the full files wait until the cover is down (released below), so
+        // the first view waits for the cooked package, the light, the guide's body and the light copies only.
+        sim.renderer.holdModelUpgrades(true);
         if (route?.tier) sim.renderer.setRenderTier(route.tier);
         sim.renderer.setPixelRatioCap(q.pixelRatioCap);
         sim.setVolume(s0.volume);
@@ -1019,6 +1022,8 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
           // The cover stays until explore mode takes over (the loading screen goes with the booting phase).
           if (disposed) return;
         }
+        // The cover goes now: the full-resolution models load behind the visitor, nearest first.
+        sim.renderer.holdModelUpgrades(false);
         if (exp.kind === 'game' || route?.cook === 'record') go('title');
         cookHandle.ready = true;
         void attract();
