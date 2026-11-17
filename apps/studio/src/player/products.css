@@ -1,0 +1,189 @@
+/*
+ * Product cards of the standalone player (`products/mount.ts`, lazy: only worlds with products load it). Glass panel in
+ * the player's tokens (`player.css`); docked right on wide screens, a bottom sheet on phones.
+ */
+.pl-prod {
+  position: absolute;
+  top: 50%;
+  right: calc(20px + env(safe-area-inset-right, 0px));
+  z-index: 14;
+  width: min(360px, calc(100% - 40px));
+  max-height: calc(100% - 160px);
+  overflow-y: auto;
+  padding: 24px 24px 22px;
+  border: 1px solid var(--edge);
+  border-radius: 18px;
+  background: var(--glass-strong);
+  color: var(--text);
+  box-shadow: 0 24px 64px rgb(0 0 0 / 0.45);
+  backdrop-filter: blur(20px) saturate(1.1);
+  -webkit-backdrop-filter: blur(20px) saturate(1.1);
+  transform: translateY(-50%);
+  animation: pl-prod-in 0.24s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  outline: none;
+}
+
+.pl-prod:focus-visible {
+  box-shadow:
+    0 24px 64px rgb(0 0 0 / 0.45),
+    0 0 0 2px rgb(255 255 255 / 0.5);
+}
+
+@keyframes pl-prod-in {
+  from {
+    opacity: 0;
+    transform: translate(12px, -50%);
+  }
+  to {
+    opacity: 1;
+    transform: translate(0, -50%);
+  }
+}
+
+.pl-prod__close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.pl-prod__close:hover {
+  background: rgb(255 255 255 / 0.08);
+  color: var(--text);
+}
+
+.pl-prod__close:focus-visible,
+.pl-prod__buy:focus-visible,
+.pl-prod__ask:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+.pl-prod__eyebrow {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font: 600 11px/1 var(--font);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.pl-prod__name {
+  margin: 0 32px 0 0;
+  font: 600 21px/1.25 var(--font-display);
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+.pl-prod__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 14px;
+  margin-top: 12px;
+}
+
+.pl-prod__price {
+  font: 600 19px/1.2 var(--font);
+  font-variant-numeric: tabular-nums;
+}
+
+.pl-prod__size {
+  color: var(--text-2);
+  font: 500 13px/1.2 var(--font);
+  font-variant-numeric: tabular-nums;
+}
+
+.pl-prod__details {
+  margin: 14px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--edge);
+  color: var(--text-2);
+  font: 400 14px/1.55 var(--font);
+}
+
+.pl-prod__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.pl-prod__actions .pl-btn {
+  flex: 1 1 auto;
+  min-height: 44px;
+}
+
+.pl-prod__note {
+  margin: 18px 0 0;
+  color: var(--muted);
+  font: 400 13px/1.45 var(--font);
+}
+
+/* Hover: the product's name next to the pointer. */
+.pl-prod-hover {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 13;
+  max-width: 280px;
+  padding: 6px 10px;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  background: var(--glass-strong);
+  color: var(--text);
+  font: 500 12.5px/1.3 var(--font);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.3);
+}
+
+.pl-prod-hover[hidden] {
+  display: none;
+}
+
+@keyframes pl-prod-up {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .pl-prod {
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: auto;
+    max-height: 70%;
+    padding: 22px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+    border-width: 1px 0 0;
+    border-radius: 18px 18px 0 0;
+    transform: none;
+    animation-name: pl-prod-up;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pl-prod {
+    animation: none;
+  }
+}

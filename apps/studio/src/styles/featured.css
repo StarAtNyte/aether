@@ -229,6 +229,12 @@
   pointer-events: none;
 }
 
+/* "Virtual tour" (a showroom guide leads visitors round): the same mark, warm. */
+.fcard__tour {
+  border-color: oklch(85% 0.12 75 / 0.6);
+  background: oklch(32% 0.08 60 / 0.7);
+}
+
 /* "Multiplayer" (shared visits): the same mark, under "Asset-free" when a card has both (its dot: home.css). */
 .fcard__free + .fcard__mp {
   top: calc(var(--s-3) + 34px);

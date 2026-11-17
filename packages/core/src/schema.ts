@@ -556,6 +556,30 @@ export const InteractSpec = z.object({
 });
 export type InteractSpec = z.infer<typeof InteractSpec>;
 
+/**
+ * Additive: something for sale or on show in a showroom. The player shows a card when the visitor clicks it (name, size,
+ * price, details and an Enquire or Buy button), and the showroom guide ({@link GuideSpec}) knows it by these fields. All
+ * text is display text written by the author: the price is a string ("€1,250", "from $89") so no currency is assumed.
+ */
+export const ProductSpec = z.object({
+  /** Display name; absent: the entity's name. */
+  name: z.string().max(80).optional(),
+  price: z.string().max(40).optional(),
+  /** Size or dimensions as shown ("200 × 300 cm"). */
+  size: z.string().max(60).optional(),
+  /** One or two sentences: material, origin, what makes it special. */
+  details: z.string().max(600).optional(),
+  /** Where the button goes: an https page of the shop, or a mailto: address. Absent: the card says no shop is connected. */
+  url: z
+    .string()
+    .max(500)
+    .regex(/^(https:\/\/|mailto:)[^\s"'<>]+$/)
+    .optional(),
+  /** The button's verb; default `enquire`. */
+  action: z.enum(['buy', 'enquire']).optional(),
+});
+export type ProductSpec = z.infer<typeof ProductSpec>;
+
 export const Entity = z.object({
   id: EntityId,
   name: z.string().default(''),
@@ -606,6 +630,8 @@ export const Entity = z.object({
   interact: InteractSpec.optional(),
   /** Additive: a continuous particle emitter that follows the entity (visual only; see `feel-schema.ts`). */
   vfx: EntityVfx.optional(),
+  /** Additive: for sale or on show in a showroom (see {@link ProductSpec}). */
+  product: ProductSpec.optional(),
 });
 export type Entity = z.infer<typeof Entity>;
 export type EntityInput = z.input<typeof Entity>;
@@ -1136,6 +1162,46 @@ export const TextureSetDef = z.object({
 });
 export type TextureSetDef = z.infer<typeof TextureSetDef>;
 
+/**
+ * Additive: the showroom guide of a published world. The player stands a person (one of the VRM bodies visitors can
+ * choose) at `position`, has it greet the visitor, answer questions about the world's products ({@link ProductSpec}) through
+ * the site's model (a keyword match without one), and walk the visitor to the product asked about. The editor ignores it.
+ */
+export const GuideSpec = z.object({
+  name: z.string().min(1).max(40).default('Ava'),
+  body: z.enum(['kaho-vrm', 'mio-vrm']).default('mio-vrm'),
+  /** First line said to a visitor; absent: a greeting made from the name and the world's name. */
+  greeting: z.string().max(300).optional(),
+  /** What the guide may tell visitors beyond the products: the shop, opening hours, delivery, how to order. */
+  about: z.string().max(1500).optional(),
+  /** Where it stands (feet); absent: a little in front of the walkthrough start. */
+  position: z.tuple([z.number(), z.number(), z.number()]).optional(),
+  /** Facing, radians about Y; absent: towards the start. */
+  yaw: z.number().optional(),
+  /**
+   * The guided tour, in walking order ("Take the tour"): each stop an entity id (a product, or any entity worth a stop),
+   * or `{ at, chapter?, intro?, title?, say? }`: `chapter` starts a chapter (later stops stay in it) and `intro` is said
+   * walking into it; `title` names the stop; `say` is said there (else a line made from the product). Absent: the player
+   * orders the world's products into a short walking route from the start.
+   */
+  tour: z
+    .array(EntityId.or(z.object({ at: EntityId, chapter: z.string().max(60).optional(), intro: z.string().max(300).optional(), title: z.string().max(80).optional(), say: z.string().max(600).optional() })))
+    .max(24)
+    .optional(),
+  /**
+   * Folder of the guide's recorded lines on this site (`/templates/voices/<slug>/`, an `index.json` and MP3s; see the
+   * player's `guide/voice.ts`). Absent: the guide speaks only in bubbles.
+   */
+  voice: z
+    .string()
+    .max(200)
+    .regex(/^\/(?:[\w-]+\/)+$/)
+    .optional(),
+});
+export type GuideSpec = z.infer<typeof GuideSpec>;
+/** One stop of `GuideSpec.tour`. */
+export type GuideStop = NonNullable<GuideSpec['tour']>[number];
+
 export const WorldDoc = z.object({
   version: z.literal(1).default(1),
   id: z.string().default('world'),
@@ -1177,6 +1243,8 @@ export const WorldDoc = z.object({
   views: z.array(ViewStop).max(MAX_VIEW_STOPS).optional(),
   /** Additive: the world's short film (see {@link Story}); played first when `startMode` is `story`. The editor ignores it. */
   story: Story.optional(),
+  /** Additive: the showroom guide (see {@link GuideSpec}). The editor ignores it. */
+  guide: GuideSpec.optional(),
   /** Additive: game feel — feedback tier and per-event cues (visual only; absent = the `normal` tier). See `feel-schema.ts`. */
   feel: FeelSpec.optional(),
   /** Additive: texture sets of the project (see {@link TextureSetDef}); absent for worlds without photographed or generated maps. */
@@ -1235,6 +1303,8 @@ export const Patch = z.discriminatedUnion('op', [
     story: Story.nullable().optional(),
     /** Additive: the tour stops (`world.views`), or with `null` let the player compute them. */
     views: z.array(ViewStop).max(MAX_VIEW_STOPS).nullable().optional(),
+    /** Additive: the showroom guide (`world.guide`), or with `null` remove it. */
+    guide: GuideSpec.nullable().optional(),
   }),
   z.object({ op: z.literal('clear'), /** keep environment/player */ keepEnvironment: z.boolean().default(true) }),
   /** Additive: delete a custom generator (rejected while entities still use it). Needed so `defineGenerator` is invertible. */

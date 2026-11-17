@@ -52,6 +52,8 @@ type Phase = PlayerPhase;
 type ExploreModule = typeof import('./ExploreUI');
 /** The lazily loaded shared-visit controls. */
 type CopresenceModule = typeof import('./copresence/CopresenceUI');
+/** The lazily loaded showroom guide (worlds with `guide`). */
+type GuideModule = typeof import('./guide/GuideUI');
 
 /** The world shows a building (architecture: the dollhouse applies). */
 function hasBuilding(world: WorldDoc): boolean {
@@ -386,11 +388,12 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const world = game.world;
-  const exp = useMemo(() => experienceFor(game.startMode, game.profile, hasBuilding(world), !!world.story), [game.startMode, game.profile, world]);
+  const exp = useMemo(() => experienceFor(game.startMode, game.profile, hasBuilding(world), !!world.story, !!world.guide), [game.startMode, game.profile, world]);
   const [explore, setExplore] = useState<ExploreState | null>(null);
   const [exploreMod, setExploreMod] = useState<ExploreModule | null>(null);
   /** The shared-visit controls (worlds with `sharedVisits`), loaded once the world is up. */
   const [copresenceMod, setCopresenceMod] = useState<CopresenceModule | null>(null);
+  const [guideMod, setGuideMod] = useState<GuideModule | null>(null);
   const exploreRef = useRef<ExploreController | null>(null);
   /** Stops of the cooked package (computed by the cook); the world's own `views` win. */
   const cookedViews = useRef<CookView[] | undefined>(undefined);
@@ -845,6 +848,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
     const host = hostRef.current;
     if (!host) return;
     let disposed = false;
+    let unmountProducts: (() => void) | null = null;
     const canvas = document.createElement('canvas');
     canvas.className = 'pl-canvas';
     canvas.setAttribute('aria-label', `${game.title} — 3D view`);
@@ -984,6 +988,13 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
         if (exp.kind === 'game' || route?.cook === 'record') go('title');
         cookHandle.ready = true;
         void attract();
+        // Product cards (products/): the module loads only for worlds with products.
+        if (Object.values(world.entities).some((e) => e.product))
+          void import('./products/mount').then((m) => {
+            if (!disposed) unmountProducts = m.mountProducts(sim, world, host);
+          }, () => undefined);
+        // The showroom guide loads only for worlds that have one.
+        if (world.guide && route?.cook !== 'record') void import('./guide/GuideUI').then((m) => !disposed && setGuideMod(m), () => undefined);
         // Shared visits: the controls load only for worlds that have them (and show only when a relay answers).
         if (game.sharedVisits && route?.cook !== 'record')
           void import('./copresence/CopresenceUI').then(
@@ -1003,6 +1014,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
       stopMusic();
       storyRef.current?.dispose();
       storyRef.current = null;
+      unmountProducts?.();
       exploreRef.current?.dispose();
       exploreRef.current = null;
       simRef.current?.dispose();
@@ -1296,6 +1308,9 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
       )}
       {copresenceMod && sim && game.sharedVisits && phase !== 'booting' && phase !== 'failed' && (
         <copresenceMod.CopresencePanel sim={sim} world={game.sharedVisits.world} hidden={phase === 'story' || (phase === 'exploring' && !!explore?.photo)} />
+      )}
+      {guideMod && sim && world.guide && phase !== 'booting' && phase !== 'failed' && (
+        <guideMod.GuidePanel sim={sim} world={world} guide={world.guide} explore={() => exploreRef.current} show={phase === 'story' ? 'none' : phase === 'exploring' && !explore?.photo ? 'all' : 'person'} />
       )}
       <div className="pl-toasts" aria-live="polite">
         {toasts.map((t) => (

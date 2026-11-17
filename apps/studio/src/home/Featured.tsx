@@ -17,7 +17,8 @@ const TIME_OF_DAY: ReadonlySet<string> = new Set(['casa-patio', 'skyline-penthou
 const LEAD_STILL: ReadonlySet<string> = new Set(['cloudwatch-harbour']);
 
 /** "Walkthrough · time of day", "Story film", "Game", "City · drone tour", "Scene · orbit": what the player does with the world. */
-export function featuredMode(t: Pick<WorldTemplate, 'slug' | 'kind'>): string {
+export function featuredMode(t: Pick<WorldTemplate, 'slug' | 'kind'> & { virtualTour?: boolean }): string {
+  if (t.virtualTour) return 'Virtual tour · AI guide';
   const p = templatePublish(t.slug, t.kind);
   if (p.startMode === 'story') return 'Explore · story film';
   if (p.startMode === 'play') return p.profile === 'city' ? 'City · game' : 'Game';
@@ -26,7 +27,8 @@ export function featuredMode(t: Pick<WorldTemplate, 'slug' | 'kind'>): string {
 }
 
 /** The verb on a card's button. */
-export function featuredVerb(t: Pick<WorldTemplate, 'slug' | 'kind'>): string {
+export function featuredVerb(t: Pick<WorldTemplate, 'slug' | 'kind'> & { virtualTour?: boolean }): string {
+  if (t.virtualTour) return 'Take the tour';
   const p = templatePublish(t.slug, t.kind);
   return p.startMode === 'story' ? 'Explore' : p.startMode === 'play' ? 'Play' : p.startMode === 'walkthrough' ? 'Walk through' : 'Explore';
 }
@@ -56,6 +58,7 @@ const FeaturedCard = memo(function FeaturedCard({ t, size, onRemix }: { t: World
           Asset-free
         </span>
       )}
+      {t.virtualTour && !t.assetFree && <span className="fcard__free fcard__tour">Virtual tour</span>}
       {t.multiplayer && <span className="fcard__free fcard__mp">Multiplayer</span>}
       {/* The whole card (picture included) is the link; the text above it lets clicks through. */}
       <a className="fcard__link" href={templatePlayUrl(t.slug)} aria-label={`${featuredVerb(t)} ${t.title}: ${featuredMode(t)}`} />

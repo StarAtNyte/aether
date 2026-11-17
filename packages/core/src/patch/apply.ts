@@ -519,6 +519,8 @@ function opSetMeta(d: Draft, p: PatchOf<'setMeta'>): Outcome {
   else if (p.story !== undefined && !deepEqual(p.story, d.world.story)) d.setPresentation('story', p.story);
   if (p.views === null) d.setPresentation('views', undefined);
   else if (p.views !== undefined && !deepEqual(p.views, d.world.views)) d.setPresentation('views', p.views);
+  if (p.guide === null) d.setPresentation('guide', undefined);
+  else if (p.guide !== undefined && !deepEqual(p.guide, d.world.guide)) d.setPresentation('guide', p.guide);
   return OK;
 }
 

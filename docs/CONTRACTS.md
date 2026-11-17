@@ -1952,6 +1952,87 @@ Everything here is additive; the World IR is unchanged.
 - Builds register `./sw.js` (offline precache, per-scope cache names) only
   when the page links a web-app manifest.
 
+### Products (World IR, additive; player cards in `src/player/products/`)
+
+```ts
+interface ProductSpec { name?: string /* ≤80, absent: entity name */; price?: string; size?: string; details?: string /* ≤600 */;
+  url?: string /* https:// or mailto: only */; action?: 'buy' | 'enquire' /* default enquire */ }
+interface Entity { product?: ProductSpec; /* … */ }
+```
+
+- The player lazy-loads `products/mount.ts` only when some entity has `product`. A click on a product, or on any
+  descendant of one (`productOwner`: the entity or its nearest ancestor with `product`), opens its card: name, price,
+  size, details, an Enquire / Buy link (new tab, `noopener`), or "not connected to a shop yet" without a url;
+  "Ask the guide" only when `world.guide` exists. Esc or the close button closes it. Hover shows a pointer and the name.
+- Window events: explore mode sends `aether:pick-entity` (`detail: { id }`, cancelable) for the entity under a click
+  before the walk view glides; the cards call `preventDefault()` for a product, so the camera stays. The guide sends
+  `aether:show-product` (`detail: { id }`) to open a card; the card's "Ask the guide" sends `aether:ask-guide`
+  (`detail: { id }`). In play mode the cards read canvas clicks themselves (not under pointer lock).
+
+### Showroom guide (World IR, additive; player in `src/player/guide/`)
+
+```ts
+interface GuideSpec { name: string /* 1–40, default 'Ava' */; body: 'kaho-vrm' | 'mio-vrm' /* default mio-vrm */;
+  greeting?: string /* ≤300 */; about?: string /* ≤1500: shop, delivery, ordering */; position?: Vec3 /* feet */;
+  yaw?: number /* radians, 0 faces −Z (as player.yaw) */; tour?: GuideStop[] /* ≤24, walking order */; voice?: string }
+type GuideStop = EntityId | { at: EntityId; chapter?: string /* ≤60: starts a chapter, later stops stay in it */;
+  intro?: string /* ≤300: said walking into the chapter */; title?: string /* ≤80 */; say?: string /* ≤600: said there */ }
+interface WorldDoc { guide?: GuideSpec; /* … */ }   // patch: setMeta { guide?: GuideSpec | null }
+```
+
+- Lazy: PlayerApp imports `guide/GuideUI.tsx` (its own JS and CSS chunk) only when `world.guide` exists; nothing is in
+  the play.html shell. The editor ignores `guide`.
+- Person (`person.ts`): a transient entity `aether-guide` with `character: { body }` (idle / walk by speed, as shared-visit
+  avatars), name tag and speech bubble in a DOM layer (hidden when the camera cannot see the head), walks at 1.3 m/s
+  facing its way, turns to a visitor within 4.5 m or talking to it. Stands at `position` (snapped to the floor), else
+  2.5 m in front of `player.spawn` facing it. The guide's own raycasts skip its id.
+- Greeting: when the camera comes within 6 m, or 4 s after the world opens: `greeting`, else "Welcome to {world}! I'm
+  {name}. Shall I show you round?". With a tour it shows as a welcome card ("Start the guided tour · about N min",
+  "Explore on my own"); without one the panel opens with it.
+- Panel (`GuideUI.tsx`): bottom left above the explore bar (phones: under the title) ("Ask {name}", "Take the tour"), opening into the last lines,
+  suggestion chips and a text field. The stage, bottom centre (phones: under the title): captions (the tour's lines while
+  said), the welcome and end cards, and the tour bar (chapter and stop title, a heart to save the piece, one dot per stop
+  to jump to, Back, Pause / Resume, Next ringed by the countdown, Ask, End).
+  Shown while exploring (not in photo mode); the person stays while playing and hides during a story.
+- Brain (`brain.ts`, pure): products are entities with `product`; products of one name are one catalogue item (the
+  first id; the guide goes to the copy nearest the visitor). Request: `POST /api/llm` (same origin,
+  `credentials: 'same-origin'`) `{ role: 'critic', system, messages /* last 6 turns, opening with the visitor */,
+  maxTokens: 400 }`; system prompt: the guide's name and world, `about`, the catalogue as `id | name | size | price |
+  details` lines, 1–3 sentences, never invent products or prices, reply `{"say": "...", "goTo": "<id>" | "tour" | null}`.
+  The reply's first JSON object is read (an unknown `goTo` is dropped), else its text. 25 s limit with a "thinking"
+  state. No model (404 / 405 / 501, a non-JSON answer, an error, the limit, offline): a keyword answer from the catalogue
+  (colour words match shades: blue → denim, marine, navy, teal…; style words their names: Persian → Kashan, Isfahan, Tabriz…; "best" / "cheapest" by price; delivery, made to
+  measure and ordering from `about`; "tour" starts the tour). After a 404, 405, 501 or a non-JSON answer later
+  questions skip the call.
+- Walk to a product (`place.ts`): a viewpoint 2.2 m or more (large pieces further) in front of the product's bounds on
+  a clear side (a hanging piece: its face), at eye level over the visitor's floor, the line of sight checked; the
+  guide stands beside it. The guide's path is straight when clear (rays at 0.5 and 1.3 m), else through one or two of
+  the building's openings (`arch.role: 'opening'`) and rings of points round both ends (lazy A*: a leg's rays are cast only
+  when the search takes it), else it steps there out of view. Rays never run into the guide's own person (they start or
+  stop 1 m short of it): a ray into a skinned VRM tests every triangle before its id is skipped. The camera moves with
+  `ExploreController.lookAt(target, from, minSeconds, then)` (walk: glide or fade; orbit / drone: `flyToPose`),
+  timed to arrive with the guide. On arrival: `aether:show-product` `{ id }`. `aether:ask-guide` `{ id }` (the card's
+  Ask the guide) says the product's name, size, price and first detail without a model call, then walks there. A click
+  on the person (`aether:pick-entity` for `aether-guide`, consumed) opens the panel.
+- Tour (`brain.ts` `tourStops`): `tour` (plain ids and `{ at, … }` stops; unknown entities and repeats dropped; a stop
+  may be any entity, the card opens only at products), else a nearest-neighbour walk from the spawn over the products,
+  one per name, at most 8 stops. Length shown: `tourMinutes` (walk at 1.3 m/s, lines, framing, countdown). Walking
+  there, the view follows the guide (`ExploreController.follow`: a critically damped spring on eye and look point, the
+  eye 2.3 m back along her trail, looking ahead of her; a wall or > 9 m between view and aim fades; walk view without
+  reduced motion only, else `lookAt` as above), then eases round to the stop's viewpoint when she has 1.8 m left; she
+  stands beside it facing the visitor. A new chapter's `intro` is said on the way, the stop's line (`say`, else
+  `narrate`) on arrival, both as captions timed by the recording (else about 15 characters a second); then a 4 s
+  countdown (held while the visitor types or the model thinks) and the next stop. Viewpoints are found once per stop
+  (idle time after the greeting), the way between two stops once (the next leg while the visitor listens). Starting
+  stops the explore bar's autoplay. A drag, click or wheel on the canvas, WASD / arrows, or the explore bar pauses it;
+  Resume walks back to the stop if the visitor left it. A question mid-tour pauses it, is answered where they stand and
+  offers to carry on. Pieces saved with the heart are shown at the end with size, price and Enquire (the product's
+  `url`, else its card) and "Ask {name} about these".
+- Voice (`voice.ts`): `voice` names a same-origin folder with `index.json` (`voiceKey` of each line as said → MP3);
+  only `index.json` loads up front, the next line's clip ahead of its turn, at most two Audio elements at once.
+  `scripts/voices/guide-lines.ts` lists every line (`brain.ts` `guideLines`) for recording.
+- Probe handle: `window.__aetherGuide` (`snapshot()`, `position`, `walking`, `ask(text)`, `startTour()`, `route()`).
+
 ### `apps/server` (local app only; behind the `/api/local/*` guard)
 
 - `GET /api/local/publish/targets` → `{ targets: [{ id: netlify|vercel|github|itch,

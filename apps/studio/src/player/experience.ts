@@ -31,6 +31,11 @@ export interface Experience {
   photo: boolean;
   /** Label of the stops bar. */
   stopsLabel: string;
+  /**
+   * A showroom guide leads the visit (`world.guide`): explore opens inside at the walkthrough start, at eye level in front of
+   * the guide, and the viewpoint autoplay waits for the visitor (the guide's tour is the tour).
+   */
+  guided?: boolean;
 }
 
 export type StartModeLike = 'play' | 'walkthrough' | 'orbit' | 'story' | null | undefined;
@@ -41,7 +46,9 @@ export type ProfileLike = 'game' | 'walkthrough' | 'showcase' | 'city' | 'vr' | 
  * follows its profile: a city's is the drone); a walkthrough is architecture; a city profile is a city; the rest is a
  * showcase. No start mode at all (an old game build) is a game.
  */
-export function experienceFor(startMode: StartModeLike, profile: ProfileLike, hasBuilding = false, hasStory = false): Experience {
+export function experienceFor(startMode: StartModeLike, profile: ProfileLike, hasBuilding = false, hasStory = false, hasGuide = false): Experience {
+  // A guided showroom: inside, on foot, with its guide (whatever its kind, unless it is a game started from its title).
+  if (hasGuide && startMode !== 'play') return { kind: 'arch', entry: 'hero-tour', explore: 'walk', dollhouse: hasBuilding, photo: true, stopsLabel: 'Viewpoints', guided: true };
   // A story world (profile `story`, or any world started on its film): the film first, then P plays, Tab/O explores.
   if ((startMode === 'story' || (!startMode && profile === 'story')) && hasStory) return { kind: 'story', entry: 'story', explore: profile === 'walkthrough' ? 'walk' : profile === 'city' ? 'drone' : 'orbit', dollhouse: profile === 'walkthrough' && hasBuilding, photo: true, stopsLabel: 'Viewpoints' };
   if (startMode === 'play' || (!startMode && (!profile || profile === 'game' || profile === 'vr'))) {

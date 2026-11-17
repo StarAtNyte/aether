@@ -272,8 +272,8 @@ export class Draft {
     else this.doc.feel = value;
   }
 
-  /** Set (or with `undefined`, remove) one of the presentation fields (start mode, profile, story, tour stops). */
-  setPresentation<K extends 'startMode' | 'profile' | 'story' | 'views'>(key: K, value: WorldDoc[K]): void {
+  /** Set (or with `undefined`, remove) one of the presentation fields (start mode, profile, story, tour stops, guide). */
+  setPresentation<K extends 'startMode' | 'profile' | 'story' | 'views' | 'guide'>(key: K, value: WorldDoc[K]): void {
     if (value === this.doc[key]) return;
     this.dirty = true;
     if (value === undefined) delete this.doc[key];

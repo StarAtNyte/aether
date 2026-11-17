@@ -260,6 +260,20 @@ Then choose where it goes:
   CLIs you are signed in to, or share it on your local network behind a
   random token.
 
+**Products:** an object with product details (name, size, price, a short
+description and a shop link) opens a product card when visitors click it in the
+player, with an Enquire or Buy button; the Rug Exhibition Hall template comes
+with a catalogue of its rugs.
+
+**Showroom guide:** a world can have a guide (`guide` in the world file: a name,
+one of the two people visitors can choose, a greeting and a few lines about the
+shop). In the player the guide stands near the entrance, greets visitors and
+answers questions about the products from the bottom-left panel ("Ask Ava").
+Ask for something ("Show me something blue") and she walks you to it and opens
+its card. **Take the tour** walks you past the main pieces one by one; any move
+of your own pauses it, and Resume carries on. With the site's model she answers
+in her own words; without one she still answers from the catalogue.
+
 Or export a file:
 
 - **Video:** a keyframe camera timeline, presets (orbit, fly-through, dolly,

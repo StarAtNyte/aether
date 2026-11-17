@@ -19,7 +19,7 @@ import { easeInOutCubic } from '@aether/render';
 import type { Simulation } from '../engine/Simulation';
 import { skyForHour } from '../state/archUi';
 import type { Experience } from './experience';
-import { glideDestination, glideSeconds, needsFade, STEP_DOWN, turn, WALK_EYE, walkStep, yawPitch, type WalkProbe } from './walk';
+import { FADE_DISTANCE, forwardOf, glideDestination, glideSeconds, needsFade, STEP_DOWN, turn, WALK_EYE, walkStep, yawPitch, type WalkProbe } from './walk';
 
 /** Seconds the hero view holds before the tour (or the drone) starts. */
 export const HERO_HOLD_S = 4;
@@ -31,12 +31,20 @@ export const STREET_EYE = 6;
 export const FLY_IN_S = 7;
 /** Lens of the eye-level walk (degrees), as the play camera's first person. */
 const WALK_LENS = 70;
+/** Lens (degrees) of an orbit view sent in front of a product ({@link ExploreController.lookAt}): the whole piece in frame. */
+const PRODUCT_LENS = 62;
 /** Half of a fade (ms). */
 const FADE_MS = 280;
 /** Drag look speed (radians per pixel). */
 const LOOK_RATE = 0.0042;
 /** Below this height above the ground (m) an orbit or drone view is at street level: a drag turns the view in place. */
 const STREET_LEVEL = 4;
+
+/**
+ * Window event a click on the world sends in explore mode (walk, orbit, drone) with the entity hit (`detail: { id }`),
+ * before the walk view glides there. A listener that calls `preventDefault()` consumes the click.
+ */
+export const PICK_EVENT = 'aether:pick-entity';
 
 /** Camera of explore mode now. */
 export type ExploreView = 'walk' | 'orbit' | 'drone' | 'dollhouse' | 'plan';
@@ -104,6 +112,37 @@ export function pickStops(own: readonly ViewStop[] | undefined, cooked: readonly
   return compute();
 }
 
+/** Where a following view wants to be now ({@link ExploreController.follow}); filled in place each frame. */
+export interface FollowAim {
+  eye: Vec3;
+  look: Vec3;
+  /** The pose to end on: reaching it ends the follow. */
+  final: boolean;
+}
+
+const _sd: [number, number] = [0, 0];
+
+/**
+ * One axis of a critically damped spring (Unity's SmoothDamp): `x` moving with velocity `v` toward `to`, arriving in about
+ * `smooth` seconds without overshoot. Returns the new position and velocity in `out` (by default one shared pair: read
+ * it before the next call; nothing is allocated per frame).
+ */
+export function smoothDamp(x: number, v: number, to: number, smooth: number, dt: number, out: [number, number] = _sd): [number, number] {
+  const w = 2 / Math.max(1e-3, smooth);
+  const k = w * dt;
+  const e = 1 / (1 + k + 0.48 * k * k + 0.235 * k * k * k);
+  const c = x - to;
+  const t = (v + w * c) * dt;
+  out[0] = to + (c + t) * e;
+  out[1] = (v - w * t) * e;
+  return out;
+}
+
+/** Seconds the follow's eye and look lag behind their aim (the end pose: a slower ease round). */
+const FOLLOW_EYE_S = 0.55;
+const FOLLOW_LOOK_S = 0.5;
+const FOLLOW_FINAL_S = 0.85;
+
 /** A pose in the walk's terms. */
 interface WalkPose {
   eye: Vec3;
@@ -117,6 +156,8 @@ export class ExploreController {
   private readonly probe: WalkProbe;
   private pose: WalkPose | null = null;
   private glide: { from: WalkPose; to: WalkPose; t: number; seconds: number; then?: () => void } | null = null;
+  /** The view following a moving subject (see {@link follow}): its eye and look point, each with a velocity. */
+  private fol: { aim: (out: FollowAim) => boolean; done?: () => void; skip?: ReadonlySet<string>; out: FollowAim; eye: Vec3; ev: Vec3; look: Vec3; lv: Vec3; dir: Vec3; check: number; final: number; arrived: boolean } | null = null;
   private readonly keys = new Set<string>();
   private raf: number | null = null;
   private last = 0;
@@ -226,6 +267,18 @@ export class ExploreController {
     const r = this.sim.renderer;
     const hero = this.state.stops[0] ?? null;
     if (this.exp.explore === 'walk') {
+      const w = this.sim.syncedWorld;
+      if (entry && this.exp.guided && w?.player) {
+        // A guided showroom opens where a visitor walks in, facing the guide; its tour waits for the visitor.
+        const sp = w.player.spawn;
+        const eye: Vec3 = [sp[0], sp[1] + WALK_EYE, sp[2]];
+        // Facing the guide (its head), else the start's own heading.
+        const g = w.guide?.position;
+        const face = g ? yawPitch(eye, [g[0], g[1] + 1.45, g[2]]) : null;
+        this.placeWalk({ eye, yaw: face ? face.yaw : ((w.player.yaw ?? 0) * Math.PI) / 180, pitch: face ? Math.max(-0.15, Math.min(0.05, face.pitch)) : -0.08 });
+        this.loop();
+        return;
+      }
       if (from) this.placeWalk({ eye: [from.feet[0], from.feet[1] + WALK_EYE, from.feet[2]], yaw: from.yaw, pitch: -0.08 });
       else if (entry && hero) this.placeStop(0);
       else this.placeFromCamera();
@@ -348,8 +401,12 @@ export class ExploreController {
   private fadeTo(swap: () => void): void {
     this.set({ fading: true });
     this.later(FADE_MS, () => {
-      swap();
-      this.later(60, () => this.set({ fading: false }));
+      try {
+        swap();
+      } finally {
+        // Whatever the swap does, the view comes back.
+        this.later(60, () => this.set({ fading: false }));
+      }
     });
   }
 
@@ -362,9 +419,11 @@ export class ExploreController {
       if (room) this.goTo(room.index);
       return true;
     }
-    if (this.state.view !== 'walk' || !this.pose) return false;
     const ray = r.cursorRay(ndcX, ndcY);
     const hit = r.raycastWorld(ray.origin, ray.direction, 80);
+    // An object a module claims (a product card, `products/`) takes the click before the glide: it cancels the event.
+    if (hit && !window.dispatchEvent(new CustomEvent(PICK_EVENT, { detail: { id: hit.id }, cancelable: true }))) return true;
+    if (this.state.view !== 'walk' || !this.pose) return false;
     if (!hit) return true;
     const dest = glideDestination(this.pose.eye, hit, this.probe);
     if (!dest) return true;
@@ -428,6 +487,7 @@ export class ExploreController {
     d.x = e.clientX;
     d.y = e.clientY;
     this.glide = null;
+    this.fol = null;
     // Grab the view: dragging right turns left (the scene follows the pointer).
     const pose = this.pose;
     pose.yaw += dx * LOOK_RATE;
@@ -463,6 +523,7 @@ export class ExploreController {
 
   /** The visitor took over: autoplay and a scheduled drone stop. */
   private readonly onUserInput = (): void => {
+    this.fol = null;
     if (this.hold !== null || this.state.autoplay) {
       this.hold = null;
       this.holdAction = null;
@@ -514,6 +575,172 @@ export class ExploreController {
     r.flyToPose(s.position, s.target, seconds, s.fov);
     this.set({ index, view: this.exp.explore === 'drone' ? 'drone' : 'orbit' });
     this.later(seconds * 1000 + 50, arrive);
+  }
+
+  /**
+   * Stand with the eye at `from` looking at `target` (the showroom guide shows a product, `guide/`): the walk glides there,
+   * the orbit camera flies there. Stops autoplay. `minSeconds`: move at least this long; `then`: on arrival.
+   */
+  lookAt(target: Vec3, from: Vec3, minSeconds = 0, then?: () => void): boolean {
+    if (this.disposed) return false;
+    this.onUserInput();
+    const r = this.sim.renderer;
+    r.stopTour();
+    const { yaw, pitch } = yawPitch(from, target);
+    const to: WalkPose = { eye: [from[0], from[1], from[2]], yaw, pitch };
+    const cut = this.state.view === 'dollhouse' || this.state.view === 'plan';
+    this.set({ index: -1 });
+    if (this.state.view === 'walk' && this.pose) this.moveWalk(to, minSeconds, then);
+    else if (cut && this.exp.explore === 'walk')
+      this.fadeTo(() => {
+        r.setArchView({ walls: 'up' });
+        this.set({ view: 'walk' });
+        this.placeWalk(to);
+        // After the swap: a failing callback must not leave the fade on.
+        if (then) setTimeout(then, 0);
+      });
+    else {
+      // Orbit and drone views (architecture explores in orbit): the camera flies there, or fades there across walls and
+      // long distances as the walk does (the orbit rig's flight would pass through roofs).
+      const p = r.camera.position;
+      const at: Vec3 = [p.x, p.y, p.z];
+      const d = Math.hypot(from[0] - at[0], from[1] - at[1], from[2] - at[2]);
+      this.set({ view: this.exp.explore === 'drone' ? 'drone' : 'orbit' });
+      if (cut || this.opts.reduceMotion || d > FADE_DISTANCE || (d > 0.05 && this.probe.free(at, [(from[0] - at[0]) / d, (from[1] - at[1]) / d, (from[2] - at[2]) / d], d) < d - 0.25))
+        this.fadeTo(() => {
+          if (cut) r.setArchView({ walls: 'up' });
+          r.flyToPose(from, target, 0, PRODUCT_LENS);
+          if (then) setTimeout(then, 0);
+        });
+      else {
+        const seconds = Math.max(minSeconds, 1.8, Math.min(5, d / 14));
+        r.flyToPose(from, target, seconds, PRODUCT_LENS);
+        this.later(seconds * 1000 + 50, () => then?.());
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Follow a moving subject at eye level (the showroom guide walking its tour): each frame `aim()` says where the eye wants
+   * to be and what it looks at (filling `out` in place), and the view eases after it (a critically damped spring on the eye and on the look point,
+   * so turns and stops never snap). A wall (or more than {@link FADE_DISTANCE}) between the view and its aim is crossed by
+   * a fade. An aim marked `final` is arrived at once nearly reached (`done` runs, the view still easing the last
+   * centimetres) and ends the follow when reached; `aim()` returning false ends it without.
+   * Nothing is allocated per frame; the wall check's ray runs a few times a second.
+   * Any input of the visitor (or another move) ends it too. `skip`: entities the wall check looks through (the subject).
+   * Walk view only, never with reduced motion: false when it cannot follow (the caller moves the view another way).
+   */
+  follow(aim: (out: FollowAim) => boolean, done?: () => void, skip?: ReadonlySet<string>): boolean {
+    if (this.disposed || this.opts.reduceMotion || this.state.view !== 'walk' || !this.pose || this.state.fading) return false;
+    this.onUserInput();
+    this.sim.renderer.stopTour();
+    this.glide = null;
+    this.set({ index: -1 });
+    const p = this.pose;
+    const [fx, fz] = forwardOf(p.yaw);
+    const c = Math.cos(p.pitch) * 3;
+    this.fol = { aim, ...(done ? { done } : {}), ...(skip ? { skip } : {}), out: { eye: [0, 0, 0], look: [0, 0, 0], final: false }, eye: [...p.eye] as Vec3, ev: [0, 0, 0], look: [p.eye[0] + fx * c, p.eye[1] + Math.sin(p.pitch) * 3, p.eye[2] + fz * c], lv: [0, 0, 0], dir: [0, 0, 0], check: 0, final: 0, arrived: false };
+    return true;
+  }
+
+  /** A follow is running. */
+  get following(): boolean {
+    return this.fol !== null;
+  }
+
+  /** Stop following (the view stays where it is). */
+  unfollow(): void {
+    this.fol = null;
+  }
+
+  /** One frame of {@link follow} (no allocation). */
+  private stepFollow(dt: number): void {
+    const f = this.fol;
+    if (!f) return;
+    const a = f.out;
+    if (!f.aim(a)) {
+      this.fol = null;
+      return;
+    }
+    const r = this.sim.renderer;
+    // A wall between the view and where it wants to be, checked a few times a second: fade across instead of through.
+    f.check -= dt;
+    const gap = Math.hypot(a.eye[0] - f.eye[0], a.eye[1] - f.eye[1], a.eye[2] - f.eye[2]);
+    if (f.check <= 0 && gap > 0.6) {
+      f.check = 0.25;
+      let blocked = gap > FADE_DISTANCE;
+      if (!blocked) {
+        for (let i = 0; i < 3; i++) f.dir[i] = ((a.eye[i] as number) - (f.eye[i] as number)) / gap;
+        const hit = r.raycastWorld(f.eye, f.dir, gap, f.skip);
+        blocked = !!hit && Math.hypot(hit.point[0] - f.eye[0], hit.point[1] - f.eye[1], hit.point[2] - f.eye[2]) < gap - 0.25;
+      }
+      if (blocked) {
+        this.fadeTo(() => {
+          if (this.fol !== f) return;
+          f.aim(a);
+          for (let i = 0; i < 3; i++) {
+            f.eye[i] = a.eye[i] as number;
+            f.look[i] = a.look[i] as number;
+            f.ev[i] = 0;
+            f.lv[i] = 0;
+          }
+          this.applyFollow(f);
+        });
+        return;
+      }
+    }
+    const se = a.final ? FOLLOW_FINAL_S : FOLLOW_EYE_S;
+    const sl = a.final ? FOLLOW_FINAL_S : FOLLOW_LOOK_S;
+    for (let i = 0; i < 3; i++) {
+      const e = smoothDamp(f.eye[i] as number, f.ev[i] as number, a.eye[i] as number, se, dt);
+      f.eye[i] = e[0];
+      f.ev[i] = e[1];
+      const l = smoothDamp(f.look[i] as number, f.lv[i] as number, a.look[i] as number, sl, dt);
+      f.look[i] = l[0];
+      f.lv[i] = l[1];
+    }
+    this.applyFollow(f);
+    if (!a.final) {
+      f.final = 0;
+      return;
+    }
+    f.final += dt;
+    const de = Math.hypot(a.eye[0] - f.eye[0], a.eye[1] - f.eye[1], a.eye[2] - f.eye[2]);
+    const dl = Math.hypot(a.look[0] - f.look[0], a.look[1] - f.look[1], a.look[2] - f.look[2]);
+    // Nearly framed: the stop begins (its line, its card) while the view settles.
+    if (!f.arrived && ((de < 0.25 && dl < 0.35) || f.final > 3.5)) {
+      f.arrived = true;
+      f.done?.();
+      if (this.fol !== f) return;
+    }
+    if ((de < 0.02 && dl < 0.03) || f.final > 8) {
+      for (let i = 0; i < 3; i++) {
+        f.eye[i] = a.eye[i] as number;
+        f.look[i] = a.look[i] as number;
+      }
+      this.applyFollow(f);
+      this.fol = null;
+    }
+  }
+
+  /** Put the walk's pose (updated in place) and the camera where the follow is. */
+  private applyFollow(f: { eye: Vec3; look: Vec3 }): void {
+    const p = this.pose;
+    if (!p) return;
+    // A look point (eased on its own) passing close by the eye would swing the view: hold the direction until it is clear.
+    const dx = f.look[0] - f.eye[0];
+    const dz = f.look[2] - f.eye[2];
+    const flat = Math.hypot(dx, dz);
+    if (flat >= 0.6) {
+      p.yaw = Math.atan2(-dx, -dz);
+      p.pitch = Math.max(-1.2, Math.min(1, Math.atan2(f.look[1] - f.eye[1], flat)));
+    }
+    p.eye[0] = f.eye[0];
+    p.eye[1] = f.eye[1];
+    p.eye[2] = f.eye[2];
+    this.sim.renderer.setCameraPose(p.eye[0], p.eye[1], p.eye[2], p.yaw, p.pitch);
+    this.sim.touch();
   }
 
   next(): void {
@@ -671,6 +898,10 @@ export class ExploreController {
         this.glide = null;
         g.then?.();
       }
+      return;
+    }
+    if (this.fol) {
+      this.stepFollow(dt);
       return;
     }
     if (this.keys.size === 0) return;

@@ -1,0 +1,801 @@
+/* The showroom guide (guide/): loaded with its chunk only. Tokens from player.css. */
+
+.pl-gtag {
+  z-index: 1;
+}
+
+.pl-gtag__bubble {
+  max-width: 280px;
+  padding: 8px 12px;
+  font-size: 13.5px;
+  text-align: left;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
+  animation: pl-fadein 0.18s ease both;
+}
+
+.pl-gtag__bubble.is-thinking {
+  letter-spacing: 0.2em;
+}
+
+.pl-gtag__name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pl-gtag__role {
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgb(127 224 168 / 0.18);
+  color: var(--win);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.pl-guide {
+  position: absolute;
+  left: 16px;
+  bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+  z-index: 13;
+  display: grid;
+  gap: 8px;
+  width: min(340px, calc(100% - 32px));
+  pointer-events: none;
+}
+
+.pl-guide > * {
+  pointer-events: auto;
+}
+
+.pl-gdock {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-self: start;
+}
+
+.pl-gopen {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 4px 14px 4px 5px;
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  background: var(--glass);
+  color: var(--text);
+  font: 600 14px/1 var(--font);
+  cursor: pointer;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.3);
+}
+
+.pl-gopen--tour {
+  padding-left: 14px;
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: transparent;
+}
+
+.pl-gopen:hover {
+  border-color: rgb(255 255 255 / 0.3);
+}
+
+.pl-gopen--tour:hover {
+  background: var(--accent-press);
+}
+
+.pl-gavatar {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: linear-gradient(140deg, #2b6b74, #1f4f57);
+  color: #fff;
+  font: 700 14px/1 var(--font);
+}
+
+.pl-gpanel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--edge);
+  border-radius: 16px;
+  background: var(--glass-strong);
+  box-shadow: 0 16px 48px rgb(0 0 0 / 0.4);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  animation: pl-fadein 0.18s ease both;
+}
+
+.pl-gpanel__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pl-gpanel__title {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.pl-gpanel__title strong {
+  font-size: 14px;
+}
+
+.pl-gpanel__title span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.pl-glog {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  max-height: min(220px, 30vh);
+  margin: 0;
+  padding: 0 2px 0 0;
+  overflow-y: auto;
+  list-style: none;
+  scrollbar-width: thin;
+}
+
+.pl-glog:empty {
+  display: none;
+}
+
+.pl-gline {
+  max-width: 88%;
+  padding: 7px 10px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.pl-gline--guide {
+  justify-self: start;
+  border-bottom-left-radius: 4px;
+  background: rgb(255 255 255 / 0.08);
+  color: var(--text);
+}
+
+.pl-gline--you {
+  justify-self: end;
+  border-bottom-right-radius: 4px;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.pl-gline--thinking {
+  display: inline-flex;
+  gap: 4px;
+  padding: 10px 12px;
+}
+
+.pl-gline--thinking i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-2);
+  animation: pl-gdot 1s ease-in-out infinite;
+}
+
+.pl-gline--thinking i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.pl-gline--thinking i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes pl-gdot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+.pl-gchips {
+  display: flex;
+  gap: 6px;
+  margin: 0 -12px;
+  padding: 0 12px 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  mask-image: linear-gradient(90deg, transparent, #000 12px, #000 calc(100% - 18px), transparent);
+}
+
+.pl-gchips::-webkit-scrollbar {
+  display: none;
+}
+
+.pl-gchip {
+  flex: none;
+  white-space: nowrap;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.05);
+  color: var(--text-2);
+  font: 500 12.5px/1 var(--font);
+  cursor: pointer;
+}
+
+.pl-gchip:hover:not(:disabled) {
+  border-color: rgb(255 255 255 / 0.3);
+  color: var(--text);
+}
+
+.pl-gchip.is-primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+
+.pl-gchip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.pl-gform {
+  display: flex;
+  gap: 6px;
+}
+
+.pl-ginput {
+  flex: 1;
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 0.06);
+  color: var(--text);
+  font: 14px var(--font);
+}
+
+.pl-ginput:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.pl-gbtn {
+  min-width: 34px;
+  min-height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 0.06);
+  color: var(--text);
+  font: 600 14px/1 var(--font);
+  cursor: pointer;
+}
+
+.pl-gbtn:hover:not(:disabled) {
+  background: rgb(255 255 255 / 0.12);
+}
+
+.pl-gbtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.pl-gbtn--wide {
+  padding: 0 12px;
+  font-size: 13px;
+}
+
+.pl-gbtn--send {
+  padding: 0 14px;
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 13px;
+}
+
+.pl-gbtn--send:hover:not(:disabled) {
+  background: var(--accent-press);
+}
+
+.pl-gbtn--ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 20px;
+}
+
+.pl-gbtn.is-primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.pl-gbtn.is-primary:hover {
+  background: var(--accent-press);
+}
+
+/* --- The stage: captions, the welcome and end cards, the tour bar (bottom centre, above the explore bar). --- */
+
+.pl-gstage {
+  position: absolute;
+  left: 50%;
+  bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+  z-index: 13;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  width: min(580px, calc(100% - 32px));
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.pl-gstage > * {
+  pointer-events: auto;
+}
+
+.pl-gavatar--lg {
+  width: 40px;
+  height: 40px;
+  font-size: 17px;
+  box-shadow: 0 0 0 2px rgb(127 224 168 / 0.35);
+}
+
+/* Captions: the line being said, as a subtitle. */
+.pl-gcap {
+  max-width: 100%;
+  margin: 0;
+  padding: 9px 16px 10px;
+  border-radius: 14px;
+  background: rgb(10 9 8 / 0.72);
+  color: var(--text);
+  font-size: 15.5px;
+  line-height: 1.45;
+  text-align: center;
+  text-wrap: pretty;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.5);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  pointer-events: none;
+  animation: pl-grise 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.pl-gcap__who {
+  margin-right: 8px;
+  color: var(--win);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Cards: the welcome and the end of the tour. */
+.pl-gcard {
+  display: grid;
+  gap: 12px;
+  width: min(420px, 100%);
+  padding: 16px;
+  border: 1px solid var(--edge);
+  border-radius: 20px;
+  background: var(--glass-strong);
+  box-shadow: 0 24px 64px rgb(0 0 0 / 0.45), inset 0 1px 0 rgb(255 255 255 / 0.06);
+  backdrop-filter: blur(20px) saturate(1.2);
+  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+  animation: pl-grise 0.36s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.pl-gcard__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pl-gcard__who {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.pl-gcard__who strong {
+  font-size: 15px;
+}
+
+.pl-gcard__who span {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.pl-gcard__text {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+
+.pl-gcard__actions {
+  display: grid;
+  gap: 8px;
+}
+
+.pl-gcta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 8px 16px;
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+  background: rgb(255 255 255 / 0.05);
+  color: var(--text);
+  font: 600 14px/1.2 var(--font);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.pl-gcta:hover {
+  border-color: rgb(255 255 255 / 0.3);
+  background: rgb(255 255 255 / 0.1);
+}
+
+.pl-gcta.is-primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.pl-gcta.is-primary:hover {
+  background: var(--accent-press);
+}
+
+.pl-gcta > span {
+  display: grid;
+  text-align: left;
+}
+
+.pl-gcta small {
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0.72;
+}
+
+.pl-gcta:focus-visible,
+.pl-gbtn:focus-visible,
+.pl-gdot:focus-visible,
+.pl-gopen:focus-visible,
+.pl-gchip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The saved pieces. */
+.pl-gsaved {
+  display: grid;
+  gap: 6px;
+  max-height: min(260px, 36vh);
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  scrollbar-width: thin;
+}
+
+.pl-gsaved__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 12px;
+  border-radius: 12px;
+  background: rgb(255 255 255 / 0.05);
+}
+
+.pl-gsaved__info {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.3;
+}
+
+.pl-gsaved__info strong {
+  overflow: hidden;
+  font-size: 13.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pl-gsaved__info span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* The tour bar. */
+.pl-gbar {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 10px 10px 12px;
+  border: 1px solid var(--edge);
+  border-radius: 18px;
+  background: var(--glass-strong);
+  box-shadow: 0 16px 44px rgb(0 0 0 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.06);
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  animation: pl-grise 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.pl-gbar__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pl-gbar__where {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.pl-gbar__chapter {
+  overflow: hidden;
+  color: var(--win);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.pl-gbar__title {
+  overflow: hidden;
+  font-size: 14.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pl-gbar__n {
+  flex: none;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pl-gtrack {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pl-gtrack li {
+  display: flex;
+  flex: 1;
+}
+
+.pl-gtrack li.is-chapter {
+  margin-left: 5px;
+}
+
+.pl-gdot {
+  position: relative;
+  flex: 1;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.pl-gdot::before {
+  content: '';
+  position: absolute;
+  inset: 7px 0;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.16);
+  transition: background 0.2s ease, inset 0.2s ease;
+}
+
+.pl-gdot:hover::before {
+  background: rgb(255 255 255 / 0.4);
+}
+
+.pl-gdot.is-done::before {
+  background: rgb(243 241 236 / 0.62);
+}
+
+.pl-gdot.is-now::before {
+  inset: 5px 0;
+  background: var(--win);
+  box-shadow: 0 0 10px rgb(127 224 168 / 0.55);
+}
+
+.pl-gdot.is-saved::after {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #ff8fa3;
+  transform: translateX(-50%);
+}
+
+.pl-gbar__btns {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pl-gbar__gap {
+  flex: 1;
+}
+
+.pl-gbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.pl-gbtn--icon {
+  width: 38px;
+  min-width: 38px;
+  height: 38px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.pl-gheart {
+  flex: none;
+  color: var(--text-2);
+}
+
+.pl-gheart.is-on {
+  border-color: rgb(255 143 163 / 0.45);
+  background: rgb(255 143 163 / 0.14);
+  color: #ff8fa3;
+}
+
+.pl-gheart.is-on svg {
+  animation: pl-gpop 0.3s ease both;
+}
+
+.pl-gnext {
+  position: relative;
+}
+
+/* The countdown to the next stop: a ring round Next that empties. */
+.pl-gring {
+  position: absolute;
+  inset: -3px;
+  width: calc(100% + 6px);
+  height: calc(100% + 6px);
+  transform: rotate(-90deg);
+  pointer-events: none;
+}
+
+.pl-gring circle {
+  fill: none;
+  stroke: var(--win);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-dasharray: 100.53px;
+  stroke-dashoffset: var(--c0, 0px);
+  animation-name: pl-gcount;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+@keyframes pl-gcount {
+  from {
+    stroke-dashoffset: var(--c0, 0px);
+  }
+  to {
+    stroke-dashoffset: 100.53px;
+  }
+}
+
+@keyframes pl-grise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes pl-gpop {
+  50% {
+    transform: scale(1.25);
+  }
+}
+
+/* While a product card is open (docked right, 360 px), the stage centres in the space left of it, so the card never
+   covers the caption or the tour bar. */
+@media (min-width: 721px) and (max-width: 1600px) {
+  body:has(.pl-prod) .pl-gstage {
+    left: calc((100% - 400px) / 2);
+    width: min(560px, calc(100% - 440px));
+  }
+}
+
+/* Room for the chat beside the stage on wide screens only; narrower, the chat covers it while open. */
+@media (max-width: 1240px) {
+  .pl-gstage.is-behind {
+    display: none;
+  }
+}
+
+/* Phones: the explore bar wraps to two rows; the guide and the stage sit under the title instead. */
+@media (max-width: 720px) {
+  .pl-guide {
+    top: calc(76px + env(safe-area-inset-top, 0px));
+    bottom: auto;
+  }
+  .pl-glog {
+    max-height: 22vh;
+  }
+  .pl-gstage {
+    top: calc(76px + env(safe-area-inset-top, 0px));
+    bottom: auto;
+    width: calc(100% - 24px);
+  }
+  .pl-gstage > .pl-gcap {
+    order: 2;
+    font-size: 14.5px;
+  }
+  .pl-gbar {
+    padding: 8px;
+  }
+  .pl-gbtn--wide {
+    padding: 0 10px;
+  }
+  .pl-gcard {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pl-gline--thinking i,
+  .pl-gpanel,
+  .pl-gtag__bubble,
+  .pl-gcap,
+  .pl-gcard,
+  .pl-gbar,
+  .pl-gheart.is-on svg {
+    animation: none;
+  }
+  .pl-gdot::before,
+  .pl-gcta {
+    transition: none;
+  }
+}
+
+.pl-gtag[hidden],
+.pl-gtag__bubble[hidden] {
+  display: none;
+}

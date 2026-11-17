@@ -1,0 +1,960 @@
+/**
+ * Runs the showroom guide of a world with `guide` (see `GuideSpec`): its person (`person.ts`), the welcome when the
+ * visitor comes near, the questions (the site's model through `ask.ts`, the keyword match of `brain.ts` without one), the
+ * walk to a product with the visitor's camera gliding to look at it (`place.ts`, the explore controller's `lookAt`), and
+ * the guided tour (`brain.ts` `tourStops`: chapters of stops in walking order).
+ *
+ * On the tour the visitor's view follows the guide at eye level a couple of metres behind her, along the way she walked
+ * (the explore controller's `follow`), then eases round to frame the piece while she steps beside it and turns to the
+ * visitor; a chapter's intro is said on the way, the stop's line on arrival, as a caption timed by its recording (else
+ * by reading time); a short countdown, then on to the next stop. Any move of the visitor pauses it. Pieces can be saved
+ * on the way; the end shows them together.
+ *
+ * Events: on arriving at a product it sends `aether:show-product` (`detail: { id }`; the product card opens; `id: null`
+ * closes it at a stop without one); it listens for `aether:ask-guide` (`detail: { id }`, the card's Ask the guide) and for
+ * a click on its person (`aether:pick-entity`).
+ */
+import type { GuideSpec, Vec3, WorldDoc } from '@aether/core';
+import type { Simulation } from '../../engine/Simulation';
+import type { ExploreController, FollowAim } from '../explore';
+import { WALK_EYE } from '../walk';
+import { askModel } from './ask';
+import {
+  catalogue,
+  COUNTDOWN_S,
+  greetingFor,
+  keywordAnswer,
+  nearestCopy,
+  parseReply,
+  products,
+  requestBody,
+  speechSeconds,
+  stopLine,
+  systemPrompt,
+  talkLine,
+  TOUR_END,
+  TOUR_END_SAVED,
+  TOUR_START,
+  tourMinutes,
+  tourStops,
+  type Item,
+  type Product,
+  type Reply,
+  type TourStop,
+  type Turn,
+} from './brain';
+import { GUIDE_ID, GuidePerson } from './person';
+import { floorAt, openings, viewpoint, walkPath, type Viewpoint } from './place';
+import { GuideVoice } from './voice';
+
+/** The visitor nearer than this (m) is greeted. */
+export const GREET_M = 6;
+/** Otherwise the greeting comes this long (s) after the guide is in view. */
+const GREET_AFTER_S = 4;
+/** Opening the guide as `aether:ask-guide` names a product. */
+export const ASK_EVENT = 'aether:ask-guide';
+export const SHOW_EVENT = 'aether:show-product';
+const PICK_EVENT = 'aether:pick-entity';
+/** The following view keeps this far (m, along her way) behind the guide. */
+export const FOLLOW_BACK_M = 2.3;
+/** The view turns to frame the piece when the guide has this little (m) left to walk. */
+const FRAME_AT_M = 1.8;
+
+/** One line of the conversation. */
+export interface GuideLine {
+  id: number;
+  who: 'you' | 'guide';
+  text: string;
+}
+
+/** The guided tour now. */
+export interface TourState {
+  index: number;
+  count: number;
+  chapter: string;
+  title: string;
+  /** The stop shows a product (it can be saved). */
+  product: string | null;
+  paused: boolean;
+  /** The countdown to the next stop runs: its seconds left and a number bumped each time it starts (0: not running). */
+  countdown: { seconds: number; seq: number } | null;
+}
+
+/** A stop of the progress track. */
+export interface TrackStop {
+  title: string;
+  chapter: string;
+  product: string | null;
+}
+
+/** A saved piece, for the summary. */
+export interface SavedPiece {
+  id: string;
+  name: string;
+  price?: string;
+  size?: string;
+}
+
+/** What the panel shows. */
+export interface GuideSnapshot {
+  name: string;
+  log: GuideLine[];
+  thinking: boolean;
+  tour: TourState | null;
+  canTour: boolean;
+  /** The tour's stops (the track's dots) and its length in minutes. */
+  stops: TrackStop[];
+  minutes: number;
+  /** The welcome card is up (the first greeting). */
+  welcome: string | null;
+  /** The line being said, as a caption (null: silence). */
+  caption: { id: number; text: string } | null;
+  /** Product ids saved on the tour. */
+  saved: string[];
+  /** The end-of-tour card: the saved pieces (null: not shown). */
+  summary: SavedPiece[] | null;
+  /** Bumped when the guide wants the panel open (Ask the guide, a click on the person, an answer to give). */
+  openSeq: number;
+  /** The recorded voice: on, off, or none (the world has no recordings). */
+  voice: 'on' | 'off' | 'none';
+}
+
+/** Debug / probe handle (`window.__aetherGuide`). */
+export interface GuideHandle {
+  snapshot(): GuideSnapshot;
+  readonly position: Vec3;
+  readonly walking: boolean;
+  ask(text: string): Promise<void>;
+  startTour(): void;
+  route(): string[];
+  /** The last walk to a product: the copy, its bounds, the viewpoint and the guide's path (null: none yet). */
+  readonly lastTrip: { id: string; bounds: { min: Vec3; max: Vec3 }; view: Viewpoint | null; path: Vec3[] | null; ms: number; viewMs: number } | null;
+}
+
+declare global {
+  interface Window {
+    __aetherGuide?: GuideHandle;
+  }
+}
+
+/** Where the guide walked lately (feet points in a fixed ring, newest last): the following view keeps to it. */
+export class Trail {
+  private readonly buf: Float64Array;
+  private head = 0;
+  private n = 0;
+  constructor(private readonly max = 96) {
+    this.buf = new Float64Array(max * 3);
+  }
+  /** Point `i` back from the newest (0: newest), into `out`. */
+  private at(i: number, out: Vec3): Vec3 {
+    const k = ((this.head - 1 - i + this.max * 2) % this.max) * 3;
+    out[0] = this.buf[k] as number;
+    out[1] = this.buf[k + 1] as number;
+    out[2] = this.buf[k + 2] as number;
+    return out;
+  }
+  private readonly _p: Vec3 = [0, 0, 0];
+  /** Add the guide's position (once it moved 0.15 m from the last). Nothing is allocated. */
+  push(p: Readonly<Vec3>): void {
+    if (this.n > 0) {
+      const l = this.at(0, this._p);
+      if (Math.hypot(p[0] - l[0], p[2] - l[2]) < 0.15) return;
+    }
+    const k = this.head * 3;
+    this.buf[k] = p[0];
+    this.buf[k + 1] = p[1];
+    this.buf[k + 2] = p[2];
+    this.head = (this.head + 1) % this.max;
+    this.n = Math.min(this.max, this.n + 1);
+  }
+  reset(p: Readonly<Vec3>): void {
+    this.n = 0;
+    this.head = 0;
+    this.push(p);
+  }
+  /** The point `m` metres back along the trail from `from` (the oldest point when it is shorter), into `out`; null: empty. */
+  back(from: Readonly<Vec3>, m: number, out: Vec3 = [0, 0, 0]): Vec3 | null {
+    if (this.n === 0) return null;
+    let left = m;
+    let ax = from[0];
+    let ay = from[1];
+    let az = from[2];
+    const b = this._p;
+    for (let i = 0; i < this.n; i++) {
+      this.at(i, b);
+      const d = Math.hypot(b[0] - ax, b[2] - az);
+      if (d >= left && d > 1e-6) {
+        const k = left / d;
+        out[0] = ax + (b[0] - ax) * k;
+        out[1] = ay + (b[1] - ay) * k;
+        out[2] = az + (b[2] - az) * k;
+        return out;
+      }
+      left -= d;
+      ax = b[0];
+      ay = b[1];
+      az = b[2];
+    }
+    out[0] = ax;
+    out[1] = ay;
+    out[2] = az;
+    return out;
+  }
+}
+
+/** Run `fn` when the page is idle (a timeout where the browser has no idle callback). */
+const idle = (fn: () => void): void => {
+  const w = window as Window & { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number };
+  if (w.requestIdleCallback) w.requestIdleCallback(fn, { timeout: 1500 });
+  else setTimeout(fn, 60);
+};
+
+export class GuideController {
+  private readonly person: GuidePerson;
+  private readonly list: Product[];
+  private readonly items: Item[];
+  private readonly ids: Set<string>;
+  private readonly system: string;
+  private doorPoints: Vec3[] | null = null;
+  private readonly skip = new Set([GUIDE_ID]);
+  private readonly stops: TourStop[];
+  private turns: Turn[] = [];
+  private snap: GuideSnapshot;
+  private lineId = 0;
+  private raf = 0;
+  private last = 0;
+  private greeted = false;
+  private shownFor = 0;
+  private hidden = false;
+  private typing = false;
+  /** The product the visitor is looking at (asked about or a tour stop). */
+  private focus: Product | null = null;
+  /** Bumped by each walk: a stale arrival does nothing. */
+  private trip = 0;
+  /**
+   * The tour: the stop, paused, its phase (walking there, saying its line, counting down to the next) with the seconds
+   * left of the countdown, whether its line was said, and the chapter last introduced.
+   */
+  private tour: { index: number; paused: boolean; phase: 'walk' | 'talk' | 'count'; left: number; said: boolean; chapter: string | null; seq: number } | null = null;
+  private readonly trail = new Trail();
+  /** Scratch vectors of the per-frame code (nothing is allocated per frame). */
+  private readonly _eye: Vec3 = [0, 0, 0];
+  private readonly _back: Vec3 = [0, 0, 0];
+  /** Each stop's viewpoint, found once (in idle time ahead of the tour, else on the way), by stop index. */
+  private readonly views = new Map<number, Viewpoint | null>();
+  /** The guide's way between two stops (`from>to`, stand to stand), found once: a revisit or Back sets off at once. */
+  private readonly paths = new Map<string, Vec3[]>();
+  /** The stop whose spot the guide stands on (null: elsewhere). */
+  private standingAt: number | null = null;
+  private precomputing = false;
+  private prefetching = false;
+  /** The caption's end (ms, performance clock) and a line waiting for it (said once it ends). */
+  private captionUntil = 0;
+  private captionDone: (() => void) | null = null;
+  private queued: { text: string; done?: () => void } | null = null;
+  private settle = 0;
+  private disposed = false;
+  private abort: AbortController | null = null;
+  private lastTrip: GuideHandle['lastTrip'] = null;
+  private readonly voice: GuideVoice | null;
+
+  constructor(
+    private readonly sim: Simulation,
+    private readonly world: WorldDoc,
+    private readonly spec: GuideSpec,
+    layer: HTMLElement,
+    private readonly explore: () => ExploreController | null,
+    private readonly onChange: (s: GuideSnapshot) => void,
+  ) {
+    const name = spec.name || 'Ava';
+    this.list = products(world);
+    this.items = catalogue(this.list);
+    this.ids = new Set(this.list.map((p) => p.id));
+    this.system = systemPrompt({ name, ...(spec.about ? { about: spec.about } : {}) }, world.name, this.items);
+    const { at, yaw } = this.startPose();
+    this.stops = tourStops(world, this.list, spec.tour);
+    this.person = new GuidePerson(sim.renderer, layer, name, spec.body ?? 'mio-vrm', at, yaw);
+    this.trail.reset(at);
+    this.voice = spec.voice ? new GuideVoice(spec.voice) : null;
+    this.snap = {
+      name,
+      log: [],
+      thinking: false,
+      tour: null,
+      canTour: this.stops.length > 1,
+      stops: this.stops.map((s) => ({ title: s.title, chapter: s.chapter, product: s.product?.id ?? null })),
+      minutes: tourMinutes(this.stops, world.player.spawn),
+      welcome: null,
+      caption: null,
+      saved: [],
+      summary: null,
+      openSeq: 0,
+      voice: this.voice ? 'on' : 'none',
+    };
+    window.addEventListener(ASK_EVENT, this.onAskEvent);
+    window.addEventListener(PICK_EVENT, this.onPick);
+    const canvas = sim.renderer.domElement;
+    canvas.addEventListener('pointerdown', this.onVisitorMove);
+    canvas.addEventListener('wheel', this.onVisitorMove, { passive: true });
+    window.addEventListener('keydown', this.onKey);
+    window.addEventListener('pointerdown', this.onBarDown, { capture: true });
+    const self = this;
+    window.__aetherGuide = {
+      snapshot: () => self.snap,
+      get position() {
+        return [...self.person.pos] as Vec3;
+      },
+      get walking() {
+        return self.person.walking;
+      },
+      ask: (t) => self.ask(t),
+      startTour: () => self.startTour(),
+      route: () => self.stops.map((p) => p.id),
+      get lastTrip() {
+        return self.lastTrip;
+      },
+    };
+    this.last = performance.now();
+    this.raf = requestAnimationFrame(this.frame);
+  }
+
+  /** Where the guide stands first: `position` and `yaw`, else 2.5 m in front of the start, facing it. */
+  private startPose(): { at: Vec3; yaw: number } {
+    const s = this.world.player.spawn;
+    const startYaw = ((this.world.player.yaw ?? 0) * Math.PI) / 180;
+    let at: Vec3;
+    if (this.spec.position) at = [...this.spec.position] as Vec3;
+    else at = [s[0] - Math.sin(startYaw) * 2.5, s[1], s[2] - Math.cos(startYaw) * 2.5];
+    const yaw = this.spec.yaw ?? Math.atan2(-(s[0] - at[0]), -(s[2] - at[2]));
+    return { at, yaw };
+  }
+
+  get snapshot(): GuideSnapshot {
+    return this.snap;
+  }
+
+  private set(patch: Partial<GuideSnapshot>): void {
+    this.snap = { ...this.snap, ...patch };
+    if (!this.disposed) this.onChange(this.snap);
+  }
+
+  private add(who: GuideLine['who'], text: string): void {
+    this.set({ log: [...this.snap.log, { id: ++this.lineId, who, text }].slice(-12) });
+  }
+
+  /** The guide says a line (bubble and the panel's log). */
+  private say(text: string): void {
+    this.endCaption();
+    this.person.say(text, performance.now());
+    this.voice?.play(text);
+    this.add('guide', text);
+  }
+
+  /** A short line over the person only (not in the log), with its recording. */
+  private murmur(text: string): void {
+    this.person.say(text, performance.now());
+    this.voice?.play(text);
+  }
+
+  /**
+   * Say a line as a caption (the tour's lines, the welcome): it shows while it is said, as long as its recording plays (else
+   * its reading time), and goes in the log. A caption still up holds this one until it ends. `done`: once it has been said.
+   */
+  private speak(text: string, done?: () => void): void {
+    if (performance.now() < this.captionUntil) {
+      // The line before finishes first (a chapter intro still being said on arrival); a line waiting is replaced.
+      this.queued = { text, ...(done ? { done } : {}) };
+      return;
+    }
+    this.person.hush();
+    const t0 = performance.now();
+    this.captionUntil = t0 + speechSeconds(text) * 1000 + 400;
+    this.captionDone = done ?? null;
+    const id = ++this.lineId;
+    this.set({ caption: { id, text }, log: [...this.snap.log, { id, who: 'guide' as const, text }].slice(-12) });
+    // Timed by the recording when there is one (its length may be known at once: loaded ahead).
+    this.voice?.play(
+      text,
+      (sec) => {
+        if (this.snap.caption?.id === id) this.captionUntil = t0 + sec * 1000 + 500;
+      },
+      () => {
+        if (this.snap.caption?.id === id) this.captionUntil = Math.min(this.captionUntil, performance.now() + 350);
+      },
+    );
+  }
+
+  /** Clear the caption now (its `done` runs; a waiting line is dropped). */
+  private endCaption(): void {
+    this.queued = null;
+    this.captionUntil = 0;
+    const d = this.captionDone;
+    this.captionDone = null;
+    if (this.snap.caption) this.set({ caption: null });
+    d?.();
+  }
+
+  /** Turn the recorded voice on or off. */
+  setVoice(on: boolean): void {
+    if (!this.voice) return;
+    this.voice.setEnabled(on);
+    this.set({ voice: on ? 'on' : 'off' });
+  }
+
+  /** The panel's text field has focus or a draft: the countdown holds. */
+  setTyping(on: boolean): void {
+    if (on === this.typing) return;
+    this.typing = on;
+    this.emitTour();
+  }
+
+  /** Hide the person and stop greeting (a story playing). */
+  setHidden(on: boolean): void {
+    this.hidden = on;
+    this.person.setVisible(!on);
+  }
+
+  private eye(out: Vec3 = [0, 0, 0]): Vec3 {
+    const p = this.sim.renderer.camera.position;
+    out[0] = p.x;
+    out[1] = p.y;
+    out[2] = p.z;
+    return out;
+  }
+
+  /** The bounds of entity `id`: the renderer's once drawn, else a metre round its position. */
+  private boundsOf(id: string): { min: Vec3; max: Vec3 } | null {
+    const known = this.sim.entityBounds(id);
+    if (known) return known;
+    const at = this.stops.find((s) => s.id === id)?.position ?? this.list.find((x) => x.id === id)?.position ?? null;
+    return at ? { min: [at[0] - 0.5, at[1], at[2] - 0.5], max: [at[0] + 0.5, at[1] + 1, at[2] + 0.5] } : null;
+  }
+
+  /**
+   * The viewpoint of stop `i`, found once and kept: looked for from the stop before's viewpoint (the visitor comes from
+   * there), the first from the start. Undefined while the scene is not drawn yet (nothing is kept then).
+   */
+  private stopView(i: number): Viewpoint | null | undefined {
+    if (this.views.has(i)) return this.views.get(i);
+    const st = this.stops[i];
+    const b = st && this.sim.entityBounds(st.id);
+    if (!st || !b) return undefined;
+    const sp = this.world.player.spawn;
+    const from = (i > 0 ? this.views.get(i - 1)?.eye : null) ?? ([sp[0], sp[1] + WALK_EYE, sp[2]] as Vec3);
+    const vp = viewpoint(this.sim.renderer, st.id, b, from, from[1] - WALK_EYE, this.skip);
+    this.views.set(i, vp);
+    return vp;
+  }
+
+  /** Find the stops' viewpoints ahead of the tour, one per idle moment (the rays never stall a frame). */
+  private precompute(): void {
+    if (this.precomputing) return;
+    this.precomputing = true;
+    let i = 0;
+    let tries = 0;
+    const step = (): void => {
+      if (this.disposed) return;
+      while (i < this.stops.length && this.views.has(i)) i++;
+      if (i >= this.stops.length || tries > 40) return;
+      if (this.stopView(i) === undefined) tries++;
+      idle(step);
+    };
+    idle(step);
+  }
+
+  /** Find the way from stop `a`'s spot to stop `b`'s while the visitor listens at `a` (spread over frames, kept). */
+  private prefetch(a: number, b: number): void {
+    const key = `${a}>${b}`;
+    const from = this.views.get(a)?.stand;
+    const to = this.stopView(b)?.stand;
+    if (this.prefetching || this.paths.has(key) || !from || !to) return;
+    this.prefetching = true;
+    if (!this.doorPoints || this.doorPoints.length === 0) this.doorPoints = openings(this.world, (x) => this.sim.entityBounds(x));
+    void walkPath(this.sim.renderer, from, to, this.doorPoints, this.skip, () => this.disposed).then((path) => {
+      this.prefetching = false;
+      if (path) this.paths.set(key, path);
+    });
+  }
+
+  // --- questions ----------------------------------------------------------------------------------------------------
+
+  /** Answer the visitor's question (the model, else the keyword match), then walk to what it names. */
+  async ask(question: string): Promise<void> {
+    const q = question.trim().slice(0, 500);
+    if (!q || this.disposed) return;
+    this.add('you', q);
+    if (this.tour) this.pauseTour();
+    if (this.snap.welcome) this.set({ welcome: null });
+    this.endCaption();
+    this.person.attending = true;
+    this.set({ thinking: true });
+    this.person.say('…', performance.now(), true);
+    const context = this.focus ? `(The visitor is looking at ${this.focus.id}: ${this.focus.name}.)\n` : '';
+    this.turns.push({ role: 'user', content: context + q });
+    this.abort?.abort();
+    const ac = new AbortController();
+    this.abort = ac;
+    const text = await askModel(requestBody(this.system, this.turns), { signal: ac.signal });
+    if (this.disposed || ac.signal.aborted) return;
+    this.abort = null;
+    const reply: Reply = (text ? parseReply(text, this.ids) : null) ?? keywordAnswer(q, this.items, this.spec);
+    this.turns.push({ role: 'assistant', content: JSON.stringify(reply) });
+    this.turns = this.turns.slice(-12);
+    this.set({ thinking: false });
+    // Mid-tour: answer where we stand (no walk away from the stop), then offer to carry on.
+    const touring = !!this.tour && reply.goTo !== 'tour';
+    this.say(reply.say + (touring ? ' Shall we carry on with the tour?' : ''));
+    this.person.attending = !!this.tour;
+    if (reply.goTo === 'tour') this.startTour(true);
+    else if (reply.goTo && !touring) this.show(reply.goTo);
+  }
+
+  /** The product card's Ask the guide: talk about it at once (no model call), then walk there. */
+  talkAbout(id: string): void {
+    const p = this.list.find((x) => x.id === id);
+    if (!p) return;
+    if (this.tour) this.pauseTour();
+    this.say(talkLine(p));
+    this.focus = p;
+    this.set({ openSeq: this.snap.openSeq + 1, welcome: null });
+    this.show(id, false);
+  }
+
+  /** Ask about the saved pieces (the summary's button). */
+  askAboutSaved(): void {
+    const names = [...new Set(this.snap.saved.map((id) => this.list.find((p) => p.id === id)?.name).filter((n): n is string => !!n))];
+    if (names.length === 0) return;
+    const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+    this.set({ summary: null, openSeq: this.snap.openSeq + 1 });
+    void this.ask(`Tell me more about the ${list}.`);
+  }
+
+  // --- walking to a stop --------------------------------------------------------------------------------------------
+
+  /**
+   * Walk to product `id` (the copy nearest the visitor) and glide the visitor's view in front of it; on arrival the card
+   * opens (`aether:show-product`) and `then` runs.
+   */
+  show(id: string, announce = true, then?: () => void): void {
+    const near = nearestCopy(id, this.list, this.eye());
+    const p = this.list.find((x) => x.id === near);
+    if (!p) return;
+    this.focus = p;
+    this.visit(p.id, { card: true, announce, follow: false, ...(then ? { then } : {}) });
+  }
+
+  /**
+   * Walk the guide to entity `id` and bring the visitor's view in front of it. `follow`: the view follows her there at eye
+   * level (the tour; else it glides on its own, timed to arrive with her). `card`: open its product card on arrival.
+   */
+  private visit(id: string, o: { card: boolean; announce: boolean; follow: boolean; then?: () => void; stop?: number }): void {
+    const trip = ++this.trip;
+    const t0 = performance.now();
+    const r = this.sim.renderer;
+    const ctrl = this.explore();
+    const walkView = !!ctrl && ctrl.snapshot.view === 'walk';
+    const camView = !!ctrl && ctrl.snapshot.view !== 'plan';
+    const eyeNow = this.eye();
+    const floorY = walkView ? eyeNow[1] - WALK_EYE : this.person.pos[1];
+    const b = this.boundsOf(id);
+    if (!b) {
+      o.then?.();
+      return;
+    }
+    // A tour stop's viewpoint is found once (see stopView); anything else from where the visitor is now.
+    const kept = o.stop !== undefined ? this.stopView(o.stop) : undefined;
+    const vp = kept !== undefined ? kept : viewpoint(r, id, b, eyeNow, floorY, this.skip);
+    const fromStop = this.standingAt;
+    this.standingAt = null;
+    const tView = performance.now();
+    const centre: Vec3 = [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2];
+    const stand: Vec3 = vp?.stand ?? [centre[0] + 1, floorY, centre[2] + 1];
+    // The card opens when the visitor's view arrives (or, without a view move, when the guide does); a guide still on its
+    // way a moment later steps to its spot, so it always stands beside the piece while the visitor looks.
+    let done = false;
+    const stale = (): boolean => trip !== this.trip || this.disposed;
+    const arrive = (): void => {
+      if (stale() || done) return;
+      done = true;
+      if (o.card) window.dispatchEvent(new CustomEvent(SHOW_EVENT, { detail: { id } }));
+      o.then?.();
+      setTimeout(() => {
+        if (!stale() && this.person.walking) {
+          this.person.place(stand);
+          this.trail.reset(stand);
+        }
+      }, 2500);
+    };
+    // The openings once the building is drawn (their bounds); found when first needed.
+    if (!this.doorPoints || this.doorPoints.length === 0) this.doorPoints = openings(this.world, (x) => this.sim.entityBounds(x));
+    // The way is searched over a few frames; the guide sets off once it is known.
+    let searched = false;
+    this.person.walk([]);
+    const following = o.follow && !!vp && !!ctrl && ctrl.follow((out) => !stale() && this.followAim(vp, searched, out), arrive, this.skip);
+    // The way between two stops is kept: from the spot she stands on it is known at once.
+    const key = fromStop !== null && o.stop !== undefined ? `${fromStop}>${o.stop}` : null;
+    const spot = fromStop !== null ? this.views.get(fromStop)?.stand : undefined;
+    const keptPath = key && spot && Math.hypot(spot[0] - this.person.pos[0], spot[2] - this.person.pos[2]) < 0.3 ? this.paths.get(key) : undefined;
+    void (keptPath ? Promise.resolve(keptPath) : walkPath(r, this.person.pos, stand, this.doorPoints, this.skip, stale)).then((path) => {
+      if (stale()) return;
+      searched = true;
+      if (path && key && !keptPath) this.paths.set(key, path);
+      this.lastTrip = { id, bounds: b, view: vp, path, ms: Math.round(performance.now() - t0), viewMs: Math.round(tView - t0) };
+      const seconds = path ? GuidePerson.seconds(this.person.pos, path) : 0;
+      const guideArrives = camView && vp ? undefined : arrive;
+      if (path) this.person.walk(path, guideArrives);
+      else {
+        // No clear way: she steps there (the following view fades across).
+        this.person.place(stand, guideArrives);
+        this.trail.reset(stand);
+      }
+      if (o.announce && seconds > 1.5 && !this.tour && !this.person.speaking(performance.now())) this.murmur('This way.');
+    });
+    if (!following && camView && vp && ctrl) {
+      // The view sets off a moment after the guide, without waiting for its way to be found, timed by the straight-line
+      // walk so the two arrive together.
+      const est = Math.hypot(stand[0] - this.person.pos[0], stand[2] - this.person.pos[2]) / 1.3;
+      setTimeout(() => {
+        if (stale()) return;
+        if (!ctrl.lookAt(vp.target, vp.eye, Math.min(7, Math.max(0, est - 0.6)), arrive)) arrive();
+      }, 350);
+    }
+  }
+
+  /**
+   * Where the following view wants to be: a couple of metres behind the guide on the way she walked, looking ahead of her
+   * (at her while she is close); once she nears her spot (or before her way is known and she stands), the viewpoint of
+   * the piece.
+   */
+  private followAim(vp: Viewpoint, searched: boolean, out: FollowAim): boolean {
+    const g = this.person.pos;
+    const { eye, look } = out;
+    if (searched && (!this.person.walking || this.person.remaining < FRAME_AT_M)) {
+      for (let i = 0; i < 3; i++) {
+        eye[i] = vp.eye[i] as number;
+        look[i] = vp.target[i] as number;
+      }
+      out.final = true;
+      return true;
+    }
+    out.final = false;
+    const cam = this.eye(this._eye);
+    const dist = Math.hypot(g[0] - cam[0], g[2] - cam[2]);
+    const back = this.trail.back(g, FOLLOW_BACK_M, this._back);
+    // Close by (she has just set off, or walks past): stay and watch her; further, keep to her trail.
+    if (back && dist > FOLLOW_BACK_M + 0.8) {
+      eye[0] = back[0];
+      eye[1] = back[1] + WALK_EYE;
+      eye[2] = back[2];
+    } else {
+      eye[0] = cam[0];
+      eye[1] = cam[1];
+      eye[2] = cam[2];
+    }
+    // Ahead of her along her way while she walks (at her while she waits), never right at the eye: someone passing
+    // close by is watched over, not looked straight down on.
+    const fx = -Math.sin(this.person.yaw);
+    const fz = -Math.cos(this.person.yaw);
+    const ahead = this.person.walking ? 2.5 : 0;
+    look[0] = g[0] + fx * ahead;
+    look[1] = g[1] + 1.35;
+    look[2] = g[2] + fz * ahead;
+    const lx = look[0] - eye[0];
+    const lz = look[2] - eye[2];
+    const ld = Math.hypot(lx, lz);
+    if (ld < 1.5) {
+      const ux = ld > 0.2 ? lx / ld : fx;
+      const uz = ld > 0.2 ? lz / ld : fz;
+      look[0] = eye[0] + ux * 1.5;
+      look[2] = eye[2] + uz * 1.5;
+    }
+    return true;
+  }
+
+  // --- the tour -----------------------------------------------------------------------------------------------------
+
+  /** Start the guided tour from the first stop (stops the explore bar's own autoplay). */
+  startTour(fromAnswer = false): void {
+    if (this.stops.length === 0) return;
+    const ctrl = this.explore();
+    if (ctrl?.snapshot.autoplay) ctrl.setAutoplay(false);
+    this.endCaption();
+    this.person.hush();
+    this.tour = { index: 0, paused: false, phase: 'walk', left: COUNTDOWN_S, said: false, chapter: null, seq: 0 };
+    this.set({ welcome: null, summary: null });
+    this.precompute();
+    if (!fromAnswer && !this.stops[0]?.intro) this.speak(TOUR_START);
+    this.goStop(0, false, true);
+  }
+
+  /**
+   * Go to stop `i`: the chapter's intro on the way (a new chapter), the stop's line on arrival. `quiet`: no lines (its line
+   * was said). `keepLine`: the line being said goes on (else it stops).
+   */
+  goStop(i: number, quiet = false, keepLine = false): void {
+    const t = this.tour;
+    if (!t) return;
+    if (!keepLine) this.endCaption();
+    t.index = Math.max(0, Math.min(this.stops.length - 1, i));
+    t.paused = false;
+    t.phase = 'walk';
+    t.said = quiet;
+    t.left = COUNTDOWN_S;
+    const st = this.stops[t.index] as TourStop;
+    this.person.attending = false;
+    if (!quiet && st.chapter !== t.chapter) {
+      t.chapter = st.chapter;
+      if (st.intro) this.speak(st.intro);
+    }
+    // The stop's line is fetched while the intro plays (the walk there).
+    if (!quiet) this.voice?.preload(stopLine(this.stops, t.index));
+    const index = t.index;
+    // A stop without a product closes the card of the one before.
+    if (!st.product) window.dispatchEvent(new CustomEvent(SHOW_EVENT, { detail: { id: null } }));
+    this.focus = st.product;
+    this.emitTour();
+    this.visit(st.id, {
+      card: !!st.product,
+      announce: false,
+      follow: true,
+      stop: index,
+      then: () => {
+        if (this.tour !== t || t.index !== index) return;
+        this.standingAt = index;
+        this.person.attending = true;
+        // While she talks here her way to the next stop is found (spread over frames).
+        if (index + 1 < this.stops.length) this.prefetch(index, index + 1);
+        t.phase = 'talk';
+        this.emitTour();
+        const toCount = (): void => {
+          if (this.tour !== t || t.index !== index || t.phase !== 'talk') return;
+          t.said = true;
+          t.phase = 'count';
+          t.left = COUNTDOWN_S;
+          // Her line said: the next stop's first line is fetched during the countdown (one clip ahead at most).
+          this.voice?.preload(this.firstLine(index + 1));
+          this.emitTour();
+        };
+        if (t.said) toCount();
+        else this.speak(stopLine(this.stops, t.index), toCount);
+      },
+    });
+  }
+
+  /** The first line said on the way to stop `i` (its chapter's intro, else its line; past the last, the end). */
+  private firstLine(i: number): string {
+    const st = this.stops[i];
+    if (!st) return this.snap.saved.length > 0 ? TOUR_END_SAVED : TOUR_END;
+    return st.intro && st.chapter !== this.stops[i - 1]?.chapter ? st.intro : stopLine(this.stops, i);
+  }
+
+  /** The countdown is running now (not paused, nobody typing or waiting for an answer). */
+  private counting(): boolean {
+    const t = this.tour;
+    return !!t && t.phase === 'count' && !t.paused && !this.typing && !this.snap.thinking;
+  }
+
+  private emitTour(): void {
+    const t = this.tour;
+    if (!t) {
+      if (this.snap.tour) this.set({ tour: null });
+      return;
+    }
+    const st = this.stops[t.index] as TourStop;
+    const run = this.counting();
+    if (run && !this.snap.tour?.countdown) t.seq++;
+    this.set({
+      tour: { index: t.index, count: this.stops.length, chapter: st.chapter, title: st.title, product: st.product?.id ?? null, paused: t.paused, countdown: run ? { seconds: t.left, seq: t.seq } : null },
+    });
+  }
+
+  tourNext(): void {
+    const t = this.tour;
+    if (!t) return;
+    if (t.index >= this.stops.length - 1) this.endTour(true);
+    else this.goStop(t.index + 1);
+  }
+
+  tourBack(): void {
+    const t = this.tour;
+    if (t) this.goStop(t.index - 1);
+  }
+
+  pauseTour(): void {
+    const t = this.tour;
+    if (!t || t.paused) return;
+    t.paused = true;
+    this.explore()?.unfollow();
+    this.emitTour();
+  }
+
+  /** Carry on from the stop the tour paused at (back in front of it first when the visitor walked away or it was on the way). */
+  resumeTour(): void {
+    const t = this.tour;
+    if (!t) return;
+    const st = this.stops[t.index] as TourStop;
+    const e = this.eye();
+    const away = !st.position || Math.hypot(st.position[0] - e[0], st.position[2] - e[2]) > 5.5;
+    if (away || t.phase === 'walk') this.goStop(t.index, t.said);
+    else {
+      t.paused = false;
+      if (t.phase === 'count') t.left = COUNTDOWN_S;
+      this.emitTour();
+    }
+  }
+
+  endTour(finished = false): void {
+    if (!this.tour) return;
+    this.tour = null;
+    this.trip++;
+    this.explore()?.unfollow();
+    this.person.attending = false;
+    // The end card takes the place of the last piece's card.
+    window.dispatchEvent(new CustomEvent(SHOW_EVENT, { detail: { id: null } }));
+    this.emitTour();
+    this.endCaption();
+    const saved = this.savedPieces();
+    if (finished || saved.length > 0) {
+      this.set({ summary: saved });
+      this.speak(saved.length > 0 ? TOUR_END_SAVED : TOUR_END);
+    } else this.say('All right. Ask me about anything you like.');
+  }
+
+  /** Save or unsave the product of the stop shown (or `id`). */
+  toggleSaved(id?: string): void {
+    const p = id ?? (this.tour ? this.stops[this.tour.index]?.product?.id : undefined);
+    if (!p) return;
+    const has = this.snap.saved.includes(p);
+    this.set({ saved: has ? this.snap.saved.filter((x) => x !== p) : [...this.snap.saved, p] });
+    if (this.snap.summary) this.set({ summary: this.savedPieces() });
+  }
+
+  private savedPieces(): SavedPiece[] {
+    return this.snap.saved
+      .map((id) => this.list.find((p) => p.id === id))
+      .filter((p): p is Product => !!p)
+      .map((p) => ({ id: p.id, name: p.name, ...(p.price ? { price: p.price } : {}), ...(p.size ? { size: p.size } : {}) }));
+  }
+
+  /** Close the welcome or the summary card. */
+  dismiss(): void {
+    this.set({ welcome: null, summary: null });
+  }
+
+  // --- visitor input ------------------------------------------------------------------------------------------------
+
+  /** The visitor moved the view (drag, click, wheel, keys): the tour pauses, never fights them. */
+  private readonly onVisitorMove = (): void => {
+    if (this.tour && !this.tour.paused) this.pauseTour();
+  };
+
+  private readonly onKey = (e: KeyboardEvent): void => {
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (/^(Key[WASD]|Arrow)/.test(e.code)) this.onVisitorMove();
+  };
+
+  /** The explore bar's stops and views move the camera too. */
+  private readonly onBarDown = (e: PointerEvent): void => {
+    if ((e.target as HTMLElement | null)?.closest?.('.pl-xbar')) this.onVisitorMove();
+  };
+
+  private readonly onAskEvent = (e: Event): void => {
+    const id = (e as CustomEvent<{ id?: string }>).detail?.id;
+    if (typeof id === 'string') this.talkAbout(id);
+  };
+
+  /** A click on the guide opens the panel (instead of gliding into it). */
+  private readonly onPick = (e: Event): void => {
+    if ((e as CustomEvent<{ id?: string }>).detail?.id !== GUIDE_ID) return;
+    e.preventDefault();
+    this.person.attending = true;
+    setTimeout(() => (this.person.attending = !!this.tour), 6000);
+    if (!this.greeted) this.greet();
+    else {
+      this.murmur('Hello again! How can I help?');
+      this.set({ openSeq: this.snap.openSeq + 1, welcome: null });
+    }
+  };
+
+  /** The first greeting: the welcome card (with the tour), else the panel opens. */
+  private greet(): void {
+    this.greeted = true;
+    if (this.snap.canTour) this.precompute();
+    const line = greetingFor(this.spec, this.world.name, this.snap.canTour);
+    if (this.snap.canTour) {
+      this.voice?.play(line);
+      this.add('guide', line);
+      this.set({ welcome: line });
+    } else {
+      this.say(line);
+      this.set({ openSeq: this.snap.openSeq + 1 });
+    }
+  }
+
+  // --- frame --------------------------------------------------------------------------------------------------------
+
+  private readonly frame = (now: number): void => {
+    this.raf = requestAnimationFrame(this.frame);
+    const dt = Math.min(0.25, Math.max(0, (now - this.last) / 1000));
+    this.last = now;
+    try {
+      const eye = this.eye(this._eye);
+      // The floor under the guide once the scene is built (the first seconds), while it stands.
+      if (this.settle < 12 && !this.person.walking) {
+        this.settle += dt;
+        if (Math.floor(this.settle) !== Math.floor(this.settle - dt)) {
+          const f = floorAt(this.sim.renderer, this.person.pos[0], this.person.pos[2], this.person.pos[1] + 1.2, this.skip);
+          if (f && Math.abs(f.y - this.person.pos[1]) < 1.2) this.person.pos[1] = f.y;
+        }
+      }
+      this.person.update(dt, now, eye);
+      if (this.person.walking) this.trail.push(this.person.pos);
+      if (!this.hidden && !this.greeted && this.sim.mode !== 'play') {
+        if (this.shownFor === 0) this.shownFor = now;
+        const d = Math.hypot(eye[0] - this.person.pos[0], eye[2] - this.person.pos[2]);
+        if (d < GREET_M || now - this.shownFor > GREET_AFTER_S * 1000) this.greet();
+      }
+      // The caption ends; the line waiting for it is said.
+      if (this.snap.caption && now > this.captionUntil) {
+        const done = this.captionDone;
+        const next = this.queued;
+        this.captionDone = null;
+        this.queued = null;
+        this.set({ caption: null });
+        done?.();
+        if (next) this.speak(next.text, next.done);
+      }
+      // The countdown to the next stop (held while the visitor types or waits for an answer).
+      const t = this.tour;
+      if (t) {
+        const run = this.counting();
+        if (run !== !!this.snap.tour?.countdown) this.emitTour();
+        if (run) {
+          t.left -= dt;
+          if (t.left <= 0) this.tourNext();
+        }
+      }
+    } catch (err) {
+      console.warn('[guide] frame failed', err);
+    }
+  };
+
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    cancelAnimationFrame(this.raf);
+    this.abort?.abort();
+    this.explore()?.unfollow();
+    window.removeEventListener(ASK_EVENT, this.onAskEvent);
+    window.removeEventListener(PICK_EVENT, this.onPick);
+    const canvas = this.sim.renderer.domElement;
+    canvas.removeEventListener('pointerdown', this.onVisitorMove);
+    canvas.removeEventListener('wheel', this.onVisitorMove);
+    window.removeEventListener('keydown', this.onKey);
+    window.removeEventListener('pointerdown', this.onBarDown, { capture: true });
+    this.voice?.dispose();
+    this.person.dispose();
+    if (window.__aetherGuide) delete window.__aetherGuide;
+  }
+}

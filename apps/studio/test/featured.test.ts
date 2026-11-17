@@ -17,8 +17,8 @@ const PUBLIC = resolve(__dirname, '../public/templates');
 describe('the home Featured gallery', () => {
   it('features about 11 worlds, one lead first, with variety across kinds', () => {
     expect(FEATURED_TEMPLATES.length).toBeGreaterThanOrEqual(6);
-    expect(FEATURED_TEMPLATES.length).toBeLessThanOrEqual(12);
-    expect(FEATURED_TEMPLATES[0]!.slug).toBe('cloudwatch-harbour');
+    expect(FEATURED_TEMPLATES.length).toBeLessThanOrEqual(13);
+    expect(FEATURED_TEMPLATES[0]!.slug).toBe('rug-exhibition-hall');
     const modes = new Set(FEATURED_TEMPLATES.map((t) => featuredMode(t).split(' · ')[0]));
     expect(modes.size).toBeGreaterThanOrEqual(4);
   });
@@ -42,6 +42,8 @@ describe('the home Featured gallery', () => {
     expect(featuredMode({ slug: 'kestrel-outpost', kind: 'game' })).toBe('Game');
     expect(featuredMode({ slug: 'sanctuary-falls', kind: 'scene' })).toBe('Scene · orbit');
     expect(featuredVerb({ slug: 'cloudwatch-harbour', kind: 'story' })).toBe('Explore');
+    expect(featuredMode({ slug: 'rug-exhibition-hall', kind: 'architecture', virtualTour: true })).toBe('Virtual tour · AI guide');
+    expect(featuredVerb({ slug: 'rug-exhibition-hall', kind: 'architecture', virtualTour: true })).toBe('Take the tour');
   });
 
   it('renders one card per featured world: a link to the player and a Remix button outside it', () => {
@@ -52,7 +54,9 @@ describe('the home Featured gallery', () => {
       expect(html).toContain(`href="/play#t=${t.slug}"`);
       expect(html).toContain(`aria-label="Remix ${t.title}"`);
     }
-    expect(html).toContain('/templates/featured/cloudwatch-harbour.webp');
+    // The lead is the Rug Hall virtual tour, marked as one.
+    expect(html).toContain('>Virtual tour<');
+    expect(html).toContain('Take the tour');
     // No interactive content inside a link.
     expect(html).not.toMatch(/<a[^>]*>[^<]*<button/);
   });

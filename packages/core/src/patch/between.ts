@@ -212,7 +212,8 @@ export function patchesBetween(from: WorldDoc, to: WorldDoc): Patch[] {
   if (from.profile !== to.profile) meta.profile = to.profile ?? null;
   if (from.story !== to.story && !deepEqual(from.story, to.story)) meta.story = to.story ?? null;
   if (from.views !== to.views && !deepEqual(from.views, to.views)) meta.views = to.views ?? null;
-  if (meta.name !== undefined || meta.description !== undefined || meta.seed !== undefined || meta.intro !== undefined || meta.opening !== undefined || meta.feel !== undefined || meta.textures !== undefined || meta.startMode !== undefined || meta.profile !== undefined || meta.story !== undefined || meta.views !== undefined) out.push(meta);
+  if (from.guide !== to.guide && !deepEqual(from.guide, to.guide)) meta.guide = to.guide ?? null;
+  if (meta.name !== undefined || meta.description !== undefined || meta.seed !== undefined || meta.intro !== undefined || meta.opening !== undefined || meta.feel !== undefined || meta.textures !== undefined || meta.startMode !== undefined || meta.profile !== undefined || meta.story !== undefined || meta.views !== undefined || meta.guide !== undefined) out.push(meta);
   // Removing an entity drops its unused mesh automatically; remove the rest explicitly.
   if (from.meshes !== to.meshes) {
     const after = applyPatches(from, out).world;
