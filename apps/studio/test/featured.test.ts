@@ -18,7 +18,9 @@ describe('the home Featured gallery', () => {
   it('features about 11 worlds, one lead first, with variety across kinds', () => {
     expect(FEATURED_TEMPLATES.length).toBeGreaterThanOrEqual(6);
     expect(FEATURED_TEMPLATES.length).toBeLessThanOrEqual(13);
-    expect(FEATURED_TEMPLATES[0]!.slug).toBe('rug-exhibition-hall');
+    expect(FEATURED_TEMPLATES[0]!.slug).toBe('cloudwatch-harbour');
+    // The Rug Hall virtual tour sits in the top row, beside the lead.
+    expect(FEATURED_TEMPLATES[2]!.slug).toBe('rug-exhibition-hall');
     const modes = new Set(FEATURED_TEMPLATES.map((t) => featuredMode(t).split(' · ')[0]));
     expect(modes.size).toBeGreaterThanOrEqual(4);
   });
@@ -54,7 +56,8 @@ describe('the home Featured gallery', () => {
       expect(html).toContain(`href="/play#t=${t.slug}"`);
       expect(html).toContain(`aria-label="Remix ${t.title}"`);
     }
-    // The lead is the Rug Hall virtual tour, marked as one.
+    // The Rug Hall virtual tour is marked as one; a card's tags sit in one row.
+    expect(html).toContain('fcard__tags');
     expect(html).toContain('>Virtual tour<');
     expect(html).toContain('Take the tour');
     // No interactive content inside a link.

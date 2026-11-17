@@ -53,13 +53,17 @@ const FeaturedCard = memo(function FeaturedCard({ t, size, onRemix }: { t: World
         draggable={false}
         {...(lead ? { fetchPriority: 'high' as const } : {})}
       />
-      {t.assetFree && (
-        <span className="fcard__free" title="Built from scratch: every object is shapes and generated code, no library models">
-          Asset-free
+      {(t.assetFree || t.virtualTour || t.multiplayer) && (
+        <span className="fcard__tags">
+          {t.assetFree && (
+            <span className="fcard__free" title="Built from scratch: every object is shapes and generated code, no library models">
+              Asset-free
+            </span>
+          )}
+          {t.virtualTour && <span className="fcard__free fcard__tour">Virtual tour</span>}
+          {t.multiplayer && <span className="fcard__free fcard__mp">Multiplayer</span>}
         </span>
       )}
-      {t.virtualTour && !t.assetFree && <span className="fcard__free fcard__tour">Virtual tour</span>}
-      {t.multiplayer && <span className="fcard__free fcard__mp">Multiplayer</span>}
       {/* The whole card (picture included) is the link; the text above it lets clicks through. */}
       <a className="fcard__link" href={templatePlayUrl(t.slug)} aria-label={`${featuredVerb(t)} ${t.title}: ${featuredMode(t)}`} />
       <div className="fcard__body">

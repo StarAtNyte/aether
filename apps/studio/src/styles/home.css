@@ -1353,6 +1353,18 @@
   background: var(--skeleton);
 }
 
+/* Wide screens: four a row, the lead beside a 2 x 2 block (13 worlds in 4 rows). */
+@media (min-width: 1280px) {
+  .featured__item,
+  .featured__item--side {
+    grid-column: span 3;
+    aspect-ratio: 16 / 10;
+  }
+  .featured__item--lead {
+    grid-column: span 6;
+  }
+}
+
 @media (max-width: 1023px) {
   .featured__grid {
     grid-template-columns: repeat(6, minmax(0, 1fr));
