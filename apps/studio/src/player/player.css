@@ -1673,3 +1673,47 @@ kbd {
     transition: none;
   }
 }
+
+/* Enter VR (xr/VRButton.tsx): shown only where an immersive-vr session is supported, under the menu button (the shared
+   visit's bar takes the row to the left of it). */
+.pl-vrbtn {
+  position: absolute;
+  top: calc(66px + env(safe-area-inset-top, 0px));
+  right: 14px;
+  z-index: 9;
+  min-width: 44px;
+  height: 44px;
+  padding: 0 8px;
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+  background: var(--glass);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.pl-vrbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* VR is in development: a small "Beta" mark on the button. */
+.pl-vrbtn__beta {
+  padding: 2px 5px;
+  border-radius: 6px;
+  background: oklch(78% 0.14 75 / 0.22);
+  color: oklch(88% 0.12 80);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.pl-vrbtn:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}

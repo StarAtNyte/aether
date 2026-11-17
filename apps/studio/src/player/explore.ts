@@ -700,6 +700,11 @@ export class ExploreController {
    */
   lookAt(target: Vec3, from: Vec3, minSeconds = 0, then?: () => void): boolean {
     if (this.disposed) return false;
+    // In VR the visitor moves themselves (teleport): a caller waiting for the move (the guide's tour) goes on at once.
+    if (this.suspended) {
+      if (then) setTimeout(then, 0);
+      return true;
+    }
     this.onUserInput();
     const r = this.sim.renderer;
     r.stopTour();
@@ -752,7 +757,7 @@ export class ExploreController {
    * Walk view only, never with reduced motion: false when it cannot follow (the caller moves the view another way).
    */
   follow(aim: (out: FollowAim) => boolean, done?: () => void, skip?: ReadonlySet<string>, fallback?: { eye: Vec3; look: Vec3 }): boolean {
-    if (this.disposed || this.opts.reduceMotion || this.state.view !== 'walk' || !this.pose || this.state.fading) return false;
+    if (this.disposed || this.suspended || this.opts.reduceMotion || this.state.view !== 'walk' || !this.pose || this.state.fading) return false;
     this.onUserInput();
     this.sim.renderer.stopTour();
     this.glide = null;
@@ -1151,6 +1156,7 @@ export class ExploreController {
 
   private step(dt: number): void {
     this.holdWhileMoving(!this.disposed && (this.glide !== null || this.fol !== null || this.state.fading));
+    if (this.suspended) return;
     if (this.state.fading) return;
     if (this.hold !== null) {
       this.hold -= dt;
@@ -1207,6 +1213,64 @@ export class ExploreController {
     }
     r.setCameraPose(p.eye[0], p.eye[1], p.eye[2], p.yaw, p.pitch);
     this.sim.touch();
+  }
+
+  // --- immersive VR (xr/session.ts) ------------------------------------------------------------------------------------
+
+  /** An immersive VR session has the view: the tour, glides, follows and keys stand still (see {@link suspend}). */
+  private suspended = false;
+
+  /**
+   * Hand the view to an immersive VR session (`on`) or take it back. While suspended nothing here moves the camera:
+   * autoplay and a follow stop, and a caller asking for a move (the guide's tour) is told it arrived.
+   */
+  suspend(on: boolean): void {
+    if (this.disposed || on === this.suspended) return;
+    this.suspended = on;
+    if (!on) return;
+    this.onUserInput();
+    this.glide = null;
+    this.keys.clear();
+    this.drag = null;
+    if (this.state.fading) {
+      this.fadeSeq++;
+      this.set({ fading: false });
+    }
+    this.holdWhileMoving(false);
+  }
+
+  /**
+   * Where a VR session starts: the walk's eye and facing; from an orbit or drone view the world's start (its player
+   * spawn) or the floor under the camera.
+   */
+  get viewSpot(): { eye: Vec3; yaw: number } {
+    if (this.state.view === 'walk' && this.pose) return { eye: [...this.pose.eye] as Vec3, yaw: this.pose.yaw };
+    const sp = this.sim.syncedWorld?.player;
+    if (sp) return { eye: [sp.spawn[0], sp.spawn[1] + WALK_EYE, sp.spawn[2]], yaw: ((sp.yaw ?? 0) * Math.PI) / 180 };
+    const c = this.sim.renderer.camera;
+    const e = c.matrixWorld.elements;
+    const { yaw } = yawPitch([c.position.x, c.position.y, c.position.z], [c.position.x - (e[8] as number), c.position.y - (e[9] as number), c.position.z - (e[10] as number)]);
+    const below = this.sim.renderer.raycastWorld([c.position.x, c.position.y, c.position.z], [0, -1, 0], 500);
+    const floor = below && below.normal[1] > 0.55 ? below.point[1] : 0;
+    return { eye: [c.position.x, floor + WALK_EYE, c.position.z], yaw };
+  }
+
+  /** After a VR session: stand at `feet` facing `yaw` (the walk; an orbit or drone view looks from there instead). */
+  standAt(feet: Readonly<Vec3>, yaw: number): void {
+    if (this.disposed || !feet.every(Number.isFinite) || !Number.isFinite(yaw)) return;
+    const eye: Vec3 = [feet[0], feet[1] + WALK_EYE, feet[2]];
+    if (this.state.view === 'walk' || this.exp.explore === 'walk') {
+      if (this.state.view !== 'walk') {
+        this.sim.renderer.setArchView({ walls: 'up' });
+        this.set({ view: 'walk' });
+      }
+      this.placeWalk({ eye, yaw, pitch: -0.08 });
+      return;
+    }
+    const [fx, fz] = forwardOf(yaw);
+    const r = this.sim.renderer;
+    r.setCameraMode('orbit');
+    r.flyToPose(eye, [eye[0] + fx * 3, eye[1] - 0.2, eye[2] + fz * 3], 0);
   }
 
   /** Where the walk stands (feet) and faces, for Play to start there; null outside a walk. */

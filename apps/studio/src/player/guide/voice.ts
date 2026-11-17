@@ -27,6 +27,8 @@ export class GuideVoice {
   /** The next line, loading ahead (its key and element). */
   private next: { key: string; audio: HTMLAudioElement } | null = null;
   private on = true;
+  /** A clip is about to play or is loading ahead (its absolute URL): the lips measure it. Never changes playback. */
+  onClip: ((url: string) => void) | null = null;
 
   constructor(private readonly base: string) {
     if (!VOICE_PATH_RE.test(base)) return;
@@ -41,6 +43,11 @@ export class GuideVoice {
 
   get enabled(): boolean {
     return this.on;
+  }
+
+  /** The element of the line playing (null: none; the lips follow it). */
+  get current(): HTMLAudioElement | null {
+    return this.audio;
   }
 
   setEnabled(on: boolean): void {
@@ -62,6 +69,7 @@ export class GuideVoice {
     a.preload = 'auto';
     a.src = this.url(key);
     this.next = { key, audio: a };
+    this.onClip?.(a.src);
   }
 
   /** A recording of `text` exists (the index is loaded and names one). */
@@ -84,6 +92,7 @@ export class GuideVoice {
     const a = ready ?? new Audio(this.url(key));
     a.volume = 0.9;
     this.audio = a;
+    this.onClip?.(a.src);
     if (onLength) {
       if (a.readyState >= 1 && Number.isFinite(a.duration)) onLength(a.duration);
       else a.addEventListener('loadedmetadata', () => this.audio === a && Number.isFinite(a.duration) && onLength(a.duration), { once: true });
@@ -106,6 +115,7 @@ export class GuideVoice {
     if (this.next) release(this.next.audio);
     this.next = null;
     this.files = null;
+    this.onClip = null;
   }
 }
 

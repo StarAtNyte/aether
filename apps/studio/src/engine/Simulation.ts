@@ -1766,9 +1766,46 @@ export class Simulation {
     else this.qualityHolds.delete(reason);
   }
 
+  /** An immersive VR session drives the frames ({@link setExternalFrames}): the window's animation frames stop. */
+  private externalFrames = false;
+
+  /**
+   * Hand the frame loop to someone else (an immersive VR session: a headset paints at its own rate from the session's
+   * animation frames, and the window's stop while it presents). `on`: the window's loop stops and {@link runFrame} is
+   * called by the driver; off: the window's loop starts again (without a giant time step).
+   */
+  setExternalFrames(on: boolean): void {
+    if (this.disposed || on === this.externalFrames) return;
+    this.externalFrames = on;
+    if (on) {
+      if (this.raf !== 0) cancelAnimationFrame(this.raf);
+      this.raf = 0;
+    }
+    this.lastFrame = -1;
+    this.stepper.reset();
+    this.touch();
+    this.renderer.requestRender();
+    if (!on && !this.hidden && this.raf === 0 && this.frameFailures < MAX_FRAME_FAILURES) this.raf = requestAnimationFrame(this.onAnimationFrame);
+  }
+
+  /** Frames that failed in a row (0 after a good one): an external driver gives up before the loop does. */
+  get consecutiveFrameFailures(): number {
+    return this.frameFailures;
+  }
+
+  /** One frame of the loop at time `t` (ms), for an external driver ({@link setExternalFrames}). */
+  runFrame(t: number): void {
+    if (this.disposed || !this.externalFrames) return;
+    this.frame(t);
+  }
+
   private readonly onAnimationFrame = (t: number): void => {
-    if (this.disposed) return;
+    if (this.disposed || this.externalFrames) return;
     this.raf = requestAnimationFrame(this.onAnimationFrame);
+    this.frame(t);
+  };
+
+  private frame(t: number): void {
     // Raw frame delta: the stepper and the renderer clamp long stalls themselves,
     // and clamping here would pin the fps counter at 1 / MAX_FRAME_DT on slow GPUs.
     const dt = this.lastFrame < 0 ? 0 : Math.max(0, (t - this.lastFrame) / 1000);
@@ -1808,7 +1845,7 @@ export class Simulation {
         log.warn('stats failed', err);
       }
     }
-  };
+  }
 
   /** Report a failed frame once per distinct error; stop the loop when failures persist. */
   private onFrameError(err: unknown, s: PlaySession | null): void {
@@ -2386,6 +2423,8 @@ export class Simulation {
     const hidden = document.visibilityState === 'hidden';
     if (hidden === this.hidden) return;
     this.hidden = hidden;
+    // A headset browser may report the page hidden while its immersive session presents: the session keeps the frames (and the sound).
+    if (hidden && this.externalFrames) return;
     if (hidden) {
       cancelAnimationFrame(this.raf);
       this.raf = 0;
@@ -2396,7 +2435,7 @@ export class Simulation {
     this.stepper.reset();
     this.touch();
     this.renderer.requestRender();
-    if (this.raf === 0 && this.frameFailures < MAX_FRAME_FAILURES) this.raf = requestAnimationFrame(this.onAnimationFrame);
+    if (this.raf === 0 && !this.externalFrames && this.frameFailures < MAX_FRAME_FAILURES) this.raf = requestAnimationFrame(this.onAnimationFrame);
   };
 
   private readonly onActivity = (): void => {

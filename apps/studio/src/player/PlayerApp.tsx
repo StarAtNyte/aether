@@ -43,6 +43,8 @@ import type { StoryAudio } from './story-audio';
 import { playStartAfterStory, storyCast } from './story';
 import { FilmPanel, type FilmPanelState } from './FilmPanel';
 import { filmFileName, type FilmFps } from './film-schedule';
+import { xrBootBackend } from './xr/support';
+import { VRButton } from './xr/VRButton';
 
 /** Hour of each time-of-day key (Digit1 … Digit4). */
 const TIME_PRESETS_BY_DIGIT: Readonly<Record<string, number>> = Object.freeze(Object.fromEntries(TIME_PRESETS.map((p) => [`Digit${p.key}`, p.hour])));
@@ -931,7 +933,8 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
             },
           },
           {
-            backend: 'auto',
+            // WebGL2 on a headset browser (or `?xr=1`): three's WebXR runs on that backend (see xr/support.ts).
+            backend: xrBootBackend(location.search, navigator.userAgent),
             shadows: s0.quality !== 'low',
             lowMemory: q.lowMemory,
             statsWhileEditing: false,
@@ -1294,6 +1297,7 @@ const GameView = memo(function GameView({ game }: { game: GameManifest }): React
             </div>
           )}
           <exploreMod.ExploreBar state={explore} ctrl={exploreRef.current} exp={exp} onPlay={() => void start()} canPlay={!world.voxel} />
+          <VRButton sim={sim} explore={() => exploreRef.current} show={!explore.photo && (explore.view === 'walk' || explore.view === 'orbit' || explore.view === 'drone')} onToast={toast} />
           {!explore.photo && (
             <button type="button" className="pl-pausebtn" aria-label="Menu" onClick={() => pause(true)}>
               ☰

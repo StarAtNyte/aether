@@ -126,6 +126,7 @@ import { geckoSafePath, geckoStartLevel } from './gpu/gecko-safe';
 import { autoTierReason } from './gpu/tier-reason';
 import { QualityTransition, type TransitionState } from './view/quality-transition';
 import { primeTarget } from './gpu/prime-target';
+import { allowDefaultXRFramebuffer } from './gpu/xr-framebuffer';
 import { shadowNoiseValue } from './gpu/sun-shadow-nodes';
 import { setFoliageTint } from './materials/foliage-shading';
 import { setFixedClock as setFilmClock } from './view/fixed-clock';
@@ -5045,12 +5046,13 @@ export class WorldRenderer {
     this.preparation.link();
     // Render-only geometry uploaded by the last frame gives its CPU arrays back (gpu/cpu-release.ts).
     sweepUploads(this.renderer.backend);
-    if (this.watchdogOn) this.watch(false);
+    if (this.watchdogOn && !this.xrPresenting) this.watch(false);
     this.cullFarAnimals();
     this.cullFarInteriors();
     this.cullSmallMeshes();
     const step = Number.isFinite(dt) ? Math.min(Math.max(dt, 0), 0.1) : 0;
-    const cameraMoved = this.rig.update(step);
+    // In immersive VR the headset moves the view every frame (three's XR manager poses the camera inside render()).
+    const cameraMoved = this.xrPresenting || this.rig.update(step);
     // The view or the content was asked to change from outside (camera, edits, resizes), as against content that merely animates.
     const motion = cameraMoved || this.frameInvalidation.motion;
     this.frameBudget.beginFrame(motion);
@@ -5220,7 +5222,7 @@ export class WorldRenderer {
       this.requestPreparedFrame(false);
     }
     if (!this.atRest) this.motionFrameReady = true;
-    if (this.watchdogOn) this.watch(true);
+    if (this.watchdogOn && !this.xrPresenting) this.watch(true);
     this.trimWatch();
     const info = this.renderer.info.render;
     this.lastDrawCalls = info.drawCalls ?? info.frameCalls ?? 0;
@@ -5246,7 +5248,8 @@ export class WorldRenderer {
       }
     }
     // A split studio chain refines at rest with its full (slow) chain: those frames say nothing about motion.
-    if (this.qualityPlan.moveEffects === null || !this.atRest) {
+    // Not in immersive VR: the headset sets the eye buffers' size, and a tier step would rebuild every lit material mid-session.
+    if (!this.xrPresenting && (this.qualityPlan.moveEffects === null || !this.atRest)) {
       // CPU contention from a background bake says nothing about GPU pixel cost, nor does a progressive frame drawn while
       // objects coming into view still prepare (the preparation shares the frame), nor a frame drawn while a plan change's
       // programs link: counted, the links' slow frames made the ladder take the next step at once (medium to low, then the
@@ -5560,7 +5563,8 @@ export class WorldRenderer {
 
   /** The effect set of the rest phase (`rest`) or of the motion phase of a split chain (see {@link wantedEffects}). */
   private effectsFor(rest: boolean): PostEffects | null {
-    if (!this.budget.post) return null;
+    // Immersive VR draws the scene straight into the headset's eye buffers: the post chain's screen passes are not per eye.
+    if (!this.budget.post || this.xrPresenting) return null;
     const plan = this.qualityPlan;
     let effects = resolveEffects(!rest && plan.moveEffects !== null ? plan.moveEffects : plan.effects, this.effectOverrides, this.failedEffects);
     // Not on a weak machine: the bloom chain is the one post pass the low tier could still run, and on a machine
@@ -5625,7 +5629,7 @@ export class WorldRenderer {
    * let the room's exposure trim follow it (see `view/exposure-trim.ts`). Never while the view moves or programs link.
    */
   private trimWatch(): void {
-    if ((globalThis as { __NOTRIM?: boolean }).__NOTRIM) return;
+    if ((globalThis as { __NOTRIM?: boolean }).__NOTRIM || this.xrPresenting) return;
     const debug = (globalThis as { __TRIMLOG?: boolean }).__TRIMLOG === true;
     const why = (reason: string): void => {
       if (debug && now() - this.trimDebugAt > 1500) {
@@ -6976,6 +6980,8 @@ export class WorldRenderer {
   private matricesFresh = false;
   /** The studio's load screen covers the view (see setLoading). */
   private loadingScreen = false;
+  /** An immersive VR session draws the frames (see {@link setXRPresenting}). */
+  private xrPresenting = false;
   /** Main-thread budget of background work per frame (preparation, sliced uploads). */
   private readonly frameBudget = new FrameBudget();
   /** Large geometry uploads in slices (WebGL2, opt-in with `__AETHER_SLICED_UPLOAD = true`; null otherwise). */
@@ -7091,6 +7097,51 @@ export class WorldRenderer {
   // ---------------------------------------------------------------------------
   // Publishing: posed captures, stills, glTF, camera paths
   // ---------------------------------------------------------------------------
+
+  // ---------------------------------------------------------------------------
+  // Immersive VR (the player's `xr/` chunk)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * What an immersive VR session needs of the renderer: three's XR manager, the scene (controller rays, the teleport
+   * arc) and the animation loop the session's frames drive. WebGL2 only (null on WebGPU): three's XR on the WebGPU
+   * backend needs the experimental XRGPUBinding and the 'webgpu' session feature, which headset browsers do not ship.
+   */
+  xrHost(): { xr: WebGPURenderer['xr']; scene: Scene; setAnimationLoop(cb: ((time: number, frame?: XRFrame) => void) | null): Promise<void> } | null {
+    if (this.backend !== 'webgl2' || this.disposed || this.lost) return null;
+    const r = this.renderer;
+    // A plain XRWebGLLayer on the default framebuffer reports it as null, which three's draw-buffer cache cannot key.
+    allowDefaultXRFramebuffer(r.backend, (r.getContext() as WebGL2RenderingContext).COLOR_ATTACHMENT0);
+    return { xr: r.xr, scene: this.scene, setAnimationLoop: (cb) => r.setAnimationLoop(cb as Parameters<WebGPURenderer['setAnimationLoop']>[0]) };
+  }
+
+  /**
+   * An immersive VR session presents (or ended). While it does every frame draws (the head moves the view), straight to
+   * the eye buffers without the post chain (the cooked and baked light stays: it is in the materials), and adaptive
+   * resolution, the quality ladder, the blank-frame watchdog and the exposure trim's read-backs stand still. On the way
+   * back the canvas takes its size again and the post chain is rebuilt.
+   */
+  setXRPresenting(on: boolean): void {
+    if (on === this.xrPresenting) return;
+    this.xrPresenting = on;
+    if (on) {
+      if (this.post || this.postPending) {
+        this.dropPost();
+        this.postPending = false;
+      }
+      this.applyLook();
+    } else {
+      this.adaptive.reset();
+      this.resize(this.cssWidth, this.cssHeight);
+      this.applyLook();
+    }
+    this.needsDraw = true;
+  }
+
+  /** An immersive VR session presents. */
+  get xrActive(): boolean {
+    return this.xrPresenting;
+  }
 
   /** Change the extra pixel-ratio cap (quality settings of published games; Infinity removes it). */
   setPixelRatioCap(cap: number): void {

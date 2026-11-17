@@ -139,6 +139,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/three": "^0.186.0",
+    "iwer": "^2.8.0",
     "meshoptimizer": "1.1.1",
     "playwright": "^1.64.0",
     "typescript": "^7.0.2",

@@ -64,6 +64,9 @@ function smoothstep01(a: number, b: number, x: number): number {
   return t * t * (3 - 2 * t);
 }
 
+/** The morph speech opens (the VRM bodies' `mouth_open`, from the VRM `aa` preset). */
+const MOUTH = 'mouth_open';
+
 function boneOf(root: Object3D, name: string): Bone | null {
   return (root.getObjectByName(name) as Bone | undefined) ?? null;
 }
@@ -91,6 +94,14 @@ export class CharacterRig {
   private readonly expressions = new Map<string, { cur: number; mid: number; want: number }>();
   /** Meshes of the body that carry morph targets. */
   private morphMeshes: Mesh[] | null = null;
+  /**
+   * Mouth opening of speech, 0..1 (lip sync): its owner sets it every frame, already smoothed, and it is shown at once
+   * (no easing), added to an asked `mouth_open` and kept within the face's cap. Other expressions (a smile, a blink) are
+   * left as they are. 0: the mouth rests.
+   */
+  mouth = 0;
+  /** The speech mouth was shown last frame (one more write puts it back to rest). */
+  private mouthShown = false;
 
   /**
    * Ease a facial expression (a morph target of the body by name: `smile`, `sad`, `teary`…) to `weight` over about a
@@ -111,7 +122,9 @@ export class CharacterRig {
   }
 
   private updateExpressions(dt: number): void {
-    if (this.expressions.size === 0) return;
+    const mouth = Math.max(0, Math.min(1, this.mouth || 0));
+    if (this.expressions.size === 0 && mouth === 0 && !this.mouthShown) return;
+    this.mouthShown = mouth > 0;
     if (!this.morphMeshes) {
       this.morphMeshes = [];
       this.opts.scene.traverse((o) => {
@@ -132,8 +145,9 @@ export class CharacterRig {
       const k = 1 - Math.exp(-Math.max(0, dt) / 0.07);
       for (const [name, e] of this.expressions) {
         e.cur += (e.want - e.cur) * k;
-        write(name, e.cur);
+        if (name !== MOUTH) write(name, e.cur);
       }
+      write(MOUTH, Math.min(1, (this.expressions.get(MOUTH)?.cur ?? 0) + mouth));
       return;
     }
     // Two first-order stages in a row: the weight starts moving gently and settles without a snap.
@@ -144,6 +158,7 @@ export class CharacterRig {
       e.cur += (e.mid - e.cur) * k;
       asked[name] = e.cur;
     }
+    asked[MOUTH] = Math.min(1, (asked[MOUTH] ?? 0) + mouth);
     const shown = faceMorphWeights(tuning, asked);
     for (const name of Object.keys(asked)) if (!(name in shown)) shown[name] = 0;
     for (const [name, w] of Object.entries(shown)) write(name, w);

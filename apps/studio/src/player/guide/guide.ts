@@ -45,6 +45,7 @@ import {
 } from './brain';
 import { GUIDE_ID, GuidePerson } from './person';
 import { floorAt, framePiece, openings, viewpoint, walkPath, type ScreenArea, type Viewpoint } from './place';
+import { GuideLipSync } from './lipsync';
 import { GuideVoice } from './voice';
 
 /** The visitor nearer than this (m) is greeted. */
@@ -143,6 +144,8 @@ export interface GuideHandle {
   startTour(): void;
   route(): string[];
   /** The last walk to a product: the copy, its bounds, the viewpoint and the guide's path (null: none yet). */
+  /** How far her mouth is open now (0..1, lip sync). */
+  readonly mouth: number;
   readonly lastTrip: { id: string; bounds: { min: Vec3; max: Vec3 }; view: Viewpoint | null; path: Vec3[] | null; ms: number; viewMs: number } | null;
 }
 
@@ -273,6 +276,8 @@ export class GuideController {
   private abort: AbortController | null = null;
   private lastTrip: GuideHandle['lastTrip'] = null;
   private readonly voice: GuideVoice | null;
+  /** Her lips, following the line she says. */
+  private readonly lips = new GuideLipSync();
   /** The visitor sees the world (the loading screen is gone): only then does she greet. */
   private revealed = false;
   /** Her body is loaded and drawn ready ({@link onReady} called), and since when (ms) it has been waited for. */
@@ -299,6 +304,7 @@ export class GuideController {
     this.person = new GuidePerson(sim.renderer, layer, name, spec.body ?? 'mio-vrm', at, yaw);
     this.trail.reset(at);
     this.voice = spec.voice ? new GuideVoice(spec.voice) : null;
+    if (this.voice) this.voice.onClip = (url) => this.lips.prepare(url);
     this.snap = {
       name,
       log: [],
@@ -336,6 +342,9 @@ export class GuideController {
       get lastTrip() {
         return self.lastTrip;
       },
+      get mouth() {
+        return self.lips.value;
+      },
     };
     this.last = performance.now();
     this.raf = requestAnimationFrame(this.frame);
@@ -369,14 +378,24 @@ export class GuideController {
   private say(text: string): void {
     this.endCaption();
     this.person.say(text, performance.now());
-    this.voice?.play(text);
+    this.talk(text);
     this.add('guide', text);
   }
 
   /** A short line over the person only (not in the log), with its recording. */
   private murmur(text: string): void {
     this.person.say(text, performance.now());
-    this.voice?.play(text);
+    this.talk(text);
+  }
+
+  /**
+   * Play the recording of a line (when there is one and the voice is on) and move her lips with it: by its loudness, else
+   * at a syllable pace for its reading time. Muted, the lips rest. Same arguments as {@link GuideVoice.play}.
+   */
+  private talk(text: string, onLength?: (seconds: number) => void, onEnd?: () => void): void {
+    const played = this.voice?.play(text, onLength, onEnd) ?? false;
+    if (this.voice && !this.voice.enabled) this.lips.stop();
+    else this.lips.line(text, played ? this.voice!.current : null, speechSeconds(text), performance.now());
   }
 
   /**
@@ -396,7 +415,7 @@ export class GuideController {
     const id = ++this.lineId;
     this.set({ caption: { id, text }, log: [...this.snap.log, { id, who: 'guide' as const, text }].slice(-12) });
     // Timed by the recording when there is one (its length may be known at once: loaded ahead).
-    this.voice?.play(
+    this.talk(
       text,
       (sec) => {
         if (this.snap.caption?.id === id) this.captionUntil = t0 + sec * 1000 + 500;
@@ -421,6 +440,7 @@ export class GuideController {
   setVoice(on: boolean): void {
     if (!this.voice) return;
     this.voice.setEnabled(on);
+    if (!on) this.lips.stop();
     this.set({ voice: on ? 'on' : 'off' });
   }
 
@@ -996,7 +1016,7 @@ export class GuideController {
     if (this.snap.canTour) this.precompute();
     const line = greetingFor(this.spec, this.world.name, this.snap.canTour);
     if (this.snap.canTour) {
-      this.voice?.play(line);
+      this.talk(line);
       this.add('guide', line);
       this.set({ welcome: line });
     } else {
@@ -1021,6 +1041,10 @@ export class GuideController {
         if (Math.floor(this.settle) !== Math.floor(this.settle - dt)) this.standOnFloor();
       }
       this.person.update(dt, now, eye);
+      const rig = this.sim.renderer.characterRig(GUIDE_ID);
+      const mouth = this.lips.update(dt, now);
+      if (rig) rig.mouth = mouth;
+      if (mouth > 0) this.sim.renderer.requestRender();
       if (this.person.walking) this.trail.push(this.person.pos);
       if (this.revealed && !this.hidden && !this.greeted && this.sim.mode !== 'play') {
         if (this.shownFor === 0) this.shownFor = now;
@@ -1066,6 +1090,7 @@ export class GuideController {
     window.removeEventListener('keydown', this.onKey);
     window.removeEventListener('pointerdown', this.onBarDown, { capture: true });
     this.voice?.dispose();
+    this.lips.dispose();
     this.person.dispose();
     if (window.__aetherGuide) delete window.__aetherGuide;
   }
