@@ -11,7 +11,7 @@
  * on the way; the end shows them together.
  *
  * Events: on arriving at a product it sends `aether:show-product` (`detail: { id }`; the product card opens; `id: null`
- * closes it at a stop without one); it listens for `aether:ask-guide` (`detail: { id }`, the card's Ask the guide) and for
+ * closes it as the tour sets off from a stop); it listens for `aether:ask-guide` (`detail: { id }`, the card's Ask the guide) and for
  * a click on its person (`aether:pick-entity`).
  */
 import type { GuideSpec, Vec3, WorldDoc } from '@aether/core';
@@ -47,6 +47,7 @@ import { GUIDE_ID, GuidePerson } from './person';
 import { floorAt, framePiece, openings, viewpoint, walkPath, type ScreenArea, type Viewpoint } from './place';
 import { GuideLipSync } from './lipsync';
 import { GuideVoice } from './voice';
+import { TourGate, type TourPrep } from './tour-gate';
 
 /** The visitor nearer than this (m) is greeted. */
 export const GREET_M = 6;
@@ -133,6 +134,8 @@ export interface GuideSnapshot {
   openSeq: number;
   /** The recorded voice: on, off, or none (the world has no recordings). */
   voice: 'on' | 'off' | 'none';
+  /** Whether the tour may start yet (tour-gate.ts): the tour buttons read "Preparing the tour… N%" until it may. */
+  prep: TourPrep;
 }
 
 /** Debug / probe handle (`window.__aetherGuide`). */
@@ -283,6 +286,11 @@ export class GuideController {
   /** Her body is loaded and drawn ready ({@link onReady} called), and since when (ms) it has been waited for. */
   private ready = false;
   private readySince = 0;
+  /** The tour waits for the full models and for her (tour-gate.ts); an armed tour came from an answer (`fromAnswer`). */
+  private readonly gate = new TourGate();
+  private armedFromAnswer = false;
+  /** Every stop's viewpoint has been looked for (precompute done). */
+  private viewsDone = false;
 
   constructor(
     private readonly sim: Simulation,
@@ -319,6 +327,7 @@ export class GuideController {
       summary: null,
       openSeq: 0,
       voice: this.voice ? 'on' : 'none',
+      prep: this.gate.prep,
     };
     window.addEventListener(ASK_EVENT, this.onAskEvent);
     window.addEventListener(PICK_EVENT, this.onPick);
@@ -529,7 +538,10 @@ export class GuideController {
     const step = (): void => {
       if (this.disposed) return;
       while (i < this.stops.length && this.views.has(i)) i++;
-      if (i >= this.stops.length || tries > 40) return;
+      if (i >= this.stops.length || tries > 40) {
+        this.viewsDone = true;
+        return;
+      }
       if (this.stopView(i) === undefined) tries++;
       idle(step);
     };
@@ -806,9 +818,22 @@ export class GuideController {
 
   // --- the tour -----------------------------------------------------------------------------------------------------
 
-  /** Start the guided tour from the first stop (stops the explore bar's own autoplay). */
+  /**
+   * Start the guided tour from the first stop, or, while the full models and the guide are still being prepared
+   * (tour-gate.ts), arm it: it then starts by itself once all is ready.
+   */
   startTour(fromAnswer = false): void {
     if (this.stops.length === 0) return;
+    if (this.tour || this.gate.request(performance.now())) {
+      this.beginTour(fromAnswer);
+      return;
+    }
+    this.armedFromAnswer = fromAnswer;
+    this.set({ prep: this.gate.prep });
+  }
+
+  /** Set off on the tour (stops the explore bar's own autoplay). */
+  private beginTour(fromAnswer: boolean): void {
     const ctrl = this.explore();
     if (ctrl?.snapshot.autoplay) ctrl.setAutoplay(false);
     this.endCaption();
@@ -842,8 +867,8 @@ export class GuideController {
     // The stop's line is fetched while the intro plays (the walk there).
     if (!quiet) this.voice?.preload(stopLine(this.stops, t.index));
     const index = t.index;
-    // A stop without a product closes the card of the one before.
-    if (!st.product) window.dispatchEvent(new CustomEvent(SHOW_EVENT, { detail: { id: null } }));
+    // Leaving a stop closes its card: the next stop's opens on arrival (the bar and the card never name different pieces).
+    window.dispatchEvent(new CustomEvent(SHOW_EVENT, { detail: { id: null } }));
     this.focus = st.product;
     this.emitTour();
     this.visit(st.id, {
@@ -971,7 +996,8 @@ export class GuideController {
 
   /** Close the welcome or the summary card. */
   dismiss(): void {
-    this.set({ welcome: null, summary: null });
+    this.gate.disarm();
+    this.set({ welcome: null, summary: null, prep: this.gate.prep });
   }
 
   // --- visitor input ------------------------------------------------------------------------------------------------
@@ -1027,6 +1053,24 @@ export class GuideController {
 
   // --- frame --------------------------------------------------------------------------------------------------------
 
+  /** Feed the tour's gate (once a frame from the reveal on); an armed tour sets off once it opens. */
+  private updateGate(now: number): void {
+    const r = this.sim.renderer;
+    if (this.snap.canTour) this.precompute();
+    const before = this.gate.prep;
+    const go = this.gate.update({
+      now,
+      upgrades: r.modelUpgradeProgress(),
+      busy: r.processingStage !== null,
+      guideReady: this.ready && this.viewsDone,
+      hold: this.typing || this.snap.thinking,
+    });
+    const p = this.gate.prep;
+    if (p.ready && !before.ready) this.voice?.preload(this.stops[0]?.intro || TOUR_START);
+    if (p.ready !== before.ready || p.percent !== before.percent || p.armed !== before.armed || p.starting !== before.starting) this.set({ prep: p });
+    if (go && !this.tour) this.beginTour(this.armedFromAnswer);
+  }
+
   private readonly frame = (now: number): void => {
     this.raf = requestAnimationFrame(this.frame);
     const dt = Math.min(0.25, Math.max(0, (now - this.last) / 1000));
@@ -1034,6 +1078,7 @@ export class GuideController {
     try {
       const eye = this.eye(this._eye);
       this.checkReady(now);
+      if (this.revealed) this.updateGate(now);
       // The floor under the guide once the scene is built (the first seconds after it is; not while it loads), while it
       // stands.
       if (this.settle < 12 && !this.person.walking && this.sim.renderer.processingStage === null) {

@@ -51,6 +51,9 @@ export class ModelUpgrades {
   private readonly frustum = new Frustum();
   private hasView = false;
   private disposed = false;
+  /** Copies ever queued, and those settled (swapped in, failed, dropped): {@link progress}. */
+  private requested = 0;
+  private settled = 0;
 
   constructor(private readonly opts: ModelUpgradesOptions) {}
 
@@ -66,12 +69,22 @@ export class ModelUpgrades {
     return this.running;
   }
 
+  /**
+   * Copies queued since the start (`total`) and those settled (`done`: swapped in, failed, or dropped as their copy went),
+   * so `done === total` once nothing is waiting or loading. A host shows it as the full files' progress.
+   */
+  progress(): { done: number; total: number } {
+    return { done: this.settled, total: this.requested };
+  }
+
   /** Queue `item` under `key` (the full file's URL: copies of one file upgrade together). */
   request(key: string, item: UpgradeItem): void {
     if (this.disposed) return;
     let g = this.groups.get(key);
     if (!g) this.groups.set(key, (g = new Set()));
+    if (g.has(item)) return;
     g.add(item);
+    this.requested++;
   }
 
   /** Remember the eye (call once a frame, cheap) and start what may start. */
@@ -90,12 +103,15 @@ export class ModelUpgrades {
     while (!this.disposed && this.running < limit && this.groups.size > 0 && this.opts.allowed()) {
       const key = this.next();
       if (key === null) return;
-      const items = [...(this.groups.get(key) ?? [])].filter((i) => i.live());
+      const all = [...(this.groups.get(key) ?? [])];
+      const items = all.filter((i) => i.live());
+      this.settled += all.length - items.length;
       this.groups.delete(key);
       if (items.length === 0) continue;
       this.running++;
       void Promise.all(items.map((i) => i.load().catch(() => null))).then((swaps) => {
         this.running--;
+        this.settled += items.length;
         if (!this.disposed)
           for (const swap of swaps) {
             try {
@@ -119,6 +135,7 @@ export class ModelUpgrades {
       for (const item of items) {
         if (!item.live()) {
           items.delete(item);
+          this.settled++;
           continue;
         }
         const s = this.hasView ? item.bounds(_sphere) : null;

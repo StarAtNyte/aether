@@ -10,6 +10,7 @@
 import { installGpuQuantize } from './gpu/quantized-geometry';
 import { trackAttributeOwner } from './gpu/attribute-release';
 import { prepareCompileTextures } from './gpu/compile-textures';
+import { ENTITY_ID_KEY } from './sync/entity-node';
 import { AssetSkinCache } from './gpu/asset-skin-cache';
 import { warmRaycastTrees } from './geometry/raycast-bvh';
 import { FrameInvalidation } from './view/frame-invalidation';
@@ -1490,6 +1491,15 @@ export class WorldRenderer {
   /** Light library models waiting for, or loading, their full file. */
   get modelUpgradesPending(): number {
     return this.sync.upgradesPending;
+  }
+
+  /**
+   * The full-file upgrades of light library models: copies queued since the world loaded (`total`) and those done
+   * (`done`: downloaded, transcoded, their textures uploaded and programs linked, and swapped in; or failed, keeping the
+   * light copy). `done === total` (0 of 0 when nothing upgrades) once none is waiting or loading.
+   */
+  modelUpgradeProgress(): { done: number; total: number } {
+    return this.sync.upgradeProgress();
   }
 
   /**
@@ -4779,7 +4789,12 @@ export class WorldRenderer {
     _occHits.length = 0;
     const root = only ? this.sync.object(only) : this.sync.root;
     if (!root) return null;
-    ray.intersectObject(root, true, _occHits);
+    if (exclude && exclude.size > 0) {
+      // Excluded entities are not tested at all: a ray that merely points at a skinned person (the guide skips herself)
+      // tested every triangle of her body on the CPU, 90 ms five times a second on an integrated-GPU laptop.
+      this.intersectExcept(ray, root, exclude, false, _occHits);
+      _occHits.sort((a, b) => a.distance - b.distance);
+    } else ray.intersectObject(root, true, _occHits);
     let out: { id: EntityId; point: Vec3; normal: Vec3 } | null = null;
     for (const hit of _occHits) {
       if (!isOpaqueVisible(hit.object) || hit.object.name === 'edit:components') continue;
@@ -4791,6 +4806,18 @@ export class WorldRenderer {
     }
     _occHits.length = 0;
     return out;
+  }
+
+  /**
+   * Raycaster.intersectObject(o, true) leaving out the subtrees of the `exclude` entities (`skipping`: inside one; an
+   * entity nested in it that is not excluded is tested again).
+   */
+  private intersectExcept(ray: Raycaster, o: Object3D, exclude: ReadonlySet<EntityId>, skipping: boolean, out: Intersection[]): void {
+    const id: unknown = o.userData[ENTITY_ID_KEY];
+    if (typeof id === 'string' && this.sync.object(id) === o) skipping = exclude.has(id);
+    let propagate = true;
+    if (!skipping && o.layers.test(ray.layers)) propagate = (o.raycast(ray, out) as unknown) !== false;
+    if (propagate) for (const c of o.children) this.intersectExcept(ray, c, exclude, skipping, out);
   }
 
   /**

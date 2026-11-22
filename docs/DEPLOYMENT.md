@@ -44,6 +44,7 @@ Build-time variables (Vercel → Settings → Environment Variables):
 | `VITE_AETHER_PLAYER_URL` | Where share links of published games open (defaults to this deployment's `/play`). |
 | `VITE_AETHER_HOSTED` | `1` forces the hosted first-run screen (detected automatically on a static host). |
 | `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | Shared visits (multiplayer) on the static copy, over Supabase Realtime. Public by design (the anon key ships in the client); set automatically by the Vercel Supabase integration. Without them the static copy hides Invite. The project host must also be in `connect-src` (`vercel.json` and the server's `SUPABASE_HOSTS`, compared by a unit test). |
+| `AETHER_NO_RELAY` | `1`: the build is for a static host without the server's shared-visit relay, so the player does not ask `/api/copresence` for one (it would 404 on every visit) and uses Supabase only. Implied on Vercel (`VERCEL` is set during its builds). |
 
 Never put a model key in a `VITE_*` variable: everything `VITE_*` ends up in
 the public bundle. The hosted copy needs no secret at all.

@@ -12,3 +12,6 @@ interface ImportMetaEnv {
   /** Its publishable key, used when there is no anon key; public. */
   readonly VITE_SUPABASE_PUBLISHABLE_KEY?: string;
 }
+
+/** The build is for a static host without the server's shared-visit relay (vite.config.ts). */
+declare const __AETHER_NO_RELAY__: boolean | undefined;

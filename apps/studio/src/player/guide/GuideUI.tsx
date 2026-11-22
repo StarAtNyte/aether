@@ -16,6 +16,7 @@ import type { ExploreController } from '../explore';
 import { productCard } from '../products/model';
 import { COUNTDOWN_S } from './brain';
 import { GuideController, SHOW_EVENT, type GuideSnapshot, type SavedPiece } from './guide';
+import type { TourPrep } from './tour-gate';
 import './guide.css';
 
 /** Suggestions under the chat (the tour first when there is one). */
@@ -34,6 +35,19 @@ const PLAY = 'M7 5l12 7-12 7z';
 const CHAT = 'M4 5h16v11H9l-5 4z';
 /** Length of the countdown ring's circle (r = 16). */
 const RING = 2 * Math.PI * 16;
+
+/**
+ * A tour button's wording while the tour is being prepared (tour-gate.ts): "Preparing the tour… 62%", then "Ready" for a
+ * moment when it was pressed meanwhile; null once the tour may start (the button reads as usual).
+ */
+export function prepLabel(prep: TourPrep | undefined): string | null {
+  if (!prep || (prep.ready && !prep.starting)) return null;
+  return prep.starting ? 'Ready' : `Preparing the tour… ${prep.percent}%`;
+}
+
+/** Class and attributes of a tour button while the tour is being prepared (still pressable: a press arms it). */
+const prepProps = (prep: TourPrep | undefined): { className: string; 'aria-busy'?: boolean; style?: CSSProperties } =>
+  prepLabel(prep) === null ? { className: '' } : { className: prep!.starting ? ' is-ready' : ' is-wait', 'aria-busy': !prep!.starting, style: { '--prep': `${prep!.percent}%` } as CSSProperties };
 
 /** Open the shop's page for a piece (its card's Enquire or Buy), else its product card. */
 function enquire(world: WorldDoc, id: string): void {
@@ -126,9 +140,13 @@ export function GuidePanel({
   const summary = !tour ? (snap?.summary ?? null) : null;
   const card = !!welcome || !!summary;
   const startTour = (): void => {
-    setOpen(false);
+    // While the tour is being prepared a press arms it; the chat stays as it is until it sets off.
+    if (snap?.prep.ready) setOpen(false);
     ctrl?.startTour();
   };
+  const prep = snap?.prep;
+  const waitLabel = prepLabel(prep);
+  const wait = prepProps(prep);
 
   return (
     <>
@@ -157,12 +175,12 @@ export function GuidePanel({
               </div>
               <p className="pl-gcard__text">{welcome}</p>
               <div className="pl-gcard__actions">
-                <button type="button" className="pl-gcta is-primary" onClick={startTour} data-testid="pl-guide-welcome-tour">
+                <button type="button" className={`pl-gcta is-primary${wait.className}`} aria-busy={wait['aria-busy']} style={wait.style} onClick={startTour} data-testid="pl-guide-welcome-tour">
                   <Icon d={PLAY} fill />
-                  <span>
-                    Start the guided tour
+                  <span aria-live="polite">
+                    {waitLabel ?? 'Start the guided tour'}
                     <small>
-                      about {snap.minutes} min · {snap.stops.length} stops
+                      {waitLabel && prep?.armed && !prep.starting ? 'Starts by itself when everything is in' : `about ${snap.minutes} min · ${snap.stops.length} stops`}
                     </small>
                   </span>
                 </button>
@@ -296,8 +314,8 @@ export function GuidePanel({
                   </button>
                 )}
                 {snap.canTour && !tour && (
-                  <button type="button" className="pl-gchip is-primary" onClick={startTour} data-testid="pl-guide-tour-start">
-                    Take the tour
+                  <button type="button" className={`pl-gchip is-primary${wait.className}`} aria-busy={wait['aria-busy']} style={wait.style} onClick={startTour} data-testid="pl-guide-tour-start">
+                    {waitLabel ?? 'Take the tour'}
                   </button>
                 )}
                 {SUGGESTIONS.map((s) => (
@@ -339,8 +357,8 @@ export function GuidePanel({
                   Ask {name}
                 </button>
                 {snap.canTour && (
-                  <button type="button" className="pl-gopen pl-gopen--tour" onClick={startTour}>
-                    Take the tour
+                  <button type="button" className={`pl-gopen pl-gopen--tour${wait.className}`} aria-busy={wait['aria-busy']} style={wait.style} onClick={startTour} data-testid="pl-guide-dock-tour">
+                    {waitLabel ?? 'Take the tour'}
                   </button>
                 )}
               </div>

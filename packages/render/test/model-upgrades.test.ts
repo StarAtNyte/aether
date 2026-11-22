@@ -84,6 +84,7 @@ describe('progressive library models', () => {
     expect(materialOf(node.content)).toBe('/assets/lib/m/rug.lite.00000000.glb');
     expect(loader.calls).toEqual(['/assets/lib/m/rug.lite.00000000.glb']);
     expect(sync.upgradesPending).toBe(1);
+    expect(sync.upgradeProgress()).toEqual({ done: 0, total: 1 });
     sync.updateUpgrades(null);
     await tick(10);
     expect(loader.calls).toHaveLength(1);
@@ -94,8 +95,10 @@ describe('progressive library models', () => {
     // Downloading: the light copy is still what is drawn.
     expect(materialOf(node.content)).toBe('/assets/lib/m/rug.lite.00000000.glb');
     expect(node.content.children).toHaveLength(1);
+    expect(sync.upgradeProgress()).toEqual({ done: 0, total: 1 });
     loader.flush();
     await tick(20);
+    expect(sync.upgradeProgress()).toEqual({ done: 1, total: 1 });
     expect(prepared).toHaveLength(1);
     expect(node.content.children).toEqual([prepared[0]]);
     expect(materialOf(node.content)).toBe('/assets/lib/m/rug.00000000.glb');
@@ -159,6 +162,31 @@ describe('progressive library models', () => {
     loader.flush();
     await tick(20);
     expect(models.size).toBe(0);
+    // The dropped upgrade counts as settled: nothing is left to wait for.
+    expect(sync.upgradeProgress()).toEqual({ done: 1, total: 1 });
+  });
+
+  it('counts copies settled, dropped before they start and failed alike', async () => {
+    const q = new ModelUpgrades({ allowed: () => true });
+    const alive = { a: true, b: true, c: true };
+    const swapped: string[] = [];
+    const item = (k: keyof typeof alive, fail = false) => ({
+      live: () => alive[k],
+      bounds: () => null,
+      load: () => (fail ? Promise.reject(new Error('no file')) : Promise.resolve(() => void swapped.push(k))),
+    });
+    expect(q.progress()).toEqual({ done: 0, total: 0 });
+    const a = item('a');
+    q.request('f1', a);
+    q.request('f1', a);
+    q.request('f2', item('b', true));
+    q.request('f3', item('c'));
+    expect(q.progress()).toEqual({ done: 0, total: 3 });
+    alive.c = false;
+    q.update(null);
+    await tick(10);
+    expect(swapped).toEqual(['a']);
+    expect(q.progress()).toEqual({ done: 3, total: 3 });
   });
 
   it('the queue holds far, out-of-view files until the view rests', () => {

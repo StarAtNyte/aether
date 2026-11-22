@@ -57,7 +57,9 @@ export default defineConfig(async ({ command }) => {
   // depends on (scripts/vite/gen-version.ts).
   // __AETHER_COOKED_BASE__: where the player reads templates' cooked packages (player/source.ts): AETHER_COOKED_BASE, else the
   // hosted dataset for builds and the dev server's own cooked/ folder in dev.
-  define: { __AETHER_LIB_LEAN__: JSON.stringify(libCdn !== undefined), __AETHER_GEN_VERSION__: JSON.stringify(await generationCodeVersion()), __AETHER_COOKED_BASE__: JSON.stringify(process.env['AETHER_COOKED_BASE'] ?? (command === 'build' ? HOSTED_COOKED_BASE : './cooked/')) },
+  // __AETHER_NO_RELAY__: the build goes to a static host without the server's shared-visit relay (Vercel: its api/ has no
+  // copresence route), so the player does not ask for one (a 404 on every page load) and goes straight to Supabase.
+  define: { __AETHER_NO_RELAY__: JSON.stringify(command === 'build' && (process.env['AETHER_NO_RELAY'] === '1' || !!process.env['VERCEL'])), __AETHER_LIB_LEAN__: JSON.stringify(libCdn !== undefined), __AETHER_GEN_VERSION__: JSON.stringify(await generationCodeVersion()), __AETHER_COOKED_BASE__: JSON.stringify(process.env['AETHER_COOKED_BASE'] ?? (command === 'build' ? HOSTED_COOKED_BASE : './cooked/')) },
   // `.env*` files are read from the repository root (only `VITE_*` variables reach the bundle: the public Supabase URL and key
   // of shared visits on a static host, player copresence/supabase.ts).
   envDir: fileURLToPath(new URL('../..', import.meta.url)),

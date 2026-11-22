@@ -58,6 +58,9 @@ const STATUS_TEXT: Partial<Record<SessionSnapshot['status'], string>> = {
   unreachable: 'Could not join the visit.',
 };
 
+/** The build is for a static host without the server's relay (vite.config.ts `__AETHER_NO_RELAY__`). */
+const noRelay = (): boolean => typeof __AETHER_NO_RELAY__ === 'boolean' && __AETHER_NO_RELAY__;
+
 export function CopresencePanel({ sim, world, hidden }: { sim: Simulation; world: string; hidden?: boolean }): ReactElement | null {
   const layerRef = useRef<HTMLDivElement>(null);
   const ctrlRef = useRef<CopresenceController | null>(null);
@@ -79,7 +82,8 @@ export function CopresencePanel({ sim, world, hidden }: { sim: Simulation; world
     const { relay } = roomFromHash(location.hash);
     if (relay === 'tabs') setTransport(new BroadcastTransport(world));
     else
-      void relayInfo().then(async (info) => {
+      // A static build has no relay to ask for (the request would 404 on every visit): Supabase only.
+      void (noRelay() ? Promise.resolve({ ok: false, voice: false }) : relayInfo()).then(async (info) => {
         if (info.ok) return alive && setTransport(new WebSocketTransport(world, location.href, info.voice));
         if (!import.meta.env.VITE_SUPABASE_URL) return;
         const { SupabaseTransport, supabaseConfig } = await import('./supabase');

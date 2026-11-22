@@ -481,6 +481,29 @@
   opacity: 0.72;
 }
 
+/* The tour being prepared (tour-gate.ts): the button reads "Preparing the tour… N%", filled to N% and dimmed, still
+   pressable (a press arms the tour); "Ready" for a moment before an armed tour sets off. */
+.pl-gcta.is-wait,
+.pl-gchip.is-wait,
+.pl-gopen--tour.is-wait {
+  background: linear-gradient(90deg, rgb(255 255 255 / 0.16) var(--prep, 0%), transparent var(--prep, 0%)), color-mix(in srgb, var(--accent) 45%, rgb(40 40 46));
+  color: rgb(255 255 255 / 0.78);
+  cursor: progress;
+  font-variant-numeric: tabular-nums;
+}
+
+.pl-gcta.is-wait:hover,
+.pl-gopen--tour.is-wait:hover {
+  background: linear-gradient(90deg, rgb(255 255 255 / 0.16) var(--prep, 0%), transparent var(--prep, 0%)), color-mix(in srgb, var(--accent) 52%, rgb(40 40 46));
+}
+
+.pl-gcta.is-ready,
+.pl-gchip.is-ready,
+.pl-gopen--tour.is-ready {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 40%, transparent);
+  transition: box-shadow 0.3s ease;
+}
+
 .pl-gcta:focus-visible,
 .pl-gbtn:focus-visible,
 .pl-gdot:focus-visible,
