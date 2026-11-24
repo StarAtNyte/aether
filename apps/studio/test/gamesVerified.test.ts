@@ -43,6 +43,7 @@ const OTHER_BOTS: Record<string, string> = {
   'desert-citadel': 'scene: an orbit showcase with no goal',
   'himalayan-valley': 'scene: an orbit showcase with no goal',
   'lisbon-hills': 'city: a street-level hero view and a drone tour, no goal',
+  'rug-exhibition-hall': 'guided virtual tour, no goal to win: walkthroughSpawn.test.ts walks it from the spawn on its real colliders, and guideTour.test.ts checks Ava\'s tour through every product',
   'echoes-below': 'standalone game (no world): played through to the win screen in its own repo, games/echoes-below playtest-run and screenshots/playthrough-report.json',
   'kestrel-outpost': 'shooter: packages/agent/test/kestrel-outpost.test.ts fights all five waves to an ending with the weapon',
 };
