@@ -20,7 +20,7 @@ describe('showcase manifest', () => {
   it('has unique slugs, titles and prompts (exact duplicate prompts removed)', () => {
     expect(new Set(SHOWCASE.map((e) => e.slug)).size).toBe(SHOWCASE.length);
     expect(new Set(SHOWCASE.map((e) => e.title)).size).toBe(SHOWCASE.length);
-    const worlds = SHOWCASE.filter((e) => !e.film);
+    const worlds = SHOWCASE.filter((e) => !e.film && !e.play);
     expect(new Set(worlds.map((e) => e.prompt)).size).toBe(worlds.length);
     for (const e of SHOWCASE) expect(e.slug).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+){0,7}$/);
   });
@@ -79,7 +79,7 @@ describe('showcase manifest', () => {
   });
 
   it('ships a thumbnail (WebP ≤ 40 KB, 640 px) with a 1280 px @2x twin (≤ 110 KB) and a valid saved world for every world entry', () => {
-    for (const e of SHOWCASE.filter((x) => !x.film)) {
+    for (const e of SHOWCASE.filter((x) => !x.film && !x.play)) {
       const thumb = pub(`templates/${e.slug}.webp`);
       expect(existsSync(thumb), `${e.slug} thumbnail`).toBe(true);
       expect(statSync(thumb).size, `${e.slug} thumbnail size`).toBeLessThanOrEqual(40 * 1024);

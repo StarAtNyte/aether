@@ -1,6 +1,6 @@
 /** Template and project cards for the home page (grid and list variants). */
 import { memo, useState, type KeyboardEvent, type ReactElement } from 'react';
-import { TEMPLATE_KIND_LABEL, isFilm, templateThumbnail, templateThumbnailSrcSet, type WorldTemplate } from '../lib/examples';
+import { TEMPLATE_KIND_LABEL, isExternalGame, isFilm, templateThumbnail, templateThumbnailSrcSet, type WorldTemplate } from '../lib/examples';
 import { formatRelative, formatTimestamp } from '../lib/relativeTime';
 import type { ProjectMeta } from '../projects/model';
 import { FILM_PROVENANCE, PROVENANCE_LABEL } from '../showcase/manifest';
@@ -48,6 +48,28 @@ export function templatePlayUrl(slug: string): string {
  * from it and opens that in the editor.
  */
 export const TemplateCard = memo(function TemplateCard({ template, onPick, eager }: { template: WorldTemplate; onPick: (slug: string) => void; eager?: boolean }): ReactElement {
+  if (isExternalGame(template)) {
+    // A standalone game: the card is a link to its page (same tab, like a world's card), no world, so no Remix.
+    return (
+      <div className="card card--template">
+        <a className="card__hit" href={template.play.href} aria-label={`Play ${template.title}`}>
+          <span className="card__media">
+            <Thumb src={templateThumbnail(template.slug)} srcSet={templateThumbnailSrcSet(template.slug)} alt="" eager={eager} />
+            <span className="card__free">{template.play.tag}</span>
+          </span>
+          <span className="card__body">
+            <span className="card__title-row">
+              <span className="card__title">{template.title}</span>
+              <span className="card__label">{TEMPLATE_KIND_LABEL[template.kind]}</span>
+            </span>
+            <span className="card__desc" title={template.description}>
+              {template.description}
+            </span>
+          </span>
+        </a>
+      </div>
+    );
+  }
   if (isFilm(template)) {
     // A film has a poster and a player (a modal), no world: no Remix.
     return (

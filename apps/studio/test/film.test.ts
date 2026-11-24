@@ -71,7 +71,7 @@ describe('lists', () => {
     expect(isFilm(FILM)).toBe(true);
     expect(templateImage(FILM)).toBe(FILM.film.poster);
     expect(WORLD_TEMPLATES.some(isFilm)).toBe(false);
-    expect(WORLD_TEMPLATES.length).toBe(TEMPLATES.filter((t) => !isFilm(t)).length);
+    expect(WORLD_TEMPLATES.length).toBe(TEMPLATES.filter((t) => !isFilm(t) && !t.play).length);
     expect(EXAMPLE_PROMPTS.every((p) => p.prompt.length > 0)).toBe(true);
   });
 });

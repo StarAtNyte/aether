@@ -6,7 +6,7 @@
  * `public/templates/<slug>.webp` and a saved world in
  * `public/templates/worlds/<slug>.json`, fetched only when it is opened.
  */
-import { SHOWCASE, type Curation, type FilmInfo, type ShowcaseEntry, type TemplateKind } from '../showcase/manifest';
+import { SHOWCASE, type Curation, type FilmInfo, type GameInfo, type ShowcaseEntry, type TemplateKind } from '../showcase/manifest';
 
 export type { Curation, TemplateKind };
 
@@ -22,9 +22,18 @@ export type FilmTemplate = WorldTemplate & { film: FilmInfo };
 /** True for a film entry. */
 export const isFilm = (t: WorldTemplate): t is FilmTemplate => t.film !== undefined;
 
-/** The featured templates (home row, agent empty state), in manifest order. Films are never featured (the gallery cards open worlds). */
+/** A standalone game entry (`origin: 'game'`): a card opens its page, there is no world (never remixed or opened in the editor). */
+export type GameTemplate = WorldTemplate & { play: GameInfo };
+
+/** True for a standalone game entry. */
+export const isExternalGame = (t: WorldTemplate): t is GameTemplate => t.play !== undefined;
+
+/** True when the entry is a world (not a film, not a standalone game): it has a saved world, a publish row and can be remixed. */
+export const isWorld = (t: WorldTemplate): boolean => !t.film && !t.play;
+
+/** The featured templates (home row), in manifest order. Films are never featured (the gallery cards open worlds). */
 /** The Featured gallery's first cards, in this order (lead, two sides, then the first small card); the rest follow in manifest order. */
-const FEATURED_FIRST: readonly string[] = ['cloudwatch-harbour', 'sanctuary-falls', 'rug-exhibition-hall', 'linden-row', 'lisbon-hills', 'himalayan-valley', 'desert-citadel'];
+const FEATURED_FIRST: readonly string[] = ['cloudwatch-harbour', 'sanctuary-falls', 'rug-exhibition-hall', 'echoes-below', 'linden-row', 'lisbon-hills', 'himalayan-valley', 'desert-citadel'];
 const featuredRank = (slug: string): number => {
   const i = FEATURED_FIRST.indexOf(slug);
   return i < 0 ? FEATURED_FIRST.length : i;
@@ -48,8 +57,8 @@ export const AGENT_TEMPLATES: readonly WorldTemplate[] = Object.freeze(SHOWCASE.
 /** Every template that is shown somewhere: featured first, then the others. */
 export const TEMPLATES: readonly WorldTemplate[] = Object.freeze([...FEATURED_TEMPLATES, ...FILM_TEMPLATES, ...MORE_TEMPLATES, ...AGENT_TEMPLATES, ...PHOTO_TEMPLATES]);
 
-/** The templates that are worlds (everything but films): what can be opened in the editor, remixed or rebuilt. */
-export const WORLD_TEMPLATES: readonly WorldTemplate[] = Object.freeze(TEMPLATES.filter((t) => !isFilm(t)));
+/** The templates that are worlds (everything but films and standalone games): what can be opened in the editor, remixed or rebuilt. */
+export const WORLD_TEMPLATES: readonly WorldTemplate[] = Object.freeze(TEMPLATES.filter(isWorld));
 
 /** The groups of the Templates page: one per kind, plus the rooms rebuilt from a photograph. */
 export type TemplateGroup = 'game' | 'architecture' | 'scene' | 'physics' | 'story' | 'photo';
@@ -126,7 +135,7 @@ export interface ExamplePrompt {
 }
 
 /** True when the offline planner rebuilds the template from its prompt (not a photo room, not a world from a live Claude Code or Codex run). */
-export const isPlannerRebuildable = (t: WorldTemplate): boolean => t.origin !== 'photo' && t.origin !== 'blender' && t.origin !== 'film' && !(t.origin === 'agent' && t.provenance !== 'offline-planner');
+export const isPlannerRebuildable = (t: WorldTemplate): boolean => t.origin !== 'photo' && t.origin !== 'blender' && t.origin !== 'film' && t.origin !== 'game' && !(t.origin === 'agent' && t.provenance !== 'offline-planner');
 
 /** The shown templates' prompts as example prompts (photo rooms and live-run worlds are left out: their prompt does not rebuild the room offline). */
 export const EXAMPLE_PROMPTS: readonly ExamplePrompt[] = Object.freeze(TEMPLATES.filter(isPlannerRebuildable).map((t) => ({ title: t.title, prompt: t.prompt, kind: t.kind })));

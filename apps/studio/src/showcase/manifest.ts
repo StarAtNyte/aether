@@ -61,6 +61,19 @@ export interface FilmInfo {
   note: string;
 }
 
+/**
+ * A standalone playable game served as static files from this site (`origin: 'game'`, `kind: 'game'`): a card opens
+ * `href` in the same tab. There is no world, so no saved world, publish row or Remix. Files live in
+ * `public/games/<slug>/` (a built game: index.html plus its script, absolute asset paths because `cleanUrls` and
+ * `trailingSlash: false` serve the folder without its slash); the thumbnail is the usual `public/templates/<slug>.webp`.
+ */
+export interface GameInfo {
+  /** URL of the game's page (a folder URL under /games/). */
+  href: string;
+  /** The tag chip on the card ("Sonar game"). */
+  tag: string;
+}
+
 /** One bundled default project. */
 export interface ShowcaseEntry {
   /** URL-safe id (`#/new/<slug>`, file names). */
@@ -79,11 +92,13 @@ export interface ShowcaseEntry {
    * `showcase:bake`, not re-planned); 'blender': a world assembled around pieces modelled and baked in Blender by the scripts in
    * `scripts/blender/<slug>/` (procedural only), stored as built (re-validated and re-verified, not re-planned).
    */
-  origin: 'flagship' | 'gallery' | 'photo' | 'agent' | 'blender' | 'film';
+  origin: 'flagship' | 'gallery' | 'photo' | 'agent' | 'blender' | 'film' | 'game';
   /** A test copy of another entry (another cast, say): it reuses that entry's built pieces (`templates/models/<copyOf>/`). */
   copyOf?: string;
   /** Required for `origin: 'film'` (and only there): the footage; there is no world, so no thumbnail, saved world or publish row. */
   film?: FilmInfo;
+  /** Required for `origin: 'game'` (and only there): the standalone game the card opens; there is no world to remix. */
+  play?: GameInfo;
   /** Required for `origin: 'agent'`: how the stored world was made (shown on the card). */
   provenance?: Provenance;
   /** Gallery screenshot (in docs/screenshots/gallery) the thumbnail was cut from. */
@@ -119,6 +134,7 @@ export const SHOWCASE: readonly ShowcaseEntry[] = Object.freeze([
   // --- Featured on the home page (best first: the lead, then the side pair, then the row) ---
   { slug: 'cloudwatch-harbour', title: 'Cloudwatch Harbour', kind: 'story', curation: 'featured', origin: 'blender', description: 'An anime short: a harbour town at summer dusk, painted. Watch the film, then step in and play as the character.', prompt: 'Cloudwatch Harbour at summer dusk' },
   { slug: 'morning-kitchen', title: 'Morning Kitchen', kind: 'story', curation: 'candidate', origin: 'film', description: 'A render, not a recording: a stone-kitchen corner built and lit procedurally in Blender (Cycles, no downloaded assets) through Aether\'s local harness, 10 seconds at 1080p.', prompt: '', film: { poster: '/stories/morning-kitchen/poster.webp', mp4: '/stories/morning-kitchen/morning-kitchen.mp4', webm: '/stories/morning-kitchen/morning-kitchen.webm', seconds: 10, credit: 'Made by Aether: Blender and Cycles, driven through Aether\'s Blender harness', note: 'Rendered on a local GPU' } },
+  { slug: 'echoes-below', title: 'Echoes Below', kind: 'game', curation: 'featured', origin: 'game', description: 'A blind creature sees by sonar: find five glow-moths without waking what sleeps.', prompt: '', play: { href: '/games/echoes-below/', tag: 'Sonar game' } },
   { slug: 'sanctuary-falls', title: 'Sanctuary Falls', kind: 'scene', curation: 'featured', origin: 'agent', provenance: 'claude-code', description: 'A cliff sanctuary framed as one view, built in hardcore mode: arrive on a stone quay over a turquoise lagoon, climb the marble stair up a limestone cliff between three waterfalls to a Doric temple and a colossal goddess, with cypresses, villas and snowy mountains behind.', prompt: 'A classical cliff sanctuary as one postcard view: a lagoon quay, a limestone cliff with three waterfalls, a marble stair, a Doric temple and a colossal goddess statue, golden-hour light' },
   { slug: 'dusk-lake-house', title: 'Dusk House by the Lake', kind: 'architecture', curation: 'featured', origin: 'flagship', description: 'A glass house lit from inside at dusk — explode it, cut it, walk to the jetty.', prompt: 'Dusk House by the Lake: a two-storey glass house with a pool terrace and a jetty, lit at dusk' },
   { slug: 'lisbon-hills', title: 'Lisbon Hills', kind: 'scene', curation: 'featured', origin: 'agent', provenance: 'claude-api', description: 'A terraced Lisbon hillside to walk: pastel townhouses in real plaster, tile and stone, cobbled streets and stairs up to a castle, a tram line, and a quay with boats under a red suspension bridge. Every street, plaza and stair is reachable on foot.', prompt: 'A large walkable and driveable Lisbon hillside district with terraced streets, pastel azulejo townhouses, trams, squares, a castle on the crest, a river with quays and a red suspension bridge' },

@@ -245,3 +245,9 @@
   background: oklch(32% 0.08 60 / 0.7);
 }
 
+
+/* "Sonar game" (a standalone game, not a world): the same mark, cool cyan. */
+.fcard__game {
+  border-color: oklch(85% 0.12 205 / 0.6);
+  background: oklch(30% 0.07 215 / 0.7);
+}

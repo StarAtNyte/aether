@@ -8,7 +8,7 @@ import { lazyBoundary } from '../components/ErrorBoundary';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { useApp, useAppState } from '../app/appContext';
 import { MAX_IMPORT_BYTES } from '../config';
-import { FEATURED_TEMPLATES, TEMPLATES, TEMPLATE_GROUPS, isFilm, templateBySlug, templatesInGroup, type FilmTemplate, type TemplateGroup } from '../lib/examples';
+import { FEATURED_TEMPLATES, TEMPLATES, TEMPLATE_GROUPS, isFilm, isExternalGame, templateBySlug, templatesInGroup, type FilmTemplate, type TemplateGroup } from '../lib/examples';
 import { shortcut } from '../lib/keys';
 import { formatRelative } from '../lib/relativeTime';
 import type { HomeSection } from '../lib/router';
@@ -324,11 +324,12 @@ export const Home = memo(function Home({ section }: { section: HomeSection }): R
   }, [actions, afterDelete, chosen, exitSelect]);
   const openNew = useCallback(() => store.getState().setNewProjectOpen(true), [store]);
   const [film, setFilm] = useState<FilmTemplate | null>(null);
-  /** A world opens as a copy in the editor; a film (no world) opens the player. */
+  /** A world opens as a copy in the editor; a film (no world) opens the player; a standalone game opens its own page. */
   const pickTemplate = useCallback(
     (slug: string) => {
       const t = templateBySlug(slug);
       if (t && isFilm(t)) setFilm(t);
+      else if (t && isExternalGame(t)) window.location.assign(t.play.href);
       else void actions.createFromTemplate(slug);
     },
     [actions],

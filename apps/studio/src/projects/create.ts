@@ -45,6 +45,7 @@ export async function createFromTemplate(repo: ProjectRepo, slug: string, fetchI
   const t = templateBySlug(slug);
   if (!t) return { ok: false, error: 'Unknown template.' };
   if (t.film) return { ok: false, error: 'A film has no world to open.' };
+  if (t.play) return { ok: false, error: 'A standalone game has no world to open.' };
   // The card picture downloads beside the world, not after the project is created.
   const thumbP = loadTemplateThumbnail(t.slug, fetchImpl);
   const saved = await loadTemplateWorld(t.slug, fetchImpl);
