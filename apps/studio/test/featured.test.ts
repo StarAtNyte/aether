@@ -73,7 +73,7 @@ describe('the home Featured gallery', () => {
   it('lists Echoes Below as a standalone game: its card opens the game page, has a tag chip and no Remix', () => {
     const g = SHOWCASE.find((e) => e.slug === 'echoes-below')!;
     expect(g).toMatchObject({ kind: 'game', curation: 'featured', origin: 'game', play: { href: '/games/echoes-below/' } });
-    expect(g.description).toBe('A blind creature sees by sonar: find five glow-moths without waking what sleeps.');
+    expect(g.description).toBe('A blind cave mouse sees by sonar: four caves, three difficulties, five glow-moths in each. Don\'t wake what sleeps.');
     expect(WORLD_TEMPLATES.some((t) => t.slug === g.slug)).toBe(false);
     expect(TEMPLATE_PUBLISH[g.slug]).toBeUndefined();
     expect(existsSync(resolve(PUBLIC, 'worlds', `${g.slug}.json`))).toBe(false);
