@@ -25,6 +25,8 @@ export const UPSAMPLE_MAX_SCALE = 0.5;
 export const SPATIAL_MAX_SCALE = 0.92;
 /** Weight of the new frame at a pixel that has not moved (the history keeps the rest). */
 export const UPSAMPLE_STILL_WEIGHT = 0.1;
+/** Share of the still weight a view at rest for a while gives up (see {@link Upsampler.calm}): 0.1 becomes 0.015. */
+export const UPSAMPLE_CALM_CUT = 0.85;
 /** Weight of the new frame where the picture moves 16 pixels or more per frame. */
 export const UPSAMPLE_MOVING_WEIGHT = 0.5;
 /** Pixels of motion per frame at which the new frame's weight is the moving one. */
@@ -59,6 +61,12 @@ export interface Upsampler {
   begin(): void;
   /** After the pipeline rendered: jitter off, matrices kept for the next frame. */
   end(): void;
+  /**
+   * A view that has stopped moving (`k` from 0, moving, to 1, at rest for a while): the history takes less of each new frame, so the
+   * picture it has accumulated over the jitter's phases stops flickering with the phase of the frame in hand (the flicker is
+   * proportional to the new frame's weight) and the longer window averages more samples (finer edges than any one phase).
+   */
+  calm(k: number): void;
   /** True while the pass jitters and resolves. */
   readonly active: boolean;
   /** The resolve pass (a node the frame updates once), for a chain that must run it before what reads its output. */
@@ -85,6 +93,7 @@ export function createUpsampler(three: typeof ThreeWebGPU, tsl: typeof TslModule
   const uFullSize = uniform(new Vector2(1, 1));
   // Jitter of the frame being resolved, in uv units of the frame (the scene sample at a texel centre is this far from it).
   const uJitterUv = uniform(new Vector2(0, 0));
+  const uCalm = uniform(0);
   const uInvViewProj = uniform(new Matrix4());
   const uPrevViewProj = uniform(new Matrix4());
 
@@ -182,7 +191,7 @@ export function createUpsampler(three: typeof ThreeWebGPU, tsl: typeof TslModule
           const past = compress(max(historyCatmull ? catmullOf(history, prevUv, uFullSize) : history.sample(prevUv).rgb, 0));
           const kept = clamp(past, lo, hi);
           const motion = prevUv.sub(uvNode).mul(uFullSize).length();
-          const w = mix(stillWeight, UPSAMPLE_MOVING_WEIGHT, clamp(motion.div(UPSAMPLE_MOTION_PX), 0, 1));
+          const w = mix(uCalm.mul(-UPSAMPLE_CALM_CUT).add(1).mul(stillWeight), UPSAMPLE_MOVING_WEIGHT, clamp(motion.div(UPSAMPLE_MOTION_PX), 0, 1));
           const weight = inside.and(uReset.lessThan(0.5)).select(w, float(1));
           out.assign(expand(mix(kept, now, weight)));
         });
@@ -313,6 +322,9 @@ export function createUpsampler(three: typeof ThreeWebGPU, tsl: typeof TslModule
       cam.setViewOffset(width, height, dx, dy, width, height);
       uJitterUv.value.set(dx / width, dy / height);
       jittering = true;
+    },
+    calm(k: number): void {
+      uCalm.value = Number.isFinite(k) ? Math.max(0, Math.min(1, k)) : 0;
     },
     end(): void {
       if (!jittering) {

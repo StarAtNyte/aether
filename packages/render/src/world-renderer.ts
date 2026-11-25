@@ -1470,7 +1470,7 @@ export class WorldRenderer {
       if (want) {
         // Shafts march a shadow map that exists only after the first draw: the pipeline is then built by the first frames.
         if (!want.shafts || wr.env.shaftLight) {
-          wr.post = await createPostPipeline(renderer, wr.scene, camera, 0.4, postQualityOf(want) ?? 'standard', { effects: want, sun: wr.env.shaftLight ?? wr.env.sun, contactLight: wr.env.sun, satsueiSun: () => wr.satsueiSun() });
+          wr.post = await createPostPipeline(renderer, wr.scene, camera, 0.4, postQualityOf(want) ?? 'standard', { effects: want, sun: wr.env.shaftLight ?? wr.env.sun, contactLight: wr.env.sun, satsueiSun: () => wr.satsueiSun(), restFreeze: wr.qualityPlan.quality === 'realtime' });
           wr.applyLook();
         }
       }
@@ -6863,7 +6863,7 @@ export class WorldRenderer {
     this.postShadowSize = this.env.shaftMapSize;
     const gen = ++this.postGen;
     const builtAt = this.postShadowSize;
-    createPostPipeline(this.renderer, this.scene, this.perspective, this.env.bloom, postQualityOf(want) ?? 'standard', { effects: want, sun: this.env.shaftLight ?? this.env.sun, contactLight: this.env.sun, aoScale: this.qualityPlan.moveEffects !== null ? 0.5 : undefined, screenOcclusion: this.qualityPlan.moveEffects !== null && (globalThis as { __AETHER_SCREEN_OCCLUSION?: boolean }).__AETHER_SCREEN_OCCLUSION !== false, linkNow: (run) => (this.linkPostAsync ? run() : this.preparation.synchronous(() => this.programs.synchronous(run))), satsueiSun: () => this.satsueiSun() })
+    createPostPipeline(this.renderer, this.scene, this.perspective, this.env.bloom, postQualityOf(want) ?? 'standard', { effects: want, sun: this.env.shaftLight ?? this.env.sun, contactLight: this.env.sun, aoScale: this.qualityPlan.moveEffects !== null ? 0.5 : undefined, screenOcclusion: this.qualityPlan.moveEffects !== null && (globalThis as { __AETHER_SCREEN_OCCLUSION?: boolean }).__AETHER_SCREEN_OCCLUSION !== false, linkNow: (run) => (this.linkPostAsync ? run() : this.preparation.synchronous(() => this.programs.synchronous(run))), satsueiSun: () => this.satsueiSun(), restFreeze: this.qualityPlan.quality === 'realtime' })
       .then((p) => {
         this.postPending = false;
         if (!p) {
@@ -6930,7 +6930,7 @@ export class WorldRenderer {
     const gen = this.postGen;
     const builtAt = this.env.shaftMapSize;
     this.postShadowSize = builtAt;
-    createPostPipeline(this.renderer, this.scene, this.perspective, this.env.bloom, postQualityOf(other) ?? 'standard', { effects: other, sun: this.env.shaftLight ?? this.env.sun, contactLight: this.env.sun, aoScale: 0.5, screenOcclusion: (globalThis as { __AETHER_SCREEN_OCCLUSION?: boolean }).__AETHER_SCREEN_OCCLUSION !== false, linkNow: (run) => (this.linkPostAsync ? run() : this.preparation.synchronous(() => this.programs.synchronous(run))), satsueiSun: () => this.satsueiSun() })
+    createPostPipeline(this.renderer, this.scene, this.perspective, this.env.bloom, postQualityOf(other) ?? 'standard', { effects: other, sun: this.env.shaftLight ?? this.env.sun, contactLight: this.env.sun, aoScale: 0.5, screenOcclusion: (globalThis as { __AETHER_SCREEN_OCCLUSION?: boolean }).__AETHER_SCREEN_OCCLUSION !== false, linkNow: (run) => (this.linkPostAsync ? run() : this.preparation.synchronous(() => this.programs.synchronous(run))), satsueiSun: () => this.satsueiSun(), restFreeze: this.qualityPlan.quality === 'realtime' })
       .then((p) => {
         this.postPending = false;
         if (!p) return;

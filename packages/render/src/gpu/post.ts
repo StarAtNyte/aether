@@ -181,7 +181,19 @@ export interface PostOptions {
   linkNow?: (run: () => void) => void;
   /** Direction toward the sun the compositing layer's rays and flare come from (world space; read every frame). */
   satsueiSun?: () => readonly [number, number, number] | null;
+  /**
+   * The picture is shown live (a player), not refined at rest: once the camera has been still for {@link REST_FREEZE_MS} the
+   * per-frame variation stops (the film grain and dither pattern is held, and the temporal upsampler's history takes less of
+   * each frame, see `Upsampler.calm`), so a still view is still. Motion brings both back. Off for the studio chain, whose
+   * refinement at rest needs the jitter.
+   */
+  restFreeze?: boolean;
 }
+
+/** Time (ms) the camera must be still before the grain pattern is held. */
+export const REST_FREEZE_MS = 250;
+/** Time (ms), after the freeze, over which the temporal upsampler settles to its calm weight (no step). */
+export const REST_CALM_MS = 500;
 
 /**
  * The compositing layer (see `satsuei.ts`). Gains turn the 0..1 amounts into the shader's units; the light rays are a
@@ -631,6 +643,22 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
     }
     let seed = 0;
     let sceneScale = 1;
+    // The camera's pose of the last frame and since when it has been still (see PostOptions.restFreeze).
+    const lastPose = new Float64Array(11);
+    let stillSince = performance.now();
+    const camPose = (): boolean => {
+      const p = camera.position;
+      const q = camera.quaternion;
+      const m = (camera as PerspectiveCamera).projectionMatrix.elements;
+      const cur = [p.x, p.y, p.z, q.x, q.y, q.z, q.w, m[0] as number, m[5] as number, m[8] as number, m[9] as number];
+      let same = true;
+      for (let i = 0; i < 11; i++) {
+        // A millimetre of drift (a head's settling, a physics body at rest) is still; a turn of a thousandth of a degree too.
+        if (Math.abs((lastPose[i] as number) - (cur[i] as number)) > (i < 3 ? 1e-3 : 1e-5)) same = false;
+        lastPose[i] = cur[i] as number;
+      }
+      return same;
+    };
     const sunPoint = new Vector3();
     const sunView = new Vector3();
     const t0 = performance.now();
@@ -660,8 +688,19 @@ export async function createPostPipeline(renderer: WebGPURenderer, scene: Scene,
     };
     /** One frame of the chain: the scene passes first, then the effects. */
     const renderOnce = (): void => {
-      seed = (seed + 1) % 4096;
-      uSeed.value = seed;
+      // The grain re-rolls every frame while the view moves; a still view holds its pattern and settles its history, so nothing
+      // changes between frames. The pattern held is the one last drawn: no change at the moment it freezes.
+      let holding = false;
+      if (opts.restFreeze) {
+        const t = performance.now();
+        if (!camPose()) stillSince = t;
+        holding = t - stillSince >= REST_FREEZE_MS;
+        upsampler?.calm(holding ? Math.min(1, (t - stillSince - REST_FREEZE_MS) / REST_CALM_MS) : 0);
+      }
+      if (!holding) {
+        seed = (seed + 1) % 4096;
+        uSeed.value = seed;
+      }
       if (sats) satsueiFrame();
       upsampler?.begin();
       try {
