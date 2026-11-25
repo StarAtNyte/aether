@@ -18,12 +18,12 @@
 
 <p align="center">
   <a href="https://github.com/StarAtNyte/aether/releases/tag/v0.1.0">
-    <img src="docs/screenshots/tour-sanctuary-falls.gif" width="100%" alt="A cinematic tour of Sanctuary Falls, rendered in real time in the browser on an NVIDIA RTX 4090">
+    <img src="docs/screenshots/aether-showcase.gif" width="100%" alt="Lisbon Hills at golden hour, Linden Row, and Echoes Below, a new sonar game">
   </a>
   <br>
-  <sub>Sanctuary Falls, built by the agent (Claude Code): the studio's cinematic tour (first 11 s), screen-recorded in
-  headless Chrome (WebGL2 over ANGLE) on an NVIDIA RTX 4090 at ultra quality, then cut to a 6 fps GIF. Click for the
-  two-minute demo video.</sub>
+  <sub>Lisbon Hills and Linden Row: real frames from the app's own worlds, each averaged from 16 draws for clean edges
+  (an offline render, not a live screen recording). Echoes Below, a new sonar game playable from the home page, is captured
+  from the running game. Cut to a 10 fps GIF. Click for the two-minute demo video.</sub>
 </p>
 
 <p align="center">
