@@ -738,5 +738,48 @@
     }
    }
   ]
+ },
+ "himalayan-valley": {
+  "slug": "himalayan-valley",
+  "shots": [
+   {
+    "duration": 3,
+    "hour": 7.4,
+    "ease": "inOut",
+    "camera": {
+     "position": [
+      40,
+      32,
+      150
+     ],
+     "target": [
+      0,
+      15,
+      -60
+     ],
+     "fov": 50
+    },
+    "cameraTo": {
+     "position": [
+      32,
+      31,
+      100
+     ],
+     "target": [
+      -6,
+      16,
+      -70
+     ],
+     "fov": 50
+    },
+    "grade": {
+     "bloom": 0.6,
+     "diffusion": 0.3,
+     "vignette": 0.22,
+     "grain": 0,
+     "temperature": 0.1
+    }
+   }
+  ]
  }
 }
