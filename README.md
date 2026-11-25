@@ -18,12 +18,13 @@
 
 <p align="center">
   <a href="https://github.com/StarAtNyte/aether/releases/tag/v0.1.0">
-    <img src="docs/screenshots/aether-showcase.gif" width="100%" alt="Lisbon Hills at golden hour, Linden Row, and Echoes Below, a new sonar game">
+    <img src="docs/screenshots/aether-showcase.gif" width="100%" alt="Cloudwatch Harbour, Himalayan Valley, Sanctuary Falls, Casa del Patio, Linden Row, and Echoes Below, a new sonar game">
   </a>
   <br>
-  <sub>Lisbon Hills and Linden Row: real frames from the app's own worlds, each averaged from 16 draws for clean edges
-  (an offline render, not a live screen recording). Echoes Below, a new sonar game playable from the home page, is captured
-  from the running game. Cut to a 10 fps GIF. Click for the two-minute demo video.</sub>
+  <sub>Cloudwatch Harbour, Himalayan Valley, Sanctuary Falls, Casa del Patio and Linden Row: real frames from the app's own
+  worlds, each averaged from 16 draws for clean edges (an offline render, not a live screen recording). Echoes Below, a new
+  sonar game playable from the home page, is captured from the running game. Cut to a 10 fps GIF. Click for the two-minute
+  demo video.</sub>
 </p>
 
 <p align="center">
