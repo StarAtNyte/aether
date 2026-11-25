@@ -145,6 +145,7 @@ export interface GuideHandle {
   readonly walking: boolean;
   ask(text: string): Promise<void>;
   startTour(): void;
+  startNow(): void;
   route(): string[];
   /** The last walk to a product: the copy, its bounds, the viewpoint and the guide's path (null: none yet). */
   /** How far her mouth is open now (0..1, lip sync). */
@@ -289,6 +290,8 @@ export class GuideController {
   /** The tour waits for the full models and for her (tour-gate.ts); an armed tour came from an answer (`fromAnswer`). */
   private readonly gate = new TourGate();
   private armedFromAnswer = false;
+  /** The tour was started with "Start now": full files still loading are held while she walks. */
+  private lightStart = false;
   /** Every stop's viewpoint has been looked for (precompute done). */
   private viewsDone = false;
 
@@ -347,6 +350,7 @@ export class GuideController {
       },
       ask: (t) => self.ask(t),
       startTour: () => self.startTour(),
+      startNow: () => self.startNow(),
       route: () => self.stops.map((p) => p.id),
       get lastTrip() {
         return self.lastTrip;
@@ -832,6 +836,19 @@ export class GuideController {
     this.set({ prep: this.gate.prep });
   }
 
+  /**
+   * "Start now" while the tour is still being prepared: start from the first stop with whatever has loaded (the light
+   * copies); the rest keeps upgrading, its new files held while she walks (see {@link updateGate}). If she is not ready
+   * yet, the tour is armed and starts the moment she is.
+   */
+  startNow(): void {
+    if (this.stops.length === 0 || this.tour) return;
+    this.lightStart = true;
+    this.armedFromAnswer = false;
+    if (this.gate.skip(performance.now())) this.beginTour(false);
+    this.set({ prep: this.gate.prep });
+  }
+
   /** Set off on the tour (stops the explore bar's own autoplay). */
   private beginTour(fromAnswer: boolean): void {
     const ctrl = this.explore();
@@ -1067,8 +1084,15 @@ export class GuideController {
       hold: this.typing || this.snap.thinking,
     });
     const p = this.gate.prep;
+    // A tour started with "Start now" still has full files coming: none starts while she walks (the camera follows her and
+    // frames are precious), they carry on when she stops; once all are in the hold is gone.
+    if (this.lightStart) {
+      const { done, total } = r.modelUpgradeProgress();
+      r.holdModelUpgrades(!!this.tour && this.person.walking && done < total);
+      if (done >= total) this.lightStart = false;
+    }
     if (p.ready && !before.ready) this.voice?.preload(this.stops[0]?.intro || TOUR_START);
-    if (p.ready !== before.ready || p.percent !== before.percent || p.armed !== before.armed || p.starting !== before.starting) this.set({ prep: p });
+    if (p.ready !== before.ready || p.percent !== before.percent || p.armed !== before.armed || p.starting !== before.starting || p.step !== before.step || p.done !== before.done || p.canSkip !== before.canSkip || p.skipped !== before.skipped || p.slow !== before.slow) this.set({ prep: p });
     if (go && !this.tour) this.beginTour(this.armedFromAnswer);
   }
 

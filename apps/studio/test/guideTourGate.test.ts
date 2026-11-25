@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { prepLabel } from '../src/player/guide/GuideUI';
-import { READY_BEAT_MS, TOUR_WAIT_MS, TourGate, type GateInput } from '../src/player/guide/tour-gate';
+import { READY_BEAT_MS, SLOW_AFTER_MS, START_NOW_AFTER_MS, TOUR_WAIT_MS, TourGate, prepStatus, type GateInput } from '../src/player/guide/tour-gate';
 
 const input = (now: number, done: number, total: number, more: Partial<GateInput> = {}): GateInput => ({ now, upgrades: { done, total }, busy: false, guideReady: true, ...more });
 
@@ -12,7 +12,7 @@ describe('tour gate', () => {
   it('is ready at once when nothing upgrades and the guide is ready', () => {
     const g = new TourGate();
     expect(g.update(input(0, 0, 0))).toBe(false);
-    expect(g.prep).toEqual({ ready: true, percent: 100, armed: false, starting: false });
+    expect(g.prep).toMatchObject({ ready: true, percent: 100, armed: false, starting: false, step: null, canSkip: false });
     expect(g.request(10)).toBe(true);
     expect(prepLabel(g.prep)).toBeNull();
   });
@@ -116,5 +116,88 @@ describe('tour gate', () => {
     // The second file failed: settled, so done = total although its fraction was low.
     g.update({ ...input(1000, 2, 2), fraction: 1 });
     expect(g.prep.ready).toBe(true);
+  });
+
+  it('offers "Start now" after a few seconds, and only while waiting', () => {
+    const g = new TourGate();
+    g.update(input(1000, 0, 5));
+    expect(g.prep.canSkip).toBe(false);
+    g.update(input(1000 + START_NOW_AFTER_MS - 1, 1, 5));
+    expect(g.prep.canSkip).toBe(false);
+    g.update(input(1000 + START_NOW_AFTER_MS, 1, 5));
+    expect(g.prep.canSkip).toBe(true);
+    g.update(input(20_000, 5, 5));
+    expect(g.prep).toMatchObject({ ready: true, canSkip: false });
+  });
+
+  it('skip starts at once when the guide is ready, whatever is still loading, and the models carry on', () => {
+    const g = new TourGate();
+    g.update(input(0, 1, 5));
+    expect(g.skip(7000)).toBe(true);
+    expect(g.prep).toMatchObject({ ready: true, percent: 100, armed: false, canSkip: false });
+    // Later frames: still ready, nothing starts twice, the models still coming do not take it back.
+    expect(g.update(input(7100, 2, 5, { busy: true }))).toBe(false);
+    expect(g.prep.ready).toBe(true);
+    expect(g.skip(7200)).toBe(true);
+  });
+
+  it('skip with the guide not ready arms the tour: it starts the moment she is, with no "Ready" beat', () => {
+    const g = new TourGate();
+    g.update(input(0, 1, 5, { guideReady: false }));
+    expect(g.skip(7000)).toBe(false);
+    expect(g.prep).toMatchObject({ ready: false, armed: true, skipped: true, canSkip: false });
+    expect(g.update(input(8000, 2, 5, { guideReady: false }))).toBe(false);
+    expect(prepStatus(g.prep, 'Ava')?.text).toBe('Starting as soon as Ava is ready');
+    // She is ready; the models are not (busy): it goes at once.
+    expect(g.update(input(9000, 2, 5, { busy: true }))).toBe(true);
+    expect(g.prep).toMatchObject({ ready: true, armed: false });
+    expect(g.update(input(9100, 2, 5))).toBe(false);
+  });
+
+  it('an armed skip still holds while the visitor types', () => {
+    const g = new TourGate();
+    g.update(input(0, 1, 5, { guideReady: false }));
+    g.skip(7000);
+    expect(g.update(input(8000, 1, 5, { hold: true }))).toBe(false);
+    expect(g.update(input(8100, 1, 5))).toBe(true);
+  });
+
+  it('flags a wait with no progress for a while as slow, and clears it when it moves', () => {
+    const g = new TourGate();
+    g.update({ ...input(0, 0, 4), fraction: 0.1 });
+    g.update({ ...input(SLOW_AFTER_MS - 1, 0, 4), fraction: 0.1 });
+    expect(g.prep.slow).toBe(false);
+    g.update({ ...input(SLOW_AFTER_MS, 0, 4), fraction: 0.1 });
+    expect(g.prep.slow).toBe(true);
+    g.update({ ...input(SLOW_AFTER_MS + 100, 0, 4), fraction: 0.3 });
+    expect(g.prep.slow).toBe(false);
+  });
+
+  it('names the step from the real state', () => {
+    const g = new TourGate();
+    g.update(input(0, 3, 13, { guideReady: false }));
+    expect(g.prep.step).toBe('models');
+    expect(prepStatus(g.prep, 'Ava')).toEqual({ text: 'Loading the models in full detail', count: '3 of 13', slow: null });
+    g.update(input(1000, 13, 13, { guideReady: false }));
+    expect(g.prep.step).toBe('guide');
+    expect(prepStatus(g.prep, 'Ava')?.text).toBe('Ava is getting ready');
+    g.update(input(2000, 13, 13, { busy: true }));
+    expect(g.prep.step).toBe('finishing');
+    expect(prepStatus(g.prep)?.text).toBe('Almost there');
+    // The slow note rides on a step.
+    g.update(input(2000 + SLOW_AFTER_MS, 13, 13, { busy: true }));
+    expect(prepStatus(g.prep)?.slow).toMatch(/This device is taking a while/);
+    expect(prepStatus(g.prep)?.slow).toMatch(/start now/);
+    g.update(input(20_000, 13, 13));
+    expect(prepStatus(g.prep)).toBeNull();
+    g.update(input(20_100, 13, 13));
+  });
+
+  it('the status reads "Ready" while an armed tour starts, and nothing once it may', () => {
+    const g = new TourGate();
+    g.update(input(0, 0, 1));
+    g.request(0);
+    g.update(input(100, 1, 1));
+    expect(prepStatus(g.prep)).toEqual({ text: 'Ready', count: null, slow: null });
   });
 });

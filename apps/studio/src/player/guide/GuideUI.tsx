@@ -16,7 +16,7 @@ import type { ExploreController } from '../explore';
 import { productCard } from '../products/model';
 import { COUNTDOWN_S } from './brain';
 import { GuideController, SHOW_EVENT, type GuideSnapshot, type SavedPiece } from './guide';
-import type { TourPrep } from './tour-gate';
+import { prepStatus, type TourPrep } from './tour-gate';
 import './guide.css';
 
 /** Suggestions under the chat (the tour first when there is one). */
@@ -48,6 +48,29 @@ export function prepLabel(prep: TourPrep | undefined): string | null {
 /** Class and attributes of a tour button while the tour is being prepared (still pressable: a press arms it). */
 const prepProps = (prep: TourPrep | undefined): { className: string; 'aria-busy'?: boolean; style?: CSSProperties } =>
   prepLabel(prep) === null ? { className: '' } : { className: prep!.starting ? ' is-ready' : ' is-wait', 'aria-busy': !prep!.starting, style: { '--prep': `${prep!.percent}%` } as CSSProperties };
+
+/**
+ * What the wait is doing, in plain words, and the way to go on without it: a status line (a polite live region that reads
+ * out the step only, never the percent or the counts) and, after a few seconds, "Start now" (a real button).
+ */
+function PrepNote({ prep, name, ctrl, compact = false }: { prep: TourPrep | undefined; name: string; ctrl: GuideController | null; compact?: boolean }): ReactElement | null {
+  const status = prep ? prepStatus(prep, name) : null;
+  if (!prep || !status || prep.starting) return null;
+  return (
+    <div className={`pl-gprep${compact ? ' is-compact' : ''}`} data-testid="pl-guide-prep">
+      <p className="pl-gprep__status" aria-live="polite" data-testid="pl-guide-prep-status">
+        <span>{status.text}</span>
+        {status.count && <span aria-hidden="true"> · {status.count}</span>}
+        {status.slow && <span className="pl-gprep__slow"> {status.slow}</span>}
+      </p>
+      {prep.canSkip && (
+        <button type="button" className="pl-gprep__now" onClick={() => ctrl?.startNow()} data-testid="pl-guide-start-now">
+          Start now
+        </button>
+      )}
+    </div>
+  );
+}
 
 /** Open the shop's page for a piece (its card's Enquire or Buy), else its product card. */
 function enquire(world: WorldDoc, id: string): void {
@@ -184,6 +207,7 @@ export function GuidePanel({
                     </small>
                   </span>
                 </button>
+                <PrepNote prep={prep} name={name} ctrl={ctrl} />
                 <button type="button" className="pl-gcta" onClick={() => ctrl?.dismiss()} data-testid="pl-guide-welcome-explore">
                   Explore on my own
                 </button>
@@ -324,6 +348,7 @@ export function GuidePanel({
                   </button>
                 ))}
               </div>
+              {snap.canTour && !tour && !card && prep?.armed && <PrepNote prep={prep} name={name} ctrl={ctrl} />}
               <form className="pl-gform" onSubmit={onSubmit}>
                 <input
                   ref={inputRef}
@@ -356,6 +381,7 @@ export function GuidePanel({
                   </span>
                   Ask {name}
                 </button>
+                {snap.canTour && prep?.armed && <PrepNote prep={prep} name={name} ctrl={ctrl} compact />}
                 {snap.canTour && (
                   <button type="button" className={`pl-gopen pl-gopen--tour${wait.className}`} aria-busy={wait['aria-busy']} style={wait.style} onClick={startTour} data-testid="pl-guide-dock-tour">
                     {waitLabel ?? 'Take the tour'}
