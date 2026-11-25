@@ -47,7 +47,7 @@ import { GUIDE_ID, GuidePerson } from './person';
 import { floorAt, framePiece, openings, viewpoint, walkPath, type ScreenArea, type Viewpoint } from './place';
 import { GuideLipSync } from './lipsync';
 import { GuideVoice } from './voice';
-import { TourGate, type TourPrep } from './tour-gate';
+import { GATE_SETTLE_MS, TourGate, type TourPrep } from './tour-gate';
 
 /** The visitor nearer than this (m) is greeted. */
 export const GREET_M = 6;
@@ -1082,6 +1082,8 @@ export class GuideController {
       busy: r.processingStage !== null,
       guideReady: this.ready && this.viewsDone,
       hold: this.typing || this.snap.thinking,
+      // A slow machine is still lowering the picture: a step rebuilds programs, and the tour would walk through those frames.
+      settling: r.msSinceQualityMove < GATE_SETTLE_MS,
     });
     const p = this.gate.prep;
     // A tour started with "Start now" still has full files coming: none starts while she walks (the camera follows her and

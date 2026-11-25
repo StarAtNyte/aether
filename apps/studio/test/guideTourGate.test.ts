@@ -37,6 +37,19 @@ describe('tour gate', () => {
     expect(g.prep.ready).toBe(true);
   });
 
+  it('waits while the picture is still being lowered for this machine, but never past the cap', () => {
+    const g = new TourGate();
+    g.update(input(0, 4, 4, { settling: true }));
+    g.update(input(3000, 4, 4, { settling: true }));
+    expect(g.prep).toMatchObject({ ready: false, percent: 99 });
+    g.update(input(3100, 4, 4, { settling: false }));
+    expect(g.prep.ready).toBe(true);
+    const h = new TourGate();
+    h.update(input(0, 4, 4, { settling: true }));
+    h.update(input(60_000, 4, 4, { settling: true }));
+    expect(h.prep.ready).toBe(true);
+  });
+
   it('a press while preparing arms the tour: it starts by itself after the "Ready" beat', () => {
     const g = new TourGate();
     g.update(input(0, 1, 3));

@@ -13,6 +13,8 @@ export const TOUR_WAIT_MS = 60_000;
 export const START_NOW_AFTER_MS = 6000;
 /** No progress for this long (ms): the status adds that the device is slow and the visitor may start now. */
 export const SLOW_AFTER_MS = 8000;
+/** The picture must have been left alone this long (ms) by adaptive resolution and the quality ladder before the tour may start. */
+export const GATE_SETTLE_MS = 6000;
 /** How long (ms) an armed tour shows "Ready" before it sets off. */
 export const READY_BEAT_MS = 700;
 
@@ -33,6 +35,8 @@ export interface GateInput {
   guideReady: boolean;
   /** The visitor is typing or waiting for an answer: an armed tour waits (still armed) until they are done. */
   hold?: boolean;
+  /** The picture is still being adjusted for this machine (resolution or quality just moved): the tour's walk waits for it to settle. */
+  settling?: boolean;
 }
 
 /** What the tour buttons show. */
@@ -104,7 +108,7 @@ export class TourGate {
     const settled = done >= total;
     this.guideOk = i.guideReady;
     // "Start now" waits for the guide only (her body in, the stops' viewpoints found), not for the full models.
-    if (!this.readyNow && ((settled && !i.busy && i.guideReady) || (this.skipped && i.guideReady) || i.now - this.since >= TOUR_WAIT_MS)) {
+    if (!this.readyNow && ((settled && !i.busy && !i.settling && i.guideReady) || (this.skipped && i.guideReady) || i.now - this.since >= TOUR_WAIT_MS)) {
       this.readyNow = true;
       this.readyAt = i.now;
     }
