@@ -80,7 +80,7 @@ import { MeshBasicNodeMaterial } from 'three/webgpu';
 import { textureWork } from './gpu/task-queue';
 import { BATCHED_LAYER, FAR_INTERIOR_LAYER, RAYCAST_LAYERS, SMALL_MESH_LAYER } from './sync/static-batches';
 import { nextTrim, type TrimIntent } from './view/exposure-trim';
-import { adaptStep, adaptedLook, interiorBalance, interiorFactor, toneExposure, volumeExposure, type CeilingBox } from './view/eye-adapt';
+import { adaptStep, adaptedLook, EYE_EASE_MAX_DT, interiorBalance, interiorFactor, toneExposure, volumeExposure, type CeilingBox } from './view/eye-adapt';
 import { looksInside } from './view/arch-view';
 import { ROOM_MAX_EV, ROOM_MIN_EV, RoomSelector, roomLight, roomSamplePoints, type PointLight, type RoomBox, type RoomLight } from './view/room-exposure';
 import { LightVolumeController, materialAlbedo, type VolumeLighting, type VolumePart } from './view/light-volume-controller';
@@ -5738,7 +5738,7 @@ export class WorldRenderer {
     if (t - this.trimStillAt < (fresh ? 200 : 400)) return why('eye moving');
     if (typeof createImageBitmap !== 'function' || this.captureActive) return why('no bitmap or capture running');
     if (this.warming || this.grow.active || this.preparation.pending > 0 || this.programs.pending > 0) return why(`busy: warming ${String(this.warming)} grow ${String(this.grow.active)} prep ${this.preparation.pending} programs ${this.programs.pending}`);
-    if (Math.abs(this.trimFor(this.roomPick.id) - this.trimNow) > 0.02) return why('trim still easing');
+    if (Math.abs(this.trimFor(this.roomPick.id) - this.trimNow) > 0.05) return why('trim still easing');
     // A picture that stopped changing the trim is looked at only now and then (an animated world draws every frame).
     if (t - this.trimAt < (this.trimQuiet >= 3 ? 5000 : fresh ? 350 : 700)) return;
     this.trimAt = t;
@@ -6649,7 +6649,13 @@ export class WorldRenderer {
     // Offline footage can pin the exposure for the whole shot (`__AETHER_CAPTURE.lockEye`): the eye stays where it is.
     if (this.captureActive && captureFlags().lockEye) return;
     this.eyeClock += dt;
-    if (this.eyeClock < 0.08) return;
+    // The goals are read from the scene every 80 ms (or at once when something asked for it: `eyeClock` is set high); the
+    // exposure itself eases toward them every frame (below), so a goal that moves in a step (a room's trim learned from the
+    // picture, a new room) shows as a short ramp, not as one frame of a different brightness.
+    if (this.eyeClock < 0.08) {
+      this.easeEye(dt, 0);
+      return;
+    }
     const step = this.eyeClock;
     this.eyeClock = 0;
     if (this.ceilings === null) {
@@ -6710,13 +6716,33 @@ export class WorldRenderer {
     // A camera that jumped (a cut, a teleport, a capture pose) sees with adapted eyes at once.
     const jumped = this.lastEye.distanceToSquared(p) > 2.25;
     this.lastEye.copy(p);
-    const trimTarget = this.roomPick ? this.trimFor(this.roomPick.id) : 0;
-    const trimDone = Math.abs(trimTarget - this.trimNow) < 0.01;
-    if (Math.abs(target - this.eyeFactor) < 0.002 && Math.abs(targetEv - this.eyeEv) < 0.01 && Math.abs(targetBalance - this.eyeBalance) < 0.005 && trimDone) return;
-    this.trimNow = jumped ? trimTarget : adaptStep(this.trimNow, trimTarget, step);
-    this.eyeFactor = jumped ? target : adaptStep(this.eyeFactor, target, step);
-    this.eyeEv = jumped ? targetEv : adaptStep(this.eyeEv, targetEv, step);
-    this.eyeBalance = jumped ? targetBalance : adaptStep(this.eyeBalance, targetBalance, step);
+    this.eyeGoal.trim = this.roomPick ? this.trimFor(this.roomPick.id) : 0;
+    this.eyeGoal.factor = target;
+    this.eyeGoal.ev = targetEv;
+    this.eyeGoal.balance = targetBalance;
+    if (jumped) this.eyeCut = true;
+    this.easeEye(dt, step);
+  }
+
+  /** Where the eye's exposure is heading (see `adaptEye`), and whether the next ease takes it there at once (a cut). */
+  private readonly eyeGoal = { factor: 0, ev: 0, balance: 0, trim: 0 };
+  private eyeCut = false;
+
+  /**
+   * Move the eye's exposure toward its goals by `dt` seconds (frame-rate independent, time constant `ADAPT_SECONDS`; a long frame
+   * counts for at most `EYE_EASE_MAX_DT`, so a hitch is not a jump). A call with no frame time (`dt` 0: a capture asking for the eye
+   * at its pose) takes `stepOf` seconds instead, as the eye always did.
+   */
+  private easeEye(dt: number, stepOf: number): void {
+    const g = this.eyeGoal;
+    const cut = this.eyeCut;
+    if (!cut && Math.abs(g.factor - this.eyeFactor) < 0.002 && Math.abs(g.ev - this.eyeEv) < 0.01 && Math.abs(g.balance - this.eyeBalance) < 0.005 && Math.abs(g.trim - this.trimNow) < 0.01) return;
+    const k = dt > 0 ? Math.min(dt, EYE_EASE_MAX_DT) : Math.min(1, stepOf);
+    this.eyeCut = false;
+    this.trimNow = cut ? g.trim : adaptStep(this.trimNow, g.trim, k);
+    this.eyeFactor = cut ? g.factor : adaptStep(this.eyeFactor, g.factor, k);
+    this.eyeEv = cut ? g.ev : adaptStep(this.eyeEv, g.ev, k);
+    this.eyeBalance = cut ? g.balance : adaptStep(this.eyeBalance, g.balance, k);
     this.applyLook();
     // Exposure changed, the casters did not: a new frame, the cached sun shadow map stays (`needsDraw` would redraw it,
     // every 80 ms while the eye adapts).

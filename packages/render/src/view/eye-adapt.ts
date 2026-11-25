@@ -25,7 +25,9 @@ export const INTERIOR_FADE = 0.9;
 /** Highest ceiling a room can have for the factor to count (metres above the eye). */
 export const MAX_CEILING_ABOVE = 6;
 /** Time constant (seconds) of the adaptation. */
-export const ADAPT_SECONDS = 0.55;
+export const ADAPT_SECONDS = 0.35;
+/** Longest frame time (s) one ease of the eye's exposure takes in: a hitch of a frame is not a jump of the picture's brightness. */
+export const EYE_EASE_MAX_DT = 0.05;
 
 /** Interior factor (0..1) of an eye at `x, y, z` under `ceilings`. Non-finite input counts as outdoors. */
 export function interiorFactor(x: number, y: number, z: number, ceilings: readonly CeilingBox[]): number {
