@@ -22,6 +22,10 @@
 
 /** Frames in the percentile window. */
 const WINDOW = 48;
+/** Frames in the window before an emergency can be called (the p90 of fewer is noise, but 48 slow frames are ten seconds). */
+const CRISIS_FRAMES = 16;
+/** Smallest step when the frame rate is under the emergency one. */
+const EMERGENCY_STEP = 0.5;
 
 /** Tunables of {@link AdaptiveResolution}. */
 export const ADAPTIVE_DEFAULTS = Object.freeze({
@@ -224,11 +228,12 @@ export class AdaptiveResolution {
       this.crisis = 0;
       return false;
     }
-    const early = this.age < this.o.earlyEnd;
+    // Under the emergency frame rate the first seconds' extra patience is over: those frames are the picture, not a load.
+    const early = this.age < this.o.earlyEnd && !(this.o.emergencyFps > 0 && this.fps < this.o.emergencyFps);
     const downAfter = early ? this.o.downAfter * this.o.earlyDownMul : this.o.downAfter;
     const upAfter = early ? this.upWait * this.o.earlyUpMul : this.upWait;
     if (this.o.emergencyFps > 0 && this.o.emergencyScale > 0) {
-      this.crisis = this.fps < this.o.emergencyFps && this.filled >= WINDOW ? this.crisis + dt : 0;
+      this.crisis = this.fps < this.o.emergencyFps && this.filled >= CRISIS_FRAMES ? this.crisis + dt : 0;
       if (this.crisis >= this.o.emergencyAfter) this.crisisOpen = true;
     }
     // Clear GPU headroom means reducing pixels cannot fix the observed CPU delay.
@@ -246,7 +251,9 @@ export class AdaptiveResolution {
     }
     if (this.below >= downAfter && this.scale > this.lowest) {
       if (this.sinceUpscale < this.o.failWindow) this.upWait = Math.min(this.o.maxUpAfter, this.upWait * 2);
-      const factor = Math.max(this.o.minStep, Math.min(this.o.step, Math.sqrt(Math.max(this.fps, 1) / this.o.targetFps)));
+      // Unusably slow (under the emergency frame rate): the whole proportional step at once, not the small one.
+      const minStep = this.o.emergencyFps > 0 && this.fps < this.o.emergencyFps ? Math.min(this.o.minStep, EMERGENCY_STEP) : this.o.minStep;
+      const factor = Math.max(minStep, Math.min(this.o.step, Math.sqrt(Math.max(this.fps, 1) / this.o.targetFps)));
       return this.set(Math.max(this.lowest, this.scale * factor));
     }
     if (this.above >= upAfter && this.scale < 1) {

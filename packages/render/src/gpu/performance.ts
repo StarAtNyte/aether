@@ -144,6 +144,9 @@ export const GOVERNOR_DEFAULTS = Object.freeze({
  * that starts above level 0 (a machine on a path known to need care) is told with {@link start}. Time here is the sum of
  * the continuous frames recorded, so a hidden tab does not move it. Allocation-free per frame.
  */
+/** Longest frame (s) still counted as a sustained slow frame rather than a stall. */
+const SUSTAINED_SLOW_MAX_DT = 1;
+
 export class PerformanceGovernor {
   /** Steps taken so far (lower: less given up). */
   level = 0;
@@ -172,6 +175,7 @@ export class PerformanceGovernor {
   private failedClimbs = 0;
   private retryWait: number = GOVERNOR_DEFAULTS.retryAfter;
   private clock = 0;
+  private lastDt = 0;
   private lastMoveAt = Number.NEGATIVE_INFINITY;
   private lastUpAt = Number.NEGATIVE_INFINITY;
 
@@ -234,6 +238,12 @@ export class PerformanceGovernor {
    */
   record(dt: number, continuous: boolean, scale: number): boolean {
     if (!this.enabled || !(dt > 0) || !Number.isFinite(dt)) return false;
+    // A frame past `maxContinuousDt` is a hitch, unless the one before was slow too: a machine drawing every frame in 150-300
+    // ms is what the ladder exists for, and a tenth of its frames passing the bound reset the count each time (about one
+    // clean run in fifty of the sixteen frames a step needs), so it never stepped (same rule as adaptive resolution).
+    const sustained = continuous && dt > this.o.maxContinuousDt && dt <= SUSTAINED_SLOW_MAX_DT && this.lastDt > this.o.maxContinuousDt * 0.5;
+    this.lastDt = dt;
+    if (sustained) dt = this.o.maxContinuousDt;
     if (!continuous || dt > this.o.maxContinuousDt) {
       this.reset();
       return false;

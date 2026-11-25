@@ -504,6 +504,12 @@ export type RenderProcessingStage = 'scene' | 'materials' | 'render' | 'lighting
 const MIRROR_SCALE = 0.5;
 /** Frame time (s) beyond which an animating scene at rest cannot afford the full chain, and for how many frames in a row. */
 const REST_SLOW_DT = 0.034;
+/** A drawn frame slower than this (s) counts toward a run of slow frames; this many in a row are measured even while objects prepare. */
+const SLOW_RUN_DT = 0.12;
+const SLOW_RUN_FRAMES = 6;
+/** The run ends after this many frames in a row quicker than this (s). */
+const SLOW_RUN_END_DT = 0.1;
+const SLOW_RUN_END_FRAMES = 4;
 const REST_SLOW_FRAMES = 10;
 const SHAFT_WAIT_FRAMES = 4;
 const JPEG_QUALITY = 0.8;
@@ -1581,6 +1587,15 @@ export class WorldRenderer {
     for (const n of ['createTexture', 'updateTexture', 'generateMipmaps']) wrap(be, n, 'upload', size);
   }
 
+  /**
+   * Milliseconds since adaptive resolution or the performance ladder last moved (Infinity: never). A move rebuilds what
+   * the picture is made of (the ladder's steps link new programs, which show as a long run of slow frames), so a host
+   * about to ask for smooth motion (the guided tour) waits for the picture to settle first.
+   */
+  get msSinceQualityMove(): number {
+    return now() - this.qualityMovedAt;
+  }
+
   /** What the `?perf=1` overlay shows of this renderer (cheap; plain values). */
   perfSnapshot(): {
     gpu: string;
@@ -1595,6 +1610,12 @@ export class WorldRenderer {
     compression: string;
     pixelRatio: number;
     drawingBuffer: [number, number];
+    drawCalls: number;
+    triangles: number;
+    /** Frames the ladder and adaptive resolution cannot measure (progressive, rebuilding): counts since the start. */
+    blind: { progressive: number; rebuilding: boolean; rewarming: boolean; bake: boolean; drew: boolean };
+    /** Frames offered to the governors, those measured, the adaptive frame rate it sees and whether the view is at rest. */
+    gov: { offered: number; measured: number; fps: number; enabled: boolean; atRest: boolean; held: boolean; gpuMs: number; preparing: number };
   } {
     const prog = this.sync.upgradeProgress();
     return {
@@ -1610,6 +1631,10 @@ export class WorldRenderer {
       compression: this.compression.state,
       pixelRatio: this.renderer.getPixelRatio(),
       drawingBuffer: [this.domElement.width, this.domElement.height],
+      drawCalls: this.lastDrawCalls,
+      triangles: this.lastTriangles,
+      blind: { progressive: this.progressiveFrames, rebuilding: this.rebuildSince !== 0, rewarming: this.rewarming, bake: this.lightVolumeBaking, drew: this.drewLastFrame },
+      gov: { offered: this.govFrames, measured: this.govMeasured, fps: this.adaptive.smoothedFps, enabled: this.adaptive.enabled, atRest: this.atRest, held: this.qualityHeld, gpuMs: (this.gpuCost.seconds ?? 0) * 1000, preparing: this.preparation.pending },
     };
   }
 
@@ -5417,12 +5442,32 @@ export class WorldRenderer {
       // objects coming into view still prepare (the preparation shares the frame), nor a frame drawn while a plan change's
       // programs link: counted, the links' slow frames made the ladder take the next step at once (medium to low, then the
       // effects 6 s later on an Intel UHD 770), and the step after a climb undid the climb.
-      const measuring = this.drewLastFrame && !this.lightVolumeBaking && !this.progressive && !this.rewarming && this.rebuildSince === 0;
-      if (this.adaptive.record(dt, measuring, this.gpuCost.seconds)) this.resize(this.cssWidth, this.cssHeight);
+      // Exception: a progressive frame in a long run of very slow ones. The preparation takes a slice of a frame (a few ms, up to
+      // a load's longer ones), it cannot make six frames in a row slower than 120 ms: those frames are the picture itself, and
+      // while they stayed unmeasured (a slow machine prepares for a long time, because every frame is slow) neither the
+      // resolution nor the ladder moved, 40 s of 5 fps at full size on an Intel iGPU at 4x CPU slowdown.
+      // A run ends only after a few quick frames in a row, so the one lucky frame of a slow machine does not hand the next
+      // frames back to the unmeasured ones (each unmeasured frame also breaks the streaks the governors count).
+      if (this.drewLastFrame) {
+        if (dt > SLOW_RUN_DT) {
+          this.slowRun++;
+          this.quickRun = 0;
+        } else if (dt < SLOW_RUN_END_DT && ++this.quickRun >= SLOW_RUN_END_FRAMES) this.slowRun = 0;
+      }
+      const measuring = this.drewLastFrame && !this.lightVolumeBaking && (!this.progressive || (this.slowRun >= SLOW_RUN_FRAMES && !this.loadingScreen)) && !this.rewarming && this.rebuildSince === 0;
+      this.govFrames++;
+      if (measuring) this.govMeasured++;
+      if (this.adaptive.record(dt, measuring, this.gpuCost.seconds)) {
+        this.qualityMovedAt = now();
+        this.resize(this.cssWidth, this.cssHeight);
+      }
       const scale = this.adaptive.enabled ? this.adaptive.scale : 0;
       // The ladder waits for adaptive resolution to fall first; a scale held at its floor (0.75 under the sharp motion
       // profile, above the ladder's 0.72) has fallen as far as it will, or a slow frame rate would never give anything else up.
-      if (!this.qualityHeld && this.governor.record(dt, measuring, this.adaptive.atFloor ? Math.min(scale, GOVERNOR_DEFAULTS.afterScale) : scale)) this.applyPerformance();
+      if (!this.qualityHeld && this.governor.record(dt, measuring, this.adaptive.atFloor ? Math.min(scale, GOVERNOR_DEFAULTS.afterScale) : scale)) {
+        this.qualityMovedAt = now();
+        this.applyPerformance();
+      }
       // No probe above medium on an integrated or unrecognised GPU: high adds the sun cascades, which rebuilds every lit
       // material, and a probe that fails rebuilds them twice (each rebuild froze an Intel UHD 770 for 5-8 s on a
       // 2,300-entity street). The tier stays a choice in the settings.
@@ -5474,6 +5519,12 @@ export class WorldRenderer {
   private progressiveAt = 0;
   /** True while the frame being drawn is a progressive one (shown although programs or preparation are still pending). */
   private progressive = false;
+  /** Drawn frames in a row slower than {@link SLOW_RUN_DT}. */
+  private slowRun = 0;
+  private qualityMovedAt = Number.NEGATIVE_INFINITY;
+  private govFrames = 0;
+  private govMeasured = 0;
+  private quickRun = 0;
   /** Progressive frames shown so far, and why (diagnostics). */
   private progressiveFrames = 0;
   private progressiveNote = '';

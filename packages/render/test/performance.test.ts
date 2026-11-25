@@ -315,3 +315,28 @@ describe('start level of a world', () => {
     expect(cutsAt(4).tierCap).toBe('low');
   });
 });
+
+describe('PerformanceGovernor on a machine drawing every frame in 150-300 ms', () => {
+  // Every fifth frame is a hitch past the continuous bound: before, each reset the count and the ladder never stepped.
+  const slow = (g: PerformanceGovernor, seconds: number): number => {
+    let moved = 0;
+    for (let t = 0, i = 0; t < seconds; i++) {
+      const dt = i % 5 === 4 ? 0.32 : 0.19;
+      t += dt;
+      if (g.record(dt, true, 0.5)) moved++;
+    }
+    return moved;
+  };
+  it('steps down through the hitches', () => {
+    const g = new PerformanceGovernor();
+    expect(slow(g, 12)).toBeGreaterThanOrEqual(2);
+    expect(g.level).toBeGreaterThanOrEqual(2);
+  });
+  it('still treats a lone stall after fast frames as a hitch', () => {
+    const g = new PerformanceGovernor();
+    for (let i = 0; i < 100; i++) g.record(1 / 60, true, 1);
+    expect(g.record(0.4, true, 1)).toBe(false);
+    for (let i = 0; i < 100; i++) g.record(1 / 60, true, 1);
+    expect(g.level).toBe(0);
+  });
+});

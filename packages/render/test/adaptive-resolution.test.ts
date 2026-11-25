@@ -232,3 +232,18 @@ describe('AdaptiveResolution first seconds', () => {
     expect(feed(a, 20, ADAPTIVE_DEFAULTS.warmup - 0.1)).toBe(0);
   });
 });
+
+describe('AdaptiveResolution under the emergency frame rate', () => {
+  it('falls to the emergency scale in a few seconds of 190 ms frames, not tens', () => {
+    const a = new AdaptiveResolution(MOTION_PROFILES.sharp.opts);
+    let t = 0;
+    let at = -1;
+    for (let i = 0; i < 400 && at < 0; i++) {
+      t += 0.19;
+      a.record(0.19, true);
+      if (a.scale <= 0.5) at = t;
+    }
+    expect(at).toBeGreaterThan(0);
+    expect(at).toBeLessThan(14);
+  });
+});

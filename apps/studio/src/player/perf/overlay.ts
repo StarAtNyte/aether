@@ -24,7 +24,8 @@ interface RendererView {
   perfSnapshot?: () => {
     gpu: string; tier: string; tierReason: string | null; textureCap: number; ladder: number; scale: number;
     upgrades: { done: number; total: number; inFlight: number; waiting: number; held: boolean };
-    programs: number; textures: number; compression: string; pixelRatio: number; drawingBuffer: [number, number];
+    programs: number; textures: number; compression: string; pixelRatio: number; drawingBuffer: [number, number]; drawCalls: number; triangles: number; blind: { progressive: number; rebuilding: boolean; rewarming: boolean; bake: boolean; drew: boolean };
+    gov: { offered: number; measured: number; fps: number; enabled: boolean; atRest: boolean; held: boolean; gpuMs: number; preparing: number };
   };
   attachProbe?: () => void;
   diagnostics?: () => string;
@@ -185,7 +186,7 @@ export function installPerfOverlay(): void {
     if (snap) {
       const u = snap.upgrades;
       out.push(`model upgrades: ${u.done} of ${u.total} done; ${u.inFlight} in flight; ${u.waiting} waiting${u.held ? '; held' : ''}; swaps in 10 s: ${swaps.length}`);
-      out.push(`programs compiling: ${snap.programs}; textures on GPU: ${snap.textures}`);
+      out.push(`programs compiling: ${snap.programs}; textures on GPU: ${snap.textures}; draw calls ${snap.drawCalls}; triangles ${snap.triangles}`);
     }
     const j = [...jobs].filter(([, n]) => n > 0).map(([k, n]) => `${k} x${n}`).join(', ');
     out.push(`jobs in flight: ${j || 'none'}`);
@@ -273,7 +274,7 @@ export function installPerfOverlay(): void {
     const rv = view();
     rv?.attachProbe?.();
     const sn = rv?.perfSnapshot?.();
-    if (sn && samples.length < 20_000) samples.push({ t: Math.round(performance.now() - start), scale: Math.round(sn.scale * 100) / 100, ladder: sn.ladder, tier: sn.tier, done: sn.upgrades.done, total: sn.upgrades.total, inFlight: sn.upgrades.inFlight, held: sn.upgrades.held ? 1 : 0, programs: sn.programs });
+    if (sn && samples.length < 20_000) samples.push({ t: Math.round(performance.now() - start), scale: Math.round(sn.scale * 100) / 100, ladder: sn.ladder, tier: sn.tier, done: sn.upgrades.done, total: sn.upgrades.total, inFlight: sn.upgrades.inFlight, held: sn.upgrades.held ? 1 : 0, programs: sn.programs, calls: sn.drawCalls, tris: sn.triangles, prog: sn.blind.progressive, rebuild: sn.blind.rebuilding ? 1 : 0, rewarm: sn.blind.rewarming ? 1 : 0, bake: sn.blind.bake ? 1 : 0, off: sn.gov.offered, meas: sn.gov.measured, afps: Math.round(sn.gov.fps * 10) / 10, aen: sn.gov.enabled ? 1 : 0, rest: sn.gov.atRest ? 1 : 0, qh: sn.gov.held ? 1 : 0, gpums: Math.round(sn.gov.gpuMs * 10) / 10, preparing: sn.gov.preparing });
     if (collapsed) return;
     pre1.textContent = lines().join('\n');
     pre2.textContent = `long frames (>${LONG_MS} ms, newest first):\n${longText(SHOWN_LONG).join('\n') || 'none yet'}`;
