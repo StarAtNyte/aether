@@ -8,6 +8,9 @@ function feed(a: AdaptiveResolution, fps: number, seconds: number): number {
   return changes;
 }
 
+/** The policy once the first seconds are over (no warm-up, no longer early waits). */
+const STEADY = { warmup: 0, earlyEnd: 0 };
+
 describe('AdaptiveResolution', () => {
   it('keeps full resolution at 60 fps', () => {
     const a = new AdaptiveResolution();
@@ -16,7 +19,7 @@ describe('AdaptiveResolution', () => {
   });
 
   it('scales down after sustained frames under 50 fps, by the step the frame time asks for, down to the floor', () => {
-    const a = new AdaptiveResolution();
+    const a = new AdaptiveResolution(STEADY);
     expect(feed(a, 30, 0.5)).toBe(0);
     expect(feed(a, 30, 1)).toBe(1);
     // Pixels follow the frame time: 30 fps aiming at 58 takes sqrt(30 / 58) of the scale.
@@ -43,7 +46,7 @@ describe('AdaptiveResolution', () => {
       }
       return null;
     };
-    const a = new AdaptiveResolution();
+    const a = new AdaptiveResolution(STEADY);
     feed(a, 30, 1.2);
     expect(a.scale).toBeLessThan(1);
     const first = secondsToUp(a) as number;
@@ -69,7 +72,7 @@ describe('AdaptiveResolution', () => {
 
 describe('AdaptiveResolution p90 governor', () => {
   it('scales down for periodic stutter even when the mean frame rate looks fine', () => {
-    const a = new AdaptiveResolution();
+    const a = new AdaptiveResolution(STEADY);
     // 6 of every 48 frames take 45 ms, the rest 14 ms: mean ≈ 57 fps, p90 ≈ 22 fps.
     let changed = false;
     for (let i = 0; i < 48 * 4 && !changed; i++) changed = a.record(i % 8 === 0 ? 0.045 : 0.014, true);
@@ -176,5 +179,56 @@ describe('motion floor of a chosen ultra tier', () => {
     expect(passFloorOf('smooth', 'integrated', true)).toBe(0.5);
     expect(passFloorOf('smooth', 'integrated', false)).toBe(MOTION_PROFILES.smooth.passFloor);
     expect(passFloorOf('sharp', 'integrated', true)).toBe(MOTION_PROFILES.sharp.passFloor);
+  });
+});
+
+describe('AdaptiveResolution first seconds', () => {
+  it('changes nothing during the warm-up, however slow the frames', () => {
+    const a = new AdaptiveResolution();
+    expect(feed(a, 20, ADAPTIVE_DEFAULTS.warmup - 0.1)).toBe(0);
+    expect(a.scale).toBe(1);
+  });
+
+  it('waits longer for a step down early on, then takes the steady wait', () => {
+    const slow = (a: AdaptiveResolution): number => {
+      let t = 0;
+      for (; t < 60; t += 1 / 30) if (a.record(1 / 30, true)) return t;
+      return Infinity;
+    };
+    const early = slow(new AdaptiveResolution());
+    expect(early).toBeGreaterThanOrEqual(ADAPTIVE_DEFAULTS.warmup);
+    expect(early).toBeLessThanOrEqual(ADAPTIVE_DEFAULTS.warmup + ADAPTIVE_DEFAULTS.downAfter * ADAPTIVE_DEFAULTS.earlyDownMul + 1.5);
+    // Past the early period a slow stretch steps down after the plain wait.
+    const a = new AdaptiveResolution();
+    feed(a, 60, ADAPTIVE_DEFAULTS.earlyEnd + 1);
+    expect(a.scale).toBe(1);
+    const before = a.changeCount;
+    feed(a, 30, ADAPTIVE_DEFAULTS.downAfter + 1);
+    expect(a.changeCount).toBe(before + 1);
+  });
+
+  it('waits longer for a step back up early on than the steady wait', () => {
+    const secondsToUp = (a: AdaptiveResolution): number => {
+      const from = a.scale;
+      for (let t = 0; t < 120; t++) {
+        feed(a, 60, 1);
+        if (a.scale > from) return t + 1;
+      }
+      return Infinity;
+    };
+    const steady = new AdaptiveResolution(STEADY);
+    feed(steady, 30, 1.2);
+    expect(steady.scale).toBeLessThan(1);
+    const early = new AdaptiveResolution({ ...STEADY, warmup: 0, earlyEnd: 1000 });
+    feed(early, 30, 3.2);
+    expect(early.scale).toBeLessThan(1);
+    expect(secondsToUp(early)).toBeGreaterThan(secondsToUp(steady));
+  });
+
+  it('starts the warm-up again after a reset', () => {
+    const a = new AdaptiveResolution();
+    feed(a, 60, 5);
+    a.reset();
+    expect(feed(a, 20, ADAPTIVE_DEFAULTS.warmup - 0.1)).toBe(0);
   });
 });

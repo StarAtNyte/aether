@@ -8,6 +8,8 @@
  *   treated as slow (p90 frame-time governor).
  * - Only back-to-back frames count (an on-demand editor that skips frames or
  *   a hidden tab never looks "slow").
+ * - The first seconds decide nothing ({@link ADAPTIVE_DEFAULTS.warmup}: a load's slow frames are not what the machine
+ *   draws), and for a while after that the waits are longer, the one for a step back up longest.
  * - Hysteresis: downscale after `downAfter` seconds below `lowFps`; upscale
  *   only after `upAfter` seconds above `highFps`, and an upscale that has to
  *   be undone soon doubles the wait before the next attempt (no oscillation
@@ -42,6 +44,17 @@ export const ADAPTIVE_DEFAULTS = Object.freeze({
   failWindow: 8,
   /** Frame deltas above this break the "continuous" streak (s). */
   maxContinuousDt: 0.25,
+  /**
+   * Seconds of continuous frames after the first real picture (and after every {@link AdaptiveResolution.reset}) in which the
+   * scale does not change: the shader links, uploads and first draws of a load are not evidence of what the machine can draw.
+   */
+  warmup: 3,
+  /** The wait for a step is longer, until this many seconds of continuous frames have passed (the first seconds still settle). */
+  earlyEnd: 15,
+  /** Until `earlyEnd`: the factor on `downAfter` (a step down needs the slow frames to hold this much longer). */
+  earlyDownMul: 2,
+  /** Until `earlyEnd`: the factor on the wait before a step up (longer still: a step back up after a step down is the flicker). */
+  earlyUpMul: 3,
   /** Emergency step: under this frame rate for `emergencyAfter` seconds the floor opens down to `emergencyScale` (0: no emergency step). */
   emergencyFps: 0,
   emergencyAfter: 3,
@@ -122,6 +135,8 @@ export class AdaptiveResolution {
   private crisis = 0;
   private crisisOpen = false;
   private lastDt = 0;
+  /** Seconds of continuous frames since the start or the last reset (see `warmup`). */
+  private age = 0;
   /** Ring of recent continuous frame times (s) and a scratch copy for the percentile. */
   private readonly window = new Float32Array(WINDOW);
   private readonly sorted = new Float32Array(WINDOW);
@@ -201,6 +216,17 @@ export class AdaptiveResolution {
     this.cursor = (this.cursor + 1) % WINDOW;
     if (this.filled < WINDOW) this.filled++;
     this.fps = 1 / this.p90();
+    this.age += dt;
+    // The first seconds decide nothing (the window fills meanwhile, so the first decision rests on settled frames).
+    if (this.age < this.o.warmup) {
+      this.below = 0;
+      this.above = 0;
+      this.crisis = 0;
+      return false;
+    }
+    const early = this.age < this.o.earlyEnd;
+    const downAfter = early ? this.o.downAfter * this.o.earlyDownMul : this.o.downAfter;
+    const upAfter = early ? this.upWait * this.o.earlyUpMul : this.upWait;
     if (this.o.emergencyFps > 0 && this.o.emergencyScale > 0) {
       this.crisis = this.fps < this.o.emergencyFps && this.filled >= WINDOW ? this.crisis + dt : 0;
       if (this.crisis >= this.o.emergencyAfter) this.crisisOpen = true;
@@ -218,12 +244,12 @@ export class AdaptiveResolution {
       this.below = 0;
       this.above = 0;
     }
-    if (this.below >= this.o.downAfter && this.scale > this.lowest) {
+    if (this.below >= downAfter && this.scale > this.lowest) {
       if (this.sinceUpscale < this.o.failWindow) this.upWait = Math.min(this.o.maxUpAfter, this.upWait * 2);
       const factor = Math.max(this.o.minStep, Math.min(this.o.step, Math.sqrt(Math.max(this.fps, 1) / this.o.targetFps)));
       return this.set(Math.max(this.lowest, this.scale * factor));
     }
-    if (this.above >= this.upWait && this.scale < 1) {
+    if (this.above >= upAfter && this.scale < 1) {
       this.sinceUpscale = 0;
       return this.set(Math.min(1, this.scale / 0.8));
     }
@@ -241,6 +267,7 @@ export class AdaptiveResolution {
     this.sinceUpscale = Number.POSITIVE_INFINITY;
     this.crisis = 0;
     this.crisisOpen = false;
+    this.age = 0;
   }
 
   /** Switch the policy (a profile's options); the scale returns to 1. */
