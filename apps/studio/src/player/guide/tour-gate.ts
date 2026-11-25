@@ -18,6 +18,11 @@ export interface GateInput {
   now: number;
   /** Full-model upgrades: copies settled and copies queued (`WorldRenderer.modelUpgradeProgress`). */
   upgrades: { done: number; total: number };
+  /**
+   * The same upgrades as a weighted fraction, 0..1 (`WorldRenderer.modelUpgradeFraction`: files count for their bytes, a
+   * file in progress for its stage). Omitted: `done / total`.
+   */
+  fraction?: number;
   /** The renderer still prepares something (`processingStage !== null`). */
   busy: boolean;
   /** The guide is ready (body in, viewpoints found). */
@@ -43,6 +48,8 @@ export class TourGate {
   private readyNow = false;
   private armedAt: number | null = null;
   private readyAt = 0;
+  /** The highest percent shown: the number never goes back (more files queued late, a file restarting). */
+  private peak = 0;
   private last: TourPrep = { ready: false, percent: 0, armed: false, starting: false };
 
   /** The latest state. */
@@ -63,8 +70,13 @@ export class TourGate {
       this.readyAt = i.now;
     }
     // The guide counts as one more step, so a hall with nothing to upgrade still reads short of 100% until she is ready.
+    // The models' steps are worth their weighted fraction (the bar moves while a file loads; a settled copy is whole in
+    // it); without one, the copies settled.
     const steps = total + 1;
-    const percent = this.readyNow ? 100 : Math.min(99, Math.floor((100 * (Math.min(done, total) + (i.guideReady ? 1 : 0))) / steps));
+    const frac = total === 0 ? 0 : settled ? 1 : i.fraction === undefined ? done / total : Math.min(1, Math.max(0, i.fraction));
+    const raw = Math.min(99, Math.floor((100 * (frac * total + (i.guideReady ? 1 : 0))) / steps));
+    this.peak = Math.max(this.peak, raw);
+    const percent = this.readyNow ? 100 : this.peak;
     let go = false;
     let armed = this.armedAt !== null;
     if (armed && this.readyNow && !i.hold && i.now - Math.max(this.readyAt, this.armedAt!) >= READY_BEAT_MS) {

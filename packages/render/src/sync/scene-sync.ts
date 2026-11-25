@@ -67,7 +67,7 @@ import { disposeModelInstance, instantiateAsset, instantiateModel, type ModelCac
 import { createPoster, shareMaterials, type TextureCache } from '../geometry/poster';
 import type { AssetAnimator } from './asset-animator';
 import { isVehicleModel, VehicleRig } from './vehicle-rig';
-import { ModelUpgrades } from './model-upgrades';
+import { ModelUpgrades, UPGRADE_DECODED, UPGRADE_DOWNLOAD_SHARE, UPGRADE_PREPARED } from './model-upgrades';
 import type { CharacterSystem } from '../characters/system';
 import { resolveLook } from '@aether/assets';
 import { assetInfo, effectiveAssetId, fitScale, loadCatalog, lodDistances, type AssetInfo } from '@aether/assets';
@@ -420,6 +420,11 @@ export class SceneSync {
   /** Light library models queued for their full file since the start, and those settled (see ModelUpgrades.progress). */
   upgradeProgress(): { done: number; total: number } {
     return this.upgrades ? this.upgrades.progress() : { done: 0, total: 0 };
+  }
+
+  /** Weighted fractional progress (0..1) of the full-file upgrades (see ModelUpgrades.fraction); 1 when none. */
+  upgradeFraction(): number {
+    return this.upgrades ? this.upgrades.fraction() : 1;
   }
 
   /** Whether a scatter field needs a view update even if the camera did not move. */
@@ -1774,9 +1779,9 @@ export class SceneSync {
   }
 
   /** Retain and load `urls` (one reference each); on failure the references are given back and the error rethrown. */
-  private async acquireModels(urls: readonly string[]): Promise<Object3D[]> {
+  private async acquireModels(urls: readonly string[], onProgress?: (fraction: number) => void): Promise<Object3D[]> {
     const models = this.opts.models!;
-    const loads = urls.map((u) => models.acquire(u));
+    const loads = urls.map((u, i) => models.acquire(u, i === 0 ? onProgress : undefined));
     try {
       return await Promise.all(loads);
     } catch (e) {
@@ -1860,13 +1865,13 @@ export class SceneSync {
         const box = this.entityBounds(node.id, _upgradeBox);
         return box.isEmpty() ? null : box.getBoundingSphere(out);
       },
-      load: () =>
-        this.loadUpgrade(node, shape, info, scale, token, urls).catch((e: unknown) => {
+      load: (report) =>
+        this.loadUpgrade(node, shape, info, scale, token, urls, report).catch((e: unknown) => {
           // The light copy stays: it is a complete model, only its textures are smaller.
           log.warn(`${node.id}: full model did not load, keeping the light copy: ${errorMessage(e)}`);
           return null;
         }),
-    });
+    }, info.entry?.bytes ?? 1);
   }
 
   /**
@@ -1874,10 +1879,12 @@ export class SceneSync {
    * light copy stays on screen meanwhile). Resolves to the swap: synchronous, same transform and scale, no frame without
    * either copy.
    */
-  private async loadUpgrade(node: EntityNode, shape: AssetShape, info: AssetInfo, scale: number, token: number, urls: readonly string[]): Promise<(() => void) | null> {
+  private async loadUpgrade(node: EntityNode, shape: AssetShape, info: AssetInfo, scale: number, token: number, urls: readonly string[], report?: (fraction: number) => void): Promise<(() => void) | null> {
     const models = this.opts.models;
     if (!models || !this.isCurrent(node, token)) return null;
-    const sources = await this.acquireModels(urls);
+    // The main file's real bytes are the download stage (the levels, small, count with the decode that follows).
+    const sources = await this.acquireModels(urls, report ? (f) => report(f * UPGRADE_DOWNLOAD_SHARE) : undefined);
+    report?.(UPGRADE_DECODED);
     const release = (): void => {
       for (const u of urls) models.release(u);
     };
@@ -1894,6 +1901,7 @@ export class SceneSync {
         log.warn(`${node.id}: preparing the full model failed (it prepares on first draw): ${errorMessage(e)}`);
       }
     }
+    report?.(UPGRADE_PREPARED);
     let done = false;
     const drop = (): void => {
       if (done) return;

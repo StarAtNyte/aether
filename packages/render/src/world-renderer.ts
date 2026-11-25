@@ -1503,6 +1503,14 @@ export class WorldRenderer {
   }
 
   /**
+   * Weighted fractional progress (0..1) of the same upgrades: files count for their bytes, a file loading for its stage
+   * (download by real bytes, decode and prepare, swap); 1 when nothing upgrades.
+   */
+  modelUpgradeFraction(): number {
+    return this.sync.upgradeFraction();
+  }
+
+  /**
    * Prepare a full library model before it replaces its light copy: its programs link and its textures upload in the
    * scene pass, off the scene graph (every mesh, in view or not), so the first frame that draws it does not wait for it.
    * Bounded: a compile that never settles lets the swap go ahead after {@link UPGRADE_PREPARE_MAX_MS}.

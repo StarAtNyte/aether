@@ -7,7 +7,7 @@ import { BoxGeometry, Group, Mesh, MeshStandardMaterial, PerspectiveCamera, type
 import { createWorld, type EntityInput } from '@aether/core';
 import { setCatalog, type CatalogInput } from '@aether/assets';
 import { ModelCache, type ModelLoader } from '../src/geometry/model-loader';
-import { ModelUpgrades } from '../src/sync/model-upgrades';
+import { ModelUpgrades, UPGRADE_DECODED, UPGRADE_DOWNLOAD_SHARE, UPGRADE_PREPARED } from '../src/sync/model-upgrades';
 import { PROGRESSIVE_MIN_BYTES } from '../src/sync/scene-sync';
 import { makeSync, tick } from './helpers';
 
@@ -201,5 +201,106 @@ describe('progressive library models', () => {
     resting = true;
     q.update(camera);
     expect(started).toEqual(['far']);
+  });
+
+  it('reports a weighted, fractional progress: stages of a loading file, bytes as weight, failures and drops whole', async () => {
+    const q = new ModelUpgrades({ allowed: () => true });
+    expect(q.fraction()).toBe(1);
+    const reports: Array<(f: number) => void> = [];
+    const finish: Array<() => void> = [];
+    const item = (fail = false) => ({
+      live: () => true,
+      bounds: () => null,
+      load: (report?: (f: number) => void) =>
+        new Promise<(() => void) | null>((resolve, reject) => {
+          reports.push(report!);
+          finish.push(() => (fail ? reject(new Error('no file')) : resolve(null)));
+        }),
+    });
+    // A big file (3 MB) and a small one (1 MB): the big one is worth three quarters.
+    q.request('big', item(), 3_000_000);
+    q.request('small', item(true), 1_000_000);
+    expect(q.fraction()).toBe(0);
+    q.update(null);
+    await tick(5);
+    reports[0]!(0.3);
+    expect(q.fraction()).toBeCloseTo(0.75 * 0.3);
+    // A lower report never takes it back.
+    reports[0]!(0.1);
+    expect(q.fraction()).toBeCloseTo(0.75 * 0.3);
+    reports[0]!(UPGRADE_PREPARED);
+    reports[1]!(0.5);
+    expect(q.fraction()).toBeCloseTo(0.75 * UPGRADE_PREPARED + 0.25 * 0.5);
+    // The small file fails: it counts whole.
+    finish[1]!();
+    await tick(5);
+    expect(q.fraction()).toBeCloseTo(0.75 * UPGRADE_PREPARED + 0.25);
+    finish[0]!();
+    await tick(5);
+    expect(q.fraction()).toBe(1);
+    expect(q.progress()).toEqual({ done: 2, total: 2 });
+  });
+
+  it('creeps through a stage it cannot see inside (decode, prepare), never past it, and never backwards', async () => {
+    let clock = 0;
+    const q = new ModelUpgrades({ allowed: () => true, now: () => clock });
+    let report: ((f: number) => void) | undefined;
+    q.request('f', { live: () => true, bounds: () => null, load: (r) => ((report = r), new Promise(() => undefined)) });
+    q.update(null);
+    await tick(5);
+    report!(0.3);
+    clock = 20_000;
+    // Mid-download the real bytes count, no estimate.
+    expect(q.fraction()).toBeCloseTo(0.3);
+    report!(UPGRADE_DOWNLOAD_SHARE);
+    expect(q.fraction()).toBeCloseTo(UPGRADE_DOWNLOAD_SHARE);
+    let last = q.fraction();
+    for (const t of [21_000, 24_000, 30_000, 120_000]) {
+      clock = t;
+      const f = q.fraction();
+      expect(f).toBeGreaterThanOrEqual(last);
+      last = f;
+    }
+    // Far later it is near, but short of, the decoded mark.
+    expect(last).toBeGreaterThan(UPGRADE_DOWNLOAD_SHARE + 0.15 * 0.9);
+    expect(last).toBeLessThan(UPGRADE_DECODED);
+    report!(UPGRADE_DECODED);
+    expect(q.fraction()).toBeCloseTo(UPGRADE_DECODED);
+  });
+
+  it('without weights every file counts the same, and a dropped copy counts whole', async () => {
+    const q = new ModelUpgrades({ allowed: () => true });
+    let alive = true;
+    q.request('a', { live: () => alive, bounds: () => null, load: async () => null });
+    q.request('b', { live: () => true, bounds: () => null, load: () => new Promise(() => undefined) });
+    expect(q.fraction()).toBe(0);
+    alive = false;
+    q.update(null);
+    expect(q.fraction()).toBeCloseTo(0.5);
+  });
+
+  it('a full model load reports its download bytes through the cache and the sync', async () => {
+    const seen: number[] = [];
+    const bytesLoader: ModelLoader = {
+      async load(url, onProgress) {
+        if (!url.includes('.lite.')) {
+          onProgress?.(0.25);
+          onProgress?.(1);
+        }
+        const g = new Group();
+        g.add(new Mesh(new BoxGeometry(1, 1, 1), new MeshStandardMaterial({ name: url })));
+        return g;
+      },
+    };
+    const cache = new ModelCache(bytesLoader);
+    const { sync } = makeSync({ models: cache, modelUpgrades: { allowed: () => true } });
+    await sync.setWorld(doc(ent('r', 'rug')));
+    await sync.whenIdle();
+    expect(sync.upgradeFraction()).toBe(0);
+    sync.updateUpgrades(null);
+    await tick(20);
+    seen.push(sync.upgradeFraction());
+    expect(seen[0]).toBe(1);
+    cache.dispose();
   });
 });

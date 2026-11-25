@@ -16,7 +16,8 @@ import { sharpenObject } from '../materials/anisotropy';
 
 /** Loads a model URL into a scene graph. Injected so tests can fake it. */
 export interface ModelLoader {
-  load(url: string): Promise<Object3D>;
+  /** `onProgress`: the download's share (0..1) as bytes arrive, where the loader can tell (optional, best effort). */
+  load(url: string, onProgress?: (fraction: number) => void): Promise<Object3D>;
 }
 
 export { MAX_MODEL_URL_LENGTH };
@@ -62,7 +63,7 @@ export const CHARACTER_FILE = /\/c\/[^/]+\.glb$/;
 const libraryVariant = async (url: string): Promise<string | null> => (CHARACTER_FILE.test(url) ? null : textureVariantUrl(url, await loadTextureVariants()));
 
 interface GltfLike {
-  loadAsync(url: string): Promise<{ scene: Object3D; animations: Object3D['animations'] }>;
+  loadAsync(url: string, onProgress?: (e: { loaded: number; total: number; lengthComputable?: boolean }) => void): Promise<{ scene: Object3D; animations: Object3D['animations'] }>;
   parseAsync(data: ArrayBuffer, path: string): Promise<{ scene: Object3D; animations: Object3D['animations'] }>;
   setKTX2Loader(loader: KTX2Loader): unknown;
 }
@@ -139,7 +140,12 @@ export function createGltfModelLoader(opts: GltfLoaderOptions = {}): ModelLoader
     return (await ktx2Ready) && c.state === 'on' ? gltf : null;
   };
   return {
-    async load(url: string): Promise<Object3D> {
+    async load(url: string, onProgress?: (fraction: number) => void): Promise<Object3D> {
+      const bytes = onProgress
+        ? (e: { loaded: number; total: number; lengthComputable?: boolean }): void => {
+            if (e.total > 0 && (e.lengthComputable ?? true)) onProgress(Math.min(1, e.loaded / e.total));
+          }
+        : undefined;
       if (!isSafeModelUrl(url)) throw new Error('model url rejected (only same-origin paths, blob:/glTF data: URLs and allowlisted https hosts)');
       const withKtx2 = await compressed();
       // Amazon Berkeley Objects: KTX2 levels where the transcoder runs (never above the renderer's texture cap), the WebP
@@ -164,7 +170,7 @@ export function createGltfModelLoader(opts: GltfLoaderOptions = {}): ModelLoader
       const twin = withKtx2 ? await variantOf(url).catch(() => null) : null;
       if (withKtx2 && twin && isSafeModelUrl(twin)) {
         try {
-          const gltf = await withKtx2.loadAsync(twin);
+          const gltf = await withKtx2.loadAsync(twin, bytes);
           gltf.scene.animations = gltf.animations;
           gltf.scene.userData[COMPRESSED_SOURCE_KEY] = url;
           sharpenObject(gltf.scene);
@@ -173,7 +179,7 @@ export function createGltfModelLoader(opts: GltfLoaderOptions = {}): ModelLoader
           log.warn(`compressed twin of ${url} failed, loading the original: ${errorMessage(e)}`);
         }
       }
-      const gltf = await (await base()).loadAsync(url);
+      const gltf = await (await base()).loadAsync(url, bytes);
       gltf.scene.animations = gltf.animations;
       sharpenObject(gltf.scene);
       return gltf.scene;
@@ -348,9 +354,9 @@ export class ModelCache {
   constructor(private readonly loader: ModelLoader) {}
 
   /** Retain and (if needed) start loading `url`. Pair with {@link release}. */
-  acquire(url: string): Promise<Object3D> {
+  acquire(url: string, onProgress?: (fraction: number) => void): Promise<Object3D> {
     return this.cache.acquire(url, () => {
-      const p = isSafeModelUrl(url) ? this.loader.load(url) : Promise.reject(new Error('model url rejected'));
+      const p = isSafeModelUrl(url) ? this.loader.load(url, onProgress) : Promise.reject(new Error('model url rejected'));
       p.catch(() => undefined); // observed by callers; avoid unhandled rejections in the cache itself
       return p;
     });

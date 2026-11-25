@@ -87,4 +87,34 @@ describe('tour gate', () => {
     expect(g.prep).toMatchObject({ ready: true, starting: true });
     expect(g.update(input(10_000 + TOUR_WAIT_MS + READY_BEAT_MS, 6, 7))).toBe(true);
   });
+
+  it('reads the weighted fraction: the bar moves while a file loads, never goes back, reaches 100 only when ready', () => {
+    const g = new TourGate();
+    const at = (now: number, fraction: number, done = 0, more: Partial<GateInput> = {}) => {
+      g.update({ ...input(now, done, 4, more), fraction });
+      return g.prep.percent;
+    };
+    // Four copies, none settled, but the first file is 50% through: (0.5 * 4 + guide 1) / 5 = 60%.
+    expect(at(0, 0, 0, { guideReady: false })).toBe(0);
+    expect(at(500, 0.125, 0, { guideReady: false })).toBe(10);
+    expect(at(1000, 0.5, 0)).toBe(60);
+    // A backwards fraction (more files queued late) does not lower the number.
+    expect(at(1500, 0.3, 0)).toBe(60);
+    // The fraction is what counts (a settled copy is whole in it); a lower reading never lowers the number.
+    expect(at(2000, 0.75, 3)).toBe(80);
+    expect(at(2200, 0.4, 3)).toBe(80);
+    expect(at(2500, 1, 4, { busy: true })).toBe(99);
+    expect(g.prep.ready).toBe(false);
+    expect(at(2600, 1, 4)).toBe(100);
+    expect(g.prep.ready).toBe(true);
+  });
+
+  it('a failed file counts as done, so the bar reaches the end', () => {
+    const g = new TourGate();
+    g.update({ ...input(0, 1, 2), fraction: 0.5 });
+    expect(g.prep.percent).toBe(66);
+    // The second file failed: settled, so done = total although its fraction was low.
+    g.update({ ...input(1000, 2, 2), fraction: 1 });
+    expect(g.prep.ready).toBe(true);
+  });
 });

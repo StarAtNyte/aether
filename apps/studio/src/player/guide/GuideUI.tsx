@@ -177,7 +177,7 @@ export function GuidePanel({
               <div className="pl-gcard__actions">
                 <button type="button" className={`pl-gcta is-primary${wait.className}`} aria-busy={wait['aria-busy']} style={wait.style} onClick={startTour} data-testid="pl-guide-welcome-tour">
                   <Icon d={PLAY} fill />
-                  <span aria-live="polite">
+                  <span aria-live={waitLabel ? 'off' : 'polite'}>
                     {waitLabel ?? 'Start the guided tour'}
                     <small>
                       {waitLabel && prep?.armed && !prep.starting ? 'Starts by itself when everything is in' : `about ${snap.minutes} min · ${snap.stops.length} stops`}

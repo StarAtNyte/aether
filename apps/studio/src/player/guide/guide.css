@@ -481,20 +481,55 @@
   opacity: 0.72;
 }
 
+/* The fill and the shimmer are animatable custom properties: the fill eases to each new percent, the shimmer sweeps it. */
+@property --prep {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 0%;
+}
+
+@property --shim {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: -25%;
+}
+
+@keyframes pl-gshim {
+  to {
+    --shim: 125%;
+  }
+}
+
 /* The tour being prepared (tour-gate.ts): the button reads "Preparing the tour… N%", filled to N% and dimmed, still
    pressable (a press arms the tour); "Ready" for a moment before an armed tour sets off. */
 .pl-gcta.is-wait,
 .pl-gchip.is-wait,
 .pl-gopen--tour.is-wait {
-  background: linear-gradient(90deg, rgb(255 255 255 / 0.16) var(--prep, 0%), transparent var(--prep, 0%)), color-mix(in srgb, var(--accent) 45%, rgb(40 40 46));
+  background:
+    linear-gradient(90deg, transparent calc(var(--shim) - 25%), rgb(255 255 255 / 0.2) var(--shim), transparent calc(var(--shim) + 25%)) 0 0 / var(--prep, 0%) 100% no-repeat,
+    linear-gradient(90deg, rgb(255 255 255 / 0.16) var(--prep, 0%), transparent var(--prep, 0%)), color-mix(in srgb, var(--accent) 45%, rgb(40 40 46));
   color: rgb(255 255 255 / 0.78);
   cursor: progress;
   font-variant-numeric: tabular-nums;
+  transition: --prep 0.7s ease-out;
+  animation: pl-gshim 1.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pl-gcta.is-wait,
+  .pl-gchip.is-wait,
+  .pl-gopen--tour.is-wait {
+    animation: none;
+    background:
+      linear-gradient(90deg, rgb(255 255 255 / 0.16) var(--prep, 0%), transparent var(--prep, 0%)), color-mix(in srgb, var(--accent) 45%, rgb(40 40 46));
+  }
 }
 
 .pl-gcta.is-wait:hover,
 .pl-gopen--tour.is-wait:hover {
-  background: linear-gradient(90deg, rgb(255 255 255 / 0.16) var(--prep, 0%), transparent var(--prep, 0%)), color-mix(in srgb, var(--accent) 52%, rgb(40 40 46));
+  background:
+    linear-gradient(90deg, transparent calc(var(--shim) - 25%), rgb(255 255 255 / 0.2) var(--shim), transparent calc(var(--shim) + 25%)) 0 0 / var(--prep, 0%) 100% no-repeat,
+    linear-gradient(90deg, rgb(255 255 255 / 0.16) var(--prep, 0%), transparent var(--prep, 0%)), color-mix(in srgb, var(--accent) 52%, rgb(40 40 46));
 }
 
 .pl-gcta.is-ready,

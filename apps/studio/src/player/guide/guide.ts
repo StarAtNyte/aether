@@ -1061,6 +1061,7 @@ export class GuideController {
     const go = this.gate.update({
       now,
       upgrades: r.modelUpgradeProgress(),
+      fraction: r.modelUpgradeFraction(),
       busy: r.processingStage !== null,
       guideReady: this.ready && this.viewsDone,
       hold: this.typing || this.snap.thinking,
