@@ -14,6 +14,7 @@
  * the mouth moves at a syllable pace (about 4.5 Hz, varied) for the line's reading time. Voice muted: the mouth rests.
  * Reduced motion: it moves, but less.
  */
+import { pb, pe, pj } from '@aether/core/perf-probe';
 
 /** Envelope time constants (s): the mouth opens fast and closes a little slower. */
 export const ATTACK_S = 0.04;
@@ -207,6 +208,7 @@ export class GuideLipSync {
       return;
     }
     this.pending.add(url);
+    const endJob = pj('lipsync');
     void fetch(url, { credentials: 'same-origin', cache: 'force-cache' })
       .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
       .then((bytes) => {
@@ -215,10 +217,17 @@ export class GuideLipSync {
         return this.decoder.decodeAudioData(bytes);
       })
       .then((buf) => {
-        if (buf && !this.disposed) this.store(url, mouthEnvelope(buf));
+        if (buf && !this.disposed) {
+          const t0 = pb();
+          this.store(url, mouthEnvelope(buf));
+          pe('lipsync', t0);
+        }
       })
       .catch(() => undefined)
-      .finally(() => this.pending.delete(url));
+      .finally(() => {
+        this.pending.delete(url);
+        endJob();
+      });
   }
 
   /**

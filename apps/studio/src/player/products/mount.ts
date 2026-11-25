@@ -20,6 +20,7 @@ import {
   type ProductWorld,
 } from "./model";
 import "../products.css";
+import { pb, pe } from "@aether/core/perf-probe";
 
 /** Least time (ms) between two hover raycasts. */
 const HOVER_MS = 80;
@@ -83,12 +84,14 @@ export function mountProducts(
         active instanceof HTMLElement && active !== document.body
           ? active
           : null;
+    const t0 = pb();
     card?.remove();
     card = renderCard(model, close);
     openId = model.id;
     host.appendChild(card);
     card.focus({ preventScroll: true });
     hideLabel();
+    pe("card", t0);
     return true;
   };
 

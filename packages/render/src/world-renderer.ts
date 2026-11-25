@@ -112,7 +112,8 @@ import { installLodBias, lodBiasFor, setTextureLodBias } from './gpu/lod-bias';
 import { createGpuRenderer, type BackendKind, type BackendPreference, type BackendReason, type GpuInfo } from './gpu/backend';
 import { opaqueSort, type SortItem } from './gpu/render-order';
 import { needsPrePass } from './gpu/finishing';
-import { capTextureSize } from './gpu/texture-cap';
+import { capTextureSize, installedTextureCap } from './gpu/texture-cap';
+import { pb, pe, pj, perfOn } from '@aether/core/perf-probe';
 import { CaptureTargets } from './gpu/capture-targets';
 import { installShaderRelease } from './gpu/shader-release';
 import { installPipelineRelease } from './gpu/pipeline-release';
@@ -1184,6 +1185,7 @@ export class WorldRenderer {
     const releaseShaders = this.releaseShaders;
     this.releaseShaders = () => { lazyStages(); releasePipelines(); releaseShaders(); };
     this.programs = parallelPrograms(renderer.backend as unknown as Parameters<typeof parallelPrograms>[0], () => this.requestPreparedFrame(false), e => log.warn(`parallel shader linking failed: ${errorMessage(e)}`), this.programCache);
+    this.attachProbe();
     this.firstDraws = installFirstDrawPacer(renderer.backend as unknown as Parameters<typeof installFirstDrawPacer>[0], {
       frame: () => this.framesDrawn,
       active: () => !this.loadingScreen && this.framesDrawn > 0 && !this.captureActive && !this.tracing,
@@ -1524,6 +1526,8 @@ export class WorldRenderer {
         culled.push(o);
       }
     });
+    const endJob = pj('prepare');
+    const t0 = pb();
     content.updateMatrixWorld(true);
     let compiling: Promise<unknown>;
     try {
@@ -1532,9 +1536,81 @@ export class WorldRenderer {
       compiling = Promise.reject(e);
     } finally {
       for (const o of culled) o.frustumCulled = true;
+      pe('prepare', t0);
     }
     let timer: ReturnType<typeof setTimeout> | undefined;
-    return Promise.race([compiling.then(() => undefined), new Promise<void>((resolve) => (timer = setTimeout(resolve, UPGRADE_PREPARE_MAX_MS)))]).finally(() => clearTimeout(timer));
+    return Promise.race([compiling.then(() => undefined), new Promise<void>((resolve) => (timer = setTimeout(resolve, UPGRADE_PREPARE_MAX_MS)))]).finally(() => {
+      clearTimeout(timer);
+      endJob();
+    });
+  }
+
+  private probed = false;
+
+  /**
+   * `?perf=1`: wrap the frame, the draw, the program links and the texture uploads of this renderer in spans for the
+   * diagnostic overlay (@aether/core perf-probe). A no-op unless the overlay is installed; safe to call again.
+   */
+  attachProbe(): void {
+    if (this.probed || !perfOn()) return;
+    this.probed = true;
+    type Fn = (...a: unknown[]) => unknown;
+    const wrap = (o: object | undefined, name: string, kind: string, detail?: (a: unknown[]) => string | undefined): void => {
+      const rec = o as Record<string, Fn> | undefined;
+      const f = rec?.[name];
+      if (typeof f !== 'function') return;
+      rec![name] = function (this: unknown, ...a: unknown[]): unknown {
+        const t0 = pb();
+        try {
+          return f.apply(this, a);
+        } finally {
+          pe(kind, t0, detail?.(a));
+        }
+      };
+    };
+    const size = (a: unknown[]): string | undefined => {
+      const t = a[0] as { image?: { width?: number; height?: number }; mipmaps?: Array<{ width: number; height: number }> } | undefined;
+      const w = t?.mipmaps?.[0]?.width ?? t?.image?.width;
+      const h = t?.mipmaps?.[0]?.height ?? t?.image?.height;
+      return w ? `${w}x${h}` : undefined;
+    };
+    wrap(this, 'render', 'frame');
+    wrap(this.renderer, 'render', 'draw');
+    const be = this.renderer.backend as object;
+    for (const n of ['createProgram', 'createRenderPipeline', 'createComputePipeline', '_completeCompile']) wrap(be, n, 'compile');
+    for (const n of ['createTexture', 'updateTexture', 'generateMipmaps']) wrap(be, n, 'upload', size);
+  }
+
+  /** What the `?perf=1` overlay shows of this renderer (cheap; plain values). */
+  perfSnapshot(): {
+    gpu: string;
+    tier: string;
+    tierReason: string | null;
+    textureCap: number;
+    ladder: number;
+    scale: number;
+    upgrades: { done: number; total: number; inFlight: number; waiting: number; held: boolean };
+    programs: number;
+    textures: number;
+    compression: string;
+    pixelRatio: number;
+    drawingBuffer: [number, number];
+  } {
+    const prog = this.sync.upgradeProgress();
+    return {
+      gpu: this.gpu.description,
+      tier: `${this.renderTier} (gpu ${this.gpu.tier})`,
+      tierReason: this.autoTierReason,
+      textureCap: installedTextureCap(this.renderer),
+      ladder: this.governor.level,
+      scale: this.adaptive.scale,
+      upgrades: { ...prog, inFlight: this.sync.upgradesActive, waiting: this.sync.upgradesPending - this.sync.upgradesActive, held: this.upgradesHeld },
+      programs: this.programs.pending,
+      textures: this.renderer.info.memory.textures ?? 0,
+      compression: this.compression.state,
+      pixelRatio: this.renderer.getPixelRatio(),
+      drawingBuffer: [this.domElement.width, this.domElement.height],
+    };
   }
 
   /** The load screen is up (true) or gone: while up, preparation runs in long slices. */

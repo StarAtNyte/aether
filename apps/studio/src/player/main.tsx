@@ -21,4 +21,6 @@ if (root) {
     dom.createRoot(root).render(react.createElement(app.PlayerApp));
   });
 }
+// `?perf=1`: the diagnostic overlay (a lazy chunk; nothing in the normal bundles but this line).
+if (/[?&]perf=1(?:&|$|#)/.test(location.search + location.hash)) void import('./perf/overlay').then((m) => m.installPerfOverlay());
 registerOfflineCache();

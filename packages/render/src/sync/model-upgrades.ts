@@ -12,6 +12,7 @@
  * transform and scale, in the same task as the file's other copies.
  */
 import { Frustum, Matrix4, Sphere, Vector3, type PerspectiveCamera } from 'three';
+import { pb, pe } from '@aether/core/perf-probe';
 
 /** Full files downloading / transcoding at once. */
 export const UPGRADE_CONCURRENCY = 2;
@@ -193,11 +194,13 @@ export class ModelUpgrades {
         this.settle(key, items.length);
         if (!this.disposed)
           for (const swap of swaps) {
+            const t0 = pb();
             try {
               swap?.();
             } catch {
               // One copy failing to swap keeps its light copy; the others still swap.
             }
+            pe('swap', t0, key.slice(-40));
           }
         this.pump();
       });

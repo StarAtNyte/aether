@@ -417,6 +417,11 @@ export class SceneSync {
     return this.upgrades ? this.upgrades.waiting + this.upgrades.active : 0;
   }
 
+  /** Full files downloading or being swapped in right now. */
+  get upgradesActive(): number {
+    return this.upgrades ? this.upgrades.active : 0;
+  }
+
   /** Light library models queued for their full file since the start, and those settled (see ModelUpgrades.progress). */
   upgradeProgress(): { done: number; total: number } {
     return this.upgrades ? this.upgrades.progress() : { done: 0, total: 0 };

@@ -6,6 +6,7 @@
  * is played, or just before (`preload`, the tour's next line), and at most two Audio elements live at once (the line
  * playing and the next).
  */
+import { pb, pe } from '@aether/core/perf-probe';
 
 /** Key of a line: FNV-1a 32 of its text, trimmed, as 8 hex digits (the generator names the files by it). */
 export function voiceKey(text: string): string {
@@ -64,12 +65,14 @@ export class GuideVoice {
     if (!this.on || !this.has(text)) return;
     const key = voiceKey(text);
     if (this.next?.key === key) return;
+    const t0 = pb();
     if (this.next) release(this.next.audio);
     const a = new Audio();
     a.preload = 'auto';
     a.src = this.url(key);
     this.next = { key, audio: a };
     this.onClip?.(a.src);
+    pe('voice', t0, 'preload');
   }
 
   /** A recording of `text` exists (the index is loaded and names one). */
@@ -85,6 +88,7 @@ export class GuideVoice {
   play(text: string, onLength?: (seconds: number) => void, onEnd?: () => void): boolean {
     this.stop();
     if (!this.on || !this.files || !this.has(text)) return false;
+    const t0 = pb();
     const key = voiceKey(text);
     // The line loaded ahead, else a new element.
     const ready = this.next?.key === key ? this.next.audio : null;
@@ -100,6 +104,7 @@ export class GuideVoice {
     if (onEnd) a.addEventListener('ended', () => this.audio === a && onEnd(), { once: true });
     // Before the visitor's first click or key the browser may refuse to play: the caption still shows.
     void a.play().catch(() => undefined);
+    pe('voice', t0, 'play');
     return true;
   }
 

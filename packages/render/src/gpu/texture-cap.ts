@@ -8,6 +8,8 @@
  * targets, compressed, data, cube, array, video and canvas-backed (generated) textures are left alone.
  */
 
+import { pb, pe } from '@aether/core/perf-probe';
+
 type Drawable = ImageBitmap | HTMLImageElement | HTMLCanvasElement | OffscreenCanvas;
 
 interface TextureLike {
@@ -69,7 +71,9 @@ export function capTextureSize(renderer: unknown, cap: number): void {
     const c = this.__aetherCap ?? 0;
     if (c > 0 && t && !t.isRenderTargetTexture && !t.isDepthTexture && !t.isFramebufferTexture && !t.isCompressedTexture && !t.isDataTexture && !t.isCubeTexture && !t.isDataArrayTexture && !t.isData3DTexture && !t.isVideoTexture && !t.isCanvasTexture && t.userData?.['aetherFullSize'] !== true && drawable(t.image)) {
       try {
+        const t0 = pb();
         const small = shrink(t.image, c);
+        pe('upload', t0, 'resize');
         if (small) t.image = small;
       } catch {
         // Upload the original.
