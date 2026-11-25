@@ -1136,3 +1136,19 @@ keep their own vertex buffers (about 70 MB on Lisbon); freeing them is not in th
 live load by mistake and is undecided). Encoding
 costs the main thread about 70 ms per million vertices (positions, normals, UVs, colours), within the noise of the first
 picture. ANGLE on D3D11 has no three-component 16-bit or signed 10:10:10:2 vertex formats and widens them at upload.
+
+## The `?perf=1` diagnostic (player)
+
+Open the player with `?perf=1` (`play.html?perf=1#t=<world>`): a lazy chunk (`apps/studio/src/player/perf/overlay.ts`, nothing in the normal bundles
+but one line in `main.tsx`) shows the GPU string, tier and why, texture cap, ladder level, resolution scale, fps and frame time over 10 s
+(average, p95, max), the long frames (over 50 ms) with their likely cause, and counters (model upgrades done, in flight, swaps in 10 s, programs
+compiling, JS heap, cores, memory). "Copy report" puts the same, the last 50 long frames and the renderer's own `diagnostics()` on the clipboard.
+
+Causes come from `@aether/core/perf-probe` spans (a no-op without the overlay): `swap`, `upload`, `compile`, `prepare`, `lipsync`, `voice`, `card`, `draw`,
+`frame`. A long frame with no span and no long task is "unknown (GPU or compositor wait)". `window.__aetherPerf` has the full frame series and
+twice-a-second samples for scripts.
+
+Measured on an Intel iGPU (Mesa, RPL-S) at 4x CPU slowdown, `rug-exhibition-hall`: the hall draws at about 190 ms a frame at full size until
+adaptive resolution and the ladder have lowered it (the first ladder step also links new programs: a further 20 s of slow frames), so the freezes
+are the picture itself, not the upgrade swaps (swap, upload and compile together are about 3 s of 30 s). The tour gate now waits for that to settle.
+KTX2 files are not covered by the 512 px texture cap: the hall's 15 rug files download 35 MB (3072x4096 base colour maps) where their light copies are 3.6 MB.
